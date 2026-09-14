@@ -378,8 +378,8 @@ describe("runInit embedder flags", () => {
 		const code = await runInit(makeCtx({ flags: { "search-paths": "docs" } }));
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
-		expect(config.bm25).toBeDefined();
-		expect(config.bm25.enabled).toBe(true);
+		expect(config.minSync).toBeDefined();
+		expect(config.minSync?.enabled).toBe(true);
 		expect(config.minSync).toBeDefined();
 		expect(config.minSync.enabled).toBe(true);
 		expect(config.minSync.autoInstall).toBe(true);

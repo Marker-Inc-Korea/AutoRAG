@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.4.0",
+  "version": "2.4.2",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "MIT",
   "repository": {
@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "default": "./dist/core.js"
     }
   },
   "bin": {
@@ -22,20 +26,22 @@
   "files": [
     "dist",
     "skills",
-    "README.md"
+    "README.md",
+    "NOTICE"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/cli/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "build": "bun build src/index.ts src/core.ts src/cli/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",
     "test:windows": "node scripts/run-test-files.mjs",
     "check": "biome check --write .",
     "lint": "biome check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "supply-chain": "bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json"
   },
   "engines": {
     "node": ">=24.0.0"

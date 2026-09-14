@@ -11,7 +11,7 @@ summarize, compare, or answer questions from local PDFs, wikis, notes, research
 papers, knowledge bases, or authorized datasources.
 
 AutoRAG is the specialized librarian agent. One configured model plans the
-search, calls BM25, MinSync, Jikji, datasource, and filesystem tools, reads
+search, calls MinSync, Jikji, datasource, and filesystem tools, reads
 sources, judges evidence, and curates the final answer. There is no subagent or
 separate model role.
 
@@ -46,7 +46,7 @@ checks credential presence, and normally probes one live completion. If the
 model, authentication, configuration, or indexes are unhealthy, use
 `autorag-setup` rather than guessing private provider details.
 
-BM25, MinSync, and Jikji should normally be healthy. MinSync and Jikji
+MinSync and Jikji should normally be healthy. MinSync and Jikji
 auto-install on first use by default. If they are missing or stale, run a full
 `autorag refresh` or return to setup rather than silently degrading to
 lexical-only search.
@@ -65,15 +65,28 @@ autorag search "what were the key findings in the Q3 report" --top-k 5 --json --
 `summary`, optional `source`), and `sessionId`. Use that `sessionId` for
 feedback. `--json` without `--debug` is only `answer` plus `results`.
 
+To inspect the exact persisted evidence behind numbered results, use:
+
+```bash
+autorag evidence <sessionId> --result 1 --json
+```
+
+The response includes the original source, retrieval method, stable evidence
+ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber`,
+`retrievalResultId`, and metadata. Omit `--result` to inspect every result in
+the session. Prefer this command whenever the caller wants detailed chunk text
+rather than only the curated summary.
+
 - `--scope` narrows datasource retrieval to a requested sub-path; it cannot
   grant access.
 - `--tags` further narrows already-authorized datasource results and never
   grants new access.
 - `--json` is required for programmatic consumption.
-- `--debug` is required for `sessionId`, evidence, and diagnostics.
+- `--debug` is required for `sessionId` and diagnostics in search output.
+- `autorag evidence` is the detailed source/chunk inspection path.
 
 Do not bypass the librarian with ad hoc raw search when the user requested
-AutoRAG. The search loop can use Jikji, BM25, MinSync, datasource retrieval, and
+AutoRAG. The search loop can use Jikji, MinSync lexical/vector/hybrid retrieval, datasource retrieval, and
 direct source reading as appropriate. If search fails because of model,
 provider, auth, or timeout problems, diagnose with `autorag health --json`.
 
@@ -99,9 +112,9 @@ autorag index reset --method bm25 --yes --json
 autorag memory inspect --json
 ```
 
-Prefer a full refresh so parsed mirrors, BM25, MinSync, Jikji, and configured
+Prefer a full refresh so parsed mirrors, MinSync, Jikji, and configured
 datasources stay aligned. `--method` accepts
-`parsed,bm25,minsync,datasources,jikji,all`. Use it only for deliberate
+`parsed,minsync,datasources,jikji,all`. Use it only for deliberate
 narrowing. Scheduled maintenance should use non-daemon `autorag watch --once`,
 typically every 15–30 minutes, with the same config used by search and no
 overlapping runs.

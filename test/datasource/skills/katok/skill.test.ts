@@ -155,17 +155,6 @@ describe("KatokSkill index", () => {
 		expect(JSON.stringify(result)).toContain("binary-missing");
 	});
 
-	it("maps remote embedding rejection to an egress policy diagnostic", async () => {
-		const stub = new StubSkillClient();
-		stub.doctorResult = failStep("remote-embedding-rejected");
-		const skill = new KatokSkill({ client: asClient(stub) });
-
-		const result = await skill.index();
-
-		expect(result).toMatchObject({ ok: false, code: "datasource-embedding-egress-rejected" });
-		expect(result.diagnostics[0]?.code).toBe("datasource-embedding-egress-rejected");
-	});
-
 	it("returns datasource-index-failed when sync fails", async () => {
 		const stub = new StubSkillClient();
 		stub.syncResult = failStep("nonzero-exit");

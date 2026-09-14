@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch, realpathSync, statSync } from "node:fs";
+import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { streamSimple } from "@earendil-works/pi-ai/compat";
+import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -32,14 +32,12 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
-	MinSyncBM25Method,
-	type MinSyncBM25MethodOptions,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
-import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
+import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	type ParsedMirrorDiagnostic,
@@ -50,8 +48,8 @@ import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
 import type { PolicyResolver } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
+import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-import { type BM25SyncResult, removeLegacyBm25Artifacts } from "../retrieval/methods/bm25.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import {
@@ -78,6 +76,11 @@ import {
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
 import {
+	type AutoRAGFastAnswerDetails,
+	createEmitFastAnswerTool,
+	EMIT_FAST_ANSWER_TOOL_NAME,
+} from "./fast-answer-tool.ts";
+import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
 	type JikjiFindPerRootPolicy,
@@ -87,17 +90,18 @@ import {
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
-import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
 	createSearchDatasourceDocumentsTool,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 } from "./search-datasource-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
+	createPreliminarySearchDocumentsResponse,
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentsResponse,
+	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
 
@@ -113,7 +117,6 @@ const SEARCH_TOOLS = [
 	BASH_TOOL_NAME,
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
-	SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
 ] as const;
@@ -124,7 +127,7 @@ export interface AutoRefreshOptions {
 }
 
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
-export type RefreshMethod = "parsed" | "bm25" | "minsync" | "datasources" | "jikji";
+export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji";
 
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
@@ -139,13 +142,11 @@ export interface AutoRAGMinSyncRefreshResult {
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
 	readonly diagnostics: readonly SearchDocumentDiagnostic[];
-	readonly bm25?: BM25SyncResult;
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
 }
 
 export interface AutoRAGRefreshComponentStatus {
-	readonly bm25?: string;
 	readonly minsync?: string;
 	readonly jikji?: string;
 	readonly datasources?: string;
@@ -220,6 +221,24 @@ export class RemoteSessionRejectedError extends Error {
 	}
 }
 
+/** Thinking level applied per search phase. "off" requests no reasoning. */
+export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
+ * Two-phase progressive answers: the fast phase delivers an immediate first
+ * answer with {@link AutoRAGThinkingOptions.fast} thinking (default "off"),
+ * then the verification phase re-checks and finalizes with
+ * {@link AutoRAGThinkingOptions.final} thinking (default "high"). Pass
+ * `false` on {@link AutoRAGAgentOptions.thinking} to keep the legacy
+ * single-phase flow.
+ */
+export interface AutoRAGThinkingOptions {
+	/** Thinking level for the immediate first answer. Default "off". */
+	readonly fast?: AutoRAGThinkingLevel;
+	/** Thinking level for the verification/finalization phase. Default "high". */
+	readonly final?: AutoRAGThinkingLevel;
+}
+
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
 	apiKey?: string;
@@ -230,7 +249,6 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
-	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | false;
 	jikji?: JikjiOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
@@ -246,6 +264,8 @@ export interface AutoRAGAgentOptions {
 	maxSearchToolCalls?: number;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
+	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
+	thinking?: AutoRAGThinkingOptions | false;
 }
 
 export interface AutoRAGSearchSession {
@@ -283,8 +303,16 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
+	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
+	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
+	private readonly finalThinkingLevel: AutoRAGThinkingLevel | undefined;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
+	private jikjiPrepareInFlight: Promise<void> | undefined;
+	private jikjiReady = false;
+	private minSyncPrepareInFlight: Promise<MinSyncSyncResult | undefined> | undefined;
+	private minSyncReady = false;
 	private refreshState: RefreshState = {
 		inFlight: false,
 		lastOutcome: "never",
@@ -306,7 +334,6 @@ export class AutoRAGAgent {
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
-	private readonly bm25Method: MinSyncBM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
@@ -323,6 +350,7 @@ export class AutoRAGAgent {
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
+	private readonly sourceSearchCallCounts = new Map<string, number>();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -336,6 +364,9 @@ export class AutoRAGAgent {
 		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
 			throw new Error("maxSearchToolCalls must be a positive integer");
 		}
+		const thinking = options.thinking;
+		this.fastThinkingLevel = thinking === false ? undefined : (thinking?.fast ?? "off");
+		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
@@ -364,16 +395,9 @@ export class AutoRAGAgent {
 				...minSyncOpts,
 				root: this.workspaceProjectRoot,
 			});
+			this.minSyncReady = this.minSyncMethod.isReady();
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
-			if (options.bm25 !== false) {
-				const bm25Opts = { ...minSyncOpts, autoInstall: true, ...(options.bm25 ?? {}) };
-				this.bm25Method = new MinSyncBM25Method({
-					...bm25Opts,
-					root: this.workspaceProjectRoot,
-				});
-				this.methodRegistry.register(this.bm25Method);
-			}
 		}
 		for (const skill of this.datasourceSkills) {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
@@ -383,6 +407,7 @@ export class AutoRAGAgent {
 				...(options.jikji ?? {}),
 				root: this.workspaceProjectRoot,
 			});
+			this.jikjiReady = this.searchPaths.every((searchPath) => this.jikjiClient?.isPrepared(searchPath) === true);
 		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
@@ -391,10 +416,6 @@ export class AutoRAGAgent {
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const searchBM25Tool = createSearchBM25DocumentsTool(
-			() => this.remoteFilteredRetrievalMethod(this.bm25Method),
-			(scope) => this.resolveRetrievalScope(scope),
-		);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
@@ -419,10 +440,10 @@ export class AutoRAGAgent {
 		const reservedNames = new Set<string>([
 			BASH_TOOL_NAME,
 			"check_memory",
-			SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
+			EMIT_FAST_ANSWER_TOOL_NAME,
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
@@ -444,8 +465,7 @@ export class AutoRAGAgent {
 		const orderedTools: AgentTool[] = [
 			...(bashTool !== undefined ? [bashTool] : []),
 			...callerTools,
-			...(checkMemoryTool !== undefined ? [checkMemoryTool] : []),
-			searchBM25Tool,
+			checkMemoryTool,
 			searchMinSyncTool,
 			searchAllTool,
 			searchDatasourceTool,
@@ -456,11 +476,15 @@ export class AutoRAGAgent {
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 		];
 		const seenToolNames = new Set<string>();
-		const tools = orderedTools.filter((tool) => {
-			if (seenToolNames.has(tool.name)) return false;
-			seenToolNames.add(tool.name);
-			return true;
-		});
+		const tools = orderedTools
+			.filter((tool) => {
+				if (seenToolNames.has(tool.name)) return false;
+				seenToolNames.add(tool.name);
+				return true;
+			})
+			.map((tool) =>
+				(SEARCH_TOOLS as readonly string[]).includes(tool.name) ? this.withPerSourceSearchLimit(tool) : tool,
+			);
 		this.tools = tools;
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
@@ -561,12 +585,20 @@ export class AutoRAGAgent {
 		};
 	}
 
-	private createSearchSession(model: Model<Api>, systemPrompt: string): AutoRAGSearchSession {
+	private createSearchSession(
+		resolved: {
+			readonly model: Model<Api>;
+			readonly apiKey?: string;
+			readonly providerApiKeys?: Readonly<Record<string, string>>;
+		},
+		systemPrompt: string,
+	): AutoRAGSearchSession {
 		const agent = new Agent({
-			initialState: { systemPrompt, model, tools: [...this.tools] },
+			initialState: { systemPrompt, model: resolved.model, tools: [...this.tools] },
 			streamFn: streamSimple,
 			getApiKey: (provider) =>
-				this.providerApiKeys?.[provider] ?? (provider === model.provider ? this.apiKey : undefined),
+				resolved.providerApiKeys?.[provider] ??
+				(provider === resolved.model.provider ? resolved.apiKey : undefined),
 			convertToLlm: (messages) =>
 				messages.filter(
 					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
@@ -589,6 +621,28 @@ export class AutoRAGAgent {
 			}),
 		);
 		return unsubscribers;
+	}
+
+	private withPerSourceSearchLimit(tool: AgentTool): AgentTool {
+		return {
+			...tool,
+			execute: async (...args: Parameters<AgentTool["execute"]>) => {
+				const count = this.sourceSearchCallCounts.get(tool.name) ?? 0;
+				if (count >= 3) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `${tool.name} has reached its three-query limit. Do not call it again; conclude from the evidence already gathered.`,
+							},
+						],
+						details: { method: tool.name, resultCount: 0, sources: [], limitReached: true },
+					};
+				}
+				this.sourceSearchCallCounts.set(tool.name, count + 1);
+				return tool.execute(...args);
+			},
+		};
 	}
 
 	private recordSearchToolEvent(event: AgentEvent): void {
@@ -709,9 +763,13 @@ export class AutoRAGAgent {
 
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
+		this.sourceSearchCallCounts.clear();
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
+		this.scheduleJikjiPrepare();
+		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
+		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
 		let session: AutoRAGSearchSession | undefined;
 		let unsubscribers: readonly (() => void)[] = [];
 		this.resultCapture = (details) => {
@@ -729,7 +787,7 @@ export class AutoRAGAgent {
 			});
 			searchStarted = true;
 			session = this.createSearchSession(
-				resolved.model,
+				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
 			);
 			this.activeSession = session;
@@ -738,8 +796,49 @@ export class AutoRAGAgent {
 			try {
 				await Promise.race([
 					(async () => {
-						const initialRetrievalContext = await this.prefetchInitialRetrievalContext(trimmedQuery, options);
-						await session.prompt(this.buildSearchPrompt(trimmedQuery, options, initialRetrievalContext));
+						// Start retrieval immediately, without waiting for the model's
+						// first inference.
+						const retrievalPromise = this.prefetchInitialRetrievalContext(trimmedQuery, options);
+						if (this.fastThinkingLevel === undefined) {
+							// Legacy single-phase flow (thinking disabled).
+							await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
+							if (captured === undefined) {
+								const initialRetrievalContext = await retrievalPromise;
+								await session.prompt(
+									`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
+								);
+							}
+							return;
+						}
+						// Two-phase flow: fast thinking-off answer first, then a
+						// thinking-on verification pass that finalizes the results.
+						const fastTool = createEmitFastAnswerTool((details) => {
+							fastCaptured = details;
+						});
+						const baseline = await retrievalPromise;
+						session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
+						session.agent.state.tools = [...this.tools, fastTool];
+						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
+						let preliminary = fastCaptured;
+						if (preliminary === undefined) {
+							const text = lastAssistantText(session.agent.state.messages);
+							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
+						}
+						if (preliminary !== undefined) {
+							this.preliminaryCallback?.(
+								createPreliminarySearchDocumentsResponse(
+									sessionId,
+									trimmedQuery,
+									preliminary,
+									this.collectComponentDiagnostics(),
+								),
+							);
+						}
+						if (captured === undefined && this.finalThinkingLevel !== undefined) {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+							session.agent.state.tools = [...this.tools];
+							await session.prompt(this.buildRefinementPrompt(trimmedQuery, options, preliminary?.answer));
+						}
 					})(),
 					new Promise<never>((_, reject) => {
 						timeout = setTimeout(() => {
@@ -825,15 +924,100 @@ export class AutoRAGAgent {
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
 			this.activeRetrievalOptions = undefined;
+			this.preliminaryCallback = undefined;
 			this.activeRun = false;
+		}
+	}
+
+	/**
+	 * Stream bounded progress updates while retaining the stable
+	 * {@link searchDocuments} promise API. Progress is sourced from model text
+	 * deltas, so callers can render it in a TUI, CLI, or parent agent and can
+	 * stop by calling {@link abort}.
+	 */
+	async *searchDocumentsStream(
+		query: string,
+		options: RetrievalOptions = {},
+	): AsyncGenerator<SearchDocumentsStreamEvent, void, void> {
+		const queue: SearchDocumentsStreamEvent[] = [];
+		let progressBuffer = "";
+		let wake: (() => void) | undefined;
+		let settled = false;
+		const unsubscribe = this.subscribe((event) => {
+			if (event.type !== "message_update" || event.assistantMessageEvent.type !== "text_delta") return;
+			const text = event.assistantMessageEvent.delta;
+			if (text.trim().length === 0) return;
+			progressBuffer += text;
+			if (!/[.!?。！？]\s*$/u.test(progressBuffer)) return;
+			queue.push({
+				type: "progress",
+				sessionId: this.lastSessionId ?? "",
+				query: query.trim(),
+				text: progressBuffer,
+			});
+			progressBuffer = "";
+			wake?.();
+			wake = undefined;
+		});
+		queue.push({
+			type: "progress",
+			sessionId: "",
+			query: query.trim(),
+			text: "Reviewing the query.",
+		});
+		this.preliminaryCallback = (response) => {
+			queue.push({ type: "preliminary", response });
+			wake?.();
+			wake = undefined;
+		};
+		const run = this.searchDocuments(query, options)
+			.then((response) => {
+				if (progressBuffer.trim() !== "") {
+					queue.push({
+						type: "progress",
+						sessionId: this.lastSessionId ?? "",
+						query: query.trim(),
+						text: progressBuffer,
+					});
+					progressBuffer = "";
+				}
+				queue.push({ type: "complete", response });
+			})
+			.catch((error) => {
+				settled = true;
+				wake?.();
+				throw error;
+			})
+			.finally(() => {
+				settled = true;
+				wake?.();
+			});
+		try {
+			while (!settled || queue.length > 0) {
+				if (queue.length === 0) {
+					await new Promise<void>((resolve) => {
+						wake = resolve;
+					});
+					continue;
+				}
+				yield queue.shift() as SearchDocumentsStreamEvent;
+			}
+			await run;
+		} finally {
+			unsubscribe();
+			await run.catch(() => undefined);
 		}
 	}
 
 	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
 		const effectiveOptions = this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options;
+		const trustedTags = this.datasourceAccessOptions.allowedTags ?? [];
+		const requestedTags = effectiveOptions.allowedTags;
+		const allowedTags =
+			requestedTags === undefined ? trustedTags : trustedTags.filter((tag) => requestedTags.includes(tag));
 		return new DatasourceAccessContext({
-			allowedTags: effectiveOptions.allowedTags ?? this.datasourceAccessOptions.allowedTags,
-			allowedScopes: effectiveOptions.allowedScopes ?? this.datasourceAccessOptions.allowedScopes,
+			allowedTags,
+			allowedScopes: this.datasourceAccessOptions.allowedScopes,
 		});
 	}
 
@@ -891,7 +1075,7 @@ export class AutoRAGAgent {
 		return results;
 	}
 
-	/** Path-opaque component diagnostics (e.g. BM25 readiness) for the search response. */
+	/** Path-opaque component diagnostics for the search response. */
 	private collectComponentDiagnostics(): SearchDocumentDiagnostic[] {
 		const diagnostics: SearchDocumentDiagnostic[] = [...this.startupDiagnostics];
 		if (this.droppedCallerToolNames.length > 0) {
@@ -902,21 +1086,6 @@ export class AutoRAGAgent {
 					"One or more caller-provided tools were ignored because AutoRAG reserves read-only search tool names.",
 				source: "tools",
 			});
-		}
-		const bm25 = this.bm25Method?.getStatus();
-		if (bm25 !== undefined) {
-			if (
-				bm25.readiness === "dependency_unavailable" ||
-				bm25.readiness === "index_missing" ||
-				bm25.readiness === "error"
-			) {
-				diagnostics.push({
-					code: "bm25-unavailable",
-					severity: "warning",
-					message: "BM25 lexical search is unavailable; results rely on other retrieval paths.",
-					source: "bm25",
-				});
-			}
 		}
 		if (this.minSyncMethod?.isBinaryMissing()) {
 			diagnostics.push({
@@ -933,23 +1102,19 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions: RetrievalOptions = {
-			...options,
-			topK: 5,
-			scope: options.scope,
-		};
-		const [jikji, vector, bm25] = await Promise.all([
+		const retrieveOptions = { topK: 50, scope: options.scope };
+		const vectorReady = this.minSyncMethod?.isReady() === true;
+		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 5 }).catch(() => undefined),
-			this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []),
-			this.bm25Method?.retrieve(query, retrieveOptions).catch(() => []),
+				: this.findJikji(query, { topK: 50 }).catch(() => undefined),
+			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 5)
+					.slice(0, 50)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
@@ -959,9 +1124,16 @@ export class AutoRAGAgent {
 				for (const result of results) options.observedSources?.add(result.source);
 			}
 			if (!results || results.length === 0) return;
+			const seen = new Set<string>();
 			sections.push(
 				`${label} initial candidates:\n${results
-					.slice(0, 5)
+					.filter((result) => {
+						const key = `${result.source}\0${result.content}`;
+						if (seen.has(key)) return false;
+						seen.add(key);
+						return true;
+					})
+					.slice(0, 50)
 					.map(
 						(result, index) =>
 							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
@@ -970,10 +1142,79 @@ export class AutoRAGAgent {
 			);
 		};
 		formatResults("MinSync semantic", vector);
-		formatResults("MinSync lexical BM25", bm25);
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
+	}
+
+	/**
+	 * Prepare MinSync lazily without holding up the current search. Parsed
+	 * mirrors are built first because MinSync stages and indexes those mirrors.
+	 */
+	/** Prepare MinSync in the background; the returned promise is for tests. */
+	scheduleMinSyncPrepareForTest(): Promise<MinSyncSyncResult | undefined> | undefined {
+		return this.scheduleMinSyncPrepare();
+	}
+
+	private scheduleMinSyncPrepare(): Promise<MinSyncSyncResult | undefined> | undefined {
+		if (this.minSyncMethod === undefined || this.minSyncReady || this.minSyncPrepareInFlight !== undefined) {
+			return this.minSyncPrepareInFlight;
+		}
+		this.minSyncPrepareInFlight = Promise.resolve()
+			.then(async () => {
+				await this.syncParsedMirrors(false);
+				if (!this.minSyncMethod) return undefined;
+				this.minSyncReady = this.minSyncMethod.isReady();
+				if (this.minSyncReady) return undefined;
+				const result = await this.minSyncMethod.sync();
+				this.minSyncReady = result?.ok === true;
+				this.refreshState = { ...this.refreshState, minsync: result };
+				return result;
+			})
+			.catch(() => undefined)
+			.finally(() => {
+				this.minSyncPrepareInFlight = undefined;
+			});
+		return this.minSyncPrepareInFlight;
+	}
+
+	/**
+	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
+	 * is already gathered, so the model answers immediately with thinking off
+	 * via emit_fast_answer, without any further tool calls.
+	 */
+	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {
+		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} knowledge units.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
+			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ` +
+			`If the query is answerable from general knowledge alone, answer directly. ` +
+			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and their real source paths, then stop. ` +
+			`This is the user's immediate first answer; a deeper verification pass follows afterwards, so state uncertainty honestly in the answer text.`
+		);
+	}
+
+	/**
+	 * Verification-phase prompt for two-phase searches. The user already saw
+	 * the fast answer; the model now verifies it against sources with thinking
+	 * on and finalizes with emit_autorag_results exactly once.
+	 */
+	buildRefinementPrompt(query: string, options: RetrievalOptions, fastAnswer: string | undefined): string {
+		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Original query: ${query}${limit}${scope}\n\n` +
+			`The user already received this immediate first answer:\n${fastAnswer ?? "(the fast phase produced no answer)"}\n\n` +
+			`Now verify it rigorously. Check important claims against the actual source files with bash, correct anything wrong or unsupported, fill gaps with the retrieval tools, and resolve conflicts and freshness. ` +
+			`Preserve real source paths and evidence excerpts in the result mapping. ` +
+			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
+			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
+			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
+			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
+			`results and the internal number-to-source mapping.`
+		);
 	}
 
 	buildSearchPrompt(query: string, options: RetrievalOptions, initialRetrievalContext?: string): string {
@@ -981,11 +1222,15 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
-			`Initial retrieval context (Jikji, MinSync semantic, and MinSync lexical searches were run in parallel before this turn):\n` +
-			`${initialRetrievalContext ?? "Not preloaded; use the available retrieval tools."}\n\n` +
-			`Treat this as candidate evidence, verify important claims against source files, and use additional tools when needed. ` +
+			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval and emit the structured result. ` +
+			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not emit final results until its next message arrives.\n\n` +
+			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
+			`Treat candidates as unverified evidence, verify important claims against source files, and use additional tools when needed. ` +
 			`Use the available retrieval tools to find candidates, then use bash to read and verify the relevant source files directly. ` +
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
+			`If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
+			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
+			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);
@@ -995,10 +1240,10 @@ export class AutoRAGAgent {
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
-		// Parsed mirror is required when any indexing method (bm25/minsync) runs,
+		// Parsed mirror is required when MinSync runs,
 		// since they index over the parsed mirrors. Also run it when explicitly
 		// requested or when all methods are selected.
-		const needsParsed = allMethods || wants("parsed") || wants("bm25") || wants("minsync");
+		const needsParsed = allMethods || wants("parsed") || wants("minsync");
 		this.refreshState = {
 			...this.refreshState,
 			inFlight: true,
@@ -1006,13 +1251,11 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
-			if (wants("bm25") || wants("minsync") || allMethods) {
-				removeLegacyBm25Artifacts(this.workspaceProjectRoot);
-			}
-			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
-			const bm25 = wants("bm25") ? await this.syncBM25(minsync) : undefined;
+			const minsync = wants("minsync") ? await this.syncMinSync(force) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
-			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
+			// A MinSync refresh also establishes Jikji's local discovery artifacts:
+			// both indexes are first-class parts of the default local corpus.
+			const jikji = allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare() : undefined;
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
 				this.workspaceProjectRoot,
 				this.searchPaths,
@@ -1036,6 +1279,13 @@ export class AutoRAGAgent {
 				datasources,
 				lastError: undefined,
 			};
+			if (needsParsed) {
+				mkdirSync(dirname(refreshReadinessPath(this.workspaceProjectRoot)), { recursive: true });
+				writeFileSync(
+					refreshReadinessPath(this.workspaceProjectRoot),
+					'{"version":1,"completed":true,"parsed":true}\n',
+				);
+			}
 			const publicMinsync = minsync
 				? {
 						ok: minsync.ok,
@@ -1044,9 +1294,8 @@ export class AutoRAGAgent {
 					}
 				: undefined;
 			return {
-				...(bm25 ? { ...summary } : summary),
+				...summary,
 				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
-				...(bm25 ? { bm25 } : {}),
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -1125,15 +1374,13 @@ export class AutoRAGAgent {
 	}
 
 	private refreshComponentStatus(): AutoRAGRefreshComponentStatus {
-		const status: { bm25?: string; minsync?: string; jikji?: string; datasources?: string } = {};
-		const bm25 = this.bm25Method?.getStatus();
-		if (bm25 !== undefined) status.bm25 = bm25.readiness;
+		const status: { minsync?: string; jikji?: string; datasources?: string } = {};
 		if (this.minSyncMethod !== undefined) {
-			status.minsync = this.minSyncMethod.isBinaryMissing()
+			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
 				? "unavailable"
 				: this.refreshState.minsync?.ok === false
 					? "degraded"
-					: this.refreshState.minsync?.ok
+					: this.minSyncMethod.isReady()
 						? "ready"
 						: "configured";
 		}
@@ -1240,13 +1487,11 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncBM25(minsync?: MinSyncSyncResult): Promise<BM25SyncResult | undefined> {
-		if (this.bm25Method === undefined) return undefined;
-		return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
-	}
-
-	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
-		return this.minSyncMethod?.sync();
+	async syncMinSync(force = false): Promise<MinSyncSyncResult | undefined> {
+		const result = await this.minSyncMethod?.sync(force);
+		this.minSyncReady = result?.ok === true;
+		this.refreshState = { ...this.refreshState, minsync: result };
+		return result;
 	}
 
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
@@ -1260,7 +1505,32 @@ export class AutoRAGAgent {
 		for (const sourcePath of this.searchPaths) {
 			results.push(await this.jikjiClient.prepare(sourcePath));
 		}
+		this.jikjiReady = results.length === this.searchPaths.length && results.every((result) => result.ok);
 		return results;
+	}
+
+	/**
+	 * Start Jikji preparation without delaying the current search turn. A
+	 * subsequent turn can use the prepared index, while the child process keeps
+	 * running after emit_autorag_results has terminated the agent loop.
+	 */
+	private scheduleJikjiPrepare(): void {
+		if (this.jikjiClient === undefined || this.jikjiPrepareInFlight !== undefined) return;
+		this.jikjiPrepareInFlight = Promise.resolve()
+			.then(async () => {
+				const results = await this.executeJikjiPrepare();
+				const diagnostics = (results ?? [])
+					.map((result) => jikjiPrepareDiagnostic(result))
+					.filter((diag): diag is JikjiDiagnostic => diag !== undefined);
+				this.refreshState = { ...this.refreshState, jikjiDiagnostics: diagnostics };
+			})
+			.catch(() => {
+				// Jikji is optional; the current and future searches fall back to
+				// the other retrieval paths when background preparation fails.
+			})
+			.finally(() => {
+				this.jikjiPrepareInFlight = undefined;
+			});
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
@@ -1292,6 +1562,23 @@ export class AutoRAGAgent {
 	): Promise<JikjiFindProviderResult> {
 		if (this.jikjiClient === undefined) {
 			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
+		}
+		if (!this.jikjiReady) {
+			this.scheduleJikjiPrepare();
+			return {
+				answerPack: undefined,
+				policy: undefined,
+				diagnostics: [
+					{
+						code: "jikji-unavailable",
+						severity: "warning",
+						message: "Jikji is not prepared yet; background preparation started and this turn is falling back.",
+						source: "jikji",
+					},
+				],
+				roots: this.searchPaths,
+				perRoot: [],
+			};
 		}
 		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
 		const findOpts: JikjiFindOptions = {
@@ -1476,6 +1763,7 @@ export class AutoRAGAgent {
 			methods,
 			this.datasourceAccessContext(options),
 			options.scope,
+			options.allowedScopes,
 		);
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) options.observedSources?.add(result.source);
@@ -1537,9 +1825,29 @@ export class AutoRAGAgent {
 		};
 	}
 
-	/** The retrieval method registry (posix active; vector/bm25/hybrid pluggable). */
+	/** The retrieval method registry (posix, MinSync, and datasource methods). */
 	getMethodRegistry(): RetrievalMethodRegistry {
 		return this.methodRegistry;
+	}
+
+	/**
+	 * The standalone retrieval engine for this agent's method pipeline.
+	 * Built on first access using the agent's registered methods and configured
+	 * datasource access context. Model-free — no agent state required.
+	 */
+	private retrievalEngine: RetrievalEngine | undefined;
+	getRetrievalEngine(): RetrievalEngine {
+		if (this.retrievalEngine === undefined) {
+			this.retrievalEngine = new RetrievalEngine({
+				datasourceAccess: this.datasourceAccessOptions,
+				isMinSyncBinaryMissing:
+					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
+			});
+			for (const method of this.methodRegistry.list()) {
+				this.retrievalEngine.register(method);
+			}
+		}
+		return this.retrievalEngine;
 	}
 
 	getSystemPrompt(): string {
@@ -1626,6 +1934,20 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "assistant") continue;
+		const text = message.content
+			.filter((block) => block.type === "text")
+			.map((block) => block.text)
+			.join("")
+			.trim();
+		if (text !== "") return text;
+	}
+	return undefined;
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

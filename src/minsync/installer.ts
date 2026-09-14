@@ -3,13 +3,15 @@ import { copyFileSync, createWriteStream, existsSync, mkdirSync, renameSync, rmS
 import { chmod, mkdtemp } from "node:fs/promises";
 import { get } from "node:https";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { spawnProcess } from "./process.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.3.0";
+export const MINSYNC_VERSION = "0.4.2";
+export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
+const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
 export interface MinSyncReleaseAsset {
 	readonly name: string;
@@ -33,39 +35,68 @@ export interface EnsureMinSyncBinaryOptions {
 	readonly arch?: NodeJS.Architecture;
 	readonly releaseProvider?: () => Promise<MinSyncRelease>;
 	readonly assetInstaller?: (asset: MinSyncReleaseAsset, destination: string) => Promise<void>;
+	/** Test seam: cargo-first installer. Return undefined to fall back to GitHub. */
+	readonly cargoInstaller?: (destination: string) => Promise<InstalledMinSyncBinary | undefined>;
+	/** Test seam: locate cargo on PATH. */
+	readonly cargoLocator?: (env: NodeJS.ProcessEnv) => string | undefined;
+	readonly env?: NodeJS.ProcessEnv;
 }
 
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
+	mkdirSync(dirname(binaryPath), { recursive: true });
+	const cargoInstaller =
+		options.cargoInstaller ?? ((destination) => installMinSyncFromCargoIfAvailable(options, destination));
+	try {
+		const fromCargo = await cargoInstaller(binaryPath);
+		if (fromCargo !== undefined) return fromCargo;
+	} catch (error) {
+		if (!(error instanceof MinSyncReleaseError)) throw error;
+	}
 	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
 	const release = await releaseProvider();
-	let asset: MinSyncReleaseAsset;
-	try {
-		asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
-	} catch (error) {
-		if (!(error instanceof MinSyncReleaseError) || !error.message.startsWith("No MinSync")) throw error;
-		return installMinSyncFromCargo(options, binaryPath);
-	}
+	const asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
 	requireSha256(asset);
 	const assetInstaller = options.assetInstaller ?? installReleaseAsset;
-	mkdirSync(dirname(binaryPath), { recursive: true });
 	await assetInstaller(asset, binaryPath);
 	await chmod(binaryPath, 0o755);
 	return { binaryPath, version: release.tagName };
 }
 
+function isIsolatedTestRuntime(): boolean {
+	return process.env.NODE_ENV === "test";
+}
+
+async function installMinSyncFromCargoIfAvailable(
+	options: EnsureMinSyncBinaryOptions,
+	destination: string,
+): Promise<InstalledMinSyncBinary | undefined> {
+	// bun/vitest suites must not compile minsync from crates.io unless a test
+	// injects cargoLocator/cargoInstaller. Production auto-install stays cargo-first.
+	if (isIsolatedTestRuntime() && options.cargoLocator === undefined) return undefined;
+	const env = options.env ?? process.env;
+	const cargoLocator =
+		options.cargoLocator ?? ((lookupEnv) => lookupCargo(lookupEnv, options.platform ?? process.platform));
+	const cargo = cargoLocator(env);
+	if (cargo === undefined) return undefined;
+	if (!(await cargoIsUsable(cargo, options.root))) return undefined;
+	return installMinSyncFromCargo(options, destination, cargo);
+}
+
 async function installMinSyncFromCargo(
 	options: EnsureMinSyncBinaryOptions,
 	destination: string,
+	cargo: string,
 ): Promise<InstalledMinSyncBinary> {
 	const cargoRoot = join(options.root, ".autorag", "minsync-cargo");
 	mkdirSync(dirname(destination), { recursive: true });
 	mkdirSync(cargoRoot, { recursive: true });
 	const result = await spawnProcess(
-		"cargo",
+		cargo,
 		["install", "minsync", "--version", MINSYNC_VERSION, "--locked", "--root", cargoRoot],
 		options.root,
+		{ timeoutMs: MINSYNC_CARGO_INSTALL_TIMEOUT_MS },
 	);
 	if (!result.ok) {
 		throw new MinSyncReleaseError(result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`);
@@ -202,6 +233,27 @@ function targetTriple(platform: NodeJS.Platform, arch: NodeJS.Architecture): str
 
 export function executableName(platform: NodeJS.Platform): string {
 	return platform === "win32" ? "minsync.exe" : "minsync";
+}
+
+function cargoExecutableName(platform: NodeJS.Platform): string {
+	return platform === "win32" ? "cargo.exe" : "cargo";
+}
+
+function lookupCargo(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string | undefined {
+	const pathEnv = env.PATH;
+	if (typeof pathEnv !== "string" || pathEnv.length === 0) return undefined;
+	const execName = cargoExecutableName(platform);
+	for (const dir of pathEnv.split(delimiter)) {
+		if (dir.length === 0) continue;
+		const candidate = join(dir, execName);
+		if (existsSync(candidate)) return candidate;
+	}
+	return undefined;
+}
+
+async function cargoIsUsable(cargo: string, cwd: string): Promise<boolean> {
+	const result = await spawnProcess(cargo, ["--version"], cwd, { timeoutMs: CARGO_PROBE_TIMEOUT_MS });
+	return result.ok && result.stdout.toLowerCase().includes("cargo");
 }
 
 function parseDigest(value: unknown): string | undefined {

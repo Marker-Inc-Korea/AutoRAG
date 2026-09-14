@@ -1,20 +1,27 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { classifySearchHealthHint, runSearch } from "../../src/cli/commands/search.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { ConfigError } from "../../src/cli/config.ts";
+import { main } from "../../src/cli/index.ts";
 
 let root: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-search-cli-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(root, "home");
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -67,10 +74,19 @@ function model(): Model<"openai-responses"> {
 	};
 }
 
+function completeStream(result: SearchDocumentsResponse = response, onOptions?: (options: unknown) => void) {
+	return {
+		async *searchDocumentsStream(_query: string, options?: unknown) {
+			onOptions?.(options);
+			yield { type: "complete" as const, response: result };
+		},
+	};
+}
+
 describe("runSearch", () => {
 	it("reports usage for an empty query", async () => {
 		const { ctx, stderr } = context([]);
-		expect(await runSearch(ctx, { agentFactory: () => ({ searchDocuments: async () => response }) })).toBe(2);
+		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);
 		expect(stderr.join("\n")).toContain("Usage");
 	});
 
@@ -82,7 +98,7 @@ describe("runSearch", () => {
 				modelResolver: () => ({ model: model(), apiKey: "secret" }),
 				agentFactory: (options) => {
 					received = { model: options.model?.id, apiKey: options.apiKey };
-					return { searchDocuments: async () => response };
+					return completeStream();
 				},
 			}),
 		).toBe(0);
@@ -94,14 +110,26 @@ describe("runSearch", () => {
 		let options: unknown;
 		const { ctx } = context(["query"], { "top-k": "3", scope: "/docs" });
 		await runSearch(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async (_query, received) => {
+			agentFactory: () =>
+				completeStream(response, (received) => {
 					options = received;
-					return response;
+				}),
+		});
+		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
+	});
+
+	it("renders progress events before the final response", async () => {
+		const { ctx, stdout } = context(["query"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield { type: "progress" as const, sessionId: "session", query: "query", text: "checking evidence" };
+					yield { type: "complete" as const, response };
 				},
 			}),
 		});
-		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
+		expect(stdout[0]).toContain("checking evidence");
+		expect(JSON.parse(stdout[1]).answer).toBe("[1] answer");
 	});
 
 	it("does not fail agent construction for unknown datasource names", async () => {
@@ -122,7 +150,7 @@ describe("runSearch", () => {
 					startupDiagnostics: options.startupDiagnostics,
 					datasourceSkills: options.datasourceSkills,
 				};
-				return { searchDocuments: async () => response };
+				return completeStream();
 			},
 		});
 		expect(code).toBe(0);
@@ -137,6 +165,79 @@ describe("runSearch", () => {
 		]);
 		expect(JSON.parse(stdout[0]).answer).toBe("[1] answer");
 	});
+
+	it("renders the preliminary fast answer before the final response", async () => {
+		const { ctx, stdout } = context(["query"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "preliminary" as const,
+						response: { ...response, answer: "[1] fast answer" },
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout).toHaveLength(2);
+		const first = JSON.parse(stdout[0]);
+		expect(first.type).toBe("preliminary");
+		expect(first.response.answer).toBe("[1] fast answer");
+		expect(JSON.parse(stdout[1]).answer).toBe("[1] answer");
+	});
+
+	it("marks the preliminary fast answer distinctly in human output", async () => {
+		const { ctx, stdout } = context(["query"]);
+		ctx.json = false;
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "preliminary" as const,
+						response: { ...response, answer: "[1] fast answer" },
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout[0]).toContain("fast answer");
+		expect(stdout[0].toLowerCase()).toContain("verif");
+		expect(stdout[1]).toContain("[1] answer");
+	});
+
+	it("forwards thinking-level flags to the agent", async () => {
+		let received: unknown;
+		const { ctx } = context(["query"], { "fast-thinking": "low", "final-thinking": "max" });
+		expect(
+			await runSearch(ctx, {
+				agentFactory: (options) => {
+					received = options.thinking;
+					return completeStream();
+				},
+			}),
+		).toBe(0);
+		expect(received).toEqual({ fast: "low", final: "max" });
+	});
+
+	it("disables the two-phase flow with --single-phase", async () => {
+		let received: unknown;
+		const { ctx } = context(["query"], { "single-phase": true });
+		expect(
+			await runSearch(ctx, {
+				agentFactory: (options) => {
+					received = options.thinking;
+					return completeStream();
+				},
+			}),
+		).toBe(0);
+		expect(received).toBe(false);
+	});
+
+	it("rejects an unknown thinking level", async () => {
+		const { ctx, stderr } = context(["query"], { "final-thinking": "bogus" });
+		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);
+		expect(stderr.join("\n")).toContain("thinking");
+	});
 });
 
 describe("classifySearchHealthHint", () => {
@@ -145,5 +246,74 @@ describe("classifySearchHealthHint", () => {
 		expect(classifySearchHealthHint(new Error("401 unauthorized"))?.reason).toBe("auth_missing");
 		expect(classifySearchHealthHint(new Error("ENOTFOUND provider"))?.reason).toBe("provider_unreachable");
 		expect(classifySearchHealthHint(new Error("request timed out"))?.reason).toBe("timeout");
+	});
+});
+
+describe("autorag lite retrieve", () => {
+	it("returns a deterministic refresh-first JSON envelope instead of claiming success", async () => {
+		const configPath = join(root, "lite-config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [root],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				minSync: false,
+				jikji: false,
+			}),
+		);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const code = await main([
+			"lite",
+			"retrieve",
+			"helper function",
+			"--config",
+			configPath,
+			"--top-k",
+			"3",
+			"--scope",
+			"/docs",
+			"--tags",
+			"trusted",
+			"--json",
+		]);
+
+		const output = [...out.mock.calls, ...err.mock.calls]
+			.map(([line]) => String(line))
+			.join("")
+			.replace(/\s+/gu, "");
+		expect(code).toBe(2);
+		expect(output).toContain('"ok":false');
+		expect(output).toContain('"query":"helperfunction"');
+		expect(output).toContain('"diagnostics"');
+		expect(output).toContain("index-not-ready");
+		expect(output).not.toContain("Unknowncommand");
+	});
+
+	it("accepts an empty corpus after a successful refresh", async () => {
+		const configPath = join(root, "empty-config.json");
+		const emptyDocs = join(root, "empty-docs");
+		mkdirSync(emptyDocs, { recursive: true });
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [emptyDocs],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				minSync: false,
+				jikji: false,
+			}),
+		);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+			expect(await main(["lite", "retrieve", "anything", "--config", configPath, "--json"])).toBe(0);
+			const output = String(out.mock.calls.at(-1)?.[0] ?? "");
+			expect(JSON.parse(output)).toMatchObject({ ok: true, results: [] });
+		} finally {
+			vi.restoreAllMocks();
+		}
 	});
 });

@@ -18,14 +18,18 @@ import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	ensureLocalEmbedder,
 	ensureMinSyncBinary,
-	MinSyncBM25Method,
+	MINSYNC_VERSION,
 	MinSyncClient,
+	MinSyncQueryError,
+	MinSyncReleaseError,
 	MinSyncVectorMethod,
 	minSyncConfigPath,
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
+import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
 let root: string;
 let source: string;
@@ -67,7 +71,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeMinSync(queryJson: string): void {
+function writeFakeMinSync(queryJson: string, strictQuery = false): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
@@ -99,6 +103,7 @@ if (args[0] === "sync") {
 }
 
 if (args[0] === "query") {
+  ${strictQuery ? 'const supported = args.length === 8 && args[1] === "--format" && args[2] === "json" && args[3] === "--mode" && args[4] === "bm25" && args[5] === "-k" && !args[6].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
   console.log(${JSON.stringify(queryJson)});
   process.exit(0);
 }
@@ -125,6 +130,94 @@ function requireValue<T>(value: T | undefined, label: string): T {
 	if (value === undefined) throw new Error(`missing ${label}`);
 	return value;
 }
+
+describe("MinSyncClient", () => {
+	it("uses the official v0.4.2 query command with its selected mode", async () => {
+		// Given
+		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
+		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
+
+		// When
+		const results = await client.query("renewal cancellation", 2, "bm25");
+
+		// Then
+		expect(results).toEqual([{ path: parsedOutput, score: 0.9, text: "semantic hit" }]);
+		expect(JSON.parse(loggedCalls()[0] ?? "{}").args).toEqual([
+			"query",
+			"--format",
+			"json",
+			"--mode",
+			"bm25",
+			"-k",
+			"2",
+			"renewal cancellation",
+		]);
+	});
+
+	it("surfaces the native query failure instead of returning empty hits", async () => {
+		// Given
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+if (process.argv[2] === "query") {
+  console.error("embedding failed: local endpoint unavailable");
+  process.exit(5);
+}
+process.exit(2);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
+
+		// When
+		const query = client.query("renewal cancellation", 2);
+
+		// Then
+		await expect(query).rejects.toBeInstanceOf(MinSyncQueryError);
+		await expect(query).rejects.toMatchObject({
+			code: 5,
+			stderr: "embedding failed: local endpoint unavailable\n",
+		});
+	});
+});
+
+describe("local embedder preflight", () => {
+	it("starts Ollama when its direct OpenAI-compatible endpoint is unavailable", async () => {
+		// Given
+		let ready = false;
+		let starts = 0;
+
+		// When
+		await ensureLocalEmbedder({
+			baseUrl: "http://127.0.0.1:11434/v1",
+			probe: async () => ready,
+			start: async () => {
+				starts += 1;
+				ready = true;
+			},
+			timeoutMs: 1_000,
+		});
+
+		// Then
+		expect(starts).toBe(1);
+	});
+
+	it("leaves TEI endpoints caller-managed", async () => {
+		// Given
+		let starts = 0;
+
+		// When
+		await ensureLocalEmbedder({
+			baseUrl: "http://127.0.0.1:18080",
+			start: async () => {
+				starts += 1;
+			},
+		});
+
+		// Then
+		expect(starts).toBe(0);
+	});
+});
 
 describe("MinSyncVectorMethod", () => {
 	it("syncs parsed mirror files through minsync sync when a mirror index exists", async () => {
@@ -446,7 +539,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "--mode", "vector", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "vector", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -476,13 +569,50 @@ describe("MinSyncVectorMethod", () => {
 		expect(results[0]?.metadata.method).toBe("minsync-bm25");
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "--mode", "bm25", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "bm25", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
 	});
 
-	it("maps real MinSync relative file paths to the canonical virtual source", async () => {
+	it("exposes an install-failed diagnostic through retrieval after auto-install fails", async () => {
+		// Given
+		const originalPath = process.env.PATH;
+		process.env.PATH = join(root, "empty-path");
+		const method = new MinSyncVectorMethod({
+			root,
+			workspacePath: minsyncWorkspace,
+			installer: {
+				cargoInstaller: async () => {
+					throw new Error("mock cargo failure");
+				},
+				releaseProvider: async () => {
+					throw new Error("mock install failure");
+				},
+			},
+			autoInstall: true,
+		});
+		const engine = new RetrievalEngine({ isMinSyncBinaryMissing: () => method.isBinaryMissing() });
+		engine.register(method);
+
+		try {
+			// When
+			const { results, diagnostics } = await engine.retrieve("renewal cancellation");
+
+			// Then
+			expect(results).toEqual([]);
+			expect(diagnostics).toHaveLength(1);
+			expect(diagnostics[0]).toMatchObject({
+				code: "minsync-unavailable",
+				severity: "warning",
+				source: "minsync",
+			});
+		} finally {
+			process.env.PATH = originalPath;
+		}
+	});
+
+	it("maps real MinSync relative file paths to original source files", async () => {
 		// Given
 		writeFakeMinSync(
 			JSON.stringify([
@@ -541,7 +671,115 @@ describe("MinSyncVectorMethod", () => {
 		expect(results).toEqual([]);
 	});
 
-	it("installs the latest MinSync release asset into the AutoRAG bin cache when no binary exists", async () => {
+	it("prefers cargo install over a GitHub release asset when no binary exists", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const order: string[] = [];
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoInstaller: async (destination) => {
+				order.push("cargo");
+				mkdirSync(join(root, ".autorag", "bin"), { recursive: true });
+				writeFileSync(destination, "#!/usr/bin/env cargo-minsync\n");
+				chmodSync(destination, 0o755);
+				return { binaryPath: destination, version: MINSYNC_VERSION };
+			},
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async () => {
+				order.push("github-asset");
+				writeFileSync(installedBinary, "#!/usr/bin/env node\n");
+				chmodSync(installedBinary, 0o755);
+			},
+		});
+
+		expect(order).toEqual(["cargo"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: MINSYNC_VERSION });
+		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-minsync");
+	});
+
+	it("does not compile minsync from cargo during NODE_ENV=test without an injected locator", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const order: string[] = [];
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async (_asset, destination) => {
+				order.push("github-asset");
+				writeFileSync(destination, "#!/usr/bin/env node\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+
+		expect(order).toEqual(["github", "github-asset"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
+	});
+
+	it("skips cargo install and uses GitHub when cargo is not on PATH", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const order: string[] = [];
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoLocator: () => undefined,
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async (_asset, destination) => {
+				order.push("github-asset");
+				writeFileSync(destination, "#!/usr/bin/env node\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+
+		expect(order).toEqual(["github", "github-asset"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
+	});
+
+	it("falls back to the GitHub release asset when cargo install is unavailable", async () => {
 		// Given
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
 		const release = {
@@ -560,6 +798,7 @@ describe("MinSyncVectorMethod", () => {
 			root,
 			platform: "darwin",
 			arch: "arm64",
+			cargoInstaller: async () => undefined,
 			releaseProvider: async () => release,
 			assetInstaller: async (asset, destination) => {
 				expect(asset.name).toBe("minsync-v0.2.1-aarch64-apple-darwin.tar.gz");
@@ -571,6 +810,36 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
 		expect(readFileSync(installedBinary, "utf8")).toContain("node");
+	});
+
+	it("falls back to the GitHub release asset when cargo install throws", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoInstaller: async () => {
+				throw new MinSyncReleaseError("cargo missing");
+			},
+			releaseProvider: async () => release,
+			assetInstaller: async (_asset, destination) => {
+				writeFileSync(destination, "#!/usr/bin/env node\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
 	});
 
 	it("rejects release assets without a usable sha256 digest", async () => {
@@ -591,6 +860,7 @@ describe("MinSyncVectorMethod", () => {
 				root,
 				platform: "darwin",
 				arch: "arm64",
+				cargoInstaller: async () => undefined,
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
@@ -615,6 +885,7 @@ describe("MinSyncVectorMethod", () => {
 				root,
 				platform: "darwin",
 				arch: "arm64",
+				cargoInstaller: async () => undefined,
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
@@ -691,6 +962,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 				installer: {
 					platform: "darwin",
 					arch: "arm64",
+					cargoInstaller: async () => undefined,
 					releaseProvider: async () => ({
 						tagName: "v0.3.0",
 						assets: [
@@ -808,6 +1080,28 @@ if (args[0] === "sync") { mkdirSync(dirname(cursor), { recursive: true }); write
 		expect(calls.every((call) => call.cwd === realpathSync(workspace))).toBe(true);
 		expect(calls.map((call) => call.args[0])).toEqual(["init", "check", "sync"]);
 		rmSync(workspace, { recursive: true, force: true });
+	});
+
+	it("requires init to materialize config.toml before reading it", async () => {
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
+if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
+if (args[0] === "sync") process.stdout.write('{"synced":1}');
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { id: "test" },
+		}).sync();
+
+		expect(result).toMatchObject({ ok: false, reason: "init-failed" });
+		expect(loggedCalls().map((line) => JSON.parse(line).args[0])).toEqual(["init"]);
 	});
 
 	it("rewrites allowlisted embedder fields into .minsync/config.toml after init", async () => {
@@ -930,17 +1224,18 @@ if (args[0] === "sync") process.exit(1);
 		expect(syncCall?.cursorExists).toBe(false);
 	});
 
-	it("uses the MinSync chunk size for BM25-only indexing", async () => {
+	it("uses the MinSync chunk size for lexical indexing", async () => {
 		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
 		mkdirSync(minsyncConfigDir, { recursive: true });
 		writeFileSync(minSyncConfigPath(minsyncWorkspace), "[chunker.options]\n");
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		const method = new MinSyncBM25Method({
+		const method = new MinSyncVectorMethod({
 			binaryPath: minsyncBinary,
 			root,
 			workspacePath: minsyncWorkspace,
 			maxChunkSize: 1000,
+			mode: "bm25",
 		});
 
 		await method.sync();

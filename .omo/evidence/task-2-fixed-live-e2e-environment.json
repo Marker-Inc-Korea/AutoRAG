@@ -1,0 +1,40 @@
+{
+	"task": "st_01a08086",
+	"implementation": "Todo 2 hygiene fix — lint: useTemplate, noUnusedImports, noUnusedVariables; split lock module from env.mjs for size gate; remove unreachable break in runner.mjs",
+	"parentTask": "st_01a07f12",
+	"hygieneFixes": {
+		"lint_before": "4 violations (2 useTemplate, 1 noUnusedImports, 1 noUnusedVariables)",
+		"lint_after": "0 violations, bun run lint exit 0",
+		"env_mjs_pureLOC_before": 280,
+		"env_mjs_pureLOC_after": 180,
+		"lock_mjs_pureLOC": 117,
+		"runner_mjs_unreachable_break": "removed 2 break statements after process.exit() in cmdLockProbe",
+		"test_file_unused_imports": "removed chmodSync, readFileSync, readdirSync, statSync from imports; removed _BOOTSTRAP_PATH variable",
+		"test_file_template_literals": "converted 2 string concatenations to template literals"
+	},
+	"changedFiles": [
+		"scripts/live-e2e/env.mjs",
+		"scripts/live-e2e/runner.mjs",
+		"scripts/live-e2e/lock.mjs",
+		"test/live-e2e/env-fingerprint-lock.test.ts",
+		".omo/evidence/task-2-fixed-live-e2e-environment.json"
+	],
+	"testResults": {
+		"allPassed": true,
+		"files": ["test/live-e2e/manifest-invariant.test.ts", "test/live-e2e/env-fingerprint-lock.test.ts"],
+		"totalTests": 35,
+		"status": "GREEN"
+	},
+	"verification": {
+		"bunLint": "exit 0",
+		"nodeCheck": "exit 0 on all 4 .mjs files (bootstrap.mjs, env.mjs, lock.mjs, runner.mjs)",
+		"tscNoEmit": "exit 0",
+		"vitest": "35 passed, 0 failed (2 files, 3.37s)",
+		"lspErrors": "0 errors across all changed files",
+		"smoke_bootstrap_and_printEnv": "exit 0, AUTORAG_SEARCH_PATHS ends with /corpus",
+		"smoke_malformed_fingerprint": "exit 1 with live-e2e-fingerprint-mismatch",
+		"pureLOC_env_mjs": 180,
+		"pureLOC_lock_mjs": 117
+	},
+	"behaviorChange": "ZERO — all public exports, CLI contracts, exit codes, diagnostics strings, lock/fingerprint/search-path semantics are identical. Lock logic extracted to lock.mjs and re-exported from env.mjs."
+}

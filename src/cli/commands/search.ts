@@ -1,5 +1,4 @@
-import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
-import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
+import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import {
 	buildAgentOptions,
 	type CliConfig,
@@ -8,7 +7,7 @@ import {
 	resolveAgentModel,
 	resolveConfig,
 } from "../config.ts";
-import { renderError, renderSearch } from "../output.ts";
+import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -102,10 +101,10 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
 /**
  * Search-command dependencies. Tests inject `agentFactory` to bypass real
  * model construction and AutoRAGAgent instantiation, returning a stub whose
- * `searchDocuments` resolves a canned {@link SearchDocumentsResponse}.
+ * `searchDocumentsStream` yields progress and a canned completion.
  */
 export interface SearchDeps {
-	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocuments">;
+	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocumentsStream">;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 }
 
@@ -113,6 +112,34 @@ interface SearchOptions {
 	topK?: number;
 	scope?: string;
 	allowedTags?: string[];
+}
+
+const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function parseThinkingLevel(value: string | boolean | undefined): AutoRAGThinkingLevel | undefined {
+	if (typeof value !== "string" || value.trim() === "") return undefined;
+	return (THINKING_LEVELS as readonly string[]).includes(value) ? (value as AutoRAGThinkingLevel) : undefined;
+}
+
+/**
+ * Thinking flags for the two-phase progressive-answer flow. `--fast-thinking`
+ * and `--final-thinking` set per-phase levels (default: off/high);
+ * `--single-phase` disables the two-phase flow entirely. An unrecognized
+ * level rejects with exit 2.
+ */
+function buildThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
+	if (flags["single-phase"] === true) return false;
+	const fastProvided = flags["fast-thinking"] !== undefined;
+	const finalProvided = flags["final-thinking"] !== undefined;
+	const fast = parseThinkingLevel(flags["fast-thinking"]);
+	const final = parseThinkingLevel(flags["final-thinking"]);
+	if ((fastProvided && fast === undefined) || (finalProvided && final === undefined)) {
+		throw new Error(
+			`Invalid thinking level. Use one of: ${THINKING_LEVELS.join(", ")} (--fast-thinking/--final-thinking).`,
+		);
+	}
+	if (fast === undefined && final === undefined) return undefined;
+	return { ...(fast !== undefined ? { fast } : {}), ...(final !== undefined ? { final } : {}) };
 }
 
 function parseIntOptional(value: string | boolean | undefined): number | undefined {
@@ -165,9 +192,19 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		return 2;
 	}
 
-	let agent: Pick<AutoRAGAgent, "searchDocuments">;
+	let agent: Pick<AutoRAGAgent, "searchDocumentsStream">;
+	let thinking: AutoRAGAgentOptions["thinking"] | undefined;
+	try {
+		thinking = buildThinkingFlags(ctx.flags);
+	} catch (error) {
+		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		return 2;
+	}
 	if (deps.agentFactory && deps.modelResolver === undefined) {
-		agent = deps.agentFactory({ ...buildAgentOptions(config) });
+		agent = deps.agentFactory({
+			...buildAgentOptions(config),
+			...(thinking !== undefined ? { thinking } : {}),
+		});
 	} else {
 		let resolvedModel: ResolvedAgentModel;
 		try {
@@ -182,14 +219,27 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 			model: resolvedModel.model,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
+			...(thinking !== undefined ? { thinking } : {}),
 		};
 		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);
 	}
 
 	const options = buildSearchOptions(ctx.flags);
 	try {
-		const resp = await agent.searchDocuments(query, options);
-		ctx.stdout(renderSearch(resp, { json: ctx.json, debug: ctx.debug }));
+		for await (const event of agent.searchDocumentsStream(query, options)) {
+			switch (event.type) {
+				case "progress":
+					if (event.text.trim() === "") break;
+					ctx.stdout(ctx.json ? JSON.stringify({ type: "progress", text: event.text }) : event.text);
+					break;
+				case "preliminary":
+					ctx.stdout(renderPreliminary(event.response, { json: ctx.json, debug: ctx.debug }));
+					break;
+				case "complete":
+					ctx.stdout(renderSearch(event.response, { json: ctx.json, debug: ctx.debug }));
+					break;
+			}
+		}
 		return 0;
 	} catch (error) {
 		const hint = classifySearchHealthHint(error);

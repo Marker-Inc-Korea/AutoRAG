@@ -38,7 +38,6 @@ describe("single-model CLI config", () => {
 		});
 		expect(config.model).toEqual({ provider: "openai", id: "gpt-4o" });
 		expect(config.searchPaths).toEqual(["docs", "notes"]);
-		expect(config.bm25?.enabled).toBe(true);
 		expect(config.minSync?.enabled).toBe(true);
 		expect(config.minSync?.autoInstall).toBe(true);
 		expect(config.jikji).toEqual({});
@@ -70,7 +69,6 @@ describe("single-model CLI config", () => {
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
 				model: { provider: "openai", id: "gpt-4o" },
-				bm25: { enabled: true },
 				minSync: { enabled: false },
 				ui: {
 					host: "localhost",
@@ -82,7 +80,6 @@ describe("single-model CLI config", () => {
 		);
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
 		expect(written.model).toEqual({ provider: "openai", id: "gpt-4o" });
-		expect(written.bm25).toEqual({ enabled: true });
 		expect(written.minSync?.enabled).toBe(false);
 		expect(written.ui).toEqual({
 			host: "localhost",
@@ -97,14 +94,12 @@ describe("single-model CLI config", () => {
 			searchPaths: ["."],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			bm25: { enabled: true },
 			minSync: { enabled: false },
 			jikji: {},
 			parserOptions: { pdf: true },
 			dupey: { enabled: false },
 			excludeExactDuplicates: false,
 		});
-		expect(opts.bm25).toEqual({});
 		expect(opts.minSync).toBe(false);
 		expect(opts.jikji).toEqual({});
 		expect(opts.parserOptions).toEqual({ pdf: true });
@@ -136,6 +131,17 @@ describe("single-model CLI config", () => {
 	it("validates the MinSync chunk size", () => {
 		expect(normalizeIndexingConfig({ minSync: { maxChunkSize: 1000 } }).minSync.maxChunkSize).toBe(1000);
 		expect(() => normalizeIndexingConfig({ minSync: { maxChunkSize: 0 } })).toThrow(ConfigError);
+	});
+
+	it("ignores a legacy minSync.binaryPath instead of rejecting the config", () => {
+		// Configs written before MinSync moved to PATH resolution still carry this
+		// key; rejecting it would break every command for existing installs.
+		const config = normalizeIndexingConfig({
+			minSync: { enabled: true, binaryPath: "/usr/local/bin/minsync" } as never,
+		}).minSync;
+		expect(config.enabled).toBe(true);
+		expect(config).not.toHaveProperty("binaryPath");
+		expect(() => normalizeIndexingConfig({ minSync: { nope: true } as never })).toThrow(ConfigError);
 	});
 
 	it("rejects malformed JSON config", () => {

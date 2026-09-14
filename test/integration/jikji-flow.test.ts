@@ -97,6 +97,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -113,7 +114,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			jikji: { binaryPath },
 		});
 
-		expect(methodNames(agent)).toEqual(["minsync", "hybrid", "bm25"]);
+		expect(methodNames(agent)).toEqual(["minsync", "hybrid"]);
 	});
 
 	it("registers jikji_find tool when jikji is configured", () => {
@@ -121,6 +122,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -133,6 +135,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			minSync: { autoInstall: false },
 		});
 
 		expect(toolNames(agent)).not.toContain(JIKJI_FIND_TOOL_NAME);
@@ -144,6 +147,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -166,6 +170,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -181,6 +186,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -211,6 +217,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			minSync: { autoInstall: false },
 		});
 
 		await expect(agent.prepareJikji()).resolves.toBeUndefined();
@@ -224,6 +231,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath: missingBinary },
 		});
 
@@ -245,6 +253,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath: missingBinary },
 		});
 
@@ -253,5 +262,24 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(result.policy).toBeUndefined();
 		expect(result.diagnostics.length).toBeGreaterThan(0);
 		expect(result.diagnostics[0]?.code).toBe("jikji-unavailable");
+	});
+
+	it("starts prepare asynchronously and skips Jikji for the current find", async () => {
+		writeFakeJikji();
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+		});
+
+		const first = await agent.findJikji("Q3 report");
+		expect(first.answerPack).toBeUndefined();
+
+		await agent.prepareJikji();
+
+		const second = await agent.findJikji("Q3 report");
+		expect(second.answerPack?.answerPaths).toContain(realpathSync(join(docs, "q3-report.txt")));
 	});
 });

@@ -1,6 +1,7 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult } from "../retrieval/types.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
+import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
 
 export type SearchDocumentWarning = "empty-query";
 
@@ -16,8 +17,6 @@ export type SearchDocumentDiagnosticCode =
 	| "empty-query"
 	| "unknown-warning"
 	| "caller-tool-dropped"
-	| "bm25-unavailable"
-	| "bm25-degraded-fallback"
 	| "minsync-unavailable"
 	| "parser-skipped"
 	| "parser-failed"
@@ -41,7 +40,7 @@ export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
 	readonly severity: SearchDocumentDiagnosticSeverity;
 	readonly message: string;
-	/** Component label (e.g. "sanitizer", "bm25") or opaque virtual path — never a real filesystem path. */
+	/** Component label (e.g. "sanitizer", "minsync") or opaque virtual path — never a real filesystem path. */
 	readonly source?: string;
 }
 
@@ -74,6 +73,27 @@ export interface SearchDocumentsResponse {
 	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
+export type SearchDocumentsStreamEvent =
+	| {
+			readonly type: "progress";
+			readonly sessionId: string;
+			readonly query: string;
+			readonly text: string;
+	  }
+	| {
+			/**
+			 * Immediate first answer from the thinking-off fast phase. Always
+			 * yielded before `complete` when the two-phase flow produced one; the
+			 * `complete` event's response remains the verified final answer.
+			 */
+			readonly type: "preliminary";
+			readonly response: SearchDocumentsResponse;
+	  }
+	| {
+			readonly type: "complete";
+			readonly response: SearchDocumentsResponse;
+	  };
+
 type SearchSession = { query: string; registry: Map<number, CuratedResult>; transient?: boolean };
 type SearchSessions = Map<string, SearchSession>;
 type ReadonlySearchSessions = ReadonlyMap<
@@ -88,6 +108,43 @@ function confidenceFrom(score: number): number {
 
 function normalizeWarnings(warnings: readonly string[]): SearchDocumentWarning[] {
 	return warnings.filter((warning): warning is SearchDocumentWarning => warning === "empty-query");
+}
+
+/**
+ * Build the preliminary (fast-phase) search response. Unlike
+ * {@link recordStructuredResultsSession} this NEVER touches memory or the
+ * feedback session registry — the final response owns those. Feedback ids are
+ * namespaced with `:preliminary:` so they can never collide with final ids.
+ */
+export function createPreliminarySearchDocumentsResponse(
+	sessionId: string,
+	query: string,
+	details: AutoRAGFastAnswerDetails,
+	diagnostics: readonly SearchDocumentDiagnostic[] = [],
+): SearchDocumentsResponse {
+	const sourceByNumber = new Map(details.sources.map((entry) => [entry.number, entry.source]));
+	const results: SearchDocumentResult[] = details.results.map((result) => ({
+		number: result.number,
+		title: result.title,
+		summary: result.summary,
+		evidence: result.evidence.map((evidence) =>
+			evidence.lineNumber !== undefined
+				? { excerpt: evidence.excerpt, lineNumber: evidence.lineNumber }
+				: { excerpt: evidence.excerpt },
+		),
+		confidence: confidenceFrom(result.confidence ?? 0.5),
+		feedbackId: `${sessionId}:preliminary:${result.number}`,
+		source: sourceByNumber.get(result.number),
+	}));
+	return {
+		sessionId,
+		query,
+		results,
+		answer: details.answer,
+		searched: details.results.length,
+		warnings: [],
+		diagnostics: [...diagnostics],
+	};
 }
 
 export function createEmptySearchDocumentsResponse(

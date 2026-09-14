@@ -1,5 +1,5 @@
 import { AutoRAGAgent } from "../../agent/agent.ts";
-import { buildAgentOptions, resolveConfig } from "../config.ts";
+import { buildAgentOptions, ConfigError, resolveConfig } from "../config.ts";
 import { renderError, renderStatus } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -7,6 +7,8 @@ import type { CommandContext } from "./types.ts";
  * `autorag status` — path-opaque snapshot of corpus freshness and index health.
  * Runs a cheap parse-free staleness scan plus the cached last-refresh outcome.
  * Model-free. Never emits filesystem paths; only the renderered status text.
+ *
+ * Exit codes: 0 on success, 2 on config error, 1 on runtime error.
  */
 export async function runStatus(ctx: CommandContext): Promise<number> {
 	try {
@@ -17,6 +19,6 @@ export async function runStatus(ctx: CommandContext): Promise<number> {
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
-		return 1;
+		return error instanceof ConfigError ? 2 : 1;
 	}
 }

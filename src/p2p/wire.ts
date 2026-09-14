@@ -88,5 +88,4 @@ export function wireSourceId(source: string): string {
  * Retained as a no-op test/setup hook while the public wire source is the
  * retrieval source itself.
  */
-export function resetWireMapping(): void {
-}
+export function resetWireMapping(): void {}

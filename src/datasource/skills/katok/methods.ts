@@ -4,8 +4,8 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
-import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
 import { katokSourcePath } from "./paths.ts";
+import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
 
 /**
  * Narrow client surface required by the KakaoTalk retrieval methods.

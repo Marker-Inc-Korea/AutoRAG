@@ -45,7 +45,7 @@ export function createSearchAllDocumentsTool(
 		name: SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 		label: "Search All Documents",
 		description:
-			"Search across all configured retrieval methods (posix, BM25, MinSync, datasources) and return merged, deduplicated results. Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.",
+			"Search across all configured retrieval methods (posix, MinSync, datasources) and return merged, deduplicated results. Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchAllSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchAllDocumentsDetails>> {
 			const query = params.query.trim();

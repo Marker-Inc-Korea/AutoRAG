@@ -39,7 +39,6 @@ describe("remote-session retrieval policy", () => {
 			memoryPath: join(temp, "memory.json"),
 			remoteSession: true,
 			minSync: false,
-			bm25: false,
 			jikji: false,
 		});
 		agent
@@ -69,17 +68,13 @@ describe("remote-session retrieval policy", () => {
 			memoryPath: join(temp, "memory.json"),
 			remoteSession: true,
 			minSync: false,
-			bm25: false,
 			jikji: false,
 			datasourceAccess: { allowedTags: ["kakao"] },
 		});
 		agent
 			.getMethodRegistry()
 			.register(
-				method(
-					[result("/kakao/shared/chunks/a", "allowed"), result("/kakao/private/chunks/b", "denied")],
-					true,
-				),
+				method([result("/kakao/shared/chunks/a", "allowed"), result("/kakao/private/chunks/b", "denied")], true),
 			);
 		const resolvePolicy = (source: string) =>
 			source.startsWith("/kakao/shared/")
@@ -104,7 +99,6 @@ describe("remote-session retrieval policy", () => {
 			memoryPath: join(temp, "memory.json"),
 			remoteSession: true,
 			minSync: false,
-			bm25: false,
 			jikji: false,
 		});
 		expect((agent as unknown as { searchTimeoutMs: number }).searchTimeoutMs).toBe(120_000);

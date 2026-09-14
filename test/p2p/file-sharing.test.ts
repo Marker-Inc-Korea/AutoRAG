@@ -123,7 +123,11 @@ describe("resolveFileShare", () => {
 			return resolution("never", false);
 		};
 		const denied = resolveFileShare(wireSourceId(deniedPath), peerFingerprint, options(resolvePolicy));
-		const nonexistent = resolveFileShare(wireSourceId(join(sourceRoot, "missing.txt")), peerFingerprint, options(resolvePolicy));
+		const nonexistent = resolveFileShare(
+			wireSourceId(join(sourceRoot, "missing.txt")),
+			peerFingerprint,
+			options(resolvePolicy),
+		);
 		const unknown = resolveFileShare("/docs/unknown-wire-id", peerFingerprint, options(resolvePolicy));
 
 		expect(denied).toEqual(nonexistent);

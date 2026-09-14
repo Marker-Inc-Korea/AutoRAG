@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
@@ -45,6 +46,11 @@ export class JikjiClient {
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
+	}
+
+	/** Jikji stores prepared corpus metadata under a hidden directory in each root. */
+	isPrepared(root: string): boolean {
+		return existsSync(join(root, ".jikji", "doc_meta")) || existsSync(join(root, ".jikji", "doc_text"));
 	}
 
 	/**

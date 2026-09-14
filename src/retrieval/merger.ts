@@ -163,6 +163,5 @@ export class ParallelRetriever {
 
 function methodFailureCode(name: string): RetrievalDiagnosticCode {
 	if (name === "minsync") return "minsync-unavailable";
-	if (name === "bm25") return "bm25-unavailable";
 	return "retrieval-method-failed";
 }

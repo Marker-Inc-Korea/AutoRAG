@@ -63,7 +63,6 @@ describe("AutoRAGAgent remote-session memory isolation", () => {
 			remoteSession: true,
 			jikji: false,
 			minSync: false,
-			bm25: false,
 		});
 		const memory = internals(agent).memory;
 		memory.recordWeakSignal("seed", "search", "followup");

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import {
 	createTuiPresenter,
@@ -27,6 +27,20 @@ const response: SearchDocumentsResponse = {
 	warnings: [],
 	diagnostics: [],
 };
+
+let previousHome: string | undefined;
+
+beforeEach(() => {
+	previousHome = process.env.HOME;
+	process.env.HOME = mkdtempSync(join(tmpdir(), "autorag-tui-home-"));
+});
+
+afterEach(() => {
+	const testHome = process.env.HOME;
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
+	if (testHome !== undefined && testHome !== previousHome) rmSync(testHome, { recursive: true, force: true });
+});
 
 function context(): { ctx: CommandContext; stdout: string[]; stderr: string[] } {
 	const stdout: string[] = [];
@@ -54,6 +68,24 @@ function driver(submissions: string[]): TuiDriver {
 		stopped: false,
 		onSubmit: undefined,
 		onExit: undefined,
+	};
+}
+
+type StreamExtra = {
+	abort?: () => void;
+	subscribe?: (listener: (event: AgentEvent, signal: AbortSignal) => void | Promise<void>) => () => void;
+};
+
+function streamAgent(
+	search: (query: string) => Promise<SearchDocumentsResponse> = async () => response,
+	extra: StreamExtra = {},
+) {
+	return {
+		async *searchDocumentsStream(query: string) {
+			const result = await search(query);
+			yield { type: "complete" as const, response: result };
+		},
+		...extra,
 	};
 }
 
@@ -92,7 +124,7 @@ describe("runTui", () => {
 		const { ctx } = context();
 		const tui = driver([]);
 		const running = runTui(ctx, {
-			agentFactory: () => ({ searchDocuments: async () => response }),
+			agentFactory: () => streamAgent(),
 			modelResolver: () => {
 				throw new Error("model resolution should not run for injected agents");
 			},
@@ -104,6 +136,32 @@ describe("runTui", () => {
 		expect(await running).toBe(0);
 		expect(tui.started).toBe(true);
 		expect(tui.stopped).toBe(true);
+	});
+
+	it("renders streaming progress before the final answer", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "progress" as const,
+						sessionId: "session",
+						query: "question",
+						text: "현재 자료를 확인 중입니다.",
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+			tuiFactory: () => tui,
+		});
+
+		await tui.onSubmit?.("question");
+		await tui.onSubmit?.("/quit");
+		await running;
+
+		expect(tui.rendered.join("\n")).toContain("현재 자료를 확인 중입니다.");
+		expect(tui.rendered.join("\n")).toContain("answer");
 	});
 
 	it("opens a resume picker with first-question titles and restores the selected session", async () => {
@@ -123,12 +181,11 @@ describe("runTui", () => {
 			save: () => undefined,
 		};
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async () => {
+			agentFactory: () =>
+				streamAgent(async () => {
 					calls++;
 					return response;
-				},
-			}),
+				}),
 			sessionStore: store,
 			tuiFactory: () => tui,
 		});
@@ -159,9 +216,8 @@ describe("runTui", () => {
 			updatedAt: 1,
 		};
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async () => ({ ...response, query: "current question", answer: "current answer" }),
-			}),
+			agentFactory: () =>
+				streamAgent(async () => ({ ...response, query: "current question", answer: "current answer" })),
 			sessionStore: {
 				list: () => [session],
 				get: (id: string) => (id === session.id ? session : undefined),
@@ -338,16 +394,19 @@ describe("runTui", () => {
 		const { ctx } = context();
 		const tui = driver([]);
 		let abortCalls = 0;
-		let resolveSearch: ((value: SearchDocumentsResponse) => void) | undefined;
+		let release: (() => void) | undefined;
+		const hanging = new Promise<void>((resolve) => {
+			release = resolve;
+		});
 		const running = runTui(ctx, {
 			agentFactory: () => ({
-				searchDocuments: () =>
-					new Promise((resolve) => {
-						resolveSearch = resolve;
-					}),
+				async *searchDocumentsStream() {
+					await hanging;
+					yield { type: "complete" as const, response };
+				},
 				abort: () => {
 					abortCalls++;
-					resolveSearch?.(response);
+					release?.();
 				},
 			}),
 			tuiFactory: () => tui,
@@ -368,7 +427,7 @@ describe("runTui", () => {
 		const { ctx } = context();
 		const tui = driver([]);
 		const running = runTui(ctx, {
-			agentFactory: () => ({ searchDocuments: async () => response }),
+			agentFactory: () => streamAgent(),
 			tuiFactory: () => tui,
 		});
 
@@ -400,35 +459,38 @@ describe("runTui", () => {
 		const queries: string[] = [];
 		let listener: ((event: AgentEvent, signal: AbortSignal) => void | Promise<void>) | undefined;
 		const deps: TuiDeps = {
-			agentFactory: () => ({
-				searchDocuments: async (query) => {
-					queries.push(query);
-					void listener?.(
-						{
-							type: "tool_execution_start",
-							toolCallId: "tool-1",
-							toolName: "search_datasource_documents",
-							args: {},
+			agentFactory: () =>
+				streamAgent(
+					async (query) => {
+						queries.push(query);
+						void listener?.(
+							{
+								type: "tool_execution_start",
+								toolCallId: "tool-1",
+								toolName: "search_datasource_documents",
+								args: {},
+							},
+							new AbortController().signal,
+						);
+						void listener?.(
+							{
+								type: "message_update",
+								message: { role: "assistant" },
+								assistantMessageEvent: { type: "text_delta", delta: "streamed" },
+							} as AgentEvent,
+							new AbortController().signal,
+						);
+						return response;
+					},
+					{
+						subscribe: (callback) => {
+							listener = callback;
+							return () => {
+								listener = undefined;
+							};
 						},
-						new AbortController().signal,
-					);
-					void listener?.(
-						{
-							type: "message_update",
-							message: { role: "assistant" },
-							assistantMessageEvent: { type: "text_delta", delta: "streamed" },
-						} as AgentEvent,
-						new AbortController().signal,
-					);
-					return response;
-				},
-				subscribe: (callback) => {
-					listener = callback;
-					return () => {
-						listener = undefined;
-					};
-				},
-			}),
+					},
+				),
 			tuiFactory: () => tui,
 		};
 
@@ -450,36 +512,39 @@ describe("runTui", () => {
 		const saved: string[] = [];
 		let listener: ((event: AgentEvent, signal: AbortSignal) => void | Promise<void>) | undefined;
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async () => {
-					listener?.(
-						{
-							type: "tool_execution_start",
-							toolCallId: "tool-1",
-							toolName: "lookup",
-							args: {},
+			agentFactory: () =>
+				streamAgent(
+					async () => {
+						listener?.(
+							{
+								type: "tool_execution_start",
+								toolCallId: "tool-1",
+								toolName: "lookup",
+								args: {},
+							},
+							new AbortController().signal,
+						);
+						listener?.(
+							{
+								type: "tool_execution_end",
+								toolCallId: "tool-1",
+								toolName: "lookup",
+								result: {},
+								isError: false,
+							},
+							new AbortController().signal,
+						);
+						return response;
+					},
+					{
+						subscribe: (callback) => {
+							listener = callback;
+							return () => {
+								listener = undefined;
+							};
 						},
-						new AbortController().signal,
-					);
-					listener?.(
-						{
-							type: "tool_execution_end",
-							toolCallId: "tool-1",
-							toolName: "lookup",
-							result: {},
-							isError: false,
-						},
-						new AbortController().signal,
-					);
-					return response;
-				},
-				subscribe: (callback) => {
-					listener = callback;
-					return () => {
-						listener = undefined;
-					};
-				},
-			}),
+					},
+				),
 			sessionStore: {
 				list: () => [],
 				get: () => undefined,
@@ -500,12 +565,11 @@ describe("runTui", () => {
 		const tui = driver([]);
 		let calls = 0;
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async () => {
+			agentFactory: () =>
+				streamAgent(async () => {
 					calls++;
 					return response;
-				},
-			}),
+				}),
 			tuiFactory: () => tui,
 		});
 
@@ -521,13 +585,12 @@ describe("runTui", () => {
 		const tui = driver([]);
 		let calls = 0;
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async (query) => {
+			agentFactory: () =>
+				streamAgent(async (query) => {
 					calls++;
 					if (query === "broken") throw new Error("provider unavailable");
 					return { ...response, query, answer: "recovered" };
-				},
-			}),
+				}),
 			tuiFactory: () => tui,
 		});
 
@@ -547,27 +610,30 @@ describe("runTui", () => {
 		let listener: ((event: AgentEvent, signal: AbortSignal) => void | Promise<void>) | undefined;
 		let calls = 0;
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async (query) => {
-					calls++;
-					listener?.(
-						{
-							type: "tool_execution_start",
-							toolCallId: `tool-${calls}`,
-							toolName: query,
-							args: {},
+			agentFactory: () =>
+				streamAgent(
+					async (query) => {
+						calls++;
+						listener?.(
+							{
+								type: "tool_execution_start",
+								toolCallId: `tool-${calls}`,
+								toolName: query,
+								args: {},
+							},
+							new AbortController().signal,
+						);
+						return { ...response, query };
+					},
+					{
+						subscribe: (callback) => {
+							listener = callback;
+							return () => {
+								listener = undefined;
+							};
 						},
-						new AbortController().signal,
-					);
-					return { ...response, query };
-				},
-				subscribe: (callback) => {
-					listener = callback;
-					return () => {
-						listener = undefined;
-					};
-				},
-			}),
+					},
+				),
 			tuiFactory: () => tui,
 		});
 
@@ -585,12 +651,12 @@ describe("runTui", () => {
 		const tui = driver([]);
 		let unsubscribeCalls = 0;
 		const running = runTui(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async () => response,
-				subscribe: () => () => {
-					unsubscribeCalls++;
-				},
-			}),
+			agentFactory: () =>
+				streamAgent(async () => response, {
+					subscribe: () => () => {
+						unsubscribeCalls++;
+					},
+				}),
 			tuiFactory: () => tui,
 		});
 

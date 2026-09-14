@@ -11,19 +11,19 @@ export interface FileShareDiagnostic {
 
 export type FileShareResponse =
 	| {
-		readonly status: "ok";
-		readonly fileBase64: string;
-		readonly redacted: boolean;
-	}
+			readonly status: "ok";
+			readonly fileBase64: string;
+			readonly redacted: boolean;
+	  }
 	| {
-		readonly status: "withheld";
-		readonly fileBase64: "";
-		readonly diagnostic: FileShareDiagnostic;
-	}
+			readonly status: "withheld";
+			readonly fileBase64: "";
+			readonly diagnostic: FileShareDiagnostic;
+	  }
 	| {
-		readonly status: "rejected";
-		readonly diagnostic: FileShareDiagnostic;
-	};
+			readonly status: "rejected";
+			readonly diagnostic: FileShareDiagnostic;
+	  };
 
 export type FileResponse = FileShareResponse;
 

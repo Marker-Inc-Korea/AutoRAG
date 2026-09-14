@@ -1,0 +1,9 @@
+{
+	"version": 1,
+	"entries": [
+		{
+			"path": "corpus/sample.txt",
+			"sha256": "f3c8d1ca355dfb13868bd4dadc6a3a11a96da55e4d5f6d35bf5d5585da755c9f"
+		}
+	]
+}

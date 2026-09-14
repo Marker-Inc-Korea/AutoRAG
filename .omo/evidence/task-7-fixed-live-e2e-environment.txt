@@ -1,0 +1,224 @@
+# Task 7 - fixed live-E2E environment validation and handoff
+
+Date: 2026-09-08
+Branch: chore/fixed-live-e2e-env-setup
+Validation scope: repository gates, complete diff audit, evidence reconciliation, secret scan, and cleanup.
+No tenant QA is claimed: credentials and configured native tenant stores were not available for this validation.
+
+## 1. Final repository gates
+
+These are the final four gate invocations run once from the exact current working diff. The repository test command is the configured Vitest runner (`node scripts/run-test-files.mjs`), not Bun's test runner.
+
+### make lint
+
+Command:
+```
+make lint
+```
+Exit code: 0
+Key output:
+```
+bun run lint
+$ biome check .
+Checked 291 files in 758ms. No fixes applied.
+
+EXIT_CODE=0
+```
+
+### make typecheck
+
+Command:
+```
+make typecheck
+```
+Exit code: 0
+Key output:
+```
+bun run typecheck
+$ tsc --noEmit
+
+EXIT_CODE=0
+```
+
+### make build
+
+Command:
+```
+make build
+```
+Exit code: 0
+Key output:
+```
+bun run build
+$ bun build src/index.ts src/cli/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs
+Bundled 160 modules in 11ms
+
+  index.js     0.52 MB  (entry point)
+  cli/index.js  0.67 MB  (entry point)
+
+EXIT_CODE=0
+```
+
+### make test
+
+Command:
+```
+make test
+```
+Exit code: 0
+Key output:
+```
+bun run test
+$ node scripts/run-test-files.mjs
+...
+All 109 test files passed.
+
+EXIT_CODE=0
+```
+
+Gate result: all four required make gates exited 0. The full repository suite passed 109 of 109 test files with no test failures.
+
+## 2. Diff and scope audit
+
+The committed branch diff before this handoff contained 28 intended paths, covering:
+
+- `.gitignore`, `AGENTS.md`, and `Makefile`;
+- fixed corpus, environment, lock, preflight, workflow, runner, and type declaration files under `scripts/live-e2e/`;
+- the katok native-store harness;
+- five `test/live-e2e/` test files;
+- task 1 through task 6 evidence.
+
+The current working changes made during this validation remain within that intended scope: the datasource and preflight tests use dynamically constructed redaction sentinels instead of literal secret-shaped values, and task 3 evidence uses redacted command placeholders. The task 7 evidence file is the only new handoff artifact.
+
+Scope audit output:
+```
+SCOPE_OK
+```
+
+Whitespace check:
+```
+git diff --check
+EXIT_CODE=0
+```
+
+Changed-file syntax/data checks:
+```
+node --check on changed .mjs/.mts files: EXIT_CODE=0
+JSON parse on changed .json files: EXIT_CODE=0
+Biome on changed .mjs/.mts/.ts/.tsx files: EXIT_CODE=0
+```
+
+LOC scope clarification (not a gate failure): `test/live-e2e/env-fingerprint-lock.test.ts` measures at 352 pure LOC. The todo-2 no-excuse verifier used for this branch was scoped to `scripts/live-e2e/`, and the repository contains no `scripts/qa/check-*.mjs` (or equivalent) checker that applies the threshold to tests. The general engineering review heuristic is broader and therefore records this test-module size as a review finding, but the repository validation rule that gated todo 2 did not require a test-file split. No behavior-preserving refactor was made in this bounded handoff. `scripts/live-e2e/runner.mjs` measures 247 pure LOC and remains below the defect threshold.
+
+## 3. Secret and path scan
+
+The scan input was the union of `git diff main...HEAD --name-only` and all top-level `.omo/evidence/*` files, including this task 7 artifact. Total files scanned: 30.
+
+Literal-safe scan results:
+```
+PRIVATE_KEY_OR_SECRET_FORMAT_HITS=0
+HOME_PATH_HITS=2 (pre-existing ignored .omo/evidence/pr1535-gate-review.md only)
+CREDENTIAL_VALUE_ASSIGNMENT_HITS=0
+```
+
+The two home-path matches are pre-existing review prose in the ignored `pr1535-gate-review.md`; that file is not part of the branch diff and was not modified. It is recorded as a finding rather than silently changed. No branch-added credential, token value, private-key material, or real secret was found. The redaction tests retain their assertions while constructing dummy values at runtime, so no literal dummy credential or home path is committed.
+
+## 4. Reconciled task evidence matrix
+
+### Todo 1 - PASS
+
+Evidence: `.omo/evidence/task-1-fixed-live-e2e-environment.json`.
+
+- Manifest/bootstrap tests: 11 passed.
+- Bootstrap and corpus verification exited 0.
+- Drift verification exited 1 with the expected drift diagnostic, then restoration exited 0.
+- Missing-root, missing-flag, and unknown-command refusal scenarios were recorded.
+- Read-only mode and idempotent re-bootstrap were recorded.
+- Cleanup receipt is present: temporary root removed and absence confirmed.
+
+### Todo 2 - PASS
+
+Evidence: `.omo/evidence/task-2-fixed-live-e2e-environment.json`.
+
+- Focused environment/fingerprint/lock tests: 35 passed.
+- Lint, node syntax, TypeScript check, and focused Vitest evidence are green.
+- Mutable overrides remain under `.autorag-e2e`; warm fingerprint mismatch refuses reuse; lock contention yields one holder and one failure; cold cleanup is clone-local.
+- Cleanup is consistent with the test hooks: `cleanE2eState()` runs before and after the file-level scenarios. The artifact does not have a separate top-level cleanup object; this evidence gap is recorded, not treated as a passing tenant run.
+
+### Todo 3 - PASS (with capability-gated outcomes)
+
+Evidence: `.omo/evidence/task-3-fixed-live-e2e-environment.json`.
+
+- Healthy loopback preflight: ready, exit 0, EmbeddingGemma dimension 768.
+- Missing optional binaries: degraded, exit 0, each unavailable lane SKIP.
+- OpenAI egress refusal: refused, exit 1, stable `live-e2e-openai-egress` code, no credential echoed.
+- Non-loopback endpoint refusal: refused, exit 1, stable non-loopback code.
+- Credential-bearing endpoint output was redacted.
+- Prompt-injection and state-mutation checks were correctly marked N/A because preflight sends only a fixed probe and is read-only.
+- Cleanup is N/A for the read-only preflight scenarios; no runner-owned service process was started by these probes. No tenant QA is claimed.
+
+### Todo 4 - PASS
+
+Evidence: `.omo/evidence/task-4-fixed-live-e2e-environment.txt`.
+
+- `make help` lists warm/cold targets and explicit bootstrap prerequisite.
+- Dry-run target checks, root override, argument forwarding, absent-root refusal, ignore rule, and help idempotence passed.
+- Cleanup receipt is present: no runner process remained and help output was stable.
+
+### Todo 5 - PASS
+
+Evidence: `.omo/evidence/task-5-fixed-live-e2e-environment.json`.
+
+- Explicit bootstrap and corpus verification exited 0.
+- Local TEI adapter probe returned HTTP 200 with dimension 768.
+- Cold live run exited 0, performed full sync, wrote the MinSync cursor, and returned an absolute readable corpus source.
+- Warm live run exited 0, reused the cursor, performed no mirror writes, and returned the same absolute readable source.
+- OpenAI key presence was false and the embedding endpoint was loopback-only.
+- Cleanup receipt is complete: clone state, temporary evidence, debug journal, and processes were removed; lock was released.
+
+### Todo 6 - PASS (core PASS; native lanes SKIP)
+
+Evidence: `.omo/evidence/task-6-fixed-live-e2e-environment.json`.
+
+- Core command summary: PASS, exit 0.
+- Local corpus lane: PASS, absolute source readable and native identity retained.
+- Native datasource lanes: 10 SKIP because their operator-owned stores were not configured (`katok`, `discrawl`, `wacrawl`, `telecrawl`, `slacrawl`, `notcrawl`, `qmd`, `rclone`, `mailcrawl`, and Spotlight).
+- Native lane failures: 0. SKIP was not converted to PASS.
+- Cleanup receipt records the workflow lock released and native stores untouched. The artifact's `cloneStateRemoved: false` is consistent with that task's recorded live-stack run; task 7 cleanup removed the local generated clone state afterward.
+- No credentials or tenant capability were present, so no native tenant QA claim is made.
+
+Reconciled matrix: Todo 1 PASS; Todo 2 PASS; Todo 3 PASS; Todo 4 PASS; Todo 5 PASS; Todo 6 PASS with 1 local PASS, 10 native SKIP, and 0 FAIL. No task evidence reports FAIL.
+
+## 5. Diagnostics and cleanup
+
+Diagnostics:
+
+- LSP diagnostics for `scripts/live-e2e/`: 7 files scanned, 0 errors, 0 total diagnostics.
+- LSP diagnostics for `test/live-e2e/`: 5 files scanned, 0 errors, 0 total diagnostics.
+- LSP diagnostics for `scripts/manual-qa/run-qa-katok-live.ts`: none.
+- Changed-file Biome, node syntax, JSON parsing, project lint, and TypeScript checks are clean.
+
+Cleanup receipts from this task:
+
+- Removed generated `test/fixtures/sample-project/.jikji/` output.
+- Removed generated `test/fixtures/sample-project/.jikji_agent_map.md`.
+- Removed temporary runner evidence directories: `live-core-warm`, `live-core`, `live-refusal-missing-corpus`, and `live-refusal-stale`.
+- Confirmed `.autorag-e2e` is absent.
+- Confirmed `.debug-journal.md` is absent.
+- Confirmed `.jikji` artifacts are absent.
+- Native datasource stores were not touched.
+- Temporary gate/scan transcripts were kept outside the repository during validation and are removed after evidence capture.
+
+## 6. Final status and handoff
+
+Before the handoff commit, the only intended repository changes are the task 7 evidence plus the three branch-owned redaction-placeholder corrections described above. No runtime artifact is staged or left untracked. The task 7 evidence is committed with:
+
+```
+chore(live-e2e): validate fixed environment handoff
+```
+
+The final commit SHA is reported by the task runner after this atomic commit. The final worktree check must report no output from:
+
+```
+git status --short --untracked-files=all
+```

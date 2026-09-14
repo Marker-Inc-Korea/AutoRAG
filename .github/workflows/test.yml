@@ -1,70 +1,74 @@
 name: Legacy Unit Test
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "legacy/**"
-      - ".github/workflows/test.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "legacy/**"
-      - ".github/workflows/test.yml"
+    push:
+        branches:
+            - main
+        paths:
+            - "legacy/**"
+            - ".github/workflows/test.yml"
+    pull_request:
+        branches:
+            - main
+        paths:
+            - "legacy/**"
+            - ".github/workflows/test.yml"
 
 env:
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  legacy-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: legacy
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      - name: Update apt-get
-        run: |
-          sudo apt-get update
-      - name: Install gcc
-        run: |
-          sudo apt-get install gcc
-      - name: Install poppler-utils
-        run: |
-          sudo apt-get install poppler-utils
-      - name: Install tesseract
-        run: |
-          sudo apt-get install tesseract-ocr
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-      - name: Install Python 3.12
-        run: uv python install 3.12
-      - name: Install Venv
-        run: uv venv
-      - name: Install AutoRAG
-        run: uv sync --all-extras --link-mode=copy
-      - name: Upgrade pyOpenSSL
-        run: |
-          uv pip install --upgrade pyOpenSSL
-      - name: Install NLTK and download model
-        run: |
-          uv pip install nltk
-          uv run python -c "import nltk; nltk.download('punkt_tab')"
-          uv run python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
-      - name: Run AutoRAG tests
-        run: |
-          uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
-      - name: Check clean legacy ty scope
-        run: |
-          # Tests are intentionally excluded; pytest and ruff validate tests.
-          uv run --locked ty check autorag/data/chunk autorag/data/parse/base.py \
-            autorag/data/parse/clova.py autorag/nodes/util.py
+    legacy-test:
+        runs-on: ubuntu-latest
+        timeout-minutes: 40
+        defaults:
+            run:
+                working-directory: legacy
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: "zulu"
+                  java-version: "17"
+            - name: Update apt-get
+              run: |
+                  sudo apt-get update
+            - name: Install gcc
+              run: |
+                  sudo apt-get install gcc
+            - name: Install poppler-utils
+              run: |
+                  sudo apt-get install poppler-utils
+            - name: Install tesseract
+              run: |
+                  sudo apt-get install tesseract-ocr
+            - name: Install uv
+              uses: astral-sh/setup-uv@v5
+            - name: Install Python 3.12
+              run: uv python install 3.12
+            - name: Install Venv
+              run: uv venv
+            - name: Install AutoRAG
+              run: |
+                  # Keep vLLM out of CPU CI. vLLM >= 0.26 pulls CUDA compiler
+                  # packages that hang pytest on ubuntu-latest.
+                  uv sync --extra gpu --extra ko --extra parse --extra ja --link-mode=copy
+            - name: Upgrade pyOpenSSL
+              run: |
+                  uv pip install --upgrade pyOpenSSL
+            - name: Install NLTK and download model
+              run: |
+                  uv pip install nltk
+                  uv run python -c "import nltk; nltk.download('punkt_tab')"
+                  uv run python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
+            - name: Run AutoRAG tests
+              run: |
+                  uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
+            - name: Check clean legacy ty scope
+              run: |
+                  # Tests are intentionally excluded; pytest and ruff validate tests.
+                  uv run --locked ty check autorag/data/chunk autorag/data/parse/base.py \
+                    autorag/data/parse/clova.py autorag/nodes/util.py

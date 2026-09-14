@@ -39,7 +39,6 @@ function remoteAgent(root: string, answer: string): AutoRAGAgent {
 		memoryPath: join(root, "memory.json"),
 		remoteSession: true,
 		minSync: false,
-		bm25: false,
 		jikji: false,
 	});
 }
@@ -73,7 +72,6 @@ describe("P2P outbound payload scan", () => {
 			memoryPath: join(root, "remote-memory.json"),
 			remoteSession: true,
 			minSync: false,
-			bm25: false,
 			jikji: false,
 		});
 		const local = new AutoRAGAgent({
@@ -81,13 +79,13 @@ describe("P2P outbound payload scan", () => {
 			workspacePath: root,
 			memoryPath: join(root, "local-memory.json"),
 			minSync: false,
-			bm25: false,
 			jikji: false,
 		});
 		const remoteInternals = remote as unknown as {
 			prefetchInitialRetrievalContext: (query: string, options: Record<string, never>) => Promise<string>;
 		};
 		(remote as unknown as { minSyncMethod: unknown }).minSyncMethod = {
+			isReady: () => true,
 			retrieve: async () => [
 				{ id: "shared", source: "/docs/shared.md", content: "retrieved corpus text", score: 1, metadata: {} },
 			],
@@ -147,7 +145,6 @@ describe("P2P outbound payload scan", () => {
 			memoryPath: join(root, "tool-memory.json"),
 			remoteSession: true,
 			minSync: false,
-			bm25: false,
 			jikji: false,
 		});
 		toolAgent.getMethodRegistry().register({

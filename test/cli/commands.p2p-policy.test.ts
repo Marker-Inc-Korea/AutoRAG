@@ -72,7 +72,10 @@ describe("autorag p2p policy list", () => {
 	});
 
 	it("exposes slash datasource globs correctly", () => {
-		writeFileSync(policyPath, '[policy]\n"/kakao/*" = { tier = "peers", peers = ["abc123"] }\n"/docs/*" = "always"\n');
+		writeFileSync(
+			policyPath,
+			'[policy]\n"/kakao/*" = { tier = "peers", peers = ["abc123"] }\n"/docs/*" = "always"\n',
+		);
 		ctx.positionals = ["list"];
 		runP2pPolicy(ctx);
 		const output = JSON.parse(captured[0]!);

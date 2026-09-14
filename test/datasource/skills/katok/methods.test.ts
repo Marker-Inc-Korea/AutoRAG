@@ -233,7 +233,7 @@ describe("KatokSemanticMethod retrieve", () => {
 
 	it("returns [] without throwing on a failed semantic search", async () => {
 		const client = makeClient();
-		client.failReason = "remote-embedding-rejected";
+		client.failReason = "nonzero-exit";
 		const method = new KatokSemanticMethod({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("chargeback", {});

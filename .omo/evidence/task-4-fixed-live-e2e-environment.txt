@@ -1,0 +1,95 @@
+# Task 4 — Make entrypoints, runtime ignore rules, and operator-facing command contract
+# Evidence captured 2026-09-08
+
+## 1. make help — PASS (both live targets + bootstrap prerequisite appear)
+
+$ make help
+make install       Install dependencies from bun.lock
+make lint          Check formatting and lint rules
+make format        Apply Biome formatting and safe fixes
+make typecheck     Run TypeScript type checking
+make build         Build library, CLI, and declarations
+make test          Run the complete AutoRAG 2.0 test suite
+make test-all      Alias for the complete test suite
+make test-macos    Run the complete suite on a macOS host
+make test-windows  Run the complete suite on a Windows host
+make test-linux    Run the complete suite in a Linux container
+make e2e-live      Run warm live-E2E (reuse clone-local state)
+make e2e-live-cold Run cold live-E2E (delete state, rebuild)
+make ci            Run lint, typecheck, tests, and build locally
+
+  E2E_ROOT=<root>  Shared corpus root (default: current repo path;
+                   honors AUTORAG_LIVE_E2E_ROOT if set)
+  E2E_ARGS=<args>  Extra arguments forwarded to the runner
+  bootstrap first: node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"
+
+## 2. make -n e2e-live — PASS (same runner, warm mode, current repo path)
+
+$ make -n e2e-live
+node scripts/live-e2e/runner.mjs print-env --mode warm --root "/Volumes/SSD1/4/AutoRAG"
+
+## 3. make -n e2e-live-cold — PASS (same runner, cold mode, only mode differs)
+
+$ make -n e2e-live-cold
+node scripts/live-e2e/runner.mjs print-env --mode cold --root "/Volumes/SSD1/4/AutoRAG"
+
+## 4. make -n e2e-live-cold (E2E_ROOT override) — PASS (root replaced)
+
+$ make -n e2e-live-cold E2E_ROOT=/some/other/path
+node scripts/live-e2e/runner.mjs print-env --mode cold --root "/some/other/path"
+
+## 5. make -n e2e-live (E2E_ARGS passthrough) — PASS (extra args forwarded)
+
+$ make -n e2e-live E2E_ARGS="--json --evidence-dir /tmp/ev"
+node scripts/live-e2e/runner.mjs print-env --mode warm --root "/Volumes/SSD1/4/AutoRAG" --json --evidence-dir /tmp/ev
+
+## 6. Failure: nonexistent E2E_ROOT — PASS (exit nonzero, diagnostic, root absent, ~/.autorag unchanged)
+
+$ ABS=/tmp/autorag-e2e-absent-root-1788863475
+$ ls -d "$ABS"             # root absent — PASS
+ls: /tmp/autorag-e2e-absent-root-1788863475: No such file or directory
+
+$ make e2e-live E2E_ROOT="$ABS"
+node scripts/live-e2e/runner.mjs print-env --mode warm --root "/tmp/autorag-e2e-absent-root-1788863475"
+ERROR: live-e2e-root-not-bootstrapped: /tmp/autorag-e2e-absent-root-1788863475 is missing corpus/MANIFEST.json
+make: *** [e2e-live] Error 1
+exit code: 2
+
+$ ls -d "$ABS"             # root still absent — PASS
+ls: /tmp/autorag-e2e-absent-root-1788863475: No such file or directory
+
+$ ls -la ~/.autorag | shasum   # ~/.autorag unchanged — PASS
+6332e3720f8bd492939fa2e88764b2617e346678  -
+
+## 7. git check-ignore — PASS (.autorag-e2e ignored)
+
+$ git check-ignore -v .autorag-e2e
+.gitignore:11:.autorag-e2e	.autorag-e2e
+
+## 8. Cleanup — PASS (no stray processes, help idempotent)
+
+$ pgrep -fl "live-e2e/runner" || echo "none"
+none
+
+$ make help > /tmp/h1.txt && make help > /tmp/h2.txt && diff /tmp/h1.txt /tmp/h2.txt && echo "help idempotent"
+help idempotent
+
+## 9. Adversarial class probing
+
+| Class                       | Result                 | Notes |
+|-----------------------------|------------------------|-------|
+| malformed_input (bad E2E_ROOT) | PASS (verified)      | nonexistent path → live-e2e-root-not-bootstrapped |
+| stale_state                 | N/A (not tested)      | Verified in runner code; cold mode handles it |
+| dirty_worktree              | N/A (no runtime tracked) | No runtime state tracked by Make targets |
+| misleading_success_output   | PASS (verified)       | exit code 2 against absent root confirms diagnostic |
+| missing_runner              | N/A                    | runner is a JS file, verified by todo 1 |
+| default_vs_override         | PASS (verified)       | E2E_ROOT override correctly overrides AUTORAG_LIVE_E2E_ROOT |
+
+## 10. Files changed
+
+modified: .gitignore   (1 line: .autorag-e2e/ → .autorag-e2e)
+modified: Makefile     (24 insertions, 3 deletions)
+
+## 11. git commit
+
+chore(live-e2e): add warm and cold make entrypoints

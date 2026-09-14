@@ -465,7 +465,7 @@ installations in `PATH` (or set `JAVA_HOME` to the Java 11+ installation and
 start a new shell). Java 8 is not supported by the PDF parser.
 
 Git-based installs build `dist/` via the `prepare` script and require Bun on the installing machine.
-External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** downloads a verified GitHub release asset (on by default; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) and Discord (`discrawl`) stay manual, optional installs. All of them degrade gracefully when missing — core BM25 search works without any of them.
+External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** installs from crates.io via `cargo install minsync` first (on by default; verified GitHub release assets are the fallback when cargo is unavailable; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) and Discord (`discrawl`) stay manual, optional installs. All of them degrade gracefully when missing — core BM25 search works without any of them.
 
 ### Experimental TUI (beta)
 
@@ -543,4 +543,4 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
 
 ## License
 
-MIT
+MIT for AutoRAG 2.0 (`LICENSE`). The legacy Python package in `legacy/` is Apache-2.0 (`legacy/LICENSE`). Production third-party licenses are listed in `NOTICE`. Supply-chain gates are documented in `docs/supply-chain.md`.

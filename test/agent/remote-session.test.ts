@@ -34,7 +34,6 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 			expect(names, name).toContain(name);
 		}
 		for (const name of [
-			"lexical_search_local_docs",
 			"semantic_search_local_docs",
 			"search_all_documents",
 			"search_datasource_documents",

@@ -1,5 +1,5 @@
 import { AutoRAGAgent } from "../../agent/agent.ts";
-import { buildAgentOptions, resolveConfig } from "../config.ts";
+import { buildAgentOptions, ConfigError, resolveConfig } from "../config.ts";
 import { renderError, renderRefresh } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -10,10 +10,12 @@ function parsePositiveInt(value: string | boolean | undefined, fallback: number)
 }
 
 /**
- * `autorag watch` — keep parsed/BM25/MinSync indexes current.
+ * `autorag watch` — keep parsed/MinSync indexes current.
  *
  * - default: long-running recursive fs watch with debounced refresh
  * - `--once`: single refresh tick (for cron / launchd / Task Scheduler)
+ *
+ * Exit codes: 0 on success, 2 on config error, 1 on runtime error.
  */
 export async function runWatch(ctx: CommandContext): Promise<number> {
 	try {
@@ -74,6 +76,6 @@ export async function runWatch(ctx: CommandContext): Promise<number> {
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
-		return 1;
+		return error instanceof ConfigError ? 2 : 1;
 	}
 }

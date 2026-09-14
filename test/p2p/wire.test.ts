@@ -1,12 +1,7 @@
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-	PeerQueryRequestSchema,
-	PeerQueryResponseSchema,
-	resetWireMapping,
-	wireSourceId,
-} from "../../src/p2p/wire.js";
+import { PeerQueryRequestSchema, PeerQueryResponseSchema, resetWireMapping, wireSourceId } from "../../src/p2p/wire.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

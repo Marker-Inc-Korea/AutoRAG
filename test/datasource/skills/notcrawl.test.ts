@@ -89,7 +89,7 @@ describe("NotcrawlClient", () => {
 		});
 
 		expect(calls()[0]?.args).toEqual(["--config", join(root, "notcrawl.yaml"), "sync"]);
-		expect(calls()[1]?.args).toEqual(["search", "onboarding", "--limit", "5", "--json"]);
+		expect(calls()[1]?.args).toEqual(["search", "onboarding", "--limit", "5"]);
 		expect(calls().every((call) => call.openai === null)).toBe(true);
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
@@ -106,6 +106,35 @@ describe("NotcrawlClient", () => {
 		const args = calls()[0]?.args ?? [];
 		expect(args).not.toContain("--db");
 		expect(args.join(" ")).not.toContain(".autorag/datasources/notcrawl");
+	});
+
+	it("parses notcrawl 0.6 tab-separated search output without --json", async () => {
+		writeFakeNotcrawl();
+		const client = new NotcrawlClient({
+			binaryPath,
+			env: {
+				NOTCRAWL_FAKE_OUTPUT:
+					"page\tpage-1\tOnboarding\tNew hires meet their buddy on day one\ndatabase\tdb-2\tTeam wiki\tRollup of all team docs\n",
+			},
+		});
+		const search = await client.search("onboarding", { topK: 5 });
+		expect(search).toMatchObject({
+			ok: true,
+			hits: [
+				{ id: "page-1", content: "New hires meet their buddy on day one", title: "Onboarding" },
+				{ id: "db-2", content: "Rollup of all team docs", title: "Team wiki" },
+			],
+		});
+		expect(calls()[0]?.args).toEqual(["search", "onboarding", "--limit", "5"]);
+	});
+
+	it("parses the notcrawl 0.6 sync text summary count", async () => {
+		writeFakeNotcrawl();
+		const client = new NotcrawlClient({
+			binaryPath,
+			env: { NOTCRAWL_FAKE_OUTPUT: "desktop: pages=3 blocks=40 teams=1 collections=2 comments=0 snapshot=\n" },
+		});
+		expect(await client.sync()).toMatchObject({ ok: true, count: 3 });
 	});
 
 	it("maps a missing binary and malformed output without throwing", async () => {

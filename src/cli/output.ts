@@ -41,13 +41,6 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
-	if (result.bm25) {
-		envelope.bm25 = {
-			indexedChunks: result.bm25.indexedChunks,
-			readiness: result.bm25.readiness,
-			engine: result.bm25.engine,
-		};
-	}
 	if (result.datasources && result.datasources.length > 0) {
 		envelope.datasources = result.datasources.map((ds) => ({
 			ok: ds.ok,
@@ -71,11 +64,6 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	lines.push(
 		`  counts: scanned=${result.scanned} written=${result.written} deleted=${result.deleted} skipped=${result.skipped}`,
 	);
-	if (result.bm25) {
-		lines.push(
-			`  bm25: indexedChunks=${result.bm25.indexedChunks} readiness=${result.bm25.readiness} engine=${result.bm25.engine}`,
-		);
-	}
 	if (result.datasources && result.datasources.length > 0) {
 		for (const ds of result.datasources) {
 			lines.push(
@@ -112,7 +100,6 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 	}
 	const comps = status.components;
 	const compParts: string[] = [];
-	if (comps.bm25) compParts.push(`bm25=${comps.bm25}`);
 	if (comps.minsync) compParts.push(`minsync=${comps.minsync}`);
 	if (comps.jikji) compParts.push(`jikji=${comps.jikji}`);
 	if (comps.datasources) compParts.push(`datasources=${comps.datasources}`);
@@ -203,6 +190,18 @@ export function renderSearch(resp: SearchDocumentsResponse, opts: RenderOptions)
 	return renderSearchHuman(resp, opts.debug ?? false);
 }
 
+/**
+ * Render the two-phase search's immediate first answer. Kept distinct from
+ * the final response so callers can show "fast answer → verified answer"
+ * progression; the JSON shape wraps the normal search envelope.
+ */
+export function renderPreliminary(resp: SearchDocumentsResponse, opts: RenderOptions): string {
+	if (opts.json) {
+		return JSON.stringify({ type: "preliminary", response: searchEnvelope(resp, opts.debug ?? false) }, null, 2);
+	}
+	return `fast answer (still verifying):\n${renderSearchHuman(resp, opts.debug ?? false)}`;
+}
+
 function renderMemoryHuman(schema: MemorySchemaV4, debug: boolean): string {
 	const lines: string[] = [];
 	lines.push("memory:");
@@ -233,7 +232,7 @@ export function renderMemory(schema: MemorySchemaV4, opts: RenderOptions): strin
 export function renderFeedback(result: { applied: boolean; sessionId: string }, opts: RenderOptions): string {
 	const envelope = { ok: true, applied: result.applied, sessionId: result.sessionId };
 	if (opts.json) {
-		return JSON.stringify(envelope, null, 2);
+		return JSON.stringify(envelope);
 	}
 	const lines: string[] = [];
 	lines.push(`feedback: ${result.applied ? "applied" : "not applied"}`);

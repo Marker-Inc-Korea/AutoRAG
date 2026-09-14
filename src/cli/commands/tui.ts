@@ -8,8 +8,8 @@ import {
 	type TUI,
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
-import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
-import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
+import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
+import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../../config/home.ts";
 import {
 	buildAgentOptions,
@@ -18,7 +18,7 @@ import {
 	resolveAgentModel,
 	resolveConfig,
 } from "../config.ts";
-import { renderError, renderSearch } from "../output.ts";
+import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import { createTuiSlashCommands, parseSlashCommand, renderSlashHelp } from "../tui-commands.ts";
 import {
 	createFileTuiSessionStore,
@@ -54,10 +54,17 @@ export interface TuiPresenter {
 	reset(): void;
 }
 
-type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+type TuiAgent = Pick<AutoRAGAgent, "searchDocumentsStream"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+
+type SearchStreamHandlers = {
+	readonly onProgress: (text: string) => void;
+	readonly onPreliminary?: (response: SearchDocumentsResponse) => void;
+	readonly onComplete: (response: SearchDocumentsResponse) => void;
+	readonly isInterrupted?: () => boolean;
+};
 
 export interface TuiDeps {
-	agentFactory?: (opts?: AutoRAGAgentOptions) => TuiAgent;
+	agentFactory?: (opts?: Partial<AutoRAGAgentOptions>) => TuiAgent;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 	tuiFactory?: (ctx: CommandContext) => TuiDriver;
 	sessionStore?: TuiSessionStore;
@@ -194,12 +201,36 @@ function dimGray(text: string): string {
 	return `${ANSI_DIM_GRAY}${text}${ANSI_RESET}`;
 }
 
+function renderProgressEvent(event: SearchDocumentsStreamEvent): string | undefined {
+	return event.type === "progress" && event.text.trim() !== "" ? event.text : undefined;
+}
+
+async function consumeSearchStream(agent: TuiAgent, query: string, handlers: SearchStreamHandlers): Promise<void> {
+	for await (const event of agent.searchDocumentsStream(query)) {
+		if (handlers.isInterrupted?.()) return;
+		switch (event.type) {
+			case "progress": {
+				const progress = renderProgressEvent(event);
+				if (progress !== undefined) handlers.onProgress(progress);
+				break;
+			}
+			case "preliminary":
+				handlers.onPreliminary?.(event.response);
+				break;
+			case "complete":
+				handlers.onComplete(event.response);
+				break;
+		}
+	}
+}
+
 function stripAnsi(text: string): string {
 	return text.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
 function createAgent(ctx: CommandContext, deps: TuiDeps) {
-	if (deps.agentFactory) return deps.agentFactory();
+	const thinking = parseThinkingFlags(ctx.flags);
+	if (deps.agentFactory) return deps.agentFactory(thinking === undefined ? undefined : { thinking });
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	const resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
 	const options: AutoRAGAgentOptions = {
@@ -207,8 +238,29 @@ function createAgent(ctx: CommandContext, deps: TuiDeps) {
 		model: resolvedModel.model,
 		...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 		...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
+		...(thinking !== undefined ? { thinking } : {}),
 	};
 	return new AutoRAGAgent(options);
+}
+
+const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
+	if (flags["single-phase"] === true) return false;
+	const parse = (value: string | boolean | undefined): AutoRAGThinkingLevel | undefined =>
+		typeof value === "string" && THINKING_LEVELS.includes(value as AutoRAGThinkingLevel)
+			? (value as AutoRAGThinkingLevel)
+			: undefined;
+	const fast = parse(flags["fast-thinking"]);
+	const final = parse(flags["final-thinking"]);
+	if (flags["fast-thinking"] !== undefined && fast === undefined) {
+		throw new Error(`Invalid fast thinking level. Use one of: ${THINKING_LEVELS.join(", ")}.`);
+	}
+	if (flags["final-thinking"] !== undefined && final === undefined) {
+		throw new Error(`Invalid final thinking level. Use one of: ${THINKING_LEVELS.join(", ")}.`);
+	}
+	if (fast === undefined && final === undefined) return undefined;
+	return { ...(fast !== undefined ? { fast } : {}), ...(final !== undefined ? { final } : {}) };
 }
 
 function createRealTui(): TUI {
@@ -353,21 +405,33 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			presenter.setWorking(true);
 			renderStatus();
 			finalAnswer = "";
-			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
+			transcriptHistory = `${transcriptHistory}\n\n> ${query}`;
 			renderTranscript();
 			tui.requestRender();
-			void agent
-				.searchDocuments(query)
-				.then((response) => {
-					const answer = renderSearch(response, {
+			void consumeSearchStream(agent, query, {
+				onProgress: (progress) => {
+					transcriptHistory = `${transcriptHistory}\n\n${progress}`;
+					renderTranscript();
+					tui.requestRender();
+				},
+				onPreliminary: (response) => {
+					transcriptHistory = `${transcriptHistory}\n\n${renderPreliminary(response, {
 						json: false,
 						debug: ctx.debug,
-					});
+					})}`;
+					renderTranscript();
+					tui.requestRender();
+				},
+				onComplete: (response) => {
+					const answer = renderSearch(response, { json: false, debug: ctx.debug });
 					completedResponse = response;
 					completedAnswer = answer;
 					finalAnswer = answer;
 					renderTranscript();
-				})
+					tui.requestRender();
+				},
+				isInterrupted: () => interrupted,
+			})
 				.catch((error) => {
 					if (interrupted) return;
 					transcriptHistory = `${transcriptHistory}\n\n${renderError(error, {
@@ -469,13 +533,21 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 			interrupted = false;
 			presenter.beginRun();
 			try {
-				const response: SearchDocumentsResponse = await agent.searchDocuments(query);
-				if (!interrupted) {
-					const answer = renderSearch(response, { json: false, debug: ctx.debug });
-					tui.rendered.push(answer);
-					completedResponse = response;
-					completedAnswer = answer;
-				}
+				await consumeSearchStream(agent, query, {
+					onProgress: (progress) => {
+						tui.rendered.push(progress);
+					},
+					onPreliminary: (response) => {
+						tui.rendered.push(renderPreliminary(response, { json: false, debug: ctx.debug }));
+					},
+					onComplete: (response) => {
+						const answer = renderSearch(response, { json: false, debug: ctx.debug });
+						tui.rendered.push(answer);
+						completedResponse = response;
+						completedAnswer = answer;
+					},
+					isInterrupted: () => interrupted,
+				});
 			} catch (error) {
 				if (!interrupted) {
 					tui.rendered.push(renderError(error, { json: false, debug: ctx.debug }));
