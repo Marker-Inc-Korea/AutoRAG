@@ -1,0 +1,58 @@
+AutoRAG
+Copyright (c) 2025 NomaDamas / Marker Inc.
+
+Root package license: MIT
+legacy/ package license: Apache-2.0
+
+Third-party production dependencies:
+
+@earendil-works/pi-agent-core@0.84.4
+License: MIT
+
+@earendil-works/pi-ai@0.84.4
+License: MIT
+
+@earendil-works/pi-coding-agent@0.84.4
+License: MIT
+
+@earendil-works/pi-tui@0.84.4
+License: MIT
+
+@opendataloader/pdf@2.5.7
+License: Apache-2.0
+
+@rhwp/core@0.8.4
+License: MIT
+
+chardet@2.2.0
+License: MIT
+
+fast-xml-parser@5.11.1
+License: MIT
+
+iconv-lite@0.7.3
+License: MIT
+
+jszip@3.10.1
+License: (MIT OR GPL-3.0-or-later)
+
+mailparser@3.9.20
+License: MIT
+
+slides-grab@1.5.1
+License: MIT
+
+smol-toml@1.8.0
+License: BSD-3-Clause
+
+tesseract.js@7.0.0
+License: Apache-2.0
+
+typebox@1.3.27
+License: MIT
+
+xlsx@0.18.5
+License: Apache-2.0
+
+yaml@2.9.0
+License: ISC

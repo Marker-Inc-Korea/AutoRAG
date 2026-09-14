@@ -4,60 +4,83 @@ name: Release
 # exactly (guard below). Legacy Python releases use legacy-v* tags (publish.yml)
 # and can never trigger this workflow.
 on:
-  push:
-    tags: ["v*"]
+    push:
+        tags: ["v*"]
 
 permissions:
-  contents: write
-  id-token: write # npm provenance
+    contents: write
+    id-token: write # npm provenance + SBOM attestation
+    actions: read
+    attestations: write
+    security-events: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    supply-chain:
+        uses: ./.github/workflows/supply-chain.yml
+        permissions:
+            actions: read
+            attestations: write
+            contents: write
+            id-token: write
+            pull-requests: write
+            security-events: write
 
-      - name: Verify tag matches package.json version
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$GITHUB_REF_NAME" != "v$PKG_VERSION" ]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' does not match package.json version 'v$PKG_VERSION'."
-            echo "::error::AutoRAG 2.0 npm releases require the tag to equal v<package.json version>."
-            echo "::error::If you meant to release the legacy Python AutoRAG, use a 'legacy-v*' tag instead (see .github/workflows/publish.yml)."
-            exit 1
-          fi
+    publish:
+        needs: [supply-chain]
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
 
-      # pi-coding-agent's grep tool needs ripgrep; preinstall it so tests
-      # don't depend on its on-demand binary download.
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+            - name: Verify tag matches package.json version
+              run: |
+                  PKG_VERSION=$(node -p "require('./package.json').version")
+                  if [ "$GITHUB_REF_NAME" != "v$PKG_VERSION" ]; then
+                    echo "::error::Tag '$GITHUB_REF_NAME' does not match package.json version 'v$PKG_VERSION'."
+                    echo "::error::AutoRAG 2.0 npm releases require the tag to equal v<package.json version>."
+                    echo "::error::If you meant to release the legacy Python AutoRAG, use a 'legacy-v*' tag instead (see .github/workflows/publish.yml)."
+                    exit 1
+                  fi
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+            # pi-coding-agent's grep tool needs ripgrep; preinstall it so tests
+            # don't depend on its on-demand binary download.
+            - name: Install ripgrep
+              run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
 
-      - name: Test
-        run: node_modules/.bin/vitest run
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+            - name: Test
+              run: node_modules/.bin/vitest run
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            - name: Build
+              run: bun run build
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "AutoRAG ${{ github.ref_name }}"
-          generate_release_notes: true
-          make_latest: "true"
+            - name: Publish to npm
+              run: npm publish --provenance --access public
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+            - name: Download SBOM artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  pattern: autorag-*
+                  path: sboms
+                  merge-multiple: true
+
+            - name: Create GitHub release
+              uses: softprops/action-gh-release@v2
+              with:
+                  name: "AutoRAG ${{ github.ref_name }}"
+                  generate_release_notes: true
+                  make_latest: "true"
+                  files: |
+                      sboms/*
