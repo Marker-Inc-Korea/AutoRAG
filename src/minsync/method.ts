@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
+import { ensureRuntime } from "../embedding-runtime/index.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -8,10 +9,10 @@ import type {
 	RetrievalResult,
 } from "../retrieval/types.ts";
 import type { MinSyncQueryMode } from "./client.ts";
-import { MinSyncClient } from "./client.ts";
+import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
-import type { MinSyncEmbedderConfig, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 
 export interface MinSyncVectorMethodOptions {
@@ -24,6 +25,7 @@ export interface MinSyncVectorMethodOptions {
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
 	readonly mode?: MinSyncQueryMode;
+	readonly runtime?: MinSyncRuntime;
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
@@ -60,6 +62,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
 	private readonly mode: MinSyncQueryMode;
+	private readonly runtime: MinSyncRuntime | undefined;
 	private installFailed = false;
 
 	constructor(options: MinSyncVectorMethodOptions) {
@@ -71,6 +74,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
 		this.mode = options.mode ?? "vector";
+		this.runtime =
+			options.runtime ??
+			(options.binaryPath === undefined && options.autoInstall !== false ? { ensureRuntime } : undefined);
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -105,6 +111,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				workspacePath: this.workspacePath,
 				embedder: this.embedder,
 				maxChunkSize: this.maxChunkSize,
+				runtime: this.runtime,
 			});
 			return client.sync(force);
 		}
@@ -142,8 +149,15 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
+			runtime: this.runtime,
 		});
-		const hits = await client.query(query, queryK, this.mode);
+		let hits: readonly MinSyncQueryHit[];
+		try {
+			hits = await client.query(query, queryK, this.mode);
+		} catch (error) {
+			if (this.mode !== "hybrid") throw error;
+			hits = await client.query(query, queryK, "bm25");
+		}
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);

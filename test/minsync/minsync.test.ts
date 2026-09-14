@@ -959,6 +959,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			const method = new MinSyncVectorMethod({
 				root,
 				workspacePath: minsyncWorkspace,
+				embedder: { id: "openai" },
 				installer: {
 					platform: "darwin",
 					arch: "arm64",
@@ -1217,11 +1218,11 @@ if (args[0] === "sync") process.exit(1);
 
 		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
 		expect(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")).toBe(originalConfig);
-		expect(existsSync(join(minsyncConfigDir, "cursor.json"))).toBe(false);
+		expect(existsSync(join(minsyncConfigDir, "cursor.json"))).toBe(true);
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[]; cursorExists?: boolean })
 			.find((call) => call.args[0] === "sync");
-		expect(syncCall?.cursorExists).toBe(false);
+		expect(syncCall?.cursorExists).toBe(true);
 	});
 
 	it("uses the MinSync chunk size for lexical indexing", async () => {
@@ -1265,6 +1266,77 @@ if (args[0] === "sync") process.exit(1);
 		} finally {
 			process.env.PATH = savedPath;
 		}
+	});
+});
+
+describe("AutoRAG embedding runtime integration", () => {
+	const runtime = {
+		ensureRuntime: async () => ({
+			baseUrl: "http://127.0.0.1:43123",
+			profile: {
+				profileId: "qwen3-embedding-0.6b" as const,
+				provider: "qwen",
+				model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+				dimension: 1024,
+				queryPrefix: "",
+				passagePrefix: "",
+				runtimeBuild: "b10951",
+				modelRevision: "rev",
+				artifactSha256: "hash",
+				backend: "auto" as const,
+				protocolCapabilities: { healthz: true, embed: true, openaiCompatible: true, ollamaCompatible: true },
+			},
+			identity: {
+				profileId: "qwen3-embedding-0.6b" as const,
+				provider: "qwen",
+				model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+				dimension: 1024,
+				runtimeBuild: "b10951",
+				modelRevision: "rev",
+				artifactSha256: "hash",
+			},
+			supervisor: { state: "ready" as const, backend: "auto" as const, model: "model", port: 43123 },
+		}),
+	};
+
+	it("writes the deterministic gateway config and embedding identity", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			runtime,
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder).toMatchObject({
+			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+			base_url: "http://127.0.0.1:43123",
+		});
+		expect(config.vectorstore?.options).toMatchObject({ dimension: 1024 });
+		const identity = JSON.parse(
+			readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"),
+		);
+		expect(identity).toMatchObject({ provider: "qwen", dimension: 1024, runtimeBuild: "b10951" });
+	});
+
+	it("forces full reindex for stale identity without deleting the prior cursor", async () => {
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(minSyncConfigPath(minsyncWorkspace), "[vectorstore.options]\ndimension = 1024\n");
+		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), "{}");
+		writeFileSync(
+			join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"),
+			JSON.stringify({ provider: "old" }),
+		);
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace, runtime }).sync();
+		const syncCall = loggedCalls()
+			.map((line) => JSON.parse(line))
+			.find((call) => call.args[0] === "sync");
+		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
 	});
 });
 
