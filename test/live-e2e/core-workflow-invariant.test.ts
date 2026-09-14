@@ -86,6 +86,12 @@ describe("live-e2e core workflow invariants", () => {
 		expect(options.workspacePath).toBe(workspace);
 		expect(options.searchPaths).toEqual([join(root, "corpus")]);
 		expect(options.workspacePath).not.toBe(root);
+		expect(options.minSync).toMatchObject({
+			embedder: {
+				id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+				dimension: 1024,
+			},
+		});
 	});
 
 	it("keeps mutable parsed state out of the shared corpus root", () => {

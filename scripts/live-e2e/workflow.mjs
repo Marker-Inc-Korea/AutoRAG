@@ -15,7 +15,7 @@ export function isFingerprintCurrent(previous, current) {
 export function assertServiceReady(result) { if (result.verdict === "refused") throw new Error(result.code ?? "live-e2e-service-refused"); }
 export function buildLiveStackOptions(root, workspace) {
 	return { searchPaths: [join(resolve(root), "corpus")], workspacePath: resolve(workspace), memoryPath: join(resolve(workspace), "memory.json"), jikji: false,
-		minSync: { workspacePath: resolve(workspace), autoInstall: false, embedder: { id: "autorag-gateway:qwen3-embedding-0.6b", baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT, dimension: 1024, queryPrefix: "", passagePrefix: "", timeoutMs: 120_000 } } };
+		minSync: { workspacePath: resolve(workspace), autoInstall: false, embedder: { id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf", baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT, dimension: 1024, queryPrefix: "", passagePrefix: "", timeoutMs: 120_000 } } };
 }
 export function assertAbsoluteReadableSource(source) { if (!isAbsolute(source)) throw new Error("source-not-absolute"); accessSync(source, constants.R_OK); return realpathSync(source); }
 export function tryAcquireWorkflowLock(root = E2E_DIR) { const lock = join(root, "locks", "workflow.lock"); mkdirSync(join(root, "locks"), { recursive: true }); try { mkdirSync(lock); writeFileSync(join(lock, "pid"), String(process.pid)); return { ok: true, release: () => rmSync(lock, { recursive: true, force: true }) }; } catch { return { ok: false, code: "live-e2e-lock-held" }; } }
