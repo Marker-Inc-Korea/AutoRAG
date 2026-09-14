@@ -26,7 +26,11 @@ export interface CacheOptions {
 	readonly cacheRoot?: string;
 	readonly offline?: boolean;
 	readonly fetch?: typeof globalThis.fetch;
+	/** Total budget (ms) for a single asset download. Defaults to 10 minutes so large models can transfer. */
+	readonly downloadTimeoutMs?: number;
 }
+
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 export async function verifyCacheEntry(path: string, expectedSha256: string): Promise<string> {
 	validateHash(expectedSha256);
@@ -54,7 +58,9 @@ export async function downloadAsset(asset: CacheAsset, options: CacheOptions = {
 		throw new CacheError("offline-missing", `Asset ${asset.id} is missing or corrupt in offline mode.`);
 	const part = `${destination}.part`;
 	try {
-		const response = await (options.fetch ?? fetch)(asset.url, { signal: AbortSignal.timeout(1_000) });
+		const response = await (options.fetch ?? fetch)(asset.url, {
+			signal: AbortSignal.timeout(options.downloadTimeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS),
+		});
 		if (!response.ok || !response.body)
 			throw new CacheError("download", `Download failed for ${asset.url}: HTTP ${response.status}.`);
 		const writer = createWriteStream(part);

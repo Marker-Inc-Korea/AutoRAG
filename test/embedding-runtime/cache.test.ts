@@ -31,6 +31,28 @@ describe("embedding runtime cache", () => {
 		expect(await readFile(result)).toEqual(bytes);
 	});
 
+	it("GREEN — slow download (3s, within 10s budget) succeeds with configurable timeout", async () => {
+		const cacheRoot = await root();
+		const fetch: typeof globalThis.fetch = (_url, init) =>
+			new Promise((resolve, reject) => {
+				const signal = (init as RequestInit | undefined)?.signal;
+				const timer = setTimeout(async () => {
+					resolve(new Response(bytes));
+				}, 3_000);
+				signal?.addEventListener("abort", () => {
+					clearTimeout(timer);
+					reject(signal.reason);
+				});
+			});
+		const result = await downloadAsset(asset, {
+			cacheRoot,
+			fetch,
+			downloadTimeoutMs: 10_000, // 10s budget covers the 3s server delay
+		});
+		expect(result).toBe(join(cacheRoot, "models", asset.filename));
+		expect(await readFile(result)).toEqual(bytes);
+	});
+
 	it("rejects offline missing assets without attempting network", async () => {
 		const cacheRoot = await root();
 		let called = false;
