@@ -62,10 +62,10 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- Ollama running locally with `embeddinggemma:latest`, and the repository TEI
-  adapter running on `127.0.0.1:18080`:
-  `ollama pull embeddinggemma:latest`, `ollama serve`, and
-  `python3 scripts/manual-qa/ollama-tei-adapter.py`.
+- The gateway profile pinned in the clone-local `.autorag-e2e` home. The
+  workflow self-ensures this via `autorag models prefetch --profile qwen3-embedding-0.6b`
+  before starting the gateway; no manual Ollama serve, TEI adapter, or model
+  pull is required.
 - `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings are local
   only; do not configure a remote embedding endpoint or send corpus text off
   the machine.
@@ -111,39 +111,22 @@ slash-prefixed fake filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
-only. Remove temporary adapter processes separately, and leave katok,
-discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores untouched.
+only. Leave katok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight
+native stores untouched.
 Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
 
 ## Required MinSync Live QA
 
-When validating local-file retrieval changes, run a real `minsync sync --full`
-and a semantic query with a local EmbeddingGemma model. Do not use OpenAI
-credentials or send corpus text to a remote embedding service.
+When validating local-file retrieval changes, run a real semantic query
+through the product default gateway path. Do not use OpenAI credentials or
+send corpus text to a remote embedding service.
 
-The MinSync release binary currently exposes a TEI-compatible embedder adapter
-(`tei:<model>`) while Ollama exposes `/api/embeddings` and
-`/v1/embeddings`. Start Ollama and make the local-only adapter available before
-the experiment:
+The default product path uses the AutoRAG-owned `autorag-gateway` with the
+`qwen3-embedding-0.6b` profile (1024 dimensions, no query/passage prefixes).
+The gateway is started on demand by the semantic MinSync path and stays
+loopback-only.
 
-```bash
-ollama pull embeddinggemma:latest
-ollama serve
-```
-
-Start the repository adapter, which translates MinSync's `POST /embed` request
-to Ollama's `POST /api/embeddings` request and returns the TEI response shape
-(a bare JSON array of embedding arrays):
-
-```json
-[[0.1, 0.2, "..."]]
-```
-
-```bash
-python3 scripts/manual-qa/ollama-tei-adapter.py
-```
-
-Run the isolated experiment with an EmbeddingGemma dimension of 768:
+Run the isolated experiment:
 
 ```bash
 WORKSPACE="$(mktemp -d)"
@@ -154,34 +137,63 @@ printf '%s\n' \
   > "$WORKSPACE/docs/refund-policy.txt"
 
 cd "$WORKSPACE"
-minsync init --force --format json --embedder tei:embeddinggemma:latest
-python3 - <<'PY'
-from pathlib import Path
+# Pin the model to the local cache (no Ollama, no adapter)
+AUTORAG_HOME="$WORKSPACE/.autorag-home" \
+  autorag models prefetch --profile qwen3-embedding-0.6b
 
-config = Path(".minsync/config.toml")
-text = config.read_text()
-text = text.replace(
-    "[embedder]\n",
-    '[embedder]\nbase_url = "http://127.0.0.1:18080"\n',
-)
-text = text.replace("dimension = 1536", "dimension = 768")
-config.write_text(text)
-PY
-minsync sync --full --format json
-minsync query --format json -k 5 'semantic question about refund approval'
-minsync status --format json
+# Init with the default gateway profile
+autorag init \
+  --search-paths "$WORKSPACE/docs" \
+  --force
+
+autorag refresh --method parsed,minsync --json
+autorag search --json "semantic question about refund approval"
 ```
 
 The QA gate is not complete until all of the following are observed:
 
-1. `sync --full` exits successfully and creates `.minsync/cursor.json`.
+1. `autorag refresh --method minsync` exits successfully and
+   `.minsync/cursor.json` exists under the workspace.
 2. The semantic query returns a hit for the fixture document.
 3. AutoRAG maps that hit to an OS-absolute original `source` path.
 4. `fs.existsSync(source)` and reading `source` succeed.
 5. `OPENAI_API_KEY` is unset and no request leaves the local machine.
 
-If Ollama, `embeddinggemma:latest`, or the local adapter is unavailable, report
-the exact blocking command and do not claim live MinSync verification.
+If the model prefetch fails, the gateway is unavailable, or MinSync reports a
+semantic failure, report the exact blocking diagnostic and do not claim live
+MinSync verification.
+
+### Legacy/manual variant (Ollama + TEI adapter)
+
+For an existing workspace pinned to Ollama's EmbeddingGemma (768 dimensions),
+keep the adapter available as a manually-started sidecar:
+
+```bash
+ollama pull embeddinggemma:latest
+ollama serve
+OLLAMA_EMBEDDINGS_URL=http://127.0.0.1:11434/api/embeddings \
+  python3 scripts/manual-qa/ollama-tei-adapter.py
+```
+
+Then initialize the workspace explicitly with the TEI endpoint:
+
+```bash
+cd "$WORKSPACE"
+autorag init \
+  --search-paths "$WORKSPACE/docs" \
+  --embedder-id tei:embeddinggemma:latest \
+  --embedder-base-url http://127.0.0.1:18080 \
+  --embedder-dimension 768 \
+  --minsync-max-chunk-size 1000 \
+  --force
+autorag refresh --method parsed,minsync --json
+autorag search --json "semantic question about refund approval"
+```
+
+The adapter translates MinSync's `POST /embed` request to Ollama's
+`POST /api/embeddings` request and returns the TEI response shape (a bare JSON
+array of embedding arrays). Do not use this variant as a fresh-install
+requirement or as an implicit fallback from the gateway.
 
 Docker can reproduce the Linux job on macOS, Linux, or Windows hosts. The
 `test-linux` target uses an isolated container volume for `node_modules`, so it
