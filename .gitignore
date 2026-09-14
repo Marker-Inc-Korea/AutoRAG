@@ -18,6 +18,7 @@ evidence/
 /sbom.local.cdx.json
 /autorag.cdx.json
 /autorag.spdx.json
+/release-assets/
 
 # Shared / legacy Python artifacts
 .env

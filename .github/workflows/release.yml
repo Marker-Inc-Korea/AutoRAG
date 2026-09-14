@@ -64,17 +64,20 @@ jobs:
             - name: Build
               run: bun run build
 
-            - name: Publish to npm
-              run: npm publish --provenance --access public
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
             - name: Download SBOM artifacts
               uses: actions/download-artifact@v4
               with:
                   pattern: autorag-*
                   path: sboms
                   merge-multiple: true
+
+            - name: Stage GitHub Release assets
+              run: bun scripts/supply-chain/stage-release-assets.ts --out release-assets --sbom-dir sboms
+
+            - name: Publish to npm
+              run: npm publish --provenance --access public
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
             - name: Create GitHub release
               uses: softprops/action-gh-release@v2
@@ -83,4 +86,4 @@ jobs:
                   generate_release_notes: true
                   make_latest: "true"
                   files: |
-                      sboms/*
+                      release-assets/*

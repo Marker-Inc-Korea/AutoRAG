@@ -14,3 +14,14 @@ Production dependencies must stay on the permissive SPDX allowlist in `.github/d
 | Release | `.github/workflows/release.yml` `needs: [supply-chain]` | npm publish cannot run if the reusable supply-chain workflow failed |
 
 Regenerate attribution with `bun scripts/supply-chain/evaluate.ts notice`. Local CycloneDX: `bun scripts/supply-chain/evaluate.ts sbom --sbom sbom.local.cdx.json`.
+
+## GitHub Release assets
+
+GitHub already attaches source zip/tar from the tag. Each `v*` release additionally uploads:
+
+- the `npm pack` tarball (the built package, including `dist/` and `skills/`)
+- `LICENSE`, `NOTICE`, and `GOVERNANCE.md`
+- CycloneDX/SPDX SBOMs from the supply-chain job
+- `SHA256SUMS.txt` covering those files
+
+Stage locally after a build: `bun scripts/supply-chain/stage-release-assets.ts --out release-assets`. Do not attach `node_modules` or a second full-tree zip.
