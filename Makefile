@@ -8,7 +8,7 @@ SHELL := /bin/bash
 # root implicitly — run the explicit bootstrap command first.
 E2E_ROOT ?= $(if $(AUTORAG_LIVE_E2E_ROOT),$(AUTORAG_LIVE_E2E_ROOT),$(CURDIR))
 
-.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci e2e-live e2e-live-cold
+.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain e2e-live e2e-live-cold
 
 help:
 	@printf '%s\n' \
@@ -25,6 +25,7 @@ help:
 		'make e2e-live      Run warm live-E2E (reuse clone-local state)' \
 		'make e2e-live-cold Run cold live-E2E (delete state, rebuild)' \
 		'make ci            Run lint, typecheck, tests, and build locally' \
+		'make supply-chain  Run license, NOTICE, and local CycloneDX gates' \
 		'' \
 		'  E2E_ROOT=<root>  Shared corpus root (default: current repo path;' \
 		'                   honors AUTORAG_LIVE_E2E_ROOT if set)' \
@@ -72,3 +73,6 @@ test-linux:
 	docker run --rm --platform linux/amd64 -v "$$(pwd):/workspace" -v /workspace/node_modules -w /workspace autorag-ci-linux-amd64
 
 ci: lint typecheck test build
+
+supply-chain:
+	bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json

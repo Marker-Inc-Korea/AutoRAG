@@ -543,4 +543,4 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
 
 ## License
 
-MIT
+MIT for AutoRAG 2.0 (`LICENSE`). The legacy Python package in `legacy/` is Apache-2.0 (`legacy/LICENSE`). Production third-party licenses are listed in `NOTICE`. Supply-chain gates are documented in `docs/supply-chain.md`.

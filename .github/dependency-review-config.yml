@@ -1,0 +1,37 @@
+fail-on-severity: high
+fail-on-scopes:
+    - runtime
+    - development
+license-check: true
+vulnerability-check: true
+comment-summary-in-pr: on-failure
+allow-licenses:
+    - 0BSD
+    - Apache-1.1
+    - Apache-2.0
+    - Artistic-2.0
+    - BlueOak-1.0.0
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - BSD-3-Clause-Clear
+    - BSL-1.0
+    - CC-BY-3.0
+    - CC-BY-4.0
+    - CC0-1.0
+    - HPND
+    - ISC
+    - MIT
+    - MIT-0
+    - MPL-2.0
+    - MS-PL
+    - NCSA
+    - OpenSSL
+    - PostgreSQL
+    - PSF-2.0
+    - Python-2.0
+    - Unicode-3.0
+    - Unicode-DFS-2016
+    - Unlicense
+    - WTFPL
+    - X11
+    - Zlib

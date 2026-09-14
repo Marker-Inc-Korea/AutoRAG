@@ -26,7 +26,8 @@
   "files": [
     "dist",
     "skills",
-    "README.md"
+    "README.md",
+    "NOTICE"
   ],
   "publishConfig": {
     "access": "public"
@@ -39,7 +40,8 @@
     "test:windows": "node scripts/run-test-files.mjs",
     "check": "biome check --write .",
     "lint": "biome check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "supply-chain": "bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json"
   },
   "engines": {
     "node": ">=24.0.0"
