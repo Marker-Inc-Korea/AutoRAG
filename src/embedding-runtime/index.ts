@@ -3,6 +3,7 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import {
 	type CacheOptions,
 	downloadAsset as downloadCacheAsset,
+	hasVerifiedAsset as hasVerifiedCacheAsset,
 	importAsset as importCacheAsset,
 	verifyCacheEntry as verifyCache,
 } from "./cache.ts";
@@ -36,6 +37,17 @@ export interface EmbeddingRuntimeCache {
 		options?: CacheOptions,
 	): Promise<string>;
 	verifyCacheEntry(path: string, expectedSha256: string): Promise<string>;
+	hasVerifiedAsset?(
+		asset: {
+			id: string;
+			url: string;
+			filename: string;
+			sha256: string;
+			kind?: "model" | "runtime";
+			archiveMembers?: readonly string[];
+		},
+		cacheRoot?: string,
+	): Promise<boolean>;
 }
 
 export interface EmbeddingRuntimeSupervisor {
@@ -62,6 +74,8 @@ export interface EmbeddingRuntimeOptions {
 
 export interface EnsureRuntimeOptions extends EmbeddingRuntimeOptions {
 	profileId?: ProfileId;
+	/** Refuse downloads; used by MinSync refresh/query paths. */
+	cachedOnly?: boolean;
 }
 
 export interface RuntimeIdentity {
@@ -121,6 +135,7 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		downloadAsset: downloadCacheAsset,
 		importAsset: importCacheAsset,
 		verifyCacheEntry: verifyCache,
+		hasVerifiedAsset: hasVerifiedCacheAsset,
 	};
 	let supervisor: EmbeddingRuntimeSupervisor = options.supervisor ?? new RuntimeSupervisor({ cacheRoot: root });
 	let gateway: EmbeddingRuntimeGateway | undefined;
@@ -144,6 +159,16 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		stoppedByService = false;
 		const selectedSupervisor = input.supervisor ?? options.supervisor;
 		if (selectedSupervisor) supervisor = selectedSupervisor;
+		if (input.cachedOnly) {
+			const model = modelAsset(profile);
+			const runtime = runtimeAsset(options.platform, input.backend ?? options.backend ?? profile.backend);
+			const hasVerified = cache.hasVerifiedAsset;
+			if (!hasVerified || !(await hasVerified(model, root)) || !(await hasVerified(runtime, root))) {
+				throw new Error(
+					"Embedding runtime assets are unavailable; run autorag models prefetch (or models import).",
+				);
+			}
+		}
 		const paths = await cacheRuntime(profile);
 		if (supervisor instanceof RuntimeSupervisor) {
 			// The default supervisor is constructed with the selected profile/cache paths
@@ -169,11 +194,14 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		activeProfile = profile;
 		return { baseUrl: gateway.url, profile, identity: identity(profile), supervisor: status };
 	}
-	async function stopRuntime(): Promise<void> {
+	async function releaseRuntimeHandles(): Promise<void> {
 		if (gateway) {
 			await gateway.close();
 			gateway = undefined;
 		}
+	}
+	async function stopRuntime(): Promise<void> {
+		await releaseRuntimeHandles();
 		await supervisor.shutdown();
 		stoppedByService = true;
 		activeProfile = undefined;
@@ -218,15 +246,14 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 	return {
 		resolveRuntimeProfile: (profileId?: ProfileId) => profileOf(profileId),
 		ensureRuntime,
+		releaseRuntimeHandles,
 		stopRuntime,
 		runtimeStatus,
 		prefetchModel: async (profileId?: ProfileId) => {
 			const profile = profileOf(profileId);
-			const path = await cache.downloadAsset(modelAsset(profile), {
-				cacheRoot: root,
-				offline: options.offline,
-				fetch: options.fetch,
-			});
+			const cacheOptions = { cacheRoot: root, offline: options.offline, fetch: options.fetch };
+			const path = await cache.downloadAsset(modelAsset(profile), cacheOptions);
+			await cache.downloadAsset(runtimeAsset(options.platform, options.backend ?? profile.backend), cacheOptions);
 			return { profileId: profile.profileId, path };
 		},
 		importModel: async (profileId: ProfileId | undefined, sourcePath: string) => {
@@ -246,6 +273,7 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 const defaultRuntime = createEmbeddingRuntime();
 export const resolveRuntimeProfile = defaultRuntime.resolveRuntimeProfile;
 export const ensureRuntime = defaultRuntime.ensureRuntime;
+export const releaseRuntimeHandles = defaultRuntime.releaseRuntimeHandles;
 export const stopRuntime = defaultRuntime.stopRuntime;
 export const runtimeStatus = defaultRuntime.runtimeStatus;
 export const prefetchModel = defaultRuntime.prefetchModel;

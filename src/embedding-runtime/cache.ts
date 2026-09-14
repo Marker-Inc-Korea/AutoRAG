@@ -44,6 +44,13 @@ export async function verifyCacheEntry(path: string, expectedSha256: string): Pr
 	}
 }
 
+export async function hasVerifiedAsset(asset: CacheAsset, cacheRoot?: string): Promise<boolean> {
+	const destination = join(assetDirectory(asset, cacheRoot), basename(asset.filename));
+	if (!(await verifyIfPresent(destination, asset.sha256))) return false;
+	if (asset.kind !== "runtime") return true;
+	return asset.archiveMembers ? membersPresent(`${destination}.extracted`, asset.archiveMembers) : false;
+}
+
 export async function downloadAsset(asset: CacheAsset, options: CacheOptions = {}): Promise<string> {
 	validateHash(asset.sha256);
 	const directory = assetDirectory(asset, options.cacheRoot);

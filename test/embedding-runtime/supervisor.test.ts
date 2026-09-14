@@ -2,7 +2,11 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { EmbeddingRuntimeSupervisor, SupervisorError } from "../../src/embedding-runtime/supervisor.ts";
+import {
+	DEFAULT_READINESS_TIMEOUT_MS,
+	EmbeddingRuntimeSupervisor,
+	SupervisorError,
+} from "../../src/embedding-runtime/supervisor.ts";
 
 const node = process.execPath;
 const readyScript = `
@@ -36,6 +40,10 @@ function supervisor(cacheRoot: string, script = readyScript, overrides: Record<s
 }
 
 describe("embedding runtime supervisor", () => {
+	it("defaults to a cold-start readiness budget with margin", () => {
+		expect(DEFAULT_READINESS_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
+	});
+
 	it("starts a stub, acquires lock and pid, and becomes ready", async () => {
 		const cacheRoot = await root();
 		const runtime = supervisor(cacheRoot);
@@ -45,6 +53,16 @@ describe("embedding runtime supervisor", () => {
 		expect(status.port).toBeGreaterThan(0);
 		expect(await readFile(join(cacheRoot, "embedding-runtime.pid"), "utf8")).toContain(String(status.pid));
 		await runtime.shutdown();
+	});
+
+	it("adopts a live runtime from persisted pid and port state", async () => {
+		const cacheRoot = await root();
+		const first = supervisor(cacheRoot);
+		const started = await first.ensureRunning();
+		const second = supervisor(cacheRoot);
+		expect(await second.ensureRunning()).toMatchObject({ state: "ready", pid: started.pid, port: started.port });
+		await second.shutdown();
+		expect(() => process.kill(started.pid as number, 0)).toThrow();
 	});
 
 	it("reclaims stale pid state", async () => {

@@ -17,7 +17,10 @@ export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
 	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit profile config before using the new default runtime.";
 
 export interface MinSyncRuntime {
-	ensureRuntime(options?: { readonly profileId?: MinSyncEmbedderConfig["profile"] }): Promise<EnsuredRuntime>;
+	ensureRuntime(options?: {
+		readonly profileId?: MinSyncEmbedderConfig["profile"];
+		readonly cachedOnly?: boolean;
+	}): Promise<EnsuredRuntime>;
 }
 
 export interface MinSyncClientOptions {
@@ -69,6 +72,7 @@ export class MinSyncClient {
 		config: MinSyncEmbedderConfig;
 		identity?: MinSyncEmbeddingIdentity;
 		runtimeUnavailable?: boolean;
+		runtimeReason?: string;
 	}> {
 		const configured = this.embedder;
 		const useRuntime =
@@ -76,7 +80,7 @@ export class MinSyncClient {
 			(configured === undefined || (configured.profile !== undefined && configured.baseUrl === undefined));
 		if (!useRuntime) return { config: configured ?? {} };
 		try {
-			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile });
+			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile, cachedOnly: true });
 			if (!ensured) throw new Error("Embedding runtime did not return a runtime");
 			return {
 				config: {
@@ -96,8 +100,12 @@ export class MinSyncClient {
 					runtimeBuild: ensured.identity.runtimeBuild,
 				},
 			};
-		} catch {
-			return { config: {}, runtimeUnavailable: true };
+		} catch (error) {
+			return {
+				config: {},
+				runtimeUnavailable: true,
+				runtimeReason: error instanceof Error ? error.message : undefined,
+			};
 		}
 	}
 
@@ -127,18 +135,31 @@ export class MinSyncClient {
 			config: MinSyncEmbedderConfig;
 			identity?: MinSyncEmbeddingIdentity;
 			runtimeUnavailable?: boolean;
-		};
+			runtimeReason?: string;
+		} = { config: {} };
 		try {
 			effective = await this.effectiveEmbedder();
-			if (effective.runtimeUnavailable) throw new Error("local embedding gateway unavailable");
+			if (effective.runtimeUnavailable)
+				throw new Error(
+					effective.runtimeReason ??
+						"Semantic embedder is unavailable; run autorag models prefetch (or models import).",
+				);
 			await ensureLocalEmbedder({ baseUrl: effective.config.baseUrl, timeoutMs: effective.config.timeoutMs });
 		} catch (error) {
 			return {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason: error instanceof Error ? error.message : "local-embedder-unavailable",
-				diagnostic: { code: "embedder-unavailable", message: "Semantic embedder is unavailable.", retryable: true },
+				reason:
+					error instanceof Error
+						? error.message
+						: (effective.runtimeReason ??
+							"Semantic embedder is unavailable; run autorag models prefetch (or models import)."),
+				diagnostic: {
+					code: "embedder-unavailable",
+					message: "Semantic embedder is unavailable; run autorag models prefetch (or models import).",
+					retryable: true,
+				},
 			};
 		}
 		const embedder = effective.config;
@@ -268,7 +289,12 @@ export class MinSyncClient {
 		const configRewritten =
 			shouldRewriteConfig && rewriteEmbedderConfig(this.workspacePath, effective.config) === true;
 		try {
-			if (effective.runtimeUnavailable) throw new MinSyncQueryError(null, "Semantic embedding gateway unavailable");
+			if (effective.runtimeUnavailable)
+				throw new MinSyncQueryError(
+					null,
+					effective.runtimeReason ??
+						"Semantic embedder is unavailable; run autorag models prefetch (or models import).",
+				);
 			await ensureLocalEmbedder({ baseUrl: effective.config.baseUrl, timeoutMs: effective.config.timeoutMs });
 			const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
 			if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);

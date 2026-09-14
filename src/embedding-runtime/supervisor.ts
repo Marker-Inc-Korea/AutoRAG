@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn as defaultSpawn, type SpawnOptions } from "node:child_process";
+import { existsSync } from "node:fs";
 import { appendFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { platform } from "node:os";
@@ -47,7 +48,7 @@ export interface SupervisorOptions {
 	readonly platform?: NodeJS.Platform;
 }
 
-const DEFAULT_TIMEOUT = 15_000;
+export const DEFAULT_READINESS_TIMEOUT_MS = 60_000;
 const DEFAULT_INTERVAL = 100;
 const DEFAULT_LOG_BYTES = 256 * 1024;
 
@@ -65,6 +66,7 @@ export class EmbeddingRuntimeSupervisor {
 	private readonly osPlatform: NodeJS.Platform;
 	private readonly defaultExecutable: boolean;
 	private child?: ChildProcess;
+	private adoptedPid?: number;
 	private startedAt?: number;
 	private currentPort?: number;
 	private state: SupervisorState = "stopped";
@@ -86,7 +88,7 @@ export class EmbeddingRuntimeSupervisor {
 				? join(runtimeDir, "llama-server.exe")
 				: join(runtimeDir, "llama-b10951", "llama-server"));
 		this.modelPath = options.modelPath ?? join(cacheDirectory("models", this.root), basename(profile.model));
-		this.timeoutMs = options.readinessTimeoutMs ?? DEFAULT_TIMEOUT;
+		this.timeoutMs = options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS;
 		this.intervalMs = options.readinessIntervalMs ?? DEFAULT_INTERVAL;
 		this.logMaxBytes = options.logMaxBytes ?? DEFAULT_LOG_BYTES;
 		this.spawnProcess = options.spawn ?? ((command, args, spawnOptions) => defaultSpawn(command, args, spawnOptions));
@@ -103,8 +105,12 @@ export class EmbeddingRuntimeSupervisor {
 	}
 
 	async ensureRunning(): Promise<SupervisorStatus> {
-		if (this.state === "ready" && this.child && this.currentPort) return this.status();
+		if (this.state === "ready" && (this.child || this.adoptedPid) && this.currentPort) return this.status();
 		if (this.stopping) await this.stopping;
+		if (await this.adoptExistingRuntime()) {
+			this.state = "ready";
+			return this.status();
+		}
 		await this.acquireLock();
 		this.shutdownRequested = false;
 		this.restartCount = 0;
@@ -143,7 +149,7 @@ export class EmbeddingRuntimeSupervisor {
 	status(): SupervisorStatus {
 		return {
 			state: this.state,
-			pid: this.child?.pid,
+			pid: this.child?.pid ?? this.adoptedPid,
 			port: this.currentPort,
 			backend: this.backend,
 			model: basename(this.modelPath),
@@ -155,8 +161,15 @@ export class EmbeddingRuntimeSupervisor {
 	async shutdown(): Promise<void> {
 		if (this.stopping) return this.stopping;
 		if (!this.child) {
-			this.state = "stopped";
-			await this.cleanupState();
+			if (!this.adoptedPid) {
+				const recordedPid = await readPid(join(this.root, "embedding-runtime.pid"));
+				if (recordedPid && isAlive(recordedPid)) this.adoptedPid = recordedPid;
+			}
+			if (this.adoptedPid) await this.stopAdopted();
+			else {
+				this.state = "stopped";
+				await this.cleanupState();
+			}
 			return;
 		}
 		this.stopping = this.stopChild();
@@ -165,6 +178,22 @@ export class EmbeddingRuntimeSupervisor {
 		} finally {
 			this.stopping = undefined;
 		}
+	}
+
+	private async adoptExistingRuntime(): Promise<boolean> {
+		const pid = await readPid(join(this.root, "embedding-runtime.pid"));
+		const port = await readPid(join(this.root, "embedding-runtime.port"));
+		if (!pid || !port || !isAlive(pid)) return false;
+		try {
+			const response = await this.fetchHealth(`http://127.0.0.1:${port}/health`);
+			if (!response.ok) return false;
+		} catch {
+			return false;
+		}
+		this.adoptedPid = pid;
+		this.currentPort = port;
+		this.startedAt = Date.now();
+		return true;
 	}
 
 	private async acquireLock(): Promise<void> {
@@ -181,6 +210,7 @@ export class EmbeddingRuntimeSupervisor {
 				throw new SupervisorError("lock-conflict", "Another embedding runtime is already running.");
 			await rm(lockPath, { force: true });
 			await rm(join(this.root, "embedding-runtime.pid"), { force: true });
+			await rm(join(this.root, "embedding-runtime.port"), { force: true });
 			const handle = await open(lockPath, "wx");
 			await handle.writeFile(`${process.pid}\n`);
 			await handle.close();
@@ -255,9 +285,13 @@ export class EmbeddingRuntimeSupervisor {
 		this.child = child;
 		this.startedAt = Date.now();
 		await writeFile(join(this.root, "embedding-runtime.pid"), `${child.pid ?? ""}\n`);
+		await writeFile(join(this.root, "embedding-runtime.port"), `${this.currentPort}\n`);
 		const consume = (chunk: Buffer) => void this.appendLog(logPath, chunk.toString());
 		child.stdout?.on("data", consume);
 		child.stderr?.on("data", consume);
+		child.unref();
+		(child.stdout as typeof child.stdout & { unref?: () => void })?.unref?.();
+		(child.stderr as typeof child.stderr & { unref?: () => void })?.unref?.();
 		child.once("error", (error) => {
 			this.lastError = sanitizeError(error);
 		});
@@ -270,6 +304,10 @@ export class EmbeddingRuntimeSupervisor {
 		if (this.restartCount >= 1) {
 			this.state = "failed";
 			this.lastError = "embedding runtime exited unexpectedly after restart";
+			await this.cleanupState();
+			return;
+		}
+		if (existsSync(join(this.root, "embedding-runtime.stop"))) {
 			await this.cleanupState();
 			return;
 		}
@@ -303,8 +341,46 @@ export class EmbeddingRuntimeSupervisor {
 		const log = await this.readLog();
 		throw new SupervisorError(
 			"readiness-timeout",
-			`Embedding runtime did not become ready: ${log || "health check timed out"}`,
+			`Embedding runtime did not become ready within ${this.timeoutMs}ms: ${log || "health check timed out"}`,
 		);
+	}
+
+	private async stopAdopted(): Promise<void> {
+		this.shutdownRequested = true;
+		this.state = "stopping";
+		await writeFile(join(this.root, "embedding-runtime.stop"), "stop\n");
+		const pid = this.adoptedPid;
+		if (pid) {
+			try {
+				if (this.osPlatform === "win32") this.killProcess(pid, "SIGTERM");
+				else this.killProcess(-pid, "SIGTERM");
+			} catch {
+				// The process may have exited between discovery and shutdown.
+			}
+			await waitForExit(pid, 1_000);
+			if (isAlive(pid)) {
+				try {
+					if (this.osPlatform === "win32") this.killProcess(pid, "SIGKILL");
+					else this.killProcess(-pid, "SIGKILL");
+				} catch {
+					// The process may have exited between the check and kill.
+				}
+				await waitForExit(pid, 500);
+			}
+			if (isAlive(pid)) {
+				try {
+					this.killProcess(pid, "SIGKILL");
+				} catch {
+					// The process may have exited between the check and kill.
+				}
+				await waitForExit(pid, 500);
+			}
+		}
+		this.adoptedPid = undefined;
+		this.currentPort = undefined;
+		this.startedAt = undefined;
+		this.state = "stopped";
+		await this.cleanupState();
 	}
 
 	private async stopChild(): Promise<void> {
@@ -333,6 +409,7 @@ export class EmbeddingRuntimeSupervisor {
 		}
 		await Promise.race([exited, delay(500)]);
 		this.child = undefined;
+		this.adoptedPid = undefined;
 		this.currentPort = undefined;
 		this.startedAt = undefined;
 		this.state = "stopped";
@@ -341,6 +418,8 @@ export class EmbeddingRuntimeSupervisor {
 
 	private async cleanupState(): Promise<void> {
 		await rm(join(this.root, "embedding-runtime.pid"), { force: true });
+		await rm(join(this.root, "embedding-runtime.port"), { force: true });
+		await rm(join(this.root, "embedding-runtime.stop"), { force: true });
 		await rm(join(this.root, "embedding-runtime.lock"), { force: true });
 	}
 
@@ -405,6 +484,10 @@ function sanitizeLog(value: string): string {
 }
 function sanitizeError(error: unknown): string {
 	return sanitizeLog(error instanceof Error ? error.message : String(error));
+}
+async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (isAlive(pid) && Date.now() < deadline) await delay(25);
 }
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
