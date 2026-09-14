@@ -38,7 +38,7 @@ jobs:
       run: |
         cp docs/source/CNAME docs/build/html/CNAME
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: html-docs
         path: legacy/docs/build/html/

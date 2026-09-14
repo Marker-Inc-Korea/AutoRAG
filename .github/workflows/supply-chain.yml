@@ -55,7 +55,7 @@ jobs:
               run: bun install --frozen-lockfile
             - name: License and NOTICE gate
               run: bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json
-            - uses: actions/upload-artifact@v4
+            - uses: actions/upload-artifact@v7
               with:
                   name: local-cyclonedx
                   path: sbom.local.cdx.json

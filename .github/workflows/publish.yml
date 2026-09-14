@@ -33,7 +33,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
 
       - name: Upload updated pyproject.toml
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyproject-toml
           path: legacy/pyproject.toml
