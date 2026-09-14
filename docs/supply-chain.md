@@ -1,6 +1,8 @@
 # Supply-chain gates
 
-AutoRAG 2.0 is MIT; `legacy/` is Apache-2.0. Production dependencies must stay on the permissive SPDX allowlist in `.github/dependency-review-config.yml` (same list as `AUTORAG_SUPPLY_CHAIN_POLICY`). Copyleft GPL/AGPL/SSPL and unknown licenses fail closed.
+Project ownership and who may change the **project** license are defined in [GOVERNANCE.md](../GOVERNANCE.md): contributions are MIT, and a license change is reserved to Marker Inc. This gate does not change that license. It keeps third-party dependencies compatible with the current distribution: AutoRAG 2.0 is MIT; `legacy/` is Apache-2.0.
+
+Production dependencies must stay on the permissive SPDX allowlist in `.github/dependency-review-config.yml` (same list as `AUTORAG_SUPPLY_CHAIN_POLICY`). Copyleft GPL/AGPL/SSPL and unknown licenses fail closed.
 
 | Gate | Tool | When it blocks |
 | --- | --- | --- |
