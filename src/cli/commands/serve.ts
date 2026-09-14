@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { AutoRAGAgent } from "../../agent/agent.ts";
-import { planSourceRoots, sourceIdentifier } from "../../filesystem/source-paths.ts";
+import { isFilesystemAbsolutePath, planSourceRoots, sourceIdentifier } from "../../filesystem/source-paths.ts";
 import type { InjectionClassifierModel } from "../../p2p/injection-classifier.ts";
 import { PolicyStore } from "../../p2p/policy.ts";
 import {
@@ -171,7 +171,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 		// them to the virtual path before matching policy globs.
 		const sourceRoots = planSourceRoots(config.searchPaths);
 		const resolveVirtualPathPolicy = (source: string, peer?: string) => {
-			if (!source.startsWith("/")) return policyStore.resolvePolicy(source, peer);
+			if (!isFilesystemAbsolutePath(source)) return policyStore.resolvePolicy(source, peer);
 			// Absolute real path -> virtual path
 			for (const root of sourceRoots) {
 				if (source.startsWith(root.rootPath)) {

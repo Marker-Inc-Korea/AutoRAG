@@ -1,4 +1,5 @@
 import type { SearchDocumentResult, SearchDocumentsResponse } from "../agent/search-documents.ts";
+import { isFilesystemAbsolutePath } from "../filesystem/source-paths.ts";
 import { scanOutboundPayload } from "./injection-classifier.ts";
 import { redactPII } from "./pii-gate.ts";
 import type { PolicyResolution } from "./policy.ts";
@@ -130,7 +131,7 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 			continue;
 		}
 
-		if (!rawResult.source.startsWith("/")) {
+		if (!isFilesystemAbsolutePath(rawResult.source)) {
 			diagnostics.push(diagnostic("source-unmappable", "A result source is not a canonical virtual source."));
 			continue;
 		}
