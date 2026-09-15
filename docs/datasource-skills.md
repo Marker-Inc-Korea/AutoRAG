@@ -36,6 +36,29 @@ trusted `vdr sync`. Keyword, V-SPLADE lexical, dense embedding, and hybrid
 search are delegated to `clawgallery search --json`; AutoRAG never reads
 `images.jsonl` or `vdr.sqlite3`, and does not trigger captioning or renaming.
 
+### Spotlight
+
+`spotlight` is a macOS-only connector skill. It drives the built-in `mdfind`
+CLI (no extra install). Indexing re-runs configured Spotlight queries and
+hydrates file text; result metadata carries the real absolute path. Grant Full
+Disk Access to the host app when searching Mail, Messages, Safari, or other
+protected locations. Unavailable on non-macOS hosts.
+
+```json
+{
+  "datasources": {
+    "mac-files": {
+      "type": "spotlight",
+      "instanceId": "local"
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["spotlight"],
+    "allowedScopes": ["/mac-files/local/**"]
+  }
+}
+```
+
 ## Contract
 
 A datasource skill is both:
@@ -197,7 +220,7 @@ A skill can publish `instances`, for example:
 - KakaoTalk account -> chat corpus
 - Notion workspace -> database/page tree
 
-Every instance maps to a datasource root like `/kakao/personal` or `/slack/workspace/channel`.
+Every instance maps to a slash-hierarchical datasource root like `/kakao/personal` or `/slack/local`. Chunks hang under `/<skill>/<instance>/chunks/<id>`.
 
 ## Slack via slacrawl
 

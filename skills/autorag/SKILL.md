@@ -103,21 +103,27 @@ autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json
 autorag status --json
 autorag health --json
 autorag refresh --json
-autorag refresh --method bm25,minsync,jikji --json
+autorag refresh --method minsync,jikji --json
 autorag watch --once --json
 autorag watch
 autorag refresh --force --json
 autorag index rebuild --yes --json
-autorag index reset --method bm25 --yes --json
+autorag index reset --method parsed --yes --json
 autorag memory inspect --json
+autorag tui
+autorag serve --force
+autorag p2p policy list --json
 ```
 
 Prefer a full refresh so parsed mirrors, MinSync, Jikji, and configured
 datasources stay aligned. `--method` accepts
-`parsed,minsync,datasources,jikji,all`. Use it only for deliberate
-narrowing. Scheduled maintenance should use non-daemon `autorag watch --once`,
-typically every 15–30 minutes, with the same config used by search and no
-overlapping runs.
+`parsed,minsync,datasources,jikji,all`. BM25 is a MinSync retrieval mode, not
+a `--method` name. Use `--method` only for deliberate narrowing. Scheduled
+maintenance should use non-daemon `autorag watch --once`, typically every
+1 hour, with the same config used by search and no overlapping runs.
+`autorag tui` is the shipped beta terminal UI. `autorag serve` / `autorag p2p`
+are opt-in SimpleX peer sharing (disabled until `p2p.enabled` is true, unless
+`--force`).
 
 Reset and rebuild commands remove only selected workspace `.autorag` indexes.
 Never target source documents. `memory inspect` is read-only and path-opaque.
@@ -131,3 +137,6 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 - Preserve real source mapping and numbered feedback identifiers.
 - Prefer `--json --debug` when another agent consumes search output or will
   call `autorag feedback`.
+- Do not invent CLI commands. `autorag --help` is the command list of record
+  (`serve`, `p2p`, `tui`, and `lite` are shipped; there is no `autorag gateway`
+  or `autorag models` on current main).
