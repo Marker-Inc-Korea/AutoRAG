@@ -41,6 +41,8 @@ export function stageReleaseAssets(input: {
 	readonly sbomDir?: string;
 	/** Download and validate pinned llama.cpp runtime archives for a release. */
 	readonly stageEmbeddingAssets?: boolean;
+	/** Test seam for supplying deterministic local archive bytes instead of downloading. */
+	readonly downloadAsset?: (asset: PinnedAsset) => Uint8Array;
 }): { readonly files: readonly string[]; readonly checksumsPath: string } {
 	if (!existsSync(join(input.projectRoot, "dist", "index.js"))) {
 		throw new SupplyChainError("dist/index.js is missing; build before staging release assets");
@@ -58,7 +60,7 @@ export function stageReleaseAssets(input: {
 
 	const shouldStageEmbeddingAssets =
 		input.stageEmbeddingAssets ?? existsSync(join(input.projectRoot, EMBEDDING_MANIFEST));
-	if (shouldStageEmbeddingAssets) stageEmbeddingReleaseAssets(input.projectRoot, input.outputDir);
+	if (shouldStageEmbeddingAssets) stageEmbeddingReleaseAssets(input.projectRoot, input.outputDir, input.downloadAsset);
 	packNpmTarball(input.projectRoot, input.outputDir);
 	copySbomJson(input.sbomDir, input.outputDir);
 
@@ -79,7 +81,11 @@ export function stageReleaseAssets(input: {
 	return { files: [...staged, "SHA256SUMS.txt"], checksumsPath };
 }
 
-function stageEmbeddingReleaseAssets(projectRoot: string, outputDir: string): void {
+function stageEmbeddingReleaseAssets(
+	projectRoot: string,
+	outputDir: string,
+	downloadAsset?: (asset: PinnedAsset) => Uint8Array,
+): void {
 	const manifest = readEmbeddingManifest(join(projectRoot, EMBEDDING_MANIFEST));
 	const noticeFiles = new Set(manifest.assets.map((asset) => asset.noticeFile));
 	for (const noticeFile of noticeFiles) {
@@ -95,7 +101,7 @@ function stageEmbeddingReleaseAssets(projectRoot: string, outputDir: string): vo
 		}
 		const destination = join(outputDir, asset.filename);
 		mkdirSync(dirname(destination), { recursive: true });
-		downloadPinnedAsset(asset, destination);
+		downloadPinnedAsset(asset, destination, downloadAsset);
 		verifyArchiveMembers(asset, destination);
 	}
 }
@@ -146,20 +152,28 @@ function readEmbeddingManifest(path: string): EmbeddingManifest {
 	return { assets };
 }
 
-function downloadPinnedAsset(asset: PinnedAsset, destination: string): void {
+function downloadPinnedAsset(
+	asset: PinnedAsset,
+	destination: string,
+	downloadAsset?: (asset: PinnedAsset) => Uint8Array,
+): void {
 	const part = `${destination}.part`;
 	rmSync(part, { force: true });
-	const curl = process.platform === "win32" ? "curl.exe" : "curl";
-	const result = spawnSync(
-		curl,
-		["--fail", "--silent", "--show-error", "--location", "--retry", "3", "--output", part, asset.url],
-		{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-	);
-	if (result.status !== 0) {
-		rmSync(part, { force: true });
-		throw new SupplyChainError(
-			`download failed for ${asset.id} (${asset.url}): ${result.stderr || describe(result.error)}`,
+	if (downloadAsset !== undefined) {
+		writeFileSync(part, downloadAsset(asset));
+	} else {
+		const curl = process.platform === "win32" ? "curl.exe" : "curl";
+		const result = spawnSync(
+			curl,
+			["--fail", "--silent", "--show-error", "--location", "--retry", "3", "--output", part, asset.url],
+			{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
 		);
+		if (result.status !== 0) {
+			rmSync(part, { force: true });
+			throw new SupplyChainError(
+				`download failed for ${asset.id} (${asset.url}): ${result.stderr || describe(result.error)}`,
+			);
+		}
 	}
 	const actual = createHash("sha256").update(readFileSync(part)).digest("hex");
 	if (actual !== asset.sha256.toLowerCase()) {
