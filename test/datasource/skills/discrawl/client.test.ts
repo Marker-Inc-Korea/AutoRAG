@@ -299,7 +299,8 @@ describe("nativeGatewayBaseUrl", () => {
 	});
 
 	it("handles many repeated trailing slashes", () => {
-		expect(nativeGatewayBaseUrl("http://localhost:8080/path/" + "/".repeat(100))).toBe("http://localhost:8080/path/v1");
+		expect(nativeGatewayBaseUrl("http://localhost:8080/path/" + "/".repeat(100))).toBe(
+			"http://localhost:8080/path/v1",
+		);
 	});
 });
-

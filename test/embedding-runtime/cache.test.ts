@@ -106,7 +106,7 @@ describe("embedding runtime cache", () => {
 			fetch: async () => new Response(archiveBytes),
 		});
 		expect(runtimePath).toBe(join(cacheRoot, "runtime", "runtime.tar.gz.extracted", "llama-b10951", "llama-server"));
-		expect((await stat(runtimePath)).mode & 0o111).toBeGreaterThan(0);
+		if (process.platform !== "win32") expect((await stat(runtimePath)).mode & 0o111).toBeGreaterThan(0);
 		expect(await downloadAsset(asset, { cacheRoot, fetch: async () => new Response(bytes) })).toBe(
 			join(cacheRoot, "models", "model.gguf"),
 		);
