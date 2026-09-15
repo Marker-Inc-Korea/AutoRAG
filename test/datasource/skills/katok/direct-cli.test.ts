@@ -113,7 +113,7 @@ describe("KatokClient direct CLI execution", () => {
 });
 
 describe("Katok retrieval source identity", () => {
-	it("labels kakao hits as kakaotalk sources, never OS-file-looking paths", async () => {
+	it("labels kakao hits with the canonical slash datasource source", async () => {
 		const client = new StubSearchClient();
 		client.hits = [
 			{
@@ -134,7 +134,6 @@ describe("Katok retrieval source identity", () => {
 		expect(results).toHaveLength(1);
 		const source = results[0]?.source ?? "";
 		expect(source).toBe("/kakao/default/chunks/chunk-001");
-		expect(source.toLowerCase()).toContain("kakao");
 		expect(results[0]?.metadata).toMatchObject({ datasourceId: "kakao", chatName: "오픈소스 개발과제" });
 	});
 });
