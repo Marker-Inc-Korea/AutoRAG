@@ -64,6 +64,28 @@ export const DEFAULT_DISCRAWL_EMBEDDING_PROVIDER = "ollama";
  * the katok client. The client spawns the `discrawl` binary as a child process
  * — it never opens the Discord archive database directly.
  */
+export interface DiscrawlEmbeddingRuntime {
+	readonly provider: string;
+	readonly model: string;
+	readonly baseUrl: string;
+	readonly dimensions: number;
+	readonly identity?: string;
+}
+
+export interface DiscrawlEmbeddingConfigResult {
+	readonly configured: boolean;
+	readonly rebuildRequired: boolean;
+	readonly diagnostic?: string;
+}
+
+export interface DiscrawlMetadataInfo {
+	readonly embeddingProvider?: string;
+	readonly embeddingModel?: string;
+	readonly embeddingDimensions?: number;
+	readonly embeddingIdentity?: string;
+	readonly metadata?: Readonly<Record<string, unknown>>;
+}
+
 export interface DiscrawlOptions {
 	/** Explicit path to the `discrawl` binary. Defaults to a bare PATH lookup. */
 	readonly binaryPath?: string;
@@ -86,6 +108,8 @@ export interface DiscrawlOptions {
 	readonly guildId?: string;
 	/** Embedding provider understood by the native discrawl configuration. */
 	readonly embeddingProvider?: string;
+	/** AutoRAG-owned runtime to write into a managed workspace config. */
+	readonly embeddingRuntime?: DiscrawlEmbeddingRuntime;
 	/**
 	 * Embedding model understood by the native discrawl configuration.
 	 * English-only models are accepted but reported through a diagnostic.
@@ -218,6 +242,7 @@ export interface DiscrawlSearchOk {
 
 export type DiscrawlDoctorResult = DiscrawlOk<DiscrawlDoctorInfo> | DiscrawlFailure;
 export type DiscrawlStatusResult = DiscrawlOk<DiscrawlStatusInfo> | DiscrawlFailure;
+export type DiscrawlMetadataResult = DiscrawlOk<DiscrawlMetadataInfo> | DiscrawlFailure;
 export type DiscrawlSyncResult = DiscrawlOk<DiscrawlSyncInfo> | DiscrawlFailure;
 export type DiscrawlEmbedResult = DiscrawlOk<DiscrawlEmbedInfo> | DiscrawlFailure;
 export type DiscrawlSearchResult = DiscrawlSearchOk | DiscrawlFailure;
