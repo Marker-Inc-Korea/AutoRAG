@@ -302,8 +302,13 @@ function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
 	});
 }
 
-function nativeGatewayBaseUrl(baseUrl: string): string {
-	return baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl.replace(/\/+$/, "")}/v1`;
+export function nativeGatewayBaseUrl(baseUrl: string): string {
+	if (baseUrl.endsWith("/v1")) return baseUrl;
+	let trimmed = baseUrl;
+	while (trimmed.endsWith("/")) {
+		trimmed = trimmed.slice(0, -1);
+	}
+	return `${trimmed}/v1`;
 }
 
 function managedDiscrawlConfig(runtime: DiscrawlEmbeddingRuntime): string {

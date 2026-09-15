@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DiscrawlClient } from "../../../../src/datasource/skills/discrawl/client.ts";
+import { DiscrawlClient, nativeGatewayBaseUrl } from "../../../../src/datasource/skills/discrawl/client.ts";
 
 function stubBinary(script: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "discrawl-stub-"));
@@ -280,3 +280,26 @@ describe("DiscrawlClient doctor and embed", () => {
 		}
 	});
 });
+
+describe("nativeGatewayBaseUrl", () => {
+	it("appends /v1 to a bare base URL", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080")).toBe("http://localhost:8080/v1");
+	});
+
+	it("strips trailing slashes before appending /v1", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/gateway///")).toBe("http://localhost:8080/gateway/v1");
+	});
+
+	it("passes through a URL already ending with /v1", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/v1")).toBe("http://localhost:8080/v1");
+	});
+
+	it("handles a URL with a single trailing slash", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/")).toBe("http://localhost:8080/v1");
+	});
+
+	it("handles many repeated trailing slashes", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/path/" + "/".repeat(100))).toBe("http://localhost:8080/path/v1");
+	});
+});
+
