@@ -1,5 +1,6 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import type { StoreManifest } from "../manifest/types.ts";
+import { FENCING_GUARD_LINE } from "../p2p/injection-classifier.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
 export interface SystemPromptConfig {
@@ -10,6 +11,7 @@ export interface SystemPromptConfig {
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly Skill[];
+	retrievedContentGuard?: boolean;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -39,6 +41,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
+		toolLine(
+			config,
+			"recommend_peer_targets",
+			"recommend local peer personas to ask about a topic without contacting them",
+		),
 		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
 		...config.toolNames
 			.filter(
@@ -52,6 +59,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"load_datasource_skill",
 						"scan_duplicate_documents",
 						"check_memory",
+						"recommend_peer_targets",
 						"emit_autorag_results",
 					].includes(name),
 			)
@@ -75,6 +83,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 \`jikji_find\` is the default local-discovery aid. Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`. If Jikji is unavailable, use the diagnostic and fall back to \`bash\`.
 `
 		: "";
+	const retrievedContentGuard = config.retrievedContentGuard ? `\n${FENCING_GUARD_LINE}\n` : "";
 	const duplicateManagement = toolAvailable(config, "scan_duplicate_documents")
 		? `## Local Corpus Management
 
@@ -107,7 +116,7 @@ ${noSearchTools}
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
-- Slash-prefixed datasource IDs such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/... are virtual, not OS paths. Do not bash them. Search them with \`search_datasource_documents\`.
+- Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search or fetch them through \`search_datasource_documents\` and the loaded datasource skill/native CLI.
 - Cross-check important claims against the original source and preserve real source paths.
 - When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
 - Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
@@ -132,8 +141,7 @@ Call \`emit_autorag_results\` exactly once with:
 - \`results\`: curated units with number, title, summary, evidence, and confidence.
 - \`mapping\`: exactly one matching entry per result number with source, method, content, and evidence references.
 
-## Constraints
-
+## Constraints${retrievedContentGuard}
 - **Read before curating**: verify relevant local files directly when available.
 - **No fabrication**: report a negative result when evidence is absent.
 - **Curate, don't dump**: return useful knowledge units, not raw search output.

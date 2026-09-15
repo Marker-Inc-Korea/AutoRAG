@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 const NATIVE_LANES = Object.freeze([
-	{ name: "katok", binary: "katok", command: "scripts/manual-qa/run-qa-katok-live.ts", identityPattern: /\bkakao:[^\s]+/u },
+	{ name: "katok", binary: "katok", command: "scripts/manual-qa/run-qa-katok-live.ts", identityPattern: /\/kakao\/[^/]+\/chunks\/[^/\s]+/u },
 	{ name: "discrawl", binary: "discrawl", command: "scripts/manual-qa/run-qa-discrawl-live.ts", identityPattern: /\/discord\/[^\s]+/u },
 	{ name: "wacrawl", binary: "wacrawl" },
 	{ name: "telecrawl", binary: "telecrawl" },
@@ -79,9 +79,9 @@ export function parseDatasourceSelection(value = process.env.E2E_DATASOURCES || 
 
 export function validateNativeIdentity(source, laneName) {
 	if (typeof source !== "string") return false;
-	// kakao:<chat>/<sender>/<chunk>; chat/sender names may contain spaces (see
-	// katokSource), so validate scheme + non-empty segments, not no-whitespace.
-	if (laneName === "katok") return /^kakao:[^/]+(?:\/[^/]+){1,2}$/u.test(source);
+	// Canonical katok source: /kakao/<instance>/chunks/<chunk>. Opaque slash
+	// hierarchy, not an OS path. Retired kakao:<chat>/<sender>/<chunk> is invalid.
+	if (laneName === "katok") return /^\/kakao\/[^/]+\/chunks\/[^/]+$/u.test(source);
 	return !source.startsWith("/") && /^[a-z][a-z0-9-]*:.+/u.test(source);
 }
 

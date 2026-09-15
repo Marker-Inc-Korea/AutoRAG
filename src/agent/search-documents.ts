@@ -94,8 +94,12 @@ export type SearchDocumentsStreamEvent =
 			readonly response: SearchDocumentsResponse;
 	  };
 
-type SearchSessions = Map<string, { query: string; registry: Map<number, CuratedResult> }>;
-type ReadonlySearchSessions = ReadonlyMap<string, { query: string; registry: ReadonlyMap<number, CuratedResult> }>;
+type SearchSession = { query: string; registry: Map<number, CuratedResult>; transient?: boolean };
+type SearchSessions = Map<string, SearchSession>;
+type ReadonlySearchSessions = ReadonlyMap<
+	string,
+	{ query: string; registry: ReadonlyMap<number, CuratedResult>; transient?: boolean }
+>;
 
 function confidenceFrom(score: number): number {
 	if (!Number.isFinite(score)) return 0;
@@ -198,6 +202,7 @@ export function recordStructuredResultsSession(
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
+	options: { readonly isolateMemory?: boolean } = {},
 ): SearchDocumentsResponse {
 	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
 	const mappingNumbers = details.mapping.map((entry) => entry.number).sort((a, b) => a - b);
@@ -231,9 +236,11 @@ export function recordStructuredResultsSession(
 			evidenceRefs,
 		});
 	}
-	memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
-	sessions.set(sessionId, { query, registry });
-	memory.save();
+	sessions.set(sessionId, { query, registry, ...(options.isolateMemory ? { transient: true } : {}) });
+	if (!options.isolateMemory) {
+		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
+		memory.save();
+	}
 
 	const results: SearchDocumentResult[] = details.results.map((result) => ({
 		number: result.number,
@@ -282,7 +289,7 @@ export function recordNumberedFeedback(
 	notUsefulNumbers: readonly number[],
 ): void {
 	const session = sessions.get(sessionId);
-	if (!session) return;
+	if (!session || session.transient) return;
 	const feedback = [];
 	for (const n of usefulNumbers) {
 		if (session.registry.has(n)) feedback.push({ number: n, useful: true });

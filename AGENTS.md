@@ -106,8 +106,10 @@ for this task and to the runner result directory (by default
 `.omo/evidence/live-core-cold/result.json` or `live-core-warm/result.json`).
 Evidence and diagnostics redact tokens, passwords, credentials, and absolute
 home paths. Assert local retrieval sources are absolute and readable; assert
-native datasource results retain their source-native identity rather than a
-slash-prefixed fake filesystem path.
+native datasource results retain source-native identities such as
+`/kakao/<instance>/chunks/<chunk>` (opaque slash-hierarchical, not an OS path),
+not a retired `kakao:<chat>/<sender>/<chunk>` scheme and not a fake OS-absolute
+filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
@@ -229,7 +231,7 @@ with any of them should be rejected or reshaped:
    stores (katok, discrawl, qmd, msgvault, rclone, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
-   (`kakao:<chat>/<sender>/<chunk>`) and scope-checked access, and secrets
+   (`/kakao/<instance>/chunks/<chunk>`) and scope-checked access, and secrets
    stay with the tool that owns them.
 2. **Just works — no RAG degree required.** A non-developer installs it and
    it works: minimal configuration, no pipeline tuning, no vector-DB
@@ -256,9 +258,10 @@ Contributors and agents adding a CLI-backed datasource must:
 - spawn the CLI with its own default store; never force
   `--workspace`/`--config`/env into an empty AutoRAG-managed directory unless
   the operator explicitly configured a workspace path;
-- keep result sources human-readable datasource identities (e.g.
-  `kakao:<chat>/<sender>/<chunk>`), never slash-prefixed fake filesystem
-  paths the agent could mistake for local files;
+- keep result sources as opaque slash-hierarchical datasource identities
+  (e.g. `/kakao/<instance>/chunks/<chunk>`), never OS-absolute fake filesystem
+  paths the agent could mistake for local files; they are not OS paths and
+  must not be passed to `bash`/`cat`;
 - provide a datasource skill with native command examples and `<binary>
   --help` guidance so the agent understands which CLI backs the datasource;
 - keep failure isolation per CLI (missing binary degrades to diagnostics,

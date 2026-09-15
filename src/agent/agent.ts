@@ -45,6 +45,8 @@ import {
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
+import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
+import type { PolicyResolver } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -86,6 +88,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createSearchDatasourceDocumentsTool,
@@ -193,6 +196,31 @@ interface RefreshState {
 	watchFailed: boolean;
 }
 
+declare module "../retrieval/types.ts" {
+	interface RetrievalOptions {
+		/** Server-only P2P policy identity; never included in model tool schemas. */
+		peerFingerprint?: string;
+		/** Server-only P2P policy resolver. */
+		resolvePolicy?: PolicyResolver;
+		/** Server-only run registry populated from observed retrieval output. */
+		observedSources?: Set<string>;
+		/** Server-only datasource source globs derived from the loaded policy. */
+		policyDatasourceScopes?: readonly string[];
+	}
+}
+
+export type RemoteSessionRejectionCode = "injection-detected" | "outbound-leak-detected";
+
+export class RemoteSessionRejectedError extends Error {
+	readonly code: RemoteSessionRejectionCode;
+
+	constructor(code: RemoteSessionRejectionCode) {
+		super(`Remote session rejected: ${code}`);
+		this.name = "RemoteSessionRejectedError";
+		this.code = code;
+	}
+}
+
 /** Thinking level applied per search phase. "off" requests no reasoning. */
 export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -234,6 +262,8 @@ export interface AutoRAGAgentOptions {
 	searchTimeoutMs?: number;
 	/** Maximum number of retrieval/tool executions allowed in one search. */
 	maxSearchToolCalls?: number;
+	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
+	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
 	thinking?: AutoRAGThinkingOptions | false;
 }
@@ -316,13 +346,17 @@ export class AutoRAGAgent {
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
+	/** True when this agent was constructed for an untrusted remote peer. */
+	readonly remoteSession: boolean;
+	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
 	private readonly sourceSearchCallCounts = new Map<string, number>();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
-		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
+		this.remoteSession = options.remoteSession ?? false;
+		this.searchTimeoutMs = options.searchTimeoutMs ?? (this.remoteSession ? 120_000 : 10 * 60 * 1000);
 		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
 		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
 			throw new Error("searchTimeoutMs must be a positive finite number");
@@ -385,7 +419,7 @@ export class AutoRAGAgent {
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
-			() => this.minSyncMethod,
+			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
 		);
 		const searchAllTool = createSearchAllDocumentsTool(this);
@@ -397,6 +431,7 @@ export class AutoRAGAgent {
 		const bashTool = createBashTool({
 			cwd: this.workspaceProjectRoot,
 		});
+		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
@@ -413,6 +448,7 @@ export class AutoRAGAgent {
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -427,7 +463,7 @@ export class AutoRAGAgent {
 		// Deterministic, duplicate-free ordering: bash first, then surviving
 		// caller tools, then AutoRAG-internal tools.
 		const orderedTools: AgentTool[] = [
-			bashTool,
+			...(bashTool !== undefined ? [bashTool] : []),
 			...callerTools,
 			checkMemoryTool,
 			searchMinSyncTool,
@@ -437,6 +473,7 @@ export class AutoRAGAgent {
 			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
+			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 		];
 		const seenToolNames = new Set<string>();
 		const tools = orderedTools
@@ -457,6 +494,7 @@ export class AutoRAGAgent {
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
+			retrievedContentGuard: false,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
@@ -614,7 +652,10 @@ export class AutoRAGAgent {
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
 			void this.activeSession?.abort();
 		}
-		const details = event.result.details as { method?: string } | undefined;
+		const details = event.result.details as { method?: string; sources?: readonly string[] } | undefined;
+		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
+			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
+		}
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
 	}
@@ -717,6 +758,8 @@ export class AutoRAGAgent {
 			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions, this.startupDiagnostics);
 		}
 		options = this.normalizeRetrievalOptions(options);
+		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
+		this.activeRetrievalOptions = options;
 
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
@@ -811,6 +854,22 @@ export class AutoRAGAgent {
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
 			}
+			if (this.remoteSession && options.observedSources !== undefined) {
+				for (const entry of captured.mapping) options.observedSources.add(entry.source);
+			}
+			if (this.remoteSession) {
+				const scan = scanOutboundPayload(
+					[
+						captured.answer,
+						...captured.results.flatMap((result) => [
+							result.summary,
+							...result.evidence.map((evidence) => evidence.excerpt),
+						]),
+					],
+					[this.workspaceProjectRoot, ...this.searchPaths].map((root) => resolve(root)),
+				);
+				if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
+			}
 			const response = recordStructuredResultsSession(
 				sessionId,
 				trimmedQuery,
@@ -864,6 +923,7 @@ export class AutoRAGAgent {
 			}
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
+			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
 			this.activeRun = false;
 		}
@@ -950,8 +1010,9 @@ export class AutoRAGAgent {
 	}
 
 	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
+		const effectiveOptions = this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options;
 		const trustedTags = this.datasourceAccessOptions.allowedTags ?? [];
-		const requestedTags = options.allowedTags;
+		const requestedTags = effectiveOptions.allowedTags;
 		const allowedTags =
 			requestedTags === undefined ? trustedTags : trustedTags.filter((tag) => requestedTags.includes(tag));
 		return new DatasourceAccessContext({
@@ -1059,6 +1120,9 @@ export class AutoRAGAgent {
 			);
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
+			if (results) {
+				for (const result of results) options.observedSources?.add(result.source);
+			}
 			if (!results || results.length === 0) return;
 			const seen = new Set<string>();
 			sections.push(
@@ -1690,6 +1754,7 @@ export class AutoRAGAgent {
 		query: string,
 		options: RetrievalOptions = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		if (this.remoteSession) options = { ...this.activeRetrievalOptions, ...options };
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
@@ -1700,6 +1765,9 @@ export class AutoRAGAgent {
 			options.scope,
 			options.allowedScopes,
 		);
+		for (const results of filteredByMethod.values()) {
+			for (const result of results) options.observedSources?.add(result.source);
+		}
 		if (this.minSyncMethod?.isBinaryMissing() && !diagnostics.some((d) => d.source === "minsync")) {
 			diagnostics.push({
 				code: "minsync-unavailable",
@@ -1728,7 +1796,11 @@ export class AutoRAGAgent {
 		query: string,
 		options: { readonly topK?: number; readonly scope?: string } = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
-		const retrievalOptions: RetrievalOptions = { topK: options.topK, scope: options.scope };
+		const retrievalOptions: RetrievalOptions = {
+			...this.activeRetrievalOptions,
+			topK: options.topK,
+			scope: options.scope,
+		};
 		const ctx = this.datasourceAccessContext(retrievalOptions);
 		const methods = this.methodRegistry.list().filter((method) => {
 			const descriptor = method.describe();
@@ -1741,6 +1813,9 @@ export class AutoRAGAgent {
 			retrievalOptions,
 		);
 		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		for (const results of filteredByMethod.values()) {
+			for (const result of results) retrievalOptions.observedSources?.add(result.source);
+		}
 		return {
 			results: this.rerankWithMemory(
 				query,
@@ -1820,6 +1895,26 @@ export class AutoRAGAgent {
 			})
 			.sort((a, b) => b.rankScore - a.rankScore || a.index - b.index)
 			.map(({ result }) => result);
+	}
+
+	private remoteFilteredRetrievalMethod<
+		T extends {
+			retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
+			describe(): { name: string };
+		},
+	>(method: T | undefined): T | undefined {
+		if (!method) return method;
+		return new Proxy(method, {
+			get: (target, property, receiver) => {
+				if (property !== "retrieve") return Reflect.get(target, property, receiver);
+				return async (query: string, options: RetrievalOptions) => {
+					const effective = { ...this.activeRetrievalOptions, ...options };
+					const results = await target.retrieve.call(target, query, effective);
+					for (const result of results) effective.observedSources?.add(result.source);
+					return results;
+				};
+			},
+		}) as T;
 	}
 
 	private normalizeRetrievalOptions(options: RetrievalOptions): RetrievalOptions {
