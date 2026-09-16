@@ -218,7 +218,7 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration.
 
-Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.4` or newer)
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.6` or newer)
 and configured through its own Himalaya account. AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`

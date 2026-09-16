@@ -127,6 +127,15 @@ describe("SlacrawlClient", () => {
 		});
 		expect(await malformed.search("query")).toMatchObject({ ok: false, reason: "invalid-output" });
 	});
+
+	it("treats JSON null search output as zero hits", async () => {
+		writeFakeSlacrawl();
+		const client = new SlacrawlClient({
+			binaryPath,
+			env: { SLACRAWL_FAKE_OUTPUT: "null\n" },
+		});
+		expect(await client.search("query")).toMatchObject({ ok: true, hits: [] });
+	});
 });
 
 describe("SlackSkill", () => {
