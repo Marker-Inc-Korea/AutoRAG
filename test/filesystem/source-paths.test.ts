@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { isFilesystemAbsolutePath } from "../../src/filesystem/source-paths.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { isFilesystemAbsolutePath, normalizeSource, planSourceRoots } from "../../src/filesystem/source-paths.ts";
 
 describe("isFilesystemAbsolutePath", () => {
 	it("accepts POSIX absolute paths", () => {
@@ -21,5 +24,68 @@ describe("isFilesystemAbsolutePath", () => {
 		expect(isFilesystemAbsolutePath("docs\\notes.md")).toBe(false);
 		expect(isFilesystemAbsolutePath("C:partial")).toBe(false);
 		expect(isFilesystemAbsolutePath("")).toBe(false);
+	});
+});
+
+describe("normalizeSource", () => {
+	let root: string | undefined;
+
+	afterEach(() => {
+		if (root) rmSync(root, { recursive: true, force: true });
+		root = undefined;
+	});
+
+	function makeRoots() {
+		root = mkdtempSync(join(tmpdir(), "autorag-normalize-source-"));
+		const docsDir = join(root, "docs");
+		const sharedDir = join(root, "shared");
+		return { roots: planSourceRoots([docsDir, sharedDir]), docsDir, sharedDir };
+	}
+
+	it("converts an absolute real path under a source root to the canonical virtual id", () => {
+		const { roots, docsDir } = makeRoots();
+		expect(normalizeSource(join(docsDir, "policy", "refund.md"), roots)).toBe("/docs/policy/refund.md");
+	});
+
+	it("converts the root path itself to the root prefix", () => {
+		const { roots, sharedDir } = makeRoots();
+		expect(normalizeSource(sharedDir, roots)).toBe("/shared");
+	});
+
+	it("prefers the longest containing root for nested roots", () => {
+		root = mkdtempSync(join(tmpdir(), "autorag-normalize-source-"));
+		const outer = join(root, "docs");
+		const inner = join(root, "docs", "team");
+		const roots = planSourceRoots([outer, inner]);
+		expect(normalizeSource(join(inner, "note.md"), roots)).toBe("/team/note.md");
+	});
+
+	it("passes an already-virtual id through validation unchanged", () => {
+		const { roots } = makeRoots();
+		expect(normalizeSource("/docs/policy/refund.md", roots)).toBe("/docs/policy/refund.md");
+	});
+
+	it("passes a datasource slash identity through validation unchanged", () => {
+		const { roots } = makeRoots();
+		expect(normalizeSource("/kakao/default/chunks/chunk-1", roots)).toBe("/kakao/default/chunks/chunk-1");
+	});
+
+	it("collapses duplicate separators in virtual and datasource ids", () => {
+		const { roots } = makeRoots();
+		expect(normalizeSource("/kakao//default//chunks/chunk-1", roots)).toBe("/kakao/default/chunks/chunk-1");
+	});
+
+	it("fails closed for an absolute filesystem path outside every source root", () => {
+		const { roots } = makeRoots();
+		expect(normalizeSource(join(tmpdir(), "outside-file.md"), roots)).toBeUndefined();
+	});
+
+	it("fails closed for traversal, scheme, backslash, and empty sources", () => {
+		const { roots } = makeRoots();
+		expect(normalizeSource("/docs/../secret.md", roots)).toBeUndefined();
+		expect(normalizeSource("kakao:chat/sender/chunk-1", roots)).toBeUndefined();
+		expect(normalizeSource("file:///docs/a.md", roots)).toBeUndefined();
+		expect(normalizeSource("/docs\\a.md", roots)).toBeUndefined();
+		expect(normalizeSource("", roots)).toBeUndefined();
 	});
 });

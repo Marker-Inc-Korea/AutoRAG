@@ -86,6 +86,78 @@ export function normalizeVirtualPath(virtual: string | undefined | null): string
 	return v;
 }
 
+const POSIX_FILESYSTEM_ROOT_SEGMENTS = new Set([
+	"applications",
+	"bin",
+	"dev",
+	"etc",
+	"home",
+	"library",
+	"media",
+	"mnt",
+	"opt",
+	"private",
+	"proc",
+	"root",
+	"run",
+	"users",
+	"sbin",
+	"srv",
+	"system",
+	"tmp",
+	"usr",
+	"var",
+	"volumes",
+]);
+
+/**
+ * True when a slash-prefixed source looks like a real filesystem absolute
+ * path rather than a datasource slash identity: Windows drive/UNC paths, or a
+ * POSIX path whose first segment is a well-known filesystem root. Datasource
+ * namespaces (`/kakao/...`, `/discord/...`) use non-filesystem first segments.
+ */
+function looksLikeFilesystemAbsoluteSource(source: string): boolean {
+	if (WINDOWS_DRIVE_PATH.test(source) || source.startsWith("\\\\") || source.startsWith("//")) return true;
+	if (!source.startsWith("/")) return false;
+	const firstSegment = source.slice(1).split("/", 1)[0]?.toLocaleLowerCase("en-US");
+	return firstSegment !== undefined && POSIX_FILESYSTEM_ROOT_SEGMENTS.has(firstSegment);
+}
+
+/**
+ * Canonicalize any retrieval source form to the canonical virtual source id:
+ *
+ * 1. An id already inside a configured root's virtual namespace is validated
+ *    and returned unchanged (modulo separator cleanup).
+ * 2. An OS-absolute real path contained in a configured source root becomes
+ *    that root's virtual id (`/<prefix>/<relative>`); the longest containing
+ *    root wins for nested roots.
+ * 3. A datasource slash identity (`/kakao/<instance>/chunks/<chunk>`) is a
+ *    virtual id in a non-filesystem namespace and passes through validation.
+ *
+ * Everything else fails closed as `undefined`: absolute filesystem paths
+ * outside every root, traversal segments, URL schemes (including the retired
+ * `kakao:<chat>` colon scheme), backslashes, and empty input.
+ */
+export function normalizeSource(source: string, sourceRoots: readonly SourceRoot[]): string | undefined {
+	if (typeof source !== "string" || source.length === 0) return undefined;
+	for (const root of sourceRoots) {
+		if (virtualRootMatches(source, root)) return normalizeVirtualPath(source);
+	}
+	if (isFilesystemAbsolutePath(source)) {
+		const containing = sourceRoots
+			.filter((root) => {
+				const rel = relative(root.rootPath, resolve(source));
+				return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+			})
+			.sort((a, b) => b.rootPath.length - a.rootPath.length);
+		const selected = containing[0];
+		if (selected !== undefined) return sourceIdentifier(selected, source);
+		if (!looksLikeFilesystemAbsoluteSource(source)) return normalizeVirtualPath(source);
+		return undefined;
+	}
+	return normalizeVirtualPath(source);
+}
+
 /**
  * Exact-prefix boundary match: `/docs` matches `/docs` and `/docs/...` but NOT
  * `/docs-2`. Prevents prefix confusion between sibling roots like `/docs` and
