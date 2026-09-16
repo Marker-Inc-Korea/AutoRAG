@@ -2,17 +2,19 @@
  * Browser-profiled fetch for credential-free search engines.
  *
  * Ported from oh-my-pi (can1357/oh-my-pi, MIT)
- * `web/search/providers/browser-page.ts` with one adaptation: oh-my-pi
- * escalates bot-challenged responses to a stealth headless browser via its
- * puppeteer registry. AutoRAG ships no browser runtime, so the escalation is
- * an injectable seam — call `setWebSearchBrowserLoader` with a loader (e.g.
- * wrapping puppeteer-core) to enable it. Without a loader the plain fetch
- * result is returned as-is and the provider's own challenge detection
- * (anomaly pages, status codes) routes the chain to the next provider.
+ * `web/search/providers/browser-page.ts`. Escalation uses the loader from
+ * `browser-loader.ts`: an explicitly registered loader when present,
+ * otherwise the default puppeteer-core loader probed from the local
+ * Chrome/Chromium install. Without a loader the plain fetch result is
+ * returned as-is and the provider's own challenge detection (anomaly pages,
+ * status codes) routes the chain to the next provider.
  */
 import { buildBrowserNavigationHeaders } from "./browser-headers.ts";
+import { resolveWebSearchBrowserLoader, setWebSearchBrowserLoader } from "./browser-loader.ts";
 import type { FetchImpl } from "./providers/base.ts";
 import { SEARCH_HARD_TIMEOUT_MS } from "./providers/utils.ts";
+
+export { setWebSearchBrowserLoader };
 
 /** HTML plus the response status and final URL after redirects or browser navigation. */
 export interface LoadedHtmlPage {
@@ -21,7 +23,7 @@ export interface LoadedHtmlPage {
 	url: string;
 }
 
-interface BrowserFallbackOptions {
+export interface BrowserFallbackOptions {
 	homeUrl?: string;
 	ready?: { selector: string; timeoutMs: number };
 	afterNavigation?: (page: unknown, signal: AbortSignal) => Promise<void>;
@@ -43,9 +45,11 @@ export interface BrowserFetchOptions {
 }
 
 /**
- * Headless-browser loader installed by the host environment. Receives the
- * target URL and the provider's fallback options and must return the loaded
- * page. Kept generic so AutoRAG never links a browser runtime by default.
+ * Headless-browser loader. Receives the target URL and the provider's
+ * fallback options and must return the loaded page. The registry lives in
+ * `browser-loader.ts`, which ships a default puppeteer-core loader probed
+ * from the local Chrome/Chromium install; an explicit registration always
+ * takes precedence over the default.
  */
 export type WebSearchBrowserLoader = (
 	url: string,
@@ -53,13 +57,6 @@ export type WebSearchBrowserLoader = (
 	signal: AbortSignal,
 	timeoutMs: number,
 ) => Promise<LoadedHtmlPage>;
-
-let browserLoader: WebSearchBrowserLoader | undefined;
-
-/** Install (or clear, with `undefined`) the headless-browser fallback used by bot-challenged engines. */
-export function setWebSearchBrowserLoader(loader: WebSearchBrowserLoader | undefined): void {
-	browserLoader = loader;
-}
 
 async function fetchHtmlPage(url: string, options: BrowserFetchOptions, fetchImpl: FetchImpl): Promise<LoadedHtmlPage> {
 	const response = await fetchImpl(url, {
@@ -77,17 +74,21 @@ async function fetchHtmlPage(url: string, options: BrowserFetchOptions, fetchImp
 /** Fetch with a fresh browser profile, escalating rejected production responses to the installed headless browser. */
 export async function browserFetch(url: string, options: BrowserFetchOptions): Promise<LoadedHtmlPage> {
 	const fetchImpl = options.fetch ?? fetch;
-	const escalate = options.browser && browserLoader && !options.fetch;
+	// An injected `fetch` transport marks a test/proxy context and never
+	// escalates into a real browser; otherwise the explicit-or-default loader
+	// handles bot-challenged responses.
+	const loader = options.browser && !options.fetch ? await resolveWebSearchBrowserLoader() : undefined;
+	const escalate = options.browser && loader && !options.fetch;
 	let page: LoadedHtmlPage;
 	try {
 		page = await fetchHtmlPage(url, options, fetchImpl);
 	} catch (error) {
 		if (!escalate) throw error;
-		return browserLoader!(url, options.browser!, options.signal, options.timeoutMs ?? SEARCH_HARD_TIMEOUT_MS);
+		return loader!(url, options.browser!, options.signal, options.timeoutMs ?? SEARCH_HARD_TIMEOUT_MS);
 	}
 
 	if (!escalate) return page;
 	const isSuccessful = page.status >= 200 && page.status < 300;
 	if (isSuccessful && !options.browser!.shouldFallback(page)) return page;
-	return browserLoader!(url, options.browser!, options.signal, options.timeoutMs ?? SEARCH_HARD_TIMEOUT_MS);
+	return loader!(url, options.browser!, options.signal, options.timeoutMs ?? SEARCH_HARD_TIMEOUT_MS);
 }
