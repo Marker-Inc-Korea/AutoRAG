@@ -137,6 +137,22 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 		],
 	},
 	{
+		type: "github-gist",
+		title: "GitHub gists",
+		summary: "Index your own GitHub gists (public and secret) incrementally, with lexical and local semantic search.",
+		defaultTags: ["github", "gists"],
+		fields: [
+			INSTANCE,
+			{
+				key: "connector.tokenEnv",
+				label: "Token environment variable",
+				kind: "env",
+				placeholder: "GITHUB_TOKEN",
+				help: "Name of the env var that holds the token. Falls back to the gh CLI login when unset. The token itself is never saved.",
+			},
+		],
+	},
+	{
 		type: "clawgallery",
 		title: "ClawGallery",
 		summary: "Search local screenshots and photos through the clawgallery CLI.",
