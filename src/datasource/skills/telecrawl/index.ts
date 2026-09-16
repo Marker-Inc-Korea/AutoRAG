@@ -6,7 +6,7 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface TelecrawlOptions extends CrawlerCliOptions {}
+export interface TelecrawlOptions extends CrawlerCliOptions { }
 
 const TELECRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "telecrawl",
@@ -71,6 +71,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)

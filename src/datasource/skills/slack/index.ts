@@ -6,7 +6,7 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface SlacrawlOptions extends CrawlerCliOptions {}
+export interface SlacrawlOptions extends CrawlerCliOptions { }
 
 const SLACRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "slacrawl",
@@ -72,6 +72,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)
@@ -98,13 +99,13 @@ function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 			...(channelName !== undefined ? { title: `#${channelName}` } : {}),
 			...(channelName !== undefined || channelId !== undefined
 				? {
-						hierarchy: [
-							"workspaces",
-							workspaceName ?? workspaceId ?? "unknown",
-							"channels",
-							channelName ?? channelId ?? "unknown",
-						],
-					}
+					hierarchy: [
+						"workspaces",
+						workspaceName ?? workspaceId ?? "unknown",
+						"channels",
+						channelName ?? channelId ?? "unknown",
+					],
+				}
 				: {}),
 			...(timestamp !== undefined && Number.isFinite(Number.parseFloat(timestamp))
 				? { publishedAt: Math.round(Number.parseFloat(timestamp) * 1000) }

@@ -126,6 +126,15 @@ describe("WacrawlClient", () => {
 		});
 		expect(await malformed.search("query")).toMatchObject({ ok: false, reason: "invalid-output" });
 	});
+
+	it("treats JSON null search output as zero hits", async () => {
+		writeFakeWacrawl();
+		const client = new WacrawlClient({
+			binaryPath,
+			env: { WACRAWL_FAKE_OUTPUT: "null\n" },
+		});
+		expect(await client.search("query")).toMatchObject({ ok: true, hits: [] });
+	});
 });
 
 describe("WacrawlSkill", () => {

@@ -6,7 +6,7 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface WacrawlOptions extends CrawlerCliOptions {}
+export interface WacrawlOptions extends CrawlerCliOptions { }
 
 const WACRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "wacrawl",
@@ -79,6 +79,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)
