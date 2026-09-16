@@ -6,7 +6,7 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface WacrawlOptions extends CrawlerCliOptions { }
+export interface WacrawlOptions extends CrawlerCliOptions {}
 
 const WACRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "wacrawl",

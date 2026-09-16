@@ -6,7 +6,7 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface TelecrawlOptions extends CrawlerCliOptions { }
+export interface TelecrawlOptions extends CrawlerCliOptions {}
 
 const TELECRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "telecrawl",
