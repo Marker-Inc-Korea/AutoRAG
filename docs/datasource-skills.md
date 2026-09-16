@@ -59,6 +59,40 @@ protected locations. Unavailable on non-macOS hosts.
 }
 ```
 
+## Shared embedding runtime and native ownership
+
+The AutoRAG shared embedding runtime is a provider boundary, not a shared
+archive or vector-store boundary. It computes embeddings through the
+loopback-only `autorag-gateway`; each datasource keeps its native archive,
+chunking, credentials, metadata, vector store, generation publication, and
+source identity.
+
+The zero-configuration boundary is narrow:
+
+- **MinSync** uses the gateway by default. AutoRAG supplies the endpoint and
+  records the profile identity; MinSync owns `.minsync`, CDC chunks, vectors,
+  and reindex decisions.
+- **discrawl** can receive a managed native `[search.embeddings]` section. When
+  no explicit `connector.configPath` is supplied, AutoRAG writes only
+  `.autorag/datasources/discrawl/config.toml`, preceded by the exact marker
+  `# AutoRAG managed discrawl embeddings v1`. It writes `provider`, `model`,
+  `base_url`, and `dimensions`, and checks discrawl metadata before asking the
+  native CLI to rebuild. An explicit `configPath` is authoritative and is
+  never rewritten.
+- **katok** and **mailcrawl** remain pending upstream provider contracts
+  (issues [#19](https://github.com/NomaDamas/katok/issues/19) and
+  [#31](https://github.com/NomaDamas/mailcrawl/issues/31)). AutoRAG does not
+  force the shared runtime into either CLI before those contracts are released.
+- **qmd** and **clawgallery** are untouched. qmd retains its native retrieval;
+  ClawGallery retains its VDR/native retrieval.
+- **Lexical-only crawlers** are unchanged and receive no semantic provider
+  configuration.
+
+Embedding requests contain text and selected model/profile data only. AutoRAG
+does not send archive IDs, source paths, credentials, or native store paths to
+the gateway. If the runtime is unavailable, a datasource keeps its native
+lexical/FTS lane where supported and reports a diagnostic; it does not silently
+switch to a remote embedding service.
 ## Contract
 
 A datasource skill is both:

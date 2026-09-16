@@ -474,6 +474,7 @@ const EMBEDDER_ALLOWLIST = new Set<string>([
 	"batchSize",
 	"maxRetries",
 	"maxConcurrent",
+	"profile",
 ]);
 
 /**
@@ -503,6 +504,7 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 		batchSize?: number;
 		maxRetries?: number;
 		maxConcurrent?: number;
+		profile?: MinSyncEmbedderConfig["profile"];
 	} = {};
 	if (record.id !== undefined) {
 		if (typeof record.id !== "string" || record.id.trim() === "") {
@@ -533,6 +535,12 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 			throw new ConfigError(`${path}.passagePrefix must be a string`);
 		}
 		out.passagePrefix = record.passagePrefix;
+	}
+	if (record.profile !== undefined) {
+		if (record.profile !== "qwen3-embedding-0.6b" && record.profile !== "embeddinggemma-300m") {
+			throw new ConfigError(`${path}.profile must be a supported runtime profile`);
+		}
+		out.profile = record.profile;
 	}
 	for (const field of POSITIVE_INT_FIELDS) {
 		const value = record[field];

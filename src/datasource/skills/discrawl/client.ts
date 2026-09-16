@@ -1,12 +1,18 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type {
 	DiscrawlDoctorInfo,
 	DiscrawlDoctorResult,
+	DiscrawlEmbeddingConfigResult,
+	DiscrawlEmbeddingRuntime,
 	DiscrawlEmbedInfo,
 	DiscrawlEmbedResult,
 	DiscrawlFailure,
+	DiscrawlMetadataInfo,
+	DiscrawlMetadataResult,
 	DiscrawlOk,
 	DiscrawlOptions,
 	DiscrawlSearchHit,
@@ -82,6 +88,55 @@ export class DiscrawlClient {
 		this.options = options;
 	}
 
+	async configureEmbeddings(runtime: DiscrawlEmbeddingRuntime): Promise<DiscrawlEmbeddingConfigResult> {
+		if (this.options.configPath !== undefined) return { configured: false, rebuildRequired: false };
+		const workspace = this.options.workspacePath ?? this.options.root;
+		if (workspace === undefined) return { configured: false, rebuildRequired: false };
+		const path = `${workspace}/.autorag/datasources/discrawl/config.toml`;
+		let existing = "";
+		try {
+			existing = readFileSync(path, "utf8");
+		} catch {}
+		const managed = existing.startsWith("# AutoRAG managed discrawl embeddings v1\n");
+		if (existing.length > 0 && !managed) return { configured: false, rebuildRequired: false };
+		const previous = managed ? parseManagedEmbedding(existing) : undefined;
+		const config = managedDiscrawlConfig({ ...runtime, baseUrl: nativeGatewayBaseUrl(runtime.baseUrl) });
+		mkdirSync(dirname(path), { recursive: true });
+		if (existing !== config) writeFileSync(path, config, "utf8");
+		return {
+			configured: true,
+			rebuildRequired:
+				previous !== undefined &&
+				(previous.provider !== runtime.provider ||
+					previous.model !== runtime.model ||
+					previous.dimensions !== runtime.dimensions),
+		};
+	}
+
+	async prepareEmbeddings(): Promise<boolean> {
+		const runtime = this.options.embeddingRuntime;
+		if (runtime === undefined) return false;
+		const configured = await this.configureEmbeddings(runtime);
+		if (!configured.configured) return false;
+		const metadata = await this.metadata();
+		if (!metadata.ok) return configured.rebuildRequired;
+		return (
+			configured.rebuildRequired ||
+			(metadata.data.embeddingProvider !== undefined && metadata.data.embeddingProvider !== runtime.provider) ||
+			(metadata.data.embeddingModel !== undefined && metadata.data.embeddingModel !== runtime.model) ||
+			(metadata.data.embeddingDimensions !== undefined && metadata.data.embeddingDimensions !== runtime.dimensions)
+		);
+	}
+
+	async metadata(signal?: AbortSignal): Promise<DiscrawlMetadataResult> {
+		const result = await this.runJson(["metadata"], signal);
+		if (!result.ok) return toFailure(result);
+		const parsed = parseJsonObject(result.stdout);
+		if (parsed === undefined) return toFailure(result, "invalid-json");
+		const data = normalizeMetadata(parsed);
+		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
+	}
+
 	async doctor(signal?: AbortSignal): Promise<DiscrawlDoctorResult> {
 		const result = await this.run(["doctor"], signal);
 		if (!result.ok) return toFailure(result);
@@ -112,8 +167,9 @@ export class DiscrawlClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	async embed(limit?: number, signal?: AbortSignal): Promise<DiscrawlEmbedResult> {
+	async embed(limit?: number, rebuild = false, signal?: AbortSignal): Promise<DiscrawlEmbedResult> {
 		const args = ["embed"];
+		if (rebuild) args.push("--rebuild");
 		if (limit !== undefined) args.push("--limit", String(limit));
 		const result = await this.run(args, signal);
 		if (!result.ok) return toFailure(result);
@@ -166,7 +222,15 @@ export function discrawlWorkspace(options: DiscrawlOptions): string | undefined 
  * (`~/Library/Application Support/discrawl` on macOS).
  */
 function commonArgs(options: DiscrawlOptions): readonly string[] {
-	return options.configPath === undefined ? [] : ["--config", options.configPath];
+	if (options.configPath !== undefined) return ["--config", options.configPath];
+	if (options.embeddingRuntime !== undefined && (options.workspacePath ?? options.root) !== undefined) {
+		return ["--config", managedConfigPath((options.workspacePath ?? options.root) as string)];
+	}
+	return [];
+}
+
+function managedConfigPath(workspace: string): string {
+	return `${workspace}/.autorag/datasources/discrawl/config.toml`;
 }
 
 function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
@@ -236,6 +300,41 @@ function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
 			});
 		});
 	});
+}
+
+export function nativeGatewayBaseUrl(baseUrl: string): string {
+	if (baseUrl.endsWith("/v1")) return baseUrl;
+	let trimmed = baseUrl;
+	while (trimmed.endsWith("/")) {
+		trimmed = trimmed.slice(0, -1);
+	}
+	return `${trimmed}/v1`;
+}
+
+function managedDiscrawlConfig(runtime: DiscrawlEmbeddingRuntime): string {
+	return [
+		"# AutoRAG managed discrawl embeddings v1",
+		"[search.embeddings]",
+		"enabled = true",
+		`provider = ${JSON.stringify(runtime.provider)}`,
+		`model = ${JSON.stringify(runtime.model)}`,
+		`base_url = ${JSON.stringify(runtime.baseUrl)}`,
+		`dimensions = ${runtime.dimensions}`,
+		"",
+	].join("\n");
+}
+
+function parseManagedEmbedding(config: string): { provider?: string; model?: string; dimensions?: number } {
+	const value = (key: string): string | undefined => {
+		const match = config.match(new RegExp(`^${key}\\s*=\\s*(?:\\"([^\\"]*)\\"|([^\\s#]+))$`, "m"));
+		return match?.[1] ?? match?.[2];
+	};
+	const dimensions = Number(value("dimensions"));
+	return {
+		provider: value("provider"),
+		model: value("model"),
+		...(Number.isFinite(dimensions) ? { dimensions } : {}),
+	};
 }
 
 function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
@@ -346,6 +445,24 @@ function normalizeDoctor(raw: Record<string, string>): DiscrawlDoctorInfo | unde
 		embeddingsOk,
 		...(raw.embeddings_model !== undefined ? { embeddingModel: raw.embeddings_model } : {}),
 		...(raw.embeddings_provider !== undefined ? { embeddingProvider: raw.embeddings_provider } : {}),
+		metadata: { ...raw },
+	};
+}
+
+function normalizeMetadata(raw: Record<string, unknown>): DiscrawlMetadataInfo | undefined {
+	const embeddings = asRecord(raw.embeddings) ?? raw;
+	const provider = asString(embeddings.provider) ?? asString(raw.embeddings_provider);
+	const model = asString(embeddings.model) ?? asString(raw.embeddings_model);
+	const dimensionsValue =
+		asNumber(embeddings.dimensions) ?? asNumber(raw.embeddings_dimensions) ?? asNumber(raw.dimension);
+	const identityValue = asString(embeddings.identity) ?? asString(raw.embedding_identity);
+	if (provider === undefined && model === undefined && dimensionsValue === undefined && identityValue === undefined)
+		return {};
+	return {
+		...(provider !== undefined ? { embeddingProvider: provider } : {}),
+		...(model !== undefined ? { embeddingModel: model } : {}),
+		...(dimensionsValue !== undefined ? { embeddingDimensions: dimensionsValue } : {}),
+		...(identityValue !== undefined ? { embeddingIdentity: identityValue } : {}),
 		metadata: { ...raw },
 	};
 }

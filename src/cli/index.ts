@@ -61,10 +61,13 @@ const VALUE_FLAGS = new Set([
 	"org",
 	"access-hint",
 	"input",
+	"profile",
+	"format",
 ]);
 
 const COMMANDS = [
 	"init",
+	"setup",
 	"refresh",
 	"status",
 	"search",
@@ -80,6 +83,8 @@ const COMMANDS = [
 	"serve",
 	"p2p",
 	"lite",
+	"models",
+	"gateway",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -94,6 +99,7 @@ Usage: autorag <command> [args] [flags]
 
 Commands:
   init                 Write ~/.autorag/config.json for a local collection
+  setup                Probe and configure local runtime and datasources
 	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
 	                        --model-provider P  --model-id ID
 	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
@@ -131,6 +137,9 @@ Commands:
   p2p policy list      Show effective merged sharing policy (virtual-path keys)
   p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
   p2p policy unset     Remove a sharing rule by key
+  models prefetch|import|verify
+                       Manage verified embedding model cache (--profile ID)
+  gateway status|stop  Inspect or stop the on-demand embedding gateway (--format json)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -210,6 +219,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 			const { runInit } = await import("./commands/init.ts");
 			return runInit(ctx);
 		}
+		case "setup": {
+			const { runSetupCommand } = await import("./commands/setup.ts");
+			return runSetupCommand(ctx);
+		}
 		case "refresh": {
 			const { runRefresh } = await import("./commands/refresh.ts");
 			return runRefresh(ctx);
@@ -273,6 +286,14 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		}
 		case "lite": {
 			return dispatchLite(ctx);
+		}
+		case "models": {
+			const { runModels } = await import("./commands/models.ts");
+			return runModels(ctx);
+		}
+		case "gateway": {
+			const { runGateway } = await import("./commands/gateway.ts");
+			return runGateway(ctx);
 		}
 	}
 }

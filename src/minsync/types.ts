@@ -1,6 +1,8 @@
 /** Embedder configuration for MinSync vector indexing. Shared by config and method layers. */
 
 export interface MinSyncEmbedderConfig {
+	/** Select an AutoRAG-owned embedding runtime profile. */
+	readonly profile?: "qwen3-embedding-0.6b" | "embeddinggemma-300m";
 	readonly id?: string;
 	readonly baseUrl?: string;
 	/** Environment variable name whose value holds the embedder API key. /^[A-Za-z_][A-Za-z0-9_]*$/ */
@@ -34,6 +36,19 @@ export interface MinSyncSyncResult {
 	readonly synced: number;
 	readonly workspacePath: string;
 	readonly reason?: string;
+	readonly diagnostic?: MinSyncDiagnostic;
+}
+
+export type MinSyncDiagnosticCode =
+	| "embedder-unavailable"
+	| "no-hit"
+	| "embedding-identity-mismatch"
+	| "migration-required";
+
+export interface MinSyncDiagnostic {
+	readonly code: MinSyncDiagnosticCode;
+	readonly message: string;
+	readonly retryable?: boolean;
 }
 
 export interface MinSyncQueryHit {

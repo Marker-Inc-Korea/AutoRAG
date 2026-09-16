@@ -459,11 +459,17 @@ autorag duplicates [DIR]        # read-only duplicate families; never deletes
 autorag tui                     # interactive librarian terminal UI (beta)
 autorag ui                      # loopback page to connect datasources
 autorag lite …                  # model-free setup, retrieve, report, status
+autorag setup                   # install and configure local runtime assets
+autorag models prefetch|import|verify
+                                # manage local embedding model profiles
+autorag gateway status|stop     # inspect or stop the local embedding gateway
 autorag serve                   # P2P peer query server over SimpleX (opt-in)
 autorag p2p                     # peer trust, approvals, and sharing policy
 ```
 
-`autorag --help` is the command list of record.
+`autorag --help` is the command list of record. See
+[docs/embedding-runtime.md](docs/embedding-runtime.md) for the local embedding
+runtime and gateway setup.
 
 ### P2P sharing (SimpleX)
 

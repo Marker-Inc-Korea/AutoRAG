@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,7 +17,24 @@ afterEach(() => {
 	}
 });
 
-function writeFixture(opts: { readonly withDist: boolean; readonly withSbom: boolean }): {
+const TAR_ARCHIVE = Uint8Array.from(
+	Buffer.from(
+		"H4sIAGQXqWoC/+3NsQqDQBCE4a19ioi13K4YIY9zgqBwWtwZnz8XG8FahJD/a2Znmg3Bz77uTV9Pc2EvaYjbEOU6mnVtu2d2TlVrjvu7W2OdykPlBu+0+pjfy3+qStdPi0tjIQAAAAAAAAAAAAAAAACAH/IBLt23OQAoAAA=",
+		"base64",
+	),
+);
+const ZIP_ARCHIVE = Uint8Array.from(
+	Buffer.from(
+		"UEsDBBQAAAAAACSYL11dm7CPAgAAAAIAAAAQAAAAbGxhbWEtc2VydmVyLmV4ZU1aUEsBAhQDFAAAAAAAJJgvXV2bsI8CAAAAAgAAABAAAAAAAAAAAAAAAIABAAAAAGxsYW1hLXNlcnZlci5leGVQSwUGAAAAAAEAAQA+AAAAMAAAAAAA",
+		"base64",
+	),
+);
+
+function writeFixture(opts: {
+	readonly withDist: boolean;
+	readonly withSbom: boolean;
+	readonly withEmbedding?: boolean;
+}): {
 	readonly root: string;
 	readonly outputDir: string;
 	readonly sbomDir: string;
@@ -34,6 +52,51 @@ function writeFixture(opts: { readonly withDist: boolean; readonly withSbom: boo
 		mkdirSync(join(root, "dist"));
 		writeFileSync(join(root, "dist", "index.js"), "export const ok = true;\n");
 	}
+	if (opts.withEmbedding) {
+		const licensesDir = join(root, "licenses");
+		mkdirSync(licensesDir);
+		writeFileSync(join(licensesDir, "llama.cpp-MIT.txt"), "MIT\n");
+		const assets = [
+			{
+				kind: "runtime",
+				id: "mac",
+				filename: "runtime.tar.gz",
+				url: "https://example.invalid/runtime.tar.gz",
+				revision: "test",
+				bytes: TAR_ARCHIVE,
+				archiveMembers: ["llama-b10951/llama-server"],
+			},
+			{
+				kind: "runtime",
+				id: "win-cpu",
+				filename: "runtime-cpu.zip",
+				url: "https://example.invalid/runtime-cpu.zip",
+				revision: "test",
+				bytes: ZIP_ARCHIVE,
+				archiveMembers: ["llama-server.exe"],
+			},
+			{
+				kind: "runtime",
+				id: "win-vulkan",
+				filename: "runtime-vulkan.zip",
+				url: "https://example.invalid/runtime-vulkan.zip",
+				revision: "test",
+				bytes: ZIP_ARCHIVE,
+				archiveMembers: ["llama-server.exe"],
+			},
+		] as const;
+		writeFileSync(
+			join(licensesDir, "embedding-assets.json"),
+			JSON.stringify({
+				assets: assets.map(({ bytes, ...asset }) => ({
+					...asset,
+					sha256: createHash("sha256").update(bytes).digest("hex"),
+					licenseId: "MIT",
+					noticeFile: "licenses/llama.cpp-MIT.txt",
+				})),
+			}),
+		);
+	}
 	const sbomDir = join(root, "sboms");
 	mkdirSync(sbomDir);
 	if (opts.withSbom) {
@@ -45,12 +108,17 @@ function writeFixture(opts: { readonly withDist: boolean; readonly withSbom: boo
 
 describe("stageReleaseAssets", () => {
 	it("stages the npm pack tarball, LICENSE, NOTICE, GOVERNANCE, SBOM, and SHA256SUMS", () => {
-		const fixture = writeFixture({ withDist: true, withSbom: true });
+		const fixture = writeFixture({ withDist: true, withSbom: true, withEmbedding: true });
 		const staged = stageReleaseAssets({
 			projectRoot: fixture.root,
 			outputDir: fixture.outputDir,
 			sbomDir: fixture.sbomDir,
+			downloadAsset: (asset) => (asset.id === "mac" ? TAR_ARCHIVE : ZIP_ARCHIVE),
 		});
+		expect(staged.files).toContain("licenses/llama.cpp-MIT.txt");
+		expect(staged.files).toContain("runtime.tar.gz");
+		expect(staged.files).toContain("runtime-cpu.zip");
+		expect(staged.files).toContain("runtime-vulkan.zip");
 		expect(staged.files).toContain("LICENSE");
 		expect(staged.files).toContain("NOTICE");
 		expect(staged.files).toContain("GOVERNANCE.md");

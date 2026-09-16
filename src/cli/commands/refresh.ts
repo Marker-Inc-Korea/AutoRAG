@@ -1,4 +1,5 @@
 import { AutoRAGAgent, type RefreshMethod } from "../../agent/agent.ts";
+import { releaseRuntimeHandles } from "../../embedding-runtime/index.ts";
 import { buildAgentOptions, ConfigError, resolveConfig } from "../config.ts";
 import { renderError, renderRefresh } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -23,6 +24,8 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return error instanceof ConfigError ? 2 : 1;
+	} finally {
+		await releaseRuntimeHandles();
 	}
 }
 

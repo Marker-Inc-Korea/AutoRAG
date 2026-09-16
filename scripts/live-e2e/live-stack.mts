@@ -36,7 +36,7 @@ const result = {
 	cursorExists: true,
 	hit: { source: hit.source, sourceAbsolute: true, sourceExists: true, sourceReadable: true, score: hit.score },
 	status: { state: status.state, stale: status.stale, components: status.components },
-	embedding: { endpoint: "http://127.0.0.1:18080", model: "embeddinggemma:latest", dimension: 768, loopbackOnly: true },
+	embedding: { endpoint: process.env.AUTORAG_GATEWAY_ENDPOINT, model: "Qwen3-Embedding-0.6B-Q8_0.gguf", profileId: "qwen3-embedding-0.6b", dimension: 1024, queryPrefix: "", passagePrefix: "", loopbackOnly: true },
 	openaiKeyPresent: Boolean(process.env.OPENAI_API_KEY || process.env.AUTORAG_OPENAI_API_KEY),
 	incremental: mode === "warm" && cursorExistedBefore && refresh.written === 0,
 	fullSync: !cursorExistedBefore,
