@@ -358,8 +358,8 @@ describe("CLI config datasources wiring", () => {
 			workspacePath: tmpRoot,
 			datasources: {
 				"personal-mail": {
-					type: "gmail",
-					connector: { tokenEnv: "GMAIL_ACCESS_TOKEN_TEST" },
+					type: "mailcrawl",
+					connector: { binaryPath: "/missing/mailcrawl" },
 				},
 				"company-github": {
 					type: "github",
@@ -376,7 +376,7 @@ describe("CLI config datasources wiring", () => {
 				},
 			},
 			datasourceAccess: {
-				allowedTags: ["gmail", "github", "slack", "kakaotalk"],
+				allowedTags: ["mailcrawl", "github", "slack", "kakaotalk"],
 				allowedScopes: ["/personal-mail/**", "/company-github/**", "/engineering-slack/**", "/family-kakao/**"],
 			},
 		});

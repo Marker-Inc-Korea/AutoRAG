@@ -91,7 +91,14 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 	const pseudonymMap = new Map<string, string>();
 	const diagnostics: EgressDiagnostic[] = [];
 	if (options.observedSources.size === 0) {
-		return rejectedResponse([diagnostic("policy-denied", "No policy-allowed retrieval sources were observed.")]);
+		const foundNothing =
+			Array.isArray(options.response?.diagnostics) &&
+			options.response.diagnostics.some((entry) => entry?.code === "no-verified-results");
+		return rejectedResponse([
+			foundNothing
+				? diagnostic("no-verified-results", "The peer found no verified results for this query.")
+				: diagnostic("policy-denied", "No policy-allowed retrieval sources were observed."),
+		]);
 	}
 	const rawAnswer = typeof options.response?.answer === "string" ? options.response.answer : "";
 	const answer = redactPII(rawAnswer, {

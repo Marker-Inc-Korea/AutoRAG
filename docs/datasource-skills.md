@@ -146,8 +146,7 @@ Retrieval exposes independent BM25, semantic, and hybrid methods and maps
 results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
 datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
-path. Mailcrawl is the sole Himalaya-backed IMAP/Maildir path; Gmail remains
-available separately through the Gmail REST API.
+path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
 
 ## Datasource UI
 
@@ -167,9 +166,9 @@ Every datasource entry can use a reusable template with a connection alias:
 ```json
 {
   "datasources": {
-    "personal-gmail": {
-      "type": "gmail",
-      "connector": { "tokenEnv": "PERSONAL_GMAIL_TOKEN" }
+    "personal-mail": {
+      "type": "mailcrawl",
+      "connector": { "account": "personal", "mailbox": "INBOX" }
     },
     "company-slack": {
       "type": "slack",

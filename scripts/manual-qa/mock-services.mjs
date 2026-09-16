@@ -1,17 +1,16 @@
 /**
  * Manual-QA mock server emulating the external APIs the datasource skills
- * talk to: Slack, Notion, GitHub, Gmail, and an RSS
+ * talk to: Slack, Notion, GitHub, and an RSS
  * feed. Started by run-qa.ts on an ephemeral port.
  *
  * Auth behavior mirrors the real services closely enough for QA:
  *  - Slack expects  Authorization: Bearer qa-slack-token
- *  - Notion/Gmail expect their Bearer tokens
+ *  - Notion expects its Bearer token
  *  - wrong/missing tokens produce the service's native auth failure shape
  */
 
 import { createServer } from "node:http";
 
-const b64url = (text) => Buffer.from(text, "utf8").toString("base64url");
 
 export function startMockServices() {
 	const server = createServer((req, res) => {
@@ -94,39 +93,14 @@ export function startMockServices() {
 			]);
 		}
 
-		// ---- Gmail ----
-		if (path === "/gmail/users/me/messages") {
-			if (auth !== "Bearer qa-gmail-token") return text("unauthorized", 401);
-			return json({ messages: [{ id: "qa-mail-1" }] });
-		}
-		if (path === "/gmail/users/me/messages/qa-mail-1") {
-			return json({
-				id: "qa-mail-1",
-				threadId: "qa-thread-1",
-				labelIds: ["INBOX"],
-				internalDate: "1718000000000",
-				payload: {
-					mimeType: "multipart/alternative",
-					headers: [
-						{ name: "Subject", value: "Office relocation" },
-						{ name: "From", value: "facilities@example.com" },
-						{ name: "To", value: "all@example.com" },
-					],
-					parts: [
-						{ mimeType: "text/plain", body: { data: b64url("We move to the new Gangnam office on September 2.") } },
-					],
-				},
-			});
-		}
-
 		// ---- RSS ----
 		if (path === "/rss/feed.xml") {
 			return text(
 				`<?xml version="1.0"?><rss version="2.0"><channel><title>QA Times</title>` +
-					`<item><title>Framework 3.0 released</title><guid>qa-rss-1</guid>` +
-					`<pubDate>Mon, 01 Jul 2024 10:00:00 GMT</pubDate>` +
-					`<description>The new release ships incremental indexing.</description></item>` +
-					`</channel></rss>`,
+				`<item><title>Framework 3.0 released</title><guid>qa-rss-1</guid>` +
+				`<pubDate>Mon, 01 Jul 2024 10:00:00 GMT</pubDate>` +
+				`<description>The new release ships incremental indexing.</description></item>` +
+				`</channel></rss>`,
 				200,
 				"application/rss+xml",
 			);

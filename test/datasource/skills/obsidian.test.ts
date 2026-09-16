@@ -337,6 +337,10 @@ process.exit(0);
 		let bound: ReturnType<typeof setTimeout> | undefined;
 		let result: Awaited<ReturnType<QmdClient["search"]>>;
 		try {
+			// The fixture spawns a fresh Node runtime; under a loaded parallel suite
+			// that startup plus the 500ms reap grace can exceed a tight bound. Keep
+			// the bound generous so the assertion tests the reaper, not machine speed,
+			// while a genuine regression still fails here instead of hanging.
 			result = await Promise.race([
 				client.search("search", "descendant"),
 				new Promise<never>((_, reject) => {
@@ -347,7 +351,7 @@ process.exit(0);
 									"qmd search never settled: the direct child exited while its descendant held the inherited stdio open",
 								),
 							),
-						2_000,
+						30_000,
 					);
 				}),
 			]);

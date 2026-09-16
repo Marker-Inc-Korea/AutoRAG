@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { planSourceRoots } from "../../src/filesystem/source-paths.ts";
 import { PolicyError, PolicyStore } from "../../src/p2p/policy.ts";
 
 let root: string;
@@ -103,18 +104,18 @@ tier = "never"
 [policy."/kakao/personal/chunks/**"]
 tier = "always"
 
-[policy."/gmail/personal/chunks/**"]
+[policy."/mailcrawl/personal/chunks/**"]
 tier = "peers"
 peers = ["mail-peer"]
 `);
 		const policy = store();
 		policy.promoteSource("/kakao/personal/chunks/chunk-1");
 		policy.promoteSource("/kakao/other/chunks/chunk-1");
-		policy.promoteSource("/gmail/personal/chunks/message-1");
+		policy.promoteSource("/mailcrawl/personal/chunks/message-1");
 
 		expect(policy.resolvePolicy("/kakao/personal/chunks/chunk-1", "any").allowed).toBe(true);
 		expect(policy.resolvePolicy("/kakao/other/chunks/chunk-1", "any").allowed).toBe(false);
-		expect(policy.resolvePolicy("/gmail/personal/chunks/message-1", "mail-peer")).toMatchObject({
+		expect(policy.resolvePolicy("/mailcrawl/personal/chunks/message-1", "mail-peer")).toMatchObject({
 			tier: "peers",
 			allowed: true,
 			shareBytes: false,
@@ -234,5 +235,84 @@ tier = "always
 
 		expect(() => store()).toThrow(PolicyError);
 		expect(() => store()).toThrow(/policy\.toml/i);
+	});
+});
+
+describe("PolicyStore source normalization", () => {
+	function storeWithRoots(): { policyStore: PolicyStore; docsDir: string } {
+		const docsDir = join(workspace, "docs");
+		mkdirSync(docsDir, { recursive: true });
+		const policyStore = new PolicyStore({
+			workspacePath: workspace,
+			homePath: home,
+			sourceRoots: planSourceRoots([docsDir]),
+		});
+		return { policyStore, docsDir };
+	}
+
+	it("matches an absolute real path against the containing root's virtual allow glob", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/docs/**"]
+tier = "always"
+`);
+		const { policyStore, docsDir } = storeWithRoots();
+		const result = policyStore.resolvePolicy(join(docsDir, "policy", "refund.md"));
+		expect(result.allowed).toBe(true);
+		expect(result.tier).toBe("always");
+	});
+
+	it("matches a datasource slash identity against its namespace glob", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/kakao/**"]
+tier = "always"
+`);
+		const { policyStore } = storeWithRoots();
+		const result = policyStore.resolvePolicy("/kakao/default/chunks/chunk-1");
+		expect(result.allowed).toBe(true);
+	});
+
+	it("passes an absolute filesystem path outside every source root through to glob matching", () => {
+		// Canonical form uses forward slashes on every host (C:/... on Windows).
+		const canonicalOutside = join(tmpdir(), "outside-every-root.md").replaceAll("\\", "/");
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."${canonicalOutside}"]
+tier = "always"
+`);
+		const { policyStore } = storeWithRoots();
+		const result = policyStore.resolvePolicy(join(tmpdir(), "outside-every-root.md"));
+		expect(result.allowed).toBe(true);
+		expect(result.tier).toBe("always");
+	});
+
+	it("recognizes a promoted source reported as an absolute real path", () => {
+		writeWorkspacePolicy(`
+[policy."/docs/**"]
+tier = "always"
+`);
+		const { policyStore, docsDir } = storeWithRoots();
+		const source = join(docsDir, "fresh.md");
+		policyStore.promoteSource(source);
+		expect(policyStore.isSourceSeen(source)).toBe(true);
+		expect(policyStore.resolvePolicy(source).allowed).toBe(true);
+	});
+
+	it("keeps raw matching unchanged when no sourceRoots are configured", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/docs/**"]
+tier = "always"
+`);
+		const docsDir = join(workspace, "docs");
+		mkdirSync(docsDir, { recursive: true });
+		const result = store().resolvePolicy(join(docsDir, "policy", "refund.md"));
+		expect(result.allowed).toBe(false);
+		expect(store().resolvePolicy("/docs/policy/refund.md").allowed).toBe(true);
 	});
 });
