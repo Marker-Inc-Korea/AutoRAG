@@ -309,6 +309,67 @@ process.stdout.write("{}");
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toBe("binary-missing");
 	});
+
+	it("reaps a qmd descendant that keeps the inherited stdio open after the direct child exits", async () => {
+		const binaryPath = join(root, "qmd-descendant");
+		mkdirSync(join(root, "vault-descendant"), { recursive: true });
+		// qmd 2.8.3 is a launcher: it spawns a runtime descendant that inherits the
+		// launcher stdout/stderr pipes. When only the launcher exits, the descendant
+		// keeps those pipes open and Node never emits "close".
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { spawn } from "node:child_process";
+const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 5000)"], { stdio: "inherit" });
+process.stdout.write(JSON.stringify([{ docid: "descendant", score: 1, file: "notes/descendant.md", snippet: "descendant", grandchildPid: descendant.pid }]));
+process.exit(0);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const client = new QmdClient({
+			binaryPath,
+			vaultPath: join(root, "vault-descendant"),
+			workspaceRoot: root,
+			instanceId: "descendant",
+			timeoutMs: 30_000,
+		});
+		let bound: ReturnType<typeof setTimeout> | undefined;
+		let result: Awaited<ReturnType<QmdClient["search"]>>;
+		try {
+			result = await Promise.race([
+				client.search("search", "descendant"),
+				new Promise<never>((_, reject) => {
+					bound = setTimeout(
+						() =>
+							reject(
+								new Error(
+									"qmd search never settled: the direct child exited while its descendant held the inherited stdio open",
+								),
+							),
+						2_000,
+					);
+				}),
+			]);
+		} finally {
+			clearTimeout(bound);
+		}
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.hits[0]?.chunkId).toBe("descendant");
+		const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
+		const pidText = pidMatch?.[1];
+		if (pidText === undefined) throw new Error("qmd fixture did not report its descendant PID");
+		if (process.platform === "win32") return;
+		try {
+			process.kill(Number(pidText), 0);
+		} catch (error) {
+			if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
+			throw error;
+		}
+		throw new Error(`qmd descendant ${pidText} survived after the client settled`);
+	}, 10_000);
 });
 
 describe("toQmdCollectionName", () => {
