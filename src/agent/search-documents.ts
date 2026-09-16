@@ -15,6 +15,7 @@ export type SearchDocumentDiagnosticSeverity = "info" | "warning" | "error";
  */
 export type SearchDocumentDiagnosticCode =
 	| "empty-query"
+	| "no-verified-results"
 	| "unknown-warning"
 	| "caller-tool-dropped"
 	| "minsync-unavailable"
@@ -75,24 +76,24 @@ export interface SearchDocumentsResponse {
 
 export type SearchDocumentsStreamEvent =
 	| {
-			readonly type: "progress";
-			readonly sessionId: string;
-			readonly query: string;
-			readonly text: string;
-	  }
+		readonly type: "progress";
+		readonly sessionId: string;
+		readonly query: string;
+		readonly text: string;
+	}
 	| {
-			/**
-			 * Immediate first answer from the thinking-off fast phase. Always
-			 * yielded before `complete` when the two-phase flow produced one; the
-			 * `complete` event's response remains the verified final answer.
-			 */
-			readonly type: "preliminary";
-			readonly response: SearchDocumentsResponse;
-	  }
+		/**
+		 * Immediate first answer from the thinking-off fast phase. Always
+		 * yielded before `complete` when the two-phase flow produced one; the
+		 * `complete` event's response remains the verified final answer.
+		 */
+		readonly type: "preliminary";
+		readonly response: SearchDocumentsResponse;
+	}
 	| {
-			readonly type: "complete";
-			readonly response: SearchDocumentsResponse;
-	  };
+		readonly type: "complete";
+		readonly response: SearchDocumentsResponse;
+	};
 
 type SearchSession = { query: string; registry: Map<number, CuratedResult>; transient?: boolean };
 type SearchSessions = Map<string, SearchSession>;

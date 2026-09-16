@@ -851,8 +851,20 @@ export class AutoRAGAgent {
 				if (timeout !== undefined) clearTimeout(timeout);
 			}
 
+			let emittedNoVerifiedResults = false;
 			if (captured === undefined) {
-				throw new Error("AutoRAG agent completed without emitting structured results");
+				if (!this.remoteSession) {
+					throw new Error("AutoRAG agent completed without emitting structured results");
+				}
+				// Remote sessions fail soft: the peer must receive a structured
+				// "no verified results" response, never an internal error.
+				emittedNoVerifiedResults = true;
+				captured = {
+					answer: "No verified results were found for this query.",
+					results: [],
+					mapping: [],
+					warnings: [],
+				};
 			}
 			if (this.remoteSession && options.observedSources !== undefined) {
 				for (const entry of captured.mapping) options.observedSources.add(entry.source);
@@ -870,13 +882,22 @@ export class AutoRAGAgent {
 				);
 				if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
 			}
+			const componentDiagnostics = this.collectComponentDiagnostics();
+			if (emittedNoVerifiedResults) {
+				componentDiagnostics.push({
+					code: "no-verified-results",
+					severity: "info",
+					message: "The agent completed without verified results; returning a structured empty response.",
+					source: "agent",
+				});
+			}
 			const response = recordStructuredResultsSession(
 				sessionId,
 				trimmedQuery,
 				captured,
 				this.sessions,
 				this.memory,
-				this.collectComponentDiagnostics(),
+				componentDiagnostics,
 			);
 			this.runLogger.write({
 				event: "search_completed",

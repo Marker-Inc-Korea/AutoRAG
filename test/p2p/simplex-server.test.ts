@@ -54,7 +54,7 @@ class FakeTransport implements SimplexTransport {
 	async createInvitation(): Promise<string> {
 		return "simplex:/invitation#fake";
 	}
-	async connect(): Promise<void> {}
+	async connect(): Promise<void> { }
 	async listContacts(): Promise<{ contactId: number; localDisplayName: string }[]> {
 		return this.peer !== undefined
 			? [{ contactId: this.peer.contactId, localDisplayName: this.peer.displayName }]
@@ -88,7 +88,7 @@ class FakeTransport implements SimplexTransport {
 		this.onMessage((message) => this.received.push(message.text));
 	}
 
-	async close(): Promise<void> {}
+	async close(): Promise<void> { }
 }
 
 function transportPair(): { client: FakeTransport; server: FakeTransport } {
@@ -251,6 +251,40 @@ describe("startSimplexPeerServer", () => {
 		expect(response.answer).toBe("");
 		expect(response.results).toEqual([]);
 		expect(response.diagnostics.some((d) => d.code === "policy-denied")).toBe(true);
+	});
+
+	it("returns a structured no-verified-results response when the peer search finds nothing", async () => {
+		const { client, server } = capturingPair();
+		const agent = stubAgent(async (query) => ({
+			...searchResponse(query),
+			results: [],
+			answer: "No verified results were found for this query.",
+			diagnostics: [
+				{
+					code: "no-verified-results",
+					severity: "info",
+					message: "The agent completed without verified results.",
+					source: "agent",
+				},
+			],
+		}));
+		const handle = await startSimplexPeerServer({
+			transport: server,
+			agent,
+			peers: peers(),
+			workspacePath: workspace(),
+			injectionClassifier: false,
+			resolvePolicy: openResolver,
+		});
+		servers.push(handle);
+		await client.sendMessage(
+			server.contactId,
+			JSON.stringify({ v: 1, kind: "query", id: "empty-1", payload: { v: 1, query: "unknown topic" } }),
+		);
+		const response = await lastResponse(client);
+		expect(response.status).toBe("rejected");
+		expect(response.diagnostics.some((d) => d.code === "no-verified-results")).toBe(true);
+		expect(response.diagnostics.some((d) => d.code === "internal-error")).toBe(false);
 	});
 
 	it("rejects a query from an unknown contact with auth-error", async () => {
