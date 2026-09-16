@@ -19,6 +19,7 @@ import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./u
 
 const PERPLEXITY_ASK_URL = "https://www.perplexity.ai/rest/sse/perplexity_ask";
 const API_VERSION = "2.18";
+const DEFLECTION_PATTERN = /sign up|log in to continue|create an account|verify you are human|are you a robot/i;
 const MAX_ERROR_BYTES = 8 * 1024;
 const ANONYMOUS_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -63,34 +64,47 @@ interface PerplexityStreamEvent {
 	uuid?: string;
 }
 
-/** Read an SSE response body as parsed JSON events (`data:` lines, `[DONE]` terminator). */
+/**
+ * Read an SSE response body as parsed JSON events (`data:` lines, `[DONE]`
+ * terminator). Events are dispatched on blank lines; line endings may be
+ * LF or CRLF (the ask endpoint streams CRLF), so parsing is line-based
+ * rather than a naive "\n\n" split.
+ */
 async function* readSseJson(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<unknown> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
+	let dataLines: string[] = [];
+	const dispatch = function*(): Generator<unknown> {
+		if (dataLines.length === 0) return;
+		const data = dataLines.join("\n").trim();
+		dataLines = [];
+		if (data === "[DONE]" || data.length === 0) return;
+		try {
+			yield JSON.parse(data) as unknown;
+		} catch {
+			// Tolerate partial JSON lines from chunk boundaries.
+		}
+	};
 	try {
-		for (;;) {
+		for (; ;) {
 			if (signal?.aborted) return;
 			const { done, value } = await reader.read();
 			if (done) break;
 			buffer += decoder.decode(value, { stream: true });
-			let boundary = buffer.indexOf("\n\n");
-			while (boundary !== -1) {
-				const rawEvent = buffer.slice(0, boundary);
-				buffer = buffer.slice(boundary + 2);
-				boundary = buffer.indexOf("\n\n");
-				for (const line of rawEvent.split("\n")) {
-					if (!line.startsWith("data:")) continue;
-					const data = line.slice(5).trim();
-					if (data === "[DONE]" || data.length === 0) continue;
-					try {
-						yield JSON.parse(data) as unknown;
-					} catch {
-						// Tolerate partial JSON lines from chunk boundaries.
-					}
+			let newline = buffer.indexOf("\n");
+			while (newline !== -1) {
+				const line = buffer.slice(0, newline).replace(/\r$/, "");
+				buffer = buffer.slice(newline + 1);
+				newline = buffer.indexOf("\n");
+				if (line.length === 0) {
+					yield* dispatch();
+					continue;
 				}
+				if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
 			}
 		}
+		yield* dispatch();
 	} finally {
 		reader.releaseLock();
 	}
@@ -282,6 +296,17 @@ export class PerplexityProvider extends SearchProvider {
 		}
 
 		const sources = [...sourcesByUrl.values()];
+		// Anonymous soft wall: the backend answers deflections like "Sign up
+		// and repeat your request" with a 200 stream and zero sources. That is
+		// not a search result — fail so the chain advances to the next
+		// provider instead of presenting the deflection as an answer.
+		if (sources.length === 0 && DEFLECTION_PATTERN.test(answer)) {
+			throw new SearchProviderError(
+				"perplexity",
+				"Perplexity anonymous ask was deflected with a sign-up wall",
+				403,
+			);
+		}
 		const numResults = params.numSearchResults ?? params.limit;
 		return {
 			provider: "perplexity",

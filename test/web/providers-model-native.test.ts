@@ -168,6 +168,27 @@ describe("PerplexityProvider (anonymous ask)", () => {
 		const body = JSON.parse(String(calls[0]?.init?.body)) as { query_str?: string };
 		expect(body.query_str).toBe("autorag");
 	});
+
+	it("parses CRLF-delimited SSE streams", async () => {
+		const payload =
+			'data: {"blocks":[{"intended_usage":"web_results","web_result_block":{"web_results":[{"name":"R","url":"https://r.example/"}]}}]}\r\n\r\n' +
+			'data: {"blocks":[{"intended_usage":"ask_text","markdown_block":{"chunks":["CRLF answer"]}}],"final":true}\r\n\r\n';
+		const fetchImpl: FetchImpl = async () =>
+			new Response(payload, { status: 200, headers: { "content-type": "text/event-stream" } });
+		const response = await new PerplexityProvider().search({ query: "q", fetch: fetchImpl });
+		expect(response.answer).toBe("CRLF answer");
+		expect(response.sources.map((source) => source.url)).toContain("https://r.example/");
+	});
+
+	it("treats the anonymous sign-up deflection as a provider failure", async () => {
+		const { fetch: fetchImpl } = stubFetchSse([
+			{
+				blocks: [{ intended_usage: "ask_text", markdown_block: { chunks: ["Sign up and repeat your request."] } }],
+				final: true,
+			},
+		]);
+		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toThrow(/deflected/);
+	});
 });
 
 describe("ParallelProvider (keyless MCP)", () => {

@@ -35,11 +35,12 @@ const SEARCH_PROVIDER_HOSTS = [
 	"www.google.com",
 	"www.ecosia.org",
 	"www.mojeek.com",
-	"api.search.brave.com",
-	"api.tavily.com",
-	"api.exa.ai",
-	"s.jina.ai",
-	"kagi.com",
+	"www.perplexity.ai",
+	"search.parallel.ai",
+	"api.anthropic.com",
+	"generativelanguage.googleapis.com",
+	"api.openai.com",
+	"api.x.ai",
 ];
 
 interface OutboundRequest {
