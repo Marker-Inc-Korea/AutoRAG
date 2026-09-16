@@ -96,13 +96,14 @@ export function normalizeVirtualPath(virtual: string | undefined | null): string
  *    root wins for nested roots.
  * 3. A datasource slash identity (`/kakao/<instance>/chunks/<chunk>`) is a
  *    virtual id in a non-filesystem namespace and passes through validation.
- * 4. An absolute filesystem path outside every root passes through unchanged
- *    as its own canonical form, so operators can still write policy globs
- *    against real absolute paths.
+ * 4. An absolute filesystem path outside every root passes through as its
+ *    own canonical form — backslashes are converted to forward slashes so
+ *    Windows drive/UNC paths canonicalize identically on every host — letting
+ *    operators write policy globs against real absolute paths.
  *
  * Everything else fails closed as `undefined`: traversal segments, URL
- * schemes (including the retired `kakao:<chat>` colon scheme), backslashes,
- * and empty input.
+ * schemes (including the retired `kakao:<chat>` colon scheme), backslashes in
+ * non-absolute sources, and empty input.
  */
 export function normalizeSource(source: string, sourceRoots: readonly SourceRoot[]): string | undefined {
 	if (typeof source !== "string" || source.length === 0) return undefined;
@@ -118,7 +119,16 @@ export function normalizeSource(source: string, sourceRoots: readonly SourceRoot
 			.sort((a, b) => b.rootPath.length - a.rootPath.length);
 		const selected = containing[0];
 		if (selected !== undefined) return sourceIdentifier(selected, source);
-		return normalizeVirtualPath(source);
+		// Canonical form uses forward slashes on every host. A Windows drive
+		// prefix is preserved and the remainder validated as a virtual path
+		// (a bare `C:/...` would otherwise look like a URL scheme).
+		const canonical = source.replaceAll("\\", "/");
+		const drive = /^([a-z]):(\/.*)$/iu.exec(canonical);
+		if (drive !== null) {
+			const rest = normalizeVirtualPath(drive[2] as string);
+			return rest === undefined ? undefined : `${drive[1]}:${rest}`;
+		}
+		return normalizeVirtualPath(canonical);
 	}
 	return normalizeVirtualPath(source);
 }

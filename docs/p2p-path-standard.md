@@ -30,12 +30,14 @@ converts any of the three forms to the canonical virtual id:
 3. A datasource slash identity (a slash-prefixed id whose first segment is not
    a well-known filesystem root) passes through validation unchanged.
 4. An absolute filesystem path outside every configured root passes through
-   unchanged as its own canonical form, so operators can still write policy
-   globs against real absolute paths (for example `/etc/secrets/**`).
+   as its own canonical form — backslashes are converted to forward slashes
+   so Windows drive/UNC paths canonicalize identically on every host —
+   letting operators write policy globs against real absolute paths (for
+   example `/etc/secrets/**` or `C:/secrets/**`).
 
 Everything else fails closed as `undefined`: traversal segments (`..`), URL
-schemes (including the retired colon scheme and `file:`), backslashes, and
-empty input.
+schemes (including the retired colon scheme and `file:`), backslashes in
+non-absolute sources, and empty input.
 
 ## Policy resolution normalizes before matching
 

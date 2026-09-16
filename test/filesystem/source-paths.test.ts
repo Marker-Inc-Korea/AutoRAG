@@ -78,7 +78,15 @@ describe("normalizeSource", () => {
 	it("passes an absolute filesystem path outside every source root through as its own canonical form", () => {
 		const { roots } = makeRoots();
 		const outside = join(tmpdir(), "outside-file.md");
-		expect(normalizeSource(outside, roots)).toBe(outside);
+		// Canonical form uses forward slashes on every host.
+		expect(normalizeSource(outside, roots)).toBe(outside.replaceAll("\\", "/"));
+	});
+
+	it("canonicalizes Windows drive and UNC absolute paths to forward-slash form", () => {
+		const { roots } = makeRoots();
+		expect(normalizeSource("C:\\outside\\file.md", roots)).toBe("C:/outside/file.md");
+		expect(normalizeSource("D:/shared/file.txt", roots)).toBe("D:/shared/file.txt");
+		expect(normalizeSource("\\\\server\\share\\file.txt", roots)).toBe("/server/share/file.txt");
 	});
 
 	it("fails closed for traversal, scheme, backslash, and empty sources", () => {
@@ -86,7 +94,7 @@ describe("normalizeSource", () => {
 		expect(normalizeSource("/docs/../secret.md", roots)).toBeUndefined();
 		expect(normalizeSource("kakao:chat/sender/chunk-1", roots)).toBeUndefined();
 		expect(normalizeSource("file:///docs/a.md", roots)).toBeUndefined();
-		expect(normalizeSource("/docs\\a.md", roots)).toBeUndefined();
+		expect(normalizeSource("docs\\a.md", roots)).toBeUndefined();
 		expect(normalizeSource("", roots)).toBeUndefined();
 	});
 });
