@@ -125,9 +125,15 @@ export function cleanFeedText(text: string): string {
 	const trimmed = text.trim();
 	const cdata = /^<!\[CDATA\[([\s\S]*?)\]\]>$/.exec(trimmed);
 	const inner = cdata ? (cdata[1] ?? "") : trimmed;
-	return decodeHtmlEntities(inner)
-		.replace(/<[^>]+>/g, "")
-		.trim();
+	// Tag stripping runs to a fixed point: removing one tag may reveal another
+	// (`<scr<script>ipt>`), so a single global pass is insufficient (CodeQL
+	// js/incomplete-multi-character-sanitization). Each pass strictly shrinks
+	// the string, so the loop terminates; the bound is defense in depth.
+	let stripped = decodeHtmlEntities(inner);
+	for (let pass = 0; pass < 100 && /<[^>]+>/.test(stripped); pass++) {
+		stripped = stripped.replace(/<[^>]+>/g, "");
+	}
+	return stripped.trim();
 }
 
 interface FeedNode {

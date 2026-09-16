@@ -29,6 +29,10 @@ describe("cleanFeedText (CodeQL js/incomplete-multi-character-sanitization)", ()
 	it("does not eat a stray CDATA terminator inside content", () => {
 		expect(cleanFeedText("a ]]> b")).toBe("a ]]> b");
 	});
+
+	it("strips tags to a fixed point (nested tag fragments cannot re-form a tag)", () => {
+		expect(cleanFeedText("<scr<script>ipt>alert(1)</ipt>")).not.toMatch(/<\/?script/i);
+	});
 });
 
 describe("htmlToBasicMarkdown script/style removal (CodeQL js/bad-tag-filter)", () => {
