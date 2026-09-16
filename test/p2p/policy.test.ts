@@ -275,7 +275,7 @@ tier = "always"
 		expect(result.allowed).toBe(true);
 	});
 
-	it("fails closed for an absolute filesystem path outside every source root", () => {
+	it("passes an absolute filesystem path outside every source root through to glob matching", () => {
 		writeWorkspacePolicy(`
 newFilesPublic = true
 
@@ -284,8 +284,8 @@ tier = "always"
 `);
 		const { policyStore } = storeWithRoots();
 		const result = policyStore.resolvePolicy(join(tmpdir(), "outside-every-root.md"));
-		expect(result.allowed).toBe(false);
-		expect(result.tier).toBe("private");
+		expect(result.allowed).toBe(true);
+		expect(result.tier).toBe("always");
 	});
 
 	it("recognizes a promoted source reported as an absolute real path", () => {

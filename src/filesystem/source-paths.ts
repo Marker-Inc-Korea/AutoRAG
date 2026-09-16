@@ -86,43 +86,6 @@ export function normalizeVirtualPath(virtual: string | undefined | null): string
 	return v;
 }
 
-const POSIX_FILESYSTEM_ROOT_SEGMENTS = new Set([
-	"applications",
-	"bin",
-	"dev",
-	"etc",
-	"home",
-	"library",
-	"media",
-	"mnt",
-	"opt",
-	"private",
-	"proc",
-	"root",
-	"run",
-	"users",
-	"sbin",
-	"srv",
-	"system",
-	"tmp",
-	"usr",
-	"var",
-	"volumes",
-]);
-
-/**
- * True when a slash-prefixed source looks like a real filesystem absolute
- * path rather than a datasource slash identity: Windows drive/UNC paths, or a
- * POSIX path whose first segment is a well-known filesystem root. Datasource
- * namespaces (`/kakao/...`, `/discord/...`) use non-filesystem first segments.
- */
-function looksLikeFilesystemAbsoluteSource(source: string): boolean {
-	if (WINDOWS_DRIVE_PATH.test(source) || source.startsWith("\\\\") || source.startsWith("//")) return true;
-	if (!source.startsWith("/")) return false;
-	const firstSegment = source.slice(1).split("/", 1)[0]?.toLocaleLowerCase("en-US");
-	return firstSegment !== undefined && POSIX_FILESYSTEM_ROOT_SEGMENTS.has(firstSegment);
-}
-
 /**
  * Canonicalize any retrieval source form to the canonical virtual source id:
  *
@@ -133,10 +96,13 @@ function looksLikeFilesystemAbsoluteSource(source: string): boolean {
  *    root wins for nested roots.
  * 3. A datasource slash identity (`/kakao/<instance>/chunks/<chunk>`) is a
  *    virtual id in a non-filesystem namespace and passes through validation.
+ * 4. An absolute filesystem path outside every root passes through unchanged
+ *    as its own canonical form, so operators can still write policy globs
+ *    against real absolute paths.
  *
- * Everything else fails closed as `undefined`: absolute filesystem paths
- * outside every root, traversal segments, URL schemes (including the retired
- * `kakao:<chat>` colon scheme), backslashes, and empty input.
+ * Everything else fails closed as `undefined`: traversal segments, URL
+ * schemes (including the retired `kakao:<chat>` colon scheme), backslashes,
+ * and empty input.
  */
 export function normalizeSource(source: string, sourceRoots: readonly SourceRoot[]): string | undefined {
 	if (typeof source !== "string" || source.length === 0) return undefined;
@@ -152,8 +118,7 @@ export function normalizeSource(source: string, sourceRoots: readonly SourceRoot
 			.sort((a, b) => b.rootPath.length - a.rootPath.length);
 		const selected = containing[0];
 		if (selected !== undefined) return sourceIdentifier(selected, source);
-		if (!looksLikeFilesystemAbsoluteSource(source)) return normalizeVirtualPath(source);
-		return undefined;
+		return normalizeVirtualPath(source);
 	}
 	return normalizeVirtualPath(source);
 }

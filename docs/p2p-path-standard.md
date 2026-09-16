@@ -29,10 +29,13 @@ converts any of the three forms to the canonical virtual id:
    wins for nested roots.
 3. A datasource slash identity (a slash-prefixed id whose first segment is not
    a well-known filesystem root) passes through validation unchanged.
+4. An absolute filesystem path outside every configured root passes through
+   unchanged as its own canonical form, so operators can still write policy
+   globs against real absolute paths (for example `/etc/secrets/**`).
 
-Everything else fails closed as `undefined`: absolute filesystem paths outside
-every configured root, traversal segments (`..`), URL schemes (including the
-retired colon scheme and `file:`), backslashes, and empty input.
+Everything else fails closed as `undefined`: traversal segments (`..`), URL
+schemes (including the retired colon scheme and `file:`), backslashes, and
+empty input.
 
 ## Policy resolution normalizes before matching
 
@@ -44,8 +47,10 @@ before glob matching or seen-source lookup:
 - An absolute real path under `searchPaths` matches the root's virtual globs
   (`/docs/**`).
 - A datasource identity matches its namespace globs (`/kakao/**`).
-- An unmappable source resolves to `private` (fail-closed), even against a
-  `/**` allow glob.
+- An absolute real path outside `searchPaths` matches absolute-path globs as
+  itself.
+- A syntactically invalid source (traversal, scheme, backslash) resolves to
+  `private` (fail-closed).
 
 Without `sourceRoots`, `PolicyStore` matches sources exactly as provided
 (unchanged legacy behavior). `autorag serve` always configures `sourceRoots`

@@ -75,9 +75,10 @@ describe("normalizeSource", () => {
 		expect(normalizeSource("/kakao//default//chunks/chunk-1", roots)).toBe("/kakao/default/chunks/chunk-1");
 	});
 
-	it("fails closed for an absolute filesystem path outside every source root", () => {
+	it("passes an absolute filesystem path outside every source root through as its own canonical form", () => {
 		const { roots } = makeRoots();
-		expect(normalizeSource(join(tmpdir(), "outside-file.md"), roots)).toBeUndefined();
+		const outside = join(tmpdir(), "outside-file.md");
+		expect(normalizeSource(outside, roots)).toBe(outside);
 	});
 
 	it("fails closed for traversal, scheme, backslash, and empty sources", () => {
