@@ -277,16 +277,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-			readonly ok: true;
-			readonly code: number;
-			readonly diagnostics: readonly string[];
-	  }
+		readonly ok: true;
+		readonly code: number;
+		readonly diagnostics: readonly string[];
+	}
 	| {
-			readonly ok: false;
-			readonly reason: JikjiFailureReason;
-			readonly code: number | null;
-			readonly diagnostics: readonly string[];
-	  };
+		readonly ok: false;
+		readonly reason: JikjiFailureReason;
+		readonly code: number | null;
+		readonly diagnostics: readonly string[];
+	};
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -609,7 +609,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => {},
+			dispose: () => { },
 		};
 	}
 
@@ -1288,10 +1288,10 @@ export class AutoRAGAgent {
 			}
 			const publicMinsync = minsync
 				? {
-						ok: minsync.ok,
-						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-					}
+					ok: minsync.ok,
+					synced: minsync.synced,
+					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+				}
 				: undefined;
 			return {
 				...summary,
@@ -1373,7 +1373,12 @@ export class AutoRAGAgent {
 		};
 	}
 
-	private refreshComponentStatus(): AutoRAGRefreshComponentStatus {
+	/**
+	 * Synchronous per-component readiness snapshot (minsync/jikji/datasources).
+	 * `minsync` is "ready" only after a successful sync wrote its cursor;
+	 * "configured" means the binary resolved but no index exists yet.
+	 */
+	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
 		const status: { minsync?: string; jikji?: string; datasources?: string } = {};
 		if (this.minSyncMethod !== undefined) {
 			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
@@ -1431,7 +1436,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => {} };
+				return { close: () => { } };
 			}
 		};
 	}

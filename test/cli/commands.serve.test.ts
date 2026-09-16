@@ -62,7 +62,7 @@ function stubTransport(): SimplexTransport & { closed: boolean } {
 		connect: async () => undefined,
 		listContacts: async () => [],
 		sendMessage: async () => undefined,
-		onMessage: (_handler: (message: SimplexIncomingMessage) => void) => () => {},
+		onMessage: (_handler: (message: SimplexIncomingMessage) => void) => () => { },
 		close: async () => {
 			state.closed = true;
 		},
@@ -126,6 +126,26 @@ describe("autorag serve", () => {
 		);
 		expect(code).toBe(0);
 		expect(transport.closed).toBe(true);
+	});
+
+	it("warns on stderr when MinSync retrieval is not ready before accepting peer queries", async () => {
+		const stderr: string[] = [];
+		const code = await runServe(
+			makeCtx({
+				flags: { config: configPath, force: true },
+				stderr: (line) => stderr.push(line),
+			}),
+			{
+				startSimplexChat: async () => stubTransport(),
+				startSimplexPeerServer: async () => stubServer(),
+				waitUntilStopped: async (server) => {
+					await server.close();
+				},
+			},
+		);
+		expect(code).toBe(0);
+		expect(stderr.join("\n")).toMatch(/minsync/i);
+		expect(stderr.join("\n")).toMatch(/not ready|degraded|unavailable|refresh/i);
 	});
 
 	it("reports the SimpleX address and port, never private material", async () => {

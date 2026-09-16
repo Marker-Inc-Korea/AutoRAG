@@ -161,6 +161,15 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 				}
 				: {}),
 		});
+		// Readiness gate: peer queries answered from an unready index look like
+		// empty corpora. Warn (never block) so the operator can refresh first.
+		const components = agent.refreshComponentStatus();
+		if (components.minsync !== undefined && components.minsync !== "ready") {
+			ctx.stderr(
+				`warning: MinSync retrieval is not ready (status: ${components.minsync}); peer queries may return degraded results until 'autorag refresh --method minsync' completes.`,
+			);
+		}
+
 		// Policy resolution canonicalizes every source (absolute real paths,
 		// virtual ids, datasource slash identities) through normalizeSource
 		// before glob matching, so globs match one canonical form.
