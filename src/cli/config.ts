@@ -14,8 +14,8 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
-import { isSearchProviderId } from "../web/search/types.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import { isSearchProviderId } from "../web/search/types.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
@@ -69,11 +69,13 @@ export interface WebSearchCliConfig {
 	exclude?: string[];
 	/** Per-provider transport hard timeout in seconds (1-300). */
 	timeoutSeconds?: number;
-	fetch?: {
-		enabled?: boolean;
-		/** Total page fetch/render timeout in seconds (1-300). */
-		timeoutSeconds?: number;
-	} | false;
+	fetch?:
+		| {
+				enabled?: boolean;
+				/** Total page fetch/render timeout in seconds (1-300). */
+				timeoutSeconds?: number;
+		  }
+		| false;
 }
 
 export interface P2pConfig {

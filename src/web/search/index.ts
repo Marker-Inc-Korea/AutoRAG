@@ -96,7 +96,7 @@ export async function executeWebSearch(
 			// Plain-object providers (test fakes, host embeddings) may skip the
 			// `isExplicitlyAvailable` override; it defaults to `isAvailable`.
 			const available = candidate.explicit
-				? (await provider.isExplicitlyAvailable?.()) ?? (await provider.isAvailable())
+				? ((await provider.isExplicitlyAvailable?.()) ?? (await provider.isAvailable()))
 				: await provider.isAvailable();
 			if (!available && !candidate.explicit) continue;
 			if (!available && candidate.explicit) {

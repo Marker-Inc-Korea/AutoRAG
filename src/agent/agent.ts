@@ -89,8 +89,6 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
-import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
-import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createSearchDatasourceDocumentsTool,
@@ -106,7 +104,6 @@ import {
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
-
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -114,6 +111,8 @@ import {
 	type WatchRefreshHandle,
 	type WatchWatcher,
 } from "./watch-refresh.ts";
+import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
+import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 
 const SEARCH_TOOLS = [
 	BASH_TOOL_NAME,
@@ -290,16 +289,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-		readonly ok: true;
-		readonly code: number;
-		readonly diagnostics: readonly string[];
-	}
+			readonly ok: true;
+			readonly code: number;
+			readonly diagnostics: readonly string[];
+	  }
 	| {
-		readonly ok: false;
-		readonly reason: JikjiFailureReason;
-		readonly code: number | null;
-		readonly diagnostics: readonly string[];
-	};
+			readonly ok: false;
+			readonly reason: JikjiFailureReason;
+			readonly code: number | null;
+			readonly diagnostics: readonly string[];
+	  };
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -452,7 +451,9 @@ export class AutoRAGAgent {
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
 		const webSearchTool = webToolsEnabled ? createWebSearchTool(webSearchOption ?? {}) : undefined;
 		const webFetchTool =
-			webToolsEnabled && webSearchOption?.fetch !== false ? createWebFetchTool(webSearchOption?.fetch ?? {}) : undefined;
+			webToolsEnabled && webSearchOption?.fetch !== false
+				? createWebFetchTool(webSearchOption?.fetch ?? {})
+				: undefined;
 
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
@@ -632,7 +633,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => { },
+			dispose: () => {},
 		};
 	}
 
@@ -1311,10 +1312,10 @@ export class AutoRAGAgent {
 			}
 			const publicMinsync = minsync
 				? {
-					ok: minsync.ok,
-					synced: minsync.synced,
-					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-				}
+						ok: minsync.ok,
+						synced: minsync.synced,
+						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+					}
 				: undefined;
 			return {
 				...summary,
@@ -1454,7 +1455,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => { } };
+				return { close: () => {} };
 			}
 		};
 	}

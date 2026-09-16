@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { type FauxProviderRegistration, type FauxResponseStep, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+	type FauxProviderRegistration,
+	type FauxResponseStep,
+	fauxAssistantMessage,
+	fauxToolCall,
+} from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
@@ -88,7 +93,8 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 						{
 							number: 1,
 							title: "Refund approval rule",
-							summary: "Refund exceptions require director approval before payout, confirmed on the public policy page.",
+							summary:
+								"Refund exceptions require director approval before payout, confirmed on the public policy page.",
 							evidence: [{ excerpt: "Refund exceptions require director approval before payout." }],
 							confidence: 0.9,
 						},
@@ -121,9 +127,9 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 			jikji: false,
 		});
 
-		const names = ((agent as unknown as { innerAgent: { state: { tools: AgentTool[] } } }).innerAgent.state.tools ?? []).map(
-			(tool) => tool.name,
-		);
+		const names = (
+			(agent as unknown as { innerAgent: { state: { tools: AgentTool[] } } }).innerAgent.state.tools ?? []
+		).map((tool) => tool.name);
 		expect(names).toContain(WEB_SEARCH_TOOL_NAME);
 		expect(names).toContain(WEB_FETCH_TOOL_NAME);
 

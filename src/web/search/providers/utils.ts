@@ -107,7 +107,7 @@ export async function readLimitedText(
 	let bytes = 0;
 
 	try {
-		for (; ;) {
+		for (;;) {
 			const { done, value } = await reader.read();
 			if (done) break;
 			const accepted = Math.min(value.byteLength, maxBytes - bytes);

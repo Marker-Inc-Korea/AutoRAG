@@ -32,7 +32,10 @@ describe.skipIf(!LIVE)("web tools live e2e (real internet)", () => {
 		for (const name of KEYED_PROVIDER_ENVS) {
 			expect(process.env[name], `${name} must be unset for the credential-free proof`).toBeUndefined();
 		}
-		const result = await executeWebSearch({ query: "AutoRAG Marker-Inc-Korea GitHub repository" }, { timeoutMs: 60_000 });
+		const result = await executeWebSearch(
+			{ query: "AutoRAG Marker-Inc-Korea GitHub repository" },
+			{ timeoutMs: 60_000 },
+		);
 		expect(result.details.error).toBeUndefined();
 		expect(result.details.response.sources.length).toBeGreaterThan(0);
 		for (const source of result.details.response.sources) {
@@ -44,7 +47,10 @@ describe.skipIf(!LIVE)("web tools live e2e (real internet)", () => {
 	}, 90_000);
 
 	it("web_search honors the explicit public fan-out and dedupes across engines", async () => {
-		const result = await executeWebSearch({ query: "Model Context Protocol specification", provider: "public" }, { timeoutMs: 60_000 });
+		const result = await executeWebSearch(
+			{ query: "Model Context Protocol specification", provider: "public" },
+			{ timeoutMs: 60_000 },
+		);
 		expect(result.details.error).toBeUndefined();
 		expect(result.details.response.provider).toBe("public");
 		expect(result.details.response.sources.length).toBeGreaterThan(0);

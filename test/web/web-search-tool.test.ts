@@ -112,7 +112,9 @@ describe("web_search tool", () => {
 				return { provider: "duckduckgo", sources: [] };
 			},
 		});
-		registerSearchProvider(fakeProvider("brave", { provider: "brave", sources: [{ title: "t", url: "https://b.example" }] }));
+		registerSearchProvider(
+			fakeProvider("brave", { provider: "brave", sources: [{ title: "t", url: "https://b.example" }] }),
+		);
 		const tool = createWebSearchTool({ order: ["brave", "duckduckgo"], exclude: ["duckduckgo"] });
 		const result = await tool.execute("call-4", { query: "option routing" });
 		expect(ddgCalled).toBe(false);

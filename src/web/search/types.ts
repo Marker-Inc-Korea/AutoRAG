@@ -86,7 +86,9 @@ export const SEARCH_PROVIDER_PREFERENCES = ["auto", ...SEARCH_PROVIDER_ORDER] as
 
 /** Display labels, derived from {@link SEARCH_PROVIDER_OPTIONS}. */
 export const SEARCH_PROVIDER_LABELS = Object.fromEntries(
-	SEARCH_PROVIDER_OPTIONS.flatMap((option) => (option.value === "auto" ? [] : [[option.value, option.label] as const])),
+	SEARCH_PROVIDER_OPTIONS.flatMap((option) =>
+		option.value === "auto" ? [] : [[option.value, option.label] as const],
+	),
 ) as Record<SearchProviderId, string>;
 
 export function isSearchProviderId(value: string): value is SearchProviderId {

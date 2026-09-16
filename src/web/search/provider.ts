@@ -12,9 +12,8 @@
 import type { SearchProvider, SearchProviderContract } from "./providers/base.ts";
 import { SEARCH_PROVIDER_LABELS, SEARCH_PROVIDER_ORDER, SearchProviderError, type SearchProviderId } from "./types.ts";
 
-export type { FetchImpl, SearchParams } from "./providers/base.ts";
+export type { FetchImpl, SearchParams, SearchProviderContract } from "./providers/base.ts";
 export { SearchProvider } from "./providers/base.ts";
-export type { SearchProviderContract } from "./providers/base.ts";
 export { SEARCH_PROVIDER_ORDER } from "./types.ts";
 
 interface ProviderMeta {
@@ -220,7 +219,7 @@ export async function resolveProviderChain(forcedProvider?: SearchProviderId): P
 	for (const candidate of resolveProviderCandidates(forcedProvider)) {
 		const provider = await getSearchProvider(candidate.id);
 		const available = candidate.explicit
-			? (await provider.isExplicitlyAvailable?.()) ?? (await provider.isAvailable())
+			? ((await provider.isExplicitlyAvailable?.()) ?? (await provider.isAvailable()))
 			: await provider.isAvailable();
 		if (available) providers.push(provider);
 	}

@@ -10,8 +10,8 @@
  */
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { executeWebSearch } from "../web/search/index.ts";
 import { WEB_SEARCH_TOOL_DESCRIPTION } from "../web/search/format.ts";
+import { executeWebSearch } from "../web/search/index.ts";
 import { setExcludedSearchProviders, setSearchProviderOrder } from "../web/search/provider.ts";
 import { isSearchProviderId, type SearchProviderId } from "../web/search/types.ts";
 
@@ -72,7 +72,13 @@ export function createWebSearchTool(
 			if (params.query.trim().length === 0) {
 				return {
 					content: [{ type: "text", text: "Web search query was empty; nothing searched." }],
-					details: { method: WEB_SEARCH_TOOL_NAME, provider: "none", resultCount: 0, sources: [], available: true },
+					details: {
+						method: WEB_SEARCH_TOOL_NAME,
+						provider: "none",
+						resultCount: 0,
+						sources: [],
+						available: true,
+					},
 				};
 			}
 			const forcedProvider =
