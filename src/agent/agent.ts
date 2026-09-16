@@ -100,6 +100,8 @@ import {
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
+	type SearchDocumentRetrievalTraceEntry,
+	type SearchDocumentRetrievalTraceResult,
 	type SearchDocumentsResponse,
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
@@ -277,16 +279,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-			readonly ok: true;
-			readonly code: number;
-			readonly diagnostics: readonly string[];
-	  }
+		readonly ok: true;
+		readonly code: number;
+		readonly diagnostics: readonly string[];
+	}
 	| {
-			readonly ok: false;
-			readonly reason: JikjiFailureReason;
-			readonly code: number | null;
-			readonly diagnostics: readonly string[];
-	  };
+		readonly ok: false;
+		readonly reason: JikjiFailureReason;
+		readonly code: number | null;
+		readonly diagnostics: readonly string[];
+	};
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -303,6 +305,7 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
@@ -609,7 +612,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => {},
+			dispose: () => { },
 		};
 	}
 
@@ -652,9 +655,26 @@ export class AutoRAGAgent {
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
 			void this.activeSession?.abort();
 		}
-		const details = event.result.details as { method?: string; sources?: readonly string[] } | undefined;
+		const details = event.result.details as
+			| {
+				method?: string;
+				sources?: readonly string[];
+				resultCount?: number;
+				results?: readonly SearchDocumentRetrievalTraceResult[];
+			}
+			| undefined;
 		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
 			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
+		}
+		if (Array.isArray(details?.results)) {
+			const args = (event as { args?: { query?: unknown } }).args;
+			this.retrievalTrace.push({
+				tool: event.toolName,
+				...(typeof args?.query === "string" ? { query: args.query } : {}),
+				resultCount:
+					typeof details?.resultCount === "number" ? details.resultCount : (details?.results?.length ?? 0),
+				results: details?.results ?? [],
+			});
 		}
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
@@ -763,6 +783,7 @@ export class AutoRAGAgent {
 
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
+		this.retrievalTrace = [];
 		this.sourceSearchCallCounts.clear();
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
@@ -852,7 +873,43 @@ export class AutoRAGAgent {
 			}
 
 			if (captured === undefined) {
-				throw new Error("AutoRAG agent completed without emitting structured results");
+				const reason = lastAssistantText(session?.agent.state.messages ?? []);
+				if (this.remoteSession) {
+					const scan = scanOutboundPayload(
+						[
+							reason ?? "",
+							...this.retrievalTrace.flatMap((entry) => entry.results.map((result) => result.excerpt)),
+						],
+						[this.workspaceProjectRoot, ...this.searchPaths].map((root) => resolve(root)),
+					);
+					if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
+				}
+				const response: SearchDocumentsResponse = {
+					sessionId,
+					query: trimmedQuery,
+					results: [],
+					answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace),
+					searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
+					warnings: [],
+					diagnostics: [
+						...this.collectComponentDiagnostics(),
+						{
+							code: "missing-final-emit",
+							severity: "warning",
+							message:
+								"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
+						},
+					],
+					retrievalTrace: this.retrievalTrace,
+				};
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: 0,
+					degraded: true,
+				});
+				return response;
 			}
 			if (this.remoteSession && options.observedSources !== undefined) {
 				for (const entry of captured.mapping) options.observedSources.add(entry.source);
@@ -1288,10 +1345,10 @@ export class AutoRAGAgent {
 			}
 			const publicMinsync = minsync
 				? {
-						ok: minsync.ok,
-						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-					}
+					ok: minsync.ok,
+					synced: minsync.synced,
+					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+				}
 				: undefined;
 			return {
 				...summary,
@@ -1431,7 +1488,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => {} };
+				return { close: () => { } };
 			}
 		};
 	}
@@ -1934,6 +1991,29 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+/**
+ * Degraded fallback answer for a run that ended without emit_autorag_results:
+ * states the search-range failure, carries the agent's own last note as the
+ * reason, suggests next steps, and points at the attached retrieval trace.
+ */
+function buildMissingFinalEmitAnswer(
+	query: string,
+	reason: string | undefined,
+	trace: readonly SearchDocumentRetrievalTraceEntry[],
+): string {
+	const lines = [
+		`The search run for "${query}" ended without finalized results: the agent ended its run without calling emit_autorag_results, so no curated answer is available within the configured search range.`,
+		reason === undefined
+			? "The agent did not record why it stopped."
+			: `The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`,
+		"Next steps: broaden the configured searchPaths, connect additional datasources (for example via `autorag ui` or the datasources configuration), or retry with a narrower or different query.",
+		trace.length > 0
+			? "Retrieval candidates gathered before the run ended are attached under `retrievalTrace` for inspection."
+			: "No retrieval candidates were gathered before the run ended.",
+	];
+	return lines.join("\n\n");
 }
 
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {

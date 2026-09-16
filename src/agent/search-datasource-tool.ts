@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
+import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME = "search_datasource_documents";
 
@@ -17,6 +18,8 @@ export interface SearchDatasourceDocumentsDetails {
 	readonly resultCount: number;
 	readonly sources: readonly string[];
 	readonly diagnostics: readonly RetrievalDiagnostic[];
+	/** Top candidates in traceable shape (additive; used for the run's retrieval trace). */
+	readonly results?: readonly SearchDocumentRetrievalTraceResult[];
 }
 
 export interface DatasourceSearchProvider {
@@ -54,6 +57,7 @@ export function createSearchDatasourceDocumentsTool(
 					resultCount: results.length,
 					sources: [...new Set(results.map((result) => result.source))],
 					diagnostics,
+					results: toRetrievalTraceResults(results),
 				},
 			};
 		},
