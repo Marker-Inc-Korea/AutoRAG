@@ -89,6 +89,8 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
+import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
+import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createSearchDatasourceDocumentsTool,
@@ -250,6 +252,17 @@ export interface AutoRAGAgentOptions {
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
 	jikji?: JikjiOptions | false;
+	/**
+	 * Internet web tools (`web_search` + `web_fetch`), ported from oh-my-pi's
+	 * provider-chain web module. Default enabled and credential-free; keyed
+	 * providers activate via their documented environment variables
+	 * (BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, JINA_API_KEY,
+	 * KAGI_API_KEY, KIMI_SEARCH_API_KEY/MOONSHOT_SEARCH_API_KEY,
+	 * SEARXNG_ENDPOINT). `false` disables both tools. The `fetch` sub-option
+	 * tunes or disables `web_fetch` alone. Web tools are always omitted for
+	 * remote P2P sessions.
+	 */
+	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
@@ -277,16 +290,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-			readonly ok: true;
-			readonly code: number;
-			readonly diagnostics: readonly string[];
-	  }
+		readonly ok: true;
+		readonly code: number;
+		readonly diagnostics: readonly string[];
+	}
 	| {
-			readonly ok: false;
-			readonly reason: JikjiFailureReason;
-			readonly code: number | null;
-			readonly diagnostics: readonly string[];
-	  };
+		readonly ok: false;
+		readonly reason: JikjiFailureReason;
+		readonly code: number | null;
+		readonly diagnostics: readonly string[];
+	};
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -435,6 +448,12 @@ export class AutoRAGAgent {
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
+		const webSearchOption = options.webSearch;
+		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
+		const webSearchTool = webToolsEnabled ? createWebSearchTool(webSearchOption ?? {}) : undefined;
+		const webFetchTool =
+			webToolsEnabled && webSearchOption?.fetch !== false ? createWebFetchTool(webSearchOption?.fetch ?? {}) : undefined;
+
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
 		const reservedNames = new Set<string>([
@@ -449,6 +468,8 @@ export class AutoRAGAgent {
 			JIKJI_FIND_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
+			WEB_SEARCH_TOOL_NAME,
+			WEB_FETCH_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -470,6 +491,8 @@ export class AutoRAGAgent {
 			searchAllTool,
 			searchDatasourceTool,
 			loadDatasourceSkillTool,
+			...(webSearchTool !== undefined ? [webSearchTool] : []),
+			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
@@ -609,7 +632,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => {},
+			dispose: () => { },
 		};
 	}
 
@@ -1288,10 +1311,10 @@ export class AutoRAGAgent {
 			}
 			const publicMinsync = minsync
 				? {
-						ok: minsync.ok,
-						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-					}
+					ok: minsync.ok,
+					synced: minsync.synced,
+					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+				}
 				: undefined;
 			return {
 				...summary,
@@ -1431,7 +1454,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => {} };
+				return { close: () => { } };
 			}
 		};
 	}

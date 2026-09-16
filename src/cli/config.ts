@@ -14,6 +14,7 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { isSearchProviderId } from "../web/search/types.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
@@ -53,6 +54,26 @@ export interface RawIndexingMethods {
 /** Result of {@link normalizeIndexingConfig}: always fully populated. */
 export interface NormalizedIndexingConfig {
 	minSync: MinSyncMethodConfig;
+}
+
+/**
+ * Web tools (`web_search` + `web_fetch`) config. Secrets never appear here:
+ * keyed search providers read their own documented environment variables
+ * (BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, JINA_API_KEY, KAGI_API_KEY,
+ * KIMI_SEARCH_API_KEY/MOONSHOT_SEARCH_API_KEY, SEARXNG_ENDPOINT).
+ */
+export interface WebSearchCliConfig {
+	enabled?: boolean;
+	provider?: string;
+	order?: string[];
+	exclude?: string[];
+	/** Per-provider transport hard timeout in seconds (1-300). */
+	timeoutSeconds?: number;
+	fetch?: {
+		enabled?: boolean;
+		/** Total page fetch/render timeout in seconds (1-300). */
+		timeoutSeconds?: number;
+	} | false;
 }
 
 export interface P2pConfig {
@@ -118,6 +139,7 @@ export interface CliConfig {
 	model?: AgentModelConfig;
 	minSync?: MinSyncMethodConfig;
 	jikji?: Record<string, unknown> | false;
+	webSearch?: WebSearchCliConfig;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -965,6 +987,70 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 	return resolveConfig({ ...input, readOnly: true });
 }
 
+/** Validate and map the webSearch config section onto the agent option. */
+function buildWebSearchAgentOption(
+	raw: WebSearchCliConfig | undefined,
+): (AutoRAGAgentOptions["webSearch"] & object) | false | undefined {
+	if (raw === undefined) return undefined;
+	if (raw.enabled === false) return false;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("webSearch must be an object");
+	}
+	const out: Record<string, unknown> = {};
+	if (raw.provider !== undefined) {
+		if (typeof raw.provider !== "string" || !isSearchProviderId(raw.provider)) {
+			throw new ConfigError(`webSearch.provider is not a recognized provider id: ${String(raw.provider)}`);
+		}
+		out.provider = raw.provider;
+	}
+	for (const key of ["order", "exclude"] as const) {
+		const list = raw[key];
+		if (list === undefined) continue;
+		if (!Array.isArray(list) || list.some((id) => typeof id !== "string" || !isSearchProviderId(id))) {
+			throw new ConfigError(`webSearch.${key} must be an array of recognized provider ids`);
+		}
+		out[key] = list;
+	}
+	if (raw.timeoutSeconds !== undefined) {
+		if (
+			typeof raw.timeoutSeconds !== "number" ||
+			!Number.isInteger(raw.timeoutSeconds) ||
+			raw.timeoutSeconds < 1 ||
+			raw.timeoutSeconds > 300
+		) {
+			throw new ConfigError("webSearch.timeoutSeconds must be an integer between 1 and 300");
+		}
+		out.timeoutSeconds = raw.timeoutSeconds;
+	}
+	if (raw.fetch !== undefined) {
+		if (raw.fetch === false) {
+			out.fetch = false;
+		} else {
+			if (typeof raw.fetch !== "object" || raw.fetch === null || Array.isArray(raw.fetch)) {
+				throw new ConfigError("webSearch.fetch must be an object or false");
+			}
+			if (raw.fetch.enabled === false) {
+				out.fetch = false;
+			} else {
+				const fetchOut: Record<string, unknown> = {};
+				if (raw.fetch.timeoutSeconds !== undefined) {
+					if (
+						typeof raw.fetch.timeoutSeconds !== "number" ||
+						!Number.isInteger(raw.fetch.timeoutSeconds) ||
+						raw.fetch.timeoutSeconds < 1 ||
+						raw.fetch.timeoutSeconds > 300
+					) {
+						throw new ConfigError("webSearch.fetch.timeoutSeconds must be an integer between 1 and 300");
+					}
+					fetchOut.timeoutSeconds = raw.fetch.timeoutSeconds;
+				}
+				out.fetch = fetchOut;
+			}
+		}
+	}
+	return out as AutoRAGAgentOptions["webSearch"] & object;
+}
+
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -978,6 +1064,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.minSync = false;
 	}
 	opts.jikji = config.jikji === false ? false : (config.jikji ?? {});
+	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
