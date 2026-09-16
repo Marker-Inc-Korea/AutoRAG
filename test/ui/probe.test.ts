@@ -90,16 +90,15 @@ describe("datasource UI probes", () => {
 		expect(result.status).toBe("not-configured");
 	});
 
-	it("rejects the retired Gmail Himalaya backend", () => {
+	it("does not probe a removed Gmail REST type", () => {
 		const result = probeConnection({
-			alias: "legacy-imap",
+			alias: "inbox",
 			type: "gmail",
 			enabled: true,
-			connector: { backend: "himalaya", account: "personal", folder: "INBOX" },
+			connector: { tokenEnv: "GMAIL_ACCESS_TOKEN" },
 		});
 
 		expect(result.ok).toBe(false);
-		expect(result.status).toBe("not-configured");
-		expect(result.detail).toContain("mailcrawl");
+		expect(result.status).toBe("unknown-type");
 	});
 });

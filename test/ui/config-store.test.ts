@@ -140,12 +140,12 @@ describe("datasource UI config store", () => {
 		).toThrow(ConfigError);
 		expect(() =>
 			upsertConnection(configPath, {
-				alias: "legacy-imap",
+				alias: "legacy-gmail",
 				type: "gmail",
 				enabled: true,
-				connector: { backend: "himalaya" },
+				connector: { tokenEnv: "GMAIL_ACCESS_TOKEN" },
 			}),
-		).toThrow("mailcrawl");
+		).toThrow("Unknown datasource type");
 	});
 
 	it("toggles, lists, and removes connections while recomputing trusted access", () => {
@@ -192,16 +192,16 @@ describe("datasource UI config store", () => {
 		expect(state.connections).toHaveLength(1);
 	});
 
-	it("does not grant UI access to a retired Gmail Himalaya config", () => {
+	it("does not grant UI access to leftover Gmail REST config", () => {
 		writeFileSync(
 			configPath,
 			JSON.stringify({
 				searchPaths: [],
 				datasources: {
-					"legacy-imap": {
+					inbox: {
 						type: "gmail",
 						enabled: true,
-						connector: { backend: "himalaya", account: "personal", folder: "INBOX" },
+						connector: { tokenEnv: "GMAIL_ACCESS_TOKEN" },
 					},
 				},
 			}),
@@ -209,7 +209,7 @@ describe("datasource UI config store", () => {
 
 		const state = listUiState(configPath, {});
 		expect(state.connections[0]?.enabled).toBe(false);
-		expect(state.connections[0]?.probe.status).toBe("not-configured");
+		expect(state.connections[0]?.probe.status).toBe("unknown-type");
 		expect(state.access.allowedTags).toEqual([]);
 		expect(state.access.allowedScopes).toEqual([]);
 	});

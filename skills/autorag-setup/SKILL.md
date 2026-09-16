@@ -185,13 +185,13 @@ setup. Configure datasources directly in trusted config, wizard-style:
    list to the user, with what is missing for each.
 4. Set up a skipped datasource only when the user explicitly asks for it:
    install or authenticate the backing CLI first, then configure it.
-5. E-mail datasources (`gmail`, `mail-export`, `mailcrawl`) matter to most
+5. E-mail datasources (`mail-export`, `mailcrawl`) matter to most
    users — always probe them and report their status, even when they end up
    skipped.
 
 Datasource skills belong in trusted config and remain default-deny. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
-`clawgallery`, `notion`, `github`, `cloud-drive`, `gmail`, `mail-export`,
+`clawgallery`, `notion`, `github`, `cloud-drive`, `mail-export`,
 `mailcrawl`, `obsidian`, `rss`, and `spotlight`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
@@ -203,14 +203,13 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
     "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
     "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
-    "gmail": { "connector": { "tokenEnv": "GMAIL_ACCESS_TOKEN", "labelIds": ["INBOX"] } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["github", "cloud-drive", "gmail", "mailcrawl", "obsidian", "rss"],
-    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/gmail/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["github", "cloud-drive", "mailcrawl", "obsidian", "rss"],
+    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -223,9 +222,8 @@ and configured through its own Himalaya account. AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
 fails with `text array must be non-empty`.
-Use mailcrawl for Himalaya-backed IMAP/Maildir retrieval. The legacy
-`gmail` connector option `backend: "himalaya"` is no longer registered; migrate
-that configuration to an explicit `mailcrawl` datasource.
+Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
+datasource is removed.
 
 ## Verify and build indexes
 

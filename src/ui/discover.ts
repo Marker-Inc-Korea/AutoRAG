@@ -29,7 +29,6 @@ export async function choicesForType(
 	if (type === "cloud-drive") {
 		return { rcloneRemotes: await listRcloneRemotes(run), mailAccounts: [] };
 	}
-	if (type === "gmail") return { rcloneRemotes: [], mailAccounts: [] };
 	return { rcloneRemotes: [], mailAccounts: [] };
 }
 

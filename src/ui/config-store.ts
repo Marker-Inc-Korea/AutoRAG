@@ -72,9 +72,6 @@ export function upsertConnection(configPath: string, input: ConnectionInput): Ui
 	const raw = readRawConfigObject(configPath);
 	const datasources = asObject(raw.datasources);
 	const connector = normalizeConnector(type, stripSecrets(input.connector ?? {}));
-	if (isRetiredGmailHimalaya(type, connector)) {
-		throw new ConfigError("Himalaya-backed mail must use the mailcrawl datasource.");
-	}
 	const enabled = input.enabled !== false;
 	const entry: Record<string, unknown> = {
 		type,
@@ -103,13 +100,6 @@ export function toggleConnection(configPath: string, alias: string, enabled: boo
 	if (current === false || current === true) {
 		datasources[alias] = { type: alias, enabled };
 	} else if (typeof current === "object" && current !== null && !Array.isArray(current)) {
-		const currentEntry = asObject(current);
-		const currentType =
-			typeof currentEntry.type === "string" && currentEntry.type.length > 0 ? currentEntry.type : alias;
-		const currentConnector = asObject(currentEntry.connector);
-		if (isRetiredGmailHimalaya(currentType, currentConnector)) {
-			throw new ConfigError("Himalaya-backed mail must use the mailcrawl datasource.");
-		}
 		datasources[alias] = { ...current, enabled };
 	} else {
 		throw new ConfigError(`Unknown connection: ${alias}`);
@@ -183,7 +173,7 @@ function readConnections(raw: Record<string, unknown>): Omit<UiConnection, "prob
 		const entry = value as DatasourceSkillConfig & { enabled?: boolean; type?: string };
 		const type = typeof entry.type === "string" && entry.type.length > 0 ? entry.type : alias;
 		const connector = stripSecrets(asObject(entry.connector as Record<string, unknown> | undefined));
-		const enabled = entry.enabled !== false && !isRetiredGmailHimalaya(type, connector);
+		const enabled = entry.enabled !== false && BUILTIN.has(type);
 		connections.push({
 			alias,
 			type,
@@ -203,10 +193,6 @@ function tagsFor(type: string, connector: Record<string, unknown>): string[] {
 		if (!tags.includes(connector.provider)) tags.push(connector.provider);
 	}
 	return tags;
-}
-
-function isRetiredGmailHimalaya(type: string, connector: Record<string, unknown>): boolean {
-	return type === "gmail" && connector.backend === "himalaya";
 }
 
 export function normalizeAlias(alias: string): string {
