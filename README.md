@@ -264,10 +264,10 @@ Install telecrawl with `brew install openclaw/tap/telecrawl`. AutoRAG invokes `t
 
 Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `slacrawl sync` during datasource refresh and `slacrawl --json search` during retrieval. Optional trusted connector fields are `binaryPath`, `configPath`, and `syncSource`. Slack credentials and source definitions remain in slacrawl's own configuration rather than AutoRAG.
 
-Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search --json` during retrieval. Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
+Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search` during retrieval (notcrawl has no `--json` flag through v0.6.2; AutoRAG parses its tab-separated hits). Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
 
 Install and configure [`mailcrawl`](https://github.com/NomaDamas/mailcrawl)
-`@nomadamas/mailcrawl@0.1.4` or newer separately. AutoRAG invokes
+`@nomadamas/mailcrawl@0.1.6` or newer separately (0.1.4 is the minimum). AutoRAG invokes
 `mailcrawl sync` followed by `mailcrawl index` during datasource refresh, then
 calls `mailcrawl search` in BM25, semantic, or hybrid mode. The archive remains
 in mailcrawl's native store unless the operator explicitly sets

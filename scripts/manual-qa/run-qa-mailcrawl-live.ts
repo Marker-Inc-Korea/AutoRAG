@@ -1,8 +1,8 @@
 /**
- * Live mailcrawl 0.1.4 QA (#1496 / #1499).
+ * Live mailcrawl 0.1.6 QA (#1496 / #1499).
  *
  * Prerequisites:
- *   npm install -g @nomadamas/mailcrawl@0.1.4
+ *   npm install -g @nomadamas/mailcrawl@0.1.6
  *   Node.js 24+
  *
  * Fixture sync needs no Himalaya account or credentials. The first `index`
@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { MailcrawlClient, MailcrawlSkill } from "../../src/datasource/skills/mailcrawl/index.ts";
 
 const binaryPath = process.env.MAILCRAWL_BINARY ?? "mailcrawl";
-const root = mkdtempSync(join(tmpdir(), "autorag-mailcrawl-014-"));
+const root = mkdtempSync(join(tmpdir(), "autorag-mailcrawl-016-"));
 const dataDir = join(root, "data");
 const fixture = join(root, "messages.json");
 const timeoutMs = 900_000;
@@ -75,7 +75,7 @@ try {
 
 	const secondIndex = await client.index();
 	if (!secondIndex.ok) {
-		throw new Error(`0.1.4 no-op reindex failed: ${secondIndex.reason}`);
+		throw new Error(`0.1.6 no-op reindex failed: ${secondIndex.reason}`);
 	}
 	if ((secondIndex.data.reused ?? 0) < 1) {
 		throw new Error(`expected reused vectors after no-op sync, got ${JSON.stringify(secondIndex.data)}`);

@@ -71,6 +71,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)
