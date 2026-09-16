@@ -106,10 +106,10 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 			options.skillName === undefined
 				? definition
 				: {
-					...definition,
-					skillName: options.skillName,
-					description: `${definition.description} (${options.skillName})`,
-				};
+						...definition,
+						skillName: options.skillName,
+						description: `${definition.description} (${options.skillName})`,
+					};
 		this.connector = options.connector;
 		this.instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
 		this.instances =
