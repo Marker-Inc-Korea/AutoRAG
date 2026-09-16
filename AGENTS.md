@@ -299,25 +299,28 @@ The librarian agent owns the full workflow:
 | `bash` | Filesystem discovery and document reading with real paths (`ls`, `find`, `grep`, `cat`, etc.) | Direct source verification |
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
-| `lexical_search_local_docs` | Lexical BM25 ranking over parsed document mirrors | Exact-term retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_documents` | Search authorized external datasource skills | Server-bound datasource retrieval |
 | `check_memory` | Query past search outcomes | Adaptive strategy |
 | `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
+| `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
+| `recommend_peer_targets` | Rank local SimpleX peer personas by keyword overlap | P2P routing; never contacts peers |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
 | `emit_autorag_results` | Terminating tool that returns curated results | Final action |
+
+There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets` is omitted in remote P2P sessions.
 
 ## Architecture
 
 ```
 Agent Tools                 AutoRAGAgent (customized Pi agent)
 ┌──────────────────┐       ┌──────────────────────────────────┐
-│ bash read/search  │       │ Memory System (query history)     │
-│ retrieval tools   │  ───▶ │ Curation Layer (LLM extraction)   │
-│ search_bm25      │       │ check_memory (adaptive strategy)  │
-│ search_minsync   │       │ Manifest System (indexed stores)  │
-│ search_datasource│       │ Retrieval Registry (pluggable)    │
-│ check_memory     │       │ Result Merger (cross-method)      │
+│ bash / jikji_find │       │ Memory System (query history)     │
+│ search_all_docs   │  ───▶ │ Curation Layer (LLM extraction)   │
+│ semantic_search   │       │ check_memory (adaptive strategy)  │
+│ search_datasource │       │ Manifest System (indexed stores)  │
+│ scan_duplicates   │       │ Retrieval Registry (pluggable)    │
+│ peer_targets      │       │ Result Merger (cross-method)      │
 └──────────────────┘       │ Feedback Loop (learn from usage)  │
                            └──────────────────────────────────┘
 ```
@@ -350,7 +353,7 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, the `search_*` retrieval tools, `load_datasource_skill`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, `search_datasource_documents`, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `katok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
@@ -404,6 +407,11 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
+| `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
+| `src/agent/search-all-tool.ts` | `search_all_documents` multi-method fan-out |
+| `src/agent/search-minsync-tool.ts` | `semantic_search_local_docs` MinSync vector tool |
+| `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
+| `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX persona ranking |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
 | `src/memory/memory.ts` | Feedback persistence and method priority scoring |
 | `src/memory/renderer.ts` | Memory context renderer for system prompt |
@@ -412,12 +420,16 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
-| `src/retrieval/methods/bm25.ts` | BM25 lexical RetrievalMethod over parsed mirrors |
+| `src/minsync/method.ts` | MinSync retrieval method (vector / BM25 / hybrid over shared CDC chunks) |
 | `src/datasource/` | Datasource skill contracts, trusted access context, result filtering, polling metadata, diagnostics, and KakaoTalk/katok skill implementation |
+| `src/p2p/` | SimpleX P2P sharing: policy, injection/PII gates, approval store, wire protocol |
+| `src/cli/commands/serve.ts` | `autorag serve` P2P peer query server |
+| `src/cli/commands/p2p.ts` | `autorag p2p` peer trust and request approval |
+| `src/cli/commands/p2p-policy.ts` | `autorag p2p policy` sharing-rule CLI |
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: katok, discrawl (Discord), slack, notion, github, cloud-drive, gmail, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: katok, discrawl, wacrawl, telecrawl, slack, clawgallery, notion, github, cloud-drive, gmail, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |
 | `src/cli/commands/ui.ts` | `autorag ui` loopback dashboard for connecting and managing datasource skills |
 | `src/ui/` | Local datasource UI catalog, config store, probes, HTML, and 127.0.0.1 HTTP server |

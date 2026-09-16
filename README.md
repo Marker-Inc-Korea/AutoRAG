@@ -229,6 +229,8 @@ Security defaults are intentionally strict:
 | Mail archives | `mailcrawl` | external [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | local email sync plus BM25, semantic, and hybrid retrieval |
 | Obsidian vault | `obsidian` | external [`qmd`](https://github.com/tobi/qmd) CLI | incremental `qmd update`, BM25 `qmd search`, semantic `qmd vsearch`; vault path via `connector.vaultPath` |
 | RSS / news | `rss` | HTTP feed polling | RSS 2.0 + Atom, feed/category hierarchy, 24h dedupe window |
+| ClawGallery | `clawgallery` | external `clawgallery` CLI (`cargo install clawgallery`) | local screenshots and photos; incremental bootstrap + hybrid search |
+| macOS Spotlight | `spotlight` | built-in `mdfind` | macOS only; no extra install; Full Disk Access for protected files |
 
 Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, Telegram, Slack, and Notion leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Obsidian uses the external `qmd` CLI (incremental update + BM25 + semantic). Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
 
@@ -412,7 +414,7 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 
 `memory.json` stores retrieval memory and `logs/runs.jsonl` records run events. Model authentication remains with the user's configured provider or authenticated local runtime. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
 
-`autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method bm25,minsync,parsed`) to scope which indexing methods run or which index directories are removed. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
+`autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method minsync,parsed` or `--method datasources,jikji`) to scope which indexing methods run or which index directories are removed. Valid values are `parsed`, `minsync`, `datasources`, `jikji`, and `all`. BM25 is a MinSync retrieval mode, not a `--method` name. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
 `autorag health` checks model/provider auth before a search — it resolves the model, verifies credential presence, and optionally probes one completion call. Use it to diagnose model, provider, auth, or timeout failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness). When `autorag search` fails for a model/provider reason, the error output includes a hint pointing to `autorag health`.
 
@@ -440,6 +442,59 @@ characters. Local use remains the safe default: omit `ui` (or leave
 `allowRemote` false) and AutoRAG binds to loopback, including a working
 `localhost` URL on systems that resolve it to IPv6.
 
+### CLI commands
+
+```bash
+autorag init                    # write ~/.autorag/config.json
+autorag refresh                 # parsed + MinSync + datasources + Jikji
+autorag watch [--once]          # filesystem watch, or one cron/poll tick
+autorag status                  # corpus freshness (model-free)
+autorag search "your question"  # curated answer (requires a configured model)
+autorag feedback <session>      # numbered useful / not-useful feedback
+autorag evidence <session>      # persisted source/chunk evidence
+autorag memory inspect          # retrieval memory snapshot
+autorag index reset|rebuild     # remove or rebuild workspace indexes
+autorag health                  # model/provider auth (no index check)
+autorag duplicates [DIR]        # read-only duplicate families; never deletes
+autorag tui                     # interactive librarian terminal UI (beta)
+autorag ui                      # loopback page to connect datasources
+autorag lite …                  # model-free setup, retrieve, report, status
+autorag setup                   # install and configure local runtime assets
+autorag models prefetch|import|verify
+                                # manage local embedding model profiles
+autorag gateway status|stop     # inspect or stop the local embedding gateway
+autorag serve                   # P2P peer query server over SimpleX (opt-in)
+autorag p2p                     # peer trust, approvals, and sharing policy
+```
+
+`autorag --help` is the command list of record. See
+[docs/embedding-runtime.md](docs/embedding-runtime.md) for the local embedding
+runtime and gateway setup.
+
+### P2P sharing (SimpleX)
+
+Peer query sharing is **disabled by default**. Set `p2p.enabled` to `true` in
+`config.json`, or pass `--force` to start the server once. Peers reach this
+installation through SimpleX; the local control socket binds to loopback
+(default port 5225).
+
+```bash
+autorag serve                          # start the peer query server
+autorag p2p peers                      # list trusted peers
+autorag p2p peers --add alice --contact-id 1
+autorag p2p requests                   # pending responses held for approval
+autorag p2p requests approve <id>
+autorag p2p policy list                # merged sharing rules (virtual-path keys)
+autorag p2p policy set '/docs/**' peers
+autorag p2p policy unset '/docs/**'
+```
+
+Inbound queries are screened for injection. Outbound answers are filtered by
+sharing policy (`private` / `never` / `always` / `peers`) and PII redaction,
+and held until the operator approves them. The librarian can call
+`recommend_peer_targets` to suggest local peer personas without contacting
+them.
+
 ## Installation
 
 Published as `@autorag/librarian` (dist bundled with Bun, runtime Node ≥ 24 or Bun):
@@ -448,7 +503,7 @@ Published as `@autorag/librarian` (dist bundled with Bun, runtime Node ≥ 24 or
 bun add @autorag/librarian          # library
 bun install -g @autorag/librarian   # autorag CLI
 # or run directly from the repo:
-bun add github:NomaDamas/AutoRAG-2.0
+bun add github:Marker-Inc-Korea/AutoRAG
 ```
 
 PDF parsing requires **Java 11 or newer** because the bundled
@@ -467,28 +522,18 @@ start a new shell). Java 8 is not supported by the PDF parser.
 Git-based installs build `dist/` via the `prepare` script and require Bun on the installing machine.
 External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** installs from crates.io via `cargo install minsync` first (on by default; verified GitHub release assets are the fallback when cargo is unavailable; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) and Discord (`discrawl`) stay manual, optional installs. All of them degrade gracefully when missing — core BM25 search works without any of them.
 
-### Experimental TUI (beta)
+### TUI (beta)
 
-The latest TUI work is currently available on the `feat/experimental-tui`
-branch. To use this beta version from source:
+`autorag tui` opens an interactive Pi-powered librarian terminal UI using the
+same config as `autorag search`:
 
 ```bash
-git clone --branch feat/experimental-tui https://github.com/Marker-Inc-Korea/AutoRAG.git
-cd AutoRAG
-bun install
-bun run build
-
-# Configure your document roots and model once:
-node dist/cli/index.js init --search-paths /path/to/documents
-
-# Start the beta TUI:
-node dist/cli/index.js tui
+autorag tui
 ```
 
 Inside the TUI, use `/resume` to browse saved sessions. Selecting a session
 replaces the current view with that session instead of mixing the two
-conversation histories. This branch is experimental and may change before the
-feature is included in a published release.
+conversation histories. The TUI is beta and may still change.
 
 ## Quick Start
 
