@@ -3,6 +3,18 @@ import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import type { MinSyncEmbedderConfig } from "./types.ts";
 
+export interface MinSyncEmbeddingIdentity {
+	readonly provider: string;
+	readonly model: string;
+	readonly artifactRevision: string;
+	readonly dimension: number;
+	readonly queryPrefix: string;
+	readonly passagePrefix: string;
+	readonly runtimeBuild: string;
+}
+
+export const EMBEDDING_IDENTITY_FILE = "autorag-embedding-identity.json";
+
 /**
  * MinSync config.toml lives at `<workspace>/.minsync/config.toml`.
  * After `minsync init` runs, we rewrite allowlisted embedder fields so
@@ -13,6 +25,10 @@ export const MINSYNC_CONFIG_FILE = "config.toml";
 
 export function minSyncConfigPath(workspacePath: string): string {
 	return join(workspacePath, MINSYNC_CONFIG_DIR, MINSYNC_CONFIG_FILE);
+}
+
+export function minSyncEmbeddingIdentityPath(workspacePath: string): string {
+	return join(workspacePath, MINSYNC_CONFIG_DIR, EMBEDDING_IDENTITY_FILE);
 }
 
 export function configuredMaxChunkSize(workspacePath: string): number | undefined {

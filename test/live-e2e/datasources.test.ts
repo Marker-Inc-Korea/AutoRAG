@@ -42,7 +42,7 @@ describe("live-e2e datasource matrix", () => {
 		expect(result.lanes[0]?.reason).toContain("native identity");
 	});
 
-	it("accepts a source=prefixed kakao identity emitted by the live harness", async () => {
+	it("accepts a canonical /kakao/<instance>/chunks/<chunk> identity from the live harness", async () => {
 		const result = await runDatasourceMatrix({
 			root: fixtureRoot(),
 			selection: ["katok"],
@@ -50,7 +50,7 @@ describe("live-e2e datasource matrix", () => {
 			configured: () => true,
 			run: async () => ({
 				ok: true,
-				stdout: "KATOK_LIVE_QA_PASS source=kakao:chat/sender/chunk",
+				stdout: "KATOK_LIVE_QA_PASS source=/kakao/default/chunks/chunk-001",
 				stderr: "",
 				code: 0,
 			}),
@@ -96,9 +96,11 @@ describe("live-e2e datasource matrix", () => {
 		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "FAIL" });
 	});
 
-	it("accepts native identities and rejects slash-prefixed fake filesystem paths", () => {
-		expect(validateNativeIdentity("kakao:chat/sender/chunk")).toBe(true);
-		expect(validateNativeIdentity("/autorag/fake/chunks/1")).toBe(false);
+	it("accepts canonical katok slash identities and rejects retired scheme plus fake filesystem paths", () => {
+		expect(validateNativeIdentity("/kakao/default/chunks/chunk-001", "katok")).toBe(true);
+		expect(validateNativeIdentity("kakao:chat/sender/chunk", "katok")).toBe(false);
+		expect(validateNativeIdentity("/autorag/fake/chunks/1", "katok")).toBe(false);
+		expect(validateNativeIdentity("/kakao/default/chunk-001", "katok")).toBe(false);
 	});
 
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {

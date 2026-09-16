@@ -44,6 +44,16 @@ export function generateNotice(input: {
 		"",
 		thirdParty,
 		"",
+		"Embedding runtime and model notices:",
+		"licenses/llama.cpp-MIT.txt",
+		"licenses/qwen3-embedding-notice.txt",
+		"licenses/apache-2.0.txt",
+		"licenses/gemma-notice.txt",
+		"licenses/gemma-section-3.2-flow-down.txt",
+		"licenses/gemma-terms-of-use.txt",
+		"licenses/gemma-terms-of-use.html",
+		"licenses/embedding-assets.json",
+		"",
 	].join("\n");
 }
 

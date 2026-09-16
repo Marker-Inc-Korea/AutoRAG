@@ -1,20 +1,34 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
 import {
 	configuredMaxChunkSize,
 	configuredVectorDimension,
+	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
+	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
 } from "./embedder-config.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
+export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
+	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit profile config before using the new default runtime.";
+
+export interface MinSyncRuntime {
+	ensureRuntime(options?: {
+		readonly profileId?: MinSyncEmbedderConfig["profile"];
+		readonly cachedOnly?: boolean;
+	}): Promise<EnsuredRuntime>;
+}
+
 export interface MinSyncClientOptions {
 	readonly binaryPath: string;
 	readonly workspacePath: string;
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
+	readonly runtime?: MinSyncRuntime;
 }
 
 /** MinSync v0.4.2 supports vector, BM25, and hybrid query modes. */
@@ -25,6 +39,11 @@ const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export class MinSyncQueryError extends Error {
 	readonly code: number | null;
 	readonly stderr: string;
+	readonly diagnostic = {
+		code: "embedder-unavailable" as const,
+		message: "Semantic embedder is unavailable.",
+		retryable: true,
+	};
 
 	constructor(code: number | null, stderr: string) {
 		super(stderr || `MinSync query failed with exit code ${code ?? "unknown"}`);
@@ -39,33 +58,113 @@ export class MinSyncClient {
 	private readonly workspacePath: string;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
+	private readonly runtime: MinSyncRuntime | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
+		this.runtime = options.runtime;
+	}
+
+	private async effectiveEmbedder(): Promise<{
+		config: MinSyncEmbedderConfig;
+		identity?: MinSyncEmbeddingIdentity;
+		runtimeUnavailable?: boolean;
+		runtimeReason?: string;
+	}> {
+		const configured = this.embedder;
+		const useRuntime =
+			this.runtime !== undefined &&
+			(configured === undefined || (configured.profile !== undefined && configured.baseUrl === undefined));
+		if (!useRuntime) return { config: configured ?? {} };
+		try {
+			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile, cachedOnly: true });
+			if (!ensured) throw new Error("Embedding runtime did not return a runtime");
+			return {
+				config: {
+					id: `tei:${ensured.profile.model}`,
+					baseUrl: ensured.baseUrl,
+					dimension: ensured.profile.dimension,
+					queryPrefix: ensured.profile.queryPrefix,
+					passagePrefix: ensured.profile.passagePrefix,
+				},
+				identity: {
+					provider: ensured.identity.provider,
+					model: ensured.identity.model,
+					artifactRevision: ensured.identity.modelRevision,
+					dimension: ensured.identity.dimension,
+					queryPrefix: ensured.profile.queryPrefix,
+					passagePrefix: ensured.profile.passagePrefix,
+					runtimeBuild: ensured.identity.runtimeBuild,
+				},
+			};
+		} catch (error) {
+			return {
+				config: {},
+				runtimeUnavailable: true,
+				runtimeReason: error instanceof Error ? error.message : undefined,
+			};
+		}
+	}
+
+	private readIdentity(): MinSyncEmbeddingIdentity | undefined {
+		try {
+			const value: unknown = JSON.parse(readFileSync(minSyncEmbeddingIdentityPath(this.workspacePath), "utf8"));
+			return isIdentity(value) ? value : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	private writeIdentity(identity: MinSyncEmbeddingIdentity): void {
+		writeFileSync(minSyncEmbeddingIdentityPath(this.workspacePath), `${JSON.stringify(identity, null, 2)}\n`);
+	}
+
+	private identityMismatch(identity: MinSyncEmbeddingIdentity): boolean {
+		const previous = this.readIdentity();
+		return previous === undefined || JSON.stringify(previous) !== JSON.stringify(identity);
 	}
 
 	async sync(force = false): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "missing-binary" };
 		}
+		let effective: {
+			config: MinSyncEmbedderConfig;
+			identity?: MinSyncEmbeddingIdentity;
+			runtimeUnavailable?: boolean;
+			runtimeReason?: string;
+		} = { config: {} };
 		try {
-			await ensureLocalEmbedder({
-				baseUrl: this.embedder?.baseUrl,
-				timeoutMs: this.embedder?.timeoutMs,
-			});
+			effective = await this.effectiveEmbedder();
+			if (effective.runtimeUnavailable)
+				throw new Error(
+					effective.runtimeReason ??
+						"Semantic embedder is unavailable; run autorag models prefetch (or models import).",
+				);
+			await ensureLocalEmbedder({ baseUrl: effective.config.baseUrl, timeoutMs: effective.config.timeoutMs });
 		} catch (error) {
 			return {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason: error instanceof Error ? error.message : "local-embedder-unavailable",
+				reason:
+					error instanceof Error
+						? error.message
+						: (effective.runtimeReason ??
+							"Semantic embedder is unavailable; run autorag models prefetch (or models import)."),
+				diagnostic: {
+					code: "embedder-unavailable",
+					message: "Semantic embedder is unavailable; run autorag models prefetch (or models import).",
+					retryable: true,
+				},
 			};
 		}
-		if (this.embedder?.apiKeyEnv) {
-			const envName = this.embedder.apiKeyEnv;
+		const embedder = effective.config;
+		if (embedder.apiKeyEnv) {
+			const envName = embedder.apiKeyEnv;
 			if (!API_KEY_ENV_PATTERN.test(envName)) {
 				return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "invalid-api-key-env" };
 			}
@@ -79,13 +178,13 @@ export class MinSyncClient {
 				};
 			}
 		}
-		const spawnOpts = this.embedder?.timeoutMs !== undefined ? { timeoutMs: this.embedder.timeoutMs } : {};
+		const spawnOpts = embedder.timeoutMs !== undefined ? { timeoutMs: embedder.timeoutMs } : {};
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
 		if (!initialized) {
 			const initArgs = ["init", "--format", "json"];
-			if (this.embedder?.id) {
-				initArgs.push("--embedder", this.embedder.id);
+			if (embedder.id) {
+				initArgs.push("--embedder", embedder.id);
 			}
 			const init = await this.spawn(initArgs, spawnOpts);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
@@ -100,11 +199,12 @@ export class MinSyncClient {
 		const configuredChunkSize = configuredMaxChunkSize(this.workspacePath);
 		const configuredDimension = configuredVectorDimension(this.workspacePath);
 		const configPath = minSyncConfigPath(this.workspacePath);
-		const shouldRewriteConfig = this.embedder !== undefined || this.maxChunkSize !== undefined;
+		const shouldRewriteConfig =
+			this.embedder !== undefined || this.maxChunkSize !== undefined || effective.identity !== undefined;
 		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
 		const configRewritten =
 			shouldRewriteConfig &&
-			rewriteEmbedderConfig(this.workspacePath, this.embedder ?? {}, { maxChunkSize: this.maxChunkSize });
+			rewriteEmbedderConfig(this.workspacePath, embedder, { maxChunkSize: this.maxChunkSize });
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
@@ -124,16 +224,13 @@ export class MinSyncClient {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
-		const dimensionChanged =
-			this.embedder?.dimension !== undefined && configuredDimension !== this.embedder.dimension;
-		if (chunkSizeChanged || dimensionChanged) rmSync(cursorPath, { force: true });
+		const dimensionChanged = embedder.dimension !== undefined && configuredDimension !== embedder.dimension;
+		const identityChanged = effective.identity !== undefined && this.identityMismatch(effective.identity);
+		const fullReindex = force || chunkSizeChanged || dimensionChanged || identityChanged;
 		const syncArgs =
-			existsSync(cursorPath) && !chunkSizeChanged && !dimensionChanged && !force
-				? ["sync", "--format", "json"]
-				: ["sync", "--full", "--format", "json"];
+			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);
 		if (!result.ok) {
-			if (chunkSizeChanged || dimensionChanged) rmSync(cursorPath, { force: true });
 			restoreConfig();
 			return {
 				ok: false,
@@ -143,36 +240,62 @@ export class MinSyncClient {
 			};
 		}
 		if (!existsSync(cursorPath)) {
-			if (chunkSizeChanged || dimensionChanged) rmSync(cursorPath, { force: true });
 			restoreConfig();
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
-		return { ok: true, synced: readSyncedCount(result.stdout), workspacePath: this.workspacePath };
+		if (effective.identity) this.writeIdentity(effective.identity);
+		return {
+			ok: true,
+			synced: readSyncedCount(result.stdout),
+			workspacePath: this.workspacePath,
+			...(identityChanged
+				? {
+						diagnostic: {
+							code: "embedding-identity-mismatch" as const,
+							message: "Embedding identity changed; MinSync performed a full reindex.",
+						},
+					}
+				: {}),
+		};
 	}
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
 		const configPath = minSyncConfigPath(this.workspacePath);
 		const configuredDimension = configuredVectorDimension(this.workspacePath);
+		const effective = mode === "bm25" ? { config: this.embedder ?? {} } : await this.effectiveEmbedder();
 		if (
-			this.embedder?.dimension !== undefined &&
+			effective.config.dimension !== undefined &&
 			configuredDimension !== undefined &&
-			this.embedder.dimension !== configuredDimension
+			effective.config.dimension !== configuredDimension
 		) {
+			const migration =
+				configuredDimension === 768 && effective.config.dimension !== 768
+					? ` ${MINSYNC_OLLAMA_MIGRATION_MESSAGE}`
+					: "";
 			throw new MinSyncQueryError(
 				null,
-				`configured embedder dimension ${this.embedder.dimension} does not match indexed dimension ${configuredDimension}; reindex required`,
+				`configured embedder dimension ${effective.config.dimension} does not match indexed dimension ${configuredDimension}; reindex required.${migration}`,
 			);
 		}
-		const shouldRewriteConfig = this.embedder !== undefined;
+		if (effective.identity !== undefined && this.identityMismatch(effective.identity)) {
+			throw new MinSyncQueryError(
+				null,
+				"embedding identity does not match the indexed workspace; full reindex required",
+			);
+		}
+		const shouldRewriteConfig = this.embedder !== undefined || effective.identity !== undefined;
 		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
 		const configRewritten =
-			shouldRewriteConfig && rewriteEmbedderConfig(this.workspacePath, this.embedder ?? {}) === true;
+			shouldRewriteConfig && rewriteEmbedderConfig(this.workspacePath, effective.config) === true;
 		try {
-			await ensureLocalEmbedder({
-				baseUrl: this.embedder?.baseUrl,
-				timeoutMs: this.embedder?.timeoutMs,
-			});
+			if (effective.runtimeUnavailable)
+				throw new MinSyncQueryError(
+					null,
+					effective.runtimeReason ??
+						"Semantic embedder is unavailable; run autorag models prefetch (or models import).",
+				);
+			await ensureLocalEmbedder({ baseUrl: effective.config.baseUrl, timeoutMs: effective.config.timeoutMs });
 			const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
 			if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
 			return parseQueryHits(result.stdout);
@@ -236,6 +359,13 @@ function parseJson(text: string): unknown {
 function isMinSyncQueryHit(value: unknown): value is MinSyncQueryHit {
 	if (!isRecord(value)) return false;
 	return typeof value.path === "string" && typeof value.score === "number" && typeof value.text === "string";
+}
+
+function isIdentity(value: unknown): value is MinSyncEmbeddingIdentity {
+	if (!isRecord(value)) return false;
+	return ["provider", "model", "artifactRevision", "dimension", "queryPrefix", "passagePrefix", "runtimeBuild"].every(
+		(key) => key in value,
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

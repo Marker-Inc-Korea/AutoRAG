@@ -1,4 +1,5 @@
 export {
+	MINSYNC_OLLAMA_MIGRATION_MESSAGE,
 	MinSyncClient,
 	type MinSyncClientOptions,
 	MinSyncQueryError,
@@ -8,7 +9,9 @@ export {
 	configuredVectorDimension,
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
+	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
+	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
 } from "./embedder-config.ts";
 export {
@@ -37,6 +40,7 @@ export {
 export { MINSYNC_FILES_SUBDIR, MINSYNC_SUBDIR, minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
 export type {
 	MinSyncChunkerConfig,
+	MinSyncDiagnostic,
 	MinSyncEmbedderConfig,
 	MinSyncOptions,
 	MinSyncQueryHit,

@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, isAbsolute, relative } from "node:path";
-import type { SourceRoot } from "../filesystem/source-paths.ts";
+import { isFilesystemAbsolutePath, type SourceRoot } from "../filesystem/source-paths.ts";
 import { redactPII } from "./pii-gate.ts";
 import type { PolicyResolution, PolicyTier } from "./policy.ts";
 
@@ -147,7 +147,7 @@ export function resolveFileShare(
 	if (typeof wireId !== "string" || typeof peerFingerprint !== "string") return denied();
 
 	const source = wireId;
-	if (!isAbsolute(source)) return denied();
+	if (!isFilesystemAbsolutePath(source)) return denied();
 
 	const resolved = resolveLocalSource(source, options.workspaceRoots);
 	if (resolved === undefined) return denied();

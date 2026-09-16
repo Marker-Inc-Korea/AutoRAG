@@ -10,6 +10,7 @@
  *   KATOK_LIVE_QUERY="refund" bun scripts/manual-qa/run-qa-katok-live.ts
  */
 import { KatokClient, KatokSkill } from "../../src/datasource/skills/katok/index.ts";
+import { parseKatokSourcePath } from "../../src/datasource/skills/katok/paths.ts";
 
 const query = process.env.KATOK_LIVE_QUERY ?? "meeting";
 const client = new KatokClient({ timeoutMs: 900_000 });
@@ -34,10 +35,8 @@ for (const fallback of ["test", "회의", "ㅋㅋ", "ㅇㅇ"]) {
 	results = await method.retrieve(fallback, { topK: 5 });
 }
 const first = results[0];
-// kakao:<chat>/<sender>/<chunk>; chat/sender names may contain spaces (see
-// katokSource in src/datasource/skills/katok/methods.ts), so validate the
-// scheme + non-empty segments rather than forbidding whitespace.
-if (first === undefined || !/^kakao:[^/]+(?:\/[^/]+){1,2}$/u.test(first.source)) {
+// Canonical source is /kakao/<instance>/chunks/<chunk> (opaque, not an OS path).
+if (first === undefined || parseKatokSourcePath(first.source) === undefined) {
 	console.error("katok returned no valid native identity");
 	process.exit(1);
 }

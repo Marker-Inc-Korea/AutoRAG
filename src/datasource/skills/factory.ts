@@ -13,7 +13,12 @@ import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
-import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
+import {
+	DiscrawlClient,
+	type DiscrawlEmbeddingRuntime,
+	type DiscrawlOptions,
+	DiscrawlSkill,
+} from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
@@ -59,6 +64,7 @@ type SkillBuilder = (
 	config: DatasourceSkillConfig,
 	workspaceRoot: string | undefined,
 	registrationName: string,
+	embeddingRuntime?: DiscrawlEmbeddingRuntime,
 ) => DatasourceSkill | undefined;
 
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
@@ -101,7 +107,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
 			},
 		}),
-	discord: (config, workspaceRoot, registrationName) => {
+	discord: (config, workspaceRoot, registrationName, embeddingRuntime) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
 		const clientOptions: DiscrawlOptions = {
 			...connector,
@@ -116,6 +122,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			channelNames: config.channels?.names,
 			client: new DiscrawlClient({
 				...clientOptions,
+				...(embeddingRuntime === undefined ? {} : { embeddingRuntime }),
 			}),
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
@@ -244,6 +251,7 @@ function common(config: DatasourceSkillConfig, workspaceRoot: string | undefined
 export function buildDatasourceSkills(
 	config: DatasourcesConfig | undefined,
 	workspaceRoot?: string,
+	embeddingRuntime?: DiscrawlEmbeddingRuntime,
 ): BuildDatasourceSkillsResult {
 	const skills: DatasourceSkill[] = [];
 	const unknown: string[] = [];
@@ -263,7 +271,7 @@ export function buildDatasourceSkills(
 		}
 		const normalizedEntry =
 			entry.instanceId === undefined && entry.type !== undefined ? { ...entry, instanceId: name } : entry;
-		const skill = builder(normalizedEntry, workspaceRoot, name);
+		const skill = builder(normalizedEntry, workspaceRoot, name, embeddingRuntime);
 		if (skill === undefined) {
 			unknown.push(name);
 			continue;

@@ -349,4 +349,25 @@ describe("buildPeerResponse", () => {
 		expect(result.results[0]?.summary).toMatch(/email_1/);
 		expect(result.answer).toMatch(/email_1/);
 	});
+
+	it("treats Windows-form absolute paths as filesystem sources", () => {
+		const winSource = "C:\\Shared\\guide.md";
+		const result = buildPeerResponse({
+			response: response("clean answer", [{ number: 1, title: "Allowed", summary: "shared", source: winSource }]),
+			observedSources: new Set([winSource]),
+			resolvePolicy: (source: string) => ({
+				tier: "always" as const,
+				allowed: source === winSource,
+				shareBytes: true,
+				redact: false,
+			}),
+			peerFingerprint,
+			workspaceRoots,
+			pseudonymize: false,
+		});
+
+		expect(result.status).toBe("ok");
+		expect(result.results).toHaveLength(1);
+		expect(result.results[0]?.source).toBe(winSource);
+	});
 });

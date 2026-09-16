@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DiscrawlClient } from "../../../../src/datasource/skills/discrawl/client.ts";
+import { DiscrawlClient, nativeGatewayBaseUrl } from "../../../../src/datasource/skills/discrawl/client.ts";
 
 function stubBinary(script: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "discrawl-stub-"));
@@ -135,6 +135,64 @@ describe("DiscrawlClient search", () => {
 	});
 });
 
+describe("DiscrawlClient managed embeddings", () => {
+	it("emits the native OpenAI-compatible config and rebuilds on managed identity change", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-managed-"));
+		const client = new DiscrawlClient({
+			root,
+			embeddingRuntime: {
+				provider: "openai_compatible",
+				model: "Qwen3",
+				baseUrl: "http://127.0.0.1:18080/v1",
+				dimensions: 1024,
+			},
+		});
+		const first = await client.configureEmbeddings({
+			provider: "openai_compatible",
+			model: "Qwen3",
+			baseUrl: "http://127.0.0.1:18080/v1",
+			dimensions: 1024,
+		});
+		const path = join(root, ".autorag", "datasources", "discrawl", "config.toml");
+		expect(first).toMatchObject({ configured: true, rebuildRequired: false });
+		expect(readFileSync(path, "utf8")).toContain("[search.embeddings]");
+		expect(readFileSync(path, "utf8")).toContain('provider = "openai_compatible"');
+		const second = await client.configureEmbeddings({
+			provider: "openai_compatible",
+			model: "Qwen3-v2",
+			baseUrl: "http://127.0.0.1:18080/v1",
+			dimensions: 1024,
+		});
+		expect(second.rebuildRequired).toBe(true);
+	});
+
+	it("leaves explicit and malformed operator config byte-identical", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-explicit-"));
+		const configPath = join(root, "operator.toml");
+		const original = "garbage = [\n";
+		writeFileSync(configPath, original);
+		const client = new DiscrawlClient({
+			root,
+			configPath,
+			embeddingRuntime: {
+				provider: "openai_compatible",
+				model: "Qwen3",
+				baseUrl: "http://127.0.0.1:18080/v1",
+				dimensions: 1024,
+			},
+		});
+		expect(
+			await client.configureEmbeddings({
+				provider: "openai_compatible",
+				model: "Qwen3",
+				baseUrl: "http://127.0.0.1:18080/v1",
+				dimensions: 1024,
+			}),
+		).toMatchObject({ configured: false });
+		expect(readFileSync(configPath, "utf8")).toBe(original);
+	});
+});
+
 describe("DiscrawlClient user-token gate", () => {
 	it("refuses to spawn when a Discord user token is present", async () => {
 		const binaryPath = stubBinary("echo '[]'");
@@ -220,5 +278,29 @@ describe("DiscrawlClient doctor and embed", () => {
 		if (result.ok) {
 			expect(result.data).toMatchObject({ processed: 1276, succeeded: 1271, failed: 0, remainingBacklog: 0 });
 		}
+	});
+});
+
+describe("nativeGatewayBaseUrl", () => {
+	it("appends /v1 to a bare base URL", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080")).toBe("http://localhost:8080/v1");
+	});
+
+	it("strips trailing slashes before appending /v1", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/gateway///")).toBe("http://localhost:8080/gateway/v1");
+	});
+
+	it("passes through a URL already ending with /v1", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/v1")).toBe("http://localhost:8080/v1");
+	});
+
+	it("handles a URL with a single trailing slash", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/")).toBe("http://localhost:8080/v1");
+	});
+
+	it("handles many repeated trailing slashes", () => {
+		expect(nativeGatewayBaseUrl("http://localhost:8080/path/" + "/".repeat(100))).toBe(
+			"http://localhost:8080/path/v1",
+		);
 	});
 });

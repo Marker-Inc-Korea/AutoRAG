@@ -1,69 +1,112 @@
 # MinSync setup
 
 AutoRAG uses MinSync for local lexical BM25, semantic vector, and hybrid
-retrieval over parsed document mirrors.
+retrieval over parsed document mirrors. MinSync remains the owner of its
+workspace, chunks, vectors, cursor, and embedding identity.
 
-## Automatic installation
+## Default path: the AutoRAG gateway
 
-MinSync is enabled by default. When no usable `minsync` executable is found
-in the configured `binaryPath`, on `PATH`, or in the workspace cache, AutoRAG
-installs from crates.io first:
+The product default is the AutoRAG-owned `autorag-gateway` path. On a new
+workspace, MinSync starts the local gateway on demand and uses the
+`qwen3-embedding-0.6b` profile (1024 dimensions). No Ollama installation, TEI
+adapter, API key, endpoint, or model selection is required.
+
+MinSync still auto-installs its own binary when no usable executable is found
+on `PATH` or in the workspace cache. If the MinSync binary is missing or its
+auto-install fails, AutoRAG reports a degraded result; it does not claim the
+index is ready.
+
+A normal setup is:
 
 ```bash
-cargo install minsync --version 0.4.2 --locked
+autorag init --search-paths /path/to/docs --workspace /path/to/workspace
+autorag refresh --method parsed,minsync --json
+autorag search --json "semantic question about the documents"
 ```
 
-The cargo path requires a Rust toolchain and writes the binary to:
+The gateway is loopback-only and is started by the semantic MinSync path. To
+inspect or stop it:
 
-```text
-<workspace>/.autorag/bin/minsync
+```bash
+autorag gateway status --format json
+autorag gateway stop
 ```
 
-If cargo is missing or the install fails, AutoRAG falls back to the verified
-GitHub release asset for the current platform. Release assets are selected by
-platform and architecture and verified against their SHA-256 digest before
-installation. Installation failures are reported as a degraded MinSync status;
-AutoRAG does not claim that the index is ready.
+`gateway status` reports the supervisor state, profile, model, backend, port
+when available, health, and sanitized failure details. `gateway stop` stops
+the owned child process and removes its pid/lock state.
 
-To manage MinSync yourself, set an explicit path and disable installation:
+## Selecting a profile
+
+The default profile is Qwen3-Embedding-0.6B at 1024 dimensions. To keep a
+768-dimensional workspace, set a profile in trusted `config.json` rather than
+pointing the product path at an implicit Ollama model:
 
 ```json
 {
   "minSync": {
-    "binaryPath": "/absolute/path/to/minsync",
-    "autoInstall": false
-  }
-}
-```
-
-An explicit `binaryPath` is authoritative. If it is missing, AutoRAG reports a
-missing binary instead of silently installing another executable.
-
-## Chunk size
-
-MinSync defaults to `max_chunk_size = 4096`. Local embedders with smaller
-context windows, such as EmbeddingGemma (2048 tokens), overflow at that size.
-Set `minSync.maxChunkSize` in `config.json`, or pass
-`--minsync-max-chunk-size` to `autorag init`. AutoRAG writes the value to
-MinSync's `[chunker.options].max_chunk_size` and forces a full reindex when
-the configured size changes.
-
-```json
-{
-  "minSync": {
+    "embedder": {
+      "profile": "embeddinggemma-300m"
+    },
     "maxChunkSize": 1000
   }
 }
 ```
 
+EmbeddingGemma uses the prefixes `task: search result | query: ` for queries
+and `title: none | text: ` for passages. Its 2048-token context makes a
+smaller `maxChunkSize` useful. AutoRAG writes only the supported MinSync
+embedder fields and does not write secrets.
+
+## Model cache and offline operation
+
+The runtime cache root is `~/.autorag` on macOS and `%USERPROFILE%\\.autorag` on
+Windows; `AUTORAG_HOME` overrides it. The cache downloader stores verified
+assets under the cache root's `models/` directory. Downloads use a `.part` file
+and an atomic rename. A failed or corrupt download is removed rather than
+treated as a usable model.
+
+Use the CLI to fetch, import, or verify a pinned model:
+
 ```bash
-autorag init --search-paths /path/to/docs --minsync-max-chunk-size 1000 --force
+autorag models prefetch --profile qwen3-embedding-0.6b
+autorag models import /path/to/Qwen3-Embedding-0.6B-Q8_0.gguf --profile qwen3-embedding-0.6b
+autorag models verify --profile qwen3-embedding-0.6b
 ```
 
-## Local EmbeddingGemma
+`import` verifies the source file against the selected profile hash before
+placing it in the cache. `verify` never downloads a missing asset. The runtime
+API also accepts `offline: true`; in that mode a missing or corrupt model or
+runtime asset returns an `offline-missing` diagnostic and makes no network
+request. Offline import works when the source file is already available.
 
-For a local-only semantic index, run Ollama and expose its embeddings through
-the repository TEI adapter:
+The exact model and runtime URLs, revisions, SHA-256 values, archive members,
+and notices are in [`licenses/embedding-assets.json`](../licenses/embedding-assets.json).
+Mutable model weights are not in the npm package.
+
+## Chunk size
+
+MinSync defaults to `max_chunk_size = 4096`. Smaller-context local models may
+need a smaller value. Set `minSync.maxChunkSize` in `config.json`, or pass
+`--minsync-max-chunk-size` to `autorag init`:
+
+```bash
+autorag init \
+  --search-paths /path/to/docs \
+  --workspace /path/to/workspace \
+  --minsync-max-chunk-size 1000 \
+  --force
+```
+
+AutoRAG writes the value to MinSync's `[chunker.options].max_chunk_size` and
+forces a full reindex when the configured chunk size changes.
+
+## Existing Ollama/TEI adapter path: legacy/manual QA only
+
+The repository's Python adapter is no longer the default product path. Keep it
+only for a legacy workspace or manual compatibility QA. It translates Ollama's
+`/api/embeddings` response to MinSync's TEI `/embed` response and must remain
+bound to loopback:
 
 ```bash
 ollama pull embeddinggemma:latest
@@ -72,7 +115,7 @@ OLLAMA_EMBEDDINGS_URL=http://127.0.0.1:11434/api/embeddings \
   python3 scripts/manual-qa/ollama-tei-adapter.py
 ```
 
-Then initialize a workspace with:
+A legacy/manual QA workspace may be initialized explicitly as follows:
 
 ```bash
 autorag init \
@@ -83,43 +126,42 @@ autorag init \
   --embedder-dimension 768 \
   --minsync-max-chunk-size 1000 \
   --force
-autorag refresh --method parsed,bm25,minsync --json
+autorag refresh --method parsed,minsync --json
 ```
 
-Verify both the index and the local semantic query:
+Do not use this adapter path as a fresh-install requirement or as an implicit
+fallback from the gateway. AutoRAG never silently switches an existing vector
+store between Ollama/TEI and the shared runtime.
 
-```bash
-autorag status --json
-autorag search --json "semantic question about the documents"
+Direct Ollama OpenAI-compatible embedding endpoints are also operator-managed
+legacy configuration, not the AutoRAG default. An explicit external endpoint
+remains authoritative and is not overwritten by the shared runtime.
+
+## Migration and failure behavior
+
+A MinSync workspace records the embedding identity in:
+
+```text
+<workspace>/.minsync/autorag-embedding-identity.json
 ```
 
-The MinSync workspace is local to the configured AutoRAG workspace. The
-embedding adapter must remain bound to loopback; do not use a remote endpoint
-for private corpus text in this QA flow.
+The identity includes provider, model, immutable model revision, dimension,
+query prefix, passage prefix, and runtime build. A mismatch requires a full
+reindex. Existing 768-dimensional Ollama/TEI stores must therefore be handled
+by either:
 
-## Direct Ollama mode (without the TEI adapter)
+- an explicit `autorag index reset --method minsync --yes` followed by
+  `autorag refresh --method minsync`; or
+- an explicit `minSync.embedder.profile` of `embeddinggemma-300m`, followed by
+  refresh and identity validation.
 
-Ollama also exposes an OpenAI-compatible embeddings endpoint. MinSync can use
-it directly, so a new local index does not need the repository's TEI adapter:
+A dimension mismatch is detected before vector reuse. MinSync reports a typed
+semantic failure rather than mixing vector dimensions. When semantic
+infrastructure is unavailable, the lexical/BM25 lane remains usable; hybrid
+retrieval can fall back to BM25 and reports the degraded semantic diagnostic.
 
-```toml
-[embedder]
-id = "openai:embeddinggemma:latest"
-base_url = "http://127.0.0.1:11434"
+The legacy migration diagnostic is:
 
-[vectorstore.options]
-dimension = 768
+```text
+This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit profile config before using the new default runtime.
 ```
-
-MinSync's OpenAI adapter still requires `OPENAI_API_KEY` to be present; for a
-loopback-only Ollama endpoint, a non-secret sentinel is sufficient:
-
-```bash
-export OPENAI_API_KEY=ollama
-```
-
-AutoRAG starts `ollama serve` on demand when this direct loopback endpoint is
-configured and unavailable. Existing indexes created through
-`tei:embeddinggemma:latest` remain tied to their TEI endpoint and still need
-the TEI adapter; switching an existing index to direct Ollama should be
-treated as a reindex/compatibility change, not an in-place configuration edit.
