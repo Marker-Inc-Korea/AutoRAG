@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import { normalizeSource, type SourceRoot } from "../filesystem/source-paths.ts";
 
 export type PolicyTier = "private" | "never" | "always" | "peers";
 
@@ -33,6 +34,14 @@ export interface PolicyStoreOptions {
 	readonly seenSourcesPath?: string;
 	/** Overrides p2p.newFilesPublic, primarily useful to callers with normalized config. */
 	readonly newFilesPublic?: boolean;
+	/**
+	 * Configured retrieval source roots. When present, every source passed to
+	 * {@link PolicyStore.resolvePolicy} and the seen-source methods is first
+	 * canonicalized via `normalizeSource` (absolute real paths become virtual
+	 * ids; datasource slash identities pass through), and unmappable sources
+	 * fail closed. When absent, sources are matched exactly as provided.
+	 */
+	readonly sourceRoots?: readonly SourceRoot[];
 }
 
 export class PolicyError extends Error {
@@ -384,6 +393,7 @@ export class PolicyStore {
 	private readonly pendingSources: Set<string>;
 	private readonly seenSourcesPath: string;
 	private readonly workspacePath: string;
+	private readonly sourceRoots: readonly SourceRoot[] | undefined;
 	private readonly compiledPatterns: readonly {
 		readonly pattern: string;
 		readonly entry: PolicyEntry;
@@ -398,6 +408,7 @@ export class PolicyStore {
 			throw new PolicyError("workspacePath must be a non-empty path");
 		}
 		this.workspacePath = resolve(normalizedOptions.workspacePath);
+		this.sourceRoots = normalizedOptions.sourceRoots;
 		const globalConfigPath =
 			normalizedOptions.globalConfigPath ?? resolveGlobalConfigPath(normalizedOptions.homePath);
 		const workspacePolicyPath =
@@ -436,9 +447,23 @@ export class PolicyStore {
 		});
 	}
 
+	/**
+	 * Canonicalize a caller-provided source when source roots are configured.
+	 * Returns the source unchanged when no roots are configured, and
+	 * `undefined` when the source cannot be mapped to the canonical form.
+	 */
+	private canonicalSource(source: string): string | undefined {
+		if (this.sourceRoots === undefined) return source;
+		return normalizeSource(source, this.sourceRoots);
+	}
+
 	/** Record an indexer's first observation; allow-globs remain private until promotion. */
 	markSourceSeen(source: string): void {
-		const normalized = validatePolicyKey(source, this.workspacePath, "source");
+		const canonical = this.canonicalSource(source);
+		if (canonical === undefined) {
+			throw new PolicyError("source cannot be mapped to a canonical source identifier");
+		}
+		const normalized = validatePolicyKey(canonical, this.workspacePath, "source");
 		if (this.seenSources.has(normalized) || this.pendingSources.has(normalized)) return;
 		this.pendingSources.add(normalized);
 		try {
@@ -483,7 +508,11 @@ export class PolicyStore {
 
 	/** Explicitly promote a newly indexed source into normal allow-glob policy evaluation. */
 	promoteSource(source: string): void {
-		const normalized = validatePolicyKey(source, this.workspacePath, "source");
+		const canonical = this.canonicalSource(source);
+		if (canonical === undefined) {
+			throw new PolicyError("source cannot be mapped to a canonical source identifier");
+		}
+		const normalized = validatePolicyKey(canonical, this.workspacePath, "source");
 		if (this.seenSources.has(normalized)) return;
 		this.pendingSources.delete(normalized);
 		this.seenSources.add(normalized);
@@ -497,7 +526,9 @@ export class PolicyStore {
 	}
 
 	isSourceSeen(source: string): boolean {
-		const normalized = validatePolicyKey(source, this.workspacePath, "source");
+		const canonical = this.canonicalSource(source);
+		if (canonical === undefined) return false;
+		const normalized = validatePolicyKey(canonical, this.workspacePath, "source");
 		return this.seenSources.has(normalized) || this.pendingSources.has(normalized);
 	}
 
@@ -517,8 +548,10 @@ export class PolicyStore {
 		if (typeof source !== "string" || source.length === 0 || UNSAFE_POLICY_CHARACTERS.test(source)) {
 			return privateResolution();
 		}
+		const canonical = this.canonicalSource(source);
+		if (canonical === undefined) return privateResolution();
 		const matches: PolicyMatch[] = this.compiledPatterns
-			.filter((candidate) => candidate.matcher.test(source))
+			.filter((candidate) => candidate.matcher.test(canonical))
 			.map((candidate) => ({ pattern: candidate.pattern, entry: candidate.entry, order: candidate.order }))
 			.sort((left, right) => {
 				const lengthDifference = right.pattern.length - left.pattern.length;
@@ -530,7 +563,7 @@ export class PolicyStore {
 		const selected = matches[0]?.entry;
 		if (selected === undefined) return privateResolution();
 		const isNewAllowSource = selected.tier === "always" || selected.tier === "peers";
-		if (isNewAllowSource && !this.newFilesPublic && !this.seenSources.has(source.normalize("NFC"))) {
+		if (isNewAllowSource && !this.newFilesPublic && !this.seenSources.has(canonical.normalize("NFC"))) {
 			return privateResolution();
 		}
 		return resolveEntry(selected, peerFingerprint);
