@@ -207,7 +207,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 Datasource skills belong in trusted config and remain default-deny. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
-`clawgallery`, `notion`, `github`, `cloud-drive`, `mail-export`,
+`clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`, `mail-export`,
 `mailcrawl`, `obsidian`, `rss`, and `spotlight`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
@@ -217,6 +217,7 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 {
   "datasources": {
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
+    "github-gist": { "connector": { "tokenEnv": "GITHUB_TOKEN" } },
     "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
     "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
