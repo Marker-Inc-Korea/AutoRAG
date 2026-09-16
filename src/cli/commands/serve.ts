@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { AutoRAGAgent } from "../../agent/agent.ts";
-import { isFilesystemAbsolutePath, planSourceRoots, sourceIdentifier } from "../../filesystem/source-paths.ts";
+import { planSourceRoots } from "../../filesystem/source-paths.ts";
 import type { InjectionClassifierModel } from "../../p2p/injection-classifier.ts";
 import { PolicyStore } from "../../p2p/policy.ts";
 import {
@@ -161,32 +161,29 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 					}
 				: {}),
 		});
+		// Readiness gate: peer queries answered from an unready index look like
+		// empty corpora. Warn (never block) so the operator can refresh first.
+		const components = agent.refreshComponentStatus();
+		if (components.minsync !== undefined && components.minsync !== "ready") {
+			ctx.stderr(
+				`warning: MinSync retrieval is not ready (status: ${components.minsync}); peer queries may return degraded results until 'autorag refresh --method minsync' completes.`,
+			);
+		}
+
+		// Policy resolution canonicalizes every source (absolute real paths,
+		// virtual ids, datasource slash identities) through normalizeSource
+		// before glob matching, so globs match one canonical form.
 		const policyStore = new PolicyStore({
 			workspacePath: config.workspacePath,
 			globalConfigPath: resolved.configPath,
+			sourceRoots: planSourceRoots(config.searchPaths),
 			...(p2p.newFilesPublic !== undefined ? { newFilesPublic: p2p.newFilesPublic } : {}),
 		});
-		// Resolve policy against the canonical virtual path. Retrieval may
-		// return real absolute paths (e.g. MinSync source fields); convert
-		// them to the virtual path before matching policy globs.
-		const sourceRoots = planSourceRoots(config.searchPaths);
-		const resolveVirtualPathPolicy = (source: string, peer?: string) => {
-			if (!isFilesystemAbsolutePath(source)) return policyStore.resolvePolicy(source, peer);
-			// Absolute real path -> virtual path
-			for (const root of sourceRoots) {
-				if (source.startsWith(root.rootPath)) {
-					const virtual = sourceIdentifier(root, source);
-					return policyStore.resolvePolicy(virtual, peer);
-				}
-			}
-			// Already a virtual path (starts with root prefix)
-			return policyStore.resolvePolicy(source, peer);
-		};
 		server = await startServer({
 			transport,
 			agent,
 			policyStore,
-			resolvePolicy: resolveVirtualPathPolicy,
+			resolvePolicy: policyStore.resolvePolicy.bind(policyStore),
 			workspacePath: config.workspacePath,
 			workspaceRoots: config.searchPaths,
 			injectionClassifier,
