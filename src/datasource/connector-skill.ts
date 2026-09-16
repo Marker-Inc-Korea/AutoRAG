@@ -1,6 +1,6 @@
 /**
  * Shared {@link DatasourceSkill} implementation for connector-backed
- * datasources (Slack, Discord, Notion, GitHub, Google Drive, Gmail/IMAP,
+ * datasources (Slack, Discord, Notion, GitHub, Google Drive,
  * local mail exports, RSS/news).
  *
  * Composition: a trusted {@link DatasourceConnector} fetches documents, a
@@ -106,10 +106,10 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 			options.skillName === undefined
 				? definition
 				: {
-						...definition,
-						skillName: options.skillName,
-						description: `${definition.description} (${options.skillName})`,
-					};
+					...definition,
+					skillName: options.skillName,
+					description: `${definition.description} (${options.skillName})`,
+				};
 		this.connector = options.connector;
 		this.instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
 		this.instances =
