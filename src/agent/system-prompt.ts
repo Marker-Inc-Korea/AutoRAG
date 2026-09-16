@@ -70,8 +70,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		config.manifests.length === 0
 			? ""
 			: `\n## Indexed Stores\n\n${config.manifests
-				.map((manifest) => `- **${manifest.name}**: ${manifest.description ?? "indexed document store"}`)
-				.join("\n")}\n`;
+					.map((manifest) => `- **${manifest.name}**: ${manifest.description ?? "indexed document store"}`)
+					.join("\n")}\n`;
 	const datasourceSkills = buildDatasourceSkillsPrompt(config.datasourceSkills ?? []);
 	const noSearchTools =
 		toolLines.length === 0
