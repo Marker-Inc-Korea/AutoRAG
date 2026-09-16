@@ -2,12 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildDatasourceSkills } from "../../../src/datasource/skills/factory.ts";
 
 describe("datasource skill factory", () => {
-	it("skips a gmail entry when connector.backend is himalaya", () => {
+	it("does not register Gmail REST datasources", () => {
 		const { skills, unknown } = buildDatasourceSkills({
-			"legacy-imap": {
-				type: "gmail",
-				connector: { backend: "himalaya", account: "personal", folder: "INBOX" },
-			},
 			inbox: {
 				type: "gmail",
 				connector: { tokenEnv: "GMAIL_ACCESS_TOKEN_TEST" },
@@ -18,9 +14,18 @@ describe("datasource skill factory", () => {
 			},
 		});
 
-		expect(skills.map((skill) => skill.describe().name).sort()).toEqual(["archive", "inbox"]);
-		expect(unknown).toEqual(["legacy-imap"]);
-		expect(skills.find((skill) => skill.describe().name === "inbox")?.describe().type).toBe("gmail-account");
-		expect(skills.find((skill) => skill.describe().name === "archive")?.describe().type).toBe("mailcrawl-archive");
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["archive"]);
+		expect(unknown).toEqual(["inbox"]);
+		expect(skills[0]?.describe().type).toBe("mailcrawl-archive");
+	});
+
+	it("treats leftover datasources.gmail config as unknown without crashing", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			gmail: { connector: { tokenEnv: "GMAIL_ACCESS_TOKEN" } },
+			rss: { connector: { feeds: [{ url: "https://example.com/feed.xml" }] } },
+		});
+
+		expect(unknown).toEqual(["gmail"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
 	});
 });

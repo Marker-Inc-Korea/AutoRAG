@@ -20,7 +20,6 @@ import {
 	DiscrawlSkill,
 } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
-import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
@@ -182,15 +181,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				...(config.connector as RcloneConnectorOptions),
 			},
 		}),
-	gmail: (config, workspaceRoot, registrationName) => {
-		const connector = config.connector as (GmailConnectorOptions & { backend?: string }) | undefined;
-		if (connector?.backend === "himalaya") return undefined;
-		return new GmailSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: connector as GmailConnectorOptions,
-		});
-	},
 	"mail-export": (config, workspaceRoot, registrationName) =>
 		new MailExportSkill({
 			...common(config, workspaceRoot),

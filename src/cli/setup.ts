@@ -58,7 +58,6 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 };
 const DEFAULT_CREDENTIALS: Readonly<Record<string, readonly string[]>> = {
 	github: ["GITHUB_TOKEN"],
-	gmail: ["GMAIL_ACCESS_TOKEN"],
 	slack: ["SLACK_TOKEN"],
 	telegram: ["TELEGRAM_BOT_TOKEN"],
 	whatsapp: ["WHATSAPP_TOKEN"],
@@ -79,7 +78,7 @@ function executableInPath(name: string, env: NodeJS.ProcessEnv): string | undefi
 		try {
 			accessSync(candidate, constants.X_OK);
 			return candidate;
-		} catch {}
+		} catch { }
 	}
 	return undefined;
 }
@@ -116,7 +115,6 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 			"telegram",
 			"whatsapp",
 			"mailcrawl",
-			"gmail",
 			"mail-export",
 			"notion",
 			"github",
@@ -150,8 +148,8 @@ export async function runSetup(options: {
 		const profileId =
 			options.profileId ??
 			(configuredProfile &&
-			typeof configuredProfile === "object" &&
-			typeof (configuredProfile as Record<string, unknown>).profile === "string"
+				typeof configuredProfile === "object" &&
+				typeof (configuredProfile as Record<string, unknown>).profile === "string"
 				? ((configuredProfile as Record<string, unknown>).profile as ProfileId)
 				: PROFILE);
 		const runtime =
@@ -228,12 +226,12 @@ export async function runSetup(options: {
 				Object.keys(embedder).length > 0
 					? embedder
 					: {
-							id: profile.model,
-							profile: profile.profileId,
-							dimension: profile.dimension,
-							queryPrefix: profile.queryPrefix,
-							passagePrefix: profile.passagePrefix,
-						};
+						id: profile.model,
+						profile: profile.profileId,
+						dimension: profile.dimension,
+						queryPrefix: profile.queryPrefix,
+						passagePrefix: profile.passagePrefix,
+					};
 			const next = {
 				...raw,
 				minSync: {

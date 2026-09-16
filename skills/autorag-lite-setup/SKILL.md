@@ -77,14 +77,14 @@ setup. Configure datasources directly in trusted config, wizard-style:
    list to the user, with what is missing for each.
 4. Set up a skipped datasource only when the user explicitly asks for it:
    install or authenticate the backing CLI first, then configure it.
-5. E-mail datasources (`gmail`, `mail-export`, `mailcrawl`) matter to most
+5. E-mail datasources (`mail-export`, `mailcrawl`) matter to most
    users — always probe them and report their status, even when they end up
    skipped.
 
 Datasource skills belong in trusted config and remain default-deny.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
-`slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`, `gmail`,
+`slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`,
 `mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.

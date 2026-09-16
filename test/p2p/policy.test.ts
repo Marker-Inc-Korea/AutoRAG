@@ -103,18 +103,18 @@ tier = "never"
 [policy."/kakao/personal/chunks/**"]
 tier = "always"
 
-[policy."/gmail/personal/chunks/**"]
+[policy."/mailcrawl/personal/chunks/**"]
 tier = "peers"
 peers = ["mail-peer"]
 `);
 		const policy = store();
 		policy.promoteSource("/kakao/personal/chunks/chunk-1");
 		policy.promoteSource("/kakao/other/chunks/chunk-1");
-		policy.promoteSource("/gmail/personal/chunks/message-1");
+		policy.promoteSource("/mailcrawl/personal/chunks/message-1");
 
 		expect(policy.resolvePolicy("/kakao/personal/chunks/chunk-1", "any").allowed).toBe(true);
 		expect(policy.resolvePolicy("/kakao/other/chunks/chunk-1", "any").allowed).toBe(false);
-		expect(policy.resolvePolicy("/gmail/personal/chunks/message-1", "mail-peer")).toMatchObject({
+		expect(policy.resolvePolicy("/mailcrawl/personal/chunks/message-1", "mail-peer")).toMatchObject({
 			tier: "peers",
 			allowed: true,
 			shareBytes: false,

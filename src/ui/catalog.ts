@@ -179,28 +179,6 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 		],
 	},
 	{
-		type: "gmail",
-		title: "Gmail",
-		summary: "Search Gmail through the Gmail API.",
-		defaultTags: ["gmail", "email", "pii"],
-		fields: [
-			INSTANCE,
-			{
-				key: "connector.tokenEnv",
-				label: "Access token environment variable",
-				kind: "env",
-				placeholder: "GMAIL_ACCESS_TOKEN",
-			},
-			{
-				key: "connector.labelIds",
-				label: "Gmail labels",
-				kind: "textarea",
-				placeholder: "INBOX",
-				help: "One label id per line.",
-			},
-		],
-	},
-	{
 		type: "mail-export",
 		title: "Mail export",
 		summary: "Index local .eml or .mbox files.",
@@ -393,7 +371,6 @@ const EXTRAS_BY_TYPE: Readonly<Record<string, readonly PickerExtra[]>> = {
 			question: "Which rclone remote (Google Drive, OneDrive, …) should this connection use?",
 		},
 	],
-	gmail: [],
 	"mail-export": [
 		{
 			key: "paths",
