@@ -3,8 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitHubGistConnector } from "../../../src/datasource/skills/github-gist/connector.ts";
+import {
+	createGatewayGistEmbedder,
+	GIST_EMBED_BATCH_SIZE,
+	type GistEmbedder,
+} from "../../../src/datasource/skills/github-gist/semantic.ts";
 import { GitHubGistSkill } from "../../../src/datasource/skills/github-gist/skill.ts";
-import type { GistEmbedder } from "../../../src/datasource/skills/github-gist/semantic.ts";
 import { createMockFetch } from "../../fixtures/mock-fetch.ts";
 
 const GIST_LIST = [
@@ -33,7 +37,13 @@ const GIST_FULL = {
 		public: false,
 		updated_at: "2024-03-01T00:00:00.000Z",
 		html_url: "https://gist.github.com/g1",
-		files: { "bench.md": { filename: "bench.md", content: "Making benchmark of different tokenizer in BM25", truncated: false } },
+		files: {
+			"bench.md": {
+				filename: "bench.md",
+				content: "Making benchmark of different tokenizer in BM25",
+				truncated: false,
+			},
+		},
 	},
 	g2: {
 		id: "g2",
@@ -148,10 +158,7 @@ describe("GitHubGistConnector", () => {
 		const first = listMock(GIST_LIST);
 		await new GitHubGistConnector({ ...NO_TOKEN, token: "t", fetchImpl: first.fetchImpl, statePath }).fetch();
 
-		const updatedList = [
-			{ ...GIST_LIST[0], updated_at: "2024-03-05T00:00:00.000Z" },
-			GIST_LIST[1],
-		];
+		const updatedList = [{ ...GIST_LIST[0], updated_at: "2024-03-05T00:00:00.000Z" }, GIST_LIST[1]];
 		const updatedFull = {
 			...GIST_FULL,
 			g1: { ...(GIST_FULL.g1 as object), updated_at: "2024-03-05T00:00:00.000Z" },
@@ -207,7 +214,11 @@ describe("GitHubGistConnector", () => {
 });
 
 describe("GitHubGistSkill", () => {
-	function skillWithMock(workspace: string, list: unknown, semantic?: { embedder: GistEmbedder } | { enabled: false }) {
+	function skillWithMock(
+		workspace: string,
+		list: unknown,
+		semantic?: { embedder: GistEmbedder } | { enabled: false },
+	) {
 		const mock = listMock(list);
 		return new GitHubGistSkill({
 			workspaceRoot: workspace,
@@ -290,6 +301,41 @@ function stubEmbedder(dimension = 3): GistEmbedder & { calls: string[][] } {
 	};
 }
 
+describe("createGatewayGistEmbedder", () => {
+	it("batches large embed requests across multiple gateway calls", async () => {
+		const bodies: string[] = [];
+		const fetchImpl = (async (_input: unknown, init?: RequestInit) => {
+			const body = String(init?.body ?? "{}");
+			bodies.push(body);
+			const parsed = JSON.parse(body) as { input: string[] };
+			return new Response(
+				JSON.stringify({ data: parsed.input.map((_, index) => ({ index, embedding: [1, 0, 0] })) }),
+				{ status: 200 },
+			);
+		}) as unknown as typeof fetch;
+		const embedder = createGatewayGistEmbedder({
+			runtime: {
+				ensureRuntime: async () => ({
+					baseUrl: "http://127.0.0.1:9",
+					identity: { provider: "p", model: "m", dimension: 3 },
+				}),
+			},
+			fetchImpl,
+		});
+		const texts = Array.from({ length: GIST_EMBED_BATCH_SIZE * 2 + 6 }, (_, index) => `text-${index}`);
+		const vectors = await embedder.embed(texts);
+		expect(vectors).toHaveLength(texts.length);
+		expect(bodies.length).toBe(3);
+		expect(bodies.map((body) => (JSON.parse(body) as { input: string[] }).input.length)).toEqual([
+			GIST_EMBED_BATCH_SIZE,
+			GIST_EMBED_BATCH_SIZE,
+			6,
+		]);
+		// Order is preserved across batches: first text of batch 3 follows batch 2.
+		expect((JSON.parse(bodies[2] ?? "{}") as { input: string[] }).input[0]).toBe(`text-${GIST_EMBED_BATCH_SIZE * 2}`);
+	});
+});
+
 describe("GitHubGistSkill semantic retrieval", () => {
 	it("adds a semantic method that ranks by cosine similarity", async () => {
 		const workspace = tempWorkspace();
@@ -301,11 +347,19 @@ describe("GitHubGistSkill semantic retrieval", () => {
 		const mock = createMockFetch([
 			{
 				match: "/gists/g1",
-				json: { ...(GIST_FULL.g1 as object), description: "alpha notes", files: { "a.md": { filename: "a.md", content: "alpha alpha topic", truncated: false } } },
+				json: {
+					...(GIST_FULL.g1 as object),
+					description: "alpha notes",
+					files: { "a.md": { filename: "a.md", content: "alpha alpha topic", truncated: false } },
+				},
 			},
 			{
 				match: "/gists/g2",
-				json: { ...(GIST_FULL.g2 as object), description: "beta notes", files: { "b.md": { filename: "b.md", content: "beta beta topic", truncated: false } } },
+				json: {
+					...(GIST_FULL.g2 as object),
+					description: "beta notes",
+					files: { "b.md": { filename: "b.md", content: "beta beta topic", truncated: false } },
+				},
 			},
 			{ match: "/gists?", json: alphaList },
 		]);

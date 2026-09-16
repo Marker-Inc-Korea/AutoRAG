@@ -9,8 +9,8 @@ export {
 } from "./semantic.ts";
 export {
 	GITHUB_GIST_SKILL_DEFINITION,
-	gistDatasourceDir,
-	GitHubGistSkill,
 	type GitHubGistSemanticOptions,
+	GitHubGistSkill,
 	type GitHubGistSkillOptions,
+	gistDatasourceDir,
 } from "./skill.ts";

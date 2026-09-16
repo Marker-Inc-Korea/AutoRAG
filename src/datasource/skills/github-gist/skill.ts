@@ -10,20 +10,20 @@
 
 import { join } from "node:path";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
+import { boundDiagnosticText, sanitizeIdSegment } from "../../connector.ts";
 import {
 	ConnectorDatasourceSkill,
 	type ConnectorSkillDefinition,
 	type ConnectorSkillOptions,
 } from "../../connector-skill.ts";
-import { boundDiagnosticText, sanitizeIdSegment } from "../../connector.ts";
 import type { DatasourceIndexResult } from "../../types.ts";
 import { GitHubGistConnector, type GitHubGistConnectorOptions } from "./connector.ts";
 import {
 	createGatewayGistEmbedder,
 	type GatewayGistEmbedderOptions,
+	type GistEmbedder,
 	GistSemanticIndex,
 	GitHubGistSemanticMethod,
-	type GistEmbedder,
 } from "./semantic.ts";
 
 export const GITHUB_GIST_SKILL_DEFINITION: ConnectorSkillDefinition = {
@@ -76,7 +76,10 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 			connectorOptions?.statePath ??
 			(options.workspaceRoot === undefined
 				? undefined
-				: join(gistDatasourceDir(options.workspaceRoot, GITHUB_GIST_SKILL_DEFINITION.skillName, instanceId), "state.json"));
+				: join(
+						gistDatasourceDir(options.workspaceRoot, GITHUB_GIST_SKILL_DEFINITION.skillName, instanceId),
+						"state.json",
+					));
 		super(GITHUB_GIST_SKILL_DEFINITION, {
 			...rest,
 			connector:
@@ -93,9 +96,9 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 					(options.workspaceRoot === undefined
 						? undefined
 						: join(
-							gistDatasourceDir(options.workspaceRoot, GITHUB_GIST_SKILL_DEFINITION.skillName, instanceId),
-							"vectors.json",
-						)),
+								gistDatasourceDir(options.workspaceRoot, GITHUB_GIST_SKILL_DEFINITION.skillName, instanceId),
+								"vectors.json",
+							)),
 			});
 			this.semanticEmbedder = semantic?.embedder ?? createGatewayGistEmbedder(semantic?.embedderOptions ?? {});
 			this.semanticMethod = new GitHubGistSemanticMethod({
