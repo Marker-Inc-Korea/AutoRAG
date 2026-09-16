@@ -44,6 +44,9 @@ interface IndexNotReadyEnvelope {
 		readonly code: "index-not-ready";
 		readonly severity: "error";
 		readonly message: string;
+		readonly source?: string;
+		readonly reason?: string;
+		readonly action?: string;
 	}[];
 }
 
@@ -267,13 +270,14 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,
 			query,
-			diagnostics: [
-				{
-					code: "index-not-ready",
-					severity: "error",
-					message: "Index is stale. Run `autorag lite refresh` or `autorag refresh` before retrieving.",
-				},
-			],
+			diagnostics: staleDiagnostics.map((stale) => ({
+				code: "index-not-ready",
+				severity: "error",
+				message: `Index is stale because source "${stale.source}" ${stale.reason?.replaceAll("-", " ") ?? "changed"}. Run \`autorag lite refresh\` or \`autorag refresh\` to rebuild it.`,
+				source: stale.source,
+				reason: stale.reason ?? "source-changed",
+				action: "refresh",
+			})),
 		};
 		ctx.stdout(renderLiteRetrieveJson(envelope));
 		return 2;
