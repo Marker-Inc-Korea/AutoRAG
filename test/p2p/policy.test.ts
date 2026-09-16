@@ -276,10 +276,12 @@ tier = "always"
 	});
 
 	it("passes an absolute filesystem path outside every source root through to glob matching", () => {
+		// Canonical form uses forward slashes on every host (C:/... on Windows).
+		const canonicalOutside = join(tmpdir(), "outside-every-root.md").replaceAll("\\", "/");
 		writeWorkspacePolicy(`
 newFilesPublic = true
 
-[policy."/**"]
+[policy."${canonicalOutside}"]
 tier = "always"
 `);
 		const { policyStore } = storeWithRoots();
