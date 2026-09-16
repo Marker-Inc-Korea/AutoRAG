@@ -75,7 +75,7 @@ async function* readSseJson(body: ReadableStream<Uint8Array>, signal?: AbortSign
 	const decoder = new TextDecoder();
 	let buffer = "";
 	let dataLines: string[] = [];
-	const dispatch = function*(): Generator<unknown> {
+	const dispatch = function* (): Generator<unknown> {
 		if (dataLines.length === 0) return;
 		const data = dataLines.join("\n").trim();
 		dataLines = [];
@@ -87,7 +87,7 @@ async function* readSseJson(body: ReadableStream<Uint8Array>, signal?: AbortSign
 		}
 	};
 	try {
-		for (; ;) {
+		for (;;) {
 			if (signal?.aborted) return;
 			const { done, value } = await reader.read();
 			if (done) break;
@@ -301,11 +301,7 @@ export class PerplexityProvider extends SearchProvider {
 		// not a search result — fail so the chain advances to the next
 		// provider instead of presenting the deflection as an answer.
 		if (sources.length === 0 && DEFLECTION_PATTERN.test(answer)) {
-			throw new SearchProviderError(
-				"perplexity",
-				"Perplexity anonymous ask was deflected with a sign-up wall",
-				403,
-			);
+			throw new SearchProviderError("perplexity", "Perplexity anonymous ask was deflected with a sign-up wall", 403);
 		}
 		const numResults = params.numSearchResults ?? params.limit;
 		return {
