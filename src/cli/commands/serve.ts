@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { AutoRAGAgent } from "../../agent/agent.ts";
-import { isFilesystemAbsolutePath, planSourceRoots, sourceIdentifier } from "../../filesystem/source-paths.ts";
+import { planSourceRoots } from "../../filesystem/source-paths.ts";
 import type { InjectionClassifierModel } from "../../p2p/injection-classifier.ts";
 import { PolicyStore } from "../../p2p/policy.ts";
 import {
@@ -116,8 +116,8 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 					error instanceof ConfigError
 						? error
 						: new ConfigError(
-								`P2P injection classifier requires a configured model: ${error instanceof Error ? error.message : "resolve failed"}.`,
-							),
+							`P2P injection classifier requires a configured model: ${error instanceof Error ? error.message : "resolve failed"}.`,
+						),
 					{ json: ctx.json, debug: ctx.debug },
 				),
 			);
@@ -153,40 +153,28 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			searchTimeoutMs: p2p.searchTimeoutMs,
 			...(resolvedModel !== undefined
 				? {
-						model: resolvedModel.model,
-						...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
-						...(resolvedModel.providerApiKeys !== undefined
-							? { providerApiKeys: resolvedModel.providerApiKeys }
-							: {}),
-					}
+					model: resolvedModel.model,
+					...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
+					...(resolvedModel.providerApiKeys !== undefined
+						? { providerApiKeys: resolvedModel.providerApiKeys }
+						: {}),
+				}
 				: {}),
 		});
+		// Policy resolution canonicalizes every source (absolute real paths,
+		// virtual ids, datasource slash identities) through normalizeSource
+		// before glob matching, so globs match one canonical form.
 		const policyStore = new PolicyStore({
 			workspacePath: config.workspacePath,
 			globalConfigPath: resolved.configPath,
+			sourceRoots: planSourceRoots(config.searchPaths),
 			...(p2p.newFilesPublic !== undefined ? { newFilesPublic: p2p.newFilesPublic } : {}),
 		});
-		// Resolve policy against the canonical virtual path. Retrieval may
-		// return real absolute paths (e.g. MinSync source fields); convert
-		// them to the virtual path before matching policy globs.
-		const sourceRoots = planSourceRoots(config.searchPaths);
-		const resolveVirtualPathPolicy = (source: string, peer?: string) => {
-			if (!isFilesystemAbsolutePath(source)) return policyStore.resolvePolicy(source, peer);
-			// Absolute real path -> virtual path
-			for (const root of sourceRoots) {
-				if (source.startsWith(root.rootPath)) {
-					const virtual = sourceIdentifier(root, source);
-					return policyStore.resolvePolicy(virtual, peer);
-				}
-			}
-			// Already a virtual path (starts with root prefix)
-			return policyStore.resolvePolicy(source, peer);
-		};
 		server = await startServer({
 			transport,
 			agent,
 			policyStore,
-			resolvePolicy: resolveVirtualPathPolicy,
+			resolvePolicy: policyStore.resolvePolicy.bind(policyStore),
 			workspacePath: config.workspacePath,
 			workspaceRoots: config.searchPaths,
 			injectionClassifier,
@@ -198,7 +186,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			...(p2p.quotas !== undefined ? { quotas: p2p.quotas } : {}),
 		} as StartSimplexPeerServerOptions);
 	} catch (error) {
-		await transport.close().catch(() => {});
+		await transport.close().catch(() => { });
 		const status = error instanceof ConfigError ? 2 : 1;
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return status;
@@ -208,7 +196,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	try {
 		address = await transport.getOrCreateAddress();
 	} catch (error) {
-		await transport.close().catch(() => {});
+		await transport.close().catch(() => { });
 		ctx.stderr(
 			renderError(error instanceof Error ? error : new ConfigError("address creation failed"), {
 				json: ctx.json,
@@ -232,10 +220,10 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	const wait = deps.waitUntilStopped ?? defaultWaitUntilStopped;
 	try {
 		await wait(server);
-		await transport.close().catch(() => {});
+		await transport.close().catch(() => { });
 		return 0;
 	} catch (error) {
-		await transport.close().catch(() => {});
+		await transport.close().catch(() => { });
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 1;
 	}

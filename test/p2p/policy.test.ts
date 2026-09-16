@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { planSourceRoots } from "../../src/filesystem/source-paths.ts";
 import { PolicyError, PolicyStore } from "../../src/p2p/policy.ts";
 
 let root: string;
@@ -234,5 +235,82 @@ tier = "always
 
 		expect(() => store()).toThrow(PolicyError);
 		expect(() => store()).toThrow(/policy\.toml/i);
+	});
+});
+
+describe("PolicyStore source normalization", () => {
+	function storeWithRoots(): { policyStore: PolicyStore; docsDir: string } {
+		const docsDir = join(workspace, "docs");
+		mkdirSync(docsDir, { recursive: true });
+		const policyStore = new PolicyStore({
+			workspacePath: workspace,
+			homePath: home,
+			sourceRoots: planSourceRoots([docsDir]),
+		});
+		return { policyStore, docsDir };
+	}
+
+	it("matches an absolute real path against the containing root's virtual allow glob", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/docs/**"]
+tier = "always"
+`);
+		const { policyStore, docsDir } = storeWithRoots();
+		const result = policyStore.resolvePolicy(join(docsDir, "policy", "refund.md"));
+		expect(result.allowed).toBe(true);
+		expect(result.tier).toBe("always");
+	});
+
+	it("matches a datasource slash identity against its namespace glob", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/kakao/**"]
+tier = "always"
+`);
+		const { policyStore } = storeWithRoots();
+		const result = policyStore.resolvePolicy("/kakao/default/chunks/chunk-1");
+		expect(result.allowed).toBe(true);
+	});
+
+	it("fails closed for an absolute filesystem path outside every source root", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/**"]
+tier = "always"
+`);
+		const { policyStore } = storeWithRoots();
+		const result = policyStore.resolvePolicy(join(tmpdir(), "outside-every-root.md"));
+		expect(result.allowed).toBe(false);
+		expect(result.tier).toBe("private");
+	});
+
+	it("recognizes a promoted source reported as an absolute real path", () => {
+		writeWorkspacePolicy(`
+[policy."/docs/**"]
+tier = "always"
+`);
+		const { policyStore, docsDir } = storeWithRoots();
+		const source = join(docsDir, "fresh.md");
+		policyStore.promoteSource(source);
+		expect(policyStore.isSourceSeen(source)).toBe(true);
+		expect(policyStore.resolvePolicy(source).allowed).toBe(true);
+	});
+
+	it("keeps raw matching unchanged when no sourceRoots are configured", () => {
+		writeWorkspacePolicy(`
+newFilesPublic = true
+
+[policy."/docs/**"]
+tier = "always"
+`);
+		const docsDir = join(workspace, "docs");
+		mkdirSync(docsDir, { recursive: true });
+		const result = store().resolvePolicy(join(docsDir, "policy", "refund.md"));
+		expect(result.allowed).toBe(false);
+		expect(store().resolvePolicy("/docs/policy/refund.md").allowed).toBe(true);
 	});
 });
