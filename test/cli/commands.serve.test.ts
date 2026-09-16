@@ -62,7 +62,7 @@ function stubTransport(): SimplexTransport & { closed: boolean } {
 		connect: async () => undefined,
 		listContacts: async () => [],
 		sendMessage: async () => undefined,
-		onMessage: (_handler: (message: SimplexIncomingMessage) => void) => () => { },
+		onMessage: (_handler: (message: SimplexIncomingMessage) => void) => () => {},
 		close: async () => {
 			state.closed = true;
 		},

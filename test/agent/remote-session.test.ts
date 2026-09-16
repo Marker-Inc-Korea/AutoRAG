@@ -28,7 +28,8 @@ afterEach(() => {
 function textOnlyModel() {
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "text-only" }] });
 	registration.setResponses([
-		() => fauxAssistantMessage([{ type: "text", text: "I could not find anything relevant." }], { stopReason: "stop" }),
+		() =>
+			fauxAssistantMessage([{ type: "text", text: "I could not find anything relevant." }], { stopReason: "stop" }),
 	]);
 	registrations.push(registration);
 	return registration.getModel();

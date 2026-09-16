@@ -116,8 +116,8 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 					error instanceof ConfigError
 						? error
 						: new ConfigError(
-							`P2P injection classifier requires a configured model: ${error instanceof Error ? error.message : "resolve failed"}.`,
-						),
+								`P2P injection classifier requires a configured model: ${error instanceof Error ? error.message : "resolve failed"}.`,
+							),
 					{ json: ctx.json, debug: ctx.debug },
 				),
 			);
@@ -153,12 +153,12 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			searchTimeoutMs: p2p.searchTimeoutMs,
 			...(resolvedModel !== undefined
 				? {
-					model: resolvedModel.model,
-					...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
-					...(resolvedModel.providerApiKeys !== undefined
-						? { providerApiKeys: resolvedModel.providerApiKeys }
-						: {}),
-				}
+						model: resolvedModel.model,
+						...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
+						...(resolvedModel.providerApiKeys !== undefined
+							? { providerApiKeys: resolvedModel.providerApiKeys }
+							: {}),
+					}
 				: {}),
 		});
 		// Readiness gate: peer queries answered from an unready index look like
@@ -195,7 +195,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			...(p2p.quotas !== undefined ? { quotas: p2p.quotas } : {}),
 		} as StartSimplexPeerServerOptions);
 	} catch (error) {
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		const status = error instanceof ConfigError ? 2 : 1;
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return status;
@@ -205,7 +205,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	try {
 		address = await transport.getOrCreateAddress();
 	} catch (error) {
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		ctx.stderr(
 			renderError(error instanceof Error ? error : new ConfigError("address creation failed"), {
 				json: ctx.json,
@@ -229,10 +229,10 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	const wait = deps.waitUntilStopped ?? defaultWaitUntilStopped;
 	try {
 		await wait(server);
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		return 0;
 	} catch (error) {
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 1;
 	}

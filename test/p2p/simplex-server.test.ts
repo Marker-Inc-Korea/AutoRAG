@@ -54,7 +54,7 @@ class FakeTransport implements SimplexTransport {
 	async createInvitation(): Promise<string> {
 		return "simplex:/invitation#fake";
 	}
-	async connect(): Promise<void> { }
+	async connect(): Promise<void> {}
 	async listContacts(): Promise<{ contactId: number; localDisplayName: string }[]> {
 		return this.peer !== undefined
 			? [{ contactId: this.peer.contactId, localDisplayName: this.peer.displayName }]
@@ -88,7 +88,7 @@ class FakeTransport implements SimplexTransport {
 		this.onMessage((message) => this.received.push(message.text));
 	}
 
-	async close(): Promise<void> { }
+	async close(): Promise<void> {}
 }
 
 function transportPair(): { client: FakeTransport; server: FakeTransport } {
