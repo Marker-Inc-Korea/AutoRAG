@@ -60,7 +60,9 @@ interface PersistedVectors {
 const VECTORS_VERSION = 1;
 
 function contentHash(chunk: StoredChunk): string {
-	return createHash("sha256").update(`${chunk.title ?? ""}\n${chunk.content}`).digest("hex");
+	return createHash("sha256")
+		.update(`${chunk.title ?? ""}\n${chunk.content}`)
+		.digest("hex");
 }
 
 function sameIdentity(a: GistEmbeddingIdentity, b: GistEmbeddingIdentity): boolean {
@@ -98,7 +100,10 @@ export class GistSemanticIndex {
 	 * Embed new/changed chunks, prune removed ones, and persist. Never throws;
 	 * an embedder failure leaves prior entries intact and reports ok:false.
 	 */
-	async sync(chunks: readonly StoredChunk[], embedder: GistEmbedder): Promise<GistSemanticSyncOk | GistSemanticSyncFail> {
+	async sync(
+		chunks: readonly StoredChunk[],
+		embedder: GistEmbedder,
+	): Promise<GistSemanticSyncOk | GistSemanticSyncFail> {
 		this.ensureLoaded();
 		let identity: GistEmbeddingIdentity;
 		try {
@@ -157,7 +162,8 @@ export class GistSemanticIndex {
 		if (this.statePath === undefined || !existsSync(this.statePath)) return;
 		try {
 			const parsed = JSON.parse(readFileSync(this.statePath, "utf8")) as PersistedVectors;
-			if (parsed.version !== VECTORS_VERSION || typeof parsed.entries !== "object" || parsed.entries === null) return;
+			if (parsed.version !== VECTORS_VERSION || typeof parsed.entries !== "object" || parsed.entries === null)
+				return;
 			if (typeof parsed.identity?.dimension !== "number") return;
 			this.identity = parsed.identity;
 			this.entries = { ...parsed.entries };
@@ -286,6 +292,13 @@ export interface GatewayGistEmbedderOptions {
  * ensured lazily with `cachedOnly` so semantic retrieval never triggers a
  * model download; an unprimed cache surfaces as a sync/retrieve degrade.
  */
+/**
+ * Texts per `/v1/embeddings` call. The llama.cpp upstream rejects very large
+ * batches (HTTP 413 on a full-archive sync), so embedding fans out in
+ * bounded sequential batches while preserving input order.
+ */
+export const GIST_EMBED_BATCH_SIZE = 32;
+
 export function createGatewayGistEmbedder(options: GatewayGistEmbedderOptions = {}): GistEmbedder {
 	let ensured: { baseUrl: string; identity: GistEmbeddingIdentity } | undefined;
 	async function ensure(): Promise<{ baseUrl: string; identity: GistEmbeddingIdentity }> {
@@ -312,17 +325,25 @@ export function createGatewayGistEmbedder(options: GatewayGistEmbedderOptions = 
 			if (texts.length === 0) return [];
 			const { baseUrl, identity } = await ensure();
 			const fetchImpl = options.fetchImpl ?? fetch;
-			const response = await fetchImpl(`${baseUrl}/v1/embeddings`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ model: identity.model, input: [...texts] }),
-			});
-			if (!response.ok) throw new Error(`gateway /v1/embeddings returned HTTP ${response.status}`);
-			const json = (await response.json()) as { data?: { index?: number; embedding?: number[] }[] };
-			const rows = [...(json.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-			const embeddings = rows.map((row) => row.embedding ?? []);
-			if (embeddings.length !== texts.length || embeddings.some((row) => row.length !== identity.dimension)) {
-				throw new Error("gateway /v1/embeddings returned an invalid embedding batch");
+			const embeddings: number[][] = [];
+			for (let offset = 0; offset < texts.length; offset += GIST_EMBED_BATCH_SIZE) {
+				const batch = texts.slice(offset, offset + GIST_EMBED_BATCH_SIZE);
+				const response = await fetchImpl(`${baseUrl}/v1/embeddings`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ model: identity.model, input: [...batch] }),
+				});
+				if (!response.ok) throw new Error(`gateway /v1/embeddings returned HTTP ${response.status}`);
+				const json = (await response.json()) as { data?: { index?: number; embedding?: number[] }[] };
+				const rows = [...(json.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+				const batchEmbeddings = rows.map((row) => row.embedding ?? []);
+				if (
+					batchEmbeddings.length !== batch.length ||
+					batchEmbeddings.some((row) => row.length !== identity.dimension)
+				) {
+					throw new Error("gateway /v1/embeddings returned an invalid embedding batch");
+				}
+				embeddings.push(...batchEmbeddings);
 			}
 			return embeddings;
 		},
