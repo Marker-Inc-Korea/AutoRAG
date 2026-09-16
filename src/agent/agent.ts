@@ -279,16 +279,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-		readonly ok: true;
-		readonly code: number;
-		readonly diagnostics: readonly string[];
-	}
+			readonly ok: true;
+			readonly code: number;
+			readonly diagnostics: readonly string[];
+	  }
 	| {
-		readonly ok: false;
-		readonly reason: JikjiFailureReason;
-		readonly code: number | null;
-		readonly diagnostics: readonly string[];
-	};
+			readonly ok: false;
+			readonly reason: JikjiFailureReason;
+			readonly code: number | null;
+			readonly diagnostics: readonly string[];
+	  };
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -612,7 +612,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => { },
+			dispose: () => {},
 		};
 	}
 
@@ -657,11 +657,11 @@ export class AutoRAGAgent {
 		}
 		const details = event.result.details as
 			| {
-				method?: string;
-				sources?: readonly string[];
-				resultCount?: number;
-				results?: readonly SearchDocumentRetrievalTraceResult[];
-			}
+					method?: string;
+					sources?: readonly string[];
+					resultCount?: number;
+					results?: readonly SearchDocumentRetrievalTraceResult[];
+			  }
 			| undefined;
 		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
 			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
@@ -1345,10 +1345,10 @@ export class AutoRAGAgent {
 			}
 			const publicMinsync = minsync
 				? {
-					ok: minsync.ok,
-					synced: minsync.synced,
-					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-				}
+						ok: minsync.ok,
+						synced: minsync.synced,
+						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+					}
 				: undefined;
 			return {
 				...summary,
@@ -1488,7 +1488,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => { } };
+				return { close: () => {} };
 			}
 		};
 	}
