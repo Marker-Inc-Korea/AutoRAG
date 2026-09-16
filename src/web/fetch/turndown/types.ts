@@ -1,4 +1,7 @@
-/** Behavior-compatible reimplementation of turndown's used surface. */
+/**
+ * Behavior-compatible reimplementation of turndown's used surface.
+ * Vendored from oh-my-pi (can1357/oh-my-pi, MIT) `packages/utils/src/turndown/types.ts`.
+ */
 
 /** A DOM-shaped node accepted by conversion rules. */
 export interface TurndownNode {

@@ -1,3 +1,8 @@
+/**
+ * Small shared helpers for web search providers.
+ * Ported from oh-my-pi (can1357/oh-my-pi, MIT) `web/search/utils.ts`.
+ */
+
 /** Calculate age in seconds from an ISO date string. Returns undefined on invalid input. */
 export function dateToAgeSeconds(dateStr: string | null | undefined): number | undefined {
 	if (!dateStr) return undefined;
