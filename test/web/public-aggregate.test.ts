@@ -16,10 +16,7 @@ class FakeProvider extends SearchProvider {
 	readonly id: SearchProviderId;
 	private readonly run: (signal: AbortSignal | undefined) => Promise<SearchResponse>;
 
-	constructor(
-		id: SearchProviderId,
-		run: (signal: AbortSignal | undefined) => Promise<SearchResponse>,
-	) {
+	constructor(id: SearchProviderId, run: (signal: AbortSignal | undefined) => Promise<SearchResponse>) {
 		super();
 		this.label = id;
 		this.id = id;
@@ -119,7 +116,7 @@ describe("Public Web aggregate", () => {
 
 	it("waits past the soft deadline for the first success", async () => {
 		vi.useFakeTimers();
-		let resolveDelivered: (value: SearchResponse) => void = () => { };
+		let resolveDelivered: (value: SearchResponse) => void = () => {};
 		const delivered = new Promise<SearchResponse>((resolve) => {
 			resolveDelivered = resolve;
 		});
