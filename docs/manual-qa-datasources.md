@@ -12,6 +12,8 @@ wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
 Issue #1477 adds the live ClawGallery CLI path.
 Issue #1496 adds the live mailcrawl local email CLI path.
+Issue #1588 adds the live github-gist path (authenticated account gists,
+incremental cursor sync, lexical + local-gateway semantic search).
 
 ## Harnesses
 
@@ -26,6 +28,7 @@ Issue #1496 adds the live mailcrawl local email CLI path.
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.1.6` fixture sync, no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
+| `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the local embedding gateway (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
 | `scripts/manual-qa/run-qa-ui.ts` | Local loopback `autorag ui`: list/add/test/toggle/remove connections, secret stripping, folder browse | `bun scripts/manual-qa/run-qa-ui.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
