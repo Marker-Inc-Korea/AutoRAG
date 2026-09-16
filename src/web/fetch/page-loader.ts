@@ -228,16 +228,7 @@ export function looksLikeHtml(content: string): boolean {
 }
 
 /**
- * Decode common HTML entities.
+ * Decode common HTML entities. Single-pass: an entity produced by decoding
+ * is never re-decoded (see `../entities.ts`).
  */
-export function decodeHtmlEntities(text: string): string {
-	return text
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&amp;/g, "&")
-		.replace(/&quot;/g, '"')
-		.replace(/&#0?39;/g, "'")
-		.replace(/&#x27;/g, "'")
-		.replace(/&#x2F;/g, "/")
-		.replace(/&nbsp;/g, " ");
-}
+export { decodeHtmlEntities } from "../entities.ts";

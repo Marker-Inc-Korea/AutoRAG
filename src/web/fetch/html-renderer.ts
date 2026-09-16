@@ -93,23 +93,30 @@ function hasCommand(cmd: string): boolean {
 
 /**
  * Convert HTML to markdown using the vendored Turndown with GFM support.
- * Strips script/style tags before conversion.
+ * Script/style elements are dropped by a parser-level turndown rule — never
+ * by regex pre-stripping (CodeQL js/bad-tag-filter,
+ * js/incomplete-multi-character-sanitization).
  */
 export function htmlToBasicMarkdown(html: string): string {
-	const cleaned = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "");
 	const turndown = new TurndownService({
 		headingStyle: "atx",
 		codeBlockStyle: "fenced",
 		bulletListMarker: "-",
 	});
 	turndown.use(gfm);
+	turndown.addRule("removeScriptAndStyle", {
+		filter: ["script", "style"],
+		replacement() {
+			return "";
+		},
+	});
 	turndown.addRule("strikethrough", {
 		filter: ["del", "s", "strike"],
 		replacement(content) {
 			return `~~${content}~~`;
 		},
 	});
-	return turndown.turndown(cleaned).trim();
+	return turndown.turndown(html).trim();
 }
 
 /**

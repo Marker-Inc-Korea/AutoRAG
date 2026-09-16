@@ -8,6 +8,7 @@
 
 import { extname } from "node:path";
 import { XMLParser } from "fast-xml-parser";
+import { decodeHtmlEntities } from "../entities.ts";
 
 /**
  * Read a single HTML attribute from a tag string.
@@ -116,16 +117,15 @@ export function extractDocumentLinks(html: string, baseUrl: string): string[] {
 }
 
 /**
- * Strip CDATA wrapper and clean text.
+ * Strip a CDATA wrapper and clean text. Only a full-string wrapper is
+ * unwrapped (anchored): a stray `]]>` inside content is data, not markup.
+ * Entity decoding is single-pass (see `../entities.ts`).
  */
 export function cleanFeedText(text: string): string {
-	return text
-		.replace(/<!\[CDATA\[/g, "")
-		.replace(/\]\]>/g, "")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&amp;/g, "&")
-		.replace(/&quot;/g, '"')
+	const trimmed = text.trim();
+	const cdata = /^<!\[CDATA\[([\s\S]*?)\]\]>$/.exec(trimmed);
+	const inner = cdata ? (cdata[1] ?? "") : trimmed;
+	return decodeHtmlEntities(inner)
 		.replace(/<[^>]+>/g, "")
 		.trim();
 }

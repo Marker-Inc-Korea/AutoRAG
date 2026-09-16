@@ -313,9 +313,9 @@ export default class TurndownService {
 	}
 
 	#replaceLink(content: string, node: TurndownNode): string {
-		const href = (node.getAttribute("href") ?? "").replace(/([()<>])/g, "\\$1");
+		const href = (node.getAttribute("href") ?? "").replace(/\\/g, "\\\\").replace(/([()<>])/g, "\\$1");
 		const title = node.getAttribute("title");
-		const destination = `${href}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""}`;
+		const destination = `${href}${title ? ` "${title.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : ""}`;
 		if (this.options.linkStyle !== "referenced") return `[${content}](${destination})`;
 		const referenceNumber = this.#references.length + 1;
 		let label = String(referenceNumber);
@@ -327,10 +327,10 @@ export default class TurndownService {
 	}
 
 	#replaceImage(node: TurndownNode): string {
-		const source = (node.getAttribute("src") ?? "").replace(/([()<>])/g, "\\$1");
+		const source = (node.getAttribute("src") ?? "").replace(/\\/g, "\\\\").replace(/([()<>])/g, "\\$1");
 		if (!source) return "";
 		const alternative = this.escape(node.getAttribute("alt") ?? "");
 		const title = node.getAttribute("title");
-		return `![${alternative}](${source}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`;
+		return `![${alternative}](${source}${title ? ` "${title.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : ""})`;
 	}
 }

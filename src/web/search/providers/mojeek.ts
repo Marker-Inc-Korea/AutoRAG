@@ -10,6 +10,7 @@
  * `packages/coding-agent/src/web/search/providers/mojeek.ts`.
  */
 
+import { decodeHtmlEntities } from "../../entities.ts";
 import type { LoadedHtmlPage } from "../browser-page.ts";
 import { browserFetch } from "../browser-page.ts";
 import { formatScraperQuery, type QuerySyntax } from "../query.ts";
@@ -33,14 +34,7 @@ interface ParsedResult {
 }
 
 function decodeHtmlText(value: string): string {
-	return value
-		.replace(/<[^>]*>/g, " ")
-		.replace(/&nbsp;/g, " ")
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;|&apos;/g, "'")
+	return decodeHtmlEntities(value.replace(/<[^>]*>/g, " "))
 		.replace(/\s+/g, " ")
 		.trim();
 }

@@ -9,6 +9,7 @@
  * `packages/coding-agent/src/web/search/providers/duckduckgo.ts`.
  */
 
+import { decodeHtmlEntities } from "../../entities.ts";
 import { browserFetch } from "../browser-page.ts";
 import { formatScraperQuery, parseSearchQuery, type QuerySyntax } from "../query.ts";
 import type { SearchProviderId, SearchResponse, SearchSource } from "../types.ts";
@@ -37,16 +38,7 @@ interface ParsedResult {
 }
 
 function decodeHtmlText(value: string): string {
-	return value
-		.replace(/<[^>]*>/g, " ")
-		.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-		.replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
-		.replace(/&nbsp;/gi, " ")
-		.replace(/&amp;/gi, "&")
-		.replace(/&lt;/gi, "<")
-		.replace(/&gt;/gi, ">")
-		.replace(/&quot;/gi, '"')
-		.replace(/&#39;|&apos;/gi, "'")
+	return decodeHtmlEntities(value.replace(/<[^>]*>/g, " "))
 		.replace(/\s+/g, " ")
 		.trim();
 }
