@@ -87,7 +87,13 @@ describe("autorag lite lifecycle dispatch", () => {
 			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
 			writeFileSync(join(root, "docs", "note.md"), "Changed after refresh\n");
 			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(2);
-			expect(String(out.mock.calls.at(-1)?.[0] ?? "")).toContain("Index is stale");
+			const diagnostic = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(diagnostic.diagnostics[0]).toMatchObject({
+				code: "index-not-ready",
+				source: "/docs/note.md",
+				reason: "mtime-and-size-changed",
+				action: "refresh",
+			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -69,6 +69,7 @@ export interface ParsedMirrorDiagnostic {
 	readonly severity: "info" | "warning";
 	readonly message: string;
 	readonly source: string;
+	readonly reason?: string;
 }
 
 export interface ParsedMirrorSyncResult {
@@ -266,11 +267,20 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		if (!registry.getForVirtualPath(entry.virtualPath)) continue;
 		const prev = previous.entries[entry.virtualPath];
 		if (!prev || prev.sourceMtimeNs !== entry.mtimeNs || prev.sourceSizeBytes !== entry.sizeBytes) {
+			const reason =
+				prev === undefined
+					? "source-added"
+					: prev.sourceMtimeNs !== entry.mtimeNs && prev.sourceSizeBytes !== entry.sizeBytes
+						? "mtime-and-size-changed"
+						: prev.sourceMtimeNs !== entry.mtimeNs
+							? "mtime-changed"
+							: "size-changed";
 			diagnostics.push({
 				code: "stale-index",
 				severity: "warning",
-				message: "A source document has changed since the last refresh; indexes may be stale.",
+				message: `Source ${entry.virtualPath} is ${reason.replaceAll("-", " ")} since the last refresh; indexes may be stale.`,
 				source: entry.virtualPath,
+				reason,
 			});
 		}
 	}
