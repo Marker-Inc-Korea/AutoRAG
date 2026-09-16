@@ -1,8 +1,8 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
 import { obsidianQmdCacheDir, obsidianQmdConfigDir, stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
 import type {
 	QmdEmbedInfo,
@@ -193,19 +193,46 @@ function spawnQmd(request: {
 		const child = spawn(portable.command, [...portable.args], {
 			env: request.env,
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+			// POSIX: lead own process group so terminateProcessTree can reap the
+			// launcher's runtime descendant with kill(-pid). Windows: keep the
+			// parent/child chain that taskkill /t walks.
+			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
 		let finalReason: QmdFailureReason | undefined;
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
+		const settleWith = (result: ProcessResult): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			if (pipeGuard !== undefined) clearTimeout(pipeGuard);
+			request.signal?.removeEventListener("abort", abortHandler);
+			resolveResult(result);
+		};
+		const finish = (code: number | null): void => {
+			if (finalReason !== undefined) {
+				settleWith({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
+				return;
+			}
+			settleWith({
+				ok: code === 0,
+				reason: code === 0 ? undefined : "nonzero-exit",
+				stdout: stdout.text,
+				stderr: stderr.text,
+				code,
+			});
+		};
 		const timeout = setTimeout(() => {
 			finalReason = "timeout";
-			terminate(child);
+			terminateProcessTree(child);
 		}, request.timeoutMs);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
-			terminate(child);
+			terminateProcessTree(child);
 		};
 		if (request.signal?.aborted) abortHandler();
 		request.signal?.addEventListener("abort", abortHandler, { once: true });
@@ -215,23 +242,27 @@ function spawnQmd(request: {
 			stdout = appendBounded(stdout, chunk, request.maxBufferBytes);
 			if (stdout.capped) {
 				finalReason = "stdout-too-large";
-				terminate(child);
+				terminateProcessTree(child);
 			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr = appendBounded(stderr, chunk, request.maxBufferBytes);
 			if (stderr.capped) {
 				finalReason = "stderr-too-large";
-				terminate(child);
+				terminateProcessTree(child);
 			}
 		});
-		child.on("error", (error: NodeJS.ErrnoException) => {
+		child.on("exit", () => {
 			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			request.signal?.removeEventListener("abort", abortHandler);
+			// The direct child can exit while a descendant still holds the pipes it
+			// inherited, which keeps "close" from firing. Reap the tree, then bound
+			// the wait for the stream release.
+			terminateProcessTree(child);
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
+		});
+		child.on("error", (error: NodeJS.ErrnoException) => {
 			const reason: QmdFailureReason = error.code === "ENOENT" ? "binary-missing" : "spawn-error";
-			resolveResult({
+			settleWith({
 				ok: false,
 				reason,
 				stdout: stdout.text,
@@ -239,28 +270,8 @@ function spawnQmd(request: {
 				code: null,
 			});
 		});
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			request.signal?.removeEventListener("abort", abortHandler);
-			if (finalReason !== undefined) {
-				resolveResult({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
-				return;
-			}
-			resolveResult({
-				ok: code === 0,
-				reason: code === 0 ? undefined : "nonzero-exit",
-				stdout: stdout.text,
-				stderr: stderr.text,
-				code,
-			});
-		});
+		child.on("close", (code) => finish(code));
 	});
-}
-
-function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
 }
 
 function appendBounded(state: BufferState, chunk: string, maxBytes: number): BufferState {

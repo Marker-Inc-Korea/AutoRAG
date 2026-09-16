@@ -127,6 +127,15 @@ describe("TelecrawlClient", () => {
 		});
 		expect(await malformed.search("query")).toMatchObject({ ok: false, reason: "invalid-output" });
 	});
+
+	it("treats JSON null search output as zero hits", async () => {
+		writeFakeTelecrawl();
+		const client = new TelecrawlClient({
+			binaryPath,
+			env: { TELECRAWL_FAKE_OUTPUT: "null\n" },
+		});
+		expect(await client.search("query")).toMatchObject({ ok: true, hits: [] });
+	});
 });
 
 describe("TelecrawlSkill", () => {
