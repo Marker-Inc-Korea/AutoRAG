@@ -139,7 +139,10 @@ export class GitHubGistConnector implements DatasourceConnector {
 		}
 
 		// 4. Persist the new cursor only when the list completed.
-		this.saveState({ version: STATE_VERSION, gists: Object.fromEntries([...listed].map(([id, e]) => [id, e.updatedAt])) });
+		this.saveState({
+			version: STATE_VERSION,
+			gists: Object.fromEntries([...listed].map(([id, e]) => [id, e.updatedAt])),
+		});
 
 		const changed = changedIds.length > 0 || deletedDocIds.length > 0;
 		return {
