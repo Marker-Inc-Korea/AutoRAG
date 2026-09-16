@@ -7,9 +7,19 @@ import {
 	setSearchProviderOrder,
 } from "../../src/web/search/provider.ts";
 import type { SearchProviderContract } from "../../src/web/search/providers/base.ts";
-import { SearchProviderError, type SearchResponse } from "../../src/web/search/types.ts";
+import {
+	SEARCH_PROVIDER_ORDER,
+	SearchProviderError,
+	type SearchProviderId,
+	type SearchResponse,
+} from "../../src/web/search/types.ts";
 
-function fakeProvider(id: "duckduckgo" | "brave", response: SearchResponse): SearchProviderContract {
+/** Exclude every built-in provider except `keep` so tool tests stay hermetic (no real network). */
+function isolateChainTo(...keep: SearchProviderId[]): void {
+	setExcludedSearchProviders(SEARCH_PROVIDER_ORDER.filter((id) => !keep.includes(id)));
+}
+
+function fakeProvider(id: "duckduckgo" | "google", response: SearchResponse): SearchProviderContract {
 	return {
 		id,
 		label: `Fake ${id}`,
@@ -90,6 +100,7 @@ describe("web_search tool", () => {
 				throw new SearchProviderError("duckduckgo", "duckduckgo bot challenge", 429);
 			},
 		});
+		isolateChainTo("duckduckgo");
 		setSearchProviderOrder(["duckduckgo"]);
 		const tool = createWebSearchTool();
 		const result = await tool.execute("call-3", { query: "doomed query" });
@@ -118,12 +129,12 @@ describe("web_search tool", () => {
 			},
 		});
 		registerSearchProvider(
-			fakeProvider("brave", { provider: "brave", sources: [{ title: "t", url: "https://b.example" }] }),
+			fakeProvider("google", { provider: "google", sources: [{ title: "t", url: "https://b.example" }] }),
 		);
-		const tool = createWebSearchTool({ order: ["brave", "duckduckgo"], exclude: ["duckduckgo"] });
+		const tool = createWebSearchTool({ order: ["google", "duckduckgo"], exclude: ["duckduckgo"] });
 		const result = await tool.execute("call-4", { query: "option routing" });
 		expect(ddgCalled).toBe(false);
-		expect((result.details as { provider: string }).provider).toBe("brave");
+		expect((result.details as { provider: string }).provider).toBe("google");
 	});
 
 	it("forwards recency and result-count hints to the provider", async () => {

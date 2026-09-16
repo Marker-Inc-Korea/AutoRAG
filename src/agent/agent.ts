@@ -50,7 +50,6 @@ import type { PolicyResolver } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import {
 	buildRetrievalScopeBindings,
@@ -59,6 +58,7 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { modelNativeAuthFromAgentModel, setModelNativeSearchAuth } from "../web/search/model-auth.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -253,13 +253,15 @@ export interface AutoRAGAgentOptions {
 	jikji?: JikjiOptions | false;
 	/**
 	 * Internet web tools (`web_search` + `web_fetch`), ported from oh-my-pi's
-	 * provider-chain web module. Default enabled and credential-free; keyed
-	 * providers activate via their documented environment variables
-	 * (BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, JINA_API_KEY,
-	 * KAGI_API_KEY, KIMI_SEARCH_API_KEY/MOONSHOT_SEARCH_API_KEY,
-	 * SEARXNG_ENDPOINT). `false` disables both tools. The `fetch` sub-option
-	 * tunes or disables `web_fetch` alone. Web tools are always omitted for
-	 * remote P2P sessions.
+	 * provider-chain web module. Default enabled and credential-free: the
+	 * chain leads with providers that need no user-issued key — model-native
+	 * search reusing the agent's own model credentials (Gemini grounding,
+	 * Anthropic/OpenAI/xAI web_search), the anonymous Perplexity ask
+	 * endpoint, and Parallel's keyless MCP — then scraped engines with
+	 * headless-browser escalation for bot challenges. A self-hosted
+	 * SEARXNG_ENDPOINT is the only env-gated option. `false` disables both
+	 * tools. The `fetch` sub-option tunes or disables `web_fetch` alone.
+	 * Web tools are always omitted for remote P2P sessions.
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
 	autoRefresh?: AutoRefreshOptions;
@@ -802,6 +804,16 @@ export class AutoRAGAgent {
 		let searchStarted = false;
 		try {
 			const resolved = this.resolveSessionModel();
+			// Model-native web search rides on the same model credential the
+			// agent loop uses — no separate search key (see web/search/model-auth).
+			setModelNativeSearchAuth(
+				modelNativeAuthFromAgentModel({
+					provider: resolved.model.provider,
+					...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+					...(resolved.model.baseUrl !== undefined ? { baseUrl: resolved.model.baseUrl } : {}),
+					modelId: resolved.model.id,
+				}),
+			);
 			this.runLogger.write({
 				event: "search_started",
 				timestamp: new Date().toISOString(),

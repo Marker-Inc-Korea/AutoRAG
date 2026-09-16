@@ -3,11 +3,14 @@
  *
  * Unified types for web search responses across supported providers.
  * Ported from oh-my-pi (can1357/oh-my-pi, MIT) `web/search/types.ts`,
- * trimmed to the providers AutoRAG ships: simple env-key REST providers and
- * the credential-free engines. OAuth/model-native providers from oh-my-pi
- * (perplexity, gemini, anthropic, codex, xai, zai, tinyfish, synthetic,
- * ollama, parallel, firecrawl) are intentionally absent: they depend on
- * oh-my-pi's auth broker rather than plain environment variables.
+ * trimmed to a credential-free-only surface: model-native providers that
+ * reuse the agent's own model credentials (gemini, anthropic, codex, xai —
+ * see `model-auth.ts`), the always-keyless routes (perplexity anonymous ask,
+ * parallel MCP), the explicitly-advanced SearXNG endpoint, and the
+ * credential-free scraped engines. oh-my-pi's vendor-key providers (brave,
+ * tavily, exa, jina, kagi, kimi, zai, tinyfish, synthetic, ollama,
+ * firecrawl) are intentionally absent: a default AutoRAG install must never
+ * require a user-issued search key or signup.
  */
 
 export const SEARCH_PROVIDER_OPTIONS = [
@@ -16,17 +19,41 @@ export const SEARCH_PROVIDER_OPTIONS = [
 		label: "Auto",
 		description: "Automatically uses the first configured web-search provider",
 	},
-	{ value: "brave", label: "Brave", description: "Requires BRAVE_API_KEY" },
-	{ value: "tavily", label: "Tavily", description: "Requires TAVILY_API_KEY" },
-	{ value: "exa", label: "Exa", description: "Requires EXA_API_KEY" },
-	{ value: "jina", label: "Jina", description: "Requires JINA_API_KEY" },
-	{ value: "kagi", label: "Kagi", description: "Requires KAGI_API_KEY" },
 	{
-		value: "kimi",
-		label: "Kimi",
-		description: "Kimi Code search (requires KIMI_SEARCH_API_KEY or MOONSHOT_SEARCH_API_KEY)",
+		value: "gemini",
+		label: "Gemini",
+		description: "Google Search grounding via the agent's Gemini model credentials (GEMINI_API_KEY/GOOGLE_API_KEY)",
 	},
-	{ value: "searxng", label: "SearXNG", description: "Requires SEARXNG_ENDPOINT" },
+	{
+		value: "anthropic",
+		label: "Anthropic",
+		description: "Claude's built-in web_search via the agent's Anthropic model credentials (ANTHROPIC_API_KEY)",
+	},
+	{
+		value: "codex",
+		label: "OpenAI",
+		description: "OpenAI Responses web_search via the agent's OpenAI model credentials (OPENAI_API_KEY)",
+	},
+	{
+		value: "xai",
+		label: "xAI",
+		description: "xAI Responses web_search via the agent's xAI model credentials (XAI_API_KEY)",
+	},
+	{
+		value: "perplexity",
+		label: "Perplexity",
+		description: "Anonymous Perplexity ask endpoint; no key or signup required",
+	},
+	{
+		value: "parallel",
+		label: "Parallel",
+		description: "Parallel's keyless web search MCP endpoint; no key or signup required",
+	},
+	{
+		value: "searxng",
+		label: "SearXNG",
+		description: "Advanced: requires a self-hosted SEARXNG_ENDPOINT; never part of the default experience",
+	},
 	{
 		value: "startpage",
 		label: "Startpage",
@@ -71,8 +98,8 @@ export type SearchProviderId = Exclude<(typeof SEARCH_PROVIDER_OPTIONS)[number][
 /**
  * Auto-resolution priority order. Derived from {@link SEARCH_PROVIDER_OPTIONS}
  * (minus `auto`) so any dropdown/setting and `resolveProviderChain()` share
- * one source of truth and never drift apart: keyed providers first (used
- * only when their env credential exists), then credential-free engines, with
+ * one source of truth and never drift apart: credential-free and
+ * model-credential-reusing providers first, then the scraped engines, with
  * the public fan-out last (explicit selection only).
  */
 export const SEARCH_PROVIDER_ORDER: readonly SearchProviderId[] = SEARCH_PROVIDER_OPTIONS.flatMap((option) =>

@@ -13,7 +13,7 @@ import { Type } from "typebox";
 import { WEB_SEARCH_TOOL_DESCRIPTION } from "../web/search/format.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { setExcludedSearchProviders, setSearchProviderOrder } from "../web/search/provider.ts";
-import { isSearchProviderId, type SearchProviderId } from "../web/search/types.ts";
+import { isSearchProviderId, SEARCH_PROVIDER_CHOICES, type SearchProviderId } from "../web/search/types.ts";
 
 export const WEB_SEARCH_TOOL_NAME = "web_search";
 
@@ -31,8 +31,7 @@ const webSearchSchema = Type.Object({
 	num_search_results: Type.Optional(Type.Integer({ description: "Alias for limit (result count hint)." })),
 	provider: Type.Optional(
 		Type.String({
-			description:
-				"Optional explicit provider id (brave, tavily, exa, jina, kagi, kimi, searxng, startpage, duckduckgo, ecosia, google, mojeek, public). Default: auto chain with fallback.",
+			description: `Optional explicit provider id (${SEARCH_PROVIDER_CHOICES.map((choice) => choice.value).join(", ")}). Default: auto chain with fallback.`,
 		}),
 	),
 });

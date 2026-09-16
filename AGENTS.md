@@ -312,7 +312,7 @@ The librarian agent owns the full workflow:
 
 There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
 
-`web_search`/`web_fetch` are ported from oh-my-pi's web module: a provider chain (`brave` → `tavily` → `exa` → `jina` → `kagi` → `kimi` → `searxng` → credential-free `startpage`/`duckduckgo`/`ecosia`/`google`/`mojeek`, plus the `public` fan-out aggregate) where quota, auth, and bot-challenge failures automatically fall back to the next provider. No API key is required by default; keyed providers activate when their documented environment variable is present (`BRAVE_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY`, `KAGI_API_KEY`, `KIMI_SEARCH_API_KEY`/`MOONSHOT_SEARCH_API_KEY`, `SEARXNG_ENDPOINT`). Web queries leave the machine: never include private corpus content or secrets in them.
+`web_search`/`web_fetch` are ported from oh-my-pi's web module: a credential-free-only provider chain — model-native search reusing the agent's own model credentials (`gemini`/`anthropic`/`codex`/`xai`), the anonymous `perplexity` ask endpoint, Parallel's keyless MCP (`parallel`), then the scraped engines (`startpage`/`duckduckgo`/`ecosia`/`google`/`mojeek`, plus the `public` fan-out aggregate) with headless-browser escalation for bot challenges — where quota, auth, and bot-challenge failures automatically fall back to the next provider. No API key or signup is required; a self-hosted `SEARXNG_ENDPOINT` is the only env-gated, explicitly-advanced option. Web queries leave the machine: never include private corpus content or secrets in them.
 
 ## Architecture
 

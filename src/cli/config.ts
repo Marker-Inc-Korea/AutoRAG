@@ -58,9 +58,9 @@ export interface NormalizedIndexingConfig {
 
 /**
  * Web tools (`web_search` + `web_fetch`) config. Secrets never appear here:
- * keyed search providers read their own documented environment variables
- * (BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, JINA_API_KEY, KAGI_API_KEY,
- * KIMI_SEARCH_API_KEY/MOONSHOT_SEARCH_API_KEY, SEARXNG_ENDPOINT).
+ * the shipped chain is credential-free (model-native providers reuse the
+ * agent's resolved model credentials; perplexity/parallel need nothing), and
+ * the only env-gated option is a self-hosted SEARXNG_ENDPOINT.
  */
 export interface WebSearchCliConfig {
 	enabled?: boolean;

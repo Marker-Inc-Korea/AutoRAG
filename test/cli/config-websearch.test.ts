@@ -39,7 +39,7 @@ describe("webSearch CLI config", () => {
 		const opts = buildAgentOptions(
 			baseConfig({
 				provider: "duckduckgo",
-				order: ["brave", "duckduckgo"],
+				order: ["google", "duckduckgo"],
 				exclude: ["google"],
 				timeoutSeconds: 45,
 				fetch: { timeoutSeconds: 20 },
@@ -47,7 +47,7 @@ describe("webSearch CLI config", () => {
 		);
 		expect(opts.webSearch).toEqual({
 			provider: "duckduckgo",
-			order: ["brave", "duckduckgo"],
+			order: ["google", "duckduckgo"],
 			exclude: ["google"],
 			timeoutSeconds: 45,
 			fetch: { timeoutSeconds: 20 },

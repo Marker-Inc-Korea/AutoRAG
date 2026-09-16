@@ -24,35 +24,35 @@ interface ProviderMeta {
 
 /** Lazy factories. Each `load()` dynamic-imports its provider module on first call. */
 const PROVIDER_META: Record<SearchProviderId, ProviderMeta> = {
-	brave: {
-		id: "brave",
-		label: SEARCH_PROVIDER_LABELS.brave,
-		load: async () => new (await import("./providers/brave.ts")).BraveProvider(),
+	gemini: {
+		id: "gemini",
+		label: SEARCH_PROVIDER_LABELS.gemini,
+		load: async () => new (await import("./providers/gemini.ts")).GeminiProvider(),
 	},
-	tavily: {
-		id: "tavily",
-		label: SEARCH_PROVIDER_LABELS.tavily,
-		load: async () => new (await import("./providers/tavily.ts")).TavilyProvider(),
+	anthropic: {
+		id: "anthropic",
+		label: SEARCH_PROVIDER_LABELS.anthropic,
+		load: async () => new (await import("./providers/anthropic.ts")).AnthropicProvider(),
 	},
-	exa: {
-		id: "exa",
-		label: SEARCH_PROVIDER_LABELS.exa,
-		load: async () => new (await import("./providers/exa.ts")).ExaProvider(),
+	codex: {
+		id: "codex",
+		label: SEARCH_PROVIDER_LABELS.codex,
+		load: async () => new (await import("./providers/codex.ts")).CodexProvider(),
 	},
-	jina: {
-		id: "jina",
-		label: SEARCH_PROVIDER_LABELS.jina,
-		load: async () => new (await import("./providers/jina.ts")).JinaProvider(),
+	xai: {
+		id: "xai",
+		label: SEARCH_PROVIDER_LABELS.xai,
+		load: async () => new (await import("./providers/xai.ts")).XaiProvider(),
 	},
-	kagi: {
-		id: "kagi",
-		label: SEARCH_PROVIDER_LABELS.kagi,
-		load: async () => new (await import("./providers/kagi.ts")).KagiProvider(),
+	perplexity: {
+		id: "perplexity",
+		label: SEARCH_PROVIDER_LABELS.perplexity,
+		load: async () => new (await import("./providers/perplexity.ts")).PerplexityProvider(),
 	},
-	kimi: {
-		id: "kimi",
-		label: SEARCH_PROVIDER_LABELS.kimi,
-		load: async () => new (await import("./providers/kimi.ts")).KimiProvider(),
+	parallel: {
+		id: "parallel",
+		label: SEARCH_PROVIDER_LABELS.parallel,
+		load: async () => new (await import("./providers/parallel.ts")).ParallelProvider(),
 	},
 	searxng: {
 		id: "searxng",

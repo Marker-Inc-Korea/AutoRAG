@@ -8,7 +8,17 @@ import {
 } from "../../src/web/search/provider.ts";
 import type { SearchParams, SearchProviderContract } from "../../src/web/search/providers/base.ts";
 import { classifyProviderHttpError, normalizeSearchText } from "../../src/web/search/providers/utils.ts";
-import { SearchProviderError, type SearchProviderId, type SearchResponse } from "../../src/web/search/types.ts";
+import {
+	SEARCH_PROVIDER_ORDER,
+	SearchProviderError,
+	type SearchProviderId,
+	type SearchResponse,
+} from "../../src/web/search/types.ts";
+
+/** Exclude every built-in provider except `keep` so chain tests stay hermetic (no real network). */
+function isolateChainTo(...keep: SearchProviderId[]): void {
+	setExcludedSearchProviders(SEARCH_PROVIDER_ORDER.filter((id) => !keep.includes(id)));
+}
 
 function fakeProvider(
 	id: SearchProviderId,
@@ -50,12 +60,12 @@ describe("executeWebSearch provider chain", () => {
 
 	it("advances past a quota-exhausted provider to the next in the chain", async () => {
 		registerSearchProvider(
-			fakeProvider("brave", async () => {
-				throw new SearchProviderError("brave", "brave: 402 credits exhausted", 402);
+			fakeProvider("startpage", async () => {
+				throw new SearchProviderError("startpage", "startpage: 402 credits exhausted", 402);
 			}),
 		);
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["brave", "duckduckgo"]);
+		setSearchProviderOrder(["startpage", "duckduckgo"]);
 		const result = await executeWebSearch({ query: "quota fallback" });
 		expect(result.details.error).toBeUndefined();
 		expect(result.details.response.provider).toBe("duckduckgo");
@@ -64,7 +74,7 @@ describe("executeWebSearch provider chain", () => {
 	it("skips providers that report unavailable (no credentials) in the auto chain", async () => {
 		registerSearchProvider(
 			fakeProvider(
-				"brave",
+				"startpage",
 				async () => {
 					throw new Error("must not be called");
 				},
@@ -72,30 +82,30 @@ describe("executeWebSearch provider chain", () => {
 			),
 		);
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["brave", "duckduckgo"]);
+		setSearchProviderOrder(["startpage", "duckduckgo"]);
 		const result = await executeWebSearch({ query: "skip unavailable" });
 		expect(result.details.response.provider).toBe("duckduckgo");
 	});
 
 	it("treats a response with no renderable content as a failure and falls through", async () => {
-		registerSearchProvider(fakeProvider("brave", async () => ({ provider: "brave", sources: [] })));
+		registerSearchProvider(fakeProvider("startpage", async () => ({ provider: "startpage", sources: [] })));
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["brave", "duckduckgo"]);
+		setSearchProviderOrder(["startpage", "duckduckgo"]);
 		const result = await executeWebSearch({ query: "empty first" });
 		expect(result.details.response.provider).toBe("duckduckgo");
 	});
 
 	it("fails explicitly selected providers when they are unavailable", async () => {
-		registerSearchProvider(fakeProvider("brave", async () => oneSourceResponse("brave"), false));
-		const result = await executeWebSearch({ query: "x", provider: "brave" });
+		registerSearchProvider(fakeProvider("startpage", async () => oneSourceResponse("startpage"), false));
+		const result = await executeWebSearch({ query: "x", provider: "startpage" });
 		expect(result.details.error).toBeDefined();
 		expect(result.content[0]?.text).toContain("unavailable");
 	});
 
 	it("summarizes every provider failure when the whole chain fails", async () => {
 		registerSearchProvider(
-			fakeProvider("brave", async () => {
-				throw new SearchProviderError("brave", "brave: 429 rate limited", 429);
+			fakeProvider("startpage", async () => {
+				throw new SearchProviderError("startpage", "startpage: 429 rate limited", 429);
 			}),
 		);
 		registerSearchProvider(
@@ -103,10 +113,11 @@ describe("executeWebSearch provider chain", () => {
 				throw new SearchProviderError("duckduckgo", "duckduckgo bot challenge", 429);
 			}),
 		);
-		setSearchProviderOrder(["brave", "duckduckgo"]);
+		isolateChainTo("startpage", "duckduckgo");
+		setSearchProviderOrder(["startpage", "duckduckgo"]);
 		const result = await executeWebSearch({ query: "doomed" });
 		expect(result.details.error).toContain("All web search providers failed");
-		expect(result.details.error).toContain("brave");
+		expect(result.details.error).toContain("startpage");
 		expect(result.details.error).toContain("duckduckgo");
 	});
 
@@ -119,7 +130,7 @@ describe("executeWebSearch provider chain", () => {
 			}),
 		);
 		setSearchProviderOrder(["duckduckgo"]);
-		setExcludedSearchProviders(["duckduckgo"]);
+		setExcludedSearchProviders([...SEARCH_PROVIDER_ORDER]);
 		const result = await executeWebSearch({ query: "excluded" });
 		expect(called).toBe(false);
 		expect(result.details.error).toBeDefined();
@@ -143,15 +154,15 @@ describe("executeWebSearch provider chain", () => {
 
 describe("classifyProviderHttpError", () => {
 	it("maps quota and auth signals to compact provider errors", () => {
-		expect(classifyProviderHttpError("brave", 402, "")?.message).toContain("credits exhausted");
-		expect(classifyProviderHttpError("tavily", 200, "Your quota is exceeded")?.status).toBe(200);
-		expect(classifyProviderHttpError("exa", 401, "")?.message).toContain("401 unauthorized");
-		expect(classifyProviderHttpError("kagi", 403, "")?.message).toContain("403 forbidden");
+		expect(classifyProviderHttpError("startpage", 402, "")?.message).toContain("credits exhausted");
+		expect(classifyProviderHttpError("google", 200, "Your quota is exceeded")?.status).toBe(200);
+		expect(classifyProviderHttpError("ecosia", 401, "")?.message).toContain("401 unauthorized");
+		expect(classifyProviderHttpError("mojeek", 403, "")?.message).toContain("403 forbidden");
 	});
 
 	it("returns null for ordinary failures", () => {
-		expect(classifyProviderHttpError("brave", 500, "internal error")).toBeNull();
-		expect(classifyProviderHttpError("brave", 429, "slow down")).toBeNull();
+		expect(classifyProviderHttpError("startpage", 500, "internal error")).toBeNull();
+		expect(classifyProviderHttpError("startpage", 429, "slow down")).toBeNull();
 	});
 });
 
