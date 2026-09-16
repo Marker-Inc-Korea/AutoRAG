@@ -13,13 +13,17 @@ const ENGINE_IDS = ["startpage", "google", "duckduckgo", "ecosia", "mojeek"] as 
 
 class FakeProvider extends SearchProvider {
 	readonly label: string;
+	readonly id: SearchProviderId;
+	private readonly run: (signal: AbortSignal | undefined) => Promise<SearchResponse>;
 
 	constructor(
-		readonly id: SearchProviderId,
-		private readonly run: (signal: AbortSignal | undefined) => Promise<SearchResponse>,
+		id: SearchProviderId,
+		run: (signal: AbortSignal | undefined) => Promise<SearchResponse>,
 	) {
 		super();
 		this.label = id;
+		this.id = id;
+		this.run = run;
 	}
 
 	isAvailable(): boolean {
@@ -115,7 +119,7 @@ describe("Public Web aggregate", () => {
 
 	it("waits past the soft deadline for the first success", async () => {
 		vi.useFakeTimers();
-		let resolveDelivered: (value: SearchResponse) => void = () => {};
+		let resolveDelivered: (value: SearchResponse) => void = () => { };
 		const delivered = new Promise<SearchResponse>((resolve) => {
 			resolveDelivered = resolve;
 		});

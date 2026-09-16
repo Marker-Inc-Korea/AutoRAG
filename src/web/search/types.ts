@@ -153,12 +153,13 @@ export interface SearchResponse {
 
 /** Provider-specific error with optional HTTP status */
 export class SearchProviderError extends Error {
-	constructor(
-		public readonly provider: SearchProviderId,
-		message: string,
-		public readonly status?: number,
-	) {
+	public readonly provider: SearchProviderId;
+	public readonly status?: number;
+
+	constructor(provider: SearchProviderId, message: string, status?: number) {
 		super(message);
 		this.name = "SearchProviderError";
+		this.provider = provider;
+		this.status = status;
 	}
 }

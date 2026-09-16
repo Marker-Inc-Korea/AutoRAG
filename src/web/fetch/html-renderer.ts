@@ -24,7 +24,8 @@ const JINA_MARKDOWN_MARKER = "Markdown Content:";
 const JINA_READER_MAX_BYTES = 2 * 1024 * 1024;
 
 export interface RenderHtmlToTextOptions {
-	timeoutSeconds: number;
+	/** Overall render budget in seconds (default 30). */
+	timeoutSeconds?: number;
 	signal?: AbortSignal;
 	fetch?: typeof fetch;
 	firecrawlApiKey?: string;
@@ -124,7 +125,8 @@ export async function renderHtmlToText(
 	html: string,
 	options: RenderHtmlToTextOptions,
 ): Promise<{ content: string; ok: boolean; method: FetchProvider | "none" }> {
-	const { timeoutSeconds, signal, fetch: fetchImpl = fetch, firecrawlApiKey, jinaApiKey, runners } = options;
+	const { signal, fetch: fetchImpl = fetch, firecrawlApiKey, jinaApiKey, runners } = options;
+	const timeoutSeconds = options.timeoutSeconds ?? 30;
 	const fetchFn = fetchImpl;
 
 	const remoteBudgetMs = Math.min(timeoutSeconds * 1000, REMOTE_READER_MAX_MS);

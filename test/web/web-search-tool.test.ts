@@ -59,7 +59,7 @@ describe("web_search tool", () => {
 		expect(details.resultCount).toBe(1);
 		expect(details.sources).toEqual(["https://github.com/Marker-Inc-Korea/AutoRAG"]);
 		expect(details.available).toBe(true);
-		expect(result.content[0]?.text).toContain("[1] AutoRAG repo");
+		expect((result.content[0] as { text: string }).text).toContain("[1] AutoRAG repo");
 	});
 
 	it("never calls a provider for an empty query", async () => {
@@ -77,7 +77,7 @@ describe("web_search tool", () => {
 		const tool = createWebSearchTool();
 		const result = await tool.execute("call-2", { query: "   " });
 		expect(called).toBe(false);
-		expect(result.content[0]?.text).toContain("empty");
+		expect((result.content[0] as { text: string }).text).toContain("empty");
 		expect((result.details as { resultCount: number }).resultCount).toBe(0);
 	});
 
@@ -93,12 +93,17 @@ describe("web_search tool", () => {
 		setSearchProviderOrder(["duckduckgo"]);
 		const tool = createWebSearchTool();
 		const result = await tool.execute("call-3", { query: "doomed query" });
-		const details = result.details as { resultCount: number; sources: string[]; available: boolean; error?: string };
+		const details = result.details as unknown as {
+			resultCount: number;
+			sources: string[];
+			available: boolean;
+			error?: string;
+		};
 		expect(details.available).toBe(false);
 		expect(details.resultCount).toBe(0);
 		expect(details.sources).toEqual([]);
 		expect(details.error).toContain("duckduckgo");
-		expect(result.content[0]?.text).toContain("unavailable");
+		expect((result.content[0] as { text: string }).text).toContain("unavailable");
 	});
 
 	it("applies order and exclusion options before searching", async () => {

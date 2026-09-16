@@ -19,7 +19,7 @@ describe("renderHtmlToText", () => {
 					return provider === "jina" ? substantial("jina") : null;
 				}),
 			]),
-		);
+		) as unknown as Record<FetchProvider, () => Promise<string | null>>;
 
 		const result = await renderHtmlToText("https://example.test", "<html></html>", {
 			timeoutSeconds: 1,

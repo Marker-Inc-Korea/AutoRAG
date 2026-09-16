@@ -99,6 +99,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 	}
 
 	if (!response.ok) {
+		const status = "status" in response ? response.status : undefined;
 		return {
 			url,
 			finalUrl: response.finalUrl || url,
@@ -108,7 +109,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 			fetchedAt,
 			truncated: false,
 			notes: [
-				response.status ? `Failed to fetch URL (HTTP ${response.status})` : "Failed to fetch URL",
+				status ? `Failed to fetch URL (HTTP ${status})` : "Failed to fetch URL",
 				...(response.error ? [`Cause: ${response.error}`] : []),
 			],
 		};

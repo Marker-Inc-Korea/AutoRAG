@@ -100,11 +100,11 @@ export async function fetchBinary(
 	}
 }
 
-let parserRegistryPromise: Promise<Parser[]> | undefined;
+let parserRegistry: Parser[] | undefined;
 
 async function getConverters(): Promise<Parser[]> {
-	parserRegistryPromise ??= createDefaultParserRegistry().list();
-	return parserRegistryPromise;
+	parserRegistry ??= createDefaultParserRegistry().list();
+	return parserRegistry;
 }
 
 export interface ConvertResult {

@@ -1,11 +1,11 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import iconv from "iconv-lite";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPage } from "../../src/web/fetch/page-loader.ts";
 
 const servers: Server[] = [];
 
-async function serve(handler: Parameters<typeof createServer>[0]): Promise<string> {
+async function serve(handler: (request: IncomingMessage, response: ServerResponse) => void): Promise<string> {
 	const server = createServer(handler);
 	servers.push(server);
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
