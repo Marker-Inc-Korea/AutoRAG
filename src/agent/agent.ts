@@ -872,44 +872,49 @@ export class AutoRAGAgent {
 				if (timeout !== undefined) clearTimeout(timeout);
 			}
 
+			let emittedNoVerifiedResults = false;
 			if (captured === undefined) {
-				const reason = lastAssistantText(session?.agent.state.messages ?? []);
 				if (this.remoteSession) {
-					const scan = scanOutboundPayload(
-						[
-							reason ?? "",
-							...this.retrievalTrace.flatMap((entry) => entry.results.map((result) => result.excerpt)),
+					// Remote sessions fail soft: the peer must receive a structured
+					// "no verified results" response, never an internal error.
+					emittedNoVerifiedResults = true;
+					captured = {
+						answer: "No verified results were found for this query.",
+						results: [],
+						mapping: [],
+						warnings: [],
+					};
+				} else {
+					// Local sessions resolve with a degraded response that carries the
+					// run's retrieval trace instead of throwing away the whole run.
+					const reason = lastAssistantText(session?.agent.state.messages ?? []);
+					const response: SearchDocumentsResponse = {
+						sessionId,
+						query: trimmedQuery,
+						results: [],
+						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace),
+						searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
+						warnings: [],
+						diagnostics: [
+							...this.collectComponentDiagnostics(),
+							{
+								code: "missing-final-emit",
+								severity: "warning",
+								message:
+									"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
+							},
 						],
-						[this.workspaceProjectRoot, ...this.searchPaths].map((root) => resolve(root)),
-					);
-					if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
+						retrievalTrace: this.retrievalTrace,
+					};
+					this.runLogger.write({
+						event: "search_completed",
+						timestamp: new Date().toISOString(),
+						sessionId,
+						resultCount: 0,
+						degraded: true,
+					});
+					return response;
 				}
-				const response: SearchDocumentsResponse = {
-					sessionId,
-					query: trimmedQuery,
-					results: [],
-					answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace),
-					searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
-					warnings: [],
-					diagnostics: [
-						...this.collectComponentDiagnostics(),
-						{
-							code: "missing-final-emit",
-							severity: "warning",
-							message:
-								"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
-						},
-					],
-					retrievalTrace: this.retrievalTrace,
-				};
-				this.runLogger.write({
-					event: "search_completed",
-					timestamp: new Date().toISOString(),
-					sessionId,
-					resultCount: 0,
-					degraded: true,
-				});
-				return response;
 			}
 			if (this.remoteSession && options.observedSources !== undefined) {
 				for (const entry of captured.mapping) options.observedSources.add(entry.source);
@@ -927,13 +932,22 @@ export class AutoRAGAgent {
 				);
 				if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
 			}
+			const componentDiagnostics = this.collectComponentDiagnostics();
+			if (emittedNoVerifiedResults) {
+				componentDiagnostics.push({
+					code: "no-verified-results",
+					severity: "info",
+					message: "The agent completed without verified results; returning a structured empty response.",
+					source: "agent",
+				});
+			}
 			const response = recordStructuredResultsSession(
 				sessionId,
 				trimmedQuery,
 				captured,
 				this.sessions,
 				this.memory,
-				this.collectComponentDiagnostics(),
+				componentDiagnostics,
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -1430,7 +1444,12 @@ export class AutoRAGAgent {
 		};
 	}
 
-	private refreshComponentStatus(): AutoRAGRefreshComponentStatus {
+	/**
+	 * Synchronous per-component readiness snapshot (minsync/jikji/datasources).
+	 * `minsync` is "ready" only after a successful sync wrote its cursor;
+	 * "configured" means the binary resolved but no index exists yet.
+	 */
+	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
 		const status: { minsync?: string; jikji?: string; datasources?: string } = {};
 		if (this.minSyncMethod !== undefined) {
 			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()

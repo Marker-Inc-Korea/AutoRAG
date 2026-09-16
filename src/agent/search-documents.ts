@@ -15,6 +15,7 @@ export type SearchDocumentDiagnosticSeverity = "info" | "warning" | "error";
  */
 export type SearchDocumentDiagnosticCode =
 	| "empty-query"
+	| "no-verified-results"
 	| "unknown-warning"
 	| "caller-tool-dropped"
 	| "minsync-unavailable"

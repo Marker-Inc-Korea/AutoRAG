@@ -81,12 +81,6 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
-export {
-	GmailConnector,
-	type GmailConnectorOptions,
-	GmailSkill,
-	type GmailSkillOptions,
-} from "./skills/gmail/index.ts";
 export type {
 	KatokFailureReason,
 	KatokHit,

@@ -137,7 +137,7 @@ describe("datasource UI server", () => {
 		expect(github.status).toBe(200);
 		expect(String((github.json as { prompt?: string }).prompt)).toContain("acme/repo");
 
-		const choices = await request(server, "/api/choices?type=gmail", { token: server.token });
+		const choices = await request(server, "/api/choices?type=mailcrawl", { token: server.token });
 		expect(choices.status).toBe(200);
 		expect(choices.json).toEqual({ rcloneRemotes: [], mailAccounts: [] });
 

@@ -58,7 +58,6 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 };
 const DEFAULT_CREDENTIALS: Readonly<Record<string, readonly string[]>> = {
 	github: ["GITHUB_TOKEN"],
-	gmail: ["GMAIL_ACCESS_TOKEN"],
 	slack: ["SLACK_TOKEN"],
 	telegram: ["TELEGRAM_BOT_TOKEN"],
 	whatsapp: ["WHATSAPP_TOKEN"],
@@ -116,7 +115,6 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 			"telegram",
 			"whatsapp",
 			"mailcrawl",
-			"gmail",
 			"mail-export",
 			"notion",
 			"github",
