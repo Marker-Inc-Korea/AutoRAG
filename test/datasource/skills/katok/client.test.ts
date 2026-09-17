@@ -135,18 +135,29 @@ function jsonEnv(value: unknown): string {
  */
 function writeKatokSpawningDescendant(
 	mode: "exit" | "linger" | "signal",
-	options: { readonly escapeGroup?: boolean } = {},
+	options: {
+		readonly escapeGroup?: boolean;
+		readonly stream?: "stdout" | "stderr";
+		readonly trapSigterm?: boolean;
+	} = {},
 ): void {
 	const descendantOptions =
 		options.escapeGroup === true ? '{ stdio: "inherit", detached: true }' : '{ stdio: "inherit" }';
+	// A descendant that ignores SIGTERM survives anything weaker than SIGKILL,
+	// so the reap assertions below fail if the kill signal is ever downgraded.
+	const descendantCode =
+		options.trapSigterm === true
+			? 'process.on("SIGTERM", () => undefined); setTimeout(() => process.exit(0), 60000);'
+			: "setTimeout(() => process.exit(0), 60000);";
+	const stream = options.stream ?? "stdout";
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
-const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 60000)"], ${descendantOptions});
+const descendant = spawn(process.execPath, ["-e", ${JSON.stringify(descendantCode)}], ${descendantOptions});
 writeFileSync(${JSON.stringify(descendantPidPath)}, String(descendant.pid));
-process.stdout.write(process.env.KATOK_FAKE_OUTPUT ?? "{}");
+process.${stream}.write(process.env.KATOK_FAKE_OUTPUT ?? "{}");
 ${FAKE_KATOK_ENDINGS[mode]}
 `,
 	);
@@ -586,6 +597,76 @@ process.stdout.write("x".repeat(64));
 			const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ version: "1.2.3", ready: true }) });
 
 			const result = await withinBound(client.doctor(), "doctor");
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.data).toEqual({ version: "1.2.3", ready: true, metadata: {} });
+			expect(result.code).toBe(0);
+		}, 20_000);
+
+		it("reaps the process group when stderr exceeds the buffer cap", async () => {
+			// The stderr cap reaches the same terminate/finish pair as the stdout
+			// cap through a separate handler, so it needs its own reap assertion.
+			writeKatokSpawningDescendant("linger", { stream: "stderr" });
+			const client = new KatokClient({
+				binaryPath,
+				env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: "x".repeat(64) },
+				maxBufferBytes: 8,
+				timeoutMs: 15_000,
+			});
+
+			const result = await withinBound(client.doctor(), "doctor");
+
+			expect(result).toMatchObject({ ok: false, reason: "stderr-too-large" });
+			if (process.platform === "win32") return;
+			expect(descendantIsAlive(descendantPid())).toBe(false);
+		}, 20_000);
+
+		it("reaps a descendant that ignores SIGTERM, so the kill signal is not silently downgraded", async () => {
+			// The shared helper defaults to SIGTERM; katok asks for SIGKILL. This
+			// descendant survives SIGTERM, so it stays alive if that argument is lost.
+			writeKatokSpawningDescendant("linger", { trapSigterm: true });
+			const client = new KatokClient({
+				binaryPath,
+				env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+				timeoutMs: 100,
+			});
+
+			const result = await withinBound(client.doctor(), "doctor");
+
+			expect(result).toMatchObject({ ok: false, reason: "timeout" });
+			if (process.platform === "win32") return;
+			expect(descendantIsAlive(descendantPid())).toBe(false);
+		}, 20_000);
+
+		it("keeps the recorded failure reason when an escaped pipe holder forces the grace path", async () => {
+			// Combines a recorded finalReason with a descendant outside the signalled
+			// group: only the bounded guard can settle this, and it must not downgrade
+			// the cap failure into a plain exit-code result.
+			writeKatokSpawningDescendant("exit", { escapeGroup: true });
+			const client = new KatokClient({
+				binaryPath,
+				env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: "x".repeat(64) },
+				maxBufferBytes: 8,
+				timeoutMs: 15_000,
+			});
+
+			const result = await withinBound(client.doctor(), "doctor");
+
+			expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
+		}, 20_000);
+
+		it("(control) ignores an abort raised after the result already settled", async () => {
+			// Controls for the retired `child.killed` gate: the settle path detaches
+			// the abort listener, so a late abort must not re-enter termination or
+			// alter the delivered result. Passes on both arms by construction.
+			writeFakeKatok();
+			const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ version: "1.2.3", ready: true }) });
+			const controller = new AbortController();
+
+			const result = await withinBound(client.doctor(controller.signal), "doctor");
+			controller.abort();
+			await new Promise((resolve) => setTimeout(resolve, 50));
 
 			expect(result.ok).toBe(true);
 			if (!result.ok) return;
