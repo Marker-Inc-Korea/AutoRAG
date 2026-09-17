@@ -11,6 +11,13 @@ type LoggedCall = {
 
 const FAKE_CHILD_READY_TIMEOUT_MS = 10_000;
 
+/** How the fake katok ends after it has spawned its descendant. */
+const FAKE_KATOK_ENDINGS = {
+	exit: "process.exit(0);",
+	linger: "setInterval(() => undefined, 1000);",
+	signal: 'process.kill(process.pid, "SIGKILL");',
+} as const;
+
 let root: string;
 let binDir: string;
 let binaryPath: string;
@@ -126,7 +133,10 @@ function jsonEnv(value: unknown): string {
  * as `mode` says. Node emits "close" only once every holder of those pipes has
  * exited, so a descendant the client fails to reap keeps the result pending.
  */
-function writeKatokSpawningDescendant(mode: "exit" | "linger", options: { readonly escapeGroup?: boolean } = {}): void {
+function writeKatokSpawningDescendant(
+	mode: "exit" | "linger" | "signal",
+	options: { readonly escapeGroup?: boolean } = {},
+): void {
 	const descendantOptions =
 		options.escapeGroup === true ? '{ stdio: "inherit", detached: true }' : '{ stdio: "inherit" }';
 	writeFileSync(
@@ -137,7 +147,7 @@ import { writeFileSync } from "node:fs";
 const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 60000)"], ${descendantOptions});
 writeFileSync(${JSON.stringify(descendantPidPath)}, String(descendant.pid));
 process.stdout.write(process.env.KATOK_FAKE_OUTPUT ?? "{}");
-${mode === "exit" ? "process.exit(0);" : "setInterval(() => undefined, 1000);"}
+${FAKE_KATOK_ENDINGS[mode]}
 `,
 	);
 	chmodSync(binaryPath, 0o755);
@@ -526,6 +536,23 @@ process.stdout.write("x".repeat(64));
 			expect(result.ok).toBe(true);
 			if (!result.ok) return;
 			expect(result.data).toMatchObject({ version: "1.2.3", ready: true });
+		}, 20_000);
+
+		it("reports nonzero-exit when the child dies by signal with no recorded reason", async () => {
+			// finish() runs with child.exitCode === null on the signal path. Without a
+			// recorded reason the result must still be a failure, not a success with
+			// a null code.
+			writeKatokSpawningDescendant("signal");
+			const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }) });
+
+			const result = await withinBound(client.doctor(), "doctor");
+
+			expect(result.ok).toBe(false);
+			if (result.ok) return;
+			expect(result.reason).toBe("nonzero-exit");
+			expect(result.code).toBeNull();
+			if (process.platform === "win32") return;
+			expect(descendantIsAlive(descendantPid())).toBe(false);
 		}, 20_000);
 
 		it("(control) still resolves a clean exit with parsed data when no descendant is spawned", async () => {
