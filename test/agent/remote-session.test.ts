@@ -83,7 +83,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 		expect(response.diagnostics).toContainEqual(expect.objectContaining({ code: "no-verified-results" }));
 	});
 
-	it("still throws when a local session emits nothing", async () => {
+	it("resolves a degraded response when a local session emits nothing", async () => {
 		tmpDir = mkdtempSync(join(tmpdir(), "autorag-local-empty-"));
 		const agent = new AutoRAGAgent({
 			model: textOnlyModel(),
@@ -95,8 +95,11 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 			thinking: false,
 		});
 
-		await expect(agent.searchDocuments("is there anything about unicorns?")).rejects.toThrow(
-			/completed without emitting structured results/,
+		const response = await agent.searchDocuments("is there anything about unicorns?");
+
+		expect(response.results).toEqual([]);
+		expect(response.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "missing-final-emit", severity: "warning" }),
 		);
 	});
 });

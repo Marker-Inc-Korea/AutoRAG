@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
+import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_ALL_DOCUMENTS_TOOL_NAME = "search_all_documents";
 
@@ -29,6 +30,8 @@ export interface SearchAllDocumentsDetails {
 	readonly sources: readonly string[];
 	readonly diagnostics: readonly RetrievalDiagnostic[];
 	readonly perMethodCounts?: Readonly<Record<string, number>>;
+	/** Top candidates in traceable shape (additive; used for the run's retrieval trace). */
+	readonly results?: readonly SearchDocumentRetrievalTraceResult[];
 }
 
 /**
@@ -68,6 +71,7 @@ export function createSearchAllDocumentsTool(
 					sources: [...new Set(results.map((result) => result.source))],
 					diagnostics,
 					...(perMethodCounts ? { perMethodCounts } : {}),
+					results: toRetrievalTraceResults(results),
 				},
 			};
 		},

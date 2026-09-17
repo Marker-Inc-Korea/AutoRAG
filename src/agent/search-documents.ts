@@ -1,5 +1,5 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
-import type { CuratedResult } from "../retrieval/types.ts";
+import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
 import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
 
@@ -35,7 +35,8 @@ export type SearchDocumentDiagnosticCode =
 	| "refresh-failed"
 	| "watch-failed"
 	| "watch-limited"
-	| "unknown-datasource-skill";
+	| "unknown-datasource-skill"
+	| "missing-final-emit";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
@@ -60,6 +61,25 @@ export interface SearchDocumentResult {
 	readonly source?: string;
 }
 
+/** One retrieval candidate captured in a run's retrieval trace. */
+export interface SearchDocumentRetrievalTraceResult {
+	readonly source?: string;
+	readonly excerpt: string;
+	readonly score?: number;
+}
+
+/**
+ * What one retrieval tool execution found during a search run. Attached to the
+ * degraded fallback response when the agent never called emit_autorag_results,
+ * so an upstream agent can still inspect the raw candidates.
+ */
+export interface SearchDocumentRetrievalTraceEntry {
+	readonly tool: string;
+	readonly query?: string;
+	readonly resultCount: number;
+	readonly results: readonly SearchDocumentRetrievalTraceResult[];
+}
+
 export interface SearchDocumentsResponse {
 	readonly sessionId: string;
 	readonly query: string;
@@ -72,6 +92,24 @@ export interface SearchDocumentsResponse {
 	 * window, but ALWAYS populated at runtime (defaults to an empty array).
 	 */
 	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
+	/**
+	 * Retrieval candidates gathered during the run. Populated on the degraded
+	 * fallback path (missing final emit); absent or empty otherwise.
+	 */
+	readonly retrievalTrace?: readonly SearchDocumentRetrievalTraceEntry[];
+}
+
+/** Cap and shape retrieval results for the run trace (additive tool details). */
+export function toRetrievalTraceResults(
+	results: readonly RetrievalResult[],
+	limit = 5,
+	excerptChars = 300,
+): readonly SearchDocumentRetrievalTraceResult[] {
+	return results.slice(0, limit).map((result) => ({
+		source: result.source,
+		excerpt: result.content.replace(/\s+/gu, " ").slice(0, excerptChars),
+		score: result.score,
+	}));
 }
 
 export type SearchDocumentsStreamEvent =
