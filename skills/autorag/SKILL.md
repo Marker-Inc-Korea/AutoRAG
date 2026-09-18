@@ -139,5 +139,7 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
   call `autorag feedback`.
 - Do not invent CLI commands. `autorag --help` is the command list of record,
   including the shipped `gateway`, `models`, `serve`, `p2p`, `tui`, and `lite`
-  commands. See `docs/embedding-runtime.md` for the local embedding runtime
+  commands. `autorag <command> --help` prints that command's own flags, and
+  `autorag --version` prints the installed version. See
+  `docs/embedding-runtime.md` for the local embedding runtime
   and gateway setup.
