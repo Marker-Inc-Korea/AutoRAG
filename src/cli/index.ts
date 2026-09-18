@@ -20,6 +20,8 @@ const BOOLEAN_FLAGS = new Set([
 	"allow-remote",
 	"full",
 	"single-phase",
+	"strict",
+	"refresh",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
