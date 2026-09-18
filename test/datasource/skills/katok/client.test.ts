@@ -6,6 +6,7 @@ import { KatokClient } from "../../../../src/datasource/skills/katok/client.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
+	readonly descendantPid?: number;
 	readonly envApiKey?: string | null;
 };
 
@@ -84,6 +85,7 @@ function isLoggedCall(value: unknown): value is LoggedCall {
 	return (
 		Array.isArray(value.args) &&
 		value.args.every((arg) => typeof arg === "string") &&
+		(value.descendantPid === undefined || typeof value.descendantPid === "number") &&
 		(value.envApiKey === undefined || isNullableString(value.envApiKey))
 	);
 }
@@ -299,6 +301,49 @@ setInterval(() => undefined, 1000);
 		const result = await client.doctor();
 
 		expect(result).toMatchObject({ ok: false, reason: "timeout" });
+	});
+
+	it("terminates descendants that inherit the katok stdio pipes", { timeout: 20_000 }, async () => {
+		writeFakeKatok();
+		const client = new KatokClient({
+			binaryPath,
+			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+			timeoutMs: 500,
+		});
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+const descendant = spawn(process.execPath, ["-e", "setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2), descendantPid: descendant.pid }) + "\\n");
+setInterval(() => undefined, 1000);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const pending = client.doctor();
+		await waitForLogFile();
+		const descendantPid = loggedCalls()[0]?.descendantPid;
+		try {
+			const result = await Promise.race([
+				pending,
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error("katok timeout did not settle")), 1_000),
+				),
+			]);
+
+			expect(result).toMatchObject({ ok: false, reason: "timeout" });
+			expect(descendantPid).toEqual(expect.any(Number));
+			if (descendantPid === undefined) throw new Error("fake katok did not record descendant PID");
+			expect(() => process.kill(descendantPid, 0)).toThrow();
+		} finally {
+			if (descendantPid !== undefined) {
+				try {
+					process.kill(descendantPid, "SIGKILL");
+				} catch {}
+			}
+		}
 	});
 
 	it("terminates the child when AbortController aborts", { timeout: 20_000 }, async () => {
