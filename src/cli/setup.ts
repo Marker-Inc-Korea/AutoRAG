@@ -16,7 +16,12 @@ export interface SetupDatasourceReport {
 export interface SetupReport {
 	readonly ok: boolean;
 	readonly mode: "semantic" | "bm25";
-	readonly runtime: { readonly state: string; readonly health: boolean; readonly model: string };
+	readonly runtime: {
+		readonly state: string;
+		readonly health: boolean;
+		readonly model: string;
+		readonly reason?: string;
+	};
 	readonly model: { readonly valid: boolean; readonly profile: ProfileId };
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
@@ -248,17 +253,24 @@ export async function runSetup(options: {
 			}
 		}
 		let effectiveRuntimeStatus = runtimeStatus;
+		let startupFailure: string | undefined;
 		if (modelValid && effectiveRuntimeStatus?.health.ok !== true && runtime.ensureRuntime !== undefined) {
 			try {
 				await runtime.ensureRuntime({ profileId });
 				effectiveRuntimeStatus = await runtime.runtimeStatus();
 			} catch (error) {
 				// Runtime startup is independent from model verification and datasource probes.
-				// The report remains useful in BM25 mode when startup is unavailable.
-				if (runtimeFailure === undefined) safeReason(error);
+				// The report remains useful in BM25 mode when startup is unavailable, but the
+				// failure reason must reach the caller instead of being discarded.
+				startupFailure = safeReason(error);
 			}
 		}
 		const semantic = modelValid && effectiveRuntimeStatus?.health.ok === true;
+		const healthFailure =
+			effectiveRuntimeStatus !== undefined && effectiveRuntimeStatus.health.ok === false
+				? effectiveRuntimeStatus.health.message
+				: undefined;
+		const runtimeReason = startupFailure ?? runtimeFailure ?? healthFailure;
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
@@ -266,6 +278,7 @@ export async function runSetup(options: {
 				state: effectiveRuntimeStatus?.state ?? runtimeFailure ?? "unavailable",
 				health: effectiveRuntimeStatus?.health.ok === true,
 				model: profile.model,
+				...(runtimeReason === undefined ? {} : { reason: runtimeReason }),
 			},
 			model: { valid: modelValid, profile: profile.profileId },
 			datasources,

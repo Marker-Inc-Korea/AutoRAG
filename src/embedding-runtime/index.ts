@@ -10,7 +10,7 @@ import {
 import { startEmbeddingGateway } from "./gateway.ts";
 import { MODEL_ASSETS, resolveProfile, selectPlatformAsset } from "./manifest.ts";
 import { EmbeddingRuntimeSupervisor as RuntimeSupervisor, type SupervisorStatus } from "./supervisor.ts";
-import type { BackendKind, HealthStatus, ProfileId, RuntimeProfile } from "./types.ts";
+import type { BackendKind, HealthFailure, HealthStatus, ProfileId, RuntimeProfile } from "./types.ts";
 
 export interface EmbeddingRuntimeCache {
 	downloadAsset(
@@ -129,6 +129,28 @@ function identity(profile: RuntimeProfile): RuntimeIdentity {
 	};
 }
 
+function incompatibleGateway(message: string): HealthFailure {
+	return { ok: false, code: "incompatible", message, retryable: false };
+}
+/**
+ * The gateway answers `/healthz` with its own liveness payload (`{ status: "ok", ... }`),
+ * while the embed protocol's `HealthResult` is keyed on `ok`. Translate the payload the
+ * gateway actually serves instead of casting it, so a live gateway is not read as unhealthy.
+ */
+function normalizeGatewayHealth(payload: unknown): HealthStatus {
+	if (typeof payload !== "object" || payload === null) {
+		return incompatibleGateway("Gateway health response was not a JSON object.");
+	}
+	const { status, profileId, dimension, runtimeBuild } = payload as Record<string, unknown>;
+	if (status !== "ok") {
+		return incompatibleGateway('Gateway health response did not report status "ok".');
+	}
+	if (typeof profileId !== "string" || typeof dimension !== "number" || typeof runtimeBuild !== "string") {
+		return incompatibleGateway("Gateway health response was missing profile identity fields.");
+	}
+	return { ok: true, profileId: profileId as ProfileId, dimension, runtimeBuild };
+}
+
 export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 	const root = options.cacheRoot ?? resolveAutoRAGHome();
 	const cache: EmbeddingRuntimeCache = options.cache ?? {
@@ -232,7 +254,7 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		try {
 			const response = await (options.fetch ?? fetch)(`${gateway.url}/healthz`);
 			if (!response.ok) throw new Error(`Gateway health returned HTTP ${response.status}.`);
-			const health = (await response.json()) as HealthStatus;
+			const health = normalizeGatewayHealth(await response.json());
 			return { ...base, profileId: activeProfile?.profileId, baseUrl: gateway.url, health };
 		} catch {
 			return {
