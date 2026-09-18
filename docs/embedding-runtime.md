@@ -133,7 +133,7 @@ without Ollama, TEI, an API key, or an endpoint setting.
 The MinSync workspace records the runtime identity in:
 
 ```text
-<workspace>/.minsync/autorag-embedding-identity.json
+<workspace>/.autorag/minsync/.minsync/autorag-embedding-identity.json
 ```
 
 A dimension or identity mismatch is detected before semantic vector reuse.

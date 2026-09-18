@@ -142,8 +142,11 @@ remains authoritative and is not overwritten by the shared runtime.
 A MinSync workspace records the embedding identity in:
 
 ```text
-<workspace>/.minsync/autorag-embedding-identity.json
+<workspace>/.autorag/minsync/.minsync/autorag-embedding-identity.json
 ```
+
+MinSync's own store, cursor (`cursor.json`), and config (`config.toml`) live
+under that same `.minsync` subdirectory.
 
 The identity includes provider, model, immutable model revision, dimension,
 query prefix, passage prefix, and runtime build. A mismatch requires a full
