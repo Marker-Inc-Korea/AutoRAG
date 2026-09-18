@@ -1,8 +1,8 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
 import type {
 	DiscrawlDoctorInfo,
 	DiscrawlDoctorResult,
@@ -234,27 +234,50 @@ function managedConfigPath(workspace: string): string {
 }
 
 function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
-	return new Promise((resolve) => {
+	return new Promise((resolveResult) => {
 		const { options, args, env, signal } = request;
 		const portable = portableSpawnCommand(options.binaryPath ?? DEFAULT_DISCRAWL_BINARY, args);
 		const child = spawn(portable.command, [...portable.args], {
 			env,
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
 			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
 		let finalReason: DiscrawlFailure["reason"] | undefined;
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
 		const maxBuffer = options.maxBufferBytes ?? DEFAULT_DISCRAWL_MAX_BUFFER_BYTES;
+		const settleWith = (result: ProcessResult): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			if (pipeGuard !== undefined) clearTimeout(pipeGuard);
+			signal?.removeEventListener("abort", abortHandler);
+			resolveResult(result);
+		};
+		const finish = (code: number | null): void => {
+			if (finalReason !== undefined) {
+				settleWith({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
+				return;
+			}
+			settleWith({
+				ok: code === 0,
+				reason: code === 0 ? undefined : "nonzero-exit",
+				stdout: stdout.text,
+				stderr: stderr.text,
+				code,
+			});
+		};
 		const timeout = setTimeout(() => {
 			finalReason = "timeout";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		}, options.timeoutMs ?? DEFAULT_DISCRAWL_TIMEOUT_MS);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		};
 		if (signal?.aborted) abortHandler();
 		signal?.addEventListener("abort", abortHandler, { once: true });
@@ -264,41 +287,26 @@ function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
 			stdout = appendBounded(stdout, chunk, maxBuffer);
 			if (stdout.capped) {
 				finalReason = "stdout-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr = appendBounded(stderr, chunk, maxBuffer);
 			if (stderr.capped) {
 				finalReason = "stderr-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
+		});
+		child.on("exit", () => {
+			if (settled) return;
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
 		});
 		child.on("error", (error: NodeJS.ErrnoException) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			signal?.removeEventListener("abort", abortHandler);
 			const reason = error.code === "ENOENT" ? "binary-missing" : "spawn-error";
-			resolve({ ok: false, reason, stdout: stdout.text, stderr: describeSpawnFailure(reason), code: null });
+			settleWith({ ok: false, reason, stdout: stdout.text, stderr: describeSpawnFailure(reason), code: null });
 		});
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			signal?.removeEventListener("abort", abortHandler);
-			if (finalReason !== undefined) {
-				resolve({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
-				return;
-			}
-			resolve({
-				ok: code === 0,
-				reason: code === 0 ? undefined : "nonzero-exit",
-				stdout: stdout.text,
-				stderr: stderr.text,
-				code,
-			});
-		});
+		child.on("close", (code) => finish(code));
 	});
 }
 
@@ -364,17 +372,6 @@ function findUserTokenKey(env: NodeJS.ProcessEnv): string | undefined {
 		if (USER_TOKEN_KEYS.has(key.toLowerCase())) return key;
 	}
 	return undefined;
-}
-
-function terminate(child: ChildProcess): void {
-	if (child.killed) return;
-	if (process.platform !== "win32" && child.pid !== undefined) {
-		try {
-			process.kill(-child.pid, "SIGKILL");
-			return;
-		} catch {}
-	}
-	child.kill("SIGKILL");
 }
 
 /** Path-opaque stderr replacement (the raw Node error leaks the binary path). */
