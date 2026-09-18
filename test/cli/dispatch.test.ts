@@ -276,7 +276,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	duplicates: ["DIR"],
 	tui: ["Usage: autorag tui"],
 	ui: ["--port", "--host", "--no-open", "--allow-remote"],
-	serve: ["--port", "--host", "--force"],
+	serve: ["--port", "--force"],
 	p2p: ["peers", "requests", "--contact-id"],
 	models: ["prefetch", "import", "verify", "--profile"],
 	gateway: ["status", "stop"],
@@ -326,6 +326,18 @@ describe("per-command help", () => {
 		expect(await main([command, "--help"])).toBe(0);
 		for (const token of COMMAND_HELP_TOKENS[command]) {
 			expect(io.stdout()).toContain(token);
+		}
+	});
+
+	it.each(COMMANDS_WITH_OWN_HELP)("only advertises flags the parser accepts for %s", async (command) => {
+		const io = captureStdio();
+		expect(await main([command, "--help"])).toBe(0);
+		const advertised = [...new Set(io.stdout().match(/--[a-z][a-z0-9-]*/g) ?? [])];
+		expect(advertised.length).toBeGreaterThan(0);
+		for (const flag of advertised) {
+			const parsed = parseArgs([command, flag, "value"]);
+			const reason = "error" in parsed ? parsed.error : "";
+			expect(reason, `${command} --help advertises ${flag}`).not.toContain("Unknown flag");
 		}
 	});
 

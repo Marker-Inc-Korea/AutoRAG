@@ -11,15 +11,15 @@ import type { CommandName } from "./index.ts";
  * global usage.
  */
 
-const GLOBAL_FLAGS = `Global flags:
+const GLOBAL_FLAGS = `Global flags (accepted for every command):
   --json                    Emit machine-readable JSON
   --debug                   Reveal opaque internal diagnostics (never filesystem paths)
   --config <path>           Use a specific config file
   --search-paths <csv>      Folders to index/search (also AUTORAG_SEARCH_PATHS)
   --workspace <dir>         Workspace that owns .autorag state
   --memory-path <file>      Retrieval memory file
-  --model-provider <name>   Override the model provider
-  --model-id <id>           Override the model
+  --model-provider <name>   Override the model provider (where a model is resolved)
+  --model-id <id>           Override the model (where a model is resolved)
   -h, --help                Show this help`;
 
 function usage(lines: readonly string[]): string {
@@ -205,9 +205,11 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"",
 		"Usage: autorag serve [flags]",
 		"",
+		"Binds a loopback-only SimpleX control socket; peers arrive through the",
+		"SimpleX network, so there is no bind-address flag.",
+		"",
 		"Flags:",
 		"  --port <n>    SimpleX WebSocket bind port (default 5225)",
-		"  --host <addr> Bind address (loopback only)",
 		"  --force       Start even when p2p.enabled is false in config",
 	]),
 	p2p: usage([

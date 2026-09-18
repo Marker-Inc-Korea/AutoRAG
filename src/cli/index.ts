@@ -164,7 +164,7 @@ Global flags:
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --port <n>           For ui: loopback port (default 8787, 0 for ephemeral)
-  --host <addr>        For ui/serve: bind address (127.0.0.1, ::1, or 0.0.0.0)
+  --host <addr>        For ui: bind address (127.0.0.1 or ::1)
   --no-open            For ui: print the URL and do not launch a browser
   --version, -V        Print the package version
   --help, -h           Show this help
