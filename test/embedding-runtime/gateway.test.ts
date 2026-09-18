@@ -104,6 +104,20 @@ describe("embedding gateway", () => {
 		expect((await post(limited, "/embed", { inputs: ["a", "b"] })).status).toBe(413);
 	});
 
+	it("accepts the largest batch MinSync's defaults can build", async () => {
+		const inputs = Array.from({ length: 64 }, () => "x".repeat(4096));
+		const server = await gateway(upstream(inputs.map((_, i) => row(i + 1))));
+		expect((await post(server, "/embed", { inputs })).status).toBe(200);
+	});
+
+	it("still rejects a batch above the derived limits", async () => {
+		const server = await gateway();
+		const tooManyInputs = Array.from({ length: 129 }, () => "x");
+		expect((await post(server, "/embed", { inputs: tooManyInputs })).status).toBe(413);
+		const tooManyCharacters = Array.from({ length: 64 }, () => "x".repeat(4097));
+		expect((await post(server, "/embed", { inputs: tooManyCharacters })).status).toBe(413);
+	});
+
 	it("returns 504 for an upstream timeout", async () => {
 		const server = await startEmbeddingGateway({
 			profile,
