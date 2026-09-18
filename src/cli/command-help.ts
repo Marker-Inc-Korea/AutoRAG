@@ -1,0 +1,270 @@
+import type { CommandName } from "./index.ts";
+
+/**
+ * Command-level `--help` text for every command except `lite`, which owns its
+ * own renderer (`src/cli/commands/lite.ts`). `main()` prints the entry for the
+ * invoked command instead of the global command list, so
+ * `autorag setup --help` answers "what does setup take?" directly.
+ *
+ * The record is typed against `CommandName`, so adding a command to the router
+ * without help text is a compile error rather than a silent fallback to the
+ * global usage.
+ */
+
+const GLOBAL_FLAGS = `Global flags (accepted for every command):
+  --json                    Emit machine-readable JSON
+  --debug                   Reveal opaque internal diagnostics (never filesystem paths)
+  --config <path>           Use a specific config file
+  --search-paths <csv>      Folders to index/search (also AUTORAG_SEARCH_PATHS)
+  --workspace <dir>         Workspace that owns .autorag state
+  --memory-path <file>      Retrieval memory file
+  --model-provider <name>   Override the model provider (where a model is resolved)
+  --model-id <id>           Override the model (where a model is resolved)
+  -h, --help                Show this help`;
+
+function usage(lines: readonly string[]): string {
+	return `${[...lines, "", GLOBAL_FLAGS].join("\n")}\n`;
+}
+
+const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
+	init: usage([
+		"autorag init - write the local AutoRAG config",
+		"",
+		"Usage: autorag init [flags]",
+		"",
+		"Writes the config (default ~/.autorag/config.json) for a local collection.",
+		"An existing config is not overwritten without --force.",
+		"",
+		"Flags:",
+		"  --search-paths <csv>          Folders to index/search",
+		"  --workspace <dir>             Workspace that owns .autorag state",
+		"  --memory-path <file>          Retrieval memory file",
+		"  --model-provider <name>       Librarian model provider",
+		"  --model-id <id>               Librarian model id (provider and id go together)",
+		"  --embedder-id <id>            MinSync embedder id",
+		"  --embedder-base-url <url>     MinSync embedder endpoint",
+		"  --embedder-api-key-env <var>  Env var holding the embedder key (name only, never the key)",
+		"  --embedder-dimension <n>      Embedding dimension",
+		"  --embedder-query-prefix <t>   Prefix added to queries",
+		"  --embedder-passage-prefix <t> Prefix added to passages",
+		"  --embedder-timeout-ms <n>     Per-request timeout in ms",
+		"  --embedder-batch-size <n>     Embedding batch size",
+		"  --minsync-max-chunk-size <n>  MinSync chunk size limit",
+		"  --force                       Overwrite an existing config",
+	]),
+	setup: usage([
+		"autorag setup - probe the local runtime and datasources",
+		"",
+		"Usage: autorag setup [flags]",
+		"",
+		"Probes the embedding runtime, the configured model profile, and every known",
+		"datasource, then reports what is ready and what is blocked. When no config",
+		"exists yet, a default one is written first from --search-paths/--workspace.",
+		"",
+		"Flags:",
+		"  --search-paths <csv>  Folders to index/search when writing a missing config",
+		"  --workspace <dir>     Workspace for the config written when none exists",
+		"  --profile <id>        Embedding profile to verify (qwen3-embedding-0.6b | embeddinggemma-300m)",
+		"  --format json         Emit machine-readable JSON",
+		"",
+		"Exit codes: 0 when every probe is ready, 1 when something is blocked.",
+		"",
+		"See also: autorag models prefetch   (cache the embedding model)",
+		"          autorag health            (check the curation model)",
+	]),
+	refresh: usage([
+		"autorag refresh - refresh every configured index",
+		"",
+		"Usage: autorag refresh [flags]",
+		"",
+		"Parses configured search paths, then resyncs the parsed mirror, MinSync,",
+		"datasources, and Jikji. Model-free: no LLM is constructed.",
+		"",
+		"Flags:",
+		"  --method <csv>  Restrict the run: minsync,parsed,datasources,jikji,all",
+		"  --force         Re-index even when the mirror looks unchanged",
+	]),
+	status: usage([
+		"autorag status - corpus freshness and index health",
+		"",
+		"Usage: autorag status",
+		"",
+		"Path-opaque snapshot of staleness and the last refresh outcome.",
+		"Model-free, and never emits filesystem paths.",
+	]),
+	search: usage([
+		"autorag search - search and curate documents",
+		"",
+		"Usage: autorag search <query> [flags]",
+		"",
+		"Runs the librarian agent loop: retrieval, reading, curation, numbered results.",
+		"Requires a configured model (see `autorag init` / `autorag health`).",
+		"",
+		"Flags:",
+		"  --top-k <n>            Maximum curated results",
+		"  --scope <scope>        Narrow retrieval to a trusted scope",
+		"  --tags <csv>           Narrow retrieval to trusted tags",
+		"  --fast-thinking <lvl>  Thinking level for the fast first answer",
+		"  --final-thinking <lvl> Thinking level for the verified answer",
+		"  --single-phase         Disable the two-phase progressive-answer flow",
+		"",
+		"Thinking levels: off, minimal, low, medium, high, xhigh, max.",
+	]),
+	feedback: usage([
+		"autorag feedback - record numbered feedback for a session",
+		"",
+		"Usage: autorag feedback <session> [flags]",
+		"",
+		"Flags:",
+		"  --useful <csv>      Result numbers that were useful (e.g. 1,3)",
+		"  --not-useful <csv>  Result numbers that were not useful (e.g. 2)",
+	]),
+	evidence: usage([
+		"autorag evidence - show persisted source and chunk evidence",
+		"",
+		"Usage: autorag evidence <session> [flags]",
+		"",
+		"Flags:",
+		"  --result <n>  Show evidence for a single numbered result",
+	]),
+	memory: usage([
+		"autorag memory - inspect retrieval memory",
+		"",
+		"Usage: autorag memory inspect",
+		"",
+		"Renders a path-opaque snapshot of curated results, feedback signals,",
+		"insights, and signal defaults. Model-free; the storage path is never emitted.",
+	]),
+	index: usage([
+		"autorag index - reset or rebuild local indexes",
+		"",
+		"Usage: autorag index <reset|rebuild> [flags]",
+		"",
+		"Subcommands:",
+		"  reset    Remove the parsed mirror and MinSync indexes (keeps bin, datasources, memory)",
+		"  rebuild  Reset, then re-run a forced refresh",
+		"",
+		"Flags:",
+		"  --method <csv>  Scope the reset: minsync,parsed,all",
+		"  --yes           Skip the confirmation prompt",
+	]),
+	watch: usage([
+		"autorag watch - keep configured indexes current",
+		"",
+		"Usage: autorag watch [flags]",
+		"",
+		"Flags:",
+		"  --once              Run one refresh tick and exit (cron / launchd / Task Scheduler)",
+		"  --immediate         Refresh once before reading fs events (default true)",
+		"  --debounce-ms <n>   Debounce window for fs events (default 1500)",
+		"  --force             Re-index even when the mirror looks unchanged",
+	]),
+	health: usage([
+		"autorag health - check the curation model's auth and completion access",
+		"",
+		"Usage: autorag health [flags]",
+		"",
+		"Checks model resolution, provider auth, and a live completion probe.",
+		"It does not check index health (use `autorag status`).",
+		"",
+		"Flags:",
+		"  --skip-probes        Skip the network completion probe (auth checks still run)",
+		"  --timeout-ms <n>     Per-probe timeout in ms (default 10000)",
+	]),
+	duplicates: usage([
+		"autorag duplicates - scan exact and near duplicate document families",
+		"",
+		"Usage: autorag duplicates [DIR]",
+		"",
+		"Scans DIR, or the configured search paths when DIR is omitted.",
+		"Read-only: never deletes or moves source files.",
+	]),
+	tui: usage([
+		"autorag tui - interactive Pi-powered librarian terminal UI",
+		"",
+		"Usage: autorag tui [flags]",
+		"",
+		"Flags:",
+		"  --fast-thinking <lvl>  Thinking level for the fast first answer",
+		"  --final-thinking <lvl> Thinking level for the verified answer",
+		"  --single-phase         Disable the two-phase progressive-answer flow",
+	]),
+	ui: usage([
+		"autorag ui - local datasource setup page",
+		"",
+		"Usage: autorag ui [flags]",
+		"",
+		"Flags:",
+		"  --port <n>       Loopback port (default 8787, 0 for ephemeral)",
+		"  --host <addr>    Bind address (127.0.0.1 or ::1)",
+		"  --no-open        Print the URL without launching a browser",
+		"  --allow-remote   Permit a non-loopback bind",
+	]),
+	serve: usage([
+		"autorag serve - P2P peer query server over SimpleX",
+		"",
+		"Usage: autorag serve [flags]",
+		"",
+		"Binds a loopback-only SimpleX control socket; peers arrive through the",
+		"SimpleX network, so there is no bind-address flag.",
+		"",
+		"Flags:",
+		"  --port <n>    SimpleX WebSocket bind port (default 5225)",
+		"  --force       Start even when p2p.enabled is false in config",
+	]),
+	p2p: usage([
+		"autorag p2p - SimpleX peer trust and sharing policy management",
+		"",
+		"Usage: autorag p2p <subcommand> [flags]",
+		"",
+		"Subcommands:",
+		"  peers                     List trusted peers and local persona metadata",
+		"  peers --add <alias> --contact-id <n> [persona flags]  Trust or update a peer",
+		"  peers --edit <alias> [persona flags]                  Update the local persona",
+		"  peers --remove <alias>    Remove a peer from the registry",
+		"  peers --show <alias>      Show one peer and the local persona",
+		"  peers --rank <query>      Rank local peers by keyword overlap (never sends)",
+		"  requests                  List pending peer-query approvals",
+		"  requests approve <id>     Allow sending the pending response",
+		"  requests deny <id>        Refuse the pending response without document content",
+		"  policy list               Show the effective merged sharing policy",
+		"  policy set <key> <private|never|always|peers> [--peer fp...]  Set a sharing rule",
+		"  policy unset <key>        Remove a sharing rule",
+		"  help                      Show this help",
+		"",
+		"Persona flags: --display-name --description --role --org --access-hint",
+		"",
+		"Peers connect via the SimpleX addresses printed by `autorag serve`.",
+	]),
+	models: usage([
+		"autorag models - manage the verified embedding model cache",
+		"",
+		"Usage: autorag models <prefetch|import|verify> [flags]",
+		"",
+		"Subcommands:",
+		"  prefetch        Download and verify the configured profile",
+		"  import <path>   Import an already-downloaded model file",
+		"  verify          Verify the cached model's hash",
+		"",
+		"Flags:",
+		"  --profile <id>  Embedding profile (default qwen3-embedding-0.6b)",
+		"  --format json   Emit machine-readable JSON",
+	]),
+	gateway: usage([
+		"autorag gateway - inspect or stop the on-demand embedding gateway",
+		"",
+		"Usage: autorag gateway <status|stop> [flags]",
+		"",
+		"Subcommands:",
+		"  status  Show gateway state, backend, model, profile, and health",
+		"  stop    Stop a running gateway",
+		"",
+		"Flags:",
+		"  --format json   Emit machine-readable JSON",
+	]),
+};
+
+export function commandUsage(command: string | undefined): string | undefined {
+	if (command === undefined) return undefined;
+	return (COMMAND_USAGE as Readonly<Record<string, string>>)[command];
+}
