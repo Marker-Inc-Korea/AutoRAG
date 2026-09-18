@@ -51,7 +51,6 @@ export {
 export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
 	DEFAULT_DISCRAWL_MODE,
-	DEFAULT_DISCRAWL_SOURCE,
 	DiscrawlClient,
 	type DiscrawlFailureReason,
 	DiscrawlFtsMethod,
@@ -65,7 +64,6 @@ export {
 	DiscrawlSkill,
 	type DiscrawlSkillClient,
 	type DiscrawlSkillOptions,
-	type DiscrawlSourceKind,
 	ENGLISH_ONLY_EMBEDDING_MODELS,
 } from "./skills/discrawl/index.ts";
 export {
