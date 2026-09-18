@@ -45,9 +45,23 @@ export interface EmbeddingGateway {
 	close(): Promise<void>;
 }
 
+/**
+ * MinSync builds one embedding request per batch. Its own defaults for a fresh
+ * workspace are `batch_size = 64` (`[embedder]`) and `max_chunk_size = 4096`
+ * (`[chunker.options]`), so a single request can legitimately carry
+ * 64 * 4096 = 262,144 characters. The gateway must accept the largest request
+ * MinSync can build with its defaults; a lower cap makes a fresh workspace fail
+ * with a 413 batch-limit before a single chunk is embedded.
+ */
+const MINSYNC_DEFAULT_BATCH_SIZE = 64;
+const MINSYNC_DEFAULT_MAX_CHUNK_SIZE = 4096;
 const DEFAULT_MAX_INPUTS = 128;
-const DEFAULT_MAX_CHARACTERS = 100_000;
+const DEFAULT_MAX_CHARACTERS = MINSYNC_DEFAULT_BATCH_SIZE * MINSYNC_DEFAULT_MAX_CHUNK_SIZE;
 const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * Covers the worst-case JSON body of a maximum-size batch: every character
+ * escaped to `\uXXXX` (6 bytes) plus per-input JSON overhead.
+ */
 const MAX_BODY_BYTES = 2_000_000;
 
 export function isLoopbackHost(host: string): boolean {

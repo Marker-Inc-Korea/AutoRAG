@@ -1337,6 +1337,35 @@ describe("AutoRAG embedding runtime integration", () => {
 		expect(identity).toMatchObject({ provider: "qwen", dimension: 1024, runtimeBuild: "b10951" });
 	});
 
+	it("keeps operator batching settings when a profile selects the runtime", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			runtime,
+			embedder: {
+				profile: "qwen3-embedding-0.6b",
+				batchSize: 32,
+				maxRetries: 5,
+				maxConcurrent: 2,
+				timeoutMs: 120_000,
+			},
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder).toMatchObject({
+			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+			base_url: "http://127.0.0.1:43123",
+			batch_size: 32,
+			max_retries: 5,
+			max_concurrent: 2,
+			timeout_seconds: 120,
+		});
+	});
+
 	it("forces full reindex for stale identity without deleting the prior cursor", async () => {
 		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
 		writeFileSync(minSyncConfigPath(minsyncWorkspace), "[vectorstore.options]\ndimension = 1024\n");

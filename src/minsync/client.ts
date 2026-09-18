@@ -89,6 +89,14 @@ export class MinSyncClient {
 					dimension: ensured.profile.dimension,
 					queryPrefix: ensured.profile.queryPrefix,
 					passagePrefix: ensured.profile.passagePrefix,
+					// A profile selects the embedding model only. Batching, concurrency,
+					// retry, and timeout settings belong to the operator, so they must
+					// still reach MinSync's config instead of falling back to MinSync's
+					// own defaults.
+					...(configured?.batchSize !== undefined ? { batchSize: configured.batchSize } : {}),
+					...(configured?.maxRetries !== undefined ? { maxRetries: configured.maxRetries } : {}),
+					...(configured?.maxConcurrent !== undefined ? { maxConcurrent: configured.maxConcurrent } : {}),
+					...(configured?.timeoutMs !== undefined ? { timeoutMs: configured.timeoutMs } : {}),
 				},
 				identity: {
 					provider: ensured.identity.provider,
