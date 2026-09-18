@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -230,5 +230,149 @@ describe("main health routing", () => {
 		expect(usage).toContain("lite init");
 		expect(usage).toContain("lite health");
 		expect(String(err.mock.calls[0]?.[0] ?? "")).not.toContain("Unknown command");
+	});
+});
+
+/** The version the published package reports is the one in package.json. */
+const packageVersion = (
+	JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }
+).version;
+
+/** Every command except `lite`, which owns its own usage renderer. */
+const COMMANDS_WITH_OWN_HELP = [
+	"init",
+	"setup",
+	"refresh",
+	"status",
+	"search",
+	"feedback",
+	"evidence",
+	"memory",
+	"index",
+	"watch",
+	"health",
+	"duplicates",
+	"tui",
+	"ui",
+	"serve",
+	"p2p",
+	"models",
+	"gateway",
+] as const;
+
+/** Tokens each command's own help must name so it cannot be the global list. */
+const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], readonly string[]> = {
+	init: ["--search-paths", "--workspace", "--memory-path", "--force"],
+	setup: ["--search-paths", "--workspace", "--profile", "--format json"],
+	refresh: ["--method", "--force"],
+	status: ["Usage: autorag status"],
+	search: ["--top-k", "--scope", "--tags", "--fast-thinking", "--final-thinking", "--single-phase"],
+	feedback: ["--useful", "--not-useful"],
+	evidence: ["--result"],
+	memory: ["inspect"],
+	index: ["reset", "rebuild", "--method", "--yes"],
+	watch: ["--once", "--immediate", "--debounce-ms"],
+	health: ["--skip-probes", "--timeout-ms"],
+	duplicates: ["DIR"],
+	tui: ["Usage: autorag tui"],
+	ui: ["--port", "--host", "--no-open", "--allow-remote"],
+	serve: ["--port", "--host", "--force"],
+	p2p: ["peers", "requests", "--contact-id"],
+	models: ["prefetch", "import", "verify", "--profile"],
+	gateway: ["status", "stop"],
+};
+
+const GLOBAL_USAGE_HEADER = "Usage: autorag <command> [args] [flags]";
+
+function captureStdio(): { stdout: () => string; stderr: () => string } {
+	const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+	const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+	return {
+		stdout: () => out.mock.calls.map((call) => String(call[0] ?? "")).join(""),
+		stderr: () => err.mock.calls.map((call) => String(call[0] ?? "")).join(""),
+	};
+}
+
+describe("version surface", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it.each(["--version", "-V", "version"])("prints the package version for `%s`", async (flag) => {
+		const io = captureStdio();
+		const code = await main([flag]);
+		expect(code).toBe(0);
+		expect(io.stdout().trim()).toBe(packageVersion);
+		expect(io.stderr()).toBe("");
+	});
+});
+
+describe("per-command help", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it.each(COMMANDS_WITH_OWN_HELP)("prints `%s` usage instead of the global list", async (command) => {
+		const io = captureStdio();
+		const code = await main([command, "--help"]);
+		expect(code).toBe(0);
+		expect(io.stdout()).toContain(`Usage: autorag ${command}`);
+		expect(io.stdout()).not.toContain(GLOBAL_USAGE_HEADER);
+		expect(io.stderr()).not.toContain("Unknown");
+	});
+
+	it.each(COMMANDS_WITH_OWN_HELP)("names the %s flags it actually accepts", async (command) => {
+		const io = captureStdio();
+		expect(await main([command, "--help"])).toBe(0);
+		for (const token of COMMAND_HELP_TOKENS[command]) {
+			expect(io.stdout()).toContain(token);
+		}
+	});
+
+	it("keeps the global list for `--help` and for no command", async () => {
+		const global = captureStdio();
+		expect(await main(["--help"])).toBe(0);
+		expect(global.stdout()).toContain(GLOBAL_USAGE_HEADER);
+		vi.restoreAllMocks();
+
+		const bare = captureStdio();
+		expect(await main([])).toBe(0);
+		expect(bare.stdout()).toContain(GLOBAL_USAGE_HEADER);
+	});
+
+	it("leaves the lite namespace on its own usage renderer", async () => {
+		const io = captureStdio();
+		expect(await main(["lite", "--help"])).toBe(0);
+		expect(io.stdout()).toContain("Usage: autorag lite <subcommand>");
+		expect(io.stdout()).not.toContain(GLOBAL_USAGE_HEADER);
+	});
+});
+
+describe("two-phase thinking flags", () => {
+	it("accepts --single-phase as a boolean flag", () => {
+		const parsed = parseArgs(["search", "q", "--single-phase"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["single-phase"]).toBe(true);
+	});
+
+	it("accepts --fast-thinking and --final-thinking as value flags", () => {
+		const parsed = parseArgs(["search", "q", "--fast-thinking", "low", "--final-thinking", "max"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["fast-thinking"]).toBe("low");
+		expect(parsed.flags["final-thinking"]).toBe("max");
+	});
+
+	it("accepts the two-phase flags for the tui command", () => {
+		const parsed = parseArgs(["tui", "--fast-thinking=high"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["fast-thinking"]).toBe("high");
+	});
+
+	it("routes the flags past argument parsing in main", async () => {
+		const io = captureStdio();
+		// No config is present, so the command body fails later; what matters is
+		// that the flag itself is no longer rejected as unknown.
+		await main(["tui", "--single-phase", "--help"]);
+		expect(io.stderr()).not.toContain("Unknown flag");
 	});
 });

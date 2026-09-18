@@ -464,7 +464,9 @@ autorag serve                   # P2P peer query server over SimpleX (opt-in)
 autorag p2p                     # peer trust, approvals, and sharing policy
 ```
 
-`autorag --help` is the command list of record. See
+`autorag --help` is the command list of record; `autorag <command> --help`
+prints that command's flags and subcommands, and `autorag --version` prints the
+installed version. See
 [docs/embedding-runtime.md](docs/embedding-runtime.md) for the local embedding
 runtime and gateway setup.
 
