@@ -55,7 +55,7 @@ jobs:
           enable-cache: 'true'
           cache-suffix: '3.11'
       - name: Download updated pyproject.toml
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyproject-toml
           path: legacy
