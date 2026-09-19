@@ -1,0 +1,227 @@
+// Lazy registry of web search providers.
+//
+// Each provider is loaded on first use; importing this module loads zero
+// provider implementations. Provider modules are heavy (each pulls in
+// fetch/parse/format helpers) and only one — at most — is needed per session,
+// so eager construction was wasted work at startup.
+//
+// Ported from oh-my-pi (can1357/oh-my-pi, MIT) `web/search/provider.ts`,
+// trimmed to the providers AutoRAG ships and extended with an explicit
+// instance-registration seam (host embeddings + tests).
+
+import type { SearchAvailabilityContext, SearchProvider, SearchProviderContract } from "./providers/base.ts";
+import { SEARCH_PROVIDER_LABELS, SEARCH_PROVIDER_ORDER, SearchProviderError, type SearchProviderId } from "./types.ts";
+
+export type {
+	FetchImpl,
+	SearchAvailabilityContext,
+	SearchParams,
+	SearchProviderContract,
+} from "./providers/base.ts";
+export { SearchProvider } from "./providers/base.ts";
+export { SEARCH_PROVIDER_ORDER } from "./types.ts";
+
+interface ProviderMeta {
+	id: SearchProviderId;
+	label: string;
+	load: () => Promise<SearchProviderContract>;
+}
+
+/** Lazy factories. Each `load()` dynamic-imports its provider module on first call. */
+const PROVIDER_META: Record<SearchProviderId, ProviderMeta> = {
+	gemini: {
+		id: "gemini",
+		label: SEARCH_PROVIDER_LABELS.gemini,
+		load: async () => new (await import("./providers/gemini.ts")).GeminiProvider(),
+	},
+	anthropic: {
+		id: "anthropic",
+		label: SEARCH_PROVIDER_LABELS.anthropic,
+		load: async () => new (await import("./providers/anthropic.ts")).AnthropicProvider(),
+	},
+	codex: {
+		id: "codex",
+		label: SEARCH_PROVIDER_LABELS.codex,
+		load: async () => new (await import("./providers/codex.ts")).CodexProvider(),
+	},
+	xai: {
+		id: "xai",
+		label: SEARCH_PROVIDER_LABELS.xai,
+		load: async () => new (await import("./providers/xai.ts")).XaiProvider(),
+	},
+	perplexity: {
+		id: "perplexity",
+		label: SEARCH_PROVIDER_LABELS.perplexity,
+		load: async () => new (await import("./providers/perplexity.ts")).PerplexityProvider(),
+	},
+	parallel: {
+		id: "parallel",
+		label: SEARCH_PROVIDER_LABELS.parallel,
+		load: async () => new (await import("./providers/parallel.ts")).ParallelProvider(),
+	},
+	searxng: {
+		id: "searxng",
+		label: SEARCH_PROVIDER_LABELS.searxng,
+		load: async () => new (await import("./providers/searxng.ts")).SearXNGProvider(),
+	},
+	startpage: {
+		id: "startpage",
+		label: SEARCH_PROVIDER_LABELS.startpage,
+		load: async () => new (await import("./providers/startpage.ts")).StartpageProvider(),
+	},
+	duckduckgo: {
+		id: "duckduckgo",
+		label: SEARCH_PROVIDER_LABELS.duckduckgo,
+		load: async () => new (await import("./providers/duckduckgo.ts")).DuckDuckGoProvider(),
+	},
+	ecosia: {
+		id: "ecosia",
+		label: SEARCH_PROVIDER_LABELS.ecosia,
+		load: async () => new (await import("./providers/ecosia.ts")).EcosiaProvider(),
+	},
+	google: {
+		id: "google",
+		label: SEARCH_PROVIDER_LABELS.google,
+		load: async () => new (await import("./providers/google.ts")).GoogleProvider(),
+	},
+	mojeek: {
+		id: "mojeek",
+		label: SEARCH_PROVIDER_LABELS.mojeek,
+		load: async () => new (await import("./providers/mojeek.ts")).MojeekProvider(),
+	},
+	public: {
+		id: "public",
+		label: SEARCH_PROVIDER_LABELS.public,
+		load: async () => new (await import("./providers/public.ts")).PublicWebProvider(),
+	},
+};
+
+const instanceCache = new Map<SearchProviderId, SearchProviderContract>();
+
+/** Cheap, sync metadata accessor — never triggers a provider load. */
+export function getSearchProviderLabel(id: SearchProviderId): string {
+	return PROVIDER_META[id]?.label ?? id;
+}
+
+/** Format one provider failure for the user-facing fallback summary. */
+export function formatSearchProviderFailure(error: unknown, provider: Pick<SearchProvider, "id" | "label">): string {
+	if (error instanceof SearchProviderError) {
+		if (error.status === 401 || error.status === 403) {
+			return `${getSearchProviderLabel(error.provider)} authorization failed (${error.status}). Check API key or base URL.`;
+		}
+		return error.message;
+	}
+	if (error instanceof Error) return error.message;
+	return `Unknown error from ${provider.label}`;
+}
+
+/** Format the ordered provider fallback failures for terminal/tool output. */
+export function formatSearchProviderFailures(
+	failures: readonly { provider: Pick<SearchProvider, "id" | "label">; error: unknown }[],
+): string {
+	return failures.map((f) => `${f.provider.id}: ${formatSearchProviderFailure(f.error, f.provider)}`).join("; ");
+}
+
+/**
+ * Resolve and cache a provider instance. First call for a given id loads the
+ * underlying module; subsequent calls return the cached singleton.
+ * Instances registered through {@link registerSearchProvider} take
+ * precedence over lazy module loads (host embedding, tests).
+ */
+export async function getSearchProvider(id: SearchProviderId): Promise<SearchProviderContract> {
+	const cached = instanceCache.get(id);
+	if (cached) return cached;
+	const meta = PROVIDER_META[id];
+	if (!meta) {
+		throw new Error(`Unknown search provider: ${id}`);
+	}
+	const provider = await meta.load();
+	instanceCache.set(id, provider);
+	return provider;
+}
+
+/**
+ * Register (or replace) a provider instance, bypassing the lazy module load.
+ * Test seam and host-embedding hook; production provider modules register
+ * nothing themselves.
+ */
+export function registerSearchProvider(provider: SearchProviderContract): void {
+	instanceCache.set(provider.id, provider);
+}
+
+/** Drop every registered/cached provider instance (tests). */
+export function clearRegisteredSearchProviders(): void {
+	instanceCache.clear();
+}
+
+/**
+ * Per-request routing. Configuration never mutates module state: the caller
+ * (agent tool, CLI) owns its own routing and passes it down, so two agents
+ * in one process cannot rewrite each other's provider order or exclusions.
+ */
+export interface SearchProviderRouting {
+	/** Prioritized providers; unlisted providers keep their built-in relative order. */
+	readonly order?: readonly SearchProviderId[];
+	/** Providers this request must never use, including fallbacks. */
+	readonly exclude?: readonly SearchProviderId[];
+	/** Terminal-first provider that bypasses exclusion (an explicit `provider` argument). */
+	readonly forcedProvider?: SearchProviderId;
+}
+
+/** `true` when `routing` excludes `id` from web search (auto chain and the Public Web fan-out). */
+export function isSearchProviderExcluded(id: SearchProviderId, exclude: readonly SearchProviderId[] = []): boolean {
+	return exclude.includes(id);
+}
+
+export interface SearchProviderCandidate {
+	id: SearchProviderId;
+	explicit: boolean;
+}
+
+/**
+ * Return provider candidates in fallback order without loading their modules.
+ * `routing.forcedProvider` is terminal-first and bypasses exclusion; providers
+ * the caller listed in `routing.order` are treated as explicit selections and
+ * resolve through `isExplicitlyAvailable`. Invalid ids are ignored defensively.
+ */
+export function resolveProviderCandidates(routing: SearchProviderRouting = {}): SearchProviderCandidate[] {
+	const { forcedProvider, exclude = [] } = routing;
+	const prioritized = new Set((routing.order ?? []).filter((id) => SEARCH_PROVIDER_ORDER.includes(id)));
+	const ordered =
+		prioritized.size === 0
+			? SEARCH_PROVIDER_ORDER
+			: [...prioritized, ...SEARCH_PROVIDER_ORDER.filter((id) => !prioritized.has(id))];
+
+	const candidates: SearchProviderCandidate[] = [];
+	if (forcedProvider !== undefined && !isSearchProviderExcluded(forcedProvider, exclude)) {
+		candidates.push({ id: forcedProvider, explicit: true });
+	}
+	for (const id of ordered) {
+		if (id === forcedProvider || isSearchProviderExcluded(id, exclude)) continue;
+		candidates.push({ id, explicit: prioritized.has(id) });
+	}
+	return candidates;
+}
+
+/**
+ * Resolve the complete available provider chain.
+ *
+ * This compatibility helper loads every candidate. Search execution should use
+ * {@link resolveProviderCandidates} so fallback modules load only when reached.
+ */
+export async function resolveProviderChain(
+	routing: SearchProviderRouting = {},
+	context?: SearchAvailabilityContext,
+): Promise<SearchProviderContract[]> {
+	const providers: SearchProviderContract[] = [];
+
+	for (const candidate of resolveProviderCandidates(routing)) {
+		const provider = await getSearchProvider(candidate.id);
+		const available = candidate.explicit
+			? ((await provider.isExplicitlyAvailable?.(context)) ?? (await provider.isAvailable(context)))
+			: await provider.isAvailable(context);
+		if (available) providers.push(provider);
+	}
+
+	return providers;
+}

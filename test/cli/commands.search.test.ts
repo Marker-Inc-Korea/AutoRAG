@@ -84,6 +84,30 @@ function completeStream(result: SearchDocumentsResponse = response, onOptions?: 
 }
 
 describe("runSearch", () => {
+	it("stops the embedding runtime after a completed search so the process can exit", async () => {
+		const stopRuntime = vi.fn(async () => {});
+		const { ctx } = context(["krill habitats"]);
+		const code = await runSearch(ctx, { agentFactory: () => completeStream(), stopRuntime });
+		expect(code).toBe(0);
+		expect(stopRuntime).toHaveBeenCalledTimes(1);
+	});
+
+	it("stops the embedding runtime even when the search fails", async () => {
+		const stopRuntime = vi.fn(async () => {});
+		const { ctx } = context(["krill habitats"]);
+		const code = await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield* [];
+					throw new Error("model exploded");
+				},
+			}),
+			stopRuntime,
+		});
+		expect(code).toBe(1);
+		expect(stopRuntime).toHaveBeenCalledTimes(1);
+	});
+
 	it("reports usage for an empty query", async () => {
 		const { ctx, stderr } = context([]);
 		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);

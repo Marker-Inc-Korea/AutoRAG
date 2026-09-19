@@ -1,7 +1,7 @@
 {
-  "mode": "cold",
-  "root": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
-  "startedAt": "2026-09-19T06:22:04.534Z",
+  "mode": "warm",
+  "root": "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e",
+  "startedAt": "2026-09-19T11:16:12.691Z",
   "commands": [
     {
       "command": [
@@ -9,7 +9,7 @@
         "scripts/live-e2e/runner.mjs",
         "verify-corpus",
         "--root",
-        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e"
+        "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e"
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
@@ -33,11 +33,11 @@
         "bun",
         "scripts/live-e2e/live-stack.mts",
         "--root",
-        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
+        "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e",
         "--workspace",
-        "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace",
+        "/Volumes/SSD1/2/AutoRAG/.autorag-e2e/workspace",
         "--mode",
-        "cold"
+        "warm"
       ],
       "exitCode": 0,
       "stdout": "",
@@ -55,7 +55,7 @@
       "status": "PASS",
       "reason": "absolute corpus source is readable",
       "evidence": {
-        "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+        "source": "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e/corpus/sample.txt",
         "identity": "local:corpus/sample.txt",
         "sourceAbsolute": true,
         "sourceReadable": true,
@@ -121,7 +121,7 @@
       "evidence": {
         "binary": "mailcrawl",
         "nativeStorePreserved": true,
-        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789798955982-a733e7a43abf\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789798957338-b7ce39185ab2\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
+        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789816596147-77e4e59caeed\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789816597810-e9c5e50aa945\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
         "nativeIdentity": true
       }
     },
@@ -142,7 +142,7 @@
   "preflight": {
     "verdict": "ready",
     "exitCode": 0,
-    "endpoint": "http://127.0.0.1:64670/",
+    "endpoint": "http://127.0.0.1:50382/",
     "openaiKeyPresent": false,
     "embedding": {
       "status": "ready",
@@ -177,7 +177,7 @@
   "refresh": {
     "parsed": {
       "scanned": 1,
-      "written": 1,
+      "written": 0,
       "skipped": 0
     },
     "minsync": {
@@ -185,10 +185,10 @@
       "synced": 1
     }
   },
-  "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+  "cursorPath": "/Volumes/SSD1/2/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
   "hit": {
-    "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+    "source": "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
@@ -202,7 +202,7 @@
     }
   },
   "embedding": {
-    "endpoint": "http://127.0.0.1:64670",
+    "endpoint": "http://127.0.0.1:50382",
     "model": "Qwen3-Embedding-0.6B-Q8_0.gguf",
     "profileId": "qwen3-embedding-0.6b",
     "dimension": 1024,
@@ -211,14 +211,14 @@
     "loopbackOnly": true
   },
   "openaiKeyPresent": false,
-  "incremental": false,
-  "fullSync": true,
+  "incremental": true,
+  "fullSync": false,
   "datasourceSummary": {
     "pass": 4,
     "skip": 7,
     "fail": 0
   },
-  "finishedAt": "2026-09-19T06:22:39.490Z",
+  "finishedAt": "2026-09-19T11:16:40.328Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",

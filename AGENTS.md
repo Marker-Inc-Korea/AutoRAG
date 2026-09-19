@@ -304,11 +304,15 @@ The librarian agent owns the full workflow:
 | `check_memory` | Query past search outcomes | Adaptive strategy |
 | `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
+| `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
+| `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
 | `recommend_peer_targets` | Rank local SimpleX peer personas by keyword overlap | P2P routing; never contacts peers |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
 | `emit_autorag_results` | Terminating tool that returns curated results | Final action |
 
-There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets` is omitted in remote P2P sessions.
+There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
+
+`web_search`/`web_fetch` are ported from oh-my-pi's web module: a credential-free-only provider chain — model-native search reusing the agent's own model credentials (`gemini`/`anthropic`/`codex`/`xai`), the anonymous `perplexity` ask endpoint, Parallel's keyless MCP (`parallel`), then the scraped engines (`startpage`/`duckduckgo`/`ecosia`/`google`/`mojeek`, plus the `public` fan-out aggregate) with headless-browser escalation for bot challenges — where quota, auth, and bot-challenge failures automatically fall back to the next provider. No API key or signup is required; a self-hosted `SEARXNG_ENDPOINT` is the only env-gated, explicitly-advanced option. Web queries leave the machine: never include private corpus content or secrets in them.
 
 ## Architecture
 
@@ -410,6 +414,10 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/search-all-tool.ts` | `search_all_documents` multi-method fan-out |
 | `src/agent/search-minsync-tool.ts` | `semantic_search_local_docs` MinSync vector tool |
+| `src/agent/web-search-tool.ts` | `web_search` internet search tool over the `src/web/search` provider chain |
+| `src/agent/web-fetch-tool.ts` | `web_fetch` URL reader over the `src/web/fetch` render pipeline |
+| `src/web/search/` | oh-my-pi-ported web search: provider chain, structured query parsing, keyed + credential-free providers |
+| `src/web/fetch/` | oh-my-pi-ported URL render pipeline: page loader, HTML→markdown reader chain, feeds, content negotiation |
 | `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
 | `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX persona ranking |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
