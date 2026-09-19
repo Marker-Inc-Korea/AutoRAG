@@ -1,7 +1,7 @@
 {
   "mode": "cold",
   "root": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
-  "startedAt": "2026-09-11T08:33:18.222Z",
+  "startedAt": "2026-09-19T06:22:04.534Z",
   "commands": [
     {
       "command": [
@@ -13,6 +13,19 @@
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "bun",
+        "src/cli/index.ts",
+        "models",
+        "prefetch",
+        "--profile",
+        "qwen3-embedding-0.6b"
+      ],
+      "exitCode": 0,
+      "stdout": "models: prefetch\n",
       "stderr": ""
     },
     {
@@ -56,7 +69,7 @@
       "evidence": {
         "binary": "katok",
         "nativeStorePreserved": true,
-        "output": "KATOK_LIVE_QA_PASS source=kakao:IT 개발 커리어 공유방/kdy1/chunk_c7c53e497e5fe1fb\n",
+        "output": "KATOK_LIVE_QA_PASS source=/kakao/live/chunks/chunk_c7c53e497e5fe1fb\n",
         "nativeIdentity": true
       }
     },
@@ -67,7 +80,7 @@
       "evidence": {
         "binary": "discrawl",
         "nativeStorePreserved": true,
-        "output": "annels / 6 guilds\n\n[discord-hybrid] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-hybrid] \"deploy failed\" -> 3 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n  2. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=0.5000\n  3. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.3333\n\n[discord-fts] \"meeting schedule\" -> 0 hit(s)\n\n[discord-fts] \"deploy failed\" -> 1 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n\n[discord-semantic] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-semantic] \"deploy failed\" -> 3 hit(s)\n  1. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=1.0000\n  2. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.5000\n  3. #B200을 차지하기 위한 로동 <Jeffrey Kim> 새로고침을 안했따\n     source=/discord/live/chunks/1534254501488234737 score=0.3333\n\nIncremental check: re-running index should sync 0 new messages.\n  second pass: 2697 new message(s)\n",
+        "output": "annels / 6 guilds\n\n[discord-hybrid] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-hybrid] \"deploy failed\" -> 3 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n  2. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=0.5000\n  3. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.3333\n\n[discord-fts] \"meeting schedule\" -> 0 hit(s)\n\n[discord-fts] \"deploy failed\" -> 1 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n\n[discord-semantic] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-semantic] \"deploy failed\" -> 3 hit(s)\n  1. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=1.0000\n  2. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.5000\n  3. #B200을 차지하기 위한 로동 <Jeffrey Kim> 새로고침을 안했따\n     source=/discord/live/chunks/1534254501488234737 score=0.3333\n\nIncremental check: re-running index should sync 0 new messages.\n  second pass: 2928 new message(s)\n",
         "nativeIdentity": true
       }
     },
@@ -108,7 +121,7 @@
       "evidence": {
         "binary": "mailcrawl",
         "nativeStorePreserved": true,
-        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789115601421\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789115602266\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
+        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789798955982-a733e7a43abf\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789798957338-b7ce39185ab2\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
         "nativeIdentity": true
       }
     },
@@ -129,12 +142,13 @@
   "preflight": {
     "verdict": "ready",
     "exitCode": 0,
-    "endpoint": "http://127.0.0.1:18080/",
+    "endpoint": "http://127.0.0.1:64670/",
     "openaiKeyPresent": false,
     "embedding": {
       "status": "ready",
-      "expectedModel": "embeddinggemma:latest",
-      "dimension": 768
+      "profileId": "qwen3-embedding-0.6b",
+      "expectedModel": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "dimension": 1024
     },
     "lanes": {
       "katok": {
@@ -188,9 +202,12 @@
     }
   },
   "embedding": {
-    "endpoint": "http://127.0.0.1:18080",
-    "model": "embeddinggemma:latest",
-    "dimension": 768,
+    "endpoint": "http://127.0.0.1:64670",
+    "model": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+    "profileId": "qwen3-embedding-0.6b",
+    "dimension": 1024,
+    "queryPrefix": "",
+    "passagePrefix": "",
     "loopbackOnly": true
   },
   "openaiKeyPresent": false,
@@ -201,7 +218,7 @@
     "skip": 7,
     "fail": 0
   },
-  "finishedAt": "2026-09-11T08:33:24.186Z",
+  "finishedAt": "2026-09-19T06:22:39.490Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",

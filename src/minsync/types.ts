@@ -47,6 +47,7 @@ export interface MinSyncSyncResult {
 
 export type MinSyncDiagnosticCode =
 	| "embedder-unavailable"
+	| "sync-failed"
 	| "no-hit"
 	| "embedding-identity-mismatch"
 	| "migration-required";

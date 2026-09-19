@@ -32,6 +32,7 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
+	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -100,6 +101,7 @@ import {
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
+	type SearchDocumentDiagnosticCode,
 	type SearchDocumentRetrievalTraceEntry,
 	type SearchDocumentRetrievalTraceResult,
 	type SearchDocumentsResponse,
@@ -142,6 +144,7 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly reason?: string;
 	/** Count of parsed documents excluded from the MinSync index by file name. */
 	readonly stagingExcludedCount?: number;
+	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
@@ -1359,11 +1362,13 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
-			const publicMinsync = minsync
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
+						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
 							? { stagingExcludedCount: minsync.stagingExcluded.length }
 							: {}),
@@ -1374,6 +1379,7 @@ export class AutoRAGAgent {
 				diagnostics: [
 					...this.startupDiagnostics,
 					...summary.diagnostics,
+					...minsyncDiagnostics,
 					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
 				],
 				minsync: publicMinsync,
@@ -1423,6 +1429,11 @@ export class AutoRAGAgent {
 		];
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
+		for (const diag of minSyncRefreshDiagnostics(this.refreshState.minsync)) {
+			if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+				diagnostics.push(diag);
+			}
 		}
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
@@ -2085,6 +2096,52 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+	};
+}
+
+function sanitizeDiagnosticMessage(raw: string): string {
+	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
+	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Project a MinSync sync result onto refresh diagnostics. A structured MinSync
+ * diagnostic wins; otherwise a failed sync is reported through its reason so a
+ * degraded semantic index is never silent.
+ */
+function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): SearchDocumentDiagnostic[] {
+	if (!minsync) return [];
+	if (minsync.diagnostic) return [toMinSyncDiagnostic(minsync.diagnostic, minsync.ok)];
+	if (!minsync.ok && minsync.reason) return [toMinSyncReasonDiagnostic(minsync.reason)];
+	return [];
+}
+
+function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {
+	const code: SearchDocumentDiagnosticCode =
+		diag.code === "embedder-unavailable"
+			? "embedder-unavailable"
+			: diag.code === "embedding-identity-mismatch"
+				? "embedding-identity-mismatch"
+				: "minsync-sync-failed";
+	return {
+		code,
+		severity: ok ? "info" : "error",
+		message: sanitizeDiagnosticMessage(diag.message),
+		source: "minsync",
+	};
+}
+
+function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
+	return {
+		code: reason === "missing-binary" ? "minsync-unavailable" : "minsync-sync-failed",
+		severity: reason === "missing-binary" ? "warning" : "error",
+		message:
+			reason === "missing-binary"
+				? "MinSync binary is not available and auto-install was skipped."
+				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
+		source: "minsync",
 	};
 }
 
