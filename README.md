@@ -323,13 +323,13 @@ Discord uses the external [`discrawl`](https://github.com/openclaw/discrawl) CLI
 brew install openclaw/tap/discrawl
 ```
 
-Two archive sources are supported. `wiretap` (the default) reads the local Discord Desktop cache and needs **no token at all**; `discord` uses a bot token, which is the ToS-sanctioned automation path. AutoRAG refuses to spawn the CLI when a Discord *user* token is present in the environment — automating a user account violates Discord's Community Guidelines and can get the account terminated.
+AutoRAG reads discrawl's own local archive: `discrawl wiretap` imports the Discord Desktop cache and needs **no token at all**, and every search, embed, and sync step runs against that native store. AutoRAG carries no Discord credential — no bot token, no credential env var, no credential check in `autorag setup` — and it refuses to spawn the CLI when a Discord *user* token is present in the environment, because automating a user account violates Discord's Community Guidelines and can get the account terminated. A bot-backed archive is the CLI's own concern: configure and sync it with `discrawl` itself.
 
 ```typescript
 import { AutoRAGAgent, DiscrawlClient, DiscrawlSkill } from "@autorag/librarian";
 
 const discord = new DiscrawlSkill({
-  client: new DiscrawlClient({ source: "wiretap", root: process.cwd() }),
+  client: new DiscrawlClient({ root: process.cwd() }),
   instanceId: "community",
 });
 
@@ -350,7 +350,6 @@ Or through the trusted config factory:
     "discord": {
       "instanceId": "community",
       "connector": {
-        "source": "wiretap",
         "embeddingProvider": "ollama",
         "embeddingModel": "embeddinggemma",
         "defaultMode": "hybrid"

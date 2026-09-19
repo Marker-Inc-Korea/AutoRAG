@@ -61,11 +61,13 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	"cloud-drive": "rclone",
 	obsidian: "qmd",
 };
+/**
+ * Connectors AutoRAG authenticates itself. Every other built-in datasource is
+ * CLI-backed: the external CLI owns its archive, its index, and its
+ * credentials, so the probe never requires an env token for one.
+ */
 const DEFAULT_CREDENTIALS: Readonly<Record<string, readonly string[]>> = {
 	github: ["GITHUB_TOKEN"],
-	slack: ["SLACK_TOKEN"],
-	telegram: ["TELEGRAM_BOT_TOKEN"],
-	whatsapp: ["WHATSAPP_TOKEN"],
 };
 
 function executableInPath(name: string, env: NodeJS.ProcessEnv): string | undefined {
@@ -195,12 +197,21 @@ export async function runSetup(options: {
 				continue;
 			}
 			const connector = entry?.connector as Record<string, unknown> | undefined;
-			const credentialNames = configuredCredentialNames(connector, type);
-			if (type === "discord" && connector?.source === "bot") credentialNames.push("DISCORD_BOT_TOKEN");
-			const missingCredential = credentialNames.find((key) => env[key] === undefined || env[key] === "");
-			if (missingCredential) {
-				datasources.push({ name, state: "skipped", reason: `credential ${missingCredential} is unavailable` });
-				continue;
+			// A CLI-backed datasource owns its own credentials (native store,
+			// keychain, tool config), so an env credential is never a requirement for
+			// it — the probe must mirror what a refresh actually needs.
+			if (binary === undefined) {
+				const missingCredential = configuredCredentialNames(connector, type).find(
+					(key) => env[key] === undefined || env[key] === "",
+				);
+				if (missingCredential) {
+					datasources.push({
+						name,
+						state: "skipped",
+						reason: `credential ${missingCredential} is unavailable`,
+					});
+					continue;
+				}
 			}
 			const store = storeFor(type, entry?.connector as Record<string, unknown> | undefined, options.workspacePath);
 			if (store && !exists(store)) {
