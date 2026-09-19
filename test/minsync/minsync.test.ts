@@ -1502,6 +1502,55 @@ describe("AutoRAG embedding runtime integration", () => {
 		expect(identity).toMatchObject({ provider: "qwen", dimension: 1024, runtimeBuild: "b10951" });
 	});
 
+	it("keeps using the runtime for a profile config that also carries the profile's model id", async () => {
+		// `autorag setup` wrote `{ id: <profile model>, profile, dimension, prefixes }` before
+		// native embeddings became the default. Such a workspace must keep resolving through
+		// the gateway instead of handing MinSync a bare model file name with no endpoint.
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			runtime,
+			embedder: {
+				id: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+				profile: "qwen3-embedding-0.6b",
+				dimension: 1024,
+				queryPrefix: "",
+				passagePrefix: "",
+			},
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder).toMatchObject({
+			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+			base_url: "http://127.0.0.1:43123",
+		});
+	});
+
+	it("keeps an operator endpoint without an id instead of forcing native embeddings", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[embedder]\nid = "tei:google/embeddinggemma-300m"\nbase_url = "http://127.0.0.1:18080"\n\n[vectorstore.options]\ndimension = 768\n`,
+		);
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { baseUrl: "http://127.0.0.1:18080", dimension: 768 },
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder?.base_url).toBe("http://127.0.0.1:18080");
+		expect(config.embedder?.id).toBe("tei:google/embeddinggemma-300m");
+	});
+
 	it("keeps operator batching settings when a profile selects the runtime", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		const result = await new MinSyncClient({

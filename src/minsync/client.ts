@@ -78,15 +78,21 @@ export class MinSyncClient {
 	}> {
 		const configured = this.embedder;
 		const isExplicitNative = configured?.id?.startsWith("native:");
+		// A configured profile keeps the gateway, even when the config also carries the
+		// profile's model id: `autorag setup` wrote both before native became the default.
 		const isExplicitRemoteOrTei =
-			configured?.baseUrl !== undefined || (configured?.id !== undefined && !isExplicitNative);
+			configured?.baseUrl !== undefined ||
+			(configured?.id !== undefined && !isExplicitNative && configured.profile === undefined);
 		const useRuntime =
 			this.runtime !== undefined &&
 			!isExplicitNative &&
 			!isExplicitRemoteOrTei &&
 			(configured?.profile !== undefined || (configured === undefined && this.runtime !== undefined));
 		if (!useRuntime) {
-			if (configured === undefined || isExplicitNative || configured.id === undefined) {
+			if (
+				configured?.baseUrl === undefined &&
+				(configured === undefined || isExplicitNative || configured.id === undefined)
+			) {
 				const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
 				const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
 				return {
