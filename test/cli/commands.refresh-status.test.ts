@@ -16,6 +16,12 @@ beforeEach(() => {
 	previousHome = process.env.HOME;
 	previousPath = process.env.PATH;
 	process.env.HOME = join(root, "home");
+	// MinSync resolution reads PATH, so a developer box with `minsync`
+	// installed must not change what these CLI-envelope tests observe.
+	// Tests that need a binary put their own fixture in front of this.
+	const emptyBin = join(root, "empty-bin");
+	mkdirSync(emptyBin, { recursive: true });
+	process.env.PATH = emptyBin;
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
 	writeFileSync(join(docs, "alpha.md"), "# Alpha\n\nAlpha document body content.\n");
@@ -49,7 +55,10 @@ function writeConfig(minSync?: unknown): void {
 		memoryPath: join(root, "memory.json"),
 		jikji: false,
 	};
-	if (minSync !== undefined) config.minSync = minSync;
+	// Auto-install is a network operation (GitHub release download); these
+	// tests assert CLI envelopes, not installer behavior, so the default
+	// fixture config keeps refresh offline and deterministic.
+	config.minSync = minSync ?? { autoInstall: false };
 	const configDir = join(process.env.HOME as string, ".autorag");
 	mkdirSync(configDir, { recursive: true });
 	writeFileSync(join(configDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
