@@ -40,6 +40,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
+		toolLine(
+			config,
+			"web_search",
+			"search the public internet for current information beyond the local corpus and knowledge cutoff",
+		),
+		toolLine(config, "web_fetch", "read a public web page (http/https URL) as markdown/text"),
 		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
 		toolLine(
 			config,
@@ -58,6 +64,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"search_datasource_documents",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
+						"web_search",
+						"web_fetch",
 						"check_memory",
 						"recommend_peer_targets",
 						"emit_autorag_results",
@@ -90,6 +98,13 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 \`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files.
 `
 		: "";
+	const webResearch =
+		toolAvailable(config, "web_search") || toolAvailable(config, "web_fetch")
+			? `## Web Research
+
+\`web_search\` searches the public internet for current information beyond the local corpus and the model's knowledge cutoff; prefer primary sources (official docs, papers) and corroborate key claims with multiple sources. \`web_fetch\` reads a specific http(s) URL as markdown/text — pages found via web_search, official docs, papers. web_fetch only accepts http(s) URLs: never local file paths (use bash) or datasource virtual ids such as /kakao/... (use search_datasource_documents). Keep result URLs for traceability. Web queries leave the machine: never include private corpus content or secrets in web_search queries or fetched URLs.
+`
+			: "";
 
 	return `You are AutoRAG, a ${modelId} librarian agent for codebases and document collections.
 
@@ -123,6 +138,7 @@ ${noSearchTools}
 - Do not query the same datasource more than three times. After three attempts, stop searching it and conclude from the evidence available.
 
 ${duplicateManagement}
+${webResearch}
 ## External Datasource Skills
 
 Datasource access is default-deny and server-bound. Model arguments cannot grant \`allowedTags\` or \`allowedScopes\`; a requested scope can only narrow trusted access.

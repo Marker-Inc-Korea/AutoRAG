@@ -54,6 +54,15 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	} catch (error) {
 		if (!(error instanceof MinSyncReleaseError)) throw error;
 	}
+	// Same rule as the cargo path: a bun/vitest suite must never reach the
+	// network. Without this, any test that refreshes with the default config
+	// downloads a real MinSync release and blows the test timeout instead of
+	// degrading. Installer tests inject `releaseProvider`/`assetInstaller`.
+	if (isIsolatedTestRuntime() && options.releaseProvider === undefined) {
+		throw new MinSyncReleaseError(
+			"MinSync auto-install is disabled in the test runtime; inject a releaseProvider to exercise the installer",
+		);
+	}
 	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
 	const release = await releaseProvider();
 	const asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
