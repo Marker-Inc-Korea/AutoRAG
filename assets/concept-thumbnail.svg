@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="50%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95" />
+    </linearGradient>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+    <linearGradient id="accentCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="accentGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+    <linearGradient id="accentAmber" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <style>
+    .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 800; font-size: 46px; fill: #ffffff; }
+    .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 500; font-size: 20px; fill: #94a3b8; }
+    .label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 700; font-size: 15px; fill: #f8fafc; }
+    .sublabel { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 400; font-size: 13px; fill: #94a3b8; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; fill: #38bdf8; }
+    .tag { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 600; font-size: 11px; text-anchor: middle; }
+  </style>
+
+  <!-- Background Canvas -->
+  <rect width="1200" height="630" fill="url(#bg)" />
+
+  <!-- Subtle Ambient Glows -->
+  <circle cx="600" cy="300" r="280" fill="#6366f1" opacity="0.08" filter="url(#glow)" />
+  <circle cx="240" cy="380" r="180" fill="#0284c7" opacity="0.06" filter="url(#glow)" />
+  <circle cx="960" cy="380" r="180" fill="#a855f7" opacity="0.06" filter="url(#glow)" />
+
+  <!-- Grid decoration -->
+  <path d="M100 80 H1100 M100 550 H1100" stroke="#334155" stroke-dasharray="4 6" opacity="0.3" />
+
+  <!-- Header Section -->
+  <g transform="translate(600, 75)" text-anchor="middle">
+    <rect x="-110" y="-28" width="220" height="28" rx="14" fill="#1e293b" stroke="#334155" />
+    <text y="-10" class="tag" fill="#38bdf8">⚡ OVER-POWERED LIBRARIAN AGENT</text>
+    <text y="40" class="title">AutoRAG Agent</text>
+    <text y="72" class="subtitle">Search, read, verify, and curate personal &amp; enterprise knowledge in place</text>
+  </g>
+
+  <!-- Left Column: Federated Data Sources (Never Migrate) -->
+  <g transform="translate(80, 200)">
+    <rect width="280" height="340" rx="16" fill="url(#cardGrad)" stroke="#334155" />
+    <rect x="16" y="16" width="10" height="10" rx="5" fill="#38bdf8" />
+    <text x="36" y="26" class="label" fill="#38bdf8">Federated In-Place Stores</text>
+    <text x="16" y="50" class="sublabel">Zero data migration. Native CLIs.</text>
+
+    <!-- Datasource Items -->
+    <g transform="translate(16, 75)">
+      <rect width="248" height="42" rx="8" fill="#1e293b" stroke="#334155" />
+      <text x="14" y="26" class="label">Local Files</text>
+      <text x="95" y="26" class="sublabel">PDFs, Markdown, Wikis</text>
+    </g>
+    <g transform="translate(16, 125)">
+      <rect width="248" height="42" rx="8" fill="#1e293b" stroke="#334155" />
+      <text x="14" y="26" class="label">Team Chats</text>
+      <text x="95" y="26" class="sublabel">Slack, Discord, KakaoTalk</text>
+    </g>
+    <g transform="translate(16, 175)">
+      <rect width="248" height="42" rx="8" fill="#1e293b" stroke="#334155" />
+      <text x="14" y="26" class="label">Notes &amp; Wikis</text>
+      <text x="110" y="26" class="sublabel">Notion, Obsidian, RSS</text>
+    </g>
+    <g transform="translate(16, 225)">
+      <rect width="248" height="42" rx="8" fill="#1e293b" stroke="#334155" />
+      <text x="14" y="26" class="label">Mail &amp; Cloud</text>
+      <text x="105" y="26" class="sublabel">Gmail, IMAP, rclone, Drive</text>
+    </g>
+
+    <!-- Native Path Identity Badge -->
+    <g transform="translate(16, 280)">
+      <rect width="248" height="36" rx="6" fill="#0f172a" stroke="#0284c7" stroke-dasharray="3 3" />
+      <text x="12" y="23" class="mono">/kakao/personal/chunks/42</text>
+    </g>
+  </g>
+
+  <!-- Flow Connector: Left -> Center -->
+  <path d="M370 370 H430" stroke="#38bdf8" stroke-width="3" stroke-dasharray="6 4" />
+  <polygon points="430,365 442,370 430,375" fill="#38bdf8" />
+
+  <!-- Center Column: AutoRAG Librarian Agent Loop -->
+  <g transform="translate(450, 185)">
+    <rect width="300" height="370" rx="20" fill="url(#cardGrad)" stroke="url(#primaryGrad)" stroke-width="2" />
+    <rect x="20" y="20" width="10" height="10" rx="5" fill="#a855f7" />
+    <text x="40" y="30" class="label" fill="#e2e8f0">Librarian Agent Loop</text>
+    <text x="20" y="55" class="sublabel">Single configured model owns the loop</text>
+
+    <!-- Loop Steps -->
+    <g transform="translate(20, 75)">
+      <rect width="260" height="52" rx="10" fill="#1e293b" stroke="#475569" />
+      <text x="16" y="24" class="label">1. Multi-Method Retrieval</text>
+      <text x="16" y="42" class="sublabel">MinSync (BM25 + Vector) &amp; Jikji</text>
+    </g>
+    <g transform="translate(20, 137)">
+      <rect width="260" height="52" rx="10" fill="#1e293b" stroke="#0284c7" />
+      <text x="16" y="24" class="label" fill="#38bdf8">2. Direct File Reading</text>
+      <text x="16" y="42" class="sublabel">inspects original documents via bash</text>
+    </g>
+    <g transform="translate(20, 199)">
+      <rect width="260" height="52" rx="10" fill="#1e293b" stroke="#475569" />
+      <text x="16" y="24" class="label">3. Evidence &amp; Curation</text>
+      <text x="16" y="42" class="sublabel">resolves conflicts, synthesizes answer</text>
+    </g>
+    <g transform="translate(20, 261)">
+      <rect width="260" height="52" rx="10" fill="#1e293b" stroke="#10b981" />
+      <text x="16" y="24" class="label" fill="#34d399">4. Self-Evolving Memory</text>
+      <text x="16" y="42" class="sublabel">learns from queries &amp; useful feedback</text>
+    </g>
+
+    <!-- Speed Tag -->
+    <g transform="translate(20, 325)">
+      <rect width="260" height="28" rx="6" fill="#0f172a" />
+      <text x="130" y="19" class="tag" fill="#a855f7">⚡ FAST BY DESIGN • LOCAL EMBEDDER</text>
+    </g>
+  </g>
+
+  <!-- Flow Connector: Center -> Right -->
+  <path d="M760 370 H820" stroke="#34d399" stroke-width="3" stroke-dasharray="6 4" />
+  <polygon points="820,365 832,370 820,375" fill="#34d399" />
+
+  <!-- Right Column: Curated Structured Output -->
+  <g transform="translate(840, 200)">
+    <rect width="280" height="340" rx="16" fill="url(#cardGrad)" stroke="#334155" />
+    <rect x="16" y="16" width="10" height="10" rx="5" fill="#34d399" />
+    <text x="36" y="26" class="label" fill="#34d399">Curated Knowledge Units</text>
+    <text x="16" y="50" class="sublabel">Actionable answers. Zero raw dump.</text>
+
+    <!-- Output Card 1 -->
+    <g transform="translate(16, 75)">
+      <rect width="248" height="68" rx="8" fill="#1e293b" stroke="#334155" />
+      <text x="12" y="22" class="label" fill="#38bdf8">[1] Revenue Growth</text>
+      <text x="12" y="40" class="sublabel">Q3 grew 23% YoY to $4.2M</text>
+      <text x="12" y="56" class="mono" font-size="11">docs/q3-report.pdf:p.3-5</text>
+    </g>
+
+    <!-- Output Card 2 -->
+    <g transform="translate(16, 153)">
+      <rect width="248" height="68" rx="8" fill="#1e293b" stroke="#334155" />
+      <text x="12" y="22" class="label" fill="#38bdf8">[2] Risk Assessment</text>
+      <text x="12" y="40" class="sublabel">Identified 3 supply chain delays</text>
+      <text x="12" y="56" class="mono" font-size="11">/slack/ops/chunks/89</text>
+    </g>
+
+    <!-- Feedback Flow Action -->
+    <g transform="translate(16, 240)">
+      <rect width="248" height="74" rx="8" fill="#0f172a" stroke="#10b981" stroke-dasharray="3 3" />
+      <text x="12" y="24" class="label" fill="#34d399">Active Feedback Loop</text>
+      <text x="12" y="44" class="sublabel">"Unit [1] was useful, [2] wasn't"</text>
+      <text x="12" y="62" class="mono" font-size="11">agent.recordFeedback(id, [1], [2])</text>
+    </g>
+  </g>
+</svg>
