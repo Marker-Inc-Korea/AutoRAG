@@ -125,7 +125,7 @@ ${toolLines.join("\n")}
 ${noSearchTools}
 ## Search Strategy
 
-- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, baseline MinSync and Jikji retrieval starts before the model's search decision and supplies up to 50 candidates per method; inspect it first and treat it as unverified evidence.
+- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, baseline MinSync and Jikji retrieval starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
@@ -135,7 +135,7 @@ ${noSearchTools}
 - Cross-check important claims against the original source and preserve real source paths.
 - When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
 - Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
-- Do not query the same datasource more than three times. After three attempts, stop searching it and conclude from the evidence available.
+- Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available.
 
 ${duplicateManagement}
 ${webResearch}
