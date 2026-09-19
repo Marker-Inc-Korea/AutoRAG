@@ -97,7 +97,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.mode = options.mode ?? "vector";
 		this.runtime =
 			options.runtime ??
-			(options.binaryPath === undefined && options.autoInstall !== false ? { ensureRuntime } : undefined);
+			(this.embedder?.profile !== undefined && options.binaryPath === undefined && options.autoInstall !== false
+				? { ensureRuntime }
+				: undefined);
 	}
 
 	describe(): RetrievalMethodDescriptor {
