@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -175,5 +175,52 @@ describe("getRefreshStatus", () => {
 		const status = await agent.getRefreshStatus();
 		handle.stop();
 		expect(status.diagnostics.some((d) => d.code === "watch-limited")).toBe(true);
+	});
+
+	it("surfaces minsync failure diagnostics in refresh results and getRefreshStatus", async () => {
+		// `.mjs` keeps the fixture spawnable on Windows, where shebang scripts are not.
+		const fakeBinary = join(root, "fake-failing-minsync.mjs");
+		writeFileSync(
+			fakeBinary,
+			`#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+const args = process.argv.slice(2);
+const config = join(process.cwd(), ".minsync", "config.toml");
+if (args[0] === "init") {
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
+  console.log(JSON.stringify({ initialized: true }));
+  process.exit(0);
+}
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false }));
+  process.exit(0);
+}
+process.exit(2);
+`,
+		);
+		chmodSync(fakeBinary, 0o755);
+
+		const agent = makeAgent({
+			minSync: {
+				binaryPath: fakeBinary,
+				workspacePath: join(root, ".autorag", "minsync"),
+				autoInstall: false,
+			},
+		});
+
+		const result = await agent.refresh(true);
+		expect(result.minsync).toBeDefined();
+		expect(result.minsync?.ok).toBe(false);
+		expect(result.minsync?.diagnostics?.some((d) => d.code === "embedder-unavailable")).toBe(true);
+		expect(result.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
+		// Path opacity: MinSync text reaches the public result already sanitized.
+		expect(JSON.stringify(result.minsync)).not.toContain(root);
+
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("degraded");
+		expect(status.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
 	});
 });

@@ -412,6 +412,8 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 
 `autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method minsync,parsed` or `--method datasources,jikji`) to scope which indexing methods run or which index directories are removed. Valid values are `parsed`, `minsync`, `datasources`, `jikji`, and `all`. BM25 is a MinSync retrieval mode, not a `--method` name. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
+`autorag refresh --json` reports the MinSync outcome in a `minsync` block (`ok`, `synced`, and a `reason`/`diagnostics` on failure), and the envelope's `ok` is `false` whenever MinSync, a datasource index, or any error-severity diagnostic failed — a green envelope never hides a semantic index that did not update.
+
 `autorag health` checks model/provider auth before a search — it resolves the model, verifies credential presence, and optionally probes one completion call. Use it to diagnose model, provider, auth, or timeout failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness). When `autorag search` fails for a model/provider reason, the error output includes a hint pointing to `autorag health`.
 
 `autorag ui` opens a loopback-only page (`127.0.0.1`) to connect local folders and datasource skills without editing JSON. It writes the same trusted `datasources` / `datasourceAccess` fields as a hand-edited config, stores env-var *names* rather than secrets, and refuses non-loopback binds. Use `--no-open` to print the URL without launching a browser.

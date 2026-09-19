@@ -30,9 +30,22 @@ function diagnosticProjection(d: {
 	return out;
 }
 
+/**
+ * A refresh is only `ok` when every index it touched succeeded. A failed
+ * MinSync sync, a failed datasource index, or any error-severity diagnostic
+ * makes the run a failure, so callers cannot read a green envelope over a
+ * semantic index that never updated.
+ */
+function refreshOk(result: AutoRAGRefreshResult): boolean {
+	const minsyncOk = result.minsync === undefined || result.minsync.ok;
+	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
+	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
+	return minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+}
+
 function refreshEnvelope(result: AutoRAGRefreshResult) {
 	const envelope: Record<string, unknown> = {
-		ok: true,
+		ok: refreshOk(result),
 		counts: {
 			scanned: result.scanned,
 			written: result.written,
@@ -41,18 +54,26 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
+	if (result.minsync !== undefined) {
+		const minsyncObj: Record<string, unknown> = {
+			ok: result.minsync.ok,
+			synced: result.minsync.synced,
+		};
+		if (result.minsync.reason !== undefined) {
+			minsyncObj.reason = result.minsync.reason;
+		}
+		if (result.minsync.diagnostics && result.minsync.diagnostics.length > 0) {
+			minsyncObj.diagnostics = result.minsync.diagnostics.map(diagnosticProjection);
+		}
+		envelope.minsync = minsyncObj;
+	}
 	if (result.datasources && result.datasources.length > 0) {
 		envelope.datasources = result.datasources.map((ds) => ({
 			ok: ds.ok,
 			skill: ds.skill,
 			instanceId: ds.instanceId,
 			indexedAt: ds.indexedAt,
-			diagnostics: (ds.diagnostics ?? []).map((d) => ({
-				code: d.code,
-				severity: d.severity,
-				message: d.message,
-				...(d.source !== undefined ? { source: d.source } : {}),
-			})),
+			diagnostics: (ds.diagnostics ?? []).map(diagnosticProjection),
 		}));
 	}
 	return envelope;
@@ -60,10 +81,19 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 
 function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): string {
 	const lines: string[] = [];
-	lines.push("refresh: ok");
+	const ok = refreshOk(result);
+
+	lines.push(`refresh: ${ok ? "ok" : "failed"}`);
 	lines.push(
 		`  counts: scanned=${result.scanned} written=${result.written} deleted=${result.deleted} skipped=${result.skipped}`,
 	);
+	if (result.minsync !== undefined) {
+		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
+		if (result.minsync.reason !== undefined) {
+			parts.push(`reason=${result.minsync.reason}`);
+		}
+		lines.push(`  minsync: ${parts.join(" ")}`);
+	}
 	if (result.datasources && result.datasources.length > 0) {
 		for (const ds of result.datasources) {
 			lines.push(
@@ -71,7 +101,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 			);
 		}
 	}
-	if (debug && result.diagnostics && result.diagnostics.length > 0) {
+	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
 		for (const d of result.diagnostics) {
 			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
 		}
