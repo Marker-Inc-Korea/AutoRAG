@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,11 +11,20 @@ let docs: string;
 let previousHome: string | undefined;
 let previousPath: string | undefined;
 
+function pathWithoutMinsync(pathEnv = process.env.PATH ?? ""): string {
+	const execName = process.platform === "win32" ? "minsync.exe" : "minsync";
+	return pathEnv
+		.split(delimiter)
+		.filter((dir) => dir.length > 0 && !existsSync(join(dir, execName)))
+		.join(delimiter);
+}
+
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-refresh-"));
 	previousHome = process.env.HOME;
 	previousPath = process.env.PATH;
 	process.env.HOME = join(root, "home");
+	process.env.PATH = pathWithoutMinsync(previousPath);
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
 	writeFileSync(join(docs, "alpha.md"), "# Alpha\n\nAlpha document body content.\n");
@@ -42,7 +51,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 	};
 }
 
-function writeConfig(minSync?: unknown): void {
+function writeConfig(minSync: unknown = { autoInstall: false }): void {
 	const config: Record<string, unknown> = {
 		searchPaths: ["docs"],
 		workspacePath: root,
@@ -239,7 +248,7 @@ process.exit(2);
 `,
 		);
 		chmodSync(fakeBinary, 0o755);
-		process.env.PATH = `${fakeBinDir}${delimiter}${previousPath ?? ""}`;
+		process.env.PATH = `${fakeBinDir}${delimiter}${pathWithoutMinsync(previousPath)}`;
 
 		writeConfig({
 			workspacePath: join(root, ".autorag", "minsync"),
