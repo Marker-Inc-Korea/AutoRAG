@@ -15,6 +15,13 @@ export interface MinSyncEmbeddingIdentity {
 
 export const EMBEDDING_IDENTITY_FILE = "autorag-embedding-identity.json";
 
+export const DEFAULT_MINSYNC_EMBEDDER_ID = "native:Qwen/Qwen3-Embedding-0.6B";
+export const DEFAULT_MINSYNC_EMBEDDER_DIMENSION = 1024;
+export const DEFAULT_MINSYNC_EMBEDDER_CONFIG: MinSyncEmbedderConfig = {
+	id: DEFAULT_MINSYNC_EMBEDDER_ID,
+	dimension: DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
+};
+
 /**
  * MinSync config.toml lives at `<workspace>/.minsync/config.toml`.
  * After `minsync init` runs, we rewrite allowlisted embedder fields so
@@ -109,6 +116,11 @@ export function rewriteEmbedderConfig(
 			: {};
 	chunker.options = chunkerOptions;
 
+	if (embedder.id?.startsWith("native:")) {
+		delete embedderSection.base_url;
+		delete embedderSection.query_prefix;
+		delete embedderSection.passage_prefix;
+	}
 	if (embedder.id !== undefined) embedderSection.id = embedder.id;
 	if (embedder.baseUrl !== undefined) embedderSection.base_url = embedder.baseUrl;
 	if (embedder.queryPrefix !== undefined) embedderSection.query_prefix = embedder.queryPrefix;

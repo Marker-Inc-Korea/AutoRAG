@@ -4,6 +4,8 @@ import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
 import {
 	configuredMaxChunkSize,
 	configuredVectorDimension,
+	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
+	DEFAULT_MINSYNC_EMBEDDER_ID,
 	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
@@ -31,7 +33,7 @@ export interface MinSyncClientOptions {
 	readonly runtime?: MinSyncRuntime;
 }
 
-/** MinSync v0.4.2 supports vector, BM25, and hybrid query modes. */
+/** MinSync v0.4.5 supports native vector, BM25, and hybrid query modes. */
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -75,10 +77,37 @@ export class MinSyncClient {
 		runtimeReason?: string;
 	}> {
 		const configured = this.embedder;
+		const isExplicitNative = configured?.id?.startsWith("native:");
+		const isExplicitRemoteOrTei =
+			configured?.baseUrl !== undefined || (configured?.id !== undefined && !isExplicitNative);
 		const useRuntime =
 			this.runtime !== undefined &&
-			(configured === undefined || (configured.profile !== undefined && configured.baseUrl === undefined));
-		if (!useRuntime) return { config: configured ?? {} };
+			!isExplicitNative &&
+			!isExplicitRemoteOrTei &&
+			(configured?.profile !== undefined || (configured === undefined && this.runtime !== undefined));
+		if (!useRuntime) {
+			if (configured === undefined || isExplicitNative || configured.id === undefined) {
+				const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
+				const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
+				return {
+					config: {
+						...configured,
+						id,
+						dimension,
+					},
+					identity: {
+						provider: "native",
+						model: id.startsWith("native:") ? id.slice("native:".length) : id,
+						artifactRevision: "default",
+						dimension,
+						queryPrefix: configured?.queryPrefix ?? "",
+						passagePrefix: configured?.passagePrefix ?? "",
+						runtimeBuild: "minsync-native",
+					},
+				};
+			}
+			return { config: configured ?? {} };
+		}
 		try {
 			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile, cachedOnly: true });
 			if (!ensured) throw new Error("Embedding runtime did not return a runtime");
@@ -191,8 +220,8 @@ export class MinSyncClient {
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
 		if (!initialized) {
 			const initArgs = ["init", "--format", "json"];
-			if (embedder.id) {
-				initArgs.push("--embedder", embedder.id);
+			if (this.embedder?.id) {
+				initArgs.push("--embedder", this.embedder.id);
 			}
 			const init = await this.spawn(initArgs, spawnOpts);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
@@ -308,7 +337,8 @@ export class MinSyncClient {
 				`configured embedder dimension ${effective.config.dimension} does not match indexed dimension ${configuredDimension}; reindex required.${migration}`,
 			);
 		}
-		if (effective.identity !== undefined && this.identityMismatch(effective.identity)) {
+		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
+		if (existsSync(cursorPath) && effective.identity !== undefined && this.identityMismatch(effective.identity)) {
 			throw new MinSyncQueryError(
 				null,
 				"embedding identity does not match the indexed workspace; full reindex required",

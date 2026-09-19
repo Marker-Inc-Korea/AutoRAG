@@ -133,7 +133,7 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("MinSyncClient", () => {
-	it("uses the official v0.4.2 query command with its selected mode", async () => {
+	it("uses the official v0.4.5 query command with its selected mode", async () => {
 		// Given
 		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
 		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
@@ -1391,6 +1391,28 @@ if (args[0] === "sync") process.exit(1);
 		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
 	});
 
+	it("defaults to in-process native Qwen3 embeddings (1024d) without starting the gateway", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		const result = await method.sync();
+		expect(result.ok).toBe(true);
+
+		const identity = JSON.parse(
+			readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"),
+		);
+		expect(identity).toMatchObject({
+			provider: "native",
+			model: "Qwen/Qwen3-Embedding-0.6B",
+			dimension: 1024,
+			runtimeBuild: "minsync-native",
+		});
+	});
+
 	it("does not throw on missing binary during sync; returns ok:false degrade result", async () => {
 		const savedPath = process.env.PATH;
 		process.env.PATH = "/nonexistent";
@@ -1556,5 +1578,33 @@ dimension = 1536
 		expect(rewritten.embedder?.id).toBe("new-id");
 		expect(rewritten.embedder?.base_url).toBe("https://old.example.com");
 		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(1536);
+	});
+
+	it("strips base_url and prefixes when switching to native embedding", () => {
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[embedder]
+id = "tei:google/embeddinggemma-300m"
+base_url = "http://127.0.0.1:8080"
+query_prefix = "task: search result | query: "
+passage_prefix = "title: none | text: "
+
+[vectorstore.options]
+dimension = 768
+`,
+		);
+
+		rewriteEmbedderConfig(minsyncWorkspace, { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 });
+
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(rewritten.embedder?.id).toBe("native:Qwen/Qwen3-Embedding-0.6B");
+		expect(rewritten.embedder?.base_url).toBeUndefined();
+		expect(rewritten.embedder?.query_prefix).toBeUndefined();
+		expect(rewritten.embedder?.passage_prefix).toBeUndefined();
+		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(1024);
 	});
 });
