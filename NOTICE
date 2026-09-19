@@ -39,6 +39,9 @@ License: (MIT OR GPL-3.0-or-later)
 mailparser@3.9.20
 License: MIT
 
+puppeteer-core@25.11.0
+License: Apache-2.0
+
 slides-grab@1.5.1
 License: MIT
 
