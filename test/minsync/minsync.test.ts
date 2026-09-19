@@ -454,6 +454,9 @@ describe("MinSyncVectorMethod", () => {
 	it("reports staging exclusions through refresh diagnostics instead of dropping them silently", async () => {
 		// Given: a file name that cannot become a canonical source id (a POSIX
 		// backslash) — parseable, but not representable as a virtual id.
+		// Windows reserves the backslash as a path separator, so such a file
+		// name cannot exist there; the exclusion is POSIX-only by nature.
+		if (process.platform === "win32") return;
 		const trickyName = "policy\\note.txt";
 		writeFileSync(join(source, trickyName), "raw policy source\n");
 		writeFakeMinSync(JSON.stringify({ results: [] }));
