@@ -13,8 +13,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	detectMirrorStaleness,
 	loadMirrorIndex,
 	type ParsedMirrorIndex,
+	parsedMirrorIndexPath,
 	parsedMirrorRoot,
 	saveMirrorIndex,
 	syncParsedMirrors,
@@ -330,5 +332,123 @@ describe("syncParsedMirrors", () => {
 		expect(result.skipped).toBe(1);
 		expect(index.entries["/docs/huge.txt"]).toBeUndefined();
 		expect(result.diagnostics.some((d) => d.code === "parser-skipped")).toBe(true);
+	});
+});
+
+/**
+ * The staleness scan must not re-derive what refresh already decided. A file that
+ * refresh deliberately skipped (excluded duplicate, oversize, unparseable) used to
+ * be reported as a brand-new source forever, which made `lite retrieve` and
+ * `autorag status` permanently report a corpus that never changed as stale.
+ */
+describe("mirror staleness decisions", () => {
+	async function refreshWithDeliberateSkips(): Promise<void> {
+		writeFileSync(join(source, "ok.txt"), "Fine\n");
+		writeFileSync(join(source, "dup.txt"), "same content\n");
+		writeFileSync(join(source, "dup-copy.txt"), "same content\n");
+		writeFileSync(join(source, "huge.txt"), "x".repeat(1024));
+		writeFileSync(join(source, "broken.hwp"), Buffer.from([1, 2, 3, 4]));
+		writeFileSync(join(source, ".jikji_agent_map.md"), "# Jikji Agent Map\n");
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			excludeSourcePaths: new Set([join(source, "dup-copy.txt")]),
+		});
+	}
+
+	/** Read the persisted index artifact itself, so the test pins what lands on disk. */
+	function persistedSkipReasons(): Record<string, string> {
+		const raw: unknown = JSON.parse(readFileSync(parsedMirrorIndexPath(root), "utf8"));
+		const skipped = (raw as { skipped?: Record<string, { reason?: unknown }> }).skipped ?? {};
+		return Object.fromEntries(
+			Object.entries(skipped).map(([virtualPath, entry]) => [virtualPath, String(entry.reason)]),
+		);
+	}
+
+	it("treats a refresh's deliberate skips as current instead of as new sources", async () => {
+		await refreshWithDeliberateSkips();
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+
+		expect(diagnostics).toEqual([]);
+	});
+
+	it("never treats Jikji's product artifact as a corpus source", async () => {
+		writeFileSync(join(source, "ok.txt"), "Fine\n");
+		writeFileSync(join(source, ".jikji_agent_map.md"), "# Jikji Agent Map\n");
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+		const index = loadMirrorIndex(root);
+
+		expect(result.scanned).toBe(1);
+		expect(index.entries["/docs/.jikji_agent_map.md"]).toBeUndefined();
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+		expect(diagnostics).toEqual([]);
+	});
+
+	it("records each deliberate skip with its reason in the mirror index", async () => {
+		await refreshWithDeliberateSkips();
+
+		expect(persistedSkipReasons()).toEqual({
+			"/docs/dup-copy.txt": "duplicate-excluded",
+			"/docs/huge.txt": "parser-skipped",
+			"/docs/broken.hwp": "parser-failed",
+		});
+	});
+
+	it("reports a previously skipped source as stale again once it changes", async () => {
+		await refreshWithDeliberateSkips();
+		writeFileSync(join(source, "broken.hwp"), Buffer.from([9, 9, 9, 9, 9, 9]));
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0]).toMatchObject({
+			code: "stale-index",
+			source: "/docs/broken.hwp",
+			reason: "mtime-and-size-changed",
+		});
+	});
+
+	it("stops reporting a skipped source once a later refresh indexes it", async () => {
+		const file = join(source, "big.txt");
+		writeFileSync(file, "x".repeat(1024));
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+		});
+		expect(persistedSkipReasons()["/docs/big.txt"]).toBe("parser-skipped");
+
+		writeFileSync(file, "fits now\n");
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+		});
+
+		expect(persistedSkipReasons()["/docs/big.txt"]).toBeUndefined();
+		expect(loadMirrorIndex(root).entries["/docs/big.txt"]).toBeDefined();
 	});
 });

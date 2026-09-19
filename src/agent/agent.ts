@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -32,6 +32,7 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
+	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -100,6 +101,7 @@ import {
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
+	type SearchDocumentDiagnosticCode,
 	type SearchDocumentRetrievalTraceEntry,
 	type SearchDocumentRetrievalTraceResult,
 	type SearchDocumentsResponse,
@@ -140,6 +142,7 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly reason?: string;
+	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
@@ -1357,16 +1360,18 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
-			const publicMinsync = minsync
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
+						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 					}
 				: undefined;
 			return {
 				...summary,
-				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
+				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics, ...minsyncDiagnostics],
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -1389,6 +1394,11 @@ export class AutoRAGAgent {
 	/**
 	 * Path-opaque snapshot of corpus freshness and the last refresh outcome. Runs
 	 * a cheap parse-free staleness scan (stat only); never parses in this path.
+	 *
+	 * Freshness is read from disk, not from this instance's history: a separate CLI
+	 * process (for example `autorag status` or `autorag lite status`) reports the
+	 * corpus as current when the last refresh left parsed mirrors behind and no
+	 * source has changed since.
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const staleDiagnostics = await detectMirrorStaleness({
@@ -1409,6 +1419,11 @@ export class AutoRAGAgent {
 		];
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
+		for (const diag of minSyncRefreshDiagnostics(this.refreshState.minsync)) {
+			if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+				diagnostics.push(diag);
+			}
 		}
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
@@ -1431,13 +1446,15 @@ export class AutoRAGAgent {
 			: this.refreshState.lastOutcome === "never"
 				? "idle"
 				: this.refreshState.lastOutcome;
+		const parsedMirrorReady =
+			this.refreshState.lastOutcome === "success" || existsSync(refreshReadinessPath(this.workspaceProjectRoot));
 		return {
 			state,
 			inFlight: this.refreshState.inFlight,
 			lastStartedAt: this.refreshState.lastStartedAt,
 			lastFinishedAt: this.refreshState.lastFinishedAt,
 			counts: this.refreshState.counts,
-			stale: this.refreshState.lastOutcome === "never" || staleDiagnostics.length > 0,
+			stale: !parsedMirrorReady || staleDiagnostics.length > 0,
 			diagnostics,
 			components: this.refreshComponentStatus(),
 			lastError: this.refreshState.lastError,
@@ -2055,6 +2072,52 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+	};
+}
+
+function sanitizeDiagnosticMessage(raw: string): string {
+	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
+	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Project a MinSync sync result onto refresh diagnostics. A structured MinSync
+ * diagnostic wins; otherwise a failed sync is reported through its reason so a
+ * degraded semantic index is never silent.
+ */
+function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): SearchDocumentDiagnostic[] {
+	if (!minsync) return [];
+	if (minsync.diagnostic) return [toMinSyncDiagnostic(minsync.diagnostic, minsync.ok)];
+	if (!minsync.ok && minsync.reason) return [toMinSyncReasonDiagnostic(minsync.reason)];
+	return [];
+}
+
+function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {
+	const code: SearchDocumentDiagnosticCode =
+		diag.code === "embedder-unavailable"
+			? "embedder-unavailable"
+			: diag.code === "embedding-identity-mismatch"
+				? "embedding-identity-mismatch"
+				: "minsync-sync-failed";
+	return {
+		code,
+		severity: ok ? "info" : "error",
+		message: sanitizeDiagnosticMessage(diag.message),
+		source: "minsync",
+	};
+}
+
+function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
+	return {
+		code: reason === "missing-binary" ? "minsync-unavailable" : "minsync-sync-failed",
+		severity: reason === "missing-binary" ? "warning" : "error",
+		message:
+			reason === "missing-binary"
+				? "MinSync binary is not available and auto-install was skipped."
+				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
+		source: "minsync",
 	};
 }
 

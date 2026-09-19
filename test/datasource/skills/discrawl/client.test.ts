@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DiscrawlClient, nativeGatewayBaseUrl } from "../../../../src/datasource/skills/discrawl/client.ts";
+import type { DiscrawlOptions } from "../../../../src/datasource/skills/discrawl/types.ts";
 
 function stubBinary(script: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "discrawl-stub-"));
@@ -207,13 +208,14 @@ describe("DiscrawlClient user-token gate", () => {
 		});
 	});
 
-	it("allows a bot token through", async () => {
-		const binaryPath = stubBinary("echo '[]'");
+	it("never forwards a Discord bot token to the child process", async () => {
+		const binaryPath = stubBinary("env >&2; echo '[]'");
 		const result = await new DiscrawlClient({
 			binaryPath,
 			env: { DISCORD_BOT_TOKEN: "bot-token" },
 		}).search("fts", "q");
 		expect(result.ok).toBe(true);
+		expect(result.stderr).not.toContain("DISCORD_BOT_TOKEN");
 	});
 
 	it("never forwards the user token value in diagnostics", async () => {
@@ -227,19 +229,20 @@ describe("DiscrawlClient user-token gate", () => {
 });
 
 describe("DiscrawlClient sync", () => {
-	it("uses the wiretap subcommand for the wiretap source", async () => {
+	it("syncs the local archive through the wiretap subcommand", async () => {
 		const binaryPath = stubBinary(`echo "$@" >&2; echo '{"messages": 12}'`);
-		const result = await new DiscrawlClient({ binaryPath, source: "wiretap" }).sync();
+		const result = await new DiscrawlClient({ binaryPath }).sync();
 		expect(result.ok).toBe(true);
 		if (result.ok) expect(result.data.messages).toBe(12);
-		expect(result.stderr).toContain("wiretap");
+		expect(result.stderr.trim()).toBe("--json wiretap");
 	});
 
-	it("uses sync --source discord and forwards the guild filter for the bot source", async () => {
+	it("ignores a legacy bot source selector and never reaches the Discord API path", async () => {
 		const binaryPath = stubBinary(`echo "$@" >&2; echo '{"messages": 3}'`);
-		const result = await new DiscrawlClient({ binaryPath, source: "discord", guildId: "g1" }).sync();
+		const legacy = { binaryPath, source: "discord", guildId: "g1" } as unknown as DiscrawlOptions;
+		const result = await new DiscrawlClient(legacy).sync();
 		expect(result.ok).toBe(true);
-		expect(result.stderr).toContain("sync --source discord --guild g1");
+		expect(result.stderr.trim()).toBe("--json wiretap");
 	});
 });
 

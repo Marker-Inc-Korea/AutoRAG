@@ -18,15 +18,22 @@ the memory file, and Jikji `.jikji/` caches.
 
 ## Preflight
 
-Retrieval requires a completed refresh. If `autorag lite retrieve` returns
-exit code 2 with an `index-not-ready` diagnostic, run `autorag lite refresh`
-(or `autorag refresh`) first, then retry. Confirm freshness with:
+Retrieval needs a completed refresh. If `autorag lite retrieve` returns exit
+code 2 with an `index-not-ready` diagnostic, no refresh has completed yet —
+run `autorag lite refresh` (or `autorag refresh`) first, then retry. Confirm
+freshness with:
 
 ```bash
 autorag lite status --json
 ```
 
-`status` is model-free and path-opaque.
+`status` is model-free and path-opaque, and its `stale` field is read from disk,
+so it answers "is indexing complete?" even from a fresh process.
+
+A stale corpus is not a failure: `retrieve` answers from the index it has and
+reports the staleness it is answering past (`"stale": true` plus `stale-index`
+diagnostics). Pass `--refresh` to rebuild incrementally before answering, or
+`--strict` to keep the old fail-closed behavior and exit 2 instead of answering.
 
 ## Retrieve
 
@@ -40,6 +47,7 @@ The JSON envelope is:
 {
   "ok": true,
   "query": "key findings in the Q3 report",
+  "stale": false,
   "results": [
     {
       "number": 1,
@@ -58,6 +66,15 @@ The JSON envelope is:
   an `{"ok": false, "error": "..."}` rejection envelope.
 - Before any refresh, the envelope is `{"ok": false, "query": ..., "diagnostics":
   [{"code": "index-not-ready", "severity": "error", ...}]}` with exit code 2.
+- `stale: true` means the last refresh does not cover the current sources; the
+  results are still returned. Each entry in `diagnostics` with code
+  `stale-index` names the opaque source and a `reason` (for example
+  `mtime-and-size-changed`) plus `action: "refresh"`. Sources the refresh
+  deliberately skipped (exact duplicates, oversized or unparseable files, and
+  AutoRAG/Jikji product artifacts) are not stale.
+- `--refresh` runs an incremental refresh before answering and reports the
+  corpus current; `--strict` exits 2 with the `index-not-ready` envelope when the
+  index is stale, for callers that must not answer from a stale index.
 - Each result carries a provenance pair: the `source` identity and the
   `method` that produced it. Source identities are source-native: real file
   paths for local files, datasource identities for datasource results. Never
@@ -68,8 +85,9 @@ The JSON envelope is:
   failed run; check `diagnostics` before trusting an empty result set.
 - `--debug` adds diagnostic detail to human output without printing real
   filesystem paths.
-- Exit codes: 0 on success (results may be empty), 2 for usage, config, or
-  not-ready errors, 1 for runtime errors.
+- Exit codes: 0 on success (results may be empty, and a stale index is a
+  warning rather than a failure), 2 for usage, config, not-ready, or
+  `--strict` staleness errors, 1 for runtime errors.
 
 Retrieval methods run in parallel and merge: parsed mirrors and MinSync
 lexical/vector/hybrid methods, plus configured datasource methods. Jikji is a

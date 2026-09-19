@@ -323,13 +323,13 @@ Discord uses the external [`discrawl`](https://github.com/openclaw/discrawl) CLI
 brew install openclaw/tap/discrawl
 ```
 
-Two archive sources are supported. `wiretap` (the default) reads the local Discord Desktop cache and needs **no token at all**; `discord` uses a bot token, which is the ToS-sanctioned automation path. AutoRAG refuses to spawn the CLI when a Discord *user* token is present in the environment — automating a user account violates Discord's Community Guidelines and can get the account terminated.
+AutoRAG reads discrawl's own local archive: `discrawl wiretap` imports the Discord Desktop cache and needs **no token at all**, and every search, embed, and sync step runs against that native store. AutoRAG carries no Discord credential — no bot token, no credential env var, no credential check in `autorag setup` — and it refuses to spawn the CLI when a Discord *user* token is present in the environment, because automating a user account violates Discord's Community Guidelines and can get the account terminated. A bot-backed archive is the CLI's own concern: configure and sync it with `discrawl` itself.
 
 ```typescript
 import { AutoRAGAgent, DiscrawlClient, DiscrawlSkill } from "@autorag/librarian";
 
 const discord = new DiscrawlSkill({
-  client: new DiscrawlClient({ source: "wiretap", root: process.cwd() }),
+  client: new DiscrawlClient({ root: process.cwd() }),
   instanceId: "community",
 });
 
@@ -350,7 +350,6 @@ Or through the trusted config factory:
     "discord": {
       "instanceId": "community",
       "connector": {
-        "source": "wiretap",
         "embeddingProvider": "ollama",
         "embeddingModel": "embeddinggemma",
         "defaultMode": "hybrid"
@@ -412,6 +411,8 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 `memory.json` stores retrieval memory and `logs/runs.jsonl` records run events. Model authentication remains with the user's configured provider or authenticated local runtime. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
 
 `autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method minsync,parsed` or `--method datasources,jikji`) to scope which indexing methods run or which index directories are removed. Valid values are `parsed`, `minsync`, `datasources`, `jikji`, and `all`. BM25 is a MinSync retrieval mode, not a `--method` name. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
+
+`autorag refresh --json` reports the MinSync outcome in a `minsync` block (`ok`, `synced`, and a `reason`/`diagnostics` on failure), and the envelope's `ok` is `false` whenever MinSync, a datasource index, or any error-severity diagnostic failed — a green envelope never hides a semantic index that did not update.
 
 `autorag health` checks model/provider auth before a search — it resolves the model, verifies credential presence, and optionally probes one completion call. Use it to diagnose model, provider, auth, or timeout failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness). When `autorag search` fails for a model/provider reason, the error output includes a hint pointing to `autorag health`.
 

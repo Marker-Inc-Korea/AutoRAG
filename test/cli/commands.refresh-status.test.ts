@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runRefresh } from "../../src/cli/commands/refresh.ts";
 import { runStatus } from "../../src/cli/commands/status.ts";
@@ -9,10 +9,12 @@ import type { CommandContext } from "../../src/cli/commands/types.ts";
 let root: string;
 let docs: string;
 let previousHome: string | undefined;
+let previousPath: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-refresh-"));
 	previousHome = process.env.HOME;
+	previousPath = process.env.PATH;
 	process.env.HOME = join(root, "home");
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
@@ -22,6 +24,8 @@ beforeEach(() => {
 afterEach(() => {
 	if (previousHome === undefined) delete process.env.HOME;
 	else process.env.HOME = previousHome;
+	if (previousPath === undefined) delete process.env.PATH;
+	else process.env.PATH = previousPath;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -92,13 +96,13 @@ describe("runRefresh + runStatus (cli)", () => {
 
 		const status = JSON.parse(statusBlob);
 		// `status` runs in a fresh agent instance (a separate CLI process in real
-		// use), so in-memory `state`/`counts`/`stale` are not carried across
-		// invocations (`stale` is true whenever this instance has never refreshed).
-		// The cross-process-observable disk-freshness signal is the absence of any
-		// `stale-index` diagnostic: after refresh wrote fresh parsed mirrors, a new
-		// status invocation finds no source newer than the recorded mirror index.
+		// use), so in-memory `state`/`counts` are not carried across invocations.
+		// Freshness is: it comes from the readiness marker the refresh wrote plus the
+		// stat-only scan, so a new invocation after a refresh reports the corpus as
+		// current and finds no source newer than the recorded mirror index.
 		expect(typeof status.state).toBe("string");
 		expect(Array.isArray(status.diagnostics)).toBe(true);
+		expect(status.stale).toBe(false);
 		const staleDiagnostics = (status.diagnostics as { code: string }[]).filter((d) => d.code === "stale-index");
 		expect(staleDiagnostics).toHaveLength(0);
 		expect(status.components).toBeDefined();
@@ -198,6 +202,66 @@ describe("runRefresh --method", () => {
 		expect(blob).not.toContain(root);
 		const parsed = JSON.parse(blob);
 		expect(parsed.counts).toBeDefined();
+		expect(parsed.minsync).toBeDefined();
+		expect(typeof parsed.minsync.ok).toBe("boolean");
+	});
+
+	it("surfaces minsync failure in refresh JSON envelope when minsync embedder fails", async () => {
+		// The CLI config ignores a persisted `minSync.binaryPath`: MinSync is resolved
+		// from PATH and the workspace cache. The fixture therefore owns PATH, which
+		// also keeps the test independent of a real `minsync` on the developer's box.
+		// PATH injection of a shebang fixture is POSIX-only; the same failure path is
+		// covered cross-platform by test/agent/refresh-status.test.ts.
+		if (process.platform === "win32") return;
+
+		const fakeBinDir = join(root, "fake-bin");
+		mkdirSync(fakeBinDir, { recursive: true });
+		const fakeBinary = join(fakeBinDir, "minsync");
+		writeFileSync(
+			fakeBinary,
+			`#!/usr/bin/env node
+const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
+
+const args = process.argv.slice(2);
+const config = join(process.cwd(), ".minsync", "config.toml");
+if (args[0] === "init") {
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
+  console.log(JSON.stringify({ initialized: true }));
+  process.exit(0);
+}
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false }));
+  process.exit(0);
+}
+process.exit(2);
+`,
+		);
+		chmodSync(fakeBinary, 0o755);
+		process.env.PATH = `${fakeBinDir}${delimiter}${previousPath ?? ""}`;
+
+		writeConfig({
+			workspacePath: join(root, ".autorag", "minsync"),
+			autoInstall: false,
+		});
+
+		const refreshOut: string[] = [];
+		const refreshCode = await runRefresh(makeCtx({ stdout: (line) => refreshOut.push(line) }));
+		expect(refreshCode).toBe(0);
+		expect(refreshOut).toHaveLength(1);
+
+		const parsed = JSON.parse(refreshOut[0]);
+		expect(parsed.ok).toBe(false);
+		expect(parsed.minsync).toBeDefined();
+		expect(parsed.minsync.ok).toBe(false);
+		expect(parsed.minsync.reason).toContain("check-failed");
+		expect(
+			parsed.diagnostics.some(
+				(d: { code: string; source?: string }) => d.code === "embedder-unavailable" && d.source === "minsync",
+			),
+		).toBe(true);
+		expect(refreshOut[0]).not.toContain(root);
 	});
 
 	it("refreshes with all methods when --method all is given", async () => {
