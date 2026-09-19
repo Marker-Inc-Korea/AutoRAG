@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { releaseRuntimeHandles } from "../../embedding-runtime/index.ts";
 import { resolveConfigPath, resolveConfigReadOnly, writeDefaultConfig } from "../config.ts";
 import { renderError } from "../output.ts";
 import { runSetup } from "../setup.ts";
@@ -33,6 +34,8 @@ export async function runSetupCommand(ctx: CommandContext): Promise<number> {
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 1;
+	} finally {
+		await releaseRuntimeHandles();
 	}
 }
 function renderSetup(report: Awaited<ReturnType<typeof runSetup>>): string {

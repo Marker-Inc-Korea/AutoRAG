@@ -5,6 +5,7 @@ import { createEmbeddingRuntime, type RuntimeStatus } from "../embedding-runtime
 import { resolveProfile } from "../embedding-runtime/manifest.ts";
 import type { ProfileId } from "../embedding-runtime/types.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { DEFAULT_MINSYNC_EMBEDDER_DIMENSION, DEFAULT_MINSYNC_EMBEDDER_ID } from "../minsync/embedder-config.ts";
 import { readRawConfigObject, writeConfigObject } from "./config.ts";
 
 export type SetupDatasourceState = "configured" | "skipped" | "blocked";
@@ -36,6 +37,7 @@ export interface SetupRuntime {
 		profile: ReturnType<typeof resolveProfile>;
 		identity: { provider: string; model: string; dimension: number; profileId: ProfileId };
 	}>;
+	releaseRuntimeHandles?(): Promise<void>;
 }
 export interface SetupDeps {
 	readonly runtime?: SetupRuntime;
@@ -149,6 +151,7 @@ export async function runSetup(options: {
 			retryMs: 10,
 			timeoutError: () => new Error("Timed out waiting for setup lock"),
 		});
+	let runtime: SetupRuntime | undefined;
 	try {
 		const raw = readRawConfigObject(options.configPath);
 		const configuredProfile = (raw.minSync as Record<string, unknown> | undefined)?.embedder;
@@ -159,7 +162,7 @@ export async function runSetup(options: {
 			typeof (configuredProfile as Record<string, unknown>).profile === "string"
 				? ((configuredProfile as Record<string, unknown>).profile as ProfileId)
 				: PROFILE);
-		const runtime =
+		runtime =
 			options.deps?.runtime ??
 			createEmbeddingRuntime({ cacheRoot: home, offline: env.AUTORAG_OFFLINE === "1", fetch: fetch });
 		const [runtimeResult, modelResult] = await Promise.allSettled([
@@ -241,13 +244,18 @@ export async function runSetup(options: {
 			const nextEmbedder =
 				Object.keys(embedder).length > 0
 					? embedder
-					: {
-							id: profile.model,
-							profile: profile.profileId,
-							dimension: profile.dimension,
-							queryPrefix: profile.queryPrefix,
-							passagePrefix: profile.passagePrefix,
-						};
+					: options.profileId !== undefined
+						? {
+								id: profile.model,
+								profile: profile.profileId,
+								dimension: profile.dimension,
+								queryPrefix: profile.queryPrefix,
+								passagePrefix: profile.passagePrefix,
+							}
+						: {
+								id: DEFAULT_MINSYNC_EMBEDDER_ID,
+								dimension: DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
+							};
 			const next = {
 				...raw,
 				minSync: {
@@ -298,5 +306,8 @@ export async function runSetup(options: {
 		};
 	} finally {
 		lock.release();
+		if (options.deps?.runtime === undefined && runtime && typeof runtime.releaseRuntimeHandles === "function") {
+			await runtime.releaseRuntimeHandles();
+		}
 	}
 }

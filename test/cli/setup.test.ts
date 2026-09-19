@@ -93,6 +93,11 @@ describe("setup orchestration", () => {
 			health: true,
 			model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
 		});
+		const config = JSON.parse(readFileSync(configPath, "utf8"));
+		expect(config.minSync.embedder).toEqual({
+			id: "native:Qwen/Qwen3-Embedding-0.6B",
+			dimension: 1024,
+		});
 	});
 
 	it("never requires an env credential for a CLI-backed datasource", async () => {

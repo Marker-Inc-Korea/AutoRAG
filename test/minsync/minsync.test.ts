@@ -133,7 +133,7 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("MinSyncClient", () => {
-	it("uses the official v0.4.2 query command with its selected mode", async () => {
+	it("uses the official v0.4.5 query command with its selected mode", async () => {
 		// Given
 		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
 		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
@@ -1391,6 +1391,28 @@ if (args[0] === "sync") process.exit(1);
 		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
 	});
 
+	it("defaults to in-process native Qwen3 embeddings (1024d) without starting the gateway", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		const result = await method.sync();
+		expect(result.ok).toBe(true);
+
+		const identity = JSON.parse(
+			readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"),
+		);
+		expect(identity).toMatchObject({
+			provider: "native",
+			model: "Qwen/Qwen3-Embedding-0.6B",
+			dimension: 1024,
+			runtimeBuild: "minsync-native",
+		});
+	});
+
 	it("does not throw on missing binary during sync; returns ok:false degrade result", async () => {
 		const savedPath = process.env.PATH;
 		process.env.PATH = "/nonexistent";
@@ -1480,6 +1502,55 @@ describe("AutoRAG embedding runtime integration", () => {
 		expect(identity).toMatchObject({ provider: "qwen", dimension: 1024, runtimeBuild: "b10951" });
 	});
 
+	it("keeps using the runtime for a profile config that also carries the profile's model id", async () => {
+		// `autorag setup` wrote `{ id: <profile model>, profile, dimension, prefixes }` before
+		// native embeddings became the default. Such a workspace must keep resolving through
+		// the gateway instead of handing MinSync a bare model file name with no endpoint.
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			runtime,
+			embedder: {
+				id: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+				profile: "qwen3-embedding-0.6b",
+				dimension: 1024,
+				queryPrefix: "",
+				passagePrefix: "",
+			},
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder).toMatchObject({
+			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+			base_url: "http://127.0.0.1:43123",
+		});
+	});
+
+	it("keeps an operator endpoint without an id instead of forcing native embeddings", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[embedder]\nid = "tei:google/embeddinggemma-300m"\nbase_url = "http://127.0.0.1:18080"\n\n[vectorstore.options]\ndimension = 768\n`,
+		);
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { baseUrl: "http://127.0.0.1:18080", dimension: 768 },
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder?.base_url).toBe("http://127.0.0.1:18080");
+		expect(config.embedder?.id).toBe("tei:google/embeddinggemma-300m");
+	});
+
 	it("keeps operator batching settings when a profile selects the runtime", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		const result = await new MinSyncClient({
@@ -1556,5 +1627,33 @@ dimension = 1536
 		expect(rewritten.embedder?.id).toBe("new-id");
 		expect(rewritten.embedder?.base_url).toBe("https://old.example.com");
 		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(1536);
+	});
+
+	it("strips base_url and prefixes when switching to native embedding", () => {
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[embedder]
+id = "tei:google/embeddinggemma-300m"
+base_url = "http://127.0.0.1:8080"
+query_prefix = "task: search result | query: "
+passage_prefix = "title: none | text: "
+
+[vectorstore.options]
+dimension = 768
+`,
+		);
+
+		rewriteEmbedderConfig(minsyncWorkspace, { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 });
+
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(rewritten.embedder?.id).toBe("native:Qwen/Qwen3-Embedding-0.6B");
+		expect(rewritten.embedder?.base_url).toBeUndefined();
+		expect(rewritten.embedder?.query_prefix).toBeUndefined();
+		expect(rewritten.embedder?.passage_prefix).toBeUndefined();
+		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(1024);
 	});
 });
