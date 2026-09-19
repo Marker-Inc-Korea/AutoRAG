@@ -7,7 +7,7 @@ export const SEARCH_ALL_DOCUMENTS_TOOL_NAME = "search_all_documents";
 
 const searchAllSchema = Type.Object({
 	query: Type.String({ description: "Query to search across all configured retrieval methods." }),
-	topK: Type.Optional(Type.Integer({ description: "Maximum number of merged results to return." })),
+	topK: Type.Optional(Type.Integer({ description: "Maximum number of merged results to return. Defaults to 50." })),
 	scope: Type.Optional(Type.String({ description: "Optional opaque virtual-path scope, e.g. /docs or /docs/**." })),
 });
 

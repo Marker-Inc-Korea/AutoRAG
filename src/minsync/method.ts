@@ -172,7 +172,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		const topK = options.topK ?? 20;
+		const topK = options.topK ?? 50;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		const binaryResult = await this.resolveBinary();
