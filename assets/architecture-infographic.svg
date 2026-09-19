@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#111827" />
+    </linearGradient>
+    <linearGradient id="cardGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95" />
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+    <filter id="glow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <style>
+    .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 800; font-size: 32px; fill: #ffffff; }
+    .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 400; font-size: 16px; fill: #94a3b8; }
+    .box-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 700; font-size: 16px; fill: #f8fafc; }
+    .box-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 400; font-size: 12px; fill: #94a3b8; }
+    .step-num { font-family: ui-monospace, monospace; font-weight: 700; font-size: 14px; fill: #38bdf8; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+  </style>
+
+  <rect width="1200" height="800" fill="url(#bg2)" />
+
+  <!-- Ambient background glow -->
+  <circle cx="600" cy="400" r="300" fill="#6366f1" opacity="0.05" filter="url(#glow2)" />
+  <circle cx="200" cy="300" r="200" fill="#0ea5e9" opacity="0.04" filter="url(#glow2)" />
+
+  <!-- Header -->
+  <g transform="translate(600, 50)" text-anchor="middle">
+    <text y="0" class="title">AutoRAG Agent Architecture &amp; Lifecycle</text>
+    <text y="30" class="subtitle">How a query flows through memory, multi-method retrieval, bash verification, and curation</text>
+  </g>
+
+  <!-- Query Box (Top) -->
+  <g transform="translate(420, 110)">
+    <rect width="360" height="54" rx="27" fill="#1e293b" stroke="#38bdf8" stroke-width="2" />
+    <text x="30" y="33" class="mono" fill="#38bdf8" font-size="14">💬 "Summarize Q3 cloud contract changes"</text>
+  </g>
+
+  <!-- Down Arrow 1 -->
+  <path d="M600 164 V195" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" />
+  <polygon points="596,195 600,203 604,195" fill="#38bdf8" />
+
+  <!-- AutoRAG Agent Main Container -->
+  <g transform="translate(80, 205)">
+    <rect width="1040" height="430" rx="20" fill="url(#cardGrad2)" stroke="#334155" stroke-width="1.5" />
+    
+    <!-- Header inside Agent Container -->
+    <g transform="translate(24, 28)">
+      <rect width="180" height="28" rx="6" fill="#1e293b" stroke="#6366f1" />
+      <text x="90" y="19" class="mono" fill="#818cf8" text-anchor="middle" font-weight="700">AutoRAGAgent Loop (Pi)</text>
+      <text x="200" y="20" class="box-desc">Single configured model drives the entire investigation</text>
+    </g>
+
+    <!-- Phase 1: Adaptive Memory Query -->
+    <g transform="translate(24, 75)">
+      <rect width="210" height="95" rx="12" fill="#111827" stroke="#334155" />
+      <text x="14" y="26" class="step-num">01. Strategy &amp; Memory</text>
+      <text x="14" y="48" class="box-title" font-size="14">check_memory</text>
+      <text x="14" y="68" class="box-desc">Recalls successful queries</text>
+      <text x="14" y="82" class="box-desc">&amp; retrieval method priority</text>
+    </g>
+
+    <!-- Connector: Memory -> Retrieval -->
+    <path d="M234 122 H266" stroke="#6366f1" stroke-width="2" />
+    <polygon points="266,118 274,122 266,126" fill="#6366f1" />
+
+    <!-- Phase 2: Parallel Multi-Method Retrieval -->
+    <g transform="translate(276, 65)">
+      <rect width="470" height="195" rx="14" fill="#111827" stroke="#475569" />
+      <text x="16" y="26" class="step-num">02. Parallel Multi-Method Retrieval</text>
+      <text x="16" y="45" class="box-desc">Fan-out across local and federated sources simultaneously</text>
+
+      <!-- Sub-grid of retrieval methods -->
+      <g transform="translate(16, 58)">
+        <rect width="210" height="52" rx="8" fill="#1e293b" stroke="#334155" />
+        <text x="12" y="22" class="box-title" font-size="13">MinSync BM25</text>
+        <text x="12" y="40" class="box-desc">Shared CDC lexical index</text>
+      </g>
+      <g transform="translate(238, 58)">
+        <rect width="210" height="52" rx="8" fill="#1e293b" stroke="#334155" />
+        <text x="12" y="22" class="box-title" font-size="13">MinSync Semantic</text>
+        <text x="12" y="40" class="box-desc">Local Embedding Gateway</text>
+      </g>
+      <g transform="translate(16, 122)">
+        <rect width="210" height="54" rx="8" fill="#1e293b" stroke="#334155" />
+        <text x="12" y="22" class="box-title" font-size="13">Jikji Find-First</text>
+        <text x="12" y="40" class="box-desc">CLI answer pack &amp; hints</text>
+      </g>
+      <g transform="translate(238, 122)">
+        <rect width="210" height="54" rx="8" fill="#1e293b" stroke="#334155" />
+        <text x="12" y="22" class="box-title" font-size="13">Datasource Skills</text>
+        <text x="12" y="40" class="box-desc">Slack, Discord, Mail, Notion, Drive</text>
+      </g>
+    </g>
+
+    <!-- Connector: Retrieval -> Merger -->
+    <path d="M746 162 H778" stroke="#6366f1" stroke-width="2" />
+    <polygon points="778,158 786,162 778,166" fill="#6366f1" />
+
+    <!-- Result Merger & Filter -->
+    <g transform="translate(788, 65)">
+      <rect width="224" height="195" rx="14" fill="#111827" stroke="#334155" />
+      <text x="16" y="26" class="step-num">03. Merge &amp; Filter</text>
+      <text x="16" y="48" class="box-title" font-size="14">ResultMerger</text>
+      <text x="16" y="70" class="box-desc">• Score normalization (RRF)</text>
+      <text x="16" y="90" class="box-desc">• Near-duplicate dedupe</text>
+      <text x="16" y="110" class="box-desc">• Default-deny scope gating</text>
+      <text x="16" y="130" class="box-desc">• Source-native path identities</text>
+      <rect x="16" y="150" width="192" height="28" rx="6" fill="#1e293b" />
+      <text x="24" y="169" class="mono" fill="#34d399" font-size="11">Bounded candidate list</text>
+    </g>
+
+    <!-- Down to Verification & Curation -->
+    <path d="M900 260 V285" stroke="#38bdf8" stroke-width="2" />
+    <polygon points="896,285 900,293 904,285" fill="#38bdf8" />
+
+    <!-- Phase 4: Direct Verification (Bash Tool) -->
+    <g transform="translate(276, 290)">
+      <rect width="470" height="110" rx="14" fill="#111827" stroke="#0284c7" stroke-width="1.5" />
+      <text x="16" y="24" class="step-num" fill="#38bdf8">04. Direct Source Verification (Real File Reading)</text>
+      <text x="16" y="46" class="box-title" font-size="14">Built-in bash Tool: ls, find, cat, grep</text>
+      <text x="16" y="68" class="box-desc">The librarian agent opens real files directly. It does not blindly trust chunk fragments.</text>
+      <text x="16" y="86" class="box-desc">Inspects surrounding context, verifies dates, resolves conflicts, and verifies truth.</text>
+    </g>
+
+    <!-- Phase 5: Curation & Judgment -->
+    <g transform="translate(788, 290)">
+      <rect width="224" height="110" rx="14" fill="#111827" stroke="#10b981" stroke-width="1.5" />
+      <text x="14" y="24" class="step-num" fill="#34d399">05. Curation &amp; Synthesis</text>
+      <text x="14" y="46" class="box-title" font-size="14">emit_autorag_results</text>
+      <text x="14" y="68" class="box-desc">Extracts actionable knowledge</text>
+      <text x="14" y="86" class="box-desc">Structures numbered findings</text>
+    </g>
+
+    <!-- Arrow from Merger to Verification -->
+    <path d="M788 345 H746" stroke="#38bdf8" stroke-width="2" />
+    <polygon points="754,341 746,345 754,349" fill="#38bdf8" />
+
+    <!-- Arrow from Verification to Curation -->
+    <path d="M746 345 H788" stroke="#10b981" stroke-width="2" />
+    <polygon points="780,341 788,345 780,349" fill="#10b981" />
+  </g>
+
+  <!-- Output Section (Bottom) -->
+  <g transform="translate(180, 660)">
+    <rect width="840" height="95" rx="14" fill="#111827" stroke="#34d399" stroke-width="2" />
+    <text x="24" y="30" class="box-title" fill="#34d399">Numbered Knowledge Units (Ground Truth)</text>
+    <text x="24" y="52" class="mono" fill="#f8fafc">[1] AWS discount tier bumped to 28% for enterprise compute. (contracts/cloud-2026.pdf:p.4)</text>
+    <text x="24" y="74" class="mono" fill="#f8fafc">[2] Data residency clause pinned to Seoul region. (/slack/legal-review/chunks/318)</text>
+  </g>
+
+  <!-- Feedback Return Loop to Memory -->
+  <path d="M180 705 H120 V252 H104" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5 5" />
+  <polygon points="108,248 100,252 108,256" fill="#f59e0b" />
+  <text x="135" y="470" class="mono" fill="#fbbf24" font-size="11" transform="rotate(-90, 135, 470)">Feedback: agent.recordFeedback()</text>
+</svg>
