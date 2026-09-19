@@ -25,6 +25,9 @@ export function terminateProcessTree(child: ChildProcess, signal: NodeJS.Signals
 	if (process.platform === "win32") {
 		const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
 		killer.on("error", () => killDirectChild(child, signal));
+		killer.on("close", (code) => {
+			if (code !== 0) killDirectChild(child, signal);
+		});
 		return true;
 	}
 	try {
