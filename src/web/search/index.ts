@@ -12,6 +12,7 @@
  * instead of a settings singleton, and there is no TUI rendering layer.
  */
 import { formatForLLM, hasRenderableSearchContent, WEB_SEARCH_SYSTEM_PROMPT } from "./format.ts";
+import type { ModelNativeSearchAuth } from "./model-auth.ts";
 import {
 	formatSearchProviderFailure,
 	formatSearchProviderFailures,
@@ -54,6 +55,18 @@ export interface WebSearchExecuteOptions {
 	signal?: AbortSignal;
 	/** Per-provider transport hard timeout in milliseconds (default 60s, capped at 300s). */
 	timeoutMs?: number;
+	/**
+	 * Budget for the whole fallback chain in milliseconds (default: twice the
+	 * per-provider timeout). Without it a chain of stalled providers costs one
+	 * per-provider timeout each and the tool call looks hung.
+	 */
+	totalTimeoutMs?: number;
+	/** Prioritized providers for this request; unlisted providers keep their built-in order. */
+	order?: readonly SearchProviderId[];
+	/** Providers this request must never use, including fallbacks. */
+	exclude?: readonly SearchProviderId[];
+	/** Agent model credential for the model-native providers (per request, never global). */
+	modelAuth?: ModelNativeSearchAuth;
 	/** Transport injection for tests/proxies; forwarded to providers that accept it. */
 	fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
@@ -65,6 +78,16 @@ function resolveTimeoutMs(timeoutMs: number | undefined): number {
 	return Math.min(timeoutMs, MAX_WEB_SEARCH_TIMEOUT_SECONDS * 1_000);
 }
 
+/** The whole chain gets twice one provider's budget unless the caller sets its own. */
+const TOTAL_TIMEOUT_MULTIPLIER = 2;
+
+function resolveTotalTimeoutMs(totalTimeoutMs: number | undefined, perProviderMs: number): number {
+	if (totalTimeoutMs === undefined || !Number.isFinite(totalTimeoutMs) || totalTimeoutMs <= 0) {
+		return perProviderMs * TOTAL_TIMEOUT_MULTIPLIER;
+	}
+	return totalTimeoutMs;
+}
+
 /** Execute a web search through the provider fallback chain. */
 export async function executeWebSearch(
 	params: WebSearchQueryParams,
@@ -72,17 +95,20 @@ export async function executeWebSearch(
 ): Promise<WebSearchExecuteResult> {
 	const { signal } = options;
 	const explicitProvider = params.provider;
+	const routing = { order: options.order, exclude: options.exclude };
 	let candidates: SearchProviderCandidate[];
 	if (explicitProvider && explicitProvider !== "auto") {
 		candidates = [{ id: explicitProvider, explicit: true }];
 	} else {
-		// `auto` and the default both walk the configured chain;
+		// `auto` and the default both walk the caller's chain;
 		// exclusions still apply.
-		candidates = resolveProviderCandidates();
+		candidates = resolveProviderCandidates(routing);
 	}
 
 	const parsedQuery = parseSearchQuery(params.query);
 	const timeoutMs = resolveTimeoutMs(options.timeoutMs);
+	const availabilityContext = { modelAuth: options.modelAuth };
+	const chainDeadline = Date.now() + resolveTotalTimeoutMs(options.totalTimeoutMs, timeoutMs);
 
 	const failures: Array<{ provider: Pick<SearchProviderContract, "id" | "label">; error: unknown }> = [];
 	let availableProviderCount = 0;
@@ -91,13 +117,22 @@ export async function executeWebSearch(
 		let provider: SearchProviderContract | undefined;
 		const providerMeta = { id: candidate.id, label: getSearchProviderLabel(candidate.id) };
 		lastProvider = providerMeta;
+		const remainingMs = chainDeadline - Date.now();
+		if (remainingMs <= 0) {
+			failures.push({
+				provider: providerMeta,
+				error: new SearchProviderError(candidate.id, "Web search deadline elapsed before this provider ran.", 504),
+			});
+			break;
+		}
 		try {
 			provider = await getSearchProvider(candidate.id);
 			// Plain-object providers (test fakes, host embeddings) may skip the
 			// `isExplicitlyAvailable` override; it defaults to `isAvailable`.
 			const available = candidate.explicit
-				? ((await provider.isExplicitlyAvailable?.()) ?? (await provider.isAvailable()))
-				: await provider.isAvailable();
+				? ((await provider.isExplicitlyAvailable?.(availabilityContext)) ??
+					(await provider.isAvailable(availabilityContext)))
+				: await provider.isAvailable(availabilityContext);
 			if (!available && !candidate.explicit) continue;
 			if (!available && candidate.explicit) {
 				throw new SearchProviderError(
@@ -118,8 +153,10 @@ export async function executeWebSearch(
 				numSearchResults: params.num_search_results,
 				temperature: params.temperature,
 				signal,
-				timeoutMs,
+				timeoutMs: Math.min(timeoutMs, remainingMs),
 				fetch: options.fetch,
+				...(options.modelAuth !== undefined ? { modelAuth: options.modelAuth } : {}),
+				...(options.exclude !== undefined ? { excludedProviders: options.exclude } : {}),
 			});
 
 			// Lenient constraint pass over whatever the provider returned: enforce
@@ -182,6 +219,6 @@ export async function executeWebSearch(
 	};
 }
 
-export { getSearchProvider, setExcludedSearchProviders, setSearchProviderOrder } from "./provider.ts";
+export { getSearchProvider, type SearchProviderRouting } from "./provider.ts";
 export type { SearchProviderId, SearchResponse } from "./types.ts";
 export { isSearchProviderId, isSearchProviderPreference } from "./types.ts";

@@ -13,7 +13,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { WEB_SEARCH_TOOL_DESCRIPTION } from "../web/search/format.ts";
 import { executeWebSearch } from "../web/search/index.ts";
-import { setExcludedSearchProviders, setSearchProviderOrder } from "../web/search/provider.ts";
+import type { ModelNativeSearchAuth } from "../web/search/model-auth.ts";
 import type { SearchProviderId } from "../web/search/types.ts";
 
 export const WEB_SEARCH_TOOL_NAME = "web_search";
@@ -41,6 +41,12 @@ export interface WebSearchToolOptions {
 	readonly exclude?: readonly SearchProviderId[];
 	/** Per-provider transport hard timeout in seconds (default 60, max 300). */
 	readonly timeoutSeconds?: number;
+	/**
+	 * Agent model credential for the model-native providers, read per call so
+	 * the tool follows its own agent's session model and never another
+	 * agent's. Returning undefined leaves the env-key fallback in charge.
+	 */
+	readonly modelAuth?: () => ModelNativeSearchAuth | undefined;
 }
 
 export interface WebSearchToolDetails {
@@ -55,9 +61,6 @@ export interface WebSearchToolDetails {
 export function createWebSearchTool(
 	options: WebSearchToolOptions = {},
 ): AgentTool<typeof webSearchSchema, WebSearchToolDetails> {
-	if (options.order && options.order.length > 0) setSearchProviderOrder(options.order);
-	if (options.exclude && options.exclude.length > 0) setExcludedSearchProviders(options.exclude);
-
 	return {
 		name: WEB_SEARCH_TOOL_NAME,
 		label: "Web Search",
@@ -91,6 +94,11 @@ export function createWebSearchTool(
 				{
 					signal,
 					timeoutMs: options.timeoutSeconds !== undefined ? options.timeoutSeconds * 1_000 : undefined,
+					// Routing and credentials stay on this tool instance: two
+					// agents in one process must not rewrite each other's chain.
+					...(options.order !== undefined ? { order: options.order } : {}),
+					...(options.exclude !== undefined ? { exclude: options.exclude } : {}),
+					...(options.modelAuth?.() !== undefined ? { modelAuth: options.modelAuth() } : {}),
 				},
 			);
 			const response = result.details.response;

@@ -3,7 +3,7 @@
  * `packages/coding-agent/src/tools/fetch.ts` (MIT licensed).
  */
 
-import { type LoadPageResult, loadPage, looksLikeHtml } from "./page-loader.ts";
+import { type FetchImpl, type LoadPageResult, loadPage, looksLikeHtml } from "./page-loader.ts";
 import { normalizeMime } from "./url-target.ts";
 
 /**
@@ -35,7 +35,12 @@ export function buildLlmEndpointCandidates(url: string): string[] {
 /**
  * Try fetching URL with .md appended (llms.txt convention).
  */
-export async function tryMdSuffix(url: string, timeout: number, signal?: AbortSignal): Promise<string | null> {
+export async function tryMdSuffix(
+	url: string,
+	timeout: number,
+	signal?: AbortSignal,
+	fetchImpl?: FetchImpl,
+): Promise<string | null> {
 	const candidates: string[] = [];
 
 	try {
@@ -61,7 +66,7 @@ export async function tryMdSuffix(url: string, timeout: number, signal?: AbortSi
 		if (signal?.aborted) {
 			return null;
 		}
-		const result = await loadPage(candidate, { timeout, signal });
+		const result = await loadPage(candidate, { timeout, signal, ...(fetchImpl ? { fetch: fetchImpl } : {}) });
 		if (result.ok && result.content.trim().length > 100 && !looksLikeHtml(result.content)) {
 			return result.content;
 		}
@@ -77,6 +82,7 @@ export async function tryLlmEndpoints(
 	url: string,
 	timeout: number,
 	signal?: AbortSignal,
+	fetchImpl?: FetchImpl,
 ): Promise<{ content: string; endpoint: string } | null> {
 	const endpoints = buildLlmEndpointCandidates(url);
 
@@ -88,7 +94,11 @@ export async function tryLlmEndpoints(
 		if (signal?.aborted) {
 			return null;
 		}
-		const result = await loadPage(endpoint, { timeout: Math.min(timeout, 5), signal });
+		const result = await loadPage(endpoint, {
+			timeout: Math.min(timeout, 5),
+			signal,
+			...(fetchImpl ? { fetch: fetchImpl } : {}),
+		});
 		if (result.ok && result.content.trim().length > 100 && !looksLikeHtml(result.content)) {
 			return { content: result.content, endpoint };
 		}
@@ -103,6 +113,7 @@ export async function tryContentNegotiation(
 	url: string,
 	timeout: number,
 	signal?: AbortSignal,
+	fetchImpl?: FetchImpl,
 ): Promise<{ content: string; type: string } | null> {
 	if (signal?.aborted) {
 		return null;
@@ -114,6 +125,7 @@ export async function tryContentNegotiation(
 			timeout,
 			headers: { Accept: "text/markdown, text/plain;q=0.9, text/html;q=0.8" },
 			signal,
+			...(fetchImpl ? { fetch: fetchImpl } : {}),
 		});
 	} catch {
 		return null;

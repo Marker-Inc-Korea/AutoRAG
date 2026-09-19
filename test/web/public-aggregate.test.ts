@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-	clearRegisteredSearchProviders,
-	registerSearchProvider,
-	setExcludedSearchProviders,
-} from "../../src/web/search/provider.ts";
+import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SearchProvider } from "../../src/web/search/providers/base.ts";
 import { searchPublicWeb } from "../../src/web/search/providers/public.ts";
 import type { SearchProviderId, SearchResponse, SearchSource } from "../../src/web/search/types.ts";
@@ -48,7 +44,6 @@ function registerEmptyExcept(overrides: Partial<Record<(typeof ENGINE_IDS)[numbe
 
 afterEach(() => {
 	vi.useRealTimers();
-	setExcludedSearchProviders([]);
 	clearRegisteredSearchProviders();
 });
 
@@ -160,8 +155,38 @@ describe("Public Web aggregate", () => {
 		);
 	});
 
-	it("respects exclusions and rejects when every public engine is excluded", async () => {
-		setExcludedSearchProviders([...ENGINE_IDS]);
-		await expect(searchPublicWeb({ query: "nothing" })).rejects.toMatchObject({ provider: "public", status: 400 });
+	it("respects per-request exclusions and rejects when every public engine is excluded", async () => {
+		await expect(searchPublicWeb({ query: "nothing", excludedProviders: [...ENGINE_IDS] })).rejects.toMatchObject({
+			provider: "public",
+			status: 400,
+		});
+	});
+
+	it("does not let an immediate empty engine cut off a slower engine with results", async () => {
+		vi.useFakeTimers();
+		let resolveLate: (value: SearchResponse) => void = () => {};
+		const late = new Promise<SearchResponse>((resolve) => {
+			resolveLate = resolve;
+		});
+		// Scraped engines answer HTTP 200 with zero parsed results routinely;
+		// that must not count as the fan-out's first success.
+		register("startpage", () => Promise.resolve(response("startpage", [])));
+		register("google", () => late);
+		for (const id of ENGINE_IDS.slice(3)) register(id, () => Promise.reject(new Error("blocked")));
+		register("duckduckgo", () => Promise.reject(new Error("blocked")));
+
+		const pending = searchPublicWeb({ query: "empty first" }, { softMs: 10, hardMs: 100 });
+		await vi.advanceTimersByTimeAsync(10);
+		let settled = false;
+		void pending.finally(() => {
+			settled = true;
+		});
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		resolveLate(response("google", [{ title: "Late", url: "https://example.com/late" }]));
+		await expect(pending).resolves.toMatchObject({
+			sources: [{ title: "Late", url: "https://example.com/late" }],
+		});
 	});
 });

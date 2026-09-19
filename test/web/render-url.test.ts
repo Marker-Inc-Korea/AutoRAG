@@ -28,6 +28,27 @@ describe("renderUrl", () => {
 		expect(result.content).toContain("# Title");
 	});
 
+	it("routes the primary page load through an injected transport", async () => {
+		const base = await serve((_request, response) => {
+			response.writeHead(200, { "Content-Type": "text/html" });
+			response.end(`<html><body><p>server body that must not be read</p></body></html>`);
+		});
+		const requested: string[] = [];
+		const result = await renderUrl(base, {
+			timeoutSeconds: 2,
+			fetch: (async (input: string | URL | Request) => {
+				requested.push(String(input));
+				return new Response(`<html><body><h1>Injected</h1><p>${longText}</p></body></html>`, {
+					status: 200,
+					headers: { "content-type": "text/html" },
+				});
+			}) as typeof fetch,
+		});
+		expect(requested[0]).toContain("127.0.0.1");
+		expect(result.content).toContain("# Injected");
+		expect(result.content).not.toContain("must not be read");
+	});
+
 	it("uses a markdown alternate link", async () => {
 		const base = await serve((request, response) => {
 			if (request.url === "/page.md") {

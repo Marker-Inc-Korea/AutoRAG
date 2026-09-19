@@ -6,6 +6,7 @@
  * broker; AutoRAG providers read their documented environment variables
  * directly (see `../credentials.ts`), so `isAvailable` takes no arguments.
  */
+import type { ModelNativeSearchAuth } from "../model-auth.ts";
 import type { StructuredQuery } from "../query.ts";
 import type { SearchProviderId, SearchResponse } from "../types.ts";
 
@@ -51,6 +52,18 @@ export interface SearchParams {
 	maxOutputTokens?: number;
 	numSearchResults?: number;
 	temperature?: number;
+	/**
+	 * Agent model credential for the model-native providers, carried per
+	 * request so concurrent agents never share one process-wide key.
+	 */
+	modelAuth?: ModelNativeSearchAuth;
+	/** Providers this request must not use, including inside the `public` fan-out. */
+	excludedProviders?: readonly SearchProviderId[];
+}
+
+/** Per-request context consulted by provider availability checks. */
+export interface SearchAvailabilityContext {
+	readonly modelAuth?: ModelNativeSearchAuth;
 }
 
 /**
@@ -62,8 +75,8 @@ export interface SearchParams {
 export interface SearchProviderContract {
 	readonly id: SearchProviderId;
 	readonly label: string;
-	isAvailable(): Promise<boolean> | boolean;
-	isExplicitlyAvailable?(): Promise<boolean> | boolean;
+	isAvailable(context?: SearchAvailabilityContext): Promise<boolean> | boolean;
+	isExplicitlyAvailable?(context?: SearchAvailabilityContext): Promise<boolean> | boolean;
 	search(params: SearchParams): Promise<SearchResponse>;
 }
 
@@ -81,7 +94,7 @@ export abstract class SearchProvider implements SearchProviderContract {
 	 * when the chain walks the order. Explicit selection uses
 	 * {@link isExplicitlyAvailable} instead.
 	 */
-	abstract isAvailable(): Promise<boolean> | boolean;
+	abstract isAvailable(context?: SearchAvailabilityContext): Promise<boolean> | boolean;
 
 	/**
 	 * Returns `true` when this provider should run when the user explicitly
@@ -92,8 +105,8 @@ export abstract class SearchProvider implements SearchProviderContract {
 	 *
 	 * Defaults to mirroring {@link isAvailable}.
 	 */
-	isExplicitlyAvailable(): Promise<boolean> | boolean {
-		return this.isAvailable();
+	isExplicitlyAvailable(context?: SearchAvailabilityContext): Promise<boolean> | boolean {
+		return this.isAvailable(context);
 	}
 
 	/**

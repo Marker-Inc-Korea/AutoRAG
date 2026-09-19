@@ -59,7 +59,7 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
-import { modelNativeAuthFromAgentModel, setModelNativeSearchAuth } from "../web/search/model-auth.ts";
+import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -324,6 +324,8 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	/** This agent's model credential for model-native web search (per instance, never shared). */
+	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
@@ -459,7 +461,9 @@ export class AutoRAGAgent {
 
 		const webSearchOption = options.webSearch;
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
-		const webSearchTool = webToolsEnabled ? createWebSearchTool(webSearchOption ?? {}) : undefined;
+		const webSearchTool = webToolsEnabled
+			? createWebSearchTool({ ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth })
+			: undefined;
 		const webFetchTool =
 			webToolsEnabled && webSearchOption?.fetch !== false
 				? createWebFetchTool(webSearchOption?.fetch ?? {})
@@ -832,14 +836,14 @@ export class AutoRAGAgent {
 			const resolved = this.resolveSessionModel();
 			// Model-native web search rides on the same model credential the
 			// agent loop uses — no separate search key (see web/search/model-auth).
-			setModelNativeSearchAuth(
-				modelNativeAuthFromAgentModel({
-					provider: resolved.model.provider,
-					...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
-					...(resolved.model.baseUrl !== undefined ? { baseUrl: resolved.model.baseUrl } : {}),
-					modelId: resolved.model.id,
-				}),
-			);
+			// It lives on the instance, never in module state, so a second agent
+			// in the same process cannot take over this agent's credential.
+			this.modelNativeSearchAuth = modelNativeAuthFromAgentModel({
+				provider: resolved.model.provider,
+				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+				...(resolved.model.baseUrl !== undefined ? { baseUrl: resolved.model.baseUrl } : {}),
+				modelId: resolved.model.id,
+			});
 			this.runLogger.write({
 				event: "search_started",
 				timestamp: new Date().toISOString(),

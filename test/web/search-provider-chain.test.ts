@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { executeWebSearch } from "../../src/web/search/index.ts";
-import {
-	clearRegisteredSearchProviders,
-	registerSearchProvider,
-	setExcludedSearchProviders,
-	setSearchProviderOrder,
-} from "../../src/web/search/provider.ts";
+import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import type { SearchParams, SearchProviderContract } from "../../src/web/search/providers/base.ts";
 import { classifyProviderHttpError, normalizeSearchText } from "../../src/web/search/providers/utils.ts";
 import {
@@ -15,9 +10,13 @@ import {
 	type SearchResponse,
 } from "../../src/web/search/types.ts";
 
-/** Exclude every built-in provider except `keep` so chain tests stay hermetic (no real network). */
-function isolateChainTo(...keep: SearchProviderId[]): void {
-	setExcludedSearchProviders(SEARCH_PROVIDER_ORDER.filter((id) => !keep.includes(id)));
+/**
+ * Routing for one call: run `ids` in order and exclude every other built-in
+ * provider, so chain tests stay hermetic (no real network) and carry their
+ * own configuration instead of mutating shared state.
+ */
+function chain(...ids: SearchProviderId[]): { order: SearchProviderId[]; exclude: SearchProviderId[] } {
+	return { order: ids, exclude: SEARCH_PROVIDER_ORDER.filter((id) => !ids.includes(id)) };
 }
 
 function fakeProvider(
@@ -42,15 +41,12 @@ function oneSourceResponse(provider: SearchProviderId): SearchResponse {
 
 afterEach(() => {
 	clearRegisteredSearchProviders();
-	setSearchProviderOrder([]);
-	setExcludedSearchProviders([]);
 });
 
 describe("executeWebSearch provider chain", () => {
 	it("returns the first available provider's response", async () => {
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["duckduckgo"]);
-		const result = await executeWebSearch({ query: "autorag librarian" });
+		const result = await executeWebSearch({ query: "autorag librarian" }, chain("duckduckgo"));
 		expect(result.details.error).toBeUndefined();
 		expect(result.details.response.provider).toBe("duckduckgo");
 		const text = result.content[0]?.text ?? "";
@@ -65,8 +61,7 @@ describe("executeWebSearch provider chain", () => {
 			}),
 		);
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["startpage", "duckduckgo"]);
-		const result = await executeWebSearch({ query: "quota fallback" });
+		const result = await executeWebSearch({ query: "quota fallback" }, chain("startpage", "duckduckgo"));
 		expect(result.details.error).toBeUndefined();
 		expect(result.details.response.provider).toBe("duckduckgo");
 	});
@@ -82,17 +77,55 @@ describe("executeWebSearch provider chain", () => {
 			),
 		);
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["startpage", "duckduckgo"]);
-		const result = await executeWebSearch({ query: "skip unavailable" });
+		const result = await executeWebSearch({ query: "skip unavailable" }, chain("startpage", "duckduckgo"));
 		expect(result.details.response.provider).toBe("duckduckgo");
 	});
 
 	it("treats a response with no renderable content as a failure and falls through", async () => {
 		registerSearchProvider(fakeProvider("startpage", async () => ({ provider: "startpage", sources: [] })));
 		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
-		setSearchProviderOrder(["startpage", "duckduckgo"]);
-		const result = await executeWebSearch({ query: "empty first" });
+		const result = await executeWebSearch({ query: "empty first" }, chain("startpage", "duckduckgo"));
 		expect(result.details.response.provider).toBe("duckduckgo");
+	});
+
+	it("treats search-attempt metadata without an answer or source as a failure", async () => {
+		// A model-native provider can report the queries it ran and nothing
+		// else; that is evidence of an attempt, not a result, so the chain must
+		// keep going instead of presenting it as the answer.
+		registerSearchProvider(
+			fakeProvider("startpage", async () => ({
+				provider: "startpage",
+				sources: [],
+				searchQueries: ["autorag librarian"],
+				relatedQuestions: ["what is autorag?"],
+			})),
+		);
+		registerSearchProvider(fakeProvider("duckduckgo", async () => oneSourceResponse("duckduckgo")));
+		const result = await executeWebSearch({ query: "metadata only" }, chain("startpage", "duckduckgo"));
+		expect(result.details.response.provider).toBe("duckduckgo");
+		expect(result.details.response.sources).toHaveLength(1);
+	});
+
+	it("stops the chain when the overall deadline elapses", async () => {
+		let secondCalled = false;
+		registerSearchProvider(
+			fakeProvider("startpage", async () => {
+				await new Promise((resolve) => setTimeout(resolve, 30));
+				throw new SearchProviderError("startpage", "startpage: 429 rate limited", 429);
+			}),
+		);
+		registerSearchProvider(
+			fakeProvider("duckduckgo", async () => {
+				secondCalled = true;
+				return oneSourceResponse("duckduckgo");
+			}),
+		);
+		const result = await executeWebSearch(
+			{ query: "deadline" },
+			{ ...chain("startpage", "duckduckgo"), totalTimeoutMs: 10 },
+		);
+		expect(secondCalled).toBe(false);
+		expect(result.details.error).toContain("deadline elapsed");
 	});
 
 	it("fails explicitly selected providers when they are unavailable", async () => {
@@ -113,9 +146,7 @@ describe("executeWebSearch provider chain", () => {
 				throw new SearchProviderError("duckduckgo", "duckduckgo bot challenge", 429);
 			}),
 		);
-		isolateChainTo("startpage", "duckduckgo");
-		setSearchProviderOrder(["startpage", "duckduckgo"]);
-		const result = await executeWebSearch({ query: "doomed" });
+		const result = await executeWebSearch({ query: "doomed" }, chain("startpage", "duckduckgo"));
 		expect(result.details.error).toContain("All web search providers failed");
 		expect(result.details.error).toContain("startpage");
 		expect(result.details.error).toContain("duckduckgo");
@@ -129,9 +160,10 @@ describe("executeWebSearch provider chain", () => {
 				return oneSourceResponse("duckduckgo");
 			}),
 		);
-		setSearchProviderOrder(["duckduckgo"]);
-		setExcludedSearchProviders([...SEARCH_PROVIDER_ORDER]);
-		const result = await executeWebSearch({ query: "excluded" });
+		const result = await executeWebSearch(
+			{ query: "excluded" },
+			{ order: ["duckduckgo"], exclude: [...SEARCH_PROVIDER_ORDER] },
+		);
 		expect(called).toBe(false);
 		expect(result.details.error).toBeDefined();
 	});
@@ -143,8 +175,7 @@ describe("executeWebSearch provider chain", () => {
 				sources: [{ title: "Off site", url: "https://other.example/page" }],
 			})),
 		);
-		setSearchProviderOrder(["duckduckgo"]);
-		const result = await executeWebSearch({ query: "anything site:example.com" });
+		const result = await executeWebSearch({ query: "anything site:example.com" }, chain("duckduckgo"));
 		// site:example.com would eliminate every result, so it is relaxed and noted.
 		expect(result.content[0]?.text).toContain("Note:");
 		expect(result.content[0]?.text).toContain("site:example.com");

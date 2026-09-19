@@ -83,7 +83,10 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 	url = normalizeUrl(url);
 
 	// Step 2: Fetch page
-	const response = await loadPage(url, { timeout, signal }).catch((err: unknown) => {
+	const load = (target: string, extra: { headers?: Record<string, string> } = {}) =>
+		loadPage(target, { timeout, signal, ...(fetchImpl ? { fetch: fetchImpl } : {}), ...extra });
+
+	const response = await load(url).catch((err: unknown) => {
 		if (signal?.aborted) throw err;
 		return {
 			content: "",
@@ -242,7 +245,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 		const markdownAlt = alternates.find((alt) => alt.endsWith(".md") || alt.includes("markdown"));
 		if (markdownAlt) {
 			const resolved = markdownAlt.startsWith("http") ? markdownAlt : new URL(markdownAlt, finalUrl).href;
-			const altResult = await loadPage(resolved, { timeout, signal });
+			const altResult = await load(resolved);
 			if (altResult.ok && altResult.content.trim().length > 100 && !looksLikeHtml(altResult.content)) {
 				notes.push(`Used markdown alternate: ${resolved}`);
 				const output = finalizeOutput(altResult.content);
@@ -260,7 +263,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 		}
 
 		// 5B: Try URL.md suffix
-		const mdSuffix = await tryMdSuffix(finalUrl, timeout, signal);
+		const mdSuffix = await tryMdSuffix(finalUrl, timeout, signal, fetchImpl);
 		if (mdSuffix) {
 			notes.push("Found .md suffix version");
 			const output = finalizeOutput(mdSuffix);
@@ -277,7 +280,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 		}
 
 		// 5C: Content negotiation
-		const negotiated = await tryContentNegotiation(url, timeout, signal);
+		const negotiated = await tryContentNegotiation(url, timeout, signal, fetchImpl);
 		if (negotiated) {
 			notes.push(`Content negotiation returned ${negotiated.type}`);
 			const output = finalizeOutput(negotiated.content);
@@ -297,7 +300,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 		const feedAlternates = alternates.filter((alt) => !alt.endsWith(".md") && !alt.includes("markdown"));
 		for (const altUrl of feedAlternates.slice(0, 2)) {
 			const resolved = altUrl.startsWith("http") ? altUrl : new URL(altUrl, finalUrl).href;
-			const altResult = await loadPage(resolved, { timeout, signal });
+			const altResult = await load(resolved);
 			if (altResult.ok && altResult.content.trim().length > 200) {
 				notes.push(`Used feed alternate: ${resolved}`);
 				const parsed = parseFeedToMarkdown(altResult.content);
@@ -330,7 +333,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 		if (!htmlResult.ok) {
 			notes.push("html rendering failed (no reader backend produced usable output)");
 
-			const llmResult = await tryLlmEndpoints(finalUrl, timeout, signal);
+			const llmResult = await tryLlmEndpoints(finalUrl, timeout, signal, fetchImpl);
 			if (llmResult) {
 				notes.push(`Used llms.txt fallback: ${llmResult.endpoint}`);
 				const output = finalizeOutput(llmResult.content);
@@ -392,7 +395,7 @@ export async function renderUrl(url: string, options: RenderUrlOptions = {}): Pr
 				}
 			}
 
-			const llmResult = await tryLlmEndpoints(finalUrl, timeout, signal);
+			const llmResult = await tryLlmEndpoints(finalUrl, timeout, signal, fetchImpl);
 			if (llmResult) {
 				notes.push(`Used llms.txt fallback: ${llmResult.endpoint}`);
 				const output = finalizeOutput(llmResult.content);

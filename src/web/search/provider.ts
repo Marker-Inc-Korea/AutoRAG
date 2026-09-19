@@ -9,10 +9,15 @@
 // trimmed to the providers AutoRAG ships and extended with an explicit
 // instance-registration seam (host embeddings + tests).
 
-import type { SearchProvider, SearchProviderContract } from "./providers/base.ts";
+import type { SearchAvailabilityContext, SearchProvider, SearchProviderContract } from "./providers/base.ts";
 import { SEARCH_PROVIDER_LABELS, SEARCH_PROVIDER_ORDER, SearchProviderError, type SearchProviderId } from "./types.ts";
 
-export type { FetchImpl, SearchParams, SearchProviderContract } from "./providers/base.ts";
+export type {
+	FetchImpl,
+	SearchAvailabilityContext,
+	SearchParams,
+	SearchProviderContract,
+} from "./providers/base.ts";
 export { SearchProvider } from "./providers/base.ts";
 export { SEARCH_PROVIDER_ORDER } from "./types.ts";
 
@@ -149,37 +154,23 @@ export function clearRegisteredSearchProviders(): void {
 	instanceCache.clear();
 }
 
-/** Provider fallback order set via configuration (default: built-in order). */
-let orderedProvIds: readonly SearchProviderId[] = SEARCH_PROVIDER_ORDER;
-/** Providers the user explicitly listed in configuration. */
-let explicitProvIds = new Set<SearchProviderId>();
-
 /**
- * Prioritize configured providers while retaining every unlisted provider in
- * its built-in relative order. Invalid IDs are ignored defensively. Listed
- * providers are treated as explicit selections: they resolve through
- * `isExplicitlyAvailable`.
+ * Per-request routing. Configuration never mutates module state: the caller
+ * (agent tool, CLI) owns its own routing and passes it down, so two agents
+ * in one process cannot rewrite each other's provider order or exclusions.
  */
-export function setSearchProviderOrder(providers: readonly SearchProviderId[]): void {
-	const prioritized = new Set(providers.filter((id) => SEARCH_PROVIDER_ORDER.includes(id)));
-	explicitProvIds = prioritized;
-	orderedProvIds =
-		prioritized.size === 0
-			? SEARCH_PROVIDER_ORDER
-			: [...prioritized, ...SEARCH_PROVIDER_ORDER.filter((id) => !prioritized.has(id))];
+export interface SearchProviderRouting {
+	/** Prioritized providers; unlisted providers keep their built-in relative order. */
+	readonly order?: readonly SearchProviderId[];
+	/** Providers this request must never use, including fallbacks. */
+	readonly exclude?: readonly SearchProviderId[];
+	/** Terminal-first provider that bypasses exclusion (an explicit `provider` argument). */
+	readonly forcedProvider?: SearchProviderId;
 }
 
-/** Providers excluded from web search resolution via configuration. */
-let excludedProvIds = new Set<SearchProviderId>();
-
-/** Set providers that web search should never use, including fallbacks. */
-export function setExcludedSearchProviders(providers: readonly SearchProviderId[]): void {
-	excludedProvIds = new Set(providers);
-}
-
-/** `true` when configuration excludes `id` from web search (auto chain and the Public Web fan-out). */
-export function isSearchProviderExcluded(id: SearchProviderId): boolean {
-	return excludedProvIds.has(id);
+/** `true` when `routing` excludes `id` from web search (auto chain and the Public Web fan-out). */
+export function isSearchProviderExcluded(id: SearchProviderId, exclude: readonly SearchProviderId[] = []): boolean {
+	return exclude.includes(id);
 }
 
 export interface SearchProviderCandidate {
@@ -189,21 +180,26 @@ export interface SearchProviderCandidate {
 
 /**
  * Return provider candidates in fallback order without loading their modules.
- * `forcedProvider` (a per-request `provider` argument) is terminal-first and
- * bypasses exclusion; configured-order entries carry `explicit: true`.
+ * `routing.forcedProvider` is terminal-first and bypasses exclusion; providers
+ * the caller listed in `routing.order` are treated as explicit selections and
+ * resolve through `isExplicitlyAvailable`. Invalid ids are ignored defensively.
  */
-export function resolveProviderCandidates(forcedProvider?: SearchProviderId): SearchProviderCandidate[] {
-	const candidates: SearchProviderCandidate[] = [];
+export function resolveProviderCandidates(routing: SearchProviderRouting = {}): SearchProviderCandidate[] {
+	const { forcedProvider, exclude = [] } = routing;
+	const prioritized = new Set((routing.order ?? []).filter((id) => SEARCH_PROVIDER_ORDER.includes(id)));
+	const ordered =
+		prioritized.size === 0
+			? SEARCH_PROVIDER_ORDER
+			: [...prioritized, ...SEARCH_PROVIDER_ORDER.filter((id) => !prioritized.has(id))];
 
-	if (forcedProvider !== undefined && !isSearchProviderExcluded(forcedProvider)) {
+	const candidates: SearchProviderCandidate[] = [];
+	if (forcedProvider !== undefined && !isSearchProviderExcluded(forcedProvider, exclude)) {
 		candidates.push({ id: forcedProvider, explicit: true });
 	}
-
-	for (const id of orderedProvIds) {
-		if (id === forcedProvider || isSearchProviderExcluded(id)) continue;
-		candidates.push({ id, explicit: explicitProvIds.has(id) });
+	for (const id of ordered) {
+		if (id === forcedProvider || isSearchProviderExcluded(id, exclude)) continue;
+		candidates.push({ id, explicit: prioritized.has(id) });
 	}
-
 	return candidates;
 }
 
@@ -213,14 +209,17 @@ export function resolveProviderCandidates(forcedProvider?: SearchProviderId): Se
  * This compatibility helper loads every candidate. Search execution should use
  * {@link resolveProviderCandidates} so fallback modules load only when reached.
  */
-export async function resolveProviderChain(forcedProvider?: SearchProviderId): Promise<SearchProviderContract[]> {
+export async function resolveProviderChain(
+	routing: SearchProviderRouting = {},
+	context?: SearchAvailabilityContext,
+): Promise<SearchProviderContract[]> {
 	const providers: SearchProviderContract[] = [];
 
-	for (const candidate of resolveProviderCandidates(forcedProvider)) {
+	for (const candidate of resolveProviderCandidates(routing)) {
 		const provider = await getSearchProvider(candidate.id);
 		const available = candidate.explicit
-			? ((await provider.isExplicitlyAvailable?.()) ?? (await provider.isAvailable()))
-			: await provider.isAvailable();
+			? ((await provider.isExplicitlyAvailable?.(context)) ?? (await provider.isAvailable(context)))
+			: await provider.isAvailable(context);
 		if (available) providers.push(provider);
 	}
 

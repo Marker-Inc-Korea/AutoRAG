@@ -15,7 +15,7 @@ import { envCredential } from "../credentials.ts";
 import { resolveModelNativeCredential } from "../model-auth.ts";
 import { formatQuery, parseSearchQuery, type QuerySyntax, type StructuredQuery } from "../query.ts";
 import { type SearchCitation, SearchProviderError, type SearchResponse, type SearchSource } from "../types.ts";
-import type { SearchParams } from "./base.ts";
+import type { SearchAvailabilityContext, SearchParams } from "./base.ts";
 import { SearchProvider } from "./base.ts";
 import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./utils.ts";
 
@@ -173,12 +173,12 @@ export class AnthropicProvider extends SearchProvider {
 	readonly id = "anthropic" as const;
 	readonly label = "Anthropic";
 
-	isAvailable(): boolean {
-		return resolveModelNativeCredential("anthropic") !== undefined;
+	isAvailable(context?: SearchAvailabilityContext): boolean {
+		return resolveModelNativeCredential("anthropic", context?.modelAuth) !== undefined;
 	}
 
 	async search(params: SearchParams): Promise<SearchResponse> {
-		const credential = resolveModelNativeCredential("anthropic");
+		const credential = resolveModelNativeCredential("anthropic", params.modelAuth);
 		if (!credential) {
 			throw new SearchProviderError(
 				"anthropic",

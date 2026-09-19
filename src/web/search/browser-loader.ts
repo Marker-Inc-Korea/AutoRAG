@@ -19,6 +19,25 @@ import { SEARCH_HARD_TIMEOUT_MS } from "./providers/utils.ts";
 /** Upper bound on page/browser teardown; a dead CDP session leaves close() pending forever. */
 const BROWSER_TEARDOWN_TIMEOUT_MS = 5_000;
 
+/**
+ * Await a close() under a deadline and always clear the deadline timer: a
+ * pending timer keeps the Node event loop alive, so a completed search would
+ * otherwise hold the CLI open for the full teardown timeout.
+ */
+async function closeBounded(close: () => Promise<void>): Promise<void> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			close().catch(() => undefined),
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, BROWSER_TEARDOWN_TIMEOUT_MS);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
+
 /** Minimal page surface the loader needs (structural subset of puppeteer-core's Page). */
 export interface WebSearchBrowserPage {
 	goto(url: string, options?: { waitUntil?: string; timeout?: number }): Promise<{ status(): number } | null>;
@@ -152,16 +171,9 @@ async function loadWithBrowser(
 	} finally {
 		// Teardown must settle even when the caller's signal already fired;
 		// bound it with a fresh deadline instead of reusing `signal`.
-		if (page) {
-			await Promise.race([
-				page.close().catch(() => undefined),
-				new Promise((resolve) => setTimeout(resolve, BROWSER_TEARDOWN_TIMEOUT_MS)),
-			]);
-		}
-		await Promise.race([
-			browser.close().catch(() => undefined),
-			new Promise((resolve) => setTimeout(resolve, BROWSER_TEARDOWN_TIMEOUT_MS)),
-		]);
+		const openPage = page;
+		if (openPage) await closeBounded(() => openPage.close());
+		await closeBounded(() => browser.close());
 	}
 }
 

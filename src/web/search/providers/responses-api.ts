@@ -144,7 +144,7 @@ export async function searchResponsesApi(
 	options: ResponsesApiSearchOptions,
 	params: SearchParams,
 ): Promise<SearchResponse> {
-	const credential = resolveModelNativeCredential(options.providerId);
+	const credential = resolveModelNativeCredential(options.providerId, params.modelAuth);
 	if (!credential) {
 		throw new SearchProviderError(options.providerId, options.missingCredentialMessage, 401);
 	}

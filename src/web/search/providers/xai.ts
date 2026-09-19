@@ -12,7 +12,7 @@
  */
 import { resolveModelNativeCredential } from "../model-auth.ts";
 import type { SearchResponse } from "../types.ts";
-import type { SearchParams } from "./base.ts";
+import type { SearchAvailabilityContext, SearchParams } from "./base.ts";
 import { SearchProvider } from "./base.ts";
 import { searchResponsesApi } from "./responses-api.ts";
 
@@ -20,8 +20,8 @@ export class XaiProvider extends SearchProvider {
 	readonly id = "xai" as const;
 	readonly label = "xAI";
 
-	isAvailable(): boolean {
-		return resolveModelNativeCredential("xai") !== undefined;
+	isAvailable(context?: SearchAvailabilityContext): boolean {
+		return resolveModelNativeCredential("xai", context?.modelAuth) !== undefined;
 	}
 
 	search(params: SearchParams): Promise<SearchResponse> {

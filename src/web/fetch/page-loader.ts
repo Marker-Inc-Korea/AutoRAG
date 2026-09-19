@@ -29,8 +29,13 @@ export interface RenderResult {
 export const MAX_OUTPUT_CHARS = 500_000;
 export const MAX_BYTES = 50 * 1024 * 1024;
 
+/** Transport signature accepted for injection (tests, proxies). */
+export type FetchImpl = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 export interface LoadPageOptions {
 	timeout?: number;
+	/** Transport injection; defaults to global fetch. */
+	fetch?: FetchImpl;
 	headers?: Record<string, string>;
 	method?: string;
 	body?: string;
@@ -112,6 +117,7 @@ function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): Abo
  */
 export async function loadPage(url: string, options: LoadPageOptions = {}): Promise<LoadPageResult> {
 	const { timeout = 20, headers = {}, maxBytes = MAX_BYTES, signal, method = "GET", body } = options;
+	const fetchImpl = options.fetch ?? fetch;
 
 	let lastError: string | undefined;
 	let retried429 = false;
@@ -141,7 +147,7 @@ export async function loadPage(url: string, options: LoadPageOptions = {}): Prom
 				requestInit.body = body;
 			}
 
-			const response = await fetch(url, requestInit);
+			const response = await fetchImpl(url, requestInit);
 
 			const rawContentType = response.headers.get("content-type") ?? "";
 			const contentType = rawContentType.split(";")[0]?.trim().toLowerCase() ?? "";

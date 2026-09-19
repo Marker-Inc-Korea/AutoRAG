@@ -63,6 +63,27 @@ describe("ensureWebSearchBrowserLoader", () => {
 		expect(page.html).toBe(REAL_PAGE.html);
 	});
 
+	it("leaves no teardown timer behind after an escalation", async () => {
+		vi.useFakeTimers();
+		try {
+			await ensureWebSearchBrowserLoader({
+				exists: (path) => path === "/fake/chrome",
+				candidates: ["/fake/chrome"],
+				launch: async () => fakeBrowser(REAL_PAGE),
+			});
+			vi.stubGlobal("fetch", async () => new Response(CHALLENGED_PAGE.html, { status: CHALLENGED_PAGE.status }));
+			await browserFetch("https://engine.example/search?q=x", {
+				signal: new AbortController().signal,
+				browser: { shouldFallback: (candidate) => candidate.status >= 400 },
+			});
+			// A pending teardown deadline would keep the Node event loop alive
+			// and hang the CLI for the full timeout after a completed search.
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("an explicitly registered loader takes precedence over the default", async () => {
 		setWebSearchBrowserLoader(async () => ({ html: "explicit", status: 200, url: "https://x" }));
 		vi.stubGlobal("fetch", async () => new Response(CHALLENGED_PAGE.html, { status: CHALLENGED_PAGE.status }));
@@ -90,11 +111,11 @@ function fakeBrowser(page: { html: string; status: number; url: string }): WebSe
 	const fakePage: WebSearchBrowserPage = {
 		content: async () => page.html,
 		url: () => page.url,
-		close: async () => {},
+		close: async () => { },
 		goto: async (_target: string) => ({ status: () => page.status }),
-		setViewport: async () => {},
-		evaluateOnNewDocument: async () => {},
+		setViewport: async () => { },
+		evaluateOnNewDocument: async () => { },
 		waitForSelector: async () => null,
 	};
-	return { newPage: async () => fakePage, close: async () => {} };
+	return { newPage: async () => fakePage, close: async () => { } };
 }

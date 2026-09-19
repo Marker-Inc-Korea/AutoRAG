@@ -6,9 +6,9 @@
  * for the agent loop, so web search reuses them instead of asking the user
  * for a second key. Two sources, in priority order:
  *
- * 1. The injected agent model credential — `AutoRAGAgent` installs the
- *    resolved model's provider/apiKey via {@link setModelNativeSearchAuth}
- *    whenever it resolves a session model.
+ * 1. The per-request agent model credential — `AutoRAGAgent` keeps the
+ *    resolved model's provider/apiKey on the instance and passes it into
+ *    each `web_search` call, so concurrent agents never share a credential.
  * 2. The provider's conventional model environment key
  *    (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY,
  *    XAI_API_KEY) — the same variables AutoRAG's model resolution reads.
@@ -54,31 +54,22 @@ const MODEL_ENV_KEYS: Record<ModelNativeSearchProviderId, readonly string[]> = {
 	xai: ["XAI_API_KEY"],
 };
 
-let injectedAuth: ModelNativeSearchAuth | undefined;
-
-/** Install (or clear, with `undefined`) the agent model credential for model-native web search. */
-export function setModelNativeSearchAuth(auth: ModelNativeSearchAuth | undefined): void {
-	injectedAuth = auth;
-}
-
-/** Return the currently injected agent model credential, if any. */
-export function getModelNativeSearchAuth(): ModelNativeSearchAuth | undefined {
-	return injectedAuth;
-}
-
 /**
- * Resolve the credential a model-native search provider should use right now:
- * the injected agent credential when its provider family matches, else the
- * provider's conventional model environment key.
+ * Resolve the credential a model-native search provider should use for this
+ * request: the caller's agent credential when its provider family matches,
+ * else the provider's conventional model environment key. The credential is
+ * never stored in module state — it travels with the request so two agents
+ * in one process cannot overwrite each other's key or base URL.
  */
 export function resolveModelNativeCredential(
 	searchProvider: ModelNativeSearchProviderId,
+	auth?: ModelNativeSearchAuth,
 ): ModelNativeCredential | undefined {
-	if (injectedAuth && MODEL_PROVIDER_ALIASES[searchProvider].includes(injectedAuth.provider)) {
+	if (auth && MODEL_PROVIDER_ALIASES[searchProvider].includes(auth.provider)) {
 		return {
-			apiKey: injectedAuth.apiKey,
-			...(injectedAuth.baseUrl !== undefined ? { baseUrl: injectedAuth.baseUrl } : {}),
-			...(injectedAuth.modelId !== undefined ? { modelId: injectedAuth.modelId } : {}),
+			apiKey: auth.apiKey,
+			...(auth.baseUrl !== undefined ? { baseUrl: auth.baseUrl } : {}),
+			...(auth.modelId !== undefined ? { modelId: auth.modelId } : {}),
 			source: "injected",
 		};
 	}

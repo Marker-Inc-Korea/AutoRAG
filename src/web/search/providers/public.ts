@@ -10,6 +10,7 @@
  * seam is kept. Engine instances come from `getSearchProvider` (registered
  * fakes in tests, lazy module loads in production).
  */
+import { hasRenderableSearchContent } from "../format.ts";
 import { formatSearchProviderFailures, getSearchProvider, isSearchProviderExcluded } from "../provider.ts";
 import { SearchProviderError, type SearchProviderId, type SearchResponse, type SearchSource } from "../types.ts";
 import { clampNumResults } from "../utils.ts";
@@ -104,7 +105,7 @@ export async function searchPublicWeb(
 	const softMs = deadlines.softMs ?? SOFT_DEADLINE_MS;
 	const hardMs = deadlines.hardMs ?? HARD_DEADLINE_MS;
 	const numResults = clampNumResults(params.numSearchResults ?? params.limit, DEFAULT_NUM_RESULTS, MAX_NUM_RESULTS);
-	const engineIds = PUBLIC_ENGINE_IDS.filter((id) => !isSearchProviderExcluded(id));
+	const engineIds = PUBLIC_ENGINE_IDS.filter((id) => !isSearchProviderExcluded(id, params.excludedProviders));
 	if (engineIds.length === 0) {
 		throw new SearchProviderError("public", "Every credential-free engine is excluded by settings.", 400);
 	}
@@ -118,12 +119,18 @@ export async function searchPublicWeb(
 	const firstSuccess = new Promise<void>((resolve) => {
 		resolveFirstSuccess = resolve;
 	});
+	// A scraped engine answers HTTP 200 with zero parsed results all the time.
+	// Only a response that actually carries results ends the wait; an empty one
+	// must not abort the engines that are still working.
+	const isUseful = (response: SearchResponse | undefined): boolean =>
+		response !== undefined && hasRenderableSearchContent(response);
 	const all = Promise.all(
 		engineIds.map(async (id, index) => {
 			try {
 				const provider = await getSearchProvider(id);
-				responses[index] = await provider.search({ ...params, signal });
-				resolveFirstSuccess();
+				const response = await provider.search({ ...params, signal });
+				responses[index] = response;
+				if (hasRenderableSearchContent(response)) resolveFirstSuccess();
 			} catch (error) {
 				failures.push({ provider: { id, label: id }, error });
 			}
@@ -131,7 +138,7 @@ export async function searchPublicWeb(
 	);
 
 	await Promise.race([all, sleep(softMs, signal)]);
-	if (!responses.some((response) => response !== undefined) && failures.length < engineIds.length) {
+	if (!responses.some(isUseful) && failures.length < engineIds.length) {
 		await Promise.race([all, firstSuccess, sleep(Math.max(0, hardMs - softMs), signal)]);
 	}
 	straggler.abort();

@@ -7,12 +7,7 @@
  * provider `fetch` injection seam; no network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	getModelNativeSearchAuth,
-	modelNativeAuthFromAgentModel,
-	resolveModelNativeCredential,
-	setModelNativeSearchAuth,
-} from "../../src/web/search/model-auth.ts";
+import { modelNativeAuthFromAgentModel, resolveModelNativeCredential } from "../../src/web/search/model-auth.ts";
 import { AnthropicProvider } from "../../src/web/search/providers/anthropic.ts";
 import type { FetchImpl } from "../../src/web/search/providers/base.ts";
 import { CodexProvider } from "../../src/web/search/providers/codex.ts";
@@ -33,11 +28,9 @@ const originalEnv = Object.fromEntries(MODEL_ENV_NAMES.map((name) => [name, proc
 
 beforeEach(() => {
 	for (const name of MODEL_ENV_NAMES) delete process.env[name];
-	setModelNativeSearchAuth(undefined);
 });
 
 afterEach(() => {
-	setModelNativeSearchAuth(undefined);
 	for (const name of MODEL_ENV_NAMES) {
 		const value = originalEnv[name];
 		if (value === undefined) delete process.env[name];
@@ -94,20 +87,33 @@ describe("model-native auth resolution", () => {
 		expect(resolveModelNativeCredential("xai")).toBeUndefined();
 	});
 
-	it("uses the injected agent model credential for the matching provider family", () => {
-		setModelNativeSearchAuth({ provider: "anthropic", apiKey: "sk-ant-injected", modelId: "claude-haiku-4-5" });
-		expect(getModelNativeSearchAuth()?.apiKey).toBe("sk-ant-injected");
-		expect(resolveModelNativeCredential("anthropic")?.apiKey).toBe("sk-ant-injected");
-		expect(resolveModelNativeCredential("gemini")).toBeUndefined();
+	it("uses the request's agent model credential for the matching provider family", () => {
+		const auth = { provider: "anthropic", apiKey: "sk-ant-injected", modelId: "claude-haiku-4-5" } as const;
+		expect(resolveModelNativeCredential("anthropic", auth)?.apiKey).toBe("sk-ant-injected");
+		expect(resolveModelNativeCredential("gemini", auth)).toBeUndefined();
+	});
+
+	it("keeps two concurrent callers' credentials apart", () => {
+		const agentA = { provider: "anthropic", apiKey: "sk-agent-a", baseUrl: "https://a.example" } as const;
+		const agentB = { provider: "anthropic", apiKey: "sk-agent-b", baseUrl: "https://b.example" } as const;
+		expect(resolveModelNativeCredential("anthropic", agentA)).toMatchObject({
+			apiKey: "sk-agent-a",
+			baseUrl: "https://a.example",
+		});
+		expect(resolveModelNativeCredential("anthropic", agentB)).toMatchObject({
+			apiKey: "sk-agent-b",
+			baseUrl: "https://b.example",
+		});
+		// Resolving B must not have rewritten anything A sees.
+		expect(resolveModelNativeCredential("anthropic", agentA)?.apiKey).toBe("sk-agent-a");
 	});
 
 	it("maps pi model provider ids onto search providers", () => {
-		setModelNativeSearchAuth({ provider: "openai", apiKey: "sk-openai" });
-		expect(resolveModelNativeCredential("codex")?.apiKey).toBe("sk-openai");
-		setModelNativeSearchAuth({ provider: "google", apiKey: "gm-key" });
-		expect(resolveModelNativeCredential("gemini")?.apiKey).toBe("gm-key");
-		setModelNativeSearchAuth({ provider: "xai", apiKey: "xai-key" });
-		expect(resolveModelNativeCredential("xai")?.apiKey).toBe("xai-key");
+		expect(resolveModelNativeCredential("codex", { provider: "openai", apiKey: "sk-openai" })?.apiKey).toBe(
+			"sk-openai",
+		);
+		expect(resolveModelNativeCredential("gemini", { provider: "google", apiKey: "gm-key" })?.apiKey).toBe("gm-key");
+		expect(resolveModelNativeCredential("xai", { provider: "xai", apiKey: "xai-key" })?.apiKey).toBe("xai-key");
 	});
 
 	it("falls back to the provider's model environment key", () => {
@@ -117,10 +123,11 @@ describe("model-native auth resolution", () => {
 		expect(resolveModelNativeCredential("gemini")?.apiKey).toBe("gm-env");
 	});
 
-	it("prefers the injected credential over the environment", () => {
+	it("prefers the request credential over the environment", () => {
 		process.env.ANTHROPIC_API_KEY = "sk-ant-env";
-		setModelNativeSearchAuth({ provider: "anthropic", apiKey: "sk-ant-injected" });
-		expect(resolveModelNativeCredential("anthropic")?.apiKey).toBe("sk-ant-injected");
+		expect(
+			resolveModelNativeCredential("anthropic", { provider: "anthropic", apiKey: "sk-ant-injected" })?.apiKey,
+		).toBe("sk-ant-injected");
 	});
 
 	it("derives injectable auth from a resolved agent model", () => {
@@ -270,11 +277,14 @@ describe("AnthropicProvider (model-native web_search)", () => {
 		expect(body.tools?.[0]?.type).toBe("web_search_20250305");
 	});
 
-	it("uses the injected agent credential over the environment", async () => {
+	it("uses the request's agent credential over the environment", async () => {
 		process.env.ANTHROPIC_API_KEY = "sk-ant-env";
-		setModelNativeSearchAuth({ provider: "anthropic", apiKey: "sk-ant-injected" });
 		const { fetch: fetchImpl, calls } = stubFetchJson({ id: "msg_1", model: "m", content: [], usage: {} });
-		await new AnthropicProvider().search({ query: "q", fetch: fetchImpl });
+		await new AnthropicProvider().search({
+			query: "q",
+			fetch: fetchImpl,
+			modelAuth: { provider: "anthropic", apiKey: "sk-ant-injected" },
+		});
 		expect(new Headers(calls[0]?.init?.headers).get("x-api-key")).toBe("sk-ant-injected");
 	});
 });

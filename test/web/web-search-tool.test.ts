@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createWebSearchTool, WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
-import {
-	clearRegisteredSearchProviders,
-	registerSearchProvider,
-	setExcludedSearchProviders,
-	setSearchProviderOrder,
-} from "../../src/web/search/provider.ts";
+import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import type { SearchProviderContract } from "../../src/web/search/providers/base.ts";
 import {
 	SEARCH_PROVIDER_ORDER,
@@ -14,9 +9,9 @@ import {
 	type SearchResponse,
 } from "../../src/web/search/types.ts";
 
-/** Exclude every built-in provider except `keep` so tool tests stay hermetic (no real network). */
-function isolateChainTo(...keep: SearchProviderId[]): void {
-	setExcludedSearchProviders(SEARCH_PROVIDER_ORDER.filter((id) => !keep.includes(id)));
+/** Tool options that run only `keep`, so tool tests stay hermetic (no real network). */
+function isolatedTo(...keep: SearchProviderId[]): { order: SearchProviderId[]; exclude: SearchProviderId[] } {
+	return { order: keep, exclude: SEARCH_PROVIDER_ORDER.filter((id) => !keep.includes(id)) };
 }
 
 function fakeProvider(id: "duckduckgo" | "google", response: SearchResponse): SearchProviderContract {
@@ -30,8 +25,6 @@ function fakeProvider(id: "duckduckgo" | "google", response: SearchResponse): Se
 
 afterEach(() => {
 	clearRegisteredSearchProviders();
-	setSearchProviderOrder([]);
-	setExcludedSearchProviders([]);
 });
 
 describe("web_search tool", () => {
@@ -55,8 +48,7 @@ describe("web_search tool", () => {
 				sources: [{ title: "AutoRAG repo", url: "https://github.com/Marker-Inc-Korea/AutoRAG", snippet: "RAG" }],
 			}),
 		);
-		setSearchProviderOrder(["duckduckgo"]);
-		const tool = createWebSearchTool();
+		const tool = createWebSearchTool(isolatedTo("duckduckgo"));
 		const result = await tool.execute("call-1", { query: "autorag" });
 		const details = result.details as {
 			method: string;
@@ -84,8 +76,7 @@ describe("web_search tool", () => {
 				return { provider: "duckduckgo", sources: [] };
 			},
 		});
-		setSearchProviderOrder(["duckduckgo"]);
-		const tool = createWebSearchTool();
+		const tool = createWebSearchTool(isolatedTo("duckduckgo"));
 		const result = await tool.execute("call-2", { query: "   " });
 		expect(called).toBe(false);
 		expect((result.content[0] as { text: string }).text).toContain("empty");
@@ -101,9 +92,7 @@ describe("web_search tool", () => {
 				throw new SearchProviderError("duckduckgo", "duckduckgo bot challenge", 429);
 			},
 		});
-		isolateChainTo("duckduckgo");
-		setSearchProviderOrder(["duckduckgo"]);
-		const tool = createWebSearchTool();
+		const tool = createWebSearchTool(isolatedTo("duckduckgo"));
 		const result = await tool.execute("call-3", { query: "doomed query" });
 		const details = result.details as unknown as {
 			resultCount: number;
@@ -138,6 +127,52 @@ describe("web_search tool", () => {
 		expect((result.details as { provider: string }).provider).toBe("google");
 	});
 
+	it("keeps routing on the tool instance so a configured tool cannot reroute a default one", async () => {
+		let googleCalled = false;
+		registerSearchProvider({
+			id: "google",
+			label: "Fake",
+			isAvailable: () => true,
+			search: async () => {
+				googleCalled = true;
+				return { provider: "google", sources: [{ title: "g", url: "https://g.example" }] };
+			},
+		});
+		registerSearchProvider(
+			fakeProvider("duckduckgo", {
+				provider: "duckduckgo",
+				sources: [{ title: "d", url: "https://d.example" }],
+			}),
+		);
+		// A configured tool exists first; the default tool created afterwards
+		// must still walk its own chain, not the configured one.
+		createWebSearchTool({ order: ["google"], exclude: ["duckduckgo"] });
+		const defaultTool = createWebSearchTool(isolatedTo("duckduckgo", "google"));
+		const result = await defaultTool.execute("call-6", { query: "instance routing" });
+		expect(googleCalled).toBe(false);
+		expect((result.details as { provider: string }).provider).toBe("duckduckgo");
+	});
+
+	it("passes its own agent model credential to model-native providers", async () => {
+		let seenKey: string | undefined;
+		registerSearchProvider({
+			id: "anthropic",
+			label: "Fake",
+			isAvailable: (context) => context?.modelAuth?.provider === "anthropic",
+			search: async (params) => {
+				seenKey = params.modelAuth?.apiKey;
+				return { provider: "anthropic", sources: [{ title: "a", url: "https://a.example" }] };
+			},
+		});
+		const tool = createWebSearchTool({
+			...isolatedTo("anthropic"),
+			modelAuth: () => ({ provider: "anthropic", apiKey: "sk-agent-a" }),
+		});
+		const result = await tool.execute("call-7", { query: "credential" });
+		expect(seenKey).toBe("sk-agent-a");
+		expect((result.details as { provider: string }).provider).toBe("anthropic");
+	});
+
 	it("forwards recency and result-count hints to the provider", async () => {
 		let seen: { recency?: string; numSearchResults?: number } = {};
 		registerSearchProvider({
@@ -149,8 +184,7 @@ describe("web_search tool", () => {
 				return { provider: "duckduckgo", sources: [{ title: "t", url: "https://d.example" }] };
 			},
 		});
-		setSearchProviderOrder(["duckduckgo"]);
-		const tool = createWebSearchTool();
+		const tool = createWebSearchTool(isolatedTo("duckduckgo"));
 		await tool.execute("call-5", { query: "hints", recency: "week", num_search_results: 5 });
 		expect(seen).toEqual({ recency: "week", numSearchResults: 5 });
 	});

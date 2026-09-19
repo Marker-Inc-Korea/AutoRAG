@@ -15,7 +15,7 @@ import { envCredential } from "../credentials.ts";
 import { resolveModelNativeCredential } from "../model-auth.ts";
 import { formatQuery, GOOGLE_QUERY_SYNTAX, parseSearchQuery } from "../query.ts";
 import { type SearchCitation, SearchProviderError, type SearchResponse, type SearchSource } from "../types.ts";
-import type { SearchParams } from "./base.ts";
+import type { SearchAvailabilityContext, SearchParams } from "./base.ts";
 import { SearchProvider } from "./base.ts";
 import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./utils.ts";
 
@@ -109,12 +109,12 @@ export class GeminiProvider extends SearchProvider {
 	readonly id = "gemini" as const;
 	readonly label = "Gemini";
 
-	isAvailable(): boolean {
-		return resolveModelNativeCredential("gemini") !== undefined;
+	isAvailable(context?: SearchAvailabilityContext): boolean {
+		return resolveModelNativeCredential("gemini", context?.modelAuth) !== undefined;
 	}
 
 	async search(params: SearchParams): Promise<SearchResponse> {
-		const credential = resolveModelNativeCredential("gemini");
+		const credential = resolveModelNativeCredential("gemini", params.modelAuth);
 		if (!credential) {
 			throw new SearchProviderError(
 				"gemini",

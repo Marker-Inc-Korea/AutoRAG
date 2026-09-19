@@ -15,12 +15,8 @@ import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { WEB_FETCH_TOOL_NAME } from "../../src/agent/web-fetch-tool.ts";
 import { WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
-import {
-	clearRegisteredSearchProviders,
-	registerSearchProvider,
-	setExcludedSearchProviders,
-	setSearchProviderOrder,
-} from "../../src/web/search/provider.ts";
+import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
+import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -34,8 +30,6 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 	for (const reg of registrations) reg.unregister();
 	clearRegisteredSearchProviders();
-	setSearchProviderOrder([]);
-	setExcludedSearchProviders([]);
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -70,7 +64,6 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 				],
 			}),
 		});
-		setSearchProviderOrder(["duckduckgo"]);
 		vi.stubGlobal("fetch", async (input: unknown) => {
 			const url = String(input);
 			if (url.startsWith("https://policy.example.com/")) {
@@ -125,6 +118,11 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 			workspacePath: root,
 			minSync: false,
 			jikji: false,
+			// Routing belongs to this agent instance: only the stubbed engine runs.
+			webSearch: {
+				order: ["duckduckgo"],
+				exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "duckduckgo"),
+			},
 		});
 
 		const names = (

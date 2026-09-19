@@ -127,11 +127,16 @@ export function formatForLLM(response: SearchResponse, notes: readonly string[] 
 	return parts.join("\n");
 }
 
+/**
+ * `true` when the response carries an actual result the caller can read: an
+ * answer, a source, or a citation. Search-attempt metadata (`searchQueries`,
+ * `relatedQuestions`) is an annotation on a real result, never a result — a
+ * provider that only reports "I ran a search" must not win the chain while a
+ * healthy fallback would have returned sources.
+ */
 export function hasRenderableSearchContent(response: SearchResponse): boolean {
 	if (response.answer?.trim()) return true;
 	if (response.sources.length > 0) return true;
 	if (response.citations?.length) return true;
-	if (response.relatedQuestions?.some((question) => question.trim())) return true;
-	if (response.searchQueries?.some((query) => query.trim())) return true;
 	return false;
 }

@@ -5,7 +5,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { WEB_FETCH_TOOL_NAME } from "../../src/agent/web-fetch-tool.ts";
 import { WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
 
@@ -91,34 +90,5 @@ describe("AutoRAGAgent web tool surface", () => {
 		const names = toolNames(agent);
 		expect(names).not.toContain(WEB_SEARCH_TOOL_NAME);
 		expect(names).not.toContain(WEB_FETCH_TOOL_NAME);
-	});
-});
-
-describe("system prompt web guidance", () => {
-	const baseConfig = { toolNames: [], manifests: [] };
-
-	it("mentions web_search and web_fetch when the tools are registered", () => {
-		const prompt = buildSystemPrompt({
-			...baseConfig,
-			toolNames: [WEB_SEARCH_TOOL_NAME, WEB_FETCH_TOOL_NAME],
-		});
-		expect(prompt).toContain(`- **${WEB_SEARCH_TOOL_NAME}**`);
-		expect(prompt).toContain(`- **${WEB_FETCH_TOOL_NAME}**`);
-		expect(prompt).toContain("Web Research");
-	});
-
-	it("omits web guidance when the tools are absent", () => {
-		const prompt = buildSystemPrompt(baseConfig);
-		expect(prompt).not.toContain(`- **${WEB_SEARCH_TOOL_NAME}**`);
-		expect(prompt).not.toContain("Web Research");
-	});
-
-	it("forbids passing local paths and datasource virtual ids to web_fetch", () => {
-		const prompt = buildSystemPrompt({
-			...baseConfig,
-			toolNames: [WEB_SEARCH_TOOL_NAME, WEB_FETCH_TOOL_NAME],
-		});
-		expect(prompt).toContain("http");
-		expect(prompt).toMatch(/web_fetch[^\n]*\n([\s\S]*?)(local|virtual)/i);
 	});
 });

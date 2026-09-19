@@ -12,7 +12,7 @@
  */
 import { resolveModelNativeCredential } from "../model-auth.ts";
 import type { SearchResponse } from "../types.ts";
-import type { SearchParams } from "./base.ts";
+import type { SearchAvailabilityContext, SearchParams } from "./base.ts";
 import { SearchProvider } from "./base.ts";
 import { searchResponsesApi } from "./responses-api.ts";
 
@@ -20,8 +20,8 @@ export class CodexProvider extends SearchProvider {
 	readonly id = "codex" as const;
 	readonly label = "OpenAI";
 
-	isAvailable(): boolean {
-		return resolveModelNativeCredential("codex") !== undefined;
+	isAvailable(context?: SearchAvailabilityContext): boolean {
+		return resolveModelNativeCredential("codex", context?.modelAuth) !== undefined;
 	}
 
 	search(params: SearchParams): Promise<SearchResponse> {
