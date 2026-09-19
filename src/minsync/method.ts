@@ -53,6 +53,27 @@ function lookupInPath(env: NodeJS.ProcessEnv): string | undefined {
 	return undefined;
 }
 
+/**
+ * MinSync allows one operation per workspace: a second concurrent operation fails
+ * with "another sync is in progress" while the first holds its lock. AutoRAG
+ * registers the vector and hybrid methods over the same workspace and the parallel
+ * retriever runs them at once, so operations for one workspace queue here.
+ */
+const workspaceOperationTails = new Map<string, Promise<unknown>>();
+
+function withWorkspaceLock<T>(workspacePath: string, run: () => Promise<T>): Promise<T> {
+	const previous = workspaceOperationTails.get(workspacePath) ?? Promise.resolve();
+	const result = previous.then(run, run);
+	workspaceOperationTails.set(
+		workspacePath,
+		result.then(
+			() => undefined,
+			() => undefined,
+		),
+	);
+	return result;
+}
+
 export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly root: string;
 	private readonly binaryPath: string | undefined;
@@ -100,10 +121,16 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async sync(force = false): Promise<MinSyncSyncResult> {
-		syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force));
+	}
+
+	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
+		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
+			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
 		const binaryResult = await this.resolveBinary();
 		if (binaryResult === undefined) {
-			return degrade(this.workspacePath, "missing-binary");
+			return withExcluded(degrade(this.workspacePath, "missing-binary"));
 		}
 		if (typeof binaryResult === "string") {
 			const client = new MinSyncClient({
@@ -113,10 +140,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				maxChunkSize: this.maxChunkSize,
 				runtime: this.runtime,
 			});
-			return client.sync(force);
+			return withExcluded(await client.sync(force));
 		}
 		// install-failed degrade result
-		return binaryResult;
+		return withExcluded(binaryResult);
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
@@ -139,6 +166,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		return withWorkspaceLock(this.workspacePath, () => this.retrieveUnlocked(query, options));
+	}
+
+	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? 20;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);

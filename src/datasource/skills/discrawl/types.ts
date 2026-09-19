@@ -11,23 +11,6 @@ import type { RetrievalOptions } from "../../../retrieval/types.ts";
 export type DiscrawlSearchMode = "fts" | "semantic" | "hybrid";
 
 /**
- * Where the `discrawl` CLI reads Discord data from.
- *
- * - `wiretap`  — the local Discord Desktop cache. Requires no token and issues
- *                no Discord API calls; it reads only files Discord already
- *                wrote to disk. Includes classifiable direct messages.
- * - `discord`  — the Discord bot API using a server-configured bot token. This
- *                is the ToS-sanctioned automation path (a bot token identifies
- *                an OAuth2 application, not a human user).
- * - `both`     — bot API plus desktop cache.
- *
- * AutoRAG never uses a Discord *user* token: automating a user account is
- * prohibited by Discord's Community Guidelines and can get the account
- * terminated.
- */
-export type DiscrawlSourceKind = "wiretap" | "discord" | "both";
-
-/**
  * Embedding models known to be English-only. Selecting one for a non-English
  * archive silently degrades semantic search to noise rather than failing, so
  * the skill emits a diagnostic instead of staying quiet.
@@ -63,6 +46,11 @@ export const DEFAULT_DISCRAWL_EMBEDDING_PROVIDER = "ollama";
  * Configuration for the discrawl client. All fields optional; defaults mirror
  * the katok client. The client spawns the `discrawl` binary as a child process
  * — it never opens the Discord archive database directly.
+ *
+ * AutoRAG drives discrawl's local archive only: `wiretap` to import the
+ * Discord Desktop cache plus search/embed against that native store. The bot
+ * API path belongs to the CLI, which owns its own credential, so no Discord
+ * token is configured, required, or forwarded here.
  */
 export interface DiscrawlEmbeddingRuntime {
 	readonly provider: string;
@@ -93,8 +81,6 @@ export interface DiscrawlOptions {
 	readonly timeoutMs?: number;
 	/** Max stdout/stderr bytes retained. Default 1_048_576 (1 MiB). */
 	readonly maxBufferBytes?: number;
-	/** Archive source for the CLI. Default `wiretap` (no token required). */
-	readonly source?: DiscrawlSourceKind;
 	/**
 	 * Explicit operator-owned discrawl config file passed as `--config`.
 	 * AutoRAG never rewrites an explicit config.
@@ -104,7 +90,7 @@ export interface DiscrawlOptions {
 	readonly root?: string;
 	/** Explicit workspace directory overriding the computed default. */
 	readonly workspacePath?: string;
-	/** Restrict search and sync to one guild id. */
+	/** Restrict search to one guild id. */
 	readonly guildId?: string;
 	/** Embedding provider understood by the native discrawl configuration. */
 	readonly embeddingProvider?: string;
@@ -130,7 +116,6 @@ export interface DiscrawlOptions {
 export const DEFAULT_DISCRAWL_BINARY = "discrawl";
 export const DEFAULT_DISCRAWL_TIMEOUT_MS = 30_000;
 export const DEFAULT_DISCRAWL_MAX_BUFFER_BYTES = 1_048_576;
-export const DEFAULT_DISCRAWL_SOURCE: DiscrawlSourceKind = "wiretap";
 export const DEFAULT_DISCRAWL_MODE: DiscrawlSearchMode = "hybrid";
 
 /**
@@ -203,7 +188,7 @@ export interface DiscrawlDoctorInfo {
 	readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
-/** Result of `discrawl sync` / `discrawl wiretap`. */
+/** Result of `discrawl wiretap`. */
 export interface DiscrawlSyncInfo {
 	readonly messages: number;
 	readonly guilds?: number;

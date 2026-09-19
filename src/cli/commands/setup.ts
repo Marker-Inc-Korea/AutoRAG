@@ -39,6 +39,7 @@ function renderSetup(report: Awaited<ReturnType<typeof runSetup>>): string {
 	return [
 		`setup: ${report.mode}`,
 		`model: ${report.model.valid ? "ready" : "blocked"}`,
+		...(report.runtime.reason ? [`runtime: ${report.runtime.reason}`] : []),
 		...report.datasources.map((d) => `  ${d.name}: ${d.state}${d.reason ? ` (${d.reason})` : ""}`),
 		...(report.remediation ? [`remediation: ${report.remediation}`] : []),
 	].join("\n");

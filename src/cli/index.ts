@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { releaseRuntimeHandles } from "../embedding-runtime/index.ts";
+import { commandUsage } from "./command-help.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 
@@ -9,6 +11,7 @@ const BOOLEAN_FLAGS = new Set([
 	"json",
 	"debug",
 	"help",
+	"version",
 	"force",
 	"yes",
 	"once",
@@ -17,6 +20,9 @@ const BOOLEAN_FLAGS = new Set([
 	"no-open",
 	"allow-remote",
 	"full",
+	"single-phase",
+	"strict",
+	"refresh",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -63,6 +69,8 @@ const VALUE_FLAGS = new Set([
 	"input",
 	"profile",
 	"format",
+	"fast-thinking",
+	"final-thinking",
 ]);
 
 const COMMANDS = [
@@ -88,6 +96,8 @@ const COMMANDS = [
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
+export type { CommandName };
+
 interface ParsedArgs {
 	positionals: string[];
 	flags: Record<string, string | boolean>;
@@ -100,11 +110,7 @@ Usage: autorag <command> [args] [flags]
 Commands:
   init                 Write ~/.autorag/config.json for a local collection
   setup                Probe and configure local runtime and datasources
-	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
-	                        --model-provider P  --model-id ID
-	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
-	                       --embedder-dimension N --embedder-batch-size N
-	                       --minsync-max-chunk-size N  --force)
+                       (--search-paths a,b  --workspace DIR  --profile ID  --format json)
   refresh              Refresh every configured index; --method narrows the run
   watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
@@ -161,10 +167,29 @@ Global flags:
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --port <n>           For ui: loopback port (default 8787, 0 for ephemeral)
-  --host <addr>        For ui/serve: bind address (127.0.0.1, ::1, or 0.0.0.0)
+  --host <addr>        For ui: bind address (127.0.0.1 or ::1)
   --no-open            For ui: print the URL and do not launch a browser
+  --version, -V        Print the package version
   --help, -h           Show this help
+
+Run: autorag <command> --help   for command-specific usage.
 `;
+
+/**
+ * The installed package version. Read from the manifest next to the entry
+ * point: `src/cli/index.ts` and the published `dist/cli/index.js` both resolve
+ * `../../package.json` to the package root.
+ */
+function readPackageVersion(): string {
+	try {
+		const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+			version?: unknown;
+		};
+		return typeof manifest.version === "string" && manifest.version.length > 0 ? manifest.version : "0.0.0";
+	} catch {
+		return "0.0.0";
+	}
+}
 
 export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string } {
 	const positionals: string[] = [];
@@ -173,6 +198,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 		const token = argv[i];
 		if (token === "-h") {
 			flags.help = true;
+			continue;
+		}
+		if (token === "-V") {
+			flags.version = true;
 			continue;
 		}
 		if (!token.startsWith("--")) {
@@ -309,11 +338,15 @@ export async function main(argv: readonly string[]): Promise<number> {
 	const json = flags.json === true;
 	const debug = flags.debug === true;
 
+	if (flags.version === true || command === "version") {
+		process.stdout.write(`${readPackageVersion()}\n`);
+		return 0;
+	}
 	if (flags.help === true || command === undefined || command === "help") {
 		if (command === "lite") {
 			// Defer to lite dispatch for subcommand-specific help.
 		} else {
-			process.stdout.write(USAGE);
+			process.stdout.write(commandUsage(command) ?? USAGE);
 			return 0;
 		}
 	}
@@ -338,6 +371,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 	} catch (error) {
 		process.stderr.write(`${renderError(error, { json, debug })}\n`);
 		return 1;
+	} finally {
+		// The local embedding gateway listens on loopback for the whole run, so a
+		// command that used it would keep the process alive after its output is
+		// written (and after its answer is already on stdout). Release it here, where
+		// every command is covered, and the shared supervisor's model stays warm.
+		await releaseRuntimeHandles();
 	}
 }
 

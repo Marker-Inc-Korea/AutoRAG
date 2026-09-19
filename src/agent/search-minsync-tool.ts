@@ -2,6 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { MinSyncVectorMethod } from "../minsync/method.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
+import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME = "semantic_search_local_docs";
 
@@ -18,6 +19,8 @@ export interface SearchMinSyncDocumentsDetails {
 	readonly resultCount: number;
 	readonly sources: readonly string[];
 	readonly available: boolean;
+	/** Top candidates in traceable shape (additive; used for the run's retrieval trace). */
+	readonly results?: readonly SearchDocumentRetrievalTraceResult[];
 }
 
 /**
@@ -64,6 +67,7 @@ export function createSearchMinSyncDocumentsTool(
 						resultCount: results.length,
 						sources: [...new Set(results.map((result) => result.source))],
 						available: true,
+						results: toRetrievalTraceResults(results),
 					},
 				};
 			} catch {

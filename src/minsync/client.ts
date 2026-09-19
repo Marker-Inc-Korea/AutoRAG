@@ -89,6 +89,14 @@ export class MinSyncClient {
 					dimension: ensured.profile.dimension,
 					queryPrefix: ensured.profile.queryPrefix,
 					passagePrefix: ensured.profile.passagePrefix,
+					// A profile selects the embedding model only. Batching, concurrency,
+					// retry, and timeout settings belong to the operator, so they must
+					// still reach MinSync's config instead of falling back to MinSync's
+					// own defaults.
+					...(configured?.batchSize !== undefined ? { batchSize: configured.batchSize } : {}),
+					...(configured?.maxRetries !== undefined ? { maxRetries: configured.maxRetries } : {}),
+					...(configured?.maxConcurrent !== undefined ? { maxConcurrent: configured.maxConcurrent } : {}),
+					...(configured?.timeoutMs !== undefined ? { timeoutMs: configured.timeoutMs } : {}),
 				},
 				identity: {
 					provider: ensured.identity.provider,
@@ -216,12 +224,29 @@ export class MinSyncClient {
 				synced: 0,
 				workspacePath: this.workspacePath,
 				reason: "check-failed",
+				diagnostic: {
+					code: "sync-failed",
+					message: check.stderr ? check.stderr.trim() : "MinSync check failed.",
+					retryable: true,
+				},
 			};
 		}
 		const checkFailure = readCheckFailure(check.stdout);
 		if (checkFailure) {
 			restoreConfig();
-			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: checkFailure,
+				diagnostic: {
+					// Only an embedder preflight failure points at the embedder; a vector
+					// store or generic preflight failure must not send users to `models prefetch`.
+					code: checkFailure.includes("embedder") ? "embedder-unavailable" : "sync-failed",
+					message: checkFailure,
+					retryable: true,
+				},
+			};
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
 		const dimensionChanged = embedder.dimension !== undefined && configuredDimension !== embedder.dimension;
@@ -237,6 +262,11 @@ export class MinSyncClient {
 				synced: 0,
 				workspacePath: this.workspacePath,
 				reason: "sync-failed",
+				diagnostic: {
+					code: "sync-failed",
+					message: result.stderr ? result.stderr.trim() : "MinSync sync failed.",
+					retryable: true,
+				},
 			};
 		}
 		if (!existsSync(cursorPath)) {

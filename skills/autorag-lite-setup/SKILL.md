@@ -128,6 +128,14 @@ Retrieval requires a completed refresh. `autorag lite retrieve` before any
 refresh exits with code 2 and an `index-not-ready` diagnostic; a successful
 refresh is recorded even when the corpus is empty or only a non-parsed method
 was selected. Always refresh first, and refresh again when roots change.
+Once a refresh has completed, staleness is reported rather than enforced: a
+source that changed afterwards gives `"stale": true` with `stale-index`
+diagnostics (and `autorag lite status` reports `stale: true`) while retrieval
+still answers from the index. Sources the refresh deliberately skipped — exact
+duplicates, oversized or unparseable files, and AutoRAG/Jikji product artifacts
+such as `.jikji_agent_map.md` — do not count as stale. Use `autorag lite
+retrieve --refresh` to rebuild incrementally before one query, or `--strict`
+when a stale index must fail instead of answering.
 Jikji is a discovery/indexing preparer, not a lite retrieval method.
 
 ## Watch and scheduled freshness

@@ -56,4 +56,137 @@ describe("setup orchestration", () => {
 			apiKeyEnv: "SECRET_KEY",
 		});
 	});
+
+	it("reports semantic mode when the runtime answers a live health probe", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => ({
+						state: "ready",
+						backend: "auto",
+						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+						health: { ok: true, profileId: "qwen3-embedding-0.6b", dimension: 1024, runtimeBuild: "b10951" },
+					}),
+					verifyModel: async () => ({
+						profileId: "qwen3-embedding-0.6b",
+						path: "/cache/model.gguf",
+						hash: "sha",
+					}),
+				},
+			},
+		});
+		expect(report.mode).toBe("semantic");
+		expect(report.ok).toBe(true);
+		expect(report.remediation).toBeUndefined();
+		expect(report.runtime).toEqual({
+			state: "ready",
+			health: true,
+			model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+		});
+	});
+
+	it("never requires an env credential for a CLI-backed datasource", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				datasources: {
+					discord: {
+						instanceId: "geumcheon-artville",
+						connector: {
+							tokenEnv: "DISCORD_BOT_TOKEN",
+							guildId: "1490970691820847155",
+							channels: ["일반"],
+							maxDocuments: 300,
+						},
+					},
+					slack: { connector: { tokenEnv: "SLACK_TOKEN" } },
+					github: { connector: { tokenEnv: "GITHUB_TOKEN", repos: ["Marker-Inc-Korea/AutoRAG"] } },
+				},
+			}),
+		);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: (name) => (name === "discrawl" || name === "slacrawl" ? `/usr/local/bin/${name}` : undefined),
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => ({
+						state: "ready",
+						backend: "auto",
+						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+						health: { ok: true, profileId: "qwen3-embedding-0.6b", dimension: 1024, runtimeBuild: "b10951" },
+					}),
+					verifyModel: async () => ({
+						profileId: "qwen3-embedding-0.6b",
+						path: "/cache/model.gguf",
+						hash: "sha",
+					}),
+				},
+			},
+		});
+		// The discord datasource reads discrawl's native store: the optional bot
+		// token is not a runtime requirement, so the probe must not invent one.
+		expect(report.datasources.find((entry) => entry.name === "discord")?.state).toBe("configured");
+		expect(JSON.stringify(report)).not.toContain("DISCORD_BOT_TOKEN");
+		expect(report.datasources.find((entry) => entry.name === "slack")?.state).toBe("configured");
+		// A non-CLI connector still owns an AutoRAG-side credential.
+		expect(report.datasources.find((entry) => entry.name === "github")).toMatchObject({
+			state: "skipped",
+			reason: "credential GITHUB_TOKEN is unavailable",
+		});
+	});
+
+	it("surfaces a runtime startup failure instead of discarding it", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => ({
+						state: "stopped",
+						backend: "auto",
+						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+						health: { ok: false, code: "unavailable", message: "Gateway is stopped.", retryable: true },
+					}),
+					verifyModel: async () => ({
+						profileId: "qwen3-embedding-0.6b",
+						path: "/cache/model.gguf",
+						hash: "sha",
+					}),
+					ensureRuntime: async () => {
+						throw new Error("spawn failed at /Users/alice/secret token=abc");
+					},
+				},
+			},
+		});
+		expect(report.mode).toBe("bm25");
+		expect(report.runtime.reason).toContain("spawn failed");
+		expect(JSON.stringify(report)).not.toContain("/Users/alice");
+	});
 });

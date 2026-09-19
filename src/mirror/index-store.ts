@@ -13,9 +13,28 @@ export interface ParsedMirrorEntry {
 	readonly updatedAt: string;
 }
 
+/** Why refresh deliberately left a source out of the parsed mirror. */
+export type ParsedMirrorSkipReason = "duplicate-excluded" | "parser-skipped" | "parser-failed";
+
+/**
+ * A source the last refresh decided not to mirror, pinned to the exact version it
+ * decided on. Staleness checks compare against this record instead of re-deriving
+ * the decision, so a deliberately skipped file is not reported as a new source.
+ */
+export interface ParsedMirrorSkipEntry {
+	readonly virtualPath: string;
+	readonly sourcePath: string;
+	readonly reason: ParsedMirrorSkipReason;
+	readonly sourceMtimeNs: number;
+	readonly sourceSizeBytes: number;
+	readonly updatedAt: string;
+}
+
 export interface ParsedMirrorIndex {
 	readonly version: 1;
 	readonly entries: Readonly<Record<string, ParsedMirrorEntry>>;
+	/** Deliberate skips recorded by the last refresh. Absent in indexes written before this field existed. */
+	readonly skipped?: Readonly<Record<string, ParsedMirrorSkipEntry>>;
 }
 
 export function emptyMirrorIndex(): ParsedMirrorIndex {
@@ -39,9 +58,31 @@ export function saveMirrorIndex(root: string, index: ParsedMirrorIndex): void {
 
 function isParsedMirrorIndex(value: unknown): value is ParsedMirrorIndex {
 	if (!isRecord(value) || value.version !== 1 || !isRecord(value.entries)) return false;
+	if (value.skipped !== undefined && !isParsedMirrorSkipRecord(value.skipped)) return false;
 	return Object.entries(value.entries).every(
 		([key, entry]) => isParsedMirrorEntry(entry) && key === entry.virtualPath,
 	);
+}
+
+function isParsedMirrorSkipRecord(value: unknown): boolean {
+	if (!isRecord(value)) return false;
+	return Object.entries(value).every(([key, entry]) => isParsedMirrorSkipEntry(entry) && key === entry.virtualPath);
+}
+
+function isParsedMirrorSkipEntry(value: unknown): value is ParsedMirrorSkipEntry {
+	return (
+		isRecord(value) &&
+		typeof value.virtualPath === "string" &&
+		typeof value.sourcePath === "string" &&
+		isParsedMirrorSkipReason(value.reason) &&
+		typeof value.sourceMtimeNs === "number" &&
+		typeof value.sourceSizeBytes === "number" &&
+		typeof value.updatedAt === "string"
+	);
+}
+
+function isParsedMirrorSkipReason(value: unknown): value is ParsedMirrorSkipReason {
+	return value === "duplicate-excluded" || value === "parser-skipped" || value === "parser-failed";
 }
 
 function isParsedMirrorEntry(value: unknown): value is ParsedMirrorEntry {

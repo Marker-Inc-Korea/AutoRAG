@@ -16,7 +16,12 @@ export interface SetupDatasourceReport {
 export interface SetupReport {
 	readonly ok: boolean;
 	readonly mode: "semantic" | "bm25";
-	readonly runtime: { readonly state: string; readonly health: boolean; readonly model: string };
+	readonly runtime: {
+		readonly state: string;
+		readonly health: boolean;
+		readonly model: string;
+		readonly reason?: string;
+	};
 	readonly model: { readonly valid: boolean; readonly profile: ProfileId };
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
@@ -56,11 +61,13 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	"cloud-drive": "rclone",
 	obsidian: "qmd",
 };
+/**
+ * Connectors AutoRAG authenticates itself. Every other built-in datasource is
+ * CLI-backed: the external CLI owns its archive, its index, and its
+ * credentials, so the probe never requires an env token for one.
+ */
 const DEFAULT_CREDENTIALS: Readonly<Record<string, readonly string[]>> = {
 	github: ["GITHUB_TOKEN"],
-	slack: ["SLACK_TOKEN"],
-	telegram: ["TELEGRAM_BOT_TOKEN"],
-	whatsapp: ["WHATSAPP_TOKEN"],
 };
 
 function executableInPath(name: string, env: NodeJS.ProcessEnv): string | undefined {
@@ -190,12 +197,21 @@ export async function runSetup(options: {
 				continue;
 			}
 			const connector = entry?.connector as Record<string, unknown> | undefined;
-			const credentialNames = configuredCredentialNames(connector, type);
-			if (type === "discord" && connector?.source === "bot") credentialNames.push("DISCORD_BOT_TOKEN");
-			const missingCredential = credentialNames.find((key) => env[key] === undefined || env[key] === "");
-			if (missingCredential) {
-				datasources.push({ name, state: "skipped", reason: `credential ${missingCredential} is unavailable` });
-				continue;
+			// A CLI-backed datasource owns its own credentials (native store,
+			// keychain, tool config), so an env credential is never a requirement for
+			// it — the probe must mirror what a refresh actually needs.
+			if (binary === undefined) {
+				const missingCredential = configuredCredentialNames(connector, type).find(
+					(key) => env[key] === undefined || env[key] === "",
+				);
+				if (missingCredential) {
+					datasources.push({
+						name,
+						state: "skipped",
+						reason: `credential ${missingCredential} is unavailable`,
+					});
+					continue;
+				}
 			}
 			const store = storeFor(type, entry?.connector as Record<string, unknown> | undefined, options.workspacePath);
 			if (store && !exists(store)) {
@@ -248,17 +264,24 @@ export async function runSetup(options: {
 			}
 		}
 		let effectiveRuntimeStatus = runtimeStatus;
+		let startupFailure: string | undefined;
 		if (modelValid && effectiveRuntimeStatus?.health.ok !== true && runtime.ensureRuntime !== undefined) {
 			try {
 				await runtime.ensureRuntime({ profileId });
 				effectiveRuntimeStatus = await runtime.runtimeStatus();
 			} catch (error) {
 				// Runtime startup is independent from model verification and datasource probes.
-				// The report remains useful in BM25 mode when startup is unavailable.
-				if (runtimeFailure === undefined) safeReason(error);
+				// The report remains useful in BM25 mode when startup is unavailable, but the
+				// failure reason must reach the caller instead of being discarded.
+				startupFailure = safeReason(error);
 			}
 		}
 		const semantic = modelValid && effectiveRuntimeStatus?.health.ok === true;
+		const healthFailure =
+			effectiveRuntimeStatus !== undefined && effectiveRuntimeStatus.health.ok === false
+				? effectiveRuntimeStatus.health.message
+				: undefined;
+		const runtimeReason = startupFailure ?? runtimeFailure ?? healthFailure;
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
@@ -266,6 +289,7 @@ export async function runSetup(options: {
 				state: effectiveRuntimeStatus?.state ?? runtimeFailure ?? "unavailable",
 				health: effectiveRuntimeStatus?.health.ok === true,
 				model: profile.model,
+				...(runtimeReason === undefined ? {} : { reason: runtimeReason }),
 			},
 			model: { valid: modelValid, profile: profile.profileId },
 			datasources,

@@ -132,9 +132,14 @@ describe("AutoRAGAgent", () => {
 		});
 		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
-		await expect(agent.searchDocuments("cap query")).rejects.toThrow(
-			"AutoRAG agent completed without emitting structured results",
-		);
+		const response = await agent.searchDocuments("cap query");
+		expect(response.results).toEqual([]);
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "missing-final-emit" && diagnostic.severity === "warning",
+			),
+		).toBe(true);
+		expect(response.retrievalTrace).toEqual([]);
 		expect(abortCalls).toBe(1);
 	});
 

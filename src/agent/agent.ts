@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -32,6 +32,7 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
+	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -100,6 +101,9 @@ import {
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
+	type SearchDocumentDiagnosticCode,
+	type SearchDocumentRetrievalTraceEntry,
+	type SearchDocumentRetrievalTraceResult,
 	type SearchDocumentsResponse,
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
@@ -139,6 +143,9 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly reason?: string;
+	/** Count of parsed documents excluded from the MinSync index by file name. */
+	readonly stagingExcludedCount?: number;
+	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
@@ -317,6 +324,7 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
@@ -678,9 +686,26 @@ export class AutoRAGAgent {
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
 			void this.activeSession?.abort();
 		}
-		const details = event.result.details as { method?: string; sources?: readonly string[] } | undefined;
+		const details = event.result.details as
+			| {
+					method?: string;
+					sources?: readonly string[];
+					resultCount?: number;
+					results?: readonly SearchDocumentRetrievalTraceResult[];
+			  }
+			| undefined;
 		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
 			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
+		}
+		if (Array.isArray(details?.results)) {
+			const args = (event as { args?: { query?: unknown } }).args;
+			this.retrievalTrace.push({
+				tool: event.toolName,
+				...(typeof args?.query === "string" ? { query: args.query } : {}),
+				resultCount:
+					typeof details?.resultCount === "number" ? details.resultCount : (details?.results?.length ?? 0),
+				results: details?.results ?? [],
+			});
 		}
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
@@ -789,6 +814,7 @@ export class AutoRAGAgent {
 
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
+		this.retrievalTrace = [];
 		this.sourceSearchCallCounts.clear();
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
@@ -889,18 +915,47 @@ export class AutoRAGAgent {
 
 			let emittedNoVerifiedResults = false;
 			if (captured === undefined) {
-				if (!this.remoteSession) {
-					throw new Error("AutoRAG agent completed without emitting structured results");
+				if (this.remoteSession) {
+					// Remote sessions fail soft: the peer must receive a structured
+					// "no verified results" response, never an internal error.
+					emittedNoVerifiedResults = true;
+					captured = {
+						answer: "No verified results were found for this query.",
+						results: [],
+						mapping: [],
+						warnings: [],
+					};
+				} else {
+					// Local sessions resolve with a degraded response that carries the
+					// run's retrieval trace instead of throwing away the whole run.
+					const reason = lastAssistantText(session?.agent.state.messages ?? []);
+					const response: SearchDocumentsResponse = {
+						sessionId,
+						query: trimmedQuery,
+						results: [],
+						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace),
+						searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
+						warnings: [],
+						diagnostics: [
+							...this.collectComponentDiagnostics(),
+							{
+								code: "missing-final-emit",
+								severity: "warning",
+								message:
+									"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
+							},
+						],
+						retrievalTrace: this.retrievalTrace,
+					};
+					this.runLogger.write({
+						event: "search_completed",
+						timestamp: new Date().toISOString(),
+						sessionId,
+						resultCount: 0,
+						degraded: true,
+					});
+					return response;
 				}
-				// Remote sessions fail soft: the peer must receive a structured
-				// "no verified results" response, never an internal error.
-				emittedNoVerifiedResults = true;
-				captured = {
-					answer: "No verified results were found for this query.",
-					results: [],
-					mapping: [],
-					warnings: [],
-				};
 			}
 			if (this.remoteSession && options.observedSources !== undefined) {
 				for (const entry of captured.mapping) options.observedSources.add(entry.source);
@@ -1343,16 +1398,26 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
-			const publicMinsync = minsync
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
+						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
+						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
+							? { stagingExcludedCount: minsync.stagingExcluded.length }
+							: {}),
 					}
 				: undefined;
 			return {
 				...summary,
-				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
+				diagnostics: [
+					...this.startupDiagnostics,
+					...summary.diagnostics,
+					...minsyncDiagnostics,
+					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
+				],
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -1375,6 +1440,11 @@ export class AutoRAGAgent {
 	/**
 	 * Path-opaque snapshot of corpus freshness and the last refresh outcome. Runs
 	 * a cheap parse-free staleness scan (stat only); never parses in this path.
+	 *
+	 * Freshness is read from disk, not from this instance's history: a separate CLI
+	 * process (for example `autorag status` or `autorag lite status`) reports the
+	 * corpus as current when the last refresh left parsed mirrors behind and no
+	 * source has changed since.
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const staleDiagnostics = await detectMirrorStaleness({
@@ -1395,6 +1465,11 @@ export class AutoRAGAgent {
 		];
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
+		for (const diag of minSyncRefreshDiagnostics(this.refreshState.minsync)) {
+			if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+				diagnostics.push(diag);
+			}
 		}
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
@@ -1417,13 +1492,15 @@ export class AutoRAGAgent {
 			: this.refreshState.lastOutcome === "never"
 				? "idle"
 				: this.refreshState.lastOutcome;
+		const parsedMirrorReady =
+			this.refreshState.lastOutcome === "success" || existsSync(refreshReadinessPath(this.workspaceProjectRoot));
 		return {
 			state,
 			inFlight: this.refreshState.inFlight,
 			lastStartedAt: this.refreshState.lastStartedAt,
 			lastFinishedAt: this.refreshState.lastFinishedAt,
 			counts: this.refreshState.counts,
-			stale: this.refreshState.lastOutcome === "never" || staleDiagnostics.length > 0,
+			stale: !parsedMirrorReady || staleDiagnostics.length > 0,
 			diagnostics,
 			components: this.refreshComponentStatus(),
 			lastError: this.refreshState.lastError,
@@ -1998,6 +2075,29 @@ export class AutoRAGAgent {
 	}
 }
 
+/**
+ * Degraded fallback answer for a run that ended without emit_autorag_results:
+ * states the search-range failure, carries the agent's own last note as the
+ * reason, suggests next steps, and points at the attached retrieval trace.
+ */
+function buildMissingFinalEmitAnswer(
+	query: string,
+	reason: string | undefined,
+	trace: readonly SearchDocumentRetrievalTraceEntry[],
+): string {
+	const lines = [
+		`The search run for "${query}" ended without finalized results: the agent ended its run without calling emit_autorag_results, so no curated answer is available within the configured search range.`,
+		reason === undefined
+			? "The agent did not record why it stopped."
+			: `The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`,
+		"Next steps: broaden the configured searchPaths, connect additional datasources (for example via `autorag ui` or the datasources configuration), or retry with a narrower or different query.",
+		trace.length > 0
+			? "Retrieval candidates gathered before the run ended are attached under `retrievalTrace` for inspection."
+			: "No retrieval candidates were gathered before the run ended.",
+	];
+	return lines.join("\n\n");
+}
+
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];
@@ -2012,12 +2112,72 @@ function lastAssistantText(messages: readonly AgentMessage[]): string | undefine
 	return undefined;
 }
 
+/**
+ * Documents the parsed mirror holds but the MinSync index cannot represent:
+ * a file name with no canonical source-id form stays searchable only as a raw
+ * file, so the gap is reported instead of being dropped silently.
+ */
+function stagingExcludedDiagnostics(excluded: readonly string[] | undefined): SearchDocumentDiagnostic[] {
+	return (excluded ?? []).map((source) => ({
+		code: "minsync-staging-excluded",
+		severity: "warning",
+		message: "Excluded from the MinSync index: this file name cannot be represented as a canonical source id.",
+		source,
+	}));
+}
+
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {
 	return {
 		code: diagnostic.code,
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+	};
+}
+
+function sanitizeDiagnosticMessage(raw: string): string {
+	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
+	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Project a MinSync sync result onto refresh diagnostics. A structured MinSync
+ * diagnostic wins; otherwise a failed sync is reported through its reason so a
+ * degraded semantic index is never silent.
+ */
+function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): SearchDocumentDiagnostic[] {
+	if (!minsync) return [];
+	if (minsync.diagnostic) return [toMinSyncDiagnostic(minsync.diagnostic, minsync.ok)];
+	if (!minsync.ok && minsync.reason) return [toMinSyncReasonDiagnostic(minsync.reason)];
+	return [];
+}
+
+function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {
+	const code: SearchDocumentDiagnosticCode =
+		diag.code === "embedder-unavailable"
+			? "embedder-unavailable"
+			: diag.code === "embedding-identity-mismatch"
+				? "embedding-identity-mismatch"
+				: "minsync-sync-failed";
+	return {
+		code,
+		severity: ok ? "info" : "error",
+		message: sanitizeDiagnosticMessage(diag.message),
+		source: "minsync",
+	};
+}
+
+function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
+	return {
+		code: reason === "missing-binary" ? "minsync-unavailable" : "minsync-sync-failed",
+		severity: reason === "missing-binary" ? "warning" : "error",
+		message:
+			reason === "missing-binary"
+				? "MinSync binary is not available and auto-install was skipped."
+				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
+		source: "minsync",
 	};
 }
 

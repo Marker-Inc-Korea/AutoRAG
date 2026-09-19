@@ -60,4 +60,83 @@ describe("embedding runtime public API", () => {
 		await runtime.stopRuntime();
 		expect(supervisor.shutdown).toHaveBeenCalledTimes(1);
 	});
+
+	it("recognizes a live gateway /healthz payload as healthy", async () => {
+		const { supervisor, cache } = deps();
+		const fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						status: "ok",
+						backend: "auto",
+						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+						dimension: 1024,
+						runtimeBuild: "b10951",
+						profileId: "qwen3-embedding-0.6b",
+					}),
+					{ status: 200 },
+				),
+		);
+		const runtime = createEmbeddingRuntime({
+			supervisor,
+			cache,
+			fetch,
+			platform: "darwin-arm64-metal",
+			gatewayFactory: async ({ upstreamUrl }) => ({
+				url: upstreamUrl.replace(/:\d+$/, ":43123"),
+				close: async () => {},
+			}),
+		});
+		await runtime.ensureRuntime();
+		const status = await runtime.runtimeStatus();
+		expect(status.health).toEqual({
+			ok: true,
+			profileId: "qwen3-embedding-0.6b",
+			dimension: 1024,
+			runtimeBuild: "b10951",
+		});
+	});
+
+	it("reports a non-ok gateway health payload as a failure", async () => {
+		const { supervisor, cache } = deps();
+		const fetch = vi.fn(async () => new Response(JSON.stringify({ status: "starting" }), { status: 200 }));
+		const runtime = createEmbeddingRuntime({
+			supervisor,
+			cache,
+			fetch,
+			platform: "darwin-arm64-metal",
+			gatewayFactory: async ({ upstreamUrl }) => ({
+				url: upstreamUrl.replace(/:\d+$/, ":43123"),
+				close: async () => {},
+			}),
+		});
+		await runtime.ensureRuntime();
+		const status = await runtime.runtimeStatus();
+		expect(status.health.ok).toBe(false);
+		expect(status.health).toMatchObject({ code: "incompatible" });
+	});
+
+	it("shares one gateway across concurrent ensureRuntime calls", async () => {
+		const { supervisor, cache } = deps();
+		const started: string[] = [];
+		const runtime = createEmbeddingRuntime({
+			supervisor,
+			cache,
+			platform: "darwin-arm64-metal",
+			gatewayFactory: async () => {
+				const url = `http://127.0.0.1:${43100 + started.length}`;
+				started.push(url);
+				return { url, close: async () => {} };
+			},
+		});
+
+		// Parallel retrieval methods (MinSync vector + hybrid) ensure the embedder at
+		// the same time. Each extra gateway listens on its own loopback port and the
+		// last one wins the runtime's reference, so a second start leaks a listening
+		// socket that keeps the process alive after the command has answered.
+		const [first, second] = await Promise.all([runtime.ensureRuntime(), runtime.ensureRuntime()]);
+
+		expect(started).toHaveLength(1);
+		expect(second.baseUrl).toBe(first.baseUrl);
+	});
 });

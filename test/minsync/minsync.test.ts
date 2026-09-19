@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	ensureLocalEmbedder,
 	ensureMinSyncBinary,
@@ -391,6 +392,101 @@ describe("MinSyncVectorMethod", () => {
 		expect(statSync(stagedPolicy).mtimeMs).toBe(preservedTime.getTime());
 	});
 
+	it("stages parsed mirror entries whose file names contain '#' or '?'", async () => {
+		// Given: real documents whose names carry URL-looking characters.
+		// `#` is legal on every host; `?` is reserved on Windows, so that half of
+		// the case only exists where such a file can be created.
+		const questionMarkHost = process.platform !== "win32";
+		const receiptOutput = join(root, ".autorag", "parsed", "files", "docs", "receipt #2832-1476.txt.md");
+		const queryOutput = join(root, ".autorag", "parsed", "files", "docs", "what ? query.txt.md");
+		writeFileSync(join(source, "receipt #2832-1476.txt"), "raw receipt source\n");
+		writeFileSync(receiptOutput, "Parsed receipt #2832-1476 for the July payout.\n");
+		if (questionMarkHost) {
+			writeFileSync(join(source, "what ? query.txt"), "raw query-marked source\n");
+			writeFileSync(queryOutput, "Parsed query-marked note about payouts.\n");
+		}
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/receipt #2832-1476.txt": {
+					virtualPath: "/docs/receipt #2832-1476.txt",
+					sourcePath: join(source, "receipt #2832-1476.txt"),
+					outputPath: receiptOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				...(questionMarkHost
+					? {
+							"/docs/what ? query.txt": {
+								virtualPath: "/docs/what ? query.txt",
+								sourcePath: join(source, "what ? query.txt"),
+								outputPath: queryOutput,
+								parserName: "plain-text",
+								sourceMtimeNs: 1,
+								sourceSizeBytes: 25,
+								updatedAt: "2026-01-01T00:00:00.000Z",
+							},
+						}
+					: {}),
+			},
+		});
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		// When
+		await method.sync();
+
+		// Then: every parsed document reaches the MinSync staging mirror.
+		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "receipt #2832-1476.txt.md"), "utf8")).toBe(
+			"Parsed receipt #2832-1476 for the July payout.\n",
+		);
+		if (questionMarkHost) {
+			expect(readFileSync(join(minsyncWorkspace, "files", "docs", "what ? query.txt.md"), "utf8")).toBe(
+				"Parsed query-marked note about payouts.\n",
+			);
+		}
+	});
+
+	it("reports staging exclusions through refresh diagnostics instead of dropping them silently", async () => {
+		// Given: a file name that cannot become a canonical source id (a POSIX
+		// backslash) — parseable, but not representable as a virtual id.
+		// Windows reserves the backslash as a path separator, so such a file
+		// name cannot exist there; the exclusion is POSIX-only by nature.
+		if (process.platform === "win32") return;
+		const trickyName = "policy\\note.txt";
+		writeFileSync(join(source, trickyName), "raw policy source\n");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const agent = new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
+		});
+
+		// When
+		const result = await agent.refresh(false, { methods: ["minsync"] });
+
+		// Then: the excluded document is named in the refresh diagnostics.
+		const excluded = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-staging-excluded");
+		expect(excluded.map((diagnostic) => diagnostic.source)).toEqual(["/docs/policy\\note.txt"]);
+	});
+
 	it("ignores traversal entries in a corrupt staging state", async () => {
 		// Given
 		const outsidePath = join(root, "outside.md");
@@ -543,6 +639,53 @@ describe("MinSyncVectorMethod", () => {
 				cwd: minSyncCwd(),
 			}),
 		);
+	});
+
+	it("serializes parallel retrievals that share one MinSync workspace", async () => {
+		// MinSync allows a single operation per workspace: a second concurrent
+		// operation fails with "another sync is in progress". AutoRAG registers the
+		// vector and hybrid methods, and the retriever runs them in parallel.
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { closeSync, mkdirSync, openSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+const lock = join(process.cwd(), ".minsync", "lock");
+mkdirSync(dirname(lock), { recursive: true });
+let fd;
+try {
+  fd = openSync(lock, "wx");
+} catch (error) {
+  if (error.code === "EEXIST") {
+    console.error("another sync is in progress");
+    process.exit(2);
+  }
+  throw error;
+}
+closeSync(fd);
+await new Promise((resolve) => setTimeout(resolve, 120));
+unlinkSync(lock);
+console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "Parsed renewal policy with cancellation terms." }] }));
+process.exit(0);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const vector = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const hybrid = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			mode: "hybrid",
+		});
+
+		const [semantic, hybridResults] = await Promise.all([
+			vector.retrieve("renewal cancellation", { topK: 2 }),
+			hybrid.retrieve("renewal cancellation", { topK: 2 }),
+		]);
+
+		expect(semantic).toHaveLength(1);
+		expect(hybridResults).toHaveLength(1);
 	});
 
 	it("routes lexical retrieval through MinSync BM25 mode", async () => {
@@ -1335,6 +1478,35 @@ describe("AutoRAG embedding runtime integration", () => {
 			readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"),
 		);
 		expect(identity).toMatchObject({ provider: "qwen", dimension: 1024, runtimeBuild: "b10951" });
+	});
+
+	it("keeps operator batching settings when a profile selects the runtime", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			runtime,
+			embedder: {
+				profile: "qwen3-embedding-0.6b",
+				batchSize: 32,
+				maxRetries: 5,
+				maxConcurrent: 2,
+				timeoutMs: 120_000,
+			},
+		}).sync();
+		expect(result.ok).toBe(true);
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder).toMatchObject({
+			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+			base_url: "http://127.0.0.1:43123",
+			batch_size: 32,
+			max_retries: 5,
+			max_concurrent: 2,
+			timeout_seconds: 120,
+		});
 	});
 
 	it("forces full reindex for stale identity without deleting the prior cursor", async () => {
