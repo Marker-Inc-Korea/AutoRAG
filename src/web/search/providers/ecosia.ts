@@ -123,7 +123,7 @@ async function callEcosiaHtml(params: SearchParams): Promise<string> {
 	if (isBlockedPage(page)) {
 		throw new SearchProviderError(
 			"ecosia",
-			"Ecosia blocked the request with a Cloudflare bot challenge. Ecosia's firewall throttles automated searches from datacenter/shared-egress IPs; try another web search provider such as DuckDuckGo, Brave, or Tavily.",
+			"Ecosia blocked the request with a Cloudflare bot challenge. Ecosia's firewall throttles automated searches from datacenter/shared-egress IPs; the automatic chain falls through to the next provider.",
 			429,
 		);
 	}

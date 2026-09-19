@@ -2,11 +2,12 @@
  * `web_search` agent tool — internet web search for the librarian agent.
  *
  * LLM-facing wrapper around the oh-my-pi-style provider chain in
- * `src/web/search/`: credential-free by default (DuckDuckGo/Startpage/…),
- * keyed providers activate via environment variables, and quota/auth/bot
+ * `src/web/search/`: credential-free end to end (model-native search on the
+ * agent's own model credential, the anonymous Perplexity ask endpoint,
+ * Parallel's keyless MCP, then the scraped engines), where quota/auth/bot
  * failures automatically fall back down the chain. The model only supplies
- * `query` plus optional hints; provider credentials are never exposed
- * through tool arguments.
+ * `query` plus optional hints; provider selection and credentials are never
+ * exposed through tool arguments.
  */
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
@@ -99,7 +100,7 @@ export function createWebSearchTool(
 					content: [
 						{
 							type: "text",
-							text: `Web search is currently unavailable: ${result.details.error} Try rephrasing the query, selecting another provider, or answering from local documents instead.`,
+							text: `Web search is currently unavailable: ${result.details.error} Try rephrasing the query, retrying later, or answering from local documents instead.`,
 						},
 					],
 					details: {

@@ -139,7 +139,7 @@ async function callMojeekHtml(params: SearchParams, numResults: number): Promise
 	if (isRobotPage(page)) {
 		throw new SearchProviderError(
 			"mojeek",
-			"Mojeek blocked the request with its automated-queries wall. Mojeek rate-limits scripted searches from datacenter/shared-egress IPs; retry later or configure another provider such as Brave, Tavily, Exa, or Kagi.",
+			"Mojeek blocked the request with its automated-queries wall. Mojeek rate-limits scripted searches from datacenter/shared-egress IPs; the automatic chain falls through to the next provider.",
 			429,
 		);
 	}
