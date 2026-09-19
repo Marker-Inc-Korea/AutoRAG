@@ -65,15 +65,18 @@ export function isFilesystemAbsolutePath(source: string): boolean {
 /**
  * Normalize an opaque virtual source id. Returns the normalized id, or
  * `undefined` when the input is syntactically invalid or unsafe (no leading
- * slash, URL scheme, fragment/query, traversal, NUL, backslash). Never throws
- * and never returns a real path — failures are signaled as `undefined`.
+ * slash, URL scheme, traversal, NUL, backslash). Never throws and never
+ * returns a real path — failures are signaled as `undefined`.
+ *
+ * `#` and `?` are NOT rejected: they are ordinary characters in a real file
+ * name, and ids are derived verbatim from real file names. URL-shaped input
+ * is already rejected by the scheme check above.
  */
 export function normalizeVirtualPath(virtual: string | undefined | null): string | undefined {
 	if (typeof virtual !== "string") return undefined;
 	let v = virtual.trim();
 	if (v.length === 0) return undefined;
 	if (URL_SCHEME_RE.test(v)) return undefined;
-	if (v.includes("#") || v.includes("?")) return undefined;
 	if (v.includes("\0")) return undefined;
 	if (!v.startsWith("/")) return undefined;
 	if (v.includes("\\")) return undefined;

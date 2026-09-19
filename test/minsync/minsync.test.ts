@@ -391,6 +391,65 @@ describe("MinSyncVectorMethod", () => {
 		expect(statSync(stagedPolicy).mtimeMs).toBe(preservedTime.getTime());
 	});
 
+	it("stages parsed mirror entries whose file names contain '#' or '?'", async () => {
+		// Given: real documents whose names carry URL-looking characters.
+		const receiptOutput = join(root, ".autorag", "parsed", "files", "docs", "receipt #2832-1476.txt.md");
+		const queryOutput = join(root, ".autorag", "parsed", "files", "docs", "what ? query.txt.md");
+		writeFileSync(join(source, "receipt #2832-1476.txt"), "raw receipt source\n");
+		writeFileSync(join(source, "what ? query.txt"), "raw query-marked source\n");
+		writeFileSync(receiptOutput, "Parsed receipt #2832-1476 for the July payout.\n");
+		writeFileSync(queryOutput, "Parsed query-marked note about payouts.\n");
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/receipt #2832-1476.txt": {
+					virtualPath: "/docs/receipt #2832-1476.txt",
+					sourcePath: join(source, "receipt #2832-1476.txt"),
+					outputPath: receiptOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/what ? query.txt": {
+					virtualPath: "/docs/what ? query.txt",
+					sourcePath: join(source, "what ? query.txt"),
+					outputPath: queryOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 25,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+			},
+		});
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		// When
+		await method.sync();
+
+		// Then: every parsed document reaches the MinSync staging mirror.
+		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "receipt #2832-1476.txt.md"), "utf8")).toBe(
+			"Parsed receipt #2832-1476 for the July payout.\n",
+		);
+		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "what ? query.txt.md"), "utf8")).toBe(
+			"Parsed query-marked note about payouts.\n",
+		);
+	});
+
 	it("ignores traversal entries in a corrupt staging state", async () => {
 		// Given
 		const outsidePath = join(root, "outside.md");
