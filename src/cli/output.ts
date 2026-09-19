@@ -10,6 +10,13 @@ export interface RenderOptions {
 	hint?: SearchHealthHint;
 }
 
+function sanitizeDiagnosticMessage(raw: string): string {
+	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
+	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return out.replace(/\s{2,}/g, " ").trim();
+}
+
 function diagnosticProjection(d: {
 	readonly code: string;
 	readonly severity: string;
@@ -24,15 +31,20 @@ function diagnosticProjection(d: {
 	const out: { code: string; severity: string; message: string; source?: string } = {
 		code: d.code,
 		severity: d.severity,
-		message: d.message,
+		message: sanitizeDiagnosticMessage(d.message),
 	};
 	if (d.source !== undefined) out.source = d.source;
 	return out;
 }
 
 function refreshEnvelope(result: AutoRAGRefreshResult) {
+	const minsyncOk = result.minsync === undefined || result.minsync.ok;
+	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
+	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
+	const ok = minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+
 	const envelope: Record<string, unknown> = {
-		ok: true,
+		ok,
 		counts: {
 			scanned: result.scanned,
 			written: result.written,
@@ -41,18 +53,26 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
+	if (result.minsync !== undefined) {
+		const minsyncObj: Record<string, unknown> = {
+			ok: result.minsync.ok,
+			synced: result.minsync.synced,
+		};
+		if (result.minsync.reason !== undefined) {
+			minsyncObj.reason = sanitizeDiagnosticMessage(result.minsync.reason);
+		}
+		if (result.minsync.diagnostics && result.minsync.diagnostics.length > 0) {
+			minsyncObj.diagnostics = result.minsync.diagnostics.map(diagnosticProjection);
+		}
+		envelope.minsync = minsyncObj;
+	}
 	if (result.datasources && result.datasources.length > 0) {
 		envelope.datasources = result.datasources.map((ds) => ({
 			ok: ds.ok,
 			skill: ds.skill,
 			instanceId: ds.instanceId,
 			indexedAt: ds.indexedAt,
-			diagnostics: (ds.diagnostics ?? []).map((d) => ({
-				code: d.code,
-				severity: d.severity,
-				message: d.message,
-				...(d.source !== undefined ? { source: d.source } : {}),
-			})),
+			diagnostics: (ds.diagnostics ?? []).map(diagnosticProjection),
 		}));
 	}
 	return envelope;
@@ -60,10 +80,22 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 
 function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): string {
 	const lines: string[] = [];
-	lines.push("refresh: ok");
+	const minsyncOk = result.minsync === undefined || result.minsync.ok;
+	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
+	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
+	const ok = minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+
+	lines.push(`refresh: ${ok ? "ok" : "failed"}`);
 	lines.push(
 		`  counts: scanned=${result.scanned} written=${result.written} deleted=${result.deleted} skipped=${result.skipped}`,
 	);
+	if (result.minsync !== undefined) {
+		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
+		if (result.minsync.reason !== undefined) {
+			parts.push(`reason=${sanitizeDiagnosticMessage(result.minsync.reason)}`);
+		}
+		lines.push(`  minsync: ${parts.join(" ")}`);
+	}
 	if (result.datasources && result.datasources.length > 0) {
 		for (const ds of result.datasources) {
 			lines.push(
@@ -71,9 +103,9 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 			);
 		}
 	}
-	if (debug && result.diagnostics && result.diagnostics.length > 0) {
+	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
 		for (const d of result.diagnostics) {
-			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
+			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${sanitizeDiagnosticMessage(d.message)}`);
 		}
 	}
 	return lines.join("\n");

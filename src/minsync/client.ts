@@ -224,12 +224,27 @@ export class MinSyncClient {
 				synced: 0,
 				workspacePath: this.workspacePath,
 				reason: "check-failed",
+				diagnostic: {
+					code: "embedder-unavailable",
+					message: check.stderr ? check.stderr.trim() : "MinSync check failed.",
+					retryable: true,
+				},
 			};
 		}
 		const checkFailure = readCheckFailure(check.stdout);
 		if (checkFailure) {
 			restoreConfig();
-			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: checkFailure,
+				diagnostic: {
+					code: "embedder-unavailable",
+					message: checkFailure,
+					retryable: true,
+				},
+			};
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
 		const dimensionChanged = embedder.dimension !== undefined && configuredDimension !== embedder.dimension;
@@ -245,6 +260,11 @@ export class MinSyncClient {
 				synced: 0,
 				workspacePath: this.workspacePath,
 				reason: "sync-failed",
+				diagnostic: {
+					code: "embedder-unavailable",
+					message: result.stderr ? result.stderr.trim() : "MinSync sync failed.",
+					retryable: true,
+				},
 			};
 		}
 		if (!existsSync(cursorPath)) {

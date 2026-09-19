@@ -32,6 +32,7 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
+	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -100,6 +101,7 @@ import {
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
+	type SearchDocumentDiagnosticCode,
 	type SearchDocumentRetrievalTraceEntry,
 	type SearchDocumentRetrievalTraceResult,
 	type SearchDocumentsResponse,
@@ -140,6 +142,7 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly reason?: string;
+	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
@@ -1357,16 +1360,25 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
-			const publicMinsync = minsync
+			const minsyncDiagnostics: SearchDocumentDiagnostic[] = [];
+			if (minsync) {
+				if (minsync.diagnostic) {
+					minsyncDiagnostics.push(toMinSyncDiagnostic(minsync.diagnostic, minsync.ok));
+				} else if (!minsync.ok && minsync.reason) {
+					minsyncDiagnostics.push(toMinSyncReasonDiagnostic(minsync.reason));
+				}
+			}
+			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
 						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 					}
 				: undefined;
 			return {
 				...summary,
-				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
+				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics, ...minsyncDiagnostics],
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -1414,6 +1426,19 @@ export class AutoRAGAgent {
 		];
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
+		if (this.refreshState.minsync) {
+			if (this.refreshState.minsync.diagnostic) {
+				const diag = toMinSyncDiagnostic(this.refreshState.minsync.diagnostic, this.refreshState.minsync.ok);
+				if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+					diagnostics.push(diag);
+				}
+			} else if (!this.refreshState.minsync.ok && this.refreshState.minsync.reason) {
+				const diag = toMinSyncReasonDiagnostic(this.refreshState.minsync.reason);
+				if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+					diagnostics.push(diag);
+				}
+			}
 		}
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
@@ -2062,6 +2087,40 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+	};
+}
+
+function sanitizeDiagnosticMessage(raw: string): string {
+	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
+	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {
+	const code: SearchDocumentDiagnosticCode =
+		diag.code === "embedder-unavailable"
+			? "embedder-unavailable"
+			: diag.code === "embedding-identity-mismatch"
+				? "embedding-identity-mismatch"
+				: "minsync-sync-failed";
+	return {
+		code,
+		severity: ok ? "info" : "error",
+		message: sanitizeDiagnosticMessage(diag.message),
+		source: "minsync",
+	};
+}
+
+function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
+	return {
+		code: reason === "missing-binary" ? "minsync-unavailable" : "minsync-sync-failed",
+		severity: reason === "missing-binary" ? "warning" : "error",
+		message:
+			reason === "missing-binary"
+				? "MinSync binary is not available and auto-install was skipped."
+				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
+		source: "minsync",
 	};
 }
 

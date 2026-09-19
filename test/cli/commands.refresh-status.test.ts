@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -198,6 +198,47 @@ describe("runRefresh --method", () => {
 		expect(blob).not.toContain(root);
 		const parsed = JSON.parse(blob);
 		expect(parsed.counts).toBeDefined();
+		expect(parsed.minsync).toBeDefined();
+		expect(typeof parsed.minsync.ok).toBe("boolean");
+	});
+
+	it("surfaces minsync failure in refresh JSON envelope when minsync embedder fails", async () => {
+		const fakeBinary = join(root, "fake-failing-minsync.sh");
+		writeFileSync(
+			fakeBinary,
+			`#!/bin/sh
+case "$1" in
+  init) mkdir -p .minsync; printf '%s\\n' '[embedder]' 'id = "fixture"' > .minsync/config.toml; exit 0 ;;
+  check) printf '%s\\n' '{"vectorstore_ok":true,"embedder_ok":false}'; exit 0 ;;
+  sync) exit 2 ;;
+esac
+exit 2
+`,
+		);
+		chmodSync(fakeBinary, 0o755);
+
+		writeConfig({
+			binaryPath: fakeBinary,
+			workspacePath: join(root, ".autorag", "minsync"),
+			autoInstall: false,
+		});
+
+		const refreshOut: string[] = [];
+		const refreshCode = await runRefresh(makeCtx({ stdout: (line) => refreshOut.push(line) }));
+		expect(refreshCode).toBe(0);
+		expect(refreshOut).toHaveLength(1);
+
+		const parsed = JSON.parse(refreshOut[0]);
+		expect(parsed.ok).toBe(false);
+		expect(parsed.minsync).toBeDefined();
+		expect(parsed.minsync.ok).toBe(false);
+		expect(parsed.minsync.reason).toContain("check-failed");
+		expect(
+			parsed.diagnostics.some(
+				(d: { code: string }) => d.code === "embedder-unavailable" || d.code === "minsync-check-failed",
+			),
+		).toBe(true);
+		expect(refreshOut[0]).not.toContain(root);
 	});
 
 	it("refreshes with all methods when --method all is given", async () => {

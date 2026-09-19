@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -175,5 +175,39 @@ describe("getRefreshStatus", () => {
 		const status = await agent.getRefreshStatus();
 		handle.stop();
 		expect(status.diagnostics.some((d) => d.code === "watch-limited")).toBe(true);
+	});
+
+	it("surfaces minsync failure diagnostics in refresh results and getRefreshStatus", async () => {
+		const fakeBinary = join(root, "fake-failing-minsync.sh");
+		writeFileSync(
+			fakeBinary,
+			`#!/bin/sh
+case "$1" in
+  init) mkdir -p .minsync; printf '%s\\n' '[embedder]' 'id = "fixture"' > .minsync/config.toml; exit 0 ;;
+  check) printf '%s\\n' '{"vectorstore_ok":true,"embedder_ok":false}'; exit 0 ;;
+  sync) exit 2 ;;
+esac
+exit 2
+`,
+		);
+		chmodSync(fakeBinary, 0o755);
+
+		const agent = makeAgent({
+			minSync: {
+				binaryPath: fakeBinary,
+				workspacePath: join(root, ".autorag", "minsync"),
+				autoInstall: false,
+			},
+		});
+
+		const result = await agent.refresh(true);
+		expect(result.minsync).toBeDefined();
+		expect(result.minsync?.ok).toBe(false);
+		expect(result.minsync?.diagnostics?.some((d) => d.code === "embedder-unavailable")).toBe(true);
+		expect(result.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
+
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("degraded");
+		expect(status.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
 	});
 });
