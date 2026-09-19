@@ -98,6 +98,7 @@ describe("runSearch", () => {
 		const code = await runSearch(ctx, {
 			agentFactory: () => ({
 				async *searchDocumentsStream() {
+					yield* [];
 					throw new Error("model exploded");
 				},
 			}),
