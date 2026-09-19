@@ -28,16 +28,9 @@
 
 ## What is AutoRAG Agent?
 
-Search tools typically return a list of matching lines and file paths, leaving the hardest part to you: reading every file, deciphering context, reconciling conflicting drafts, and synthesizing answers.
+Search tools dump file paths and matching lines — forcing you to open files, read context, and synthesize answers yourself.
 
-**AutoRAG Agent** transforms this workflow into an autonomous, specialized **librarian agent**. Built on the [Pi](https://github.com/earendil-works/pi-mono) agent framework, AutoRAG Agent:
-1. **Searches** across multiple retrieval methods simultaneously (BM25 keyword search, semantic vector retrieval, Jikji discovery, and federated datasource skills).
-2. **Reads & verifies** candidate documents directly through filesystem tools (`bash` using real file paths), inspecting context rather than blindly relying on chunk fragments.
-3. **Judges & curates** evidence, resolving contradictions and assessing document freshness.
-4. **Delivers** numbered, source-grounded knowledge units rather than unformatted raw grep dumps.
-5. **Learns continuously** via an adaptive memory system that records search outcomes and adapts retrieval strategies over time.
-
-A single configured model owns the entire retrieval, verification, and curation loop — ensuring high-speed interactive search with zero unnecessary agent coordination overhead.
+**AutoRAG Agent is a self-evolving librarian agent.** Built on the [Pi](https://github.com/earendil-works/pi-mono) agent framework, a single configured model searches across multiple retrieval methods, opens source documents directly via `bash` to verify ground truth, and curates answers into clean, numbered knowledge units:
 
 ```text
 You ask:  "What changes were made to the cloud infrastructure contract in Q3?"
@@ -50,36 +43,15 @@ AutoRAG Agent:
 
 ---
 
-## The Three Core Philosophies
+## Core Values
 
-Every architectural decision in AutoRAG Agent is anchored in three non-negotiable principles:
+Three principles drive every design decision in AutoRAG Agent:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 1. Never migrate your data to search it.                                    │
-│    Federates CLI-owned stores (katok, discrawl, qmd, mailcrawl, rclone)    │
-│    in place. No forced ingestion into a centralized third-party index.      │
-│    Results retain source-native identities (/kakao/..., /slack/...).        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 2. Just works — no RAG degree required.                                     │
-│    No vector-DB ops, no pipeline tuning, no remote embedding keys needed.   │
-│    Local embedding runtime and MinSync CDC chunking work out of the box.     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 3. Fast by design.                                                          │
-│    One configured model owns the complete loop. Local CDC chunks, BM25,     │
-│    vector, and hybrid retrieval are optimized for minimal latency.          │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`katok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
-1. **Never migrate your data to search it.**  
-   Traditional RAG systems force you to upload, ETL, and duplicate your private files and chat messages into a central cloud database or proprietary vector store. AutoRAG Agent federates your data **in place**. It integrates natively with CLI-owned stores (`katok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`, etc.) where your data already lives. Results retain opaque, source-native identities (e.g. `/kakao/personal/chunks/102`, `/discord/guild/chunks/55`), preserving access control, local-first privacy, and auditability.
-   *(Read our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why federated in-place search is the durable differentiator).*
+2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding API keys. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) out of the box with zero external telemetry.
 
-2. **Just works — no RAG degree required.**  
-   You shouldn't need a PhD in vector search or pipeline engineering just to search your notes. AutoRAG Agent automatically installs and manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) (using `qwen3-embedding-0.6b` / `EmbeddingGemma`). No external embedding API keys, no vector database server to maintain, and zero telemetry.
-
-3. **Fast by design.**  
-   Rather than coordinating complex, slow multi-agent hierarchies, a single high-throughput model owns the entire search, direct read, and curation loop. Retrieval runs locally over pre-indexed CDC chunks (supporting BM25, vector, and hybrid modes), providing rapid turnaround for multi-turn research queries.
+3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (BM25, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
 
 ---
 
