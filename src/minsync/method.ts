@@ -125,10 +125,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
-		syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
+			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
 		const binaryResult = await this.resolveBinary();
 		if (binaryResult === undefined) {
-			return degrade(this.workspacePath, "missing-binary");
+			return withExcluded(degrade(this.workspacePath, "missing-binary"));
 		}
 		if (typeof binaryResult === "string") {
 			const client = new MinSyncClient({
@@ -138,10 +140,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				maxChunkSize: this.maxChunkSize,
 				runtime: this.runtime,
 			});
-			return client.sync(force);
+			return withExcluded(await client.sync(force));
 		}
 		// install-failed degrade result
-		return binaryResult;
+		return withExcluded(binaryResult);
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */

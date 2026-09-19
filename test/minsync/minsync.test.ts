@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	ensureLocalEmbedder,
 	ensureMinSyncBinary,
@@ -389,6 +390,101 @@ describe("MinSyncVectorMethod", () => {
 			"Parsed new notice.\n",
 		);
 		expect(statSync(stagedPolicy).mtimeMs).toBe(preservedTime.getTime());
+	});
+
+	it("stages parsed mirror entries whose file names contain '#' or '?'", async () => {
+		// Given: real documents whose names carry URL-looking characters.
+		// `#` is legal on every host; `?` is reserved on Windows, so that half of
+		// the case only exists where such a file can be created.
+		const questionMarkHost = process.platform !== "win32";
+		const receiptOutput = join(root, ".autorag", "parsed", "files", "docs", "receipt #2832-1476.txt.md");
+		const queryOutput = join(root, ".autorag", "parsed", "files", "docs", "what ? query.txt.md");
+		writeFileSync(join(source, "receipt #2832-1476.txt"), "raw receipt source\n");
+		writeFileSync(receiptOutput, "Parsed receipt #2832-1476 for the July payout.\n");
+		if (questionMarkHost) {
+			writeFileSync(join(source, "what ? query.txt"), "raw query-marked source\n");
+			writeFileSync(queryOutput, "Parsed query-marked note about payouts.\n");
+		}
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/receipt #2832-1476.txt": {
+					virtualPath: "/docs/receipt #2832-1476.txt",
+					sourcePath: join(source, "receipt #2832-1476.txt"),
+					outputPath: receiptOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				...(questionMarkHost
+					? {
+							"/docs/what ? query.txt": {
+								virtualPath: "/docs/what ? query.txt",
+								sourcePath: join(source, "what ? query.txt"),
+								outputPath: queryOutput,
+								parserName: "plain-text",
+								sourceMtimeNs: 1,
+								sourceSizeBytes: 25,
+								updatedAt: "2026-01-01T00:00:00.000Z",
+							},
+						}
+					: {}),
+			},
+		});
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		// When
+		await method.sync();
+
+		// Then: every parsed document reaches the MinSync staging mirror.
+		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "receipt #2832-1476.txt.md"), "utf8")).toBe(
+			"Parsed receipt #2832-1476 for the July payout.\n",
+		);
+		if (questionMarkHost) {
+			expect(readFileSync(join(minsyncWorkspace, "files", "docs", "what ? query.txt.md"), "utf8")).toBe(
+				"Parsed query-marked note about payouts.\n",
+			);
+		}
+	});
+
+	it("reports staging exclusions through refresh diagnostics instead of dropping them silently", async () => {
+		// Given: a file name that cannot become a canonical source id (a POSIX
+		// backslash) — parseable, but not representable as a virtual id.
+		// Windows reserves the backslash as a path separator, so such a file
+		// name cannot exist there; the exclusion is POSIX-only by nature.
+		if (process.platform === "win32") return;
+		const trickyName = "policy\\note.txt";
+		writeFileSync(join(source, trickyName), "raw policy source\n");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const agent = new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
+		});
+
+		// When
+		const result = await agent.refresh(false, { methods: ["minsync"] });
+
+		// Then: the excluded document is named in the refresh diagnostics.
+		const excluded = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-staging-excluded");
+		expect(excluded.map((diagnostic) => diagnostic.source)).toEqual(["/docs/policy\\note.txt"]);
 	});
 
 	it("ignores traversal entries in a corrupt staging state", async () => {

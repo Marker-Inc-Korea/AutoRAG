@@ -142,6 +142,8 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly reason?: string;
+	/** Count of parsed documents excluded from the MinSync index by file name. */
+	readonly stagingExcludedCount?: number;
 	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
@@ -1367,11 +1369,19 @@ export class AutoRAGAgent {
 						synced: minsync.synced,
 						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
 						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
+						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
+							? { stagingExcludedCount: minsync.stagingExcluded.length }
+							: {}),
 					}
 				: undefined;
 			return {
 				...summary,
-				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics, ...minsyncDiagnostics],
+				diagnostics: [
+					...this.startupDiagnostics,
+					...summary.diagnostics,
+					...minsyncDiagnostics,
+					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
+				],
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -2064,6 +2074,20 @@ function lastAssistantText(messages: readonly AgentMessage[]): string | undefine
 		if (text !== "") return text;
 	}
 	return undefined;
+}
+
+/**
+ * Documents the parsed mirror holds but the MinSync index cannot represent:
+ * a file name with no canonical source-id form stays searchable only as a raw
+ * file, so the gap is reported instead of being dropped silently.
+ */
+function stagingExcludedDiagnostics(excluded: readonly string[] | undefined): SearchDocumentDiagnostic[] {
+	return (excluded ?? []).map((source) => ({
+		code: "minsync-staging-excluded",
+		severity: "warning",
+		message: "Excluded from the MinSync index: this file name cannot be represented as a canonical source id.",
+		source,
+	}));
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

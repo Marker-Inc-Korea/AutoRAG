@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { isFilesystemAbsolutePath, normalizeSource, planSourceRoots } from "../../src/filesystem/source-paths.ts";
+import {
+	isFilesystemAbsolutePath,
+	normalizeSource,
+	normalizeVirtualPath,
+	planSourceRoots,
+} from "../../src/filesystem/source-paths.ts";
 
 describe("isFilesystemAbsolutePath", () => {
 	it("accepts POSIX absolute paths", () => {
@@ -73,6 +78,20 @@ describe("normalizeSource", () => {
 	it("collapses duplicate separators in virtual and datasource ids", () => {
 		const { roots } = makeRoots();
 		expect(normalizeSource("/kakao//default//chunks/chunk-1", roots)).toBe("/kakao/default/chunks/chunk-1");
+	});
+
+	it("keeps file names that contain '#' or '?' as canonical virtual ids", () => {
+		const { roots, docsDir } = makeRoots();
+		// Real file names are data, not URL syntax: a receipt named
+		// `... #2832-1476.txt` must keep its canonical id so parsed mirrors stay
+		// indexable end to end (issue #1617).
+		expect(normalizeVirtualPath("/docs/receipt #2832-1476.txt")).toBe("/docs/receipt #2832-1476.txt");
+		expect(normalizeVirtualPath("/docs/what ? query.txt")).toBe("/docs/what ? query.txt");
+		expect(normalizeSource(join(docsDir, "receipt #2832-1476.txt"), roots)).toBe("/docs/receipt #2832-1476.txt");
+		expect(normalizeSource(join(docsDir, "what ? query.txt"), roots)).toBe("/docs/what ? query.txt");
+		expect(normalizeSource("/docs/receipt #2832-1476.txt", roots)).toBe("/docs/receipt #2832-1476.txt");
+		// URL-shaped sources are still rejected: the ban targeted syntax, not names.
+		expect(normalizeVirtualPath("file:///docs/a.md")).toBeUndefined();
 	});
 
 	it("passes an absolute filesystem path outside every source root through as its own canonical form", () => {

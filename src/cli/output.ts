@@ -65,6 +65,11 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		if (result.minsync.diagnostics && result.minsync.diagnostics.length > 0) {
 			minsyncObj.diagnostics = result.minsync.diagnostics.map(diagnosticProjection);
 		}
+		// The per-document diagnostics already name each excluded source; the
+		// count makes the gap scannable without reading the list.
+		if (result.minsync.stagingExcludedCount !== undefined) {
+			minsyncObj.stagingExcludedCount = result.minsync.stagingExcludedCount;
+		}
 		envelope.minsync = minsyncObj;
 	}
 	if (result.datasources && result.datasources.length > 0) {
