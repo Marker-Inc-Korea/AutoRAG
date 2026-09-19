@@ -41,6 +41,18 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
+	if (result.minsync !== undefined) {
+		// The per-document diagnostics already name each excluded source; the
+		// count makes the gap scannable without reading the list.
+		envelope.minsync = {
+			ok: result.minsync.ok,
+			synced: result.minsync.synced,
+			...(result.minsync.reason !== undefined ? { reason: result.minsync.reason } : {}),
+			...(result.minsync.stagingExcludedCount !== undefined
+				? { stagingExcludedCount: result.minsync.stagingExcludedCount }
+				: {}),
+		};
+	}
 	if (result.datasources && result.datasources.length > 0) {
 		envelope.datasources = result.datasources.map((ds) => ({
 			ok: ds.ok,
