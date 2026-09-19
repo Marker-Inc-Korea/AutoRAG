@@ -56,4 +56,78 @@ describe("setup orchestration", () => {
 			apiKeyEnv: "SECRET_KEY",
 		});
 	});
+
+	it("reports semantic mode when the runtime answers a live health probe", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => ({
+						state: "ready",
+						backend: "auto",
+						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+						health: { ok: true, profileId: "qwen3-embedding-0.6b", dimension: 1024, runtimeBuild: "b10951" },
+					}),
+					verifyModel: async () => ({
+						profileId: "qwen3-embedding-0.6b",
+						path: "/cache/model.gguf",
+						hash: "sha",
+					}),
+				},
+			},
+		});
+		expect(report.mode).toBe("semantic");
+		expect(report.ok).toBe(true);
+		expect(report.remediation).toBeUndefined();
+		expect(report.runtime).toEqual({
+			state: "ready",
+			health: true,
+			model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+		});
+	});
+
+	it("surfaces a runtime startup failure instead of discarding it", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => ({
+						state: "stopped",
+						backend: "auto",
+						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+						health: { ok: false, code: "unavailable", message: "Gateway is stopped.", retryable: true },
+					}),
+					verifyModel: async () => ({
+						profileId: "qwen3-embedding-0.6b",
+						path: "/cache/model.gguf",
+						hash: "sha",
+					}),
+					ensureRuntime: async () => {
+						throw new Error("spawn failed at /Users/alice/secret token=abc");
+					},
+				},
+			},
+		});
+		expect(report.mode).toBe("bm25");
+		expect(report.runtime.reason).toContain("spawn failed");
+		expect(JSON.stringify(report)).not.toContain("/Users/alice");
+	});
 });
