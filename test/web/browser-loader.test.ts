@@ -111,11 +111,11 @@ function fakeBrowser(page: { html: string; status: number; url: string }): WebSe
 	const fakePage: WebSearchBrowserPage = {
 		content: async () => page.html,
 		url: () => page.url,
-		close: async () => { },
+		close: async () => {},
 		goto: async (_target: string) => ({ status: () => page.status }),
-		setViewport: async () => { },
-		evaluateOnNewDocument: async () => { },
+		setViewport: async () => {},
+		evaluateOnNewDocument: async () => {},
 		waitForSelector: async () => null,
 	};
-	return { newPage: async () => fakePage, close: async () => { } };
+	return { newPage: async () => fakePage, close: async () => {} };
 }
