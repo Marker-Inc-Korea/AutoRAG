@@ -176,8 +176,29 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		);
 		return { modelPath, runtimePath };
 	}
+	let ensureInFlight: { readonly profileId: ProfileId; readonly promise: Promise<EnsuredRuntime> } | undefined;
+
+	/**
+	 * Concurrent callers for the same profile share one loopback gateway. Parallel
+	 * retrieval methods (MinSync vector and hybrid) ensure the embedder at the same
+	 * time; without coalescing each one starts its own server, and the later start
+	 * takes over the runtime's reference, leaving the earlier socket listening for
+	 * the life of the process.
+	 */
 	async function ensureRuntime(input: EnsureRuntimeOptions = {}): Promise<EnsuredRuntime> {
 		const profile = profileOf(input.profileId);
+		const pending = ensureInFlight;
+		if (pending !== undefined && pending.profileId === profile.profileId) return pending.promise;
+		const promise = ensureRuntimeOnce(profile, input);
+		ensureInFlight = { profileId: profile.profileId, promise };
+		try {
+			return await promise;
+		} finally {
+			if (ensureInFlight?.promise === promise) ensureInFlight = undefined;
+		}
+	}
+
+	async function ensureRuntimeOnce(profile: RuntimeProfile, input: EnsureRuntimeOptions): Promise<EnsuredRuntime> {
 		stoppedByService = false;
 		const selectedSupervisor = input.supervisor ?? options.supervisor;
 		if (selectedSupervisor) supervisor = selectedSupervisor;

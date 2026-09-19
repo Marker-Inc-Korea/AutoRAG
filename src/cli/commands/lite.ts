@@ -28,8 +28,15 @@ Subcommands:
                        Scan duplicate document families without deleting files
   autorag lite health  Show model-free index health (alias of lite status)
   autorag lite retrieve <query>
-                       Retrieve documents without model curation
-                       (--top-k N  --scope SCOPE  --tags A,B  --json  --debug)
+                       Retrieve documents without model curation. A stale index is
+                       reported as "stale": true plus stale-index diagnostics, and
+                       the query is still answered; indexes are only rebuilt when
+                       asked to.
+                       (--top-k N  --scope SCOPE  --tags A,B
+                        --refresh  --strict  --json  --debug)
+                       --refresh rebuilds the indexes incrementally first;
+                       --strict fails with exit 2 when the index is stale instead
+                       of answering from it.
   autorag lite report <query>
                        Persist a structured report from external curation
                        (--input FILE  --json  --debug)

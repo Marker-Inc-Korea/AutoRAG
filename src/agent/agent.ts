@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -1398,6 +1398,11 @@ export class AutoRAGAgent {
 	/**
 	 * Path-opaque snapshot of corpus freshness and the last refresh outcome. Runs
 	 * a cheap parse-free staleness scan (stat only); never parses in this path.
+	 *
+	 * Freshness is read from disk, not from this instance's history: a separate CLI
+	 * process (for example `autorag status` or `autorag lite status`) reports the
+	 * corpus as current when the last refresh left parsed mirrors behind and no
+	 * source has changed since.
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const staleDiagnostics = await detectMirrorStaleness({
@@ -1440,13 +1445,15 @@ export class AutoRAGAgent {
 			: this.refreshState.lastOutcome === "never"
 				? "idle"
 				: this.refreshState.lastOutcome;
+		const parsedMirrorReady =
+			this.refreshState.lastOutcome === "success" || existsSync(refreshReadinessPath(this.workspaceProjectRoot));
 		return {
 			state,
 			inFlight: this.refreshState.inFlight,
 			lastStartedAt: this.refreshState.lastStartedAt,
 			lastFinishedAt: this.refreshState.lastFinishedAt,
 			counts: this.refreshState.counts,
-			stale: this.refreshState.lastOutcome === "never" || staleDiagnostics.length > 0,
+			stale: !parsedMirrorReady || staleDiagnostics.length > 0,
 			diagnostics,
 			components: this.refreshComponentStatus(),
 			lastError: this.refreshState.lastError,
