@@ -13,7 +13,7 @@ import { Type } from "typebox";
 import { WEB_SEARCH_TOOL_DESCRIPTION } from "../web/search/format.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { setExcludedSearchProviders, setSearchProviderOrder } from "../web/search/provider.ts";
-import { isSearchProviderId, SEARCH_PROVIDER_CHOICES, type SearchProviderId } from "../web/search/types.ts";
+import type { SearchProviderId } from "../web/search/types.ts";
 
 export const WEB_SEARCH_TOOL_NAME = "web_search";
 
@@ -29,11 +29,6 @@ const webSearchSchema = Type.Object({
 	),
 	limit: Type.Optional(Type.Integer({ description: "Maximum number of results to return." })),
 	num_search_results: Type.Optional(Type.Integer({ description: "Alias for limit (result count hint)." })),
-	provider: Type.Optional(
-		Type.String({
-			description: `Optional explicit provider id (${SEARCH_PROVIDER_CHOICES.map((choice) => choice.value).join(", ")}). Default: auto chain with fallback.`,
-		}),
-	),
 });
 
 export interface WebSearchToolOptions {
@@ -80,8 +75,10 @@ export function createWebSearchTool(
 					},
 				};
 			}
-			const forcedProvider =
-				options.provider ?? (params.provider && isSearchProviderId(params.provider) ? params.provider : undefined);
+			// The model never picks a provider: routing always goes through the
+			// auto chain (a forced provider remains an operator-only config
+			// option), so quota/auth/challenge failures always fall back.
+			const forcedProvider = options.provider;
 			const result = await executeWebSearch(
 				{
 					query: params.query,

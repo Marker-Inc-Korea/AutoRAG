@@ -41,9 +41,10 @@ describe("web_search tool", () => {
 		expect(tool.label).toBe("Web Search");
 		expect(tool.description).toContain("Web search");
 		const props = (tool.parameters as { properties: Record<string, unknown> }).properties;
-		expect(Object.keys(props)).toEqual(
-			expect.arrayContaining(["query", "recency", "limit", "num_search_results", "provider"]),
-		);
+		expect(Object.keys(props)).toEqual(expect.arrayContaining(["query", "recency", "limit", "num_search_results"]));
+		// The agent must not pick providers: routing belongs to the auto chain
+		// (an explicit model choice bypasses quota/challenge fallback).
+		expect(Object.keys(props)).not.toContain("provider");
 		expect((tool.parameters as { required?: string[] }).required).toEqual(["query"]);
 	});
 

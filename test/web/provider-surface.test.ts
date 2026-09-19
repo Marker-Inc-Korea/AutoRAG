@@ -27,12 +27,10 @@ describe("shipped web-search provider surface", () => {
 		expect(option?.description).toMatch(/SEARXNG_ENDPOINT|advanced/i);
 	});
 
-	it("LLM-facing tool schema never advertises vendor-key providers", () => {
+	it("LLM-facing tool schema exposes no provider selection at all", () => {
+		// Provider routing is the auto chain's job; the model only passes a
+		// query, so keyed/gg engine ids can never leak to the LLM surface.
 		const tool = createWebSearchTool();
-		const providerParam = tool.parameters.properties.provider;
-		const description = providerParam && "description" in providerParam ? String(providerParam.description) : "";
-		for (const id of REMOVED_KEYED_IDS) {
-			expect(description, `tool schema must not advertise ${id}`).not.toContain(id);
-		}
+		expect(tool.parameters.properties).not.toHaveProperty("provider");
 	});
 });
