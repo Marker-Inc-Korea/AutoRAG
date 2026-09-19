@@ -19,7 +19,8 @@ import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./u
 
 const PERPLEXITY_ASK_URL = "https://www.perplexity.ai/rest/sse/perplexity_ask";
 const API_VERSION = "2.18";
-const DEFLECTION_PATTERN = /sign up|log in to continue|create an account|verify you are human|are you a robot/i;
+const DEFLECTION_PATTERN =
+	/sign up|log in|create an account|verify you are human|are you a robot|가입|로그인|회원 ?가입/i;
 const MAX_ERROR_BYTES = 8 * 1024;
 const ANONYMOUS_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";

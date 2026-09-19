@@ -180,6 +180,18 @@ describe("PerplexityProvider (anonymous ask)", () => {
 		expect(response.sources.map((source) => source.url)).toContain("https://r.example/");
 	});
 
+	it("treats a localized (Korean) sign-up deflection as a provider failure", async () => {
+		const { fetch: fetchImpl } = stubFetchSse([
+			{
+				blocks: [{ intended_usage: "ask_text", markdown_block: { chunks: ["가입한 뒤 요청을 다시 보내주세요."] } }],
+				final: true,
+			},
+		]);
+		await expect(new PerplexityProvider().search({ query: "수시 원서접수", fetch: fetchImpl })).rejects.toThrow(
+			/deflected/,
+		);
+	});
+
 	it("treats the anonymous sign-up deflection as a provider failure", async () => {
 		const { fetch: fetchImpl } = stubFetchSse([
 			{
