@@ -394,12 +394,17 @@ describe("MinSyncVectorMethod", () => {
 
 	it("stages parsed mirror entries whose file names contain '#' or '?'", async () => {
 		// Given: real documents whose names carry URL-looking characters.
+		// `#` is legal on every host; `?` is reserved on Windows, so that half of
+		// the case only exists where such a file can be created.
+		const questionMarkHost = process.platform !== "win32";
 		const receiptOutput = join(root, ".autorag", "parsed", "files", "docs", "receipt #2832-1476.txt.md");
 		const queryOutput = join(root, ".autorag", "parsed", "files", "docs", "what ? query.txt.md");
 		writeFileSync(join(source, "receipt #2832-1476.txt"), "raw receipt source\n");
-		writeFileSync(join(source, "what ? query.txt"), "raw query-marked source\n");
 		writeFileSync(receiptOutput, "Parsed receipt #2832-1476 for the July payout.\n");
-		writeFileSync(queryOutput, "Parsed query-marked note about payouts.\n");
+		if (questionMarkHost) {
+			writeFileSync(join(source, "what ? query.txt"), "raw query-marked source\n");
+			writeFileSync(queryOutput, "Parsed query-marked note about payouts.\n");
+		}
 		saveMirrorIndex(root, {
 			version: 1,
 			entries: {
@@ -421,15 +426,19 @@ describe("MinSyncVectorMethod", () => {
 					sourceSizeBytes: 18,
 					updatedAt: "2026-01-01T00:00:00.000Z",
 				},
-				"/docs/what ? query.txt": {
-					virtualPath: "/docs/what ? query.txt",
-					sourcePath: join(source, "what ? query.txt"),
-					outputPath: queryOutput,
-					parserName: "plain-text",
-					sourceMtimeNs: 1,
-					sourceSizeBytes: 25,
-					updatedAt: "2026-01-01T00:00:00.000Z",
-				},
+				...(questionMarkHost
+					? {
+							"/docs/what ? query.txt": {
+								virtualPath: "/docs/what ? query.txt",
+								sourcePath: join(source, "what ? query.txt"),
+								outputPath: queryOutput,
+								parserName: "plain-text",
+								sourceMtimeNs: 1,
+								sourceSizeBytes: 25,
+								updatedAt: "2026-01-01T00:00:00.000Z",
+							},
+						}
+					: {}),
 			},
 		});
 		writeFakeMinSync(JSON.stringify({ results: [] }));
@@ -446,9 +455,11 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "receipt #2832-1476.txt.md"), "utf8")).toBe(
 			"Parsed receipt #2832-1476 for the July payout.\n",
 		);
-		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "what ? query.txt.md"), "utf8")).toBe(
-			"Parsed query-marked note about payouts.\n",
-		);
+		if (questionMarkHost) {
+			expect(readFileSync(join(minsyncWorkspace, "files", "docs", "what ? query.txt.md"), "utf8")).toBe(
+				"Parsed query-marked note about payouts.\n",
+			);
+		}
 	});
 
 	it("reports staging exclusions through refresh diagnostics instead of dropping them silently", async () => {
