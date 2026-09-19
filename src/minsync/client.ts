@@ -225,7 +225,7 @@ export class MinSyncClient {
 				workspacePath: this.workspacePath,
 				reason: "check-failed",
 				diagnostic: {
-					code: "embedder-unavailable",
+					code: "sync-failed",
 					message: check.stderr ? check.stderr.trim() : "MinSync check failed.",
 					retryable: true,
 				},
@@ -240,7 +240,9 @@ export class MinSyncClient {
 				workspacePath: this.workspacePath,
 				reason: checkFailure,
 				diagnostic: {
-					code: "embedder-unavailable",
+					// Only an embedder preflight failure points at the embedder; a vector
+					// store or generic preflight failure must not send users to `models prefetch`.
+					code: checkFailure.includes("embedder") ? "embedder-unavailable" : "sync-failed",
 					message: checkFailure,
 					retryable: true,
 				},
@@ -261,7 +263,7 @@ export class MinSyncClient {
 				workspacePath: this.workspacePath,
 				reason: "sync-failed",
 				diagnostic: {
-					code: "embedder-unavailable",
+					code: "sync-failed",
 					message: result.stderr ? result.stderr.trim() : "MinSync sync failed.",
 					retryable: true,
 				},

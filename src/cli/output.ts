@@ -10,13 +10,6 @@ export interface RenderOptions {
 	hint?: SearchHealthHint;
 }
 
-function sanitizeDiagnosticMessage(raw: string): string {
-	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
-	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
-	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
-	return out.replace(/\s{2,}/g, " ").trim();
-}
-
 function diagnosticProjection(d: {
 	readonly code: string;
 	readonly severity: string;
@@ -31,20 +24,28 @@ function diagnosticProjection(d: {
 	const out: { code: string; severity: string; message: string; source?: string } = {
 		code: d.code,
 		severity: d.severity,
-		message: sanitizeDiagnosticMessage(d.message),
+		message: d.message,
 	};
 	if (d.source !== undefined) out.source = d.source;
 	return out;
 }
 
-function refreshEnvelope(result: AutoRAGRefreshResult) {
+/**
+ * A refresh is only `ok` when every index it touched succeeded. A failed
+ * MinSync sync, a failed datasource index, or any error-severity diagnostic
+ * makes the run a failure, so callers cannot read a green envelope over a
+ * semantic index that never updated.
+ */
+function refreshOk(result: AutoRAGRefreshResult): boolean {
 	const minsyncOk = result.minsync === undefined || result.minsync.ok;
 	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
 	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
-	const ok = minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+	return minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+}
 
+function refreshEnvelope(result: AutoRAGRefreshResult) {
 	const envelope: Record<string, unknown> = {
-		ok,
+		ok: refreshOk(result),
 		counts: {
 			scanned: result.scanned,
 			written: result.written,
@@ -59,7 +60,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 			synced: result.minsync.synced,
 		};
 		if (result.minsync.reason !== undefined) {
-			minsyncObj.reason = sanitizeDiagnosticMessage(result.minsync.reason);
+			minsyncObj.reason = result.minsync.reason;
 		}
 		if (result.minsync.diagnostics && result.minsync.diagnostics.length > 0) {
 			minsyncObj.diagnostics = result.minsync.diagnostics.map(diagnosticProjection);
@@ -80,10 +81,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 
 function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): string {
 	const lines: string[] = [];
-	const minsyncOk = result.minsync === undefined || result.minsync.ok;
-	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
-	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
-	const ok = minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+	const ok = refreshOk(result);
 
 	lines.push(`refresh: ${ok ? "ok" : "failed"}`);
 	lines.push(
@@ -92,7 +90,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	if (result.minsync !== undefined) {
 		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
 		if (result.minsync.reason !== undefined) {
-			parts.push(`reason=${sanitizeDiagnosticMessage(result.minsync.reason)}`);
+			parts.push(`reason=${result.minsync.reason}`);
 		}
 		lines.push(`  minsync: ${parts.join(" ")}`);
 	}
@@ -105,7 +103,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	}
 	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
 		for (const d of result.diagnostics) {
-			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${sanitizeDiagnosticMessage(d.message)}`);
+			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
 		}
 	}
 	return lines.join("\n");

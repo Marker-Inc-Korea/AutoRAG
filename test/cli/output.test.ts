@@ -64,6 +64,8 @@ describe("renderRefresh", () => {
 	});
 
 	it("reports ok: false and surfaces minsync error diagnostic when minsync fails", () => {
+		// MinSync text is sanitized where it enters the public result (the agent), so
+		// the renderer projects it verbatim.
 		const result: AutoRAGRefreshResult = {
 			scanned: 1,
 			written: 1,
@@ -74,19 +76,19 @@ describe("renderRefresh", () => {
 				{
 					code: "embedder-unavailable",
 					severity: "error",
-					message: "TEI API error 502 Bad Gateway at /secret/cache/model",
+					message: "TEI API error 502 Bad Gateway at <path>",
 					source: "minsync",
 				},
 			],
 			minsync: {
 				ok: false,
 				synced: 0,
-				reason: "check-failed: embedder unavailable at /secret/path",
+				reason: "check-failed: embedder unavailable",
 				diagnostics: [
 					{
 						code: "embedder-unavailable",
 						severity: "error",
-						message: "TEI API error 502 Bad Gateway at /secret/cache/model",
+						message: "TEI API error 502 Bad Gateway at <path>",
 						source: "minsync",
 					},
 				],
@@ -98,7 +100,7 @@ describe("renderRefresh", () => {
 		expect(parsed.ok).toBe(false);
 		expect(parsed.minsync.ok).toBe(false);
 		expect(parsed.minsync.synced).toBe(0);
-		expect(parsed.minsync.reason).toContain("<path>");
+		expect(parsed.minsync.reason).toBe("check-failed: embedder unavailable");
 		expect(parsed.minsync.diagnostics).toHaveLength(1);
 		expect(parsed.diagnostics[0].code).toBe("embedder-unavailable");
 		expect(jsonStr).not.toContain("/secret/");

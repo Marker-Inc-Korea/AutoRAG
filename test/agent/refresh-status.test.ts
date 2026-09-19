@@ -178,16 +178,27 @@ describe("getRefreshStatus", () => {
 	});
 
 	it("surfaces minsync failure diagnostics in refresh results and getRefreshStatus", async () => {
-		const fakeBinary = join(root, "fake-failing-minsync.sh");
+		// `.mjs` keeps the fixture spawnable on Windows, where shebang scripts are not.
+		const fakeBinary = join(root, "fake-failing-minsync.mjs");
 		writeFileSync(
 			fakeBinary,
-			`#!/bin/sh
-case "$1" in
-  init) mkdir -p .minsync; printf '%s\\n' '[embedder]' 'id = "fixture"' > .minsync/config.toml; exit 0 ;;
-  check) printf '%s\\n' '{"vectorstore_ok":true,"embedder_ok":false}'; exit 0 ;;
-  sync) exit 2 ;;
-esac
-exit 2
+			`#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+const args = process.argv.slice(2);
+const config = join(process.cwd(), ".minsync", "config.toml");
+if (args[0] === "init") {
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
+  console.log(JSON.stringify({ initialized: true }));
+  process.exit(0);
+}
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false }));
+  process.exit(0);
+}
+process.exit(2);
 `,
 		);
 		chmodSync(fakeBinary, 0o755);
@@ -205,6 +216,8 @@ exit 2
 		expect(result.minsync?.ok).toBe(false);
 		expect(result.minsync?.diagnostics?.some((d) => d.code === "embedder-unavailable")).toBe(true);
 		expect(result.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
+		// Path opacity: MinSync text reaches the public result already sanitized.
+		expect(JSON.stringify(result.minsync)).not.toContain(root);
 
 		const status = await agent.getRefreshStatus();
 		expect(status.components.minsync).toBe("degraded");

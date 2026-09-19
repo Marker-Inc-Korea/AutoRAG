@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runRefresh } from "../../src/cli/commands/refresh.ts";
 import { runStatus } from "../../src/cli/commands/status.ts";
@@ -9,10 +9,12 @@ import type { CommandContext } from "../../src/cli/commands/types.ts";
 let root: string;
 let docs: string;
 let previousHome: string | undefined;
+let previousPath: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-refresh-"));
 	previousHome = process.env.HOME;
+	previousPath = process.env.PATH;
 	process.env.HOME = join(root, "home");
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
@@ -22,6 +24,8 @@ beforeEach(() => {
 afterEach(() => {
 	if (previousHome === undefined) delete process.env.HOME;
 	else process.env.HOME = previousHome;
+	if (previousPath === undefined) delete process.env.PATH;
+	else process.env.PATH = previousPath;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -203,22 +207,41 @@ describe("runRefresh --method", () => {
 	});
 
 	it("surfaces minsync failure in refresh JSON envelope when minsync embedder fails", async () => {
-		const fakeBinary = join(root, "fake-failing-minsync.sh");
+		// The CLI config ignores a persisted `minSync.binaryPath`: MinSync is resolved
+		// from PATH and the workspace cache. The fixture therefore owns PATH, which
+		// also keeps the test independent of a real `minsync` on the developer's box.
+		// PATH injection of a shebang fixture is POSIX-only; the same failure path is
+		// covered cross-platform by test/agent/refresh-status.test.ts.
+		if (process.platform === "win32") return;
+
+		const fakeBinDir = join(root, "fake-bin");
+		mkdirSync(fakeBinDir, { recursive: true });
+		const fakeBinary = join(fakeBinDir, "minsync");
 		writeFileSync(
 			fakeBinary,
-			`#!/bin/sh
-case "$1" in
-  init) mkdir -p .minsync; printf '%s\\n' '[embedder]' 'id = "fixture"' > .minsync/config.toml; exit 0 ;;
-  check) printf '%s\\n' '{"vectorstore_ok":true,"embedder_ok":false}'; exit 0 ;;
-  sync) exit 2 ;;
-esac
-exit 2
+			`#!/usr/bin/env node
+const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
+
+const args = process.argv.slice(2);
+const config = join(process.cwd(), ".minsync", "config.toml");
+if (args[0] === "init") {
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
+  console.log(JSON.stringify({ initialized: true }));
+  process.exit(0);
+}
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false }));
+  process.exit(0);
+}
+process.exit(2);
 `,
 		);
 		chmodSync(fakeBinary, 0o755);
+		process.env.PATH = `${fakeBinDir}${delimiter}${previousPath ?? ""}`;
 
 		writeConfig({
-			binaryPath: fakeBinary,
 			workspacePath: join(root, ".autorag", "minsync"),
 			autoInstall: false,
 		});
@@ -235,7 +258,7 @@ exit 2
 		expect(parsed.minsync.reason).toContain("check-failed");
 		expect(
 			parsed.diagnostics.some(
-				(d: { code: string }) => d.code === "embedder-unavailable" || d.code === "minsync-check-failed",
+				(d: { code: string; source?: string }) => d.code === "embedder-unavailable" && d.source === "minsync",
 			),
 		).toBe(true);
 		expect(refreshOut[0]).not.toContain(root);

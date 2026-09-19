@@ -1360,19 +1360,12 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
-			const minsyncDiagnostics: SearchDocumentDiagnostic[] = [];
-			if (minsync) {
-				if (minsync.diagnostic) {
-					minsyncDiagnostics.push(toMinSyncDiagnostic(minsync.diagnostic, minsync.ok));
-				} else if (!minsync.ok && minsync.reason) {
-					minsyncDiagnostics.push(toMinSyncReasonDiagnostic(minsync.reason));
-				}
-			}
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
 						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 					}
 				: undefined;
@@ -1427,17 +1420,9 @@ export class AutoRAGAgent {
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
 		}
-		if (this.refreshState.minsync) {
-			if (this.refreshState.minsync.diagnostic) {
-				const diag = toMinSyncDiagnostic(this.refreshState.minsync.diagnostic, this.refreshState.minsync.ok);
-				if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
-					diagnostics.push(diag);
-				}
-			} else if (!this.refreshState.minsync.ok && this.refreshState.minsync.reason) {
-				const diag = toMinSyncReasonDiagnostic(this.refreshState.minsync.reason);
-				if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
-					diagnostics.push(diag);
-				}
+		for (const diag of minSyncRefreshDiagnostics(this.refreshState.minsync)) {
+			if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+				diagnostics.push(diag);
 			}
 		}
 		if (this.refreshState.watchLimited) {
@@ -2095,6 +2080,18 @@ function sanitizeDiagnosticMessage(raw: string): string {
 	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
 	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
 	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Project a MinSync sync result onto refresh diagnostics. A structured MinSync
+ * diagnostic wins; otherwise a failed sync is reported through its reason so a
+ * degraded semantic index is never silent.
+ */
+function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): SearchDocumentDiagnostic[] {
+	if (!minsync) return [];
+	if (minsync.diagnostic) return [toMinSyncDiagnostic(minsync.diagnostic, minsync.ok)];
+	if (!minsync.ok && minsync.reason) return [toMinSyncReasonDiagnostic(minsync.reason)];
+	return [];
 }
 
 function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {
