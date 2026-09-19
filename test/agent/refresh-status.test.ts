@@ -81,6 +81,31 @@ describe("getRefreshStatus", () => {
 		expect(status.diagnostics.some((d) => d.code === "stale-index")).toBe(true);
 	});
 
+	it("reports a refreshed workspace as current from a fresh instance", async () => {
+		await makeAgent().refresh(true);
+
+		// A new instance is what a separate CLI process sees: no in-memory refresh
+		// history, so freshness has to come from what the last refresh left on disk.
+		const status = await makeAgent().getRefreshStatus();
+
+		expect(status.stale).toBe(false);
+	});
+
+	it("stays current after a refresh that deliberately skipped sources", async () => {
+		// A product artifact and an unparseable file: refresh reports both, and must
+		// not leave the corpus reading as stale afterwards.
+		writeFileSync(join(docs, ".jikji_agent_map.md"), "# Jikji Agent Map\n");
+		writeFileSync(join(docs, "broken.hwp"), Buffer.from([1, 2, 3, 4]));
+
+		const agent = makeAgent();
+		const result = await agent.refresh(true);
+		const status = await agent.getRefreshStatus();
+
+		expect(result.diagnostics.some((d) => d.code === "parser-failed")).toBe(true);
+		expect(status.stale).toBe(false);
+		expect(status.diagnostics.some((d) => d.code === "stale-index")).toBe(false);
+	});
+
 	it("reports component status for MinSync without leaking paths", async () => {
 		const agent = makeAgent({
 			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },

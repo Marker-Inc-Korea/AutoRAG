@@ -2,6 +2,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { releaseRuntimeHandles } from "../embedding-runtime/index.ts";
 import { commandUsage } from "./command-help.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
@@ -20,6 +21,8 @@ const BOOLEAN_FLAGS = new Set([
 	"allow-remote",
 	"full",
 	"single-phase",
+	"strict",
+	"refresh",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -368,6 +371,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 	} catch (error) {
 		process.stderr.write(`${renderError(error, { json, debug })}\n`);
 		return 1;
+	} finally {
+		// The local embedding gateway listens on loopback for the whole run, so a
+		// command that used it would keep the process alive after its output is
+		// written (and after its answer is already on stdout). Release it here, where
+		// every command is covered, and the shared supervisor's model stays warm.
+		await releaseRuntimeHandles();
 	}
 }
 

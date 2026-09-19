@@ -545,6 +545,53 @@ describe("MinSyncVectorMethod", () => {
 		);
 	});
 
+	it("serializes parallel retrievals that share one MinSync workspace", async () => {
+		// MinSync allows a single operation per workspace: a second concurrent
+		// operation fails with "another sync is in progress". AutoRAG registers the
+		// vector and hybrid methods, and the retriever runs them in parallel.
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { closeSync, mkdirSync, openSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+const lock = join(process.cwd(), ".minsync", "lock");
+mkdirSync(dirname(lock), { recursive: true });
+let fd;
+try {
+  fd = openSync(lock, "wx");
+} catch (error) {
+  if (error.code === "EEXIST") {
+    console.error("another sync is in progress");
+    process.exit(2);
+  }
+  throw error;
+}
+closeSync(fd);
+await new Promise((resolve) => setTimeout(resolve, 120));
+unlinkSync(lock);
+console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "Parsed renewal policy with cancellation terms." }] }));
+process.exit(0);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const vector = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const hybrid = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			mode: "hybrid",
+		});
+
+		const [semantic, hybridResults] = await Promise.all([
+			vector.retrieve("renewal cancellation", { topK: 2 }),
+			hybrid.retrieve("renewal cancellation", { topK: 2 }),
+		]);
+
+		expect(semantic).toHaveLength(1);
+		expect(hybridResults).toHaveLength(1);
+	});
+
 	it("routes lexical retrieval through MinSync BM25 mode", async () => {
 		writeFakeMinSync(
 			JSON.stringify({

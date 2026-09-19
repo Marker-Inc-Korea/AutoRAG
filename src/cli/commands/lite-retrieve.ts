@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { detectMirrorStaleness } from "../../mirror/index.ts";
 import { refreshReadinessPath } from "../../mirror/paths.ts";
@@ -13,6 +14,11 @@ import type { CommandContext } from "./types.ts";
 export interface LiteRetrieveEnvelope {
 	readonly ok: true;
 	readonly query: string;
+	/**
+	 * True when the last refresh does not cover the current sources. Retrieval still
+	 * runs; the caller decides whether to trust the result or refresh first.
+	 */
+	readonly stale: boolean;
 	readonly results: readonly LiteRetrieveResultItem[];
 	readonly diagnostics: readonly LiteRetrieveDiagnostic[];
 }
@@ -31,6 +37,10 @@ export interface LiteRetrieveDiagnostic {
 	readonly severity: string;
 	readonly message: string;
 	readonly source?: string;
+	/** Why a source is considered stale, e.g. `mtime-and-size-changed`. */
+	readonly reason?: string;
+	/** Suggested recovery action, e.g. `refresh`. */
+	readonly action?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +133,8 @@ function diagnosticProjection(d: {
 	readonly severity: string;
 	readonly message: string;
 	readonly source?: string;
+	readonly reason?: string;
+	readonly action?: string;
 }): LiteRetrieveDiagnostic {
 	const out: LiteRetrieveDiagnostic = {
 		code: d.code,
@@ -131,6 +143,12 @@ function diagnosticProjection(d: {
 	};
 	if (d.source !== undefined) {
 		(out as { source: string }).source = d.source;
+	}
+	if (d.reason !== undefined) {
+		(out as { reason: string }).reason = d.reason;
+	}
+	if (d.action !== undefined) {
+		(out as { action: string }).action = d.action;
 	}
 	return out;
 }
@@ -154,6 +172,9 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	}
 	// ok: true case
 	const okEnvelope = envelope;
+	if (okEnvelope.stale) {
+		lines.push("warning: index may be stale; run `autorag lite refresh` or pass --refresh to rebuild it");
+	}
 	if (okEnvelope.results.length === 0) {
 		lines.push("retrieve: no results");
 	} else {
@@ -194,6 +215,36 @@ function hasCompletedParsedRefresh(workspacePath: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Turn refresh's stale-source diagnostics into the retrieve envelope's shape.
+ * `severity` stays a warning: stale sources are reported, not blocked.
+ */
+function staleSourceDiagnostics(
+	stale: readonly { readonly source: string; readonly reason?: string }[],
+): LiteRetrieveDiagnostic[] {
+	return stale.map((entry) => ({
+		code: "stale-index",
+		severity: "warning",
+		message: `Index may be stale because source "${entry.source}" ${(entry.reason ?? "source-changed").replaceAll("-", " ")} since the last refresh. Run \`autorag lite refresh\` or pass --refresh to rebuild it.`,
+		source: entry.source,
+		reason: entry.reason ?? "source-changed",
+		action: "refresh",
+	}));
+}
+
+/**
+ * Report a MinSync refresh that did not complete during `--refresh`. The refresh
+ * reason is never echoed: it can carry real paths, and diagnostics stay opaque.
+ */
+function refreshFailureDiagnostic(result: AutoRAGRefreshResult): LiteRetrieveDiagnostic | undefined {
+	if (result.minsync === undefined || result.minsync.ok !== false) return undefined;
+	return {
+		code: "minsync-unavailable",
+		severity: "warning",
+		message: "MinSync was not refreshed during this run; run `autorag lite refresh` for details.",
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -261,18 +312,32 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		ctx.stdout(renderLiteRetrieveJson(envelope));
 		return 2;
 	}
+
+	// `--refresh` updates the parsed mirrors (and configured indexes) before
+	// answering, so the caller can ask for a current corpus without a second
+	// command. The default path never writes: staleness is reported, not acted on.
+	let refreshFailure: LiteRetrieveDiagnostic | undefined;
+	if (ctx.flags.refresh === true) {
+		try {
+			refreshFailure = refreshFailureDiagnostic(await lite.refresh(false));
+		} catch (error) {
+			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+			return 1;
+		}
+	}
+
 	const staleDiagnostics = await detectMirrorStaleness({
 		root: workspacePath,
 		searchPaths: lite.config.searchPaths,
 		parserOptions: lite.config.parserOptions,
 	});
-	if (staleDiagnostics.length > 0) {
+	if (staleDiagnostics.length > 0 && ctx.flags.strict === true) {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,
 			query,
 			diagnostics: staleDiagnostics.map((stale) => ({
-				code: "index-not-ready",
-				severity: "error",
+				code: "index-not-ready" as const,
+				severity: "error" as const,
 				message: `Index is stale because source "${stale.source}" ${stale.reason?.replaceAll("-", " ") ?? "changed"}. Run \`autorag lite refresh\` or \`autorag refresh\` to rebuild it.`,
 				source: stale.source,
 				reason: stale.reason ?? "source-changed",
@@ -298,7 +363,12 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	}
 
 	// Build the envelope
-	const diagnostics = (retrievalResult.diagnostics ?? []).map(diagnosticProjection);
+	const staleEnvelopeDiagnostics = staleSourceDiagnostics(staleDiagnostics);
+	const diagnostics = [
+		...(refreshFailure ? [refreshFailure] : []),
+		...staleEnvelopeDiagnostics,
+		...(retrievalResult.diagnostics ?? []).map(diagnosticProjection),
+	];
 	const results: LiteRetrieveResultItem[] = retrievalResult.results.map((r, i) => ({
 		number: i + 1,
 		source: r.source,
@@ -311,6 +381,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const envelope: LiteRetrieveEnvelope = {
 		ok: true,
 		query,
+		stale: staleEnvelopeDiagnostics.length > 0,
 		results,
 		diagnostics,
 	};

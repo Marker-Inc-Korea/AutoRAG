@@ -92,13 +92,13 @@ describe("runRefresh + runStatus (cli)", () => {
 
 		const status = JSON.parse(statusBlob);
 		// `status` runs in a fresh agent instance (a separate CLI process in real
-		// use), so in-memory `state`/`counts`/`stale` are not carried across
-		// invocations (`stale` is true whenever this instance has never refreshed).
-		// The cross-process-observable disk-freshness signal is the absence of any
-		// `stale-index` diagnostic: after refresh wrote fresh parsed mirrors, a new
-		// status invocation finds no source newer than the recorded mirror index.
+		// use), so in-memory `state`/`counts` are not carried across invocations.
+		// Freshness is: it comes from the readiness marker the refresh wrote plus the
+		// stat-only scan, so a new invocation after a refresh reports the corpus as
+		// current and finds no source newer than the recorded mirror index.
 		expect(typeof status.state).toBe("string");
 		expect(Array.isArray(status.diagnostics)).toBe(true);
+		expect(status.stale).toBe(false);
 		const staleDiagnostics = (status.diagnostics as { code: string }[]).filter((d) => d.code === "stale-index");
 		expect(staleDiagnostics).toHaveLength(0);
 		expect(status.components).toBeDefined();
