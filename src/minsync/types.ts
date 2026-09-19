@@ -37,6 +37,12 @@ export interface MinSyncSyncResult {
 	readonly workspacePath: string;
 	readonly reason?: string;
 	readonly diagnostic?: MinSyncDiagnostic;
+	/**
+	 * Parsed-mirror ids that could not be staged for indexing because the file
+	 * name has no canonical source-id form. Surfaced as diagnostics so an
+	 * unindexable document is never dropped silently.
+	 */
+	readonly stagingExcluded?: readonly string[];
 }
 
 export type MinSyncDiagnosticCode =

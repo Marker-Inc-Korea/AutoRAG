@@ -25,6 +25,12 @@ export interface MinSyncWorkspaceEntry {
 export interface MinSyncWorkspaceSyncResult {
 	readonly workspacePath: string;
 	readonly entries: readonly MinSyncWorkspaceEntry[];
+	/**
+	 * Parsed-mirror ids that could not be staged: no canonical source-id form
+	 * or a missing parsed output. Callers report these instead of dropping
+	 * them silently.
+	 */
+	readonly excluded: readonly string[];
 }
 
 interface MinSyncStagingEntry {
@@ -44,8 +50,11 @@ export function syncMinSyncWorkspace(
 	const workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(root);
 	const filesRoot = join(workspacePath, "files");
 	const index = loadMirrorIndex(root);
-	const entries = Object.values(index.entries)
-		.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath))
+	const candidates = Object.values(index.entries).sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
+	const excluded = candidates
+		.filter((entry) => normalizeVirtualPath(entry.virtualPath) !== entry.virtualPath || !existsSync(entry.outputPath))
+		.map((entry) => entry.virtualPath);
+	const entries = candidates
 		.filter((entry) => normalizeVirtualPath(entry.virtualPath) === entry.virtualPath && existsSync(entry.outputPath))
 		.map((entry) => {
 			const minSyncPath = minSyncDocumentPath(workspacePath, entry.virtualPath);
@@ -83,7 +92,7 @@ export function syncMinSyncWorkspace(
 	removeUnexpectedStagedFiles(filesRoot, desiredPaths);
 	saveStagingState(workspacePath, { version: 1, entries: currentState });
 
-	return { workspacePath, entries };
+	return { workspacePath, entries, excluded };
 }
 
 function stagingStatePath(workspacePath: string): string {

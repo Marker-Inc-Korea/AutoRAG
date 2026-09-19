@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	ensureLocalEmbedder,
 	ensureMinSyncBinary,
@@ -448,6 +449,28 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "what ? query.txt.md"), "utf8")).toBe(
 			"Parsed query-marked note about payouts.\n",
 		);
+	});
+
+	it("reports staging exclusions through refresh diagnostics instead of dropping them silently", async () => {
+		// Given: a file name that cannot become a canonical source id (a POSIX
+		// backslash) — parseable, but not representable as a virtual id.
+		const trickyName = "policy\\note.txt";
+		writeFileSync(join(source, trickyName), "raw policy source\n");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const agent = new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
+		});
+
+		// When
+		const result = await agent.refresh(false, { methods: ["minsync"] });
+
+		// Then: the excluded document is named in the refresh diagnostics.
+		const excluded = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-staging-excluded");
+		expect(excluded.map((diagnostic) => diagnostic.source)).toEqual(["/docs/policy\\note.txt"]);
 	});
 
 	it("ignores traversal entries in a corrupt staging state", async () => {

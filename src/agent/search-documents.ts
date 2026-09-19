@@ -19,6 +19,7 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-warning"
 	| "caller-tool-dropped"
 	| "minsync-unavailable"
+	| "minsync-staging-excluded"
 	| "parser-skipped"
 	| "parser-failed"
 	| "pdf-java-version"
