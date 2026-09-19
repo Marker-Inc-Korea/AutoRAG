@@ -838,9 +838,19 @@ export class AutoRAGAgent {
 						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						const fastTool = createEmitFastAnswerTool((details) => {
+						const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+							if (fastCaptured !== undefined) return;
 							fastCaptured = details;
-						});
+							this.preliminaryCallback?.(
+								createPreliminarySearchDocumentsResponse(
+									sessionId,
+									trimmedQuery,
+									details,
+									this.collectComponentDiagnostics(),
+								),
+							);
+						};
+						const fastTool = createEmitFastAnswerTool(emitPreliminary);
 						const baseline = await retrievalPromise;
 						session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
 						session.agent.state.tools = [...this.tools, fastTool];
@@ -850,16 +860,7 @@ export class AutoRAGAgent {
 							const text = lastAssistantText(session.agent.state.messages);
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
-						if (preliminary !== undefined) {
-							this.preliminaryCallback?.(
-								createPreliminarySearchDocumentsResponse(
-									sessionId,
-									trimmedQuery,
-									preliminary,
-									this.collectComponentDiagnostics(),
-								),
-							);
-						}
+						if (preliminary !== undefined) emitPreliminary(preliminary);
 						if (captured === undefined && this.finalThinkingLevel !== undefined) {
 							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
 							session.agent.state.tools = [...this.tools];
