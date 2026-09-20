@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/badge/bun-%3E%3D1.2-black.svg?style=flat-square&logo=bun" alt="Bun >= 1.2" />
 </p>
 
+<p align="center">
+  <img src="assets/autorag-agent-social-preview.png" alt="AutoRAG Agent" width="100%" />
+</p>
+
 > [!IMPORTANT]
 > **Looking for the original AutoRAG (RAG AutoML / pipeline optimization tool)?**
 > This repository now hosts **AutoRAG 2.0**, a complete reimagining of AutoRAG as a self-evolving librarian agent. The original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data — now lives in the [`legacy/`](legacy/) directory of this repository.
