@@ -221,7 +221,13 @@ export class MinSyncClient {
 				};
 			}
 		}
-		const spawnOpts = embedder.timeoutMs !== undefined ? { timeoutMs: embedder.timeoutMs } : {};
+		// The embedder `timeoutMs` is a per-request embedding timeout: it is
+		// written to MinSync's config.toml as `timeout_seconds` and governs
+		// individual embedding HTTP requests inside the MinSync binary. It must
+		// never double as a process-wide kill timer: a full reindex legitimately
+		// runs for minutes or hours, and a small embedder timeout previously
+		// SIGTERM'd `minsync sync` mid-run. Spawn init, check, and sync without a
+		// process timeout so a long sync always runs to completion.
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
 		if (!initialized) {
@@ -229,7 +235,7 @@ export class MinSyncClient {
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
-			const init = await this.spawn(initArgs, spawnOpts);
+			const init = await this.spawn(initArgs);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
 					ok: false,
@@ -251,7 +257,7 @@ export class MinSyncClient {
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
-		const check = await this.spawn(["check", "--format", "json"], spawnOpts);
+		const check = await this.spawn(["check", "--format", "json"]);
 		if (!check.ok) {
 			restoreConfig();
 			return {
@@ -289,7 +295,7 @@ export class MinSyncClient {
 		const fullReindex = force || chunkSizeChanged || dimensionChanged || identityChanged;
 		const syncArgs =
 			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await this.spawn(syncArgs, spawnOpts);
+		const result = await this.spawn(syncArgs);
 		if (!result.ok) {
 			restoreConfig();
 			return {
