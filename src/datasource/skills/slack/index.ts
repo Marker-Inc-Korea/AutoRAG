@@ -6,7 +6,16 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface SlacrawlOptions extends CrawlerCliOptions {}
+export interface SlacrawlOptions extends CrawlerCliOptions {
+	/**
+	 * Slack workspace (team) id to scope reads to, e.g. `T0435JHH63Z`.
+	 *
+	 * slacrawl's `search`/`messages` read paths return nothing unless a workspace
+	 * is named explicitly, even when the archive and its FTS index hold matching
+	 * rows, so an unscoped search silently looks like an empty archive.
+	 */
+	readonly workspace?: string;
+}
 
 const SLACRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "slacrawl",
@@ -17,7 +26,15 @@ const SLACRAWL_PROFILE: CrawlerProfile = {
 		"sync",
 		...(options.syncSource !== undefined ? ["--source", options.syncSource] : []),
 	],
-	searchArgs: (options, query, topK) => [...globalArgs(options), "--json", "search", "--limit", String(topK), query],
+	searchArgs: (options, query, topK) => [
+		...globalArgs(options),
+		"--json",
+		"search",
+		...workspaceArgs(options),
+		"--limit",
+		String(topK),
+		query,
+	],
 	parseSyncCount: parseCount,
 	parseHits,
 };
@@ -56,6 +73,11 @@ export class SlackSkill extends CrawlerDatasourceSkill {
 
 function globalArgs(options: CrawlerCliOptions): readonly string[] {
 	return options.configPath !== undefined ? ["--config", options.configPath] : [];
+}
+
+function workspaceArgs(options: CrawlerCliOptions): readonly string[] {
+	const workspace = (options as SlacrawlOptions).workspace;
+	return workspace === undefined || workspace.length === 0 ? [] : ["-workspace", workspace];
 }
 
 function parseCount(stdout: string): number | undefined {
