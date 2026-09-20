@@ -272,6 +272,7 @@ or DM/MPIM access.
       "connector": {
         "configPath": "~/.slacrawl/config.toml",
         "syncSource": "wiretap",
+        "workspace": "T0123456789",
         "timeoutMs": 120000
       }
     }
@@ -283,11 +284,25 @@ or DM/MPIM access.
 }
 ```
 
+`workspace` is the Slack team id to scope reads to and it is effectively
+required. `slacrawl`'s `search` and `messages` read paths return nothing unless
+a workspace is named explicitly, even when the archive and its FTS index hold
+matching rows — an unscoped search looks exactly like an empty archive, with no
+diagnostic. `syncSource` is likewise required: `slacrawl sync` without
+`--source` fails and surfaces as `datasource-index-failed`.
+
 Initialize and refresh the local mirror with:
 
 ```bash
 slacrawl init -db ~/.slacrawl/slacrawl.db -workspace local
 slacrawl sync --source wiretap
+
+# `init -workspace local` only names the local config; it is not a Slack team
+# id. List the real ids the wiretap import produced and use one of them as the
+# connector's `workspace`:
+slacrawl sql 'select id, count(*) from workspaces join messages on messages.workspace_id = workspaces.id group by 1;'
+slacrawl search -workspace T0123456789 <term>   # must print rows before wiring it up
+
 autorag refresh --method datasources
 ```
 
