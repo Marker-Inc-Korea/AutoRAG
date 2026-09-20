@@ -89,10 +89,10 @@ export class KatokSkill implements DatasourceSkill {
 			this.lastIndexedAt = Date.now();
 			const chunkCount =
 				"data" in indexResult &&
-					typeof indexResult.data === "object" &&
-					indexResult.data !== null &&
-					"chunkCount" in indexResult.data &&
-					typeof indexResult.data.chunkCount === "number"
+				typeof indexResult.data === "object" &&
+				indexResult.data !== null &&
+				"chunkCount" in indexResult.data &&
+				typeof indexResult.data.chunkCount === "number"
 					? indexResult.data.chunkCount
 					: 0;
 			return {
