@@ -100,6 +100,7 @@ autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json
 ## Maintenance
 
 ```bash
+autorag setup --format json
 autorag status --json
 autorag health --json
 autorag refresh --json
@@ -138,7 +139,7 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 - Prefer `--json --debug` when another agent consumes search output or will
   call `autorag feedback`.
 - Do not invent CLI commands. `autorag --help` is the command list of record,
-  including the shipped `gateway`, `models`, `serve`, `p2p`, `tui`, and `lite`
+  including the shipped `setup`, `gateway`, `models`, `serve`, `p2p`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
   `docs/embedding-runtime.md` for the local embedding runtime
