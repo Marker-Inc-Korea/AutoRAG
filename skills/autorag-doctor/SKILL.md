@@ -95,10 +95,13 @@ autorag lite retrieve "recent mail subject" --scope "/mailcrawl/**" --top-k 3 --
 autorag search "summarize the collection" --top-k 3 --json --debug
 ```
 
-- **Always pass `--debug` when diagnosing.** Plain `--json` omits the
-  `diagnostics` array, so a run that silently dropped a whole retrieval method
-  still looks like `"ok": true` with fewer results. `--debug` is what surfaces
-  `minsync-unavailable` or `retrieval-method-failed` for the skipped method.
+- **Always pass `--debug` when diagnosing, and read the diagnostics.** A run
+  that silently dropped a whole retrieval method still looks successful, just
+  with fewer results; only the diagnostics name it (`minsync-unavailable`,
+  `retrieval-method-failed`). `autorag search --json` hides `diagnostics`,
+  `sessionId`, and per-result evidence unless `--debug` is set. `lite retrieve
+  --json` always carries the `diagnostics` array, but its human-readable output
+  hides it without `--debug`.
 - A method missing from the returned `method` values means that method
   contributed nothing. During a full MinSync re-sync this is expected: the
   store is being rebuilt, `minsync status` reports `NotSynced`, and local-file
