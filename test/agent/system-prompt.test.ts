@@ -109,4 +109,24 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("Honest and concise uncertainty");
 		expect(text).not.toContain("Read before curating");
 	});
+
+	it("instructs resolving conflicting information in favor of the freshest data", () => {
+		const text = prompt();
+		expect(text).toContain("treat the freshest (most recent) information as authoritative");
+		expect(text).toContain("Conflict resolution (recency preference)");
+		expect(text).toContain("Prefer recent truth");
+	});
+
+	it("explains the fast answer first into deeper exploration two-phase workflow", () => {
+		const text = prompt();
+		expect(text).toContain("two-phase loop");
+		expect(text).toContain("PLAN & FAST ANSWER");
+		expect(text).toContain("EXPLORE & RETRIEVE");
+	});
+
+	it("instructs actively using Jikji when exploring local files and folders", () => {
+		const text = prompt();
+		expect(text).toContain("primary and preferred tool for exploring local files, folders, and documents");
+		expect(text).toContain("actively use `jikji_find` rather than running exploratory `bash` commands");
+	});
 });
