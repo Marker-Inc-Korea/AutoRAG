@@ -6,7 +6,7 @@ export const EMIT_FAST_ANSWER_TOOL_NAME = "emit_fast_answer";
 const fastAnswerSchema = Type.Object({
 	answer: Type.String({
 		description:
-			"Complete, self-contained first answer for the caller, produced immediately from the baseline retrieval evidence.",
+			"Complete, self-contained first answer for the caller in at most 5 bullet points (plus optional explanation), produced immediately from baseline retrieval evidence. Reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text.",
 	}),
 	results: Type.Array(
 		Type.Object({
