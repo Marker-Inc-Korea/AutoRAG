@@ -43,6 +43,10 @@ AutoRAG Agent:
 
 ## Core Values
 
+<p align="center">
+  <img src="assets/autorag-agent-principles.png" alt="AutoRAG Agent Core Principles" width="100%" />
+</p>
+
 Three principles drive every design decision in AutoRAG Agent:
 
 1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`katok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
