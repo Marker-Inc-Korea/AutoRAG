@@ -8,6 +8,13 @@ export {
 	normalizeVirtualPathScope,
 	virtualPathScopeToRegExp,
 } from "./scope.ts";
+export {
+	describeRetrievalError,
+	groupUnsearchedSurfaces,
+	MINSYNC_SURFACE,
+	type RetrievalSkip,
+	retrievalSurfaceFor,
+} from "./skip.ts";
 export type {
 	CuratedResult,
 	NumberedResult,
@@ -17,5 +24,6 @@ export type {
 	RetrievalMethodDescriptor,
 	RetrievalOptions,
 	RetrievalResult,
+	RetrievalUnsearchedSurface,
 	RetrievalWithDiagnostics,
 } from "./types.ts";

@@ -21,7 +21,13 @@ import { RetrievalMemory } from "./memory/memory.ts";
 import type { MinSyncSyncResult } from "./minsync/types.ts";
 import type { ParsedMirrorSyncResult } from "./mirror/sync.ts";
 import type { RetrievalEngine } from "./retrieval/engine.ts";
-import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "./retrieval/types.ts";
+import type {
+	CuratedResult,
+	RetrievalDiagnostic,
+	RetrievalOptions,
+	RetrievalResult,
+	RetrievalUnsearchedSurface,
+} from "./retrieval/types.ts";
 
 /** Input accepted by {@link createAutoRAGLite}. Flags keep CLI precedence intact. */
 export interface AutoRAGLiteOptions {
@@ -97,7 +103,11 @@ export class AutoRAGLite {
 	retrieve(
 		query: string,
 		options?: RetrievalOptions,
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+	): Promise<{
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
 		return this.retrievalEngine.retrieve(query, options);
 	}
 
@@ -108,6 +118,7 @@ export class AutoRAGLite {
 	): Promise<{
 		byMethod: Map<string, RetrievalResult[]>;
 		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
 	}> {
 		return this.retrievalEngine.retrieveByMethod(query, options);
 	}

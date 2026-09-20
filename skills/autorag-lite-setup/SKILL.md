@@ -64,14 +64,17 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`katok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`), its
-   local store or archive is present, and any credentials it needs are
-   available as environment variables or in the tool's own external
-   configuration.
+   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`) and its
+   local store or archive is present. CLI-backed datasources own their own
+   archive, index, and authentication, so environment credentials (such as bot
+   tokens) are never required or checked for them. Non-CLI connectors
+   (such as `github`) require their credential environment variable
+   (`GITHUB_TOKEN`).
 2. Auto-configure every datasource that probes feasible — write its trusted
    `datasources` / `datasourceAccess` entries without asking. For example,
-   when Slack (`slacrawl`) and Discord (`discrawl`) are installed, set both up
-   automatically.
+   when Slack (`slacrawl`) and Discord (`discrawl`) are installed with local
+   stores present, set both up automatically. Discord uses discrawl's local
+   desktop wiretap archive; no Discord bot token is configured or needed.
 3. Skip every datasource that probes infeasible (for example Notion or
    Telegram when their CLIs are not installed) and always report the skipped
    list to the user, with what is missing for each.
@@ -112,11 +115,14 @@ autorag lite refresh --force --json
 - MinSync and Jikji auto-install on first use by default. If they are missing
   or broken, run a full refresh or return to setup rather than silently
   degrading to lexical-only search.
-- MinSync's default embedder is local EmbeddingGemma (768 dimensions, served
-  locally via Ollama): no embedder flags and no API key are needed, and no
-  corpus text leaves the machine. During setup, verify the local model is
-  available (`ollama pull embeddinggemma` with `ollama serve` running);
-  override it only when intentionally using a remote embedder.
+- MinSync's default embedder is in-process native Qwen3 embeddings
+  (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.5+): no
+  embedder flags, no API key, and no external daemon (such as Ollama) are
+  needed, and no corpus text leaves the machine. For gateway-profiled
+  embeddings, prefetch with `autorag models prefetch --profile qwen3-embedding-0.6b`.
+  The legacy Ollama/TEI adapter path (EmbeddingGemma, 768 dimensions) is for
+  manual QA only. Override the embedder only when intentionally using a
+  different provider.
 - Exact duplicate exclusion during refresh is enabled by default via the
   external `dupey` CLI. Install dupey during setup when it is missing
   (`command -v dupey || cargo install dupey`) and tell the user the feature is
@@ -128,6 +134,14 @@ Retrieval requires a completed refresh. `autorag lite retrieve` before any
 refresh exits with code 2 and an `index-not-ready` diagnostic; a successful
 refresh is recorded even when the corpus is empty or only a non-parsed method
 was selected. Always refresh first, and refresh again when roots change.
+Once a refresh has completed, staleness is reported rather than enforced: a
+source that changed afterwards gives `"stale": true` with `stale-index`
+diagnostics (and `autorag lite status` reports `stale: true`) while retrieval
+still answers from the index. Sources the refresh deliberately skipped — exact
+duplicates, oversized or unparseable files, and AutoRAG/Jikji product artifacts
+such as `.jikji_agent_map.md` — do not count as stale. Use `autorag lite
+retrieve --refresh` to rebuild incrementally before one query, or `--strict`
+when a stale index must fail instead of answering.
 Jikji is a discovery/indexing preparer, not a lite retrieval method.
 
 ## Watch and scheduled freshness
@@ -166,8 +180,9 @@ autorag lite duplicates --json
 ## Unavailable components and failure handling
 
 Missing optional components degrade gracefully: refresh and retrieval continue
-with path-opaque diagnostics such as `minsync-unavailable` or
-`retrieval-method-failed` instead of failing the whole run. Exit codes are 0
+with diagnostics such as `minsync-unavailable` or `retrieval-method-failed`
+instead of failing the whole run. Each one quotes the underlying error verbatim,
+and `lite retrieve --json` also names the skipped surface under `unsearched`. Exit codes are 0
 on success, 2 for config or usage errors, and 1 for runtime errors. When a
 component stays unavailable after a full refresh, return to setup rather than
 accepting silently degraded search.

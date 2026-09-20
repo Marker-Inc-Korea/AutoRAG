@@ -102,6 +102,21 @@ describe("SlacrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
+	it("scopes search to the configured workspace so unscoped slacrawl reads cannot return nothing", async () => {
+		writeFakeSlacrawl();
+		const scoped = new SlacrawlClient({
+			binaryPath,
+			workspace: "T0435JHH63Z",
+			env: { SLACRAWL_FAKE_OUTPUT: JSON.stringify([]) },
+		});
+		await scoped.search("release", { topK: 3 });
+		expect(calls()[0]?.args).toEqual(["--json", "search", "-workspace", "T0435JHH63Z", "--limit", "3", "release"]);
+
+		const unscoped = new SlacrawlClient({ binaryPath, env: { SLACRAWL_FAKE_OUTPUT: JSON.stringify([]) } });
+		await unscoped.search("release", { topK: 3 });
+		expect(calls()[1]?.args).not.toContain("-workspace");
+	});
+
 	it("runs slacrawl against its own default store without a managed --db injection", async () => {
 		writeFakeSlacrawl();
 		const client = new SlacrawlClient({

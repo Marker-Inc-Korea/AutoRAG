@@ -272,6 +272,7 @@ or DM/MPIM access.
       "connector": {
         "configPath": "~/.slacrawl/config.toml",
         "syncSource": "wiretap",
+        "workspace": "T0123456789",
         "timeoutMs": 120000
       }
     }
@@ -283,11 +284,25 @@ or DM/MPIM access.
 }
 ```
 
+`workspace` is the Slack team id to scope reads to and it is effectively
+required. `slacrawl`'s `search` and `messages` read paths return nothing unless
+a workspace is named explicitly, even when the archive and its FTS index hold
+matching rows — an unscoped search looks exactly like an empty archive, with no
+diagnostic. `syncSource` is likewise required: `slacrawl sync` without
+`--source` fails and surfaces as `datasource-index-failed`.
+
 Initialize and refresh the local mirror with:
 
 ```bash
 slacrawl init -db ~/.slacrawl/slacrawl.db -workspace local
 slacrawl sync --source wiretap
+
+# `init -workspace local` only names the local config; it is not a Slack team
+# id. List the real ids the wiretap import produced and use one of them as the
+# connector's `workspace`:
+slacrawl sql 'select id, count(*) from workspaces join messages on messages.workspace_id = workspaces.id group by 1;'
+slacrawl search -workspace T0123456789 <term>   # must print rows before wiring it up
+
 autorag refresh --method datasources
 ```
 
@@ -397,10 +412,12 @@ and mirror available for query-time search. `include`, `exclude`,
 server configuration; model/tool arguments cannot change them.
 
 Before searching, the agent loads the datasource skill with
-`load_datasource_skill`, then calls `search_datasource_documents` using a
-natural-language query and, when useful, a narrowing scope such as
-`/company-onedrive/work/**`. It must not invoke `rclone` itself or request
-credentials.
+`load_datasource_skill`, then calls the connection's dedicated
+`search_datasource_<name>` tool using a natural-language query and, when
+useful, a narrowing scope such as `/company-onedrive/work/**`. Read-only
+`rclone` inspection (e.g. `rclone lsl <remote>:<path>`) may run directly
+through bash per the skill's Native CLI section; credentials stay with
+rclone and the agent never requests them.
 
 ## Chat channel selection
 

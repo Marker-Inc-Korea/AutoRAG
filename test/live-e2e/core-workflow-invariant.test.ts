@@ -13,6 +13,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	assertAbsoluteReadableSource,
+	assertLiteRetrieveHealthy,
+	assertLiteRetrieveReportsSkippedSurface,
 	assertServiceReady,
 	buildLiveStackOptions,
 	cleanupCloneState,
@@ -46,6 +48,47 @@ describe("live-e2e core workflow invariants", () => {
 		expect(() => assertServiceReady({ verdict: "refused", code: "live-e2e-embedding-unavailable" })).toThrow(
 			"live-e2e-embedding-unavailable",
 		);
+	});
+
+	it("requires a healthy lite retrieve run to state that nothing was skipped", () => {
+		const envelope = { ok: true, results: [{ source: "/corpus/sample.txt" }], unsearched: [] };
+		expect(assertLiteRetrieveHealthy(envelope, "/corpus/sample.txt")).toBe(true);
+		// A pre-#1636 envelope has no `unsearched` field at all; that must fail loudly.
+		const legacy = { ok: true, results: envelope.results } as unknown as typeof envelope;
+		expect(() => assertLiteRetrieveHealthy(legacy, "/corpus/sample.txt")).toThrow("lite-retrieve-unsearched-missing");
+		expect(() =>
+			assertLiteRetrieveHealthy(
+				{ ...envelope, unsearched: [{ surface: "minsync", methods: ["minsync"], reason: "down" }] },
+				"/corpus/sample.txt",
+			),
+		).toThrow("lite-retrieve-unexpected-unsearched");
+	});
+
+	it("requires a skipped surface to carry the real error, not a placeholder", () => {
+		const degraded = {
+			ok: true,
+			results: [],
+			unsearched: [
+				{
+					surface: "minsync",
+					methods: ["hybrid", "minsync"],
+					reason: "MinSyncQueryError: connect ECONNREFUSED 127.0.0.1:9",
+				},
+			],
+		};
+		expect(assertLiteRetrieveReportsSkippedSurface(degraded, "minsync").reason).toContain("ECONNREFUSED");
+		expect(() => assertLiteRetrieveReportsSkippedSurface(degraded, "discord")).toThrow(
+			"lite-retrieve-surface-not-reported:discord",
+		);
+		const suppressed = {
+			...degraded,
+			unsearched: [{ ...degraded.unsearched[0], reason: "path details suppressed" }],
+		};
+		expect(() => assertLiteRetrieveReportsSkippedSurface(suppressed, "minsync")).toThrow(
+			"lite-retrieve-reason-suppressed",
+		);
+		const empty = { ...degraded, unsearched: [{ ...degraded.unsearched[0], reason: "  " }] };
+		expect(() => assertLiteRetrieveReportsSkippedSurface(empty, "minsync")).toThrow("lite-retrieve-reason-missing");
 	});
 
 	it("reports lock contention without allowing a second workflow", () => {

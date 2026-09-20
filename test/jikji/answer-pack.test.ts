@@ -72,6 +72,47 @@ describe("parseJikjiAnswerPack", () => {
 		expect(pack?.agentShouldNotRerank).toBe(true);
 	});
 
+	it("accepts latest Jikji CLI format with next_read objects and p/s shorthand fields", () => {
+		const latestJson = JSON.stringify({
+			answer_paths: ["/repo/src/a.ts"],
+			paths: ["/repo/src/a.ts"],
+			candidates: [
+				{
+					p: "/repo/src/a.ts",
+					s: 12345.67,
+					next_read: { kind: "original", path: "/repo/src/a.ts" },
+				},
+			],
+			evidence_pack: [
+				{
+					path: "/repo/src/a.ts",
+					next_read: { kind: "original", path: "/repo/src/a.ts" },
+				},
+			],
+			handoff_action: "direct_use",
+			tool_call_policy: {
+				stop_after_find: true,
+				forbidden_tools: ["bash"],
+				allowed_followups: ["jikji_find"],
+			},
+			agent_should_not_rerank: true,
+		});
+
+		const pack = parseJikjiAnswerPack(latestJson);
+		expect(pack).toBeDefined();
+		expect(pack?.answerPaths).toEqual(["/repo/src/a.ts"]);
+		expect(pack?.candidates).toHaveLength(1);
+		expect(pack?.candidates[0]).toMatchObject({
+			path: "/repo/src/a.ts",
+			nextRead: "original",
+			score: 12345.67,
+		});
+		expect(pack?.evidencePack[0]).toMatchObject({
+			path: "/repo/src/a.ts",
+			nextRead: "original",
+		});
+	});
+
 	it("accepts all three handoff_action values", () => {
 		for (const action of ["direct_use", "jikji_retry", "raw_fallback_after_retry"] as const) {
 			const pack = parseJikjiAnswerPack(validAnswerPack({ handoff_action: action }));

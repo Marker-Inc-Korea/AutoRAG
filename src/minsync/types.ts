@@ -37,10 +37,17 @@ export interface MinSyncSyncResult {
 	readonly workspacePath: string;
 	readonly reason?: string;
 	readonly diagnostic?: MinSyncDiagnostic;
+	/**
+	 * Parsed-mirror ids that could not be staged for indexing because the file
+	 * name has no canonical source-id form. Surfaced as diagnostics so an
+	 * unindexable document is never dropped silently.
+	 */
+	readonly stagingExcluded?: readonly string[];
 }
 
 export type MinSyncDiagnosticCode =
 	| "embedder-unavailable"
+	| "sync-failed"
 	| "no-hit"
 	| "embedding-identity-mismatch"
 	| "migration-required";
@@ -55,4 +62,11 @@ export interface MinSyncQueryHit {
 	readonly path: string;
 	readonly score: number;
 	readonly text: string;
+	/**
+	 * MinSync's per-chunk identity (`doc_id` in its JSON). Several chunks of one
+	 * parsed mirror share a `path`, so this is what distinguishes them; without
+	 * it every passage of a document collapses into a single evidence id.
+	 * Optional because older MinSync builds omit it.
+	 */
+	readonly docId?: string;
 }

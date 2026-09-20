@@ -4,6 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
+import { datasourceCliError } from "../../errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
 import type { QmdSearchHit, QmdSearchMode, QmdSearchOptions, QmdSearchResult } from "./types.ts";
 
@@ -90,13 +91,10 @@ async function retrieveObsidian(
 	const topK = options.topK ?? DEFAULT_TOP_K;
 	const searchOptions: QmdSearchOptions = { topK, signal: options.signal };
 
-	let result: QmdSearchResult;
-	try {
-		result = await client.search(mode, trimmed, searchOptions);
-	} catch {
-		return [];
-	}
-	if (!result.ok) return [];
+	// qmd failures reach the caller verbatim: the pipeline reports this
+	// datasource as unsearched with the CLI's own error text.
+	const result: QmdSearchResult = await client.search(mode, trimmed, searchOptions);
+	if (!result.ok) throw datasourceCliError(OBSIDIAN_DATASOURCE_ID, mode, result);
 
 	const mapped: RetrievalResult[] = [];
 	for (const hit of result.hits) {

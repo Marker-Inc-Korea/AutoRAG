@@ -39,6 +39,11 @@ Everything else fails closed as `undefined`: traversal segments (`..`), URL
 schemes (including the retired colon scheme and `file:`), backslashes in
 non-absolute sources, and empty input.
 
+A local file name is data, not URL syntax: `#` and `?` are ordinary
+characters there and stay in the canonical id. Only a *scheme* makes a
+source URL-shaped. The rejection targets syntax, never a character that a
+real file system permits.
+
 ## Policy resolution normalizes before matching
 
 `PolicyStore` accepts `sourceRoots` (built with `planSourceRoots(searchPaths)`).

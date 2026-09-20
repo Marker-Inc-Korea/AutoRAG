@@ -246,6 +246,39 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(complete.response.answer).toContain("Final answer");
 	});
 
+	it("delivers the preliminary event before the fast phase prompt continues", async () => {
+		// Given a provider that pauses after the fast-answer tool has executed.
+		let markContinuationReady: (() => void) | undefined;
+		const continuationReady = new Promise<void>((resolve) => {
+			markContinuationReady = resolve;
+		});
+		let releaseContinuation: ((message: ReturnType<typeof fauxAssistantMessage>) => void) | undefined;
+		const continuation: FauxResponseStep = () => {
+			const result = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
+				releaseContinuation = resolve;
+			});
+			markContinuationReady?.();
+			return result;
+		};
+		const model = fauxModel(true, fastAnswerCall(), continuation, finalEmitCall("Verified final answer."));
+		const agent = new AutoRAGAgent(agentOptions(model));
+		const events: SearchDocumentsStreamEvent[] = [];
+		const collecting = (async () => {
+			for await (const event of agent.searchDocumentsStream("refund approval?")) events.push(event);
+		})();
+
+		// When the post-tool model turn is still blocked, the answer must be visible.
+		try {
+			await continuationReady;
+			expect(events.some((event) => event.type === "preliminary")).toBe(true);
+		} finally {
+			releaseContinuation?.(fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }));
+			await collecting;
+		}
+		// Then finishing the prompt must not publish the same answer twice.
+		expect(events.filter((event) => event.type === "preliminary")).toHaveLength(1);
+	});
+
 	it("returns a degraded fallback with reason and retrieval trace when the final emit never happens", async () => {
 		const rows: RetrievalResult[] = [
 			{

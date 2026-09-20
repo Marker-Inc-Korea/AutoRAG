@@ -1,4 +1,5 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
+import { stopRuntime as stopEmbeddingRuntime } from "../../embedding-runtime/index.ts";
 import {
 	buildAgentOptions,
 	type CliConfig,
@@ -106,6 +107,12 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
 export interface SearchDeps {
 	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocumentsStream">;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
+	/**
+	 * Stops the on-demand embedding gateway so the process can exit. Without
+	 * this the semantic MinSync path's loopback gateway keeps the event loop
+	 * alive after the search completes and the CLI never exits.
+	 */
+	stopRuntime?: () => Promise<void>;
 }
 
 interface SearchOptions {
@@ -225,6 +232,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	}
 
 	const options = buildSearchOptions(ctx.flags);
+	const stopRuntime = deps.stopRuntime ?? stopEmbeddingRuntime;
 	try {
 		for await (const event of agent.searchDocumentsStream(query, options)) {
 			switch (event.type) {
@@ -245,5 +253,10 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		const hint = classifySearchHealthHint(error);
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
 		return 1;
+	} finally {
+		// The semantic MinSync path starts the loopback embedding gateway on
+		// demand; without an explicit stop it keeps the event loop alive and
+		// the CLI never exits after the answer has been printed.
+		await stopRuntime();
 	}
 }

@@ -18,15 +18,22 @@ the memory file, and Jikji `.jikji/` caches.
 
 ## Preflight
 
-Retrieval requires a completed refresh. If `autorag lite retrieve` returns
-exit code 2 with an `index-not-ready` diagnostic, run `autorag lite refresh`
-(or `autorag refresh`) first, then retry. Confirm freshness with:
+Retrieval needs a completed refresh. If `autorag lite retrieve` returns exit
+code 2 with an `index-not-ready` diagnostic, no refresh has completed yet —
+run `autorag lite refresh` (or `autorag refresh`) first, then retry. Confirm
+freshness with:
 
 ```bash
 autorag lite status --json
 ```
 
-`status` is model-free and path-opaque.
+`status` is model-free and path-opaque, and its `stale` field is read from disk,
+so it answers "is indexing complete?" even from a fresh process.
+
+A stale corpus is not a failure: `retrieve` answers from the index it has and
+reports the staleness it is answering past (`"stale": true` plus `stale-index`
+diagnostics). Pass `--refresh` to rebuild incrementally before answering, or
+`--strict` to keep the old fail-closed behavior and exit 2 instead of answering.
 
 ## Retrieve
 
@@ -40,6 +47,7 @@ The JSON envelope is:
 {
   "ok": true,
   "query": "key findings in the Q3 report",
+  "stale": false,
   "results": [
     {
       "number": 1,
@@ -50,6 +58,7 @@ The JSON envelope is:
       "content": "..."
     }
   ],
+  "unsearched": [],
   "diagnostics": []
 }
 ```
@@ -58,18 +67,49 @@ The JSON envelope is:
   an `{"ok": false, "error": "..."}` rejection envelope.
 - Before any refresh, the envelope is `{"ok": false, "query": ..., "diagnostics":
   [{"code": "index-not-ready", "severity": "error", ...}]}` with exit code 2.
+- `stale: true` means the last refresh does not cover the current sources; the
+  results are still returned. Each entry in `diagnostics` with code
+  `stale-index` names the opaque source and a `reason` (for example
+  `mtime-and-size-changed`) plus `action: "refresh"`. Sources the refresh
+  deliberately skipped (exact duplicates, oversized or unparseable files, and
+  AutoRAG/Jikji product artifacts) are not stale.
+- `--refresh` runs an incremental refresh before answering and reports the
+  corpus current; `--strict` exits 2 with the `index-not-ready` envelope when the
+  index is stale, for callers that must not answer from a stale index.
 - Each result carries a provenance pair: the `source` identity and the
   `method` that produced it. Source identities are source-native: real file
   paths for local files, datasource identities for datasource results. Never
   rewrite, guess, or flatten them.
-- `diagnostics` are path-opaque: `source` is a component or method label,
-  never a real filesystem path. Codes include `retrieval-method-failed` and
-  `minsync-unavailable`. A degraded component produces a diagnostic, not a
-  failed run; check `diagnostics` before trusting an empty result set.
-- `--debug` adds diagnostic detail to human output without printing real
+- `unsearched` lists the retrieval surfaces that did not run for this query.
+  `ok: true` with a non-empty `unsearched` means the answer is partial: for
+  example local MinSync files are skipped while an index sync holds the
+  workspace lock, leaving only datasource hits. Check `unsearched.length > 0`
+  before concluding that the returned sources are the whole corpus. Each entry
+  is:
+
+  ```json
+  {
+    "surface": "minsync",
+    "methods": ["hybrid", "minsync"],
+    "reason": "MinSyncQueryError: another sync is in progress (/Users/me/corpus/.autorag/minsync)"
+  }
+  ```
+
+  `surface` is `minsync` for local files or the datasource id. `reason` is the
+  underlying failure verbatim — the CLI's failure kind, exit status, stderr and
+  real paths — so the operator can act on it directly. Report it to the user as
+  given; do not summarize it away.
+- `diagnostics` carry the same transparency: `source` is the component or
+  method label, `reason` repeats the underlying error, and codes include
+  `retrieval-method-failed` and `minsync-unavailable`. A degraded component
+  produces a diagnostic, not a failed run; check `diagnostics` before trusting
+  an empty result set.
+- `--debug` adds per-result metadata and the diagnostics list to human output.
+  Skipped-surface warnings print without it, and their reasons carry real
   filesystem paths.
-- Exit codes: 0 on success (results may be empty), 2 for usage, config, or
-  not-ready errors, 1 for runtime errors.
+- Exit codes: 0 on success (results may be empty, and a stale index is a
+  warning rather than a failure), 2 for usage, config, not-ready, or
+  `--strict` staleness errors, 1 for runtime errors.
 
 Retrieval methods run in parallel and merge: parsed mirrors and MinSync
 lexical/vector/hybrid methods, plus configured datasource methods. Jikji is a
@@ -150,6 +190,6 @@ autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json
 - Never expose provider credentials or authentication payloads.
 - Treat report `source` values as opaque: persist them verbatim, never read
   the filesystem through them.
-- Keep diagnostics path-opaque; do not reconstruct or disclose real paths
-  from them.
+- Surface diagnostics and `unsearched` reasons to the user as written; they
+  carry the real error text needed to fix the failure.
 - Prefer `--json` whenever another agent consumes the output.

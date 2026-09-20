@@ -1,5 +1,6 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
@@ -183,11 +184,16 @@ export class ClawGallerySkill implements DatasourceSkill {
 				"- Never use `lexical` unless a sparse V-SPLADE index exists; it must not fall back to dense vectors.",
 				"- `hybrid` is the default and asks ClawGallery to RRF-fuse keyword results with every available dense and sparse vector channel.",
 				"",
-				"Use `search_datasource_documents` with a natural-language query. Prefer hybrid/default search unless you know which index capability is available. If an explicit vector mode is needed, inspect `clawgallery vdr status --json` first when capability details are available.",
+				`Use the dedicated \`${datasourceSearchToolName(CLAWGALLERY_DATASOURCE_ID)}\` tool with a natural-language query. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Prefer hybrid/default search unless you know which index capability is available. If an explicit vector mode is needed, inspect \`clawgallery vdr status --json\` first when capability details are available.`,
 				"",
 				"With only V-SPLADE synced, use lexical or hybrid. With only dense VDR synced, use embedding or hybrid. When both are synced, use hybrid so dense VDR and sparse V-SPLADE results can coexist and be RRF-combined.",
 				"",
 				`Optionally narrow \`scope\` to an authorized \`/${CLAWGALLERY_SOURCE_KIND}/<instance>/**\`.`,
+				"",
+				"## Native CLI",
+				"The external `clawgallery` CLI owns image discovery, captions, and vector state. When the dedicated tool cannot express what you need, call clawgallery directly through `bash`:",
+				'- `clawgallery search --json --mode hybrid "<query>"` (modes: keyword, lexical, embedding, hybrid)',
+				"- `clawgallery vdr status --json` — inspect available vector indexes before choosing a mode explicitly",
 			].join("\n"),
 		};
 	}

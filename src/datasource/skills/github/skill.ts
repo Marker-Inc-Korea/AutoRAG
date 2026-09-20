@@ -25,6 +25,8 @@ export const GITHUB_SKILL_DEFINITION: ConnectorSkillDefinition = {
 	manifestDescription:
 		"Search indexed GitHub issues and pull requests for the configured repositories. Use for questions about bug reports, feature requests, and review discussions.",
 	manifestNotes: ["Repository visibility is bounded by the server-configured token scopes."],
+	nativeCliNote:
+		'The configured repositories can also be inspected directly with the `gh` CLI through `bash` (e.g. `gh search issues "<query>" --repo <owner>/<repo>`); the dedicated tool remains the indexed search path.',
 };
 
 export interface GitHubSkillOptions extends Omit<ConnectorSkillOptions, "connector"> {

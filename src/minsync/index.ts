@@ -7,6 +7,9 @@ export {
 } from "./client.ts";
 export {
 	configuredVectorDimension,
+	DEFAULT_MINSYNC_EMBEDDER_CONFIG,
+	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
+	DEFAULT_MINSYNC_EMBEDDER_ID,
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
 	type MinSyncEmbeddingIdentity,

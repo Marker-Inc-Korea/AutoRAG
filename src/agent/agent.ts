@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -32,6 +32,7 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
+	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -50,7 +51,6 @@ import type { PolicyResolver } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import {
 	buildRetrievalScopeBindings,
@@ -59,6 +59,7 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -100,13 +101,14 @@ import {
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
+	type SearchDocumentDiagnosticCode,
 	type SearchDocumentRetrievalTraceEntry,
 	type SearchDocumentRetrievalTraceResult,
 	type SearchDocumentsResponse,
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
-
+import { createSingleDatasourceSearchTools, type SingleDatasourceToolSpec } from "./search-single-datasource-tool.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -114,14 +116,33 @@ import {
 	type WatchRefreshHandle,
 	type WatchWatcher,
 } from "./watch-refresh.ts";
+import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
+import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 
+/**
+ * Retrieval datasource tools whose executions count toward the per-search
+ * tool budget and weak-signal memory. `bash` is a source-inspection tool,
+ * not a search datasource, so it is deliberately excluded from this list.
+ */
 const SEARCH_TOOLS = [
-	BASH_TOOL_NAME,
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
 ] as const;
+
+/**
+ * Safety ceiling on merged evidence when the caller names no `topK`.
+ *
+ * The merged fan-out is bounded by what the methods themselves returned (each
+ * method caps its own fetch), so this only exists to stop a pathological
+ * registry from producing an unbounded list. It is deliberately far above a
+ * realistic fan-out: a live 16-method run over a personal corpus returned ~112
+ * chunks (~26k tokens), which every current model holds comfortably, and
+ * truncating below that silently hid evidence the librarian had already paid to
+ * retrieve.
+ */
+const MERGED_EVIDENCE_CEILING = 500;
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
@@ -140,6 +161,9 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly reason?: string;
+	/** Count of parsed documents excluded from the MinSync index by file name. */
+	readonly stagingExcludedCount?: number;
+	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
@@ -252,6 +276,19 @@ export interface AutoRAGAgentOptions {
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
 	jikji?: JikjiOptions | false;
+	/**
+	 * Internet web tools (`web_search` + `web_fetch`), ported from oh-my-pi's
+	 * provider-chain web module. Default enabled and credential-free: the
+	 * chain leads with providers that need no user-issued key — model-native
+	 * search reusing the agent's own model credentials (Gemini grounding,
+	 * Anthropic/OpenAI/xAI web_search), the anonymous Perplexity ask
+	 * endpoint, and Parallel's keyless MCP — then scraped engines with
+	 * headless-browser escalation for bot challenges. A self-hosted
+	 * SEARXNG_ENDPOINT is the only env-gated option. `false` disables both
+	 * tools. The `fetch` sub-option tunes or disables `web_fetch` alone.
+	 * Web tools are always omitted for remote P2P sessions.
+	 */
+	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
@@ -293,6 +330,8 @@ export type AutoRAGJikjiPrepareResult =
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly tools: readonly AgentTool[];
+	/** Static SEARCH_TOOLS plus the generated per-datasource tool names. */
+	private readonly searchToolNames: ReadonlySet<string>;
 	private readonly configuredModel: Model<Api> | undefined;
 	private readonly apiKey: string | undefined;
 	private readonly providerApiKeys: Readonly<Record<string, string>> | undefined;
@@ -305,6 +344,8 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	/** This agent's model credential for model-native web search (per instance, never shared). */
+	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
@@ -353,14 +394,13 @@ export class AutoRAGAgent {
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
-	private readonly sourceSearchCallCounts = new Map<string, number>();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
 		this.remoteSession = options.remoteSession ?? false;
 		this.searchTimeoutMs = options.searchTimeoutMs ?? (this.remoteSession ? 120_000 : 10 * 60 * 1000);
-		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
+		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 64;
 		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
 			throw new Error("searchTimeoutMs must be a positive finite number");
 		}
@@ -420,6 +460,13 @@ export class AutoRAGAgent {
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
+		// One tool per authorized datasource connection, so a question that
+		// targets a single connection spawns only that connection's CLIs instead
+		// of fanning out to every datasource. Generated from the same trusted
+		// config + access context as the skill list, so disabled or denied
+		// datasources never appear as tools.
+		const singleDatasourceTools = createSingleDatasourceSearchTools(this, this.singleDatasourceToolSpecs());
+		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
 			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
@@ -438,12 +485,23 @@ export class AutoRAGAgent {
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
+		const webSearchOption = options.webSearch;
+		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
+		const webSearchTool = webToolsEnabled
+			? createWebSearchTool({ ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth })
+			: undefined;
+		const webFetchTool =
+			webToolsEnabled && webSearchOption?.fetch !== false
+				? createWebFetchTool(webSearchOption?.fetch ?? {})
+				: undefined;
+
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
 		const reservedNames = new Set<string>([
 			BASH_TOOL_NAME,
 			"check_memory",
 			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+			...singleDatasourceTools.map((tool) => tool.name),
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
 			EMIT_FAST_ANSWER_TOOL_NAME,
@@ -452,6 +510,8 @@ export class AutoRAGAgent {
 			JIKJI_FIND_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
+			WEB_SEARCH_TOOL_NAME,
+			WEB_FETCH_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -472,22 +532,21 @@ export class AutoRAGAgent {
 			searchMinSyncTool,
 			searchAllTool,
 			searchDatasourceTool,
+			...singleDatasourceTools,
 			loadDatasourceSkillTool,
+			...(webSearchTool !== undefined ? [webSearchTool] : []),
+			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 		];
 		const seenToolNames = new Set<string>();
-		const tools = orderedTools
-			.filter((tool) => {
-				if (seenToolNames.has(tool.name)) return false;
-				seenToolNames.add(tool.name);
-				return true;
-			})
-			.map((tool) =>
-				(SEARCH_TOOLS as readonly string[]).includes(tool.name) ? this.withPerSourceSearchLimit(tool) : tool,
-			);
+		const tools = orderedTools.filter((tool) => {
+			if (seenToolNames.has(tool.name)) return false;
+			seenToolNames.add(tool.name);
+			return true;
+		});
 		this.tools = tools;
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
@@ -513,7 +572,7 @@ export class AutoRAGAgent {
 			transformContext: async (messages) => this.withMemoryContext(messages),
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
-				if (!this.lastQuery || !(SEARCH_TOOLS as readonly string[]).includes(toolName)) return undefined;
+				if (!this.lastQuery || !this.searchToolNames.has(toolName)) return undefined;
 
 				const details = context.result.details as
 					| { resultCount?: number; sources?: string[]; method?: string }
@@ -626,31 +685,9 @@ export class AutoRAGAgent {
 		return unsubscribers;
 	}
 
-	private withPerSourceSearchLimit(tool: AgentTool): AgentTool {
-		return {
-			...tool,
-			execute: async (...args: Parameters<AgentTool["execute"]>) => {
-				const count = this.sourceSearchCallCounts.get(tool.name) ?? 0;
-				if (count >= 3) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `${tool.name} has reached its three-query limit. Do not call it again; conclude from the evidence already gathered.`,
-							},
-						],
-						details: { method: tool.name, resultCount: 0, sources: [], limitReached: true },
-					};
-				}
-				this.sourceSearchCallCounts.set(tool.name, count + 1);
-				return tool.execute(...args);
-			},
-		};
-	}
-
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
-		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
+		if (!this.searchToolNames.has(event.toolName)) return;
 		this.searchToolCallCount += 1;
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
 			void this.activeSession?.abort();
@@ -784,7 +821,6 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
-		this.sourceSearchCallCounts.clear();
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		this.scheduleJikjiPrepare();
@@ -799,6 +835,16 @@ export class AutoRAGAgent {
 		let searchStarted = false;
 		try {
 			const resolved = this.resolveSessionModel();
+			// Model-native web search rides on the same model credential the
+			// agent loop uses — no separate search key (see web/search/model-auth).
+			// It lives on the instance, never in module state, so a second agent
+			// in the same process cannot take over this agent's credential.
+			this.modelNativeSearchAuth = modelNativeAuthFromAgentModel({
+				provider: resolved.model.provider,
+				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+				...(resolved.model.baseUrl !== undefined ? { baseUrl: resolved.model.baseUrl } : {}),
+				modelId: resolved.model.id,
+			});
 			this.runLogger.write({
 				event: "search_started",
 				timestamp: new Date().toISOString(),
@@ -833,9 +879,19 @@ export class AutoRAGAgent {
 						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						const fastTool = createEmitFastAnswerTool((details) => {
+						const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+							if (fastCaptured !== undefined) return;
 							fastCaptured = details;
-						});
+							this.preliminaryCallback?.(
+								createPreliminarySearchDocumentsResponse(
+									sessionId,
+									trimmedQuery,
+									details,
+									this.collectComponentDiagnostics(),
+								),
+							);
+						};
+						const fastTool = createEmitFastAnswerTool(emitPreliminary);
 						const baseline = await retrievalPromise;
 						session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
 						session.agent.state.tools = [...this.tools, fastTool];
@@ -845,16 +901,7 @@ export class AutoRAGAgent {
 							const text = lastAssistantText(session.agent.state.messages);
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
-						if (preliminary !== undefined) {
-							this.preliminaryCallback?.(
-								createPreliminarySearchDocumentsResponse(
-									sessionId,
-									trimmedQuery,
-									preliminary,
-									this.collectComponentDiagnostics(),
-								),
-							);
-						}
+						if (preliminary !== undefined) emitPreliminary(preliminary);
 						if (captured === undefined && this.finalThinkingLevel !== undefined) {
 							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
 							session.agent.state.tools = [...this.tools];
@@ -1108,6 +1155,38 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Per-connection tool specs for the generated `search_datasource_<id>`
+	 * tools, built from the same trusted config and access context as
+	 * {@link buildAuthorizedDatasourceSkills}. One spec per authorized
+	 * datasource skill; duplicate ids collapse to the first registration.
+	 */
+	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
+		const ctx = this.datasourceAccessContext();
+		const seen = new Set<string>();
+		const specs: SingleDatasourceToolSpec[] = [];
+		for (const skill of this.datasourceSkills) {
+			const descriptor = skill.describe();
+			if (descriptor.datasourceId === undefined) continue;
+			if (!ctx.isAccessible(descriptor)) continue;
+			if (seen.has(descriptor.datasourceId)) continue;
+			seen.add(descriptor.datasourceId);
+			// Instance roots are two-segment sources like /kakao/personal; deeper
+			// hierarchy entries would only bloat the tool description.
+			const instanceScopes = skill
+				.describeSources()
+				.map((source) => source.source)
+				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
+				.slice(0, 8);
+			specs.push({
+				datasourceId: descriptor.datasourceId,
+				description: descriptor.description,
+				instanceScopes,
+			});
+		}
+		return specs;
+	}
+
+	/**
 	 * Resolve an authorized datasource agent skill by model-visible name for the
 	 * `load_datasource_skill` tool. Returns `undefined` for unknown or
 	 * unauthorized names — model/tool input can never widen authorization.
@@ -1173,19 +1252,19 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 50, scope: options.scope };
+		const retrieveOptions = { topK: 100, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
 		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 50 }).catch(() => undefined),
+				: this.findJikji(query, { topK: 30 }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 50)
+					.slice(0, 100)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
@@ -1204,7 +1283,7 @@ export class AutoRAGAgent {
 						seen.add(key);
 						return true;
 					})
-					.slice(0, 50)
+					.slice(0, 100)
 					.map(
 						(result, index) =>
 							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
@@ -1261,9 +1340,15 @@ export class AutoRAGAgent {
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
 			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
 			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ` +
-			`If the query is answerable from general knowledge alone, answer directly. ` +
-			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and their real source paths, then stop. ` +
-			`This is the user's immediate first answer; a deeper verification pass follows afterwards, so state uncertainty honestly in the answer text.`
+			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
+			`Formatting and content rules for the answer:\n` +
+			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
+			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
+			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
+			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and their real source paths, then stop.`
 		);
 	}
 
@@ -1278,10 +1363,16 @@ export class AutoRAGAgent {
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`The user already received this immediate first answer:\n${fastAnswer ?? "(the fast phase produced no answer)"}\n\n` +
-			`Now verify it rigorously. Check important claims against the actual source files with bash, correct anything wrong or unsupported, fill gaps with the retrieval tools, and resolve conflicts and freshness. ` +
-			`Preserve real source paths and evidence excerpts in the result mapping. ` +
+			`Now verify it rigorously. Actively use jikji_find when discovering or exploring local files and folders. Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ` +
+			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
+			`Formatting and content rules for the final answer:\n` +
+			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
+			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
@@ -1296,12 +1387,18 @@ export class AutoRAGAgent {
 			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval and emit the structured result. ` +
 			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not emit final results until its next message arrives.\n\n` +
 			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
-			`Treat candidates as unverified evidence, verify important claims against source files, and use additional tools when needed. ` +
-			`Use the available retrieval tools to find candidates, then use bash to read and verify the relevant source files directly. ` +
+			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
-			`If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
+			`Formatting and content rules for the answer:\n` +
+			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
+			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations. If there are partial clues or leads, mention them concisely.\n\n` +
+			`When exploring local files and folders, actively use jikji_find rather than exploratory bash commands. If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
+			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);
@@ -1357,16 +1454,26 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
-			const publicMinsync = minsync
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
+						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
+						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
+							? { stagingExcludedCount: minsync.stagingExcluded.length }
+							: {}),
 					}
 				: undefined;
 			return {
 				...summary,
-				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
+				diagnostics: [
+					...this.startupDiagnostics,
+					...summary.diagnostics,
+					...minsyncDiagnostics,
+					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
+				],
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -1389,6 +1496,11 @@ export class AutoRAGAgent {
 	/**
 	 * Path-opaque snapshot of corpus freshness and the last refresh outcome. Runs
 	 * a cheap parse-free staleness scan (stat only); never parses in this path.
+	 *
+	 * Freshness is read from disk, not from this instance's history: a separate CLI
+	 * process (for example `autorag status` or `autorag lite status`) reports the
+	 * corpus as current when the last refresh left parsed mirrors behind and no
+	 * source has changed since.
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const staleDiagnostics = await detectMirrorStaleness({
@@ -1409,6 +1521,11 @@ export class AutoRAGAgent {
 		];
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
+		for (const diag of minSyncRefreshDiagnostics(this.refreshState.minsync)) {
+			if (!diagnostics.some((d) => d.code === diag.code && d.source === diag.source)) {
+				diagnostics.push(diag);
+			}
 		}
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
@@ -1431,13 +1548,15 @@ export class AutoRAGAgent {
 			: this.refreshState.lastOutcome === "never"
 				? "idle"
 				: this.refreshState.lastOutcome;
+		const parsedMirrorReady =
+			this.refreshState.lastOutcome === "success" || existsSync(refreshReadinessPath(this.workspaceProjectRoot));
 		return {
 			state,
 			inFlight: this.refreshState.inFlight,
 			lastStartedAt: this.refreshState.lastStartedAt,
 			lastFinishedAt: this.refreshState.lastFinishedAt,
 			counts: this.refreshState.counts,
-			stale: this.refreshState.lastOutcome === "never" || staleDiagnostics.length > 0,
+			stale: !parsedMirrorReady || staleDiagnostics.length > 0,
 			diagnostics,
 			components: this.refreshComponentStatus(),
 			lastError: this.refreshState.lastError,
@@ -1663,8 +1782,13 @@ export class AutoRAGAgent {
 		};
 		const diagnostics: JikjiDiagnostic[] = [];
 		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
-		for (const sourcePath of this.searchPaths) {
-			const result: JikjiFindResult = await this.jikjiClient.find(sourcePath, query, findOpts);
+		const searchResults = await Promise.all(
+			this.searchPaths.map(async (sourcePath) => {
+				const result: JikjiFindResult = await this.jikjiClient!.find(sourcePath, query, findOpts);
+				return { sourcePath, result };
+			}),
+		);
+		for (const { sourcePath, result } of searchResults) {
 			if (result.ok) {
 				okPacks.push({ pack: result.answerPack, root: sourcePath });
 			} else {
@@ -1855,7 +1979,7 @@ export class AutoRAGAgent {
 		return {
 			results: this.rerankWithMemory(
 				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
 			),
 			diagnostics,
 		};
@@ -1895,7 +2019,50 @@ export class AutoRAGAgent {
 		return {
 			results: this.rerankWithMemory(
 				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
+			),
+			diagnostics,
+		};
+	}
+
+	/**
+	 * Search one datasource connection only. Unlike
+	 * {@link searchDatasourceDocuments}, which fans out to every authorized
+	 * datasource and filters afterwards, this registers only the target
+	 * connection's retrieval methods with the retriever, so no other
+	 * datasource CLI is spawned at all. Access is still gated by the trusted
+	 * datasource context: an unknown or unauthorized `datasourceId` yields an
+	 * empty result set.
+	 */
+	async searchSingleDatasourceDocuments(
+		datasourceId: string,
+		query: string,
+		options: { readonly topK?: number; readonly scope?: string } = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		const retrievalOptions: RetrievalOptions = {
+			...this.activeRetrievalOptions,
+			topK: options.topK,
+			scope: options.scope,
+		};
+		const ctx = this.datasourceAccessContext(retrievalOptions);
+		const methods = this.methodRegistry.list().filter((method) => {
+			const descriptor = method.describe();
+			return descriptor.datasourceId === datasourceId && ctx.isAccessible(descriptor);
+		});
+		if (methods.length === 0) return { results: [], diagnostics: [] };
+		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
+			methods,
+			query,
+			retrievalOptions,
+		);
+		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		for (const results of filteredByMethod.values()) {
+			for (const result of results) retrievalOptions.observedSources?.add(result.source);
+		}
+		return {
+			results: this.rerankWithMemory(
+				query,
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
 			),
 			diagnostics,
 		};
@@ -2049,12 +2216,72 @@ function lastAssistantText(messages: readonly AgentMessage[]): string | undefine
 	return undefined;
 }
 
+/**
+ * Documents the parsed mirror holds but the MinSync index cannot represent:
+ * a file name with no canonical source-id form stays searchable only as a raw
+ * file, so the gap is reported instead of being dropped silently.
+ */
+function stagingExcludedDiagnostics(excluded: readonly string[] | undefined): SearchDocumentDiagnostic[] {
+	return (excluded ?? []).map((source) => ({
+		code: "minsync-staging-excluded",
+		severity: "warning",
+		message: "Excluded from the MinSync index: this file name cannot be represented as a canonical source id.",
+		source,
+	}));
+}
+
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {
 	return {
 		code: diagnostic.code,
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+	};
+}
+
+function sanitizeDiagnosticMessage(raw: string): string {
+	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
+	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Project a MinSync sync result onto refresh diagnostics. A structured MinSync
+ * diagnostic wins; otherwise a failed sync is reported through its reason so a
+ * degraded semantic index is never silent.
+ */
+function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): SearchDocumentDiagnostic[] {
+	if (!minsync) return [];
+	if (minsync.diagnostic) return [toMinSyncDiagnostic(minsync.diagnostic, minsync.ok)];
+	if (!minsync.ok && minsync.reason) return [toMinSyncReasonDiagnostic(minsync.reason)];
+	return [];
+}
+
+function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {
+	const code: SearchDocumentDiagnosticCode =
+		diag.code === "embedder-unavailable"
+			? "embedder-unavailable"
+			: diag.code === "embedding-identity-mismatch"
+				? "embedding-identity-mismatch"
+				: "minsync-sync-failed";
+	return {
+		code,
+		severity: ok ? "info" : "error",
+		message: sanitizeDiagnosticMessage(diag.message),
+		source: "minsync",
+	};
+}
+
+function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
+	return {
+		code: reason === "missing-binary" ? "minsync-unavailable" : "minsync-sync-failed",
+		severity: reason === "missing-binary" ? "warning" : "error",
+		message:
+			reason === "missing-binary"
+				? "MinSync binary is not available and auto-install was skipped."
+				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
+		source: "minsync",
 	};
 }
 

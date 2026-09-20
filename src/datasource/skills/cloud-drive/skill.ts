@@ -4,6 +4,7 @@ import {
 	type ConnectorSkillDefinition,
 	type ConnectorSkillOptions,
 } from "../../connector-skill.ts";
+import { datasourceSearchToolName } from "../../tool-naming.ts";
 import { RcloneConnector, type RcloneConnectorOptions } from "./rclone-connector.ts";
 
 export const CLOUD_DRIVE_SKILL_DEFINITION = createCloudDriveSkillDefinition("cloud-drive");
@@ -48,8 +49,10 @@ function createCloudDriveSkillDefinition(skillName: string, provider?: string): 
 			"Configure and authenticate the remote with `rclone config`; AutoRAG never receives or stores provider credentials.",
 			"Google Drive is Tier-1 supported. OneDrive and other rclone remotes use the same manifest contract. iCloud Drive is experimental and requires periodic Apple ID reauthentication.",
 			"Indexing is incremental: `rclone lsjson` inventories metadata, then only added or changed indexable files are mirrored. Search uses the last completed snapshot while a failed sync is retried.",
-			`This connection is independently addressable. Load \`datasource-${skillName}\`, then call \`search_datasource_documents\` with an optional narrowing scope under \`/${skillName}/<instance>/**\`.`,
+			`This connection is independently addressable. Load \`datasource-${skillName}\`, then call \`${datasourceSearchToolName(skillName)}\` with an optional narrowing scope under \`/${skillName}/<instance>/**\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI.`,
 		],
+		nativeCliNote:
+			"The underlying remote can be browsed directly with the `rclone` CLI through `bash` (e.g. `rclone lsl <remote>:<path>` or `rclone cat <remote>:<path>/<file>`); the dedicated tool searches the mirrored, parsed snapshot.",
 	};
 }
 
