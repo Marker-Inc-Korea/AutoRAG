@@ -89,6 +89,14 @@ describe("DiscrawlClient search", () => {
 		expect(result.stderr).toMatch(/^--json search --mode semantic --limit 7 q/);
 	});
 
+	it("treats a bare null payload as zero hits, not a failed search", async () => {
+		// The real discrawl CLI prints `null` with exit 0 when nothing matched.
+		const binaryPath = stubBinary("echo 'null'");
+		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.hits).toEqual([]);
+	});
+
 	it("reports invalid JSON as invalid-shape", async () => {
 		const binaryPath = stubBinary("echo 'not json'");
 		expect(await new DiscrawlClient({ binaryPath }).search("fts", "q")).toMatchObject({

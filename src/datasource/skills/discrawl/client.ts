@@ -529,6 +529,9 @@ function normalizeHits(stdout: string): readonly DiscrawlSearchHit[] | undefined
 	} catch {
 		return undefined;
 	}
+	// discrawl prints a bare `null` for a search that matched nothing. That is an
+	// empty result, not a malformed answer, so it must not become a search failure.
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: (() => {
