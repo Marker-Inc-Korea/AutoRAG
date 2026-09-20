@@ -291,6 +291,38 @@ AutoRAG Agent stands on the shoulders of fantastic open-source projects:
 
 ---
 
+## Troubleshooting
+
+When search returns nothing, a datasource disappears from results, refresh hangs, or the gateway will not start, run the **`autorag-doctor`** agent skill (`skills/autorag-doctor/SKILL.md`). Point your coding agent at it and say *"check AutoRAG"* — it walks the full diagnose-and-repair procedure and ends with a per-datasource status table showing what is indexed and what actually returns hits.
+
+The first three commands cover most of it:
+
+```bash
+autorag status --json          # freshness, per-component state, diagnostics
+autorag health --json          # model resolution + one live completion probe
+autorag gateway status --format json   # on-demand embedding runtime
+```
+
+Indexing is not the same thing as searchability, so always confirm retrieval itself — this needs no model:
+
+```bash
+autorag lite retrieve 'a word that certainly appears' --top-k 3 --json
+autorag lite retrieve 'recent topic' --tags discord --top-k 3 --json
+```
+
+Common failures and their fix:
+
+| Symptom | Diagnostic code | Fix |
+|---|---|---|
+| Results are missing recent files | `stale-index` | `autorag refresh --method parsed,minsync --json` |
+| Semantic search returns nothing after changing the embedder | `embedding-identity-mismatch` | `autorag index rebuild --method minsync` |
+| Gateway will not start, a previous run was killed | `lock-conflict` | `autorag gateway stop`, then retry |
+| A datasource is healthy in its own CLI but absent from results | — | add its tag/scope to `datasourceAccess` |
+| A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
+| MinSync or Jikji missing | `minsync-unavailable`, `jikji-unavailable` | check the Rust toolchain, re-run refresh |
+
+Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `katok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, `qmd status`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
+
 ## License
 
 - **AutoRAG 2.0 (AutoRAG Agent):** Released under the [MIT License](LICENSE).
