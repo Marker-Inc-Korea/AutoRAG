@@ -1,0 +1,86 @@
+# Maintainers
+
+Who reviews and merges what in AutoRAG. Project organization, decision rights, and
+the path to becoming a maintainer are defined in [GOVERNANCE.md](GOVERNANCE.md);
+this file is the roster that goes with it.
+
+## Ownership and operation
+
+- **Project owner:** Marker Inc. (주식회사 마커) — holds the copyright jointly with
+  NomaDamas and owns the repository and project assets. Ownership-level decisions
+  (license, repository transfer, archival) are reserved to Marker Inc.
+- **Operating organization:** [NomaDamas](https://github.com/NomaDamas) — runs the
+  project day to day: review, triage, roadmap, releases, technical direction.
+
+## Project lead
+
+- **Dongkyu Kim** — [@vkehfdl1](https://github.com/vkehfdl1) (vkehfdl1@gmail.com).
+  Final point of escalation for any decision not explicitly assigned in
+  [GOVERNANCE.md](GOVERNANCE.md).
+
+## Maintainers with write access
+
+Snapshot of repository access, taken from GitHub on 2026-09-20. GitHub remains the
+source of truth for who currently holds access.
+
+| Maintainer | Access | Notes |
+|---|---|---|
+| [@vkehfdl1](https://github.com/vkehfdl1) | admin | project lead; all AutoRAG 2.0 areas |
+| [@Cheol-H-Jeong](https://github.com/Cheol-H-Jeong) | admin | repository administration |
+| [@taehalim](https://github.com/taehalim) | admin | repository administration |
+| [@HaD0Yun](https://github.com/HaD0Yun) | maintain | review and merge rights |
+
+Access is also granted through a repository team: **RAG 연구팀** (a Marker Inc. team)
+holds maintain permission here, so its members can review and merge without appearing
+in the direct-collaborator list above. Maintainers who lose access through a team
+change remain maintainers in the governance sense until NomaDamas or the project lead
+records otherwise.
+
+## Area coverage
+
+Areas are also how we route review. Paths are relative to the repository root.
+
+| Area | Paths | Primary reviewer |
+|---|---|---|
+| Agent loop, tools, and prompt | `src/agent/`, `src/web/`, `skills/` | [@vkehfdl1](https://github.com/vkehfdl1) |
+| Retrieval, MinSync, manifests | `src/retrieval/`, `src/minsync/`, `src/manifest/` | [@vkehfdl1](https://github.com/vkehfdl1) |
+| Datasource skills | `src/datasource/`, `src/ui/`, `scripts/manual-qa/` | [@vkehfdl1](https://github.com/vkehfdl1) |
+| CLI, P2P, embedding runtime | `src/cli/`, `src/p2p/`, `src/embedding-runtime/` | [@vkehfdl1](https://github.com/vkehfdl1) |
+| Tests, CI, live end-to-end | `test/`, `scripts/`, `.github/workflows/` | NomaDamas maintainers |
+| Supply chain and licensing gates | `scripts/supply-chain/`, `NOTICE`, `licenses/` | NomaDamas maintainers |
+| Documentation | `README.md`, `docs/`, `CONTRIBUTING.md` | NomaDamas maintainers |
+| Legacy Python AutoRAG | `legacy/` | NomaDamas maintainers |
+
+Rows that name the team rather than one person are areas where we do not yet have a
+single sustained owner on record; any maintainer may review them, and the project
+lead assigns an area lead when a contributor wants one.
+
+## Review expectations
+
+- The `main` rulesets define the gate: `main-ci-required` (required status checks on
+  an up-to-date branch) and `main-review-required` (one approving review, squash-only
+  merges). Two approvals are not required.
+- Reviewers look for scope discipline (one logical change), tests that can fail,
+  verbatim error reporting, and secrets staying outside config and argv. See
+  [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor side.
+- A maintainer who is also the pull request author should not self-approve a change
+  that touches a required-status-check workflow, the license, or `GOVERNANCE.md`.
+- Maintainers are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md) and to
+  enforce it.
+
+## Becoming a maintainer
+
+- NomaDamas members may be granted maintainer rights by NomaDamas.
+- External contributors may be approved as maintainers by NomaDamas after sustained,
+  high-quality contributions — typically nominated by an existing maintainer with
+  sign-off from the project lead.
+- Maintainers who are inactive for an extended period may be moved to emeritus status
+  by NomaDamas, and reinstated on return.
+
+## Contact
+
+- Bug reports, feature proposals, and review questions: GitHub issues and pull
+  requests.
+- Security reports: private reporting per [SECURITY.md](SECURITY.md) — never a public
+  issue.
+- Conduct reports: the addresses in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
