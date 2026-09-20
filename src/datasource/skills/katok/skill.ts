@@ -89,10 +89,10 @@ export class KatokSkill implements DatasourceSkill {
 			this.lastIndexedAt = Date.now();
 			const chunkCount =
 				"data" in indexResult &&
-				typeof indexResult.data === "object" &&
-				indexResult.data !== null &&
-				"chunkCount" in indexResult.data &&
-				typeof indexResult.data.chunkCount === "number"
+					typeof indexResult.data === "object" &&
+					indexResult.data !== null &&
+					"chunkCount" in indexResult.data &&
+					typeof indexResult.data.chunkCount === "number"
 					? indexResult.data.chunkCount
 					: 0;
 			return {
@@ -171,7 +171,7 @@ export class KatokSkill implements DatasourceSkill {
 				"The external `katok` CLI owns the archive, index, and credentials. When the dedicated tool cannot express what you need, call katok directly through `bash`:",
 				'- `katok search bm25 "<query>" --json --limit 20` — lexical search (`semantic` mode also available)',
 				"- `katok chunk get <chunkId> --json` — fetch one chunk by id (chunk ids appear in result metadata)",
-				"- `katok context <chunkId> --json` — surrounding messages of a chunk",
+				"- `katok chunk context <chunkId> --json` — surrounding messages of a chunk",
 				"Never pass datasource virtual paths (`/kakao/...`) to bash; they are not OS paths.",
 				"",
 				"## Output rules",
