@@ -1,3 +1,4 @@
+import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import type {
@@ -101,12 +102,14 @@ export class KatokSkill implements DatasourceSkill {
 				indexedAt: this.lastIndexedAt,
 				diagnostics: [],
 			};
-		} catch {
+		} catch (error) {
+			// The unexpected failure reaches the operator verbatim: no placeholder,
+			// no swallowed message.
 			return this.fail("datasource-unavailable", {
 				ok: false,
 				reason: "spawn-error",
 				stdout: "",
-				stderr: "katok command failed; details suppressed for datasource privacy",
+				stderr: describeRetrievalError(error),
 				code: null,
 			});
 		}
@@ -174,7 +177,7 @@ export class KatokSkill implements DatasourceSkill {
 		result: { ok: false; reason: string; stdout?: string; stderr: string; code: number | null },
 	): DatasourceIndexResult {
 		const message =
-			result.stderr.length > 0 ? `${result.reason}: ${sanitizeDiagnosticText(result.stderr)}` : result.reason;
+			result.stderr.length > 0 ? `${result.reason}: ${result.stderr.trim().slice(0, 4000)}` : result.reason;
 		const diagnostic: DatasourceDiagnostic = {
 			code,
 			severity: code === "datasource-unavailable" ? "warning" : "error",
@@ -195,9 +198,5 @@ export class KatokSkill implements DatasourceSkill {
 	}
 }
 
-function sanitizeDiagnosticText(value: string): string {
-	if (value.includes("/") || value.includes("\\") || /[A-Za-z]:[\\/]/u.test(value)) {
-		return "katok command failed; details suppressed for datasource privacy";
-	}
-	return value;
-}
+// The katok CLI's stderr reaches the operator verbatim, paths included — the
+// client bounds length; nothing is replaced with a placeholder.
