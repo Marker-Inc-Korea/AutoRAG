@@ -7,7 +7,7 @@ export const SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME = "search_datasource_document
 
 const searchDatasourceSchema = Type.Object({
 	query: Type.String({ description: "Query to search across configured external datasource skills." }),
-	topK: Type.Optional(Type.Integer({ description: "Maximum number of datasource chunks to return." })),
+	topK: Type.Optional(Type.Integer({ description: "Maximum number of datasource chunks to return. Defaults to 50." })),
 	scope: Type.Optional(
 		Type.String({ description: "Optional opaque datasource scope, e.g. /kakao/account or /kakao/account/**." }),
 	),

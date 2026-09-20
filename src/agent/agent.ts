@@ -118,8 +118,12 @@ import {
 import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
 import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 
+/**
+ * Retrieval datasource tools whose executions count toward the per-search
+ * tool budget and weak-signal memory. `bash` is a source-inspection tool,
+ * not a search datasource, so it is deliberately excluded from this list.
+ */
 const SEARCH_TOOLS = [
-	BASH_TOOL_NAME,
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
@@ -374,14 +378,13 @@ export class AutoRAGAgent {
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
-	private readonly sourceSearchCallCounts = new Map<string, number>();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
 		this.remoteSession = options.remoteSession ?? false;
 		this.searchTimeoutMs = options.searchTimeoutMs ?? (this.remoteSession ? 120_000 : 10 * 60 * 1000);
-		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
+		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 64;
 		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
 			throw new Error("searchTimeoutMs must be a positive finite number");
 		}
@@ -514,15 +517,11 @@ export class AutoRAGAgent {
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 		];
 		const seenToolNames = new Set<string>();
-		const tools = orderedTools
-			.filter((tool) => {
-				if (seenToolNames.has(tool.name)) return false;
-				seenToolNames.add(tool.name);
-				return true;
-			})
-			.map((tool) =>
-				(SEARCH_TOOLS as readonly string[]).includes(tool.name) ? this.withPerSourceSearchLimit(tool) : tool,
-			);
+		const tools = orderedTools.filter((tool) => {
+			if (seenToolNames.has(tool.name)) return false;
+			seenToolNames.add(tool.name);
+			return true;
+		});
 		this.tools = tools;
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
@@ -661,28 +660,6 @@ export class AutoRAGAgent {
 		return unsubscribers;
 	}
 
-	private withPerSourceSearchLimit(tool: AgentTool): AgentTool {
-		return {
-			...tool,
-			execute: async (...args: Parameters<AgentTool["execute"]>) => {
-				const count = this.sourceSearchCallCounts.get(tool.name) ?? 0;
-				if (count >= 3) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `${tool.name} has reached its three-query limit. Do not call it again; conclude from the evidence already gathered.`,
-							},
-						],
-						details: { method: tool.name, resultCount: 0, sources: [], limitReached: true },
-					};
-				}
-				this.sourceSearchCallCounts.set(tool.name, count + 1);
-				return tool.execute(...args);
-			},
-		};
-	}
-
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
 		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
@@ -819,7 +796,6 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
-		this.sourceSearchCallCounts.clear();
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		this.scheduleJikjiPrepare();
@@ -1219,19 +1195,19 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 50, scope: options.scope };
+		const retrieveOptions = { topK: 100, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
 		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 50 }).catch(() => undefined),
+				: this.findJikji(query, { topK: 100 }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 50)
+					.slice(0, 100)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
@@ -1250,7 +1226,7 @@ export class AutoRAGAgent {
 						seen.add(key);
 						return true;
 					})
-					.slice(0, 50)
+					.slice(0, 100)
 					.map(
 						(result, index) =>
 							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
@@ -1327,7 +1303,7 @@ export class AutoRAGAgent {
 			`Now verify it rigorously. Check important claims against the actual source files with bash, correct anything wrong or unsupported, fill gaps with the retrieval tools, and resolve conflicts and freshness. ` +
 			`Preserve real source paths and evidence excerpts in the result mapping. ` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
+			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
@@ -1347,7 +1323,7 @@ export class AutoRAGAgent {
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
+			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);
@@ -1923,7 +1899,7 @@ export class AutoRAGAgent {
 		return {
 			results: this.rerankWithMemory(
 				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
 			),
 			diagnostics,
 		};
@@ -1963,7 +1939,7 @@ export class AutoRAGAgent {
 		return {
 			results: this.rerankWithMemory(
 				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
 			),
 			diagnostics,
 		};

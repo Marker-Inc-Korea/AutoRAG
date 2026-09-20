@@ -10,7 +10,9 @@ const searchMinSyncSchema = Type.Object({
 	query: Type.String({
 		description: "Semantic query to search parsed document mirrors with MinSync vector retrieval.",
 	}),
-	topK: Type.Optional(Type.Integer({ description: "Maximum number of MinSync semantic chunks to return." })),
+	topK: Type.Optional(
+		Type.Integer({ description: "Maximum number of MinSync semantic chunks to return. Defaults to 50." }),
+	),
 	scope: Type.Optional(Type.String({ description: "Optional opaque virtual-path scope, e.g. /docs or /docs/**." })),
 });
 
