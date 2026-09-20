@@ -174,8 +174,9 @@ autorag lite duplicates --json
 ## Unavailable components and failure handling
 
 Missing optional components degrade gracefully: refresh and retrieval continue
-with path-opaque diagnostics such as `minsync-unavailable` or
-`retrieval-method-failed` instead of failing the whole run. Exit codes are 0
+with diagnostics such as `minsync-unavailable` or `retrieval-method-failed`
+instead of failing the whole run. Each one quotes the underlying error verbatim,
+and `lite retrieve --json` also names the skipped surface under `unsearched`. Exit codes are 0
 on success, 2 for config or usage errors, and 1 for runtime errors. When a
 component stays unavailable after a full refresh, return to setup rather than
 accepting silently degraded search.

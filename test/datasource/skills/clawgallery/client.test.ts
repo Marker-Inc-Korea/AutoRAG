@@ -55,4 +55,16 @@ describe("ClawGalleryClient", () => {
 			reason: "binary-missing",
 		});
 	});
+
+	it("preserves path-bearing stderr verbatim on failure", async () => {
+		const stderrText = "clawgallery: database locked at /Users/me/Pictures/gallery/index.db";
+		const binaryPath = stubBinary(`printf '%s' ${JSON.stringify(stderrText)} >&2; exit 2`);
+
+		const result = await new ClawGalleryClient({ binaryPath }).bootstrap();
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.stderr).toBe(stderrText);
+		expect(result.stderr).not.toContain("suppressed");
+	});
 });

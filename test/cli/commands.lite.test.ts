@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli/index.ts";
+import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
 function writeConfig(root: string, configPath: string, model = false): void {
 	const docs = join(root, "docs");
@@ -110,6 +111,77 @@ describe("autorag lite lifecycle dispatch", () => {
 				reason: "mtime-and-size-changed",
 				action: "refresh",
 			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reports retrieval surfaces that were not searched in --json without --debug", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-unsearched-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+
+			// A healthy run states the contract explicitly: nothing was skipped.
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			expect(JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? "")).unsearched).toEqual([]);
+
+			// Local MinSync skipped (index sync holds the lock) while a datasource still answers.
+			vi.spyOn(RetrievalEngine.prototype, "retrieve").mockResolvedValue({
+				results: [
+					{
+						id: "discord:1",
+						content: "datasource hit",
+						source: "/discord/guild/chunks/1",
+						score: 1,
+						metadata: { method: "discord-hybrid" },
+					},
+				],
+				diagnostics: [
+					{
+						code: "minsync-unavailable",
+						severity: "warning",
+						message: 'Retrieval method "minsync" failed and was skipped: Error: another sync is in progress',
+						source: "minsync",
+						reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+					},
+				],
+				unsearched: [
+					{
+						surface: "minsync",
+						methods: ["hybrid", "minsync"],
+						reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+					},
+				],
+			});
+
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(envelope.ok).toBe(true);
+			expect(envelope.results).toHaveLength(1);
+			// The underlying error reaches the caller verbatim, real paths included.
+			expect(envelope.unsearched).toEqual([
+				{
+					surface: "minsync",
+					methods: ["hybrid", "minsync"],
+					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+				},
+			]);
+			expect(envelope.diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "minsync-unavailable",
+					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+				}),
+			);
+
+			// Human output warns about the skip without --debug.
+			expect(await main(["lite", "retrieve", "query", "--config", configPath])).toBe(0);
+			const human = String(out.mock.calls.at(-1)?.[0] ?? "");
+			expect(human).toContain(
+				"warning: not searched: minsync (hybrid, minsync): Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

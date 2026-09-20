@@ -165,13 +165,15 @@ describe("Obsidian retrieval methods", () => {
 		expect(semantic[0]?.metadata?.mode).toBe("vsearch");
 	});
 
-	it("returns empty on client failure", async () => {
+	it("surfaces the qmd failure with its stderr", async () => {
 		const client = {
 			async search(): Promise<QmdSearchResult> {
 				return { ok: false, reason: "nonzero-exit", stdout: "", stderr: "nope", code: 1 };
 			},
 		};
-		expect(await new ObsidianBm25Method({ client, instanceId: "v1" }).retrieve("x", { topK: 3 })).toEqual([]);
+		await expect(new ObsidianBm25Method({ client, instanceId: "v1" }).retrieve("x", { topK: 3 })).rejects.toThrow(
+			"obsidian search failed (nonzero-exit, exit code 1): nope",
+		);
 	});
 });
 

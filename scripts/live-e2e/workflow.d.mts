@@ -4,6 +4,22 @@ import type { AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 
 export function buildLiveStackOptions(root: string, workspace: string): AutoRAGAgentOptions;
 export function assertAbsoluteReadableSource(source: string): string;
+
+export interface LiteRetrieveUnsearchedEntry {
+	readonly surface: string;
+	readonly methods: readonly string[];
+	readonly reason: string;
+}
+export interface LiteRetrieveEnvelopeLike {
+	readonly ok: boolean;
+	readonly results: readonly { readonly source: string }[];
+	readonly unsearched: readonly LiteRetrieveUnsearchedEntry[];
+}
+export function assertLiteRetrieveHealthy(envelope: LiteRetrieveEnvelopeLike, expectedSource: string): boolean;
+export function assertLiteRetrieveReportsSkippedSurface(
+	envelope: LiteRetrieveEnvelopeLike,
+	surface: string,
+): LiteRetrieveUnsearchedEntry;
 export function tryAcquireWorkflowLock(root?: string): { readonly ok: boolean; readonly code?: string; readonly release?: () => void };
 export function cleanupCloneState(clonePath: string, sharedRoot: string): void;
 export function runWorkflow(options: { readonly root: string; readonly mode: "cold" | "warm"; readonly evidenceDir?: string }): Promise<Readonly<Record<string, unknown>>>;
