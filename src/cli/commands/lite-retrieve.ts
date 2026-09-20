@@ -3,7 +3,7 @@ import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { detectMirrorStaleness } from "../../mirror/index.ts";
 import { refreshReadinessPath } from "../../mirror/paths.ts";
-import type { RetrievalDiagnostic, RetrievalResult } from "../../retrieval/types.ts";
+import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -20,7 +20,26 @@ export interface LiteRetrieveEnvelope {
 	 */
 	readonly stale: boolean;
 	readonly results: readonly LiteRetrieveResultItem[];
+	/**
+	 * Retrieval surfaces that did not run for this query. A consumer that only
+	 * reads `results` can check `unsearched.length > 0` to learn the answer is
+	 * partial — for example local MinSync files skipped while an index sync holds
+	 * the workspace lock, leaving only datasource hits.
+	 */
+	readonly unsearched: readonly LiteRetrieveUnsearched[];
 	readonly diagnostics: readonly LiteRetrieveDiagnostic[];
+}
+
+export interface LiteRetrieveUnsearched {
+	/** Surface label: "minsync" for local files, or the datasource id. Never a real path. */
+	readonly surface: string;
+	/** Retrieval method names on this surface that did not run. */
+	readonly methods: readonly string[];
+	/** Stable cause, e.g. `sync-in-progress`, `binary-missing`, `identity-mismatch`. */
+	readonly reason: string;
+	/** Stable recovery hint, e.g. `retry`, `install-binary`, `reindex`. */
+	readonly action: string;
+	readonly message: string;
 }
 
 export interface LiteRetrieveResultItem {
@@ -153,6 +172,21 @@ function diagnosticProjection(d: {
 	return out;
 }
 
+/**
+ * Project the retrieval pipeline's skip report into the envelope. Surfaces and
+ * reasons are already path-opaque labels, so the projection is a copy that pins
+ * the field order of the machine contract.
+ */
+function unsearchedProjection(entry: RetrievalUnsearchedSurface): LiteRetrieveUnsearched {
+	return {
+		surface: entry.surface,
+		methods: [...entry.methods],
+		reason: entry.reason,
+		action: entry.action,
+		message: entry.message,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Render helpers
 // ---------------------------------------------------------------------------
@@ -174,6 +208,12 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	const okEnvelope = envelope;
 	if (okEnvelope.stale) {
 		lines.push("warning: index may be stale; run `autorag lite refresh` or pass --refresh to rebuild it");
+	}
+	// Skipped surfaces are reported without --debug: the results below are partial.
+	for (const entry of okEnvelope.unsearched) {
+		lines.push(
+			`warning: not searched: ${entry.surface} (reason: ${entry.reason}, action: ${entry.action}) - ${entry.message}`,
+		);
 	}
 	if (okEnvelope.results.length === 0) {
 		lines.push("retrieve: no results");
@@ -350,7 +390,11 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 
 	// Perform retrieval
 	const options = buildRetrieveOptions(ctx.flags);
-	let retrievalResult: { results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] };
+	let retrievalResult: {
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	};
 	try {
 		retrievalResult = await lite.retrieve(query, {
 			topK: topKResult.value ?? options.topK,
@@ -383,6 +427,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		query,
 		stale: staleEnvelopeDiagnostics.length > 0,
 		results,
+		unsearched: retrievalResult.unsearched.map(unsearchedProjection),
 		diagnostics,
 	};
 

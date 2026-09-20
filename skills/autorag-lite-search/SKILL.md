@@ -58,6 +58,7 @@ The JSON envelope is:
       "content": "..."
     }
   ],
+  "unsearched": [],
   "diagnostics": []
 }
 ```
@@ -79,10 +80,33 @@ The JSON envelope is:
   `method` that produced it. Source identities are source-native: real file
   paths for local files, datasource identities for datasource results. Never
   rewrite, guess, or flatten them.
+- `unsearched` lists the retrieval surfaces that did not run for this query.
+  `ok: true` with a non-empty `unsearched` means the answer is partial: for
+  example local MinSync files are skipped while an index sync holds the
+  workspace lock, leaving only datasource hits. Check `unsearched.length > 0`
+  before concluding that the returned sources are the whole corpus. Each entry
+  is:
+
+  ```json
+  {
+    "surface": "minsync",
+    "methods": ["hybrid", "minsync"],
+    "reason": "sync-in-progress",
+    "action": "retry",
+    "message": "Local MinSync sources were not searched because an index sync holds the workspace lock."
+  }
+  ```
+
+  `surface` is `minsync` for local files or the datasource id (never a real
+  path). `reason` is one of `sync-in-progress`, `binary-missing`,
+  `embedder-unavailable`, `identity-mismatch`, `method-error`; `action` is one
+  of `retry`, `install-binary`, `prepare-embedder`, `reindex`. Both are stable
+  values — branch on them instead of on `message`.
 - `diagnostics` are path-opaque: `source` is a component or method label,
   never a real filesystem path. Codes include `retrieval-method-failed` and
-  `minsync-unavailable`. A degraded component produces a diagnostic, not a
-  failed run; check `diagnostics` before trusting an empty result set.
+  `minsync-unavailable`, and a skipped method also carries the same `reason`
+  and `action`. A degraded component produces a diagnostic, not a failed run;
+  check `diagnostics` before trusting an empty result set.
 - `--debug` adds diagnostic detail to human output without printing real
   filesystem paths.
 - Exit codes: 0 on success (results may be empty, and a stale index is a

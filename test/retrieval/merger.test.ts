@@ -278,4 +278,103 @@ describe("ParallelRetriever", () => {
 		);
 		expect(diagnostics).toEqual([]);
 	});
+
+	it("retrieveWithDiagnostics reports which surfaces were not searched, with a stable reason", async () => {
+		const retriever = new ParallelRetriever();
+		const locked = (name: string): RetrievalMethod => ({
+			describe: () => ({
+				name,
+				type: "hybrid" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+			}),
+			retrieve: vi.fn().mockRejectedValue(new Error("another sync is in progress for /Users/x/workspace")),
+		});
+		const discord: RetrievalMethod = {
+			describe: () => ({
+				name: "discord-hybrid",
+				type: "hybrid" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+				datasourceId: "discord",
+			}),
+			retrieve: vi.fn().mockResolvedValue([makeResult("d", "/discord/guild/chunks/1", 1)]),
+		};
+
+		const { results, diagnostics, unsearched } = await retriever.retrieveWithDiagnostics(
+			[locked("minsync"), locked("hybrid"), discord],
+			"test",
+			{},
+		);
+
+		expect(results.get("discord-hybrid")).toHaveLength(1);
+		expect(unsearched).toEqual([
+			{
+				surface: "minsync",
+				methods: ["hybrid", "minsync"],
+				reason: "sync-in-progress",
+				action: "retry",
+				message: "Local MinSync sources were not searched because an index sync holds the workspace lock.",
+			},
+		]);
+		expect(JSON.stringify(unsearched)).not.toContain("/Users/");
+		expect(diagnostics.every((d) => d.reason === "sync-in-progress" && d.action === "retry")).toBe(true);
+	});
+
+	it("retrieveWithDiagnostics reports a failing datasource under its datasource id", async () => {
+		const retriever = new ParallelRetriever();
+		const datasource: RetrievalMethod = {
+			describe: () => ({
+				name: "discord-hybrid",
+				type: "hybrid" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+				datasourceId: "discord",
+			}),
+			retrieve: vi.fn().mockRejectedValue(new Error("spawn discrawl ENOENT")),
+		};
+		const { unsearched } = await retriever.retrieveWithDiagnostics([datasource], "test", {});
+		expect(unsearched).toEqual([
+			{
+				surface: "discord",
+				methods: ["discord-hybrid"],
+				reason: "binary-missing",
+				action: "install-binary",
+				message: 'Retrieval surface "discord" was not searched because the retrieval binary is not installed.',
+			},
+		]);
+	});
+
+	it("retrieveWithDiagnostics maps an embedding identity failure to a reindex action", async () => {
+		const retriever = new ParallelRetriever();
+		const minsync: RetrievalMethod = {
+			describe: () => ({
+				name: "minsync",
+				type: "vector" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+			}),
+			retrieve: vi
+				.fn()
+				.mockRejectedValue(
+					new Error("configured embedder dimension 1024 does not match indexed dimension 768; reindex required."),
+				),
+		};
+		const { unsearched } = await retriever.retrieveWithDiagnostics([minsync], "test", {});
+		expect(unsearched[0]).toMatchObject({ surface: "minsync", reason: "identity-mismatch", action: "reindex" });
+	});
+
+	it("retrieveWithDiagnostics reports no unsearched surfaces when all methods succeed", async () => {
+		const retriever = new ParallelRetriever();
+		const { unsearched } = await retriever.retrieveWithDiagnostics(
+			[makeMockMethod("m1", [makeResult("a", "f1.ts", 1)])],
+			"test",
+			{},
+		);
+		expect(unsearched).toEqual([]);
+	});
 });

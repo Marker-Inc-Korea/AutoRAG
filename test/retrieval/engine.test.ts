@@ -395,7 +395,7 @@ describe("RetrievalEngine", () => {
 				stubMethod("minsync", []), // empty results, no throw (simulates missing binary)
 			);
 			engine.register(stubMethod("posix", [{ source: "/a.txt", score: 0.7 }]));
-			const { results, diagnostics } = await engine.retrieve("test");
+			const { results, diagnostics, unsearched } = await engine.retrieve("test");
 			// Other methods work unaffected.
 			expect(results).toHaveLength(1);
 			expect(results[0].source).toBe("/a.txt");
@@ -406,7 +406,19 @@ describe("RetrievalEngine", () => {
 				severity: "warning",
 				message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
 				source: "minsync",
+				reason: "binary-missing",
+				action: "install-binary",
 			});
+			// The same skip is reported as an unsearched surface, not only as a method failure.
+			expect(unsearched).toEqual([
+				{
+					surface: "minsync",
+					methods: ["minsync"],
+					reason: "binary-missing",
+					action: "install-binary",
+					message: "Local MinSync sources were not searched because the retrieval binary is not installed.",
+				},
+			]);
 		});
 
 		it("does not emit minsync-unavailable when minsync method returns results", async () => {
@@ -414,8 +426,9 @@ describe("RetrievalEngine", () => {
 				isMinSyncBinaryMissing: () => true,
 			});
 			engine.register(stubMethod("minsync", [{ source: "/synced/doc.txt", score: 0.9 }]));
-			const { diagnostics } = await engine.retrieve("test");
+			const { diagnostics, unsearched } = await engine.retrieve("test");
 			expect(diagnostics).toEqual([]);
+			expect(unsearched).toEqual([]);
 		});
 
 		it("does not emit minsync-unavailable when hook is not provided", async () => {

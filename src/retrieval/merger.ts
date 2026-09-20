@@ -1,3 +1,10 @@
+import {
+	classifyRetrievalSkip,
+	groupUnsearchedSurfaces,
+	type RetrievalSkip,
+	retrievalSkipAction,
+	retrievalSurfaceFor,
+} from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
 	RetrievalDiagnosticCode,
@@ -129,9 +136,11 @@ export class ParallelRetriever {
 
 	/**
 	 * Like {@link retrieve} but also returns path-opaque diagnostics for methods
-	 * that failed. Partial results from healthy methods are preserved; failed
-	 * methods yield an empty result set plus a diagnostic. The legacy
-	 * {@link retrieve} return shape is intentionally unchanged for compatibility.
+	 * that failed, plus the retrieval surfaces those methods belong to. Partial
+	 * results from healthy methods are preserved; failed methods yield an empty
+	 * result set, a diagnostic carrying a stable skip reason, and an entry in
+	 * `unsearched`. The legacy {@link retrieve} return shape is intentionally
+	 * unchanged for compatibility.
 	 */
 	async retrieveWithDiagnostics(
 		methods: RetrievalMethod[],
@@ -141,23 +150,29 @@ export class ParallelRetriever {
 		const results = new Map<string, RetrievalResult[]>();
 		for (const method of methods) results.set(method.describe().name, []);
 		const diagnostics: RetrievalDiagnostic[] = [];
+		const skips: RetrievalSkip[] = [];
 		await Promise.all(
 			methods.map(async (method) => {
-				const name = method.describe().name;
+				const descriptor = method.describe();
+				const name = descriptor.name;
 				try {
 					results.set(name, await method.retrieve(query, options));
-				} catch {
+				} catch (error) {
 					results.set(name, []);
+					const reason = classifyRetrievalSkip(error);
+					skips.push({ method: name, surface: retrievalSurfaceFor(descriptor), reason });
 					diagnostics.push({
 						code: methodFailureCode(name),
 						severity: "warning",
 						message: `Retrieval method "${name}" failed and was skipped; partial results from other methods were used.`,
 						source: name,
+						reason,
+						action: retrievalSkipAction(reason),
 					});
 				}
 			}),
 		);
-		return { results, diagnostics };
+		return { results, diagnostics, unsearched: groupUnsearchedSurfaces(skips) };
 	}
 }
 
