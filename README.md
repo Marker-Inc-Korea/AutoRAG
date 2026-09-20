@@ -1,6 +1,6 @@
 # AutoRAG Agent
 
-**A self-evolving librarian agent for document collections and federated knowledge.**
+**Now your agent can find anything in your computer.**
 
 <p align="left">
   <a href="https://www.npmjs.com/package/@autorag/librarian"><img src="https://img.shields.io/npm/v/@autorag/librarian.svg?style=flat-square&color=38bdf8" alt="npm version" /></a>

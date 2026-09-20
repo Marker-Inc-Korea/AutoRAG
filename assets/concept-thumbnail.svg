@@ -57,7 +57,7 @@
     <rect x="-110" y="-28" width="220" height="28" rx="14" fill="#1e293b" stroke="#334155" />
     <text y="-10" class="tag" fill="#38bdf8">⚡ OVER-POWERED LIBRARIAN AGENT</text>
     <text y="40" class="title">AutoRAG Agent</text>
-    <text y="72" class="subtitle">Search, read, verify, and curate personal &amp; enterprise knowledge in place</text>
+    <text y="72" class="subtitle">Now your agent can find anything in your computer</text>
   </g>
 
   <!-- Left Column: Federated Data Sources (Never Migrate) -->
