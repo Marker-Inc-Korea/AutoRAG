@@ -27,6 +27,13 @@ import type {
 	RetrievalUnsearchedSurface,
 } from "./types.ts";
 
+/**
+ * Safety ceiling on merged evidence, not a relevance filter. The merger keeps
+ * every distinct chunk, so a run's real size is whatever the registered methods
+ * returned; this only guards against an unbounded registry.
+ */
+const DEFAULT_MERGED_EVIDENCE_CEILING = 500;
+
 /** Options for constructing a standalone {@link RetrievalEngine}. */
 export interface RetrievalEngineOptions {
 	/**
@@ -34,7 +41,12 @@ export interface RetrievalEngineOptions {
 	 * @default { allowedTags: undefined, allowedScopes: undefined }
 	 */
 	readonly datasourceAccess?: DatasourceAccessContextOptions;
-	/** Default `topK` when the caller omits it. @default 20 */
+	/**
+	 * Default `topK` when the caller omits it. This is a safety ceiling on
+	 * merged evidence, not a relevance cut: the merger returns every distinct
+	 * chunk, so the effective size is whatever the registered methods returned.
+	 * @default 500
+	 */
 	readonly defaultTopK?: number;
 	/** Default deduplication flag. @default true */
 	readonly defaultDedup?: boolean;
@@ -56,7 +68,7 @@ export interface RetrievalEngineOptions {
  * methods = registry.list()
  * byMethod = retriever.retrieveWithDiagnostics(methods, query, options)
  * filtered = filter.filter(byMethod, methods, ctx, options.scope)
- * merged = merger.merge(filtered, { topK, dedup: true })
+ * merged = merger.merge(filtered, { topK, dedup: true })  // distinct chunks, pure duplicates dropped
  * → { results: merged, diagnostics }
  * ```
  *
@@ -85,7 +97,7 @@ export class RetrievalEngine {
 		this.filter = new DatasourceResultFilter();
 		this.merger = new ResultMerger();
 		this.accessContext = new DatasourceAccessContext(options.datasourceAccess);
-		this.defaultTopK = options.defaultTopK ?? 20;
+		this.defaultTopK = options.defaultTopK ?? DEFAULT_MERGED_EVIDENCE_CEILING;
 		this.defaultDedup = options.defaultDedup ?? true;
 		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
 	}

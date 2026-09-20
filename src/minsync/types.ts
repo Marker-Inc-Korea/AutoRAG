@@ -62,4 +62,11 @@ export interface MinSyncQueryHit {
 	readonly path: string;
 	readonly score: number;
 	readonly text: string;
+	/**
+	 * MinSync's per-chunk identity (`doc_id` in its JSON). Several chunks of one
+	 * parsed mirror share a `path`, so this is what distinguishes them; without
+	 * it every passage of a document collapses into a single evidence id.
+	 * Optional because older MinSync builds omit it.
+	 */
+	readonly docId?: string;
 }
