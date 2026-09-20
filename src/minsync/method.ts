@@ -97,7 +97,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.mode = options.mode ?? "vector";
 		this.runtime =
 			options.runtime ??
-			(options.binaryPath === undefined && options.autoInstall !== false ? { ensureRuntime } : undefined);
+			(this.embedder?.profile !== undefined && options.binaryPath === undefined && options.autoInstall !== false
+				? { ensureRuntime }
+				: undefined);
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -125,10 +127,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
-		syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
+			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
 		const binaryResult = await this.resolveBinary();
 		if (binaryResult === undefined) {
-			return degrade(this.workspacePath, "missing-binary");
+			return withExcluded(degrade(this.workspacePath, "missing-binary"));
 		}
 		if (typeof binaryResult === "string") {
 			const client = new MinSyncClient({
@@ -138,10 +142,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				maxChunkSize: this.maxChunkSize,
 				runtime: this.runtime,
 			});
-			return client.sync(force);
+			return withExcluded(await client.sync(force));
 		}
 		// install-failed degrade result
-		return binaryResult;
+		return withExcluded(binaryResult);
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
@@ -168,7 +172,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		const topK = options.topK ?? 20;
+		const topK = options.topK ?? 50;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		const binaryResult = await this.resolveBinary();
@@ -191,7 +195,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
-			const chunkId = `minsync:${entry.virtualPath}:${basename(hit.path)}`;
+			// `path` is the parsed mirror, shared by every chunk of one document, so
+			// MinSync's per-chunk `docId` is what keeps distinct passages distinct.
+			// Falling back to the mirror basename would give them one identity and the
+			// merger would treat them as the same evidence.
+			const chunkDiscriminator = hit.docId ?? basename(hit.path);
+			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
 			results.push({
 				id: chunkId,
 				content: hit.text,

@@ -413,15 +413,20 @@ function toFailure(result: ProcessResult, reason?: KatokFailure["reason"]): Kato
 	return {
 		ok: false,
 		reason: reason ?? result.reason ?? "nonzero-exit",
-		stdout: sanitizeDiagnosticText(result.stdout),
-		stderr: sanitizeDiagnosticText(result.stderr),
+		stdout: result.stdout,
+		stderr: boundDiagnosticText(result.stderr),
 		code: result.code,
 	};
 }
 
-function sanitizeDiagnosticText(value: string): string {
+/**
+ * katok stderr reaches the operator as the CLI wrote it — paths included,
+ * because that is what makes a failed search debuggable. Only the length is
+ * bounded so one runaway process cannot flood a diagnostic.
+ */
+function boundDiagnosticText(value: string): string {
 	if (value.length === 0) return "";
-	return "katok command failed; details suppressed for datasource privacy";
+	return value.trim().slice(0, 4000);
 }
 
 function ok<T>(data: T, result: ProcessResult): KatokOk<T> {

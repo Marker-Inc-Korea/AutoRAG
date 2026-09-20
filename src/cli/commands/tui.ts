@@ -11,6 +11,7 @@ import {
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../../config/home.ts";
+import { stopRuntime } from "../../embedding-runtime/index.ts";
 import {
 	buildAgentOptions,
 	type CliConfig,
@@ -330,7 +331,10 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			settled = true;
 			unsubscribe?.();
 			tui.stop();
-			resolve(0);
+			// Stop the on-demand embedding gateway so the TUI process can exit.
+			void stopRuntime()
+				.catch(() => undefined)
+				.finally(() => resolve(0));
 		};
 		const unsubscribe = agent.subscribe?.((event) => {
 			presenter.handle(event);

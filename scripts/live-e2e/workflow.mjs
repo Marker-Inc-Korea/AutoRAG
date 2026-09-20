@@ -14,10 +14,46 @@ export function isFingerprintCurrent(previous, current) {
 }
 export function assertServiceReady(result) { if (result.verdict === "refused") throw new Error(result.code ?? "live-e2e-service-refused"); }
 export function buildLiveStackOptions(root, workspace) {
-	return { searchPaths: [join(resolve(root), "corpus")], workspacePath: resolve(workspace), memoryPath: join(resolve(workspace), "memory.json"), jikji: false,
-		minSync: { workspacePath: resolve(workspace), autoInstall: false, embedder: { id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf", baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT, dimension: 1024, queryPrefix: "", passagePrefix: "", timeoutMs: 120_000 } } };
+	return {
+		searchPaths: [join(resolve(root), "corpus")], workspacePath: resolve(workspace), memoryPath: join(resolve(workspace), "memory.json"), jikji: false,
+		minSync: { workspacePath: resolve(workspace), autoInstall: false, embedder: { id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf", baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT, dimension: 1024, queryPrefix: "", passagePrefix: "", timeoutMs: 120_000 } }
+	};
 }
 export function assertAbsoluteReadableSource(source) { if (!isAbsolute(source)) throw new Error("source-not-absolute"); accessSync(source, constants.R_OK); return realpathSync(source); }
+
+/**
+ * A healthy `autorag lite retrieve --json` run: the envelope answers, and it
+ * states that nothing was skipped. `unsearched` must be present even when empty
+ * — that is the field a caller checks before trusting the result set.
+ */
+export function assertLiteRetrieveHealthy(envelope, expectedSource) {
+	if (envelope.ok !== true) throw new Error("lite-retrieve-not-ok");
+	if (!Array.isArray(envelope.unsearched)) throw new Error("lite-retrieve-unsearched-missing");
+	if (envelope.unsearched.length !== 0) throw new Error("lite-retrieve-unexpected-unsearched");
+	if (!envelope.results.some((result) => result.source === expectedSource)) {
+		throw new Error("lite-retrieve-source-mismatch");
+	}
+	return true;
+}
+
+/**
+ * A degraded run: local MinSync could not answer, so the envelope still returns
+ * (`ok: true`) but names the skipped surface and carries the real error text
+ * behind it. An empty or placeholder reason is a failure: the operator has to be
+ * able to debug the component from this output alone.
+ */
+export function assertLiteRetrieveReportsSkippedSurface(envelope, surface) {
+	if (envelope.ok !== true) throw new Error("lite-retrieve-not-ok");
+	if (!Array.isArray(envelope.unsearched)) throw new Error("lite-retrieve-unsearched-missing");
+	const entry = envelope.unsearched.find((item) => item.surface === surface);
+	if (entry === undefined) throw new Error(`lite-retrieve-surface-not-reported:${surface}`);
+	if (!Array.isArray(entry.methods) || entry.methods.length === 0) throw new Error("lite-retrieve-methods-missing");
+	if (typeof entry.reason !== "string" || entry.reason.trim().length === 0) {
+		throw new Error("lite-retrieve-reason-missing");
+	}
+	if (/suppressed|details omitted/iu.test(entry.reason)) throw new Error("lite-retrieve-reason-suppressed");
+	return entry;
+}
 export function tryAcquireWorkflowLock(root = E2E_DIR) { const lock = join(root, "locks", "workflow.lock"); mkdirSync(join(root, "locks"), { recursive: true }); try { mkdirSync(lock); writeFileSync(join(lock, "pid"), String(process.pid)); return { ok: true, release: () => rmSync(lock, { recursive: true, force: true }) }; } catch { return { ok: false, code: "live-e2e-lock-held" }; } }
 export function cleanupCloneState(clonePath, sharedRoot) { const clone = resolve(clonePath); const shared = resolve(sharedRoot); if (clone === shared || shared.startsWith(`${clone}/`)) throw new Error("cleanup-boundary-violation"); rmSync(clone, { recursive: true, force: true }); }
 function commandResult(command, args, cwd, env) { const result = spawnSync(command, args, { cwd, env, encoding: "utf8", timeout: 15 * 60 * 1000 }); return { command: [command, ...args], exitCode: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" }; }

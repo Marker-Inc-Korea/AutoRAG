@@ -243,6 +243,30 @@ process.exit(2);
 		expect(result).toMatchObject({ ok: false, reason: "nonzero-exit", code: 2 });
 	});
 
+	it("preserves CLI stderr verbatim on failure, paths included", async () => {
+		writeFakeKatok();
+		const stderrText = "katok: index busy at /Users/me/Library/Application Support/katok/index.db";
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+process.stderr.write(${JSON.stringify(stderrText)});
+process.exit(1);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const client = new KatokClient({
+			binaryPath,
+			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+		});
+
+		const result = await client.doctor();
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.stderr).toBe(stderrText);
+		expect(result.stderr).not.toContain("suppressed");
+	});
+
 	it("returns invalid-json for unparseable stdout without throwing", async () => {
 		writeFakeKatok();
 		const client = new KatokClient({

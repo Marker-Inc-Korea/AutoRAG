@@ -58,6 +58,7 @@ The JSON envelope is:
       "content": "..."
     }
   ],
+  "unsearched": [],
   "diagnostics": []
 }
 ```
@@ -79,11 +80,32 @@ The JSON envelope is:
   `method` that produced it. Source identities are source-native: real file
   paths for local files, datasource identities for datasource results. Never
   rewrite, guess, or flatten them.
-- `diagnostics` are path-opaque: `source` is a component or method label,
-  never a real filesystem path. Codes include `retrieval-method-failed` and
-  `minsync-unavailable`. A degraded component produces a diagnostic, not a
-  failed run; check `diagnostics` before trusting an empty result set.
-- `--debug` adds diagnostic detail to human output without printing real
+- `unsearched` lists the retrieval surfaces that did not run for this query.
+  `ok: true` with a non-empty `unsearched` means the answer is partial: for
+  example local MinSync files are skipped while an index sync holds the
+  workspace lock, leaving only datasource hits. Check `unsearched.length > 0`
+  before concluding that the returned sources are the whole corpus. Each entry
+  is:
+
+  ```json
+  {
+    "surface": "minsync",
+    "methods": ["hybrid", "minsync"],
+    "reason": "MinSyncQueryError: another sync is in progress (/Users/me/corpus/.autorag/minsync)"
+  }
+  ```
+
+  `surface` is `minsync` for local files or the datasource id. `reason` is the
+  underlying failure verbatim — the CLI's failure kind, exit status, stderr and
+  real paths — so the operator can act on it directly. Report it to the user as
+  given; do not summarize it away.
+- `diagnostics` carry the same transparency: `source` is the component or
+  method label, `reason` repeats the underlying error, and codes include
+  `retrieval-method-failed` and `minsync-unavailable`. A degraded component
+  produces a diagnostic, not a failed run; check `diagnostics` before trusting
+  an empty result set.
+- `--debug` adds per-result metadata and the diagnostics list to human output.
+  Skipped-surface warnings print without it, and their reasons carry real
   filesystem paths.
 - Exit codes: 0 on success (results may be empty, and a stale index is a
   warning rather than a failure), 2 for usage, config, not-ready, or
@@ -168,6 +190,6 @@ autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json
 - Never expose provider credentials or authentication payloads.
 - Treat report `source` values as opaque: persist them verbatim, never read
   the filesystem through them.
-- Keep diagnostics path-opaque; do not reconstruct or disclose real paths
-  from them.
+- Surface diagnostics and `unsearched` reasons to the user as written; they
+  carry the real error text needed to fix the failure.
 - Prefer `--json` whenever another agent consumes the output.

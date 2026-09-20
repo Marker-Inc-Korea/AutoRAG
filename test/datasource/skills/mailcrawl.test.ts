@@ -101,6 +101,26 @@ describe("MailcrawlClient", () => {
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "binary-missing" });
 	});
 
+	it("preserves CLI stderr verbatim on failure, paths included", async () => {
+		const stderrText = "mailcrawl: archive locked at /Users/me/Library/Mail/mailcrawl/archive.db";
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+process.stderr.write(${JSON.stringify(stderrText)});
+process.exit(3);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const client = new MailcrawlClient({ binaryPath });
+
+		const result = await client.search("bm25", "renewal");
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.stderr).toBe(stderrText);
+		expect(result.stderr).not.toContain("suppressed");
+	});
+
 	it("applies dataDir when used without a workspace", async () => {
 		writeFake(JSON.stringify([]));
 		const dataDir = join(root, "custom-data");

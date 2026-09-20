@@ -5,7 +5,9 @@ import type {
 	RetrievalResult,
 } from "../retrieval/types.ts";
 import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
+import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
+import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnosticCode,
 	DatasourceIndexResult,
@@ -29,6 +31,8 @@ export interface CrawlerDatasourceDefinition {
 	readonly contentType: string;
 	readonly manifestDescription: string;
 	readonly backendName: string;
+	/** One copy-pastable native CLI search example shown in the skill manifest. */
+	readonly nativeCliSearchExample: string;
 }
 
 export interface CrawlerDatasourceSkillOptions {
@@ -162,10 +166,15 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				this.definition.manifestDescription,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a query and optional narrowing scope:",
+				`Call the dedicated \`${datasourceSearchToolName(this.definition.datasourceId)}\` tool with a query and optional narrowing scope. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
 				scopes,
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"",
+				"## Native CLI",
+				`The external \`${this.definition.backendName}\` CLI owns the archive, index, and credentials. When the dedicated tool cannot express what you need, call it directly through \`bash\`:`,
+				`- \`${this.definition.nativeCliSearchExample}\``,
+				`Never pass datasource virtual paths (\`/${this.definition.datasourceId}/...\`) to bash; they are not OS paths.`,
 				"",
 				this.channelIds.size === 0 && this.channelNames.size === 0
 					? "Channel selection: all channels/chats are searchable."
@@ -233,13 +242,10 @@ class CrawlerLexicalMethod implements RetrievalMethod {
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const trimmed = query.trim();
 		if (trimmed.length === 0) return [];
-		let result: CrawlerSearchResult;
-		try {
-			result = await this.options.client.search(trimmed, options);
-		} catch {
-			return [];
-		}
-		if (!result.ok) return [];
+		// Crawler failures reach the caller verbatim: the pipeline reports this
+		// datasource as unsearched with the CLI's own error text.
+		const result: CrawlerSearchResult = await this.options.client.search(trimmed, options);
+		if (!result.ok) throw datasourceCliError(this.options.datasourceId, "search", result);
 		const mapped: RetrievalResult[] = [];
 		for (const hit of result.hits) {
 			const source = datasourceSourcePath(this.options.datasourceId, this.options.instanceId, hit.id);

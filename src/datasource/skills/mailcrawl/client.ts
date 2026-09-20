@@ -318,10 +318,20 @@ function failure(result: ProcessResult): MailcrawlFailure {
 	return {
 		ok: false,
 		reason: result.reason ?? "nonzero-exit",
-		stdout: "",
-		stderr: result.stderr.length > 0 ? "mailcrawl command failed; details suppressed for datasource privacy" : "",
+		stdout: result.stdout,
+		stderr: boundDiagnosticText(result.stderr),
 		code: result.code,
 	};
+}
+
+/**
+ * mailcrawl stderr reaches the operator as the CLI wrote it — paths included,
+ * because that is what makes a failed archive lookup debuggable. Only the
+ * length is bounded so one runaway process cannot flood a diagnostic.
+ */
+function boundDiagnosticText(value: string): string {
+	if (value.length === 0) return "";
+	return value.trim().slice(0, 4000);
 }
 
 function appendOutput(current: BoundedOutput, chunk: string, maxBytes: number): BoundedOutput {

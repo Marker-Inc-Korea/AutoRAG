@@ -63,4 +63,12 @@ export {
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	type SearchMinSyncDocumentsDetails,
 } from "./search-minsync-tool.ts";
+export {
+	createSingleDatasourceSearchTools,
+	SEARCH_SINGLE_DATASOURCE_TOOL_PREFIX,
+	type SearchSingleDatasourceDetails,
+	type SingleDatasourceSearchProvider,
+	type SingleDatasourceToolSpec,
+	singleDatasourceToolName,
+} from "./search-single-datasource-tool.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";

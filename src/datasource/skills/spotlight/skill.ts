@@ -37,6 +37,8 @@ export const SPOTLIGHT_SKILL_DEFINITION: ConnectorSkillDefinition = {
 		"",
 		"Queries are trusted server configuration; indexing re-runs the configured mdfind queries and hydrates text content. Result metadata carries the real absolute file path (`path`) so hits are traceable back to disk; if paths must not leave this machine, run AutoRAG with a local LLM.",
 	],
+	nativeCliNote:
+		'Spotlight\'s own `mdfind` CLI can be run directly through `bash` for ad-hoc queries (e.g. `mdfind "<query>"` or `mdfind -onlyin <dir> "<query>"`); the dedicated tool searches the configured, hydrated index.',
 };
 
 export interface SpotlightSkillOptions extends Omit<ConnectorSkillOptions, "connector"> {

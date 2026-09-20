@@ -25,11 +25,11 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("emit_autorag_results");
 		expect(text).toContain("generic, stable question");
 		expect(text).toContain("baseline retrieval is already running in parallel");
-		expect(text).toContain("Do not query the same datasource more than three times");
+		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");
 		expect(text).toContain("Never repeat a generic status message");
 		expect(text).toContain("generic, stable question");
 		expect(text).toContain("baseline retrieval is already running in parallel");
-		expect(text).toContain("Do not query the same datasource more than three times");
+		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");
 		expect(text).toContain("Never repeat a generic status message");
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
@@ -93,5 +93,40 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(prompt).toContain("datasource-company-onedrive");
 		expect(personal.skillManifest().content).toContain("/personal-google-drive/personal");
 		expect(work.skillManifest().content).toContain("/company-onedrive/work");
+	});
+
+	it("frames AutoRAG as a librarian for document collections, cloud drives, images, and messenger history without codebases", () => {
+		const text = prompt();
+		expect(text).toContain("document collections, cloud drives, images, and messenger history");
+		expect(text).not.toContain("librarian agent for codebases");
+	});
+
+	it("includes bullet-point answer guidelines, honest uncertainty, and omits per-source negative reports", () => {
+		const text = prompt();
+		expect(text).toContain("Answer Guidelines");
+		expect(text).toContain("5 bullet points");
+		expect(text).toContain("No per-source negative reports");
+		expect(text).toContain("Honest and concise uncertainty");
+		expect(text).not.toContain("Read before curating");
+	});
+
+	it("instructs resolving conflicting information in favor of the freshest data", () => {
+		const text = prompt();
+		expect(text).toContain("treat the freshest (most recent) information as authoritative");
+		expect(text).toContain("Conflict resolution (recency preference)");
+		expect(text).toContain("Prefer recent truth");
+	});
+
+	it("explains the fast answer first into deeper exploration two-phase workflow", () => {
+		const text = prompt();
+		expect(text).toContain("two-phase loop");
+		expect(text).toContain("PLAN & FAST ANSWER");
+		expect(text).toContain("EXPLORE & RETRIEVE");
+	});
+
+	it("instructs actively using Jikji when exploring local files and folders", () => {
+		const text = prompt();
+		expect(text).toContain("primary and preferred tool for exploring local files, folders, and documents");
+		expect(text).toContain("actively use `jikji_find` rather than running exploratory `bash` commands");
 	});
 });
