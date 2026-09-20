@@ -108,6 +108,7 @@ import {
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
+import { createSingleDatasourceSearchTools, type SingleDatasourceToolSpec } from "./search-single-datasource-tool.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -316,6 +317,8 @@ export type AutoRAGJikjiPrepareResult =
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly tools: readonly AgentTool[];
+	/** Static SEARCH_TOOLS plus the generated per-datasource tool names. */
+	private readonly searchToolNames: ReadonlySet<string>;
 	private readonly configuredModel: Model<Api> | undefined;
 	private readonly apiKey: string | undefined;
 	private readonly providerApiKeys: Readonly<Record<string, string>> | undefined;
@@ -444,6 +447,13 @@ export class AutoRAGAgent {
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
+		// One tool per authorized datasource connection, so a question that
+		// targets a single connection spawns only that connection's CLIs instead
+		// of fanning out to every datasource. Generated from the same trusted
+		// config + access context as the skill list, so disabled or denied
+		// datasources never appear as tools.
+		const singleDatasourceTools = createSingleDatasourceSearchTools(this, this.singleDatasourceToolSpecs());
+		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
 			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
@@ -478,6 +488,7 @@ export class AutoRAGAgent {
 			BASH_TOOL_NAME,
 			"check_memory",
 			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+			...singleDatasourceTools.map((tool) => tool.name),
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
 			EMIT_FAST_ANSWER_TOOL_NAME,
@@ -508,6 +519,7 @@ export class AutoRAGAgent {
 			searchMinSyncTool,
 			searchAllTool,
 			searchDatasourceTool,
+			...singleDatasourceTools,
 			loadDatasourceSkillTool,
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
@@ -547,7 +559,7 @@ export class AutoRAGAgent {
 			transformContext: async (messages) => this.withMemoryContext(messages),
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
-				if (!this.lastQuery || !(SEARCH_TOOLS as readonly string[]).includes(toolName)) return undefined;
+				if (!this.lastQuery || !this.searchToolNames.has(toolName)) return undefined;
 
 				const details = context.result.details as
 					| { resultCount?: number; sources?: string[]; method?: string }
@@ -662,7 +674,7 @@ export class AutoRAGAgent {
 
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
-		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
+		if (!this.searchToolNames.has(event.toolName)) return;
 		this.searchToolCallCount += 1;
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
 			void this.activeSession?.abort();
@@ -1127,6 +1139,38 @@ export class AutoRAGAgent {
 			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
 		}
 		return skills;
+	}
+
+	/**
+	 * Per-connection tool specs for the generated `search_datasource_<id>`
+	 * tools, built from the same trusted config and access context as
+	 * {@link buildAuthorizedDatasourceSkills}. One spec per authorized
+	 * datasource skill; duplicate ids collapse to the first registration.
+	 */
+	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
+		const ctx = this.datasourceAccessContext();
+		const seen = new Set<string>();
+		const specs: SingleDatasourceToolSpec[] = [];
+		for (const skill of this.datasourceSkills) {
+			const descriptor = skill.describe();
+			if (descriptor.datasourceId === undefined) continue;
+			if (!ctx.isAccessible(descriptor)) continue;
+			if (seen.has(descriptor.datasourceId)) continue;
+			seen.add(descriptor.datasourceId);
+			// Instance roots are two-segment sources like /kakao/personal; deeper
+			// hierarchy entries would only bloat the tool description.
+			const instanceScopes = skill
+				.describeSources()
+				.map((source) => source.source)
+				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
+				.slice(0, 8);
+			specs.push({
+				datasourceId: descriptor.datasourceId,
+				description: descriptor.description,
+				instanceScopes,
+			});
+		}
+		return specs;
 	}
 
 	/**
@@ -1930,6 +1974,49 @@ export class AutoRAGAgent {
 		const methods = this.methodRegistry.list().filter((method) => {
 			const descriptor = method.describe();
 			return descriptor.datasourceId !== undefined && ctx.isAccessible(descriptor);
+		});
+		if (methods.length === 0) return { results: [], diagnostics: [] };
+		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
+			methods,
+			query,
+			retrievalOptions,
+		);
+		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		for (const results of filteredByMethod.values()) {
+			for (const result of results) retrievalOptions.observedSources?.add(result.source);
+		}
+		return {
+			results: this.rerankWithMemory(
+				query,
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
+			),
+			diagnostics,
+		};
+	}
+
+	/**
+	 * Search one datasource connection only. Unlike
+	 * {@link searchDatasourceDocuments}, which fans out to every authorized
+	 * datasource and filters afterwards, this registers only the target
+	 * connection's retrieval methods with the retriever, so no other
+	 * datasource CLI is spawned at all. Access is still gated by the trusted
+	 * datasource context: an unknown or unauthorized `datasourceId` yields an
+	 * empty result set.
+	 */
+	async searchSingleDatasourceDocuments(
+		datasourceId: string,
+		query: string,
+		options: { readonly topK?: number; readonly scope?: string } = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		const retrievalOptions: RetrievalOptions = {
+			...this.activeRetrievalOptions,
+			topK: options.topK,
+			scope: options.scope,
+		};
+		const ctx = this.datasourceAccessContext(retrievalOptions);
+		const methods = this.methodRegistry.list().filter((method) => {
+			const descriptor = method.describe();
+			return descriptor.datasourceId === datasourceId && ctx.isAccessible(descriptor);
 		});
 		if (methods.length === 0) return { results: [], diagnostics: [] };
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(

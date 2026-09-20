@@ -36,7 +36,7 @@ export function createSearchDatasourceDocumentsTool(
 		name: SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 		label: "Search Datasource Documents",
 		description:
-			"Search configured external datasource skills such as cloud drives and KakaoTalk chats. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
+			"Search configured external datasource skills such as cloud drives and KakaoTalk chats, fanning out to every datasource CLI. When the question targets one connection, prefer its dedicated search_datasource_<name> tool, which spawns only that connection's CLIs. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchDatasourceSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchDatasourceDocumentsDetails>> {
 			const query = params.query.trim();
@@ -51,7 +51,7 @@ export function createSearchDatasourceDocumentsTool(
 				scope: params.scope,
 			});
 			return {
-				content: [{ type: "text", text: formatResults(results, diagnostics) }],
+				content: [{ type: "text", text: formatDatasourceResults(results, diagnostics) }],
 				details: {
 					method: "datasource",
 					resultCount: results.length,
@@ -64,7 +64,10 @@ export function createSearchDatasourceDocumentsTool(
 	};
 }
 
-function formatResults(results: readonly RetrievalResult[], diagnostics: readonly RetrievalDiagnostic[]): string {
+export function formatDatasourceResults(
+	results: readonly RetrievalResult[],
+	diagnostics: readonly RetrievalDiagnostic[],
+): string {
 	const diagnosticSummary =
 		diagnostics.length > 0
 			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "datasource"}:${d.code}`).join(", ")}`
