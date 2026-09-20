@@ -1,5 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
 import { formatDatasourceResults } from "./search-datasource-tool.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
@@ -24,13 +25,7 @@ import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from
 export const SEARCH_SINGLE_DATASOURCE_TOOL_PREFIX = "search_datasource_";
 
 /** Model-visible tool name for one datasource connection. */
-export function singleDatasourceToolName(datasourceId: string): string {
-	const sanitized = datasourceId
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "_")
-		.replace(/^_+|_+$/g, "");
-	return `${SEARCH_SINGLE_DATASOURCE_TOOL_PREFIX}${sanitized}`;
-}
+export const singleDatasourceToolName: (datasourceId: string) => string = datasourceSearchToolName;
 
 /** Static per-connection descriptor used to generate one tool each. */
 export interface SingleDatasourceToolSpec {

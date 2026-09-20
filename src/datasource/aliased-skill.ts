@@ -1,4 +1,5 @@
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -103,10 +104,13 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 						...this.channelIds,
 						...this.channelNames,
 					].join(", ")}.`;
+		const rewritten = rewriteSource(manifest.content, this.originalId, this.alias);
 		return {
 			name: `datasource-${this.alias}`,
 			description: `${manifest.description} Connection alias: ${this.alias}.`,
-			content: `${rewriteSource(manifest.content, this.originalId, this.alias)}\n\n${selection}`,
+			// Manifests name their dedicated search tool; the alias owns its own
+			// generated tool, so the reference must be rewritten too.
+			content: `${manifestToolName(rewritten, this.originalId, this.alias)}\n\n${selection}`,
 		};
 	}
 
@@ -144,6 +148,15 @@ function rewriteSource(value: string, originalId: string, alias: string): string
 	return value
 		.replaceAll(`/${originalId}/`, `/${alias}/`)
 		.replaceAll(`datasource-${originalId}`, `datasource-${alias}`);
+}
+
+/**
+ * Rewrite the dedicated search tool reference inside a manifest. Uses the
+ * canonical {@link datasourceSearchToolName} transformation so the alias's
+ * generated tool (`search_datasource_<alias>`) is named correctly.
+ */
+function manifestToolName(content: string, originalId: string, alias: string): string {
+	return content.replaceAll(datasourceSearchToolName(originalId), datasourceSearchToolName(alias));
 }
 
 function rewriteScope(scope: string | undefined, alias: string, originalId: string): string | undefined {

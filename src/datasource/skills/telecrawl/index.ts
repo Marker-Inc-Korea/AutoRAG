@@ -26,6 +26,7 @@ const TELEGRAM_DEFINITION = {
 	manifestDescription:
 		"Search archived Telegram messages, chats, senders, topics, threads, and media titles. Use for questions about Telegram conversations or who said what.",
 	backendName: "telecrawl",
+	nativeCliSearchExample: 'telecrawl search --limit 20 "<query>"',
 } as const;
 
 export class TelecrawlClient extends CrawlerCliClient {

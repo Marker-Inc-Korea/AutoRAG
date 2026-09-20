@@ -30,6 +30,7 @@ import { DatasourceChunkStore } from "./chunk-store.ts";
 import type { ConnectorDocument, DatasourceConnector } from "./connector.ts";
 import { boundDiagnosticText, connectorFailureToDiagnosticCode } from "./connector.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
+import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
@@ -60,6 +61,12 @@ export interface ConnectorSkillDefinition {
 	readonly manifestDescription: string;
 	/** Extra path-opaque manifest body lines (after the standard sections). */
 	readonly manifestNotes?: readonly string[];
+	/**
+	 * Native CLI note for the manifest, e.g. how to inspect the underlying
+	 * tool directly. Omit when the connector has no external CLI; the manifest
+	 * then states that the dedicated search tool is the only search path.
+	 */
+	readonly nativeCliNote?: string;
 }
 
 export interface ConnectorSkillOptions {
@@ -266,10 +273,14 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
+				`Call the dedicated \`${datasourceSearchToolName(skillName)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
 				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"",
+				"## Native CLI",
+				this.definition.nativeCliNote ??
+					"This datasource has no external search CLI: its connector indexes into AutoRAG's local chunk store, so the dedicated tool is the search path.",
 				"",
 				"## Output rules",
 				`Datasource source identifiers such as \`/${skillName}/<instance>/chunks/<id>\` are stable and traceable. Result metadata may carry real file paths or account identifiers; you may cite them in the visible answer when they help the user locate the underlying item. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.`,
