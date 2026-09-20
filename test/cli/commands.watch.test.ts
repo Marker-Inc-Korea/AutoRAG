@@ -43,6 +43,7 @@ function writeConfig(): void {
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		bm25: { enabled: true },
+		minSync: false,
 		jikji: false,
 	};
 	const configDir = join(process.env.HOME as string, ".autorag");

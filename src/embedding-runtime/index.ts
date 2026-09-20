@@ -10,7 +10,7 @@ import {
 import { startEmbeddingGateway } from "./gateway.ts";
 import { MODEL_ASSETS, resolveProfile, selectPlatformAsset } from "./manifest.ts";
 import { EmbeddingRuntimeSupervisor as RuntimeSupervisor, type SupervisorStatus } from "./supervisor.ts";
-import type { BackendKind, HealthStatus, ProfileId, RuntimeProfile } from "./types.ts";
+import type { BackendKind, HealthFailure, HealthStatus, ProfileId, RuntimeProfile } from "./types.ts";
 
 export interface EmbeddingRuntimeCache {
 	downloadAsset(
@@ -129,6 +129,28 @@ function identity(profile: RuntimeProfile): RuntimeIdentity {
 	};
 }
 
+function incompatibleGateway(message: string): HealthFailure {
+	return { ok: false, code: "incompatible", message, retryable: false };
+}
+/**
+ * The gateway answers `/healthz` with its own liveness payload (`{ status: "ok", ... }`),
+ * while the embed protocol's `HealthResult` is keyed on `ok`. Translate the payload the
+ * gateway actually serves instead of casting it, so a live gateway is not read as unhealthy.
+ */
+function normalizeGatewayHealth(payload: unknown): HealthStatus {
+	if (typeof payload !== "object" || payload === null) {
+		return incompatibleGateway("Gateway health response was not a JSON object.");
+	}
+	const { status, profileId, dimension, runtimeBuild } = payload as Record<string, unknown>;
+	if (status !== "ok") {
+		return incompatibleGateway('Gateway health response did not report status "ok".');
+	}
+	if (typeof profileId !== "string" || typeof dimension !== "number" || typeof runtimeBuild !== "string") {
+		return incompatibleGateway("Gateway health response was missing profile identity fields.");
+	}
+	return { ok: true, profileId: profileId as ProfileId, dimension, runtimeBuild };
+}
+
 export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 	const root = options.cacheRoot ?? resolveAutoRAGHome();
 	const cache: EmbeddingRuntimeCache = options.cache ?? {
@@ -154,8 +176,29 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		);
 		return { modelPath, runtimePath };
 	}
+	let ensureInFlight: { readonly profileId: ProfileId; readonly promise: Promise<EnsuredRuntime> } | undefined;
+
+	/**
+	 * Concurrent callers for the same profile share one loopback gateway. Parallel
+	 * retrieval methods (MinSync vector and hybrid) ensure the embedder at the same
+	 * time; without coalescing each one starts its own server, and the later start
+	 * takes over the runtime's reference, leaving the earlier socket listening for
+	 * the life of the process.
+	 */
 	async function ensureRuntime(input: EnsureRuntimeOptions = {}): Promise<EnsuredRuntime> {
 		const profile = profileOf(input.profileId);
+		const pending = ensureInFlight;
+		if (pending !== undefined && pending.profileId === profile.profileId) return pending.promise;
+		const promise = ensureRuntimeOnce(profile, input);
+		ensureInFlight = { profileId: profile.profileId, promise };
+		try {
+			return await promise;
+		} finally {
+			if (ensureInFlight?.promise === promise) ensureInFlight = undefined;
+		}
+	}
+
+	async function ensureRuntimeOnce(profile: RuntimeProfile, input: EnsureRuntimeOptions): Promise<EnsuredRuntime> {
 		stoppedByService = false;
 		const selectedSupervisor = input.supervisor ?? options.supervisor;
 		if (selectedSupervisor) supervisor = selectedSupervisor;
@@ -232,7 +275,7 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		try {
 			const response = await (options.fetch ?? fetch)(`${gateway.url}/healthz`);
 			if (!response.ok) throw new Error(`Gateway health returned HTTP ${response.status}.`);
-			const health = (await response.json()) as HealthStatus;
+			const health = normalizeGatewayHealth(await response.json());
 			return { ...base, profileId: activeProfile?.profileId, baseUrl: gateway.url, health };
 		} catch {
 			return {

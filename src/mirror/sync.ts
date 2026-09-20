@@ -8,7 +8,14 @@ import { ParseError } from "../parser/errors.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput, Parser } from "../parser/types.ts";
-import { loadMirrorIndex, type ParsedMirrorEntry, type ParsedMirrorIndex, saveMirrorIndex } from "./index-store.ts";
+import {
+	loadMirrorIndex,
+	type ParsedMirrorEntry,
+	type ParsedMirrorIndex,
+	type ParsedMirrorSkipEntry,
+	type ParsedMirrorSkipReason,
+	saveMirrorIndex,
+} from "./index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "./paths.ts";
 
 /** Refuse to fully load/parse sources larger than this. Keeps Node heap stable on home folders. */
@@ -16,6 +23,13 @@ export const DEFAULT_MAX_SOURCE_BYTES = 50 * 1024 * 1024;
 
 /** Persist partial mirror progress this often so an OOM mid-run still restarts incrementally. */
 const MIRROR_CHECKPOINT_EVERY = 25;
+
+/**
+ * Files AutoRAG's own tooling writes into a search root. They are product output,
+ * not corpus sources: Jikji rewrites its agent map after the parsed phase, so
+ * indexing it made an otherwise untouched corpus report as stale forever.
+ */
+const PRODUCT_ARTIFACT_FILE_NAMES = new Set([".jikji_agent_map.md"]);
 
 const SKIP_DIR_NAMES = new Set([
 	".autorag",
@@ -69,6 +83,7 @@ export interface ParsedMirrorDiagnostic {
 	readonly severity: "info" | "warning";
 	readonly message: string;
 	readonly source: string;
+	readonly reason?: string;
 }
 
 export interface ParsedMirrorSyncResult {
@@ -107,6 +122,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	const current = await listCurrentFiles(options.searchPaths, supportedExtensions);
 	const previous = loadMirrorIndex(options.root);
 	const nextEntries: Record<string, ParsedMirrorEntry> = {};
+	const nextSkipped: Record<string, ParsedMirrorSkipEntry> = {};
 	const handledPrevious = new Set<string>();
 	let written = 0;
 	let skipped = 0;
@@ -114,15 +130,31 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	let sinceCheckpoint = 0;
 	const diagnostics: ParsedMirrorDiagnostic[] = [];
 
+	const recordSkip = (entry: CurrentEntry, reason: ParsedMirrorSkipReason): void => {
+		nextSkipped[entry.virtualPath] = {
+			virtualPath: entry.virtualPath,
+			sourcePath: entry.sourcePath,
+			reason,
+			sourceMtimeNs: entry.mtimeNs,
+			sourceSizeBytes: entry.sizeBytes,
+			updatedAt: new Date().toISOString(),
+		};
+	};
+
 	const checkpoint = (): void => {
 		// Progressive index: processed files + still-valid previous entries for unprocessed ones so
 		// a crash mid-run does not force a full re-parse of already written mirrors.
 		const merged: Record<string, ParsedMirrorEntry> = { ...previous.entries, ...nextEntries };
-		// Drop previous entries for supported paths we already decided to remove/skip in this pass.
+		const mergedSkipped: Record<string, ParsedMirrorSkipEntry> = { ...previous.skipped, ...nextSkipped };
+		// Drop previous records for supported paths we already decided to remove or (re)index in this pass.
 		for (const virtualPath of handledPrevious) {
-			if (!(virtualPath in nextEntries)) delete merged[virtualPath];
+			if (virtualPath in nextEntries) {
+				delete mergedSkipped[virtualPath];
+				continue;
+			}
+			delete merged[virtualPath];
 		}
-		saveMirrorIndex(options.root, { version: 1, entries: merged });
+		saveMirrorIndex(options.root, { version: 1, entries: merged, skipped: mergedSkipped });
 		sinceCheckpoint = 0;
 	};
 
@@ -131,6 +163,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;
+			recordSkip(entry, "duplicate-excluded");
 			diagnostics.push({
 				code: "duplicate-excluded",
 				severity: "info",
@@ -145,6 +178,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;
+			recordSkip(entry, "parser-skipped");
 			continue;
 		}
 
@@ -152,6 +186,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;
+			recordSkip(entry, "parser-skipped");
 			diagnostics.push({
 				code: "parser-skipped",
 				severity: "warning",
@@ -184,6 +219,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				deleted += removePrevious(options.root, previous, entry.virtualPath);
 				handledPrevious.add(entry.virtualPath);
 				skipped += 1;
+				recordSkip(entry, "parser-failed");
 				diagnostics.push({
 					code: parserFailureCode(parser, error),
 					severity: "warning",
@@ -236,7 +272,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		});
 	}
 
-	const index: ParsedMirrorIndex = { version: 1, entries: nextEntries };
+	const index: ParsedMirrorIndex = { version: 1, entries: nextEntries, skipped: nextSkipped };
 	saveMirrorIndex(options.root, index);
 	return {
 		scanned: current.length,
@@ -250,10 +286,13 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 
 /**
  * Cheap, parse-free staleness check: compares current source files (by mtime and
- * size only — no parsing) against the recorded mirror index. Returns a
- * `stale-index` diagnostic (opaque virtual path) for every supported source that
- * is new or changed since the last successful refresh. Safe to call outside the
- * query hot path (e.g. from getRefreshStatus).
+ * size only — no parsing) against the mirror index's own records. A source is
+ * current when the last refresh either indexed it or deliberately skipped it at
+ * this exact version, so a skipped duplicate, oversize, or unparseable file is not
+ * reported as a new source. Returns a `stale-index` diagnostic (opaque virtual
+ * path) for every supported source that is new or changed since the last
+ * successful refresh. Safe to call outside the query hot path (e.g. from
+ * getRefreshStatus).
  */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
@@ -265,14 +304,31 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		if (options.excludeSourcePaths?.has(entry.sourcePath)) continue;
 		if (!registry.getForVirtualPath(entry.virtualPath)) continue;
 		const prev = previous.entries[entry.virtualPath];
-		if (!prev || prev.sourceMtimeNs !== entry.mtimeNs || prev.sourceSizeBytes !== entry.sizeBytes) {
-			diagnostics.push({
-				code: "stale-index",
-				severity: "warning",
-				message: "A source document has changed since the last refresh; indexes may be stale.",
-				source: entry.virtualPath,
-			});
-		}
+		if (prev !== undefined && prev.sourceMtimeNs === entry.mtimeNs && prev.sourceSizeBytes === entry.sizeBytes)
+			continue;
+		const prevSkip = previous.skipped?.[entry.virtualPath];
+		if (
+			prevSkip !== undefined &&
+			prevSkip.sourceMtimeNs === entry.mtimeNs &&
+			prevSkip.sourceSizeBytes === entry.sizeBytes
+		)
+			continue;
+		const known = prev ?? prevSkip;
+		const reason =
+			known === undefined
+				? "source-added"
+				: known.sourceMtimeNs !== entry.mtimeNs && known.sourceSizeBytes !== entry.sizeBytes
+					? "mtime-and-size-changed"
+					: known.sourceMtimeNs !== entry.mtimeNs
+						? "mtime-changed"
+						: "size-changed";
+		diagnostics.push({
+			code: "stale-index",
+			severity: "warning",
+			message: `Source ${entry.virtualPath} is ${reason.replaceAll("-", " ")} since the last refresh; indexes may be stale.`,
+			source: entry.virtualPath,
+			reason,
+		});
 	}
 	return diagnostics;
 }
@@ -318,6 +374,7 @@ async function collectFiles(
 	}
 	for await (const entry of dir) {
 		if (SKIP_DIR_NAMES.has(entry.name)) continue;
+		if (PRODUCT_ARTIFACT_FILE_NAMES.has(entry.name)) continue;
 		const sourcePath = resolve(directory, entry.name);
 		if (entry.isDirectory()) {
 			await collectFiles(sourceRoot, sourcePath, entries, supportedExtensions);

@@ -4,6 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
+import { datasourceCliError } from "../../errors.ts";
 import { matchesDatasourceScope } from "../../scope.ts";
 import { discrawlSourcePath } from "./paths.ts";
 import type { DiscrawlSearchHit, DiscrawlSearchMode, DiscrawlSearchOptions, DiscrawlSearchResult } from "./types.ts";
@@ -140,20 +141,14 @@ async function retrieveDiscrawl(
 	if (trimmed.length === 0) return [];
 	const topK = options.topK ?? DEFAULT_TOP_K;
 
-	let result: DiscrawlSearchResult;
-	try {
-		result = await client.search(mode, trimmed, { ...options, topK });
-	} catch {
-		return [];
-	}
+	// discrawl failures reach the caller verbatim: the pipeline reports Discord as
+	// unsearched with the CLI's own error text. Hybrid still degrades to FTS first,
+	// and only a failing fallback surfaces the error.
+	let result: DiscrawlSearchResult = await client.search(mode, trimmed, { ...options, topK });
 	if (!result.ok) {
-		if (mode !== "hybrid") return [];
-		try {
-			result = await client.search("fts", trimmed, { ...options, topK });
-		} catch {
-			return [];
-		}
-		if (!result.ok) return [];
+		if (mode !== "hybrid") throw datasourceCliError(DISCORD_DATASOURCE_ID, `search --mode ${mode}`, result);
+		result = await client.search("fts", trimmed, { ...options, topK });
+		if (!result.ok) throw datasourceCliError(DISCORD_DATASOURCE_ID, "search --mode fts", result);
 		return mapDiscrawlHits(result.hits, "discord-hybrid", instanceId, "fts", options, "semantic-unavailable").slice(
 			0,
 			topK,

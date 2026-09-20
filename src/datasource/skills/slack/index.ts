@@ -6,7 +6,16 @@ import {
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
 
-export interface SlacrawlOptions extends CrawlerCliOptions {}
+export interface SlacrawlOptions extends CrawlerCliOptions {
+	/**
+	 * Slack workspace (team) id to scope reads to, e.g. `T0435JHH63Z`.
+	 *
+	 * slacrawl's `search`/`messages` read paths return nothing unless a workspace
+	 * is named explicitly, even when the archive and its FTS index hold matching
+	 * rows, so an unscoped search silently looks like an empty archive.
+	 */
+	readonly workspace?: string;
+}
 
 const SLACRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "slacrawl",
@@ -17,7 +26,15 @@ const SLACRAWL_PROFILE: CrawlerProfile = {
 		"sync",
 		...(options.syncSource !== undefined ? ["--source", options.syncSource] : []),
 	],
-	searchArgs: (options, query, topK) => [...globalArgs(options), "--json", "search", "--limit", String(topK), query],
+	searchArgs: (options, query, topK) => [
+		...globalArgs(options),
+		"--json",
+		"search",
+		...workspaceArgs(options),
+		"--limit",
+		String(topK),
+		query,
+	],
 	parseSyncCount: parseCount,
 	parseHits,
 };
@@ -31,6 +48,7 @@ const SLACK_DEFINITION = {
 	manifestDescription:
 		"Search archived Slack messages across workspaces, channels, users, and threads. Use for questions about Slack conversations, decisions, or who said what.",
 	backendName: "slacrawl",
+	nativeCliSearchExample: 'slacrawl --json search -workspace <teamId> --limit 20 "<query>"',
 } as const;
 
 export class SlacrawlClient extends CrawlerCliClient {
@@ -58,6 +76,11 @@ function globalArgs(options: CrawlerCliOptions): readonly string[] {
 	return options.configPath !== undefined ? ["--config", options.configPath] : [];
 }
 
+function workspaceArgs(options: CrawlerCliOptions): readonly string[] {
+	const workspace = (options as SlacrawlOptions).workspace;
+	return workspace === undefined || workspace.length === 0 ? [] : ["-workspace", workspace];
+}
+
 function parseCount(stdout: string): number | undefined {
 	const parsed = parseJson(stdout);
 	if (parsed === undefined) return undefined;
@@ -72,6 +95,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)

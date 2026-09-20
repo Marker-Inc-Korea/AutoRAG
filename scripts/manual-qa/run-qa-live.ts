@@ -3,8 +3,8 @@
  * credentials: the public GitHub REST API (#1303) and a real RSS feed
  * (#1316), flowing through the full agent path (setup -> refresh -> search).
  *
- * Skills requiring tenant credentials (Slack, Discord, Notion, Drive,
- * Gmail) are covered by run-qa.ts against protocol-accurate mocks, and the
+ * Skills requiring tenant credentials (Slack, Discord, Notion, Drive)
+ * are covered by run-qa.ts against protocol-accurate mocks, and the
  * filesystem skills (obsidian, mail-export) run on real files there too.
  *
  * Run: bun scripts/manual-qa/run-qa-live.ts
@@ -59,7 +59,7 @@ try {
 	check(
 		"live search: github issues return scoped hits",
 		githubHits.details.sources.length > 0 &&
-			githubHits.details.sources.every((source) => source.startsWith("/github/")),
+		githubHits.details.sources.every((source) => source.startsWith("/github/")),
 		githubHits.details.sources[0],
 	);
 

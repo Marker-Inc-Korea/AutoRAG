@@ -132,13 +132,18 @@ describe("AutoRAGAgent", () => {
 		});
 		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
-		await expect(agent.searchDocuments("cap query")).rejects.toThrow(
-			"AutoRAG agent completed without emitting structured results",
-		);
+		const response = await agent.searchDocuments("cap query");
+		expect(response.results).toEqual([]);
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "missing-final-emit" && diagnostic.severity === "warning",
+			),
+		).toBe(true);
+		expect(response.retrievalTrace).toEqual([]);
 		expect(abortCalls).toBe(1);
 	});
 
-	it("limits each retrieval tool to three executions", async () => {
+	it("does not cap retrieval tools at three executions per source", async () => {
 		const agent = new AutoRAGAgent({
 			model: fakeModel(),
 			searchPaths: [FIXTURE_DIR],
@@ -149,9 +154,13 @@ describe("AutoRAGAgent", () => {
 		const tool = internals(agent).tools.find((entry) => entry.name === "semantic_search_local_docs");
 		expect(tool).toBeDefined();
 		const execute = tool?.execute as (id: string, params: { query: string }) => Promise<{ details?: unknown }>;
-		for (let i = 0; i < 3; i++) await execute(`call-${i}`, { query: "same source" });
-		const fourth = await execute("call-4", { query: "same source" });
-		expect(fourth.details).toMatchObject({ limitReached: true });
+		for (let i = 0; i < 4; i++) {
+			const result = await execute(`call-${i}`, { query: "same source" });
+			// Every call reaches the underlying tool; no per-source cap short-circuits it.
+			expect(result.details).not.toMatchObject({ limitReached: true });
+		}
+		const fifth = await execute("call-5", { query: "same source" });
+		expect(fifth.details).toMatchObject({ method: "semantic_search_local_docs", resultCount: 0 });
 	});
 
 	it("creates with default config", () => {

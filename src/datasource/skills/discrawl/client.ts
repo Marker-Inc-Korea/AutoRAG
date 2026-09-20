@@ -24,18 +24,16 @@ import type {
 	DiscrawlSyncInfo,
 	DiscrawlSyncResult,
 } from "./types.ts";
-import {
-	DEFAULT_DISCRAWL_BINARY,
-	DEFAULT_DISCRAWL_MAX_BUFFER_BYTES,
-	DEFAULT_DISCRAWL_SOURCE,
-	DEFAULT_DISCRAWL_TIMEOUT_MS,
-} from "./types.ts";
+import { DEFAULT_DISCRAWL_BINARY, DEFAULT_DISCRAWL_MAX_BUFFER_BYTES, DEFAULT_DISCRAWL_TIMEOUT_MS } from "./types.ts";
 
 /**
  * Environment keys that would hand the CLI a Discord *user* token. Automating
  * a user account violates Discord's Community Guidelines (rule 14) and can
  * result in account termination, so these are rejected before spawn rather
- * than forwarded. Only `DISCORD_BOT_TOKEN` (an OAuth2 bot identity) is allowed.
+ * than forwarded.
+ *
+ * No Discord credential is forwarded at all: AutoRAG reads discrawl's native
+ * archive, and the CLI owns its own authentication.
  */
 const USER_TOKEN_KEYS: ReadonlySet<string> = new Set([
 	"discord_user_token",
@@ -46,7 +44,6 @@ const USER_TOKEN_KEYS: ReadonlySet<string> = new Set([
 
 const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
 const SAFE_DISCRAWL_ENV_PREFIX = "DISCRAWL_";
-const ALLOWED_DISCORD_ENV_KEYS = new Set(["DISCORD_BOT_TOKEN"]);
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -153,13 +150,14 @@ export class DiscrawlClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
+	/**
+	 * Imports new messages from the local Discord Desktop cache through
+	 * `discrawl wiretap`. AutoRAG never drives discrawl's bot sync — that path
+	 * belongs to the CLI, which owns its own credential — so no Discord token is
+	 * involved in an AutoRAG refresh.
+	 */
 	async sync(signal?: AbortSignal): Promise<DiscrawlSyncResult> {
-		const source = this.options.source ?? DEFAULT_DISCRAWL_SOURCE;
-		const args = source === "wiretap" ? ["wiretap"] : ["sync", "--source", source];
-		if (source !== "wiretap" && this.options.guildId !== undefined) {
-			args.push("--guild", this.options.guildId);
-		}
-		const result = await this.runJson(args, signal);
+		const result = await this.runJson(["wiretap"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -353,9 +351,7 @@ function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined
 }
 
 function isAllowedDiscrawlEnvKey(key: string): boolean {
-	return (
-		SAFE_INHERITED_ENV_KEYS.has(key) || ALLOWED_DISCORD_ENV_KEYS.has(key) || key.startsWith(SAFE_DISCRAWL_ENV_PREFIX)
-	);
+	return SAFE_INHERITED_ENV_KEYS.has(key) || key.startsWith(SAFE_DISCRAWL_ENV_PREFIX);
 }
 
 function findUserTokenKey(env: NodeJS.ProcessEnv): string | undefined {
@@ -533,6 +529,9 @@ function normalizeHits(stdout: string): readonly DiscrawlSearchHit[] | undefined
 	} catch {
 		return undefined;
 	}
+	// discrawl prints a bare `null` for a search that matched nothing. That is an
+	// empty result, not a malformed answer, so it must not become a search failure.
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: (() => {
@@ -589,23 +588,20 @@ function toFailure(result: ProcessResult, reason?: DiscrawlFailure["reason"]): D
 		ok: false,
 		reason: reason ?? result.reason ?? "nonzero-exit",
 		stdout: result.stdout,
-		stderr: sanitizeDiagnosticText(result.stderr),
+		stderr: boundDiagnosticText(result.stderr),
 		code: result.code,
 		...(result.violatingKey !== undefined ? { violatingKey: result.violatingKey } : {}),
 	};
 }
 
 /**
- * discrawl stderr can contain absolute archive/cache paths. Those are dropped
- * from diagnostics while the exit code is preserved, matching the katok and
- * rclone connectors.
+ * discrawl stderr reaches the operator as the CLI wrote it — paths included,
+ * because that is what makes a failed archive lookup debuggable. Only the length
+ * is bounded so one runaway process cannot flood a diagnostic.
  */
-function sanitizeDiagnosticText(value: string): string {
+function boundDiagnosticText(value: string): string {
 	if (value.length === 0) return "";
-	if (value.includes("/") || value.includes("\\")) {
-		return "discrawl command failed; path details suppressed";
-	}
-	return value.trim().slice(0, 500);
+	return value.trim().slice(0, 4000);
 }
 
 function ok<T>(data: T, result: ProcessResult): DiscrawlOk<T> {

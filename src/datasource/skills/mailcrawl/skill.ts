@@ -1,5 +1,6 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
@@ -133,7 +134,7 @@ export class MailcrawlSkill implements DatasourceSkill {
 		return {
 			name: "datasource-mailcrawl",
 			description: "Search local email synchronized and indexed by mailcrawl.",
-			content: `# mailcrawl email datasource\n\nUse this skill for authorized local email retrieval. AutoRAG invokes the external \`mailcrawl\` CLI and never opens its SQLite archive directly.\n\n## Indexing\nIndexing is server-managed and incremental; do not trigger sync yourself.\n\n## Search\nCall \`search_datasource_documents\` with a natural-language query. Available scopes:\n${scopes}\n\nThe selectable retrieval modes are BM25, semantic, and hybrid. Scope arguments can only narrow trusted access. Source identifiers remain opaque and hierarchical.`,
+			content: `# mailcrawl email datasource\n\nUse this skill for authorized local email retrieval. AutoRAG invokes the external \`mailcrawl\` CLI and never opens its SQLite archive directly.\n\n## Indexing\nIndexing is server-managed and incremental; do not trigger sync yourself.\n\n## Search\nCall the dedicated \`${datasourceSearchToolName("mailcrawl")}\` tool with a natural-language query. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available scopes:\n${scopes}\n\nThe selectable retrieval modes are BM25, semantic, and hybrid. Scope arguments can only narrow trusted access. Source identifiers remain opaque and hierarchical.\n\n## Native CLI\nThe external \`mailcrawl\` CLI owns the archive and index. When the dedicated tool cannot express what you need, call mailcrawl directly through \`bash\`:\n- \`mailcrawl search --mode hybrid --limit 20 --json "<query>"\` (\`bm25\` and \`semantic\` modes also available; \`--account\` / \`--mailbox\` narrow the archive)\nNever pass datasource virtual paths (\`/mailcrawl/...\`) to bash; they are not OS paths.`,
 		};
 	}
 	private fail(code: DatasourceDiagnosticCode, message: string): DatasourceIndexResult {

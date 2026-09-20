@@ -18,7 +18,21 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
-import type { RetrievalDiagnostic, RetrievalMethod, RetrievalOptions, RetrievalResult } from "./types.ts";
+import { MINSYNC_SURFACE } from "./skip.ts";
+import type {
+	RetrievalDiagnostic,
+	RetrievalMethod,
+	RetrievalOptions,
+	RetrievalResult,
+	RetrievalUnsearchedSurface,
+} from "./types.ts";
+
+/**
+ * Safety ceiling on merged evidence, not a relevance filter. The merger keeps
+ * every distinct chunk, so a run's real size is whatever the registered methods
+ * returned; this only guards against an unbounded registry.
+ */
+const DEFAULT_MERGED_EVIDENCE_CEILING = 500;
 
 /** Options for constructing a standalone {@link RetrievalEngine}. */
 export interface RetrievalEngineOptions {
@@ -27,7 +41,12 @@ export interface RetrievalEngineOptions {
 	 * @default { allowedTags: undefined, allowedScopes: undefined }
 	 */
 	readonly datasourceAccess?: DatasourceAccessContextOptions;
-	/** Default `topK` when the caller omits it. @default 20 */
+	/**
+	 * Default `topK` when the caller omits it. This is a safety ceiling on
+	 * merged evidence, not a relevance cut: the merger returns every distinct
+	 * chunk, so the effective size is whatever the registered methods returned.
+	 * @default 500
+	 */
 	readonly defaultTopK?: number;
 	/** Default deduplication flag. @default true */
 	readonly defaultDedup?: boolean;
@@ -49,7 +68,7 @@ export interface RetrievalEngineOptions {
  * methods = registry.list()
  * byMethod = retriever.retrieveWithDiagnostics(methods, query, options)
  * filtered = filter.filter(byMethod, methods, ctx, options.scope)
- * merged = merger.merge(filtered, { topK, dedup: true })
+ * merged = merger.merge(filtered, { topK, dedup: true })  // distinct chunks, pure duplicates dropped
  * → { results: merged, diagnostics }
  * ```
  *
@@ -78,7 +97,7 @@ export class RetrievalEngine {
 		this.filter = new DatasourceResultFilter();
 		this.merger = new ResultMerger();
 		this.accessContext = new DatasourceAccessContext(options.datasourceAccess);
-		this.defaultTopK = options.defaultTopK ?? 20;
+		this.defaultTopK = options.defaultTopK ?? DEFAULT_MERGED_EVIDENCE_CEILING;
 		this.defaultDedup = options.defaultDedup ?? true;
 		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
 	}
@@ -132,16 +151,25 @@ export class RetrievalEngine {
 	async retrieve(
 		query: string,
 		options: RetrievalOptions = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+	): Promise<{
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
 		const topK = options.topK ?? this.defaultTopK;
 		const methods = this.registry.list();
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const {
+			results: byMethod,
+			diagnostics,
+			unsearched,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const ctx = this.accessContextFor(options);
 		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
-		const allDiagnostics = this.appendMinSyncUnavailableDiagnostic(methods, filtered, diagnostics);
+		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
 		return {
 			results: this.merger.merge(filtered, { topK, dedup: this.defaultDedup }),
-			diagnostics: allDiagnostics,
+			diagnostics: skipped.diagnostics,
+			unsearched: skipped.unsearched,
 		};
 	}
 
@@ -153,13 +181,21 @@ export class RetrievalEngine {
 	async retrieveByMethod(
 		query: string,
 		options: RetrievalOptions = {},
-	): Promise<{ byMethod: Map<string, RetrievalResult[]>; diagnostics: RetrievalDiagnostic[] }> {
+	): Promise<{
+		byMethod: Map<string, RetrievalResult[]>;
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
 		const methods = this.registry.list();
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const {
+			results: byMethod,
+			diagnostics,
+			unsearched,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const ctx = this.accessContextFor(options);
 		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
-		const allDiagnostics = this.appendMinSyncUnavailableDiagnostic(methods, filtered, diagnostics);
-		return { byMethod: filtered, diagnostics: allDiagnostics };
+		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
+		return { byMethod: filtered, diagnostics: skipped.diagnostics, unsearched: skipped.unsearched };
 	}
 
 	/**
@@ -170,35 +206,48 @@ export class RetrievalEngine {
 	 * a diagnostic. This method checks whether the minsync binary is unavailable
 	 * and emits a `minsync-unavailable` diagnostic when every minsync method's
 	 * result set is empty, exactly matching the existing {@link AutoRAGAgent}
-	 * behavior (see `agent.src/agent/agent.ts` `retrieveWithDiagnostics`).
+	 * behavior (see `agent.src/agent/agent.ts` `retrieveWithDiagnostics`). The
+	 * same check reports the MinSync surface as unsearched, so a caller reading
+	 * only the skip report still learns that local sources were not queried.
 	 */
-	private appendMinSyncUnavailableDiagnostic(
+	private appendMinSyncUnavailable(
 		methods: readonly RetrievalMethod[],
 		filtered: Map<string, RetrievalResult[]>,
 		diagnostics: RetrievalDiagnostic[],
-	): RetrievalDiagnostic[] {
-		if (this.isMinSyncBinaryMissing === undefined) return diagnostics;
-		if (!this.isMinSyncBinaryMissing()) return diagnostics;
-		if (diagnostics.some((d) => d.code === "minsync-unavailable")) return diagnostics;
+		unsearched: RetrievalUnsearchedSurface[],
+	): { diagnostics: RetrievalDiagnostic[]; unsearched: RetrievalUnsearchedSurface[] } {
+		const unchanged = { diagnostics, unsearched };
+		if (this.isMinSyncBinaryMissing === undefined) return unchanged;
+		if (!this.isMinSyncBinaryMissing()) return unchanged;
+		if (diagnostics.some((d) => d.code === "minsync-unavailable")) return unchanged;
 
 		// Did any minsync method return empty results (binary missing, no throw)?
-		const hasEmptyMinsync = methods.some((m) => {
-			const name = m.describe().name;
-			if (name !== "minsync") return false;
-			const results = filtered.get(name);
-			return results === undefined || results.length === 0;
-		});
-		if (!hasEmptyMinsync) return diagnostics;
+		const emptyMinsync = methods
+			.map((m) => m.describe().name)
+			.filter((name) => {
+				if (name !== "minsync") return false;
+				const results = filtered.get(name);
+				return results === undefined || results.length === 0;
+			});
+		if (emptyMinsync.length === 0) return unchanged;
 
-		return [
-			...diagnostics,
-			{
-				code: "minsync-unavailable" as const,
-				severity: "warning" as const,
-				message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
-				source: "minsync" as const,
-			},
-		];
+		const reason = "the minsync binary could not be resolved; MinSync retrieval did not run";
+		const alreadyReported = unsearched.some((entry) => entry.surface === MINSYNC_SURFACE);
+		return {
+			diagnostics: [
+				...diagnostics,
+				{
+					code: "minsync-unavailable" as const,
+					severity: "warning" as const,
+					message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
+					source: "minsync" as const,
+					reason,
+				},
+			],
+			unsearched: alreadyReported
+				? unsearched
+				: [...unsearched, { surface: MINSYNC_SURFACE, methods: Array.from(new Set(emptyMinsync)).sort(), reason }],
+		};
 	}
 
 	/**

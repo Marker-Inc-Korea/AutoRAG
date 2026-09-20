@@ -5,7 +5,7 @@ supplies explicitly configured paths and bounded process execution; it does not
 materialize or force an AutoRAG-managed archive/config for datasource CLIs.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
-(GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
+(GitHub Issues/PRs), #1311 (local mail
 export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
 Issue #1416 adds external-crawler process coverage for WhatsApp through
 wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
@@ -17,14 +17,14 @@ Issue #1496 adds the live mailcrawl local email CLI path.
 
 | Harness | Target systems | Command |
 |---|---|---|
-| `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub/Gmail APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
+| `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
-| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.1.4` fixture sync, no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.1.6` fixture sync, no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
 | `scripts/manual-qa/run-qa-ui.ts` | Local loopback `autorag ui`: list/add/test/toggle/remove connections, secret stripping, folder browse | `bun scripts/manual-qa/run-qa-ui.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
@@ -32,14 +32,12 @@ Issue #1496 adds the live mailcrawl local email CLI path.
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |
 | `test/datasource/skills/notcrawl.test.ts` | Real child-process boundary with a deterministic fake notcrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/notcrawl.test.ts` |
 
-Skills that need tenant credentials (Gmail OAuth tokens) are QA'd against the
-mock services, which reproduce each API's envelope shapes and native auth
-failures (`invalid_auth`, HTTP 401/403/429). Google Drive is tested through the
-provider-neutral `cloud-drive` skill and the external `rclone` CLI; configure
-and authenticate the remote with `rclone config`, then run
-`bun scripts/manual-qa/run-qa-rclone.ts`. To QA Gmail against a real tenant,
-point `connector.baseUrl` at the real API base and supply the token via the
-default env var (`GITHUB_TOKEN`, `GMAIL_ACCESS_TOKEN`).
+Skills that need tenant credentials are QA'd against the mock services, which
+reproduce each API's envelope shapes and native auth failures (`invalid_auth`,
+HTTP 401/403/429). Google Drive is tested through the provider-neutral
+`cloud-drive` skill and the external `rclone` CLI; configure and authenticate
+the remote with `rclone config`, then run `bun scripts/manual-qa/run-qa-rclone.ts`.
+Email search uses mailcrawl (local CLI) or mail-export (`.eml`/`.mbox` files).
 
 WhatsApp uses the external wacrawl CLI instead of an HTTP mock. The deterministic
 test executable exercises the actual spawn/stdout/stderr contract without
@@ -92,7 +90,7 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] `search_datasource_documents` returns hits for each skill with opaque
       slash-hierarchical sources (`/<skill>/<instance>/chunks/<id>`); no `#`
       fragments, no real filesystem paths.
-- [x] `scope` narrows results for scope-capable datasources (e.g. `/gmail/**` excludes Slack hits) and can
+- [x] `scope` narrows results for scope-capable datasources (e.g. `/mail-export/**` excludes Slack hits) and can
       never widen access.
 
 ### Security

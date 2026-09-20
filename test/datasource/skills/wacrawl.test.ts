@@ -126,6 +126,35 @@ describe("WacrawlClient", () => {
 		});
 		expect(await malformed.search("query")).toMatchObject({ ok: false, reason: "invalid-output" });
 	});
+
+	it("preserves CLI stderr verbatim on failure, paths included", async () => {
+		const stderrText = "wacrawl: database locked at /Users/me/Library/Application Support/wacrawl/archive.db";
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+process.stderr.write(${JSON.stringify(stderrText)});
+process.exit(2);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const client = new WacrawlClient({ binaryPath });
+
+		const result = await client.search("dinner", { topK: 5 });
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.stderr).toBe(stderrText);
+		expect(result.stderr).not.toContain("suppressed");
+	});
+
+	it("treats JSON null search output as zero hits", async () => {
+		writeFakeWacrawl();
+		const client = new WacrawlClient({
+			binaryPath,
+			env: { WACRAWL_FAKE_OUTPUT: "null\n" },
+		});
+		expect(await client.search("query")).toMatchObject({ ok: true, hits: [] });
+	});
 });
 
 describe("WacrawlSkill", () => {

@@ -56,18 +56,18 @@ export class CrawlerCliClient {
 
 	async sync(signal?: AbortSignal): Promise<CrawlerSyncResult> {
 		const result = await this.run(this.profile.syncArgs(this.options), signal);
-		if (!result.ok) return toFailure(this.profile.binaryName, result);
+		if (!result.ok) return toFailure(result);
 		const count = this.profile.parseSyncCount(result.stdout);
-		if (count === undefined) return toFailure(this.profile.binaryName, result, "invalid-output");
+		if (count === undefined) return toFailure(result, "invalid-output");
 		return { ok: true, count, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 	}
 
 	async search(query: string, options: CrawlerSearchOptions = {}): Promise<CrawlerSearchResult> {
 		const topK = options.topK ?? 20;
 		const result = await this.run(this.profile.searchArgs(this.options, query, topK), options.signal);
-		if (!result.ok) return toFailure(this.profile.binaryName, result);
+		if (!result.ok) return toFailure(result);
 		const hits = this.profile.parseHits(result.stdout);
-		if (hits === undefined) return toFailure(this.profile.binaryName, result, "invalid-output");
+		if (hits === undefined) return toFailure(result, "invalid-output");
 		return { ok: true, hits, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 	}
 
@@ -200,13 +200,24 @@ function terminate(child: ChildProcess): void {
 	if (!child.killed) child.kill("SIGTERM");
 }
 
-function toFailure(binaryName: string, result: ProcessResult, reason?: CrawlerFailure["reason"]): CrawlerFailure {
-	const failed = result.stderr.length > 0 || result.stdout.length > 0;
+function toFailure(result: ProcessResult, reason?: CrawlerFailure["reason"]): CrawlerFailure {
 	return {
 		ok: false,
 		reason: reason ?? result.reason ?? "nonzero-exit",
-		stdout: "",
-		stderr: failed ? `${binaryName} command failed; details suppressed for datasource privacy` : "",
+		stdout: result.stdout,
+		stderr: boundDiagnosticText(result),
 		code: result.code,
 	};
+}
+
+/**
+ * A crawler CLI's stderr reaches the operator as the CLI wrote it — paths
+ * included, because that is what makes a failed archive lookup debuggable.
+ * Only the length is bounded so one runaway process cannot flood a
+ * diagnostic. Stdout is the fallback when the CLI said nothing on stderr.
+ */
+function boundDiagnosticText(result: ProcessResult): string {
+	if (result.stderr.length > 0) return result.stderr.trim().slice(0, 4000);
+	if (result.stdout.length > 0) return result.stdout.trim().slice(0, 4000);
+	return "";
 }

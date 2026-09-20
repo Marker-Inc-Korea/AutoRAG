@@ -36,6 +36,29 @@ trusted `vdr sync`. Keyword, V-SPLADE lexical, dense embedding, and hybrid
 search are delegated to `clawgallery search --json`; AutoRAG never reads
 `images.jsonl` or `vdr.sqlite3`, and does not trigger captioning or renaming.
 
+### Spotlight
+
+`spotlight` is a macOS-only connector skill. It drives the built-in `mdfind`
+CLI (no extra install). Indexing re-runs configured Spotlight queries and
+hydrates file text; result metadata carries the real absolute path. Grant Full
+Disk Access to the host app when searching Mail, Messages, Safari, or other
+protected locations. Unavailable on non-macOS hosts.
+
+```json
+{
+  "datasources": {
+    "mac-files": {
+      "type": "spotlight",
+      "instanceId": "local"
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["spotlight"],
+    "allowedScopes": ["/mac-files/local/**"]
+  }
+}
+```
+
 ## Shared embedding runtime and native ownership
 
 The AutoRAG shared embedding runtime is a provider boundary, not a shared
@@ -70,7 +93,6 @@ does not send archive IDs, source paths, credentials, or native store paths to
 the gateway. If the runtime is unavailable, a datasource keeps its native
 lexical/FTS lane where supported and reports a diagnostic; it does not silently
 switch to a remote embedding service.
-
 ## Contract
 
 A datasource skill is both:
@@ -93,7 +115,7 @@ A skill must also provide `describeSources()` entries so the librarian prompt ca
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.1.4` or newer
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.1.6` or newer
 (Node.js 24+) and configure Himalaya separately; AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
@@ -124,8 +146,7 @@ Retrieval exposes independent BM25, semantic, and hybrid methods and maps
 results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
 datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
-path. Mailcrawl is the sole Himalaya-backed IMAP/Maildir path; Gmail remains
-available separately through the Gmail REST API.
+path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
 
 ## Datasource UI
 
@@ -145,9 +166,9 @@ Every datasource entry can use a reusable template with a connection alias:
 ```json
 {
   "datasources": {
-    "personal-gmail": {
-      "type": "gmail",
-      "connector": { "tokenEnv": "PERSONAL_GMAIL_TOKEN" }
+    "personal-mail": {
+      "type": "mailcrawl",
+      "connector": { "account": "personal", "mailbox": "INBOX" }
     },
     "company-slack": {
       "type": "slack",
@@ -232,7 +253,7 @@ A skill can publish `instances`, for example:
 - KakaoTalk account -> chat corpus
 - Notion workspace -> database/page tree
 
-Every instance maps to a datasource root like `/kakao/personal` or `/slack/workspace/channel`.
+Every instance maps to a slash-hierarchical datasource root like `/kakao/personal` or `/slack/local`. Chunks hang under `/<skill>/<instance>/chunks/<id>`.
 
 ## Slack via slacrawl
 
@@ -251,6 +272,7 @@ or DM/MPIM access.
       "connector": {
         "configPath": "~/.slacrawl/config.toml",
         "syncSource": "wiretap",
+        "workspace": "T0123456789",
         "timeoutMs": 120000
       }
     }
@@ -262,11 +284,25 @@ or DM/MPIM access.
 }
 ```
 
+`workspace` is the Slack team id to scope reads to and it is effectively
+required. `slacrawl`'s `search` and `messages` read paths return nothing unless
+a workspace is named explicitly, even when the archive and its FTS index hold
+matching rows — an unscoped search looks exactly like an empty archive, with no
+diagnostic. `syncSource` is likewise required: `slacrawl sync` without
+`--source` fails and surfaces as `datasource-index-failed`.
+
 Initialize and refresh the local mirror with:
 
 ```bash
 slacrawl init -db ~/.slacrawl/slacrawl.db -workspace local
 slacrawl sync --source wiretap
+
+# `init -workspace local` only names the local config; it is not a Slack team
+# id. List the real ids the wiretap import produced and use one of them as the
+# connector's `workspace`:
+slacrawl sql 'select id, count(*) from workspaces join messages on messages.workspace_id = workspaces.id group by 1;'
+slacrawl search -workspace T0123456789 <term>   # must print rows before wiring it up
+
 autorag refresh --method datasources
 ```
 
@@ -376,10 +412,12 @@ and mirror available for query-time search. `include`, `exclude`,
 server configuration; model/tool arguments cannot change them.
 
 Before searching, the agent loads the datasource skill with
-`load_datasource_skill`, then calls `search_datasource_documents` using a
-natural-language query and, when useful, a narrowing scope such as
-`/company-onedrive/work/**`. It must not invoke `rclone` itself or request
-credentials.
+`load_datasource_skill`, then calls the connection's dedicated
+`search_datasource_<name>` tool using a natural-language query and, when
+useful, a narrowing scope such as `/company-onedrive/work/**`. Read-only
+`rclone` inspection (e.g. `rclone lsl <remote>:<path>`) may run directly
+through bash per the skill's Native CLI section; credentials stay with
+rclone and the agent never requests them.
 
 ## Chat channel selection
 

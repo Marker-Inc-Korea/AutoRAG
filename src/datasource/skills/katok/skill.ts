@@ -1,5 +1,7 @@
+import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
@@ -101,12 +103,14 @@ export class KatokSkill implements DatasourceSkill {
 				indexedAt: this.lastIndexedAt,
 				diagnostics: [],
 			};
-		} catch {
+		} catch (error) {
+			// The unexpected failure reaches the operator verbatim: no placeholder,
+			// no swallowed message.
 			return this.fail("datasource-unavailable", {
 				ok: false,
 				reason: "spawn-error",
 				stdout: "",
-				stderr: "katok command failed; details suppressed for datasource privacy",
+				stderr: describeRetrievalError(error),
 				code: null,
 			});
 		}
@@ -158,10 +162,17 @@ export class KatokSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query` and `topK`. This datasource does not support per-source scope narrowing. Authorized datasource:",
+				`Call the dedicated \`${datasourceSearchToolName(KAKAO_DATASOURCE_ID)}\` tool with a natural-language \`query\` and \`topK\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. This datasource does not support per-source scope narrowing. Authorized datasource:`,
 				instanceSources.length > 0 ? instanceSources : "- (no configured instances)",
 				"",
 				"Access is controlled by the trusted datasource tag; chat/channel filtering is owned by katok.",
+				"",
+				"## Native CLI",
+				"The external `katok` CLI owns the archive, index, and credentials. When the dedicated tool cannot express what you need, call katok directly through `bash`:",
+				'- `katok search bm25 "<query>" --json --limit 20` — lexical search (`semantic` mode also available)',
+				"- `katok chunk get <chunkId> --json` — fetch one chunk by id (chunk ids appear in result metadata)",
+				"- `katok chunk context <chunkId> --json` — surrounding messages of a chunk",
+				"Never pass datasource virtual paths (`/kakao/...`) to bash; they are not OS paths.",
 				"",
 				"## Output rules",
 				"Datasource source identifiers such as `/kakao/<instance>/chunks/<id>` are internal and opaque. Never put them, real file paths, account IDs, or phone numbers in the visible answer.",
@@ -174,7 +185,7 @@ export class KatokSkill implements DatasourceSkill {
 		result: { ok: false; reason: string; stdout?: string; stderr: string; code: number | null },
 	): DatasourceIndexResult {
 		const message =
-			result.stderr.length > 0 ? `${result.reason}: ${sanitizeDiagnosticText(result.stderr)}` : result.reason;
+			result.stderr.length > 0 ? `${result.reason}: ${result.stderr.trim().slice(0, 4000)}` : result.reason;
 		const diagnostic: DatasourceDiagnostic = {
 			code,
 			severity: code === "datasource-unavailable" ? "warning" : "error",
@@ -195,9 +206,5 @@ export class KatokSkill implements DatasourceSkill {
 	}
 }
 
-function sanitizeDiagnosticText(value: string): string {
-	if (value.includes("/") || value.includes("\\") || /[A-Za-z]:[\\/]/u.test(value)) {
-		return "katok command failed; details suppressed for datasource privacy";
-	}
-	return value;
-}
+// The katok CLI's stderr reaches the operator verbatim, paths included — the
+// client bounds length; nothing is replaced with a placeholder.

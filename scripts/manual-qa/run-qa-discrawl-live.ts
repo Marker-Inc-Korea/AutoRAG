@@ -2,21 +2,17 @@
  * Live Discord QA (#1413): index a REAL Discord archive through the external
  * `discrawl` CLI and search it with FTS, semantic, and hybrid retrieval.
  *
- * Setup (wiretap — no token, reads the local Discord Desktop cache):
+ * The archive is discrawl's own native store, imported from the local Discord
+ * Desktop cache — AutoRAG needs no Discord credential of any kind for this.
+ *
+ * Setup:
  *   1. brew install openclaw/tap/discrawl
  *   2. Have the Discord desktop app installed and signed in at least once.
  *   3. (semantic) brew install ollama && ollama serve && ollama pull embeddinggemma
  *
- * Setup (bot API — ToS-sanctioned automation):
- *   1. https://discord.com/developers/applications -> New Application -> Bot
- *   2. Enable the MESSAGE CONTENT privileged intent.
- *   3. Invite the bot with READ_MESSAGE_HISTORY to the target guild.
- *   4. export DISCORD_BOT_TOKEN=...
- *
  * Usage:
- *   bun scripts/manual-qa/run-qa-discrawl-live.ts                      # wiretap + sample queries
+ *   bun scripts/manual-qa/run-qa-discrawl-live.ts                      # sample queries
  *   bun scripts/manual-qa/run-qa-discrawl-live.ts "질의" ["질의2" ...]  # custom queries
- *   DISCRAWL_SOURCE=discord bun scripts/manual-qa/run-qa-discrawl-live.ts
  */
 
 import { mkdtempSync } from "node:fs";
@@ -24,15 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiscrawlClient, DiscrawlSkill } from "../../src/datasource/skills/discrawl/index.ts";
 
-const source = (process.env.DISCRAWL_SOURCE ?? "wiretap") as "wiretap" | "discord" | "both";
-if (source !== "wiretap" && process.env.DISCORD_BOT_TOKEN === undefined) {
-	console.error(`DISCRAWL_SOURCE=${source} requires DISCORD_BOT_TOKEN. See this file's header.`);
-	process.exit(1);
-}
-
 const workspace = mkdtempSync(join(tmpdir(), "discrawl-live-qa-"));
 const client = new DiscrawlClient({
-	source,
 	root: workspace,
 	timeoutMs: 600_000,
 	...(process.env.DISCRAWL_GUILD_ID !== undefined ? { guildId: process.env.DISCRAWL_GUILD_ID } : {}),
@@ -46,7 +35,7 @@ if (!doctor.ok) {
 }
 console.log(
 	`doctor: db=${doctor.data.databaseOk} fts=${doctor.data.ftsOk} embeddings=${doctor.data.embeddingsOk}` +
-		(doctor.data.embeddingModel !== undefined ? ` model=${doctor.data.embeddingModel}` : ""),
+	(doctor.data.embeddingModel !== undefined ? ` model=${doctor.data.embeddingModel}` : ""),
 );
 
 const skill = new DiscrawlSkill({
@@ -55,7 +44,7 @@ const skill = new DiscrawlSkill({
 	...(doctor.data.embeddingModel !== undefined ? { embeddingModel: doctor.data.embeddingModel } : {}),
 });
 
-console.log(`\nIndexing (source=${source})...`);
+console.log("\nIndexing (discrawl wiretap into the native archive)...");
 const indexed = await skill.index();
 if (!indexed.ok) {
 	console.error(`index failed: ${indexed.code} ${indexed.message}`);

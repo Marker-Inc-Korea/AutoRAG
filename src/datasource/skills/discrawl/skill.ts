@@ -1,5 +1,6 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
@@ -230,10 +231,16 @@ export class DiscrawlSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. Sync is incremental (cursor-based) and embeddings are queued per changed message. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
+				`Call the dedicated \`${datasourceSearchToolName(DISCORD_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
 				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"",
+				"## Native CLI",
+				"The external `discrawl` CLI owns the archive, index, and credentials. When the dedicated tool cannot express what you need, call discrawl directly through `bash`:",
+				'- `discrawl --json search --mode hybrid "<query>" --limit 20` — hybrid search (`fts` and `semantic` modes also available; `--json` is a global flag placed before the subcommand)',
+				'- `discrawl --json search --mode fts "<query>" --guild <guildId> --limit 20` — narrow to one guild',
+				"Never pass datasource virtual paths (`/discord/...`) to bash; they are not OS paths.",
 				"",
 				"## Retrieval quality",
 				"Hybrid retrieval is the default. The underlying FTS index merges words across line breaks into a single token, so lexical-only search can miss terms that appear immediately after a newline; semantic recall covers that gap. Prefer natural-language queries over single exact keywords.",

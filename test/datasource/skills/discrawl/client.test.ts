@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DiscrawlClient, nativeGatewayBaseUrl } from "../../../../src/datasource/skills/discrawl/client.ts";
+import type { DiscrawlOptions } from "../../../../src/datasource/skills/discrawl/types.ts";
 
 function stubBinary(script: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "discrawl-stub-"));
@@ -88,6 +89,14 @@ describe("DiscrawlClient search", () => {
 		expect(result.stderr).toMatch(/^--json search --mode semantic --limit 7 q/);
 	});
 
+	it("treats a bare null payload as zero hits, not a failed search", async () => {
+		// The real discrawl CLI prints `null` with exit 0 when nothing matched.
+		const binaryPath = stubBinary("echo 'null'");
+		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.hits).toEqual([]);
+	});
+
 	it("reports invalid JSON as invalid-shape", async () => {
 		const binaryPath = stubBinary("echo 'not json'");
 		expect(await new DiscrawlClient({ binaryPath }).search("fts", "q")).toMatchObject({
@@ -127,11 +136,12 @@ describe("DiscrawlClient search", () => {
 		expect(await pending).toMatchObject({ ok: false, reason: "aborted" });
 	});
 
-	it("suppresses paths in stderr diagnostics", async () => {
+	it("reports stderr as discrawl wrote it, paths included", async () => {
 		const binaryPath = stubBinary("echo '/Users/secret/archive.db not found' >&2; exit 1");
 		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
 		expect(result.ok).toBe(false);
-		expect(result.stderr).not.toContain("/Users/secret");
+		// The operator debugging their own archive needs the real path.
+		expect(result.stderr).toContain("/Users/secret/archive.db not found");
 	});
 });
 
@@ -207,13 +217,14 @@ describe("DiscrawlClient user-token gate", () => {
 		});
 	});
 
-	it("allows a bot token through", async () => {
-		const binaryPath = stubBinary("echo '[]'");
+	it("never forwards a Discord bot token to the child process", async () => {
+		const binaryPath = stubBinary("env >&2; echo '[]'");
 		const result = await new DiscrawlClient({
 			binaryPath,
 			env: { DISCORD_BOT_TOKEN: "bot-token" },
 		}).search("fts", "q");
 		expect(result.ok).toBe(true);
+		expect(result.stderr).not.toContain("DISCORD_BOT_TOKEN");
 	});
 
 	it("never forwards the user token value in diagnostics", async () => {
@@ -227,19 +238,20 @@ describe("DiscrawlClient user-token gate", () => {
 });
 
 describe("DiscrawlClient sync", () => {
-	it("uses the wiretap subcommand for the wiretap source", async () => {
+	it("syncs the local archive through the wiretap subcommand", async () => {
 		const binaryPath = stubBinary(`echo "$@" >&2; echo '{"messages": 12}'`);
-		const result = await new DiscrawlClient({ binaryPath, source: "wiretap" }).sync();
+		const result = await new DiscrawlClient({ binaryPath }).sync();
 		expect(result.ok).toBe(true);
 		if (result.ok) expect(result.data.messages).toBe(12);
-		expect(result.stderr).toContain("wiretap");
+		expect(result.stderr.trim()).toBe("--json wiretap");
 	});
 
-	it("uses sync --source discord and forwards the guild filter for the bot source", async () => {
+	it("ignores a legacy bot source selector and never reaches the Discord API path", async () => {
 		const binaryPath = stubBinary(`echo "$@" >&2; echo '{"messages": 3}'`);
-		const result = await new DiscrawlClient({ binaryPath, source: "discord", guildId: "g1" }).sync();
+		const legacy = { binaryPath, source: "discord", guildId: "g1" } as unknown as DiscrawlOptions;
+		const result = await new DiscrawlClient(legacy).sync();
 		expect(result.ok).toBe(true);
-		expect(result.stderr).toContain("sync --source discord --guild g1");
+		expect(result.stderr.trim()).toBe("--json wiretap");
 	});
 });
 

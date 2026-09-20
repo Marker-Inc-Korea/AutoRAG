@@ -165,13 +165,15 @@ describe("Obsidian retrieval methods", () => {
 		expect(semantic[0]?.metadata?.mode).toBe("vsearch");
 	});
 
-	it("returns empty on client failure", async () => {
+	it("surfaces the qmd failure with its stderr", async () => {
 		const client = {
 			async search(): Promise<QmdSearchResult> {
 				return { ok: false, reason: "nonzero-exit", stdout: "", stderr: "nope", code: 1 };
 			},
 		};
-		expect(await new ObsidianBm25Method({ client, instanceId: "v1" }).retrieve("x", { topK: 3 })).toEqual([]);
+		await expect(new ObsidianBm25Method({ client, instanceId: "v1" }).retrieve("x", { topK: 3 })).rejects.toThrow(
+			"obsidian search failed (nonzero-exit, exit code 1): nope",
+		);
 	});
 });
 
@@ -309,6 +311,71 @@ process.stdout.write("{}");
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toBe("binary-missing");
 	});
+
+	it("reaps a qmd descendant that keeps the inherited stdio open after the direct child exits", async () => {
+		const binaryPath = join(root, "qmd-descendant");
+		mkdirSync(join(root, "vault-descendant"), { recursive: true });
+		// qmd 2.8.3 is a launcher: it spawns a runtime descendant that inherits the
+		// launcher stdout/stderr pipes. When only the launcher exits, the descendant
+		// keeps those pipes open and Node never emits "close".
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { spawn } from "node:child_process";
+const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 5000)"], { stdio: "inherit" });
+process.stdout.write(JSON.stringify([{ docid: "descendant", score: 1, file: "notes/descendant.md", snippet: "descendant", grandchildPid: descendant.pid }]));
+process.exit(0);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const client = new QmdClient({
+			binaryPath,
+			vaultPath: join(root, "vault-descendant"),
+			workspaceRoot: root,
+			instanceId: "descendant",
+			timeoutMs: 30_000,
+		});
+		let bound: ReturnType<typeof setTimeout> | undefined;
+		let result: Awaited<ReturnType<QmdClient["search"]>>;
+		try {
+			// The fixture spawns a fresh Node runtime; under a loaded parallel suite
+			// that startup plus the 500ms reap grace can exceed a tight bound. Keep
+			// the bound generous so the assertion tests the reaper, not machine speed,
+			// while a genuine regression still fails here instead of hanging.
+			result = await Promise.race([
+				client.search("search", "descendant"),
+				new Promise<never>((_, reject) => {
+					bound = setTimeout(
+						() =>
+							reject(
+								new Error(
+									"qmd search never settled: the direct child exited while its descendant held the inherited stdio open",
+								),
+							),
+						30_000,
+					);
+				}),
+			]);
+		} finally {
+			clearTimeout(bound);
+		}
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.hits[0]?.chunkId).toBe("descendant");
+		const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
+		const pidText = pidMatch?.[1];
+		if (pidText === undefined) throw new Error("qmd fixture did not report its descendant PID");
+		if (process.platform === "win32") return;
+		try {
+			process.kill(Number(pidText), 0);
+		} catch (error) {
+			if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
+			throw error;
+		}
+		throw new Error(`qmd descendant ${pidText} survived after the client settled`);
+	}, 10_000);
 });
 
 describe("toQmdCollectionName", () => {

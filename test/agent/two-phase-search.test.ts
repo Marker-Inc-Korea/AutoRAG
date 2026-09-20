@@ -15,6 +15,18 @@ import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
+import type {
+	DatasourceIndexResult,
+	DatasourceSkill,
+	PollingMetadata,
+	SourceDescription,
+} from "../../src/datasource/types.ts";
+import type {
+	RetrievalMethod,
+	RetrievalMethodDescriptor,
+	RetrievalOptions,
+	RetrievalResult,
+} from "../../src/retrieval/types.ts";
 
 let root: string;
 let docs: string;
@@ -105,6 +117,84 @@ function finalEmitCall(answer: string): FauxResponseStep {
 	);
 }
 
+class StaticMethod implements RetrievalMethod {
+	private readonly rows: readonly RetrievalResult[];
+
+	constructor(rows: readonly RetrievalResult[]) {
+		this.rows = rows;
+	}
+
+	describe(): RetrievalMethodDescriptor {
+		return {
+			name: "kakao.keyword",
+			type: "bm25",
+			description: "KakaoTalk test datasource method",
+			status: "active",
+			capabilities: ["keyword"],
+			datasourceId: "kakao",
+			tags: ["kakao", "chat"],
+		};
+	}
+
+	async retrieve(_query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		return this.rows.slice(0, options.topK ?? this.rows.length);
+	}
+}
+
+function makeSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
+	const method = new StaticMethod(rows);
+	return {
+		describe() {
+			return {
+				name: "kakao",
+				type: "chat",
+				description: "KakaoTalk chats exported through katok",
+				capabilities: ["keyword", "polling"],
+				tags: ["kakao", "chat"],
+				status: "active",
+				datasourceId: "kakao",
+				instanceId: "acct-1",
+				instances: ["acct-1"],
+			};
+		},
+		polling(): PollingMetadata {
+			return { mode: "poll", intervalMs: 60_000 };
+		},
+		skillManifest() {
+			return {
+				name: "datasource-kakao",
+				description: "Search indexed KakaoTalk chats.",
+				content: "# KakaoTalk\nSearch with search_datasource_documents; scope /kakao/acct-1.",
+			};
+		},
+		async index(): Promise<DatasourceIndexResult> {
+			return {
+				ok: true,
+				instanceId: "acct-1",
+				skill: "kakao",
+				chunkCount: rows.length,
+				indexedAt: 1,
+				diagnostics: [],
+			};
+		},
+		retrievalMethods() {
+			return [method];
+		},
+		describeSources(): readonly SourceDescription[] {
+			return [
+				{
+					source: "/kakao/acct-1",
+					datasourceId: "kakao",
+					skill: "kakao",
+					instanceId: "acct-1",
+					contentType: "chat",
+					metadata: { description: "authorized KakaoTalk chat history" },
+				},
+			];
+		},
+	};
+}
+
 function agentOptions(model: ReturnType<typeof fauxModel>): AutoRAGAgentOptions {
 	return {
 		model,
@@ -154,6 +244,87 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const complete = events[completeIndex];
 		if (complete.type !== "complete") throw new Error("unreachable");
 		expect(complete.response.answer).toContain("Final answer");
+	});
+
+	it("delivers the preliminary event before the fast phase prompt continues", async () => {
+		// Given a provider that pauses after the fast-answer tool has executed.
+		let markContinuationReady: (() => void) | undefined;
+		const continuationReady = new Promise<void>((resolve) => {
+			markContinuationReady = resolve;
+		});
+		let releaseContinuation: ((message: ReturnType<typeof fauxAssistantMessage>) => void) | undefined;
+		const continuation: FauxResponseStep = () => {
+			const result = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
+				releaseContinuation = resolve;
+			});
+			markContinuationReady?.();
+			return result;
+		};
+		const model = fauxModel(true, fastAnswerCall(), continuation, finalEmitCall("Verified final answer."));
+		const agent = new AutoRAGAgent(agentOptions(model));
+		const events: SearchDocumentsStreamEvent[] = [];
+		const collecting = (async () => {
+			for await (const event of agent.searchDocumentsStream("refund approval?")) events.push(event);
+		})();
+
+		// When the post-tool model turn is still blocked, the answer must be visible.
+		try {
+			await continuationReady;
+			expect(events.some((event) => event.type === "preliminary")).toBe(true);
+		} finally {
+			releaseContinuation?.(fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }));
+			await collecting;
+		}
+		// Then finishing the prompt must not publish the same answer twice.
+		expect(events.filter((event) => event.type === "preliminary")).toHaveLength(1);
+	});
+
+	it("returns a degraded fallback with reason and retrieval trace when the final emit never happens", async () => {
+		const rows: RetrievalResult[] = [
+			{
+				id: "msg-1",
+				source: "/kakao/acct-1/chunks/msg-1",
+				content: "Director approval is required before payout.",
+				score: 1,
+				metadata: {},
+			},
+		];
+		const model = fauxModel(
+			true,
+			fastAnswerCall(),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			fauxAssistantMessage([fauxToolCall("search_datasource_documents", { query: "refund approval", topK: 5 })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage(
+				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
+				{ stopReason: "stop" },
+			),
+		);
+		const agent = new AutoRAGAgent({
+			...agentOptions(model),
+			datasourceSkills: [makeSkill(rows)],
+			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/**"] },
+		});
+
+		const response = await agent.searchDocuments("refund approval");
+
+		expect(response.results).toEqual([]);
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "missing-final-emit" && diagnostic.severity === "warning",
+			),
+		).toBe(true);
+		expect(response.answer).toContain("without calling emit_autorag_results");
+		expect(response.answer).toContain("could not find enough evidence");
+		expect(response.answer).toContain("searchPaths");
+		expect(response.searched).toBe(1);
+		expect(response.retrievalTrace).toHaveLength(1);
+		const entry = response.retrievalTrace?.[0];
+		expect(entry?.tool).toBe("search_datasource_documents");
+		expect(entry?.resultCount).toBe(1);
+		expect(entry?.results[0]?.source).toBe("/kakao/acct-1/chunks/msg-1");
+		expect(entry?.results[0]?.excerpt).toContain("Director approval");
 	});
 
 	it("ends the run without a preliminary event when the model emits final results immediately", async () => {

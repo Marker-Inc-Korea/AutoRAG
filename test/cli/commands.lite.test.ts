@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli/index.ts";
+import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
 function writeConfig(root: string, configPath: string, model = false): void {
 	const docs = join(root, "docs");
@@ -78,7 +79,7 @@ describe("autorag lite lifecycle dispatch", () => {
 		}
 	});
 
-	it("rejects retrieval after the parsed index becomes stale", async () => {
+	it("reports staleness without blocking retrieval, and --strict keeps the hard failure", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-lite-stale-"));
 		const configPath = join(root, "config.json");
 		writeConfig(root, configPath);
@@ -86,8 +87,137 @@ describe("autorag lite lifecycle dispatch", () => {
 		try {
 			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
 			writeFileSync(join(root, "docs", "note.md"), "Changed after refresh\n");
-			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(2);
-			expect(String(out.mock.calls.at(-1)?.[0] ?? "")).toContain("Index is stale");
+
+			// Default: answer from the index and report the staleness it is answering past.
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(envelope).toMatchObject({ ok: true, query: "query", stale: true });
+			expect(envelope.diagnostics).toContainEqual({
+				code: "stale-index",
+				severity: "warning",
+				message: expect.any(String),
+				source: "/docs/note.md",
+				reason: "mtime-and-size-changed",
+				action: "refresh",
+			});
+
+			// --strict keeps the previous fail-closed contract for callers that need it.
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--strict", "--json"])).toBe(2);
+			const strict = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(strict.ok).toBe(false);
+			expect(strict.diagnostics[0]).toMatchObject({
+				code: "index-not-ready",
+				source: "/docs/note.md",
+				reason: "mtime-and-size-changed",
+				action: "refresh",
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reports retrieval surfaces that were not searched in --json without --debug", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-unsearched-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+
+			// A healthy run states the contract explicitly: nothing was skipped.
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			expect(JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? "")).unsearched).toEqual([]);
+
+			// Local MinSync skipped (index sync holds the lock) while a datasource still answers.
+			vi.spyOn(RetrievalEngine.prototype, "retrieve").mockResolvedValue({
+				results: [
+					{
+						id: "discord:1",
+						content: "datasource hit",
+						source: "/discord/guild/chunks/1",
+						score: 1,
+						metadata: { method: "discord-hybrid" },
+					},
+				],
+				diagnostics: [
+					{
+						code: "minsync-unavailable",
+						severity: "warning",
+						message: 'Retrieval method "minsync" failed and was skipped: Error: another sync is in progress',
+						source: "minsync",
+						reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+					},
+				],
+				unsearched: [
+					{
+						surface: "minsync",
+						methods: ["hybrid", "minsync"],
+						reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+					},
+				],
+			});
+
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(envelope.ok).toBe(true);
+			expect(envelope.results).toHaveLength(1);
+			// The underlying error reaches the caller verbatim, real paths included.
+			expect(envelope.unsearched).toEqual([
+				{
+					surface: "minsync",
+					methods: ["hybrid", "minsync"],
+					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+				},
+			]);
+			expect(envelope.diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "minsync-unavailable",
+					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+				}),
+			);
+
+			// Human output warns about the skip without --debug.
+			expect(await main(["lite", "retrieve", "query", "--config", configPath])).toBe(0);
+			const human = String(out.mock.calls.at(-1)?.[0] ?? "");
+			expect(human).toContain(
+				"warning: not searched: minsync (hybrid, minsync): Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("refreshes first on request and then reports the corpus current", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-refresh-first-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+			writeFileSync(join(root, "docs", "note.md"), "Changed after refresh\n");
+
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--refresh", "--json"])).toBe(0);
+			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(envelope).toMatchObject({ ok: true, stale: false });
+			expect(envelope.diagnostics).not.toContainEqual(expect.objectContaining({ code: "stale-index" }));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reports a clean corpus as current, including a product artifact in the root", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-clean-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		writeFileSync(join(root, "docs", ".jikji_agent_map.md"), "# Jikji Agent Map\n");
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(envelope).toMatchObject({ ok: true, stale: false });
+			const index = JSON.parse(readFileSync(join(root, ".autorag", "parsed", "index.json"), "utf8"));
+			expect(index.entries["/docs/.jikji_agent_map.md"]).toBeUndefined();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -26,6 +26,7 @@ const TELEGRAM_DEFINITION = {
 	manifestDescription:
 		"Search archived Telegram messages, chats, senders, topics, threads, and media titles. Use for questions about Telegram conversations or who said what.",
 	backendName: "telecrawl",
+	nativeCliSearchExample: 'telecrawl search --limit 20 "<query>"',
 } as const;
 
 export class TelecrawlClient extends CrawlerCliClient {
@@ -71,6 +72,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)

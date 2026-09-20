@@ -1,12 +1,13 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
+import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME = "search_datasource_documents";
 
 const searchDatasourceSchema = Type.Object({
 	query: Type.String({ description: "Query to search across configured external datasource skills." }),
-	topK: Type.Optional(Type.Integer({ description: "Maximum number of datasource chunks to return." })),
+	topK: Type.Optional(Type.Integer({ description: "Maximum number of datasource chunks to return. Defaults to 50." })),
 	scope: Type.Optional(
 		Type.String({ description: "Optional opaque datasource scope, e.g. /kakao/account or /kakao/account/**." }),
 	),
@@ -17,6 +18,8 @@ export interface SearchDatasourceDocumentsDetails {
 	readonly resultCount: number;
 	readonly sources: readonly string[];
 	readonly diagnostics: readonly RetrievalDiagnostic[];
+	/** Top candidates in traceable shape (additive; used for the run's retrieval trace). */
+	readonly results?: readonly SearchDocumentRetrievalTraceResult[];
 }
 
 export interface DatasourceSearchProvider {
@@ -33,7 +36,7 @@ export function createSearchDatasourceDocumentsTool(
 		name: SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 		label: "Search Datasource Documents",
 		description:
-			"Search configured external datasource skills such as cloud drives and KakaoTalk chats. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
+			"Search configured external datasource skills such as cloud drives and KakaoTalk chats, fanning out to every datasource CLI. When the question targets one connection, prefer its dedicated search_datasource_<name> tool, which spawns only that connection's CLIs. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchDatasourceSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchDatasourceDocumentsDetails>> {
 			const query = params.query.trim();
@@ -48,19 +51,23 @@ export function createSearchDatasourceDocumentsTool(
 				scope: params.scope,
 			});
 			return {
-				content: [{ type: "text", text: formatResults(results, diagnostics) }],
+				content: [{ type: "text", text: formatDatasourceResults(results, diagnostics) }],
 				details: {
 					method: "datasource",
 					resultCount: results.length,
 					sources: [...new Set(results.map((result) => result.source))],
 					diagnostics,
+					results: toRetrievalTraceResults(results),
 				},
 			};
 		},
 	};
 }
 
-function formatResults(results: readonly RetrievalResult[], diagnostics: readonly RetrievalDiagnostic[]): string {
+export function formatDatasourceResults(
+	results: readonly RetrievalResult[],
+	diagnostics: readonly RetrievalDiagnostic[],
+): string {
 	const diagnosticSummary =
 		diagnostics.length > 0
 			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "datasource"}:${d.code}`).join(", ")}`

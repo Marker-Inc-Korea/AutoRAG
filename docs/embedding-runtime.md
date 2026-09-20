@@ -130,10 +130,14 @@ external endpoint is configured. The effective no-flag profile is
 `qwen3-embedding-0.6b`, so a new workspace uses 1024-dimensional vectors
 without Ollama, TEI, an API key, or an endpoint setting.
 
-The MinSync workspace records the runtime identity in:
+The MinSync workspace keeps its state in the `.minsync` subdirectory of
+`<workspace>/.autorag/minsync` and records the runtime identity there, beside
+the sync cursor and `config.toml`:
 
 ```text
-<workspace>/.minsync/autorag-embedding-identity.json
+<workspace>/.autorag/minsync/.minsync/autorag-embedding-identity.json
+<workspace>/.autorag/minsync/.minsync/cursor.json
+<workspace>/.autorag/minsync/.minsync/config.toml
 ```
 
 A dimension or identity mismatch is detected before semantic vector reuse.

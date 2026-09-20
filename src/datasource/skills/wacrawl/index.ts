@@ -34,6 +34,7 @@ const WHATSAPP_DEFINITION = {
 	manifestDescription:
 		"Search archived WhatsApp messages, chats, senders, and media titles. Use for questions about WhatsApp conversations or who said what.",
 	backendName: "wacrawl",
+	nativeCliSearchExample: 'wacrawl --sync never search --limit 20 "<query>"',
 } as const;
 
 export class WacrawlClient extends CrawlerCliClient {
@@ -79,6 +80,7 @@ function parseCount(stdout: string): number | undefined {
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const parsed = parseJson(stdout);
+	if (parsed === null) return [];
 	const rows = Array.isArray(parsed)
 		? parsed
 		: isRecord(parsed) && Array.isArray(parsed.messages)

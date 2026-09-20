@@ -1,5 +1,5 @@
 /**
- * Manual QA harness for the five connector-backed datasource skills
+ * Manual QA harness for connector-backed datasource skills
  * (#1300 #1301 #1302 #1303 #1304 #1305 #1311 #1314 #1316).
  *
  * Spins up a local mock of every external API (plus real filesystem
@@ -62,18 +62,17 @@ try {
 	mkdirSync(docsDir, { recursive: true });
 	writeFileSync(join(docsDir, "readme.txt"), "Local corpus placeholder.");
 
-	// --- 1. Setup: build all five connector-backed skills from trusted config (factory path) ---
+	// --- 1. Setup: build connector-backed skills from trusted config (factory path) ---
 	const { skills, unknown } = buildDatasourceSkills(
 		{
 			github: { connector: { baseUrl: `${base}/github`, repos: ["qa-org/qa-repo"] } },
-			gmail: { connector: { baseUrl: `${base}/gmail`, token: "qa-gmail-token" } },
 			"mail-export": { connector: { paths: [mailDir] } },
 			obsidian: { connector: { vaultPath: vault } },
 			rss: { connector: { feeds: [{ url: `${base}/rss/feed.xml` }] } },
 		},
 		tmpRoot,
 	);
-	check("setup: factory builds all five HTTP/filesystem skills", skills.length === 5 && unknown.length === 0);
+	check("setup: factory builds all four HTTP/filesystem skills", skills.length === 4 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
@@ -82,7 +81,7 @@ try {
 		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: {
-			allowedTags: ["github", "gmail", "mail-export", "obsidian", "rss"],
+			allowedTags: ["github", "mail-export", "obsidian", "rss"],
 			allowedScopes: ["/**"],
 		},
 	});
@@ -100,7 +99,7 @@ try {
 
 	// --- 3. Progressive disclosure: skills announced + loadable ---
 	const prompt = agent.getSystemPrompt();
-	const names = ["github", "gmail", "mail-export", "obsidian", "rss"];
+	const names = ["github", "mail-export", "obsidian", "rss"];
 	check(
 		"prompt: all authorized skills announced",
 		names.every((name) => prompt.includes(`datasource-${name}`)),
@@ -117,7 +116,6 @@ try {
 	const searchTool = createSearchDatasourceDocumentsTool(agent);
 	const queries: Record<string, string> = {
 		github: "Korean queries tokenized ranking",
-		gmail: "Gangnam office move September",
 		"mail-export": "hiring frozen budget approved",
 		obsidian: "mobile app beta October",
 		rss: "release incremental indexing",
@@ -130,12 +128,12 @@ try {
 
 	// --- 5. Scope narrowing (tool arg can only narrow) ---
 	const narrowed = await searchTool.execute("qa-narrow", {
-		query: "Gangnam office move September",
-		scope: "/gmail/**",
+		query: "hiring frozen budget approved",
+		scope: "/mail-export/**",
 	});
 	check(
 		"scope: narrowing excludes other skills",
-		narrowed.details.sources.every((source) => source.startsWith("/gmail/")),
+		narrowed.details.sources.every((source) => source.startsWith("/mail-export/")),
 	);
 
 	// --- 6. Default-deny agent (no trusted access) ---

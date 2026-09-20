@@ -104,8 +104,9 @@ at `scripts/manual-qa/run-qa-katok-live.ts`.
 Evidence is written to `.omo/evidence/task-6-fixed-live-e2e-environment.json`
 for this task and to the runner result directory (by default
 `.omo/evidence/live-core-cold/result.json` or `live-core-warm/result.json`).
-Evidence and diagnostics redact tokens, passwords, credentials, and absolute
-home paths. Assert local retrieval sources are absolute and readable; assert
+Diagnostics and error text are reported verbatim, including absolute paths and
+CLI stderr: an operator searching their own machine must be able to debug a
+failure from the output alone. Assert local retrieval sources are absolute and readable; assert
 native datasource results retain source-native identities such as
 `/kakao/<instance>/chunks/<chunk>` (opaque slash-hierarchical, not an OS path),
 not a retired `kakao:<chat>/<sender>/<chunk>` scheme and not a fake OS-absolute
@@ -264,16 +265,30 @@ Contributors and agents adding a CLI-backed datasource must:
   must not be passed to `bash`/`cat`;
 - provide a datasource skill with native command examples and `<binary>
   --help` guidance so the agent understands which CLI backs the datasource;
-- keep failure isolation per CLI (missing binary degrades to diagnostics,
-  never crashes the search loop);
+- keep failure isolation per CLI (one failing CLI degrades to diagnostics and
+  an `unsearched` entry, never crashes the search loop);
+- report failures verbatim: a retrieval method that cannot answer throws the
+  CLI's own error (failure kind, exit status, stderr) instead of returning an
+  empty result set, so the caller sees why the source was not searched;
 - retain small, focused guards where they matter (e.g. discrawl's user-token
   rejection);
 - add focused tests and live manual QA where a local store exists before
   registering the datasource.
 
 Secrets must remain external: store only environment-variable, keychain, or
-profile references and never tokens, cookies, passwords, or refresh
-credentials in files, logs, argv snapshots, or diagnostics.
+profile references, and never persist tokens, cookies, passwords, or refresh
+credentials into config files or argv snapshots. This is about where
+credentials live, not about muting errors — diagnostics and CLI stderr are
+never scrubbed or suppressed on the way to the operator.
+
+## Error Transparency
+
+Errors belong to the user, not to the agent. Retrieval, refresh, and datasource
+failures surface the underlying text verbatim — exit codes, stderr, and real
+filesystem paths included — in diagnostics, `unsearched` reasons, and CLI
+output. Do not classify a failure into a fixed enum in place of its message, do
+not replace it with a generic sentence, and do not drop it because it contains a
+path. Bounding runaway output by length is fine; suppressing content is not.
 
 ## Why AutoRAG Exists
 
@@ -299,25 +314,33 @@ The librarian agent owns the full workflow:
 | `bash` | Filesystem discovery and document reading with real paths (`ls`, `find`, `grep`, `cat`, etc.) | Direct source verification |
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
-| `lexical_search_local_docs` | Lexical BM25 ranking over parsed document mirrors | Exact-term retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_documents` | Search authorized external datasource skills | Server-bound datasource retrieval |
+| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per authorized connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs | Targeted single-datasource retrieval |
 | `check_memory` | Query past search outcomes | Adaptive strategy |
 | `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
+| `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
+| `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
+| `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
+| `recommend_peer_targets` | Rank local SimpleX peer personas by keyword overlap | P2P routing; never contacts peers |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
 | `emit_autorag_results` | Terminating tool that returns curated results | Final action |
+
+There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
+
+`web_search`/`web_fetch` are ported from oh-my-pi's web module: a credential-free-only provider chain — model-native search reusing the agent's own model credentials (`gemini`/`anthropic`/`codex`/`xai`), the anonymous `perplexity` ask endpoint, Parallel's keyless MCP (`parallel`), then the scraped engines (`startpage`/`duckduckgo`/`ecosia`/`google`/`mojeek`, plus the `public` fan-out aggregate) with headless-browser escalation for bot challenges — where quota, auth, and bot-challenge failures automatically fall back to the next provider. No API key or signup is required; a self-hosted `SEARXNG_ENDPOINT` is the only env-gated, explicitly-advanced option. Web queries leave the machine: never include private corpus content or secrets in them.
 
 ## Architecture
 
 ```
 Agent Tools                 AutoRAGAgent (customized Pi agent)
 ┌──────────────────┐       ┌──────────────────────────────────┐
-│ bash read/search  │       │ Memory System (query history)     │
-│ retrieval tools   │  ───▶ │ Curation Layer (LLM extraction)   │
-│ search_bm25      │       │ check_memory (adaptive strategy)  │
-│ search_minsync   │       │ Manifest System (indexed stores)  │
-│ search_datasource│       │ Retrieval Registry (pluggable)    │
-│ check_memory     │       │ Result Merger (cross-method)      │
+│ bash / jikji_find │       │ Memory System (query history)     │
+│ search_all_docs   │  ───▶ │ Curation Layer (LLM extraction)   │
+│ semantic_search   │       │ check_memory (adaptive strategy)  │
+│ search_datasource │       │ Manifest System (indexed stores)  │
+│ scan_duplicates   │       │ Retrieval Registry (pluggable)    │
+│ peer_targets      │       │ Result Merger (cross-method)      │
 └──────────────────┘       │ Feedback Loop (learn from usage)  │
                            └──────────────────────────────────┘
 ```
@@ -342,7 +365,7 @@ Datasource skills are retrieval-method factories plus indexing hooks for externa
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `katok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Gmail REST**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Himalaya-backed IMAP/Maildir retrieval is provided by **mailcrawl**. Results remain traceable and datasource access stays default-deny. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable and datasource access stays default-deny. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
 ## Directory Access
 
@@ -350,7 +373,7 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, the `search_*` retrieval tools, `load_datasource_skill`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, `search_datasource_documents`, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `katok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
@@ -404,6 +427,15 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
+| `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
+| `src/agent/search-all-tool.ts` | `search_all_documents` multi-method fan-out |
+| `src/agent/search-minsync-tool.ts` | `semantic_search_local_docs` MinSync vector tool |
+| `src/agent/web-search-tool.ts` | `web_search` internet search tool over the `src/web/search` provider chain |
+| `src/agent/web-fetch-tool.ts` | `web_fetch` URL reader over the `src/web/fetch` render pipeline |
+| `src/web/search/` | oh-my-pi-ported web search: provider chain, structured query parsing, keyed + credential-free providers |
+| `src/web/fetch/` | oh-my-pi-ported URL render pipeline: page loader, HTML→markdown reader chain, feeds, content negotiation |
+| `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
+| `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX persona ranking |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
 | `src/memory/memory.ts` | Feedback persistence and method priority scoring |
 | `src/memory/renderer.ts` | Memory context renderer for system prompt |
@@ -412,12 +444,16 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
-| `src/retrieval/methods/bm25.ts` | BM25 lexical RetrievalMethod over parsed mirrors |
+| `src/minsync/method.ts` | MinSync retrieval method (vector / BM25 / hybrid over shared CDC chunks) |
 | `src/datasource/` | Datasource skill contracts, trusted access context, result filtering, polling metadata, diagnostics, and KakaoTalk/katok skill implementation |
+| `src/p2p/` | SimpleX P2P sharing: policy, injection/PII gates, approval store, wire protocol |
+| `src/cli/commands/serve.ts` | `autorag serve` P2P peer query server |
+| `src/cli/commands/p2p.ts` | `autorag p2p` peer trust and request approval |
+| `src/cli/commands/p2p-policy.ts` | `autorag p2p policy` sharing-rule CLI |
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: katok, discrawl (Discord), slack, notion, github, cloud-drive, gmail, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: katok, discrawl, wacrawl, telecrawl, slack, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |
 | `src/cli/commands/ui.ts` | `autorag ui` loopback dashboard for connecting and managing datasource skills |
 | `src/ui/` | Local datasource UI catalog, config store, probes, HTML, and 127.0.0.1 HTTP server |

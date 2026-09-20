@@ -39,8 +39,8 @@ describe("datasource UI catalog", () => {
 		const github = SOURCE_PICKER.find((entry) => entry.type === "github");
 		expect(github?.supportsMultiple).toBe(true);
 		expect(github?.extras.some((extra) => extra.key === "repos")).toBe(true);
-		expect(SOURCE_PICKER.find((entry) => entry.type === "gmail")?.extras).toEqual([]);
-		expect(getDatasourceType("gmail")?.fields.some((field) => field.key === "connector.backend")).toBe(false);
+		expect(SOURCE_PICKER.find((entry) => entry.type === "gmail")).toBeUndefined();
+		expect(getDatasourceType("gmail")).toBeUndefined();
 		expect(SOURCE_PICKER.find((entry) => entry.type === "mailcrawl")?.binaryName).toBe("mailcrawl");
 		expect(
 			SOURCE_PICKER.find((entry) => entry.type === "cloud-drive")?.extras.some(

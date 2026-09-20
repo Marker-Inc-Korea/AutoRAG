@@ -139,11 +139,19 @@ remains authoritative and is not overwritten by the shared runtime.
 
 ## Migration and failure behavior
 
-A MinSync workspace records the embedding identity in:
+A MinSync workspace keeps its state in the `.minsync` subdirectory of
+`<workspace>/.autorag/minsync`, and records the embedding identity alongside the
+sync cursor and `config.toml`:
 
 ```text
-<workspace>/.minsync/autorag-embedding-identity.json
+<workspace>/.autorag/minsync/.minsync/autorag-embedding-identity.json
+<workspace>/.autorag/minsync/.minsync/cursor.json
+<workspace>/.autorag/minsync/.minsync/config.toml
 ```
+
+An explicit `minSync.workspacePath` setting replaces the default
+`<workspace>/.autorag/minsync` location; MinSync then keeps its `.minsync` state
+under that configured path instead.
 
 The identity includes provider, model, immutable model revision, dimension,
 query prefix, passage prefix, and runtime build. A mismatch requires a full

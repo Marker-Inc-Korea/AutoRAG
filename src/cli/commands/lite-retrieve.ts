@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
+import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { detectMirrorStaleness } from "../../mirror/index.ts";
 import { refreshReadinessPath } from "../../mirror/paths.ts";
-import type { RetrievalDiagnostic, RetrievalResult } from "../../retrieval/types.ts";
+import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -13,8 +14,30 @@ import type { CommandContext } from "./types.ts";
 export interface LiteRetrieveEnvelope {
 	readonly ok: true;
 	readonly query: string;
+	/**
+	 * True when the last refresh does not cover the current sources. Retrieval still
+	 * runs; the caller decides whether to trust the result or refresh first.
+	 */
+	readonly stale: boolean;
 	readonly results: readonly LiteRetrieveResultItem[];
+	/**
+	 * Retrieval surfaces that did not run for this query. A consumer that only
+	 * reads `results` can check `unsearched.length > 0` to learn the answer is
+	 * partial — for example local MinSync files skipped while an index sync holds
+	 * the workspace lock, leaving only datasource hits.
+	 */
+	readonly unsearched: readonly LiteRetrieveUnsearched[];
+
 	readonly diagnostics: readonly LiteRetrieveDiagnostic[];
+}
+
+export interface LiteRetrieveUnsearched {
+	/** Surface label: "minsync" for local files, or the datasource id. */
+	readonly surface: string;
+	/** Retrieval method names on this surface that did not run. */
+	readonly methods: readonly string[];
+	/** The underlying failure verbatim, including CLI stderr and exit status. */
+	readonly reason: string;
 }
 
 export interface LiteRetrieveResultItem {
@@ -31,6 +54,10 @@ export interface LiteRetrieveDiagnostic {
 	readonly severity: string;
 	readonly message: string;
 	readonly source?: string;
+	/** Why a source is considered stale, e.g. `mtime-and-size-changed`. */
+	readonly reason?: string;
+	/** Suggested recovery action, e.g. `refresh`. */
+	readonly action?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +71,9 @@ interface IndexNotReadyEnvelope {
 		readonly code: "index-not-ready";
 		readonly severity: "error";
 		readonly message: string;
+		readonly source?: string;
+		readonly reason?: string;
+		readonly action?: string;
 	}[];
 }
 
@@ -112,7 +142,7 @@ function parseTopK(
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostic projection (path-opaque by contract)
+// Diagnostic projection
 // ---------------------------------------------------------------------------
 
 function diagnosticProjection(d: {
@@ -120,6 +150,8 @@ function diagnosticProjection(d: {
 	readonly severity: string;
 	readonly message: string;
 	readonly source?: string;
+	readonly reason?: string;
+	readonly action?: string;
 }): LiteRetrieveDiagnostic {
 	const out: LiteRetrieveDiagnostic = {
 		code: d.code,
@@ -129,7 +161,22 @@ function diagnosticProjection(d: {
 	if (d.source !== undefined) {
 		(out as { source: string }).source = d.source;
 	}
+	if (d.reason !== undefined) {
+		(out as { reason: string }).reason = d.reason;
+	}
+	if (d.action !== undefined) {
+		(out as { action: string }).action = d.action;
+	}
 	return out;
+}
+
+/**
+ * Project the retrieval pipeline's skip report into the envelope. The reason is
+ * copied through untouched so the caller sees the failure the retrieval method
+ * actually hit.
+ */
+function unsearchedProjection(entry: RetrievalUnsearchedSurface): LiteRetrieveUnsearched {
+	return { surface: entry.surface, methods: [...entry.methods], reason: entry.reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +198,13 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	}
 	// ok: true case
 	const okEnvelope = envelope;
+	if (okEnvelope.stale) {
+		lines.push("warning: index may be stale; run `autorag lite refresh` or pass --refresh to rebuild it");
+	}
+	// Skipped surfaces are reported without --debug: the results below are partial.
+	for (const entry of okEnvelope.unsearched) {
+		lines.push(`warning: not searched: ${entry.surface} (${entry.methods.join(", ")}): ${entry.reason}`);
+	}
 	if (okEnvelope.results.length === 0) {
 		lines.push("retrieve: no results");
 	} else {
@@ -191,6 +245,41 @@ function hasCompletedParsedRefresh(workspacePath: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Turn refresh's stale-source diagnostics into the retrieve envelope's shape.
+ * `severity` stays a warning: stale sources are reported, not blocked.
+ */
+function staleSourceDiagnostics(
+	stale: readonly { readonly source: string; readonly reason?: string }[],
+): LiteRetrieveDiagnostic[] {
+	return stale.map((entry) => ({
+		code: "stale-index",
+		severity: "warning",
+		message: `Index may be stale because source "${entry.source}" ${(entry.reason ?? "source-changed").replaceAll("-", " ")} since the last refresh. Run \`autorag lite refresh\` or pass --refresh to rebuild it.`,
+		source: entry.source,
+		reason: entry.reason ?? "source-changed",
+		action: "refresh",
+	}));
+}
+
+/**
+ * Report a MinSync refresh that did not complete during `--refresh`, quoting the
+ * reason MinSync gave so the caller can act on it instead of re-running blind.
+ */
+function refreshFailureDiagnostic(result: AutoRAGRefreshResult): LiteRetrieveDiagnostic | undefined {
+	if (result.minsync === undefined || result.minsync.ok !== false) return undefined;
+	const reason = result.minsync.reason;
+	return {
+		code: "minsync-unavailable",
+		severity: "warning",
+		message:
+			reason === undefined
+				? "MinSync was not refreshed during this run."
+				: `MinSync was not refreshed during this run: ${reason}`,
+		...(reason === undefined ? {} : { reason }),
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -258,22 +347,37 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		ctx.stdout(renderLiteRetrieveJson(envelope));
 		return 2;
 	}
+
+	// `--refresh` updates the parsed mirrors (and configured indexes) before
+	// answering, so the caller can ask for a current corpus without a second
+	// command. The default path never writes: staleness is reported, not acted on.
+	let refreshFailure: LiteRetrieveDiagnostic | undefined;
+	if (ctx.flags.refresh === true) {
+		try {
+			refreshFailure = refreshFailureDiagnostic(await lite.refresh(false));
+		} catch (error) {
+			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+			return 1;
+		}
+	}
+
 	const staleDiagnostics = await detectMirrorStaleness({
 		root: workspacePath,
 		searchPaths: lite.config.searchPaths,
 		parserOptions: lite.config.parserOptions,
 	});
-	if (staleDiagnostics.length > 0) {
+	if (staleDiagnostics.length > 0 && ctx.flags.strict === true) {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,
 			query,
-			diagnostics: [
-				{
-					code: "index-not-ready",
-					severity: "error",
-					message: "Index is stale. Run `autorag lite refresh` or `autorag refresh` before retrieving.",
-				},
-			],
+			diagnostics: staleDiagnostics.map((stale) => ({
+				code: "index-not-ready" as const,
+				severity: "error" as const,
+				message: `Index is stale because source "${stale.source}" ${stale.reason?.replaceAll("-", " ") ?? "changed"}. Run \`autorag lite refresh\` or \`autorag refresh\` to rebuild it.`,
+				source: stale.source,
+				reason: stale.reason ?? "source-changed",
+				action: "refresh",
+			})),
 		};
 		ctx.stdout(renderLiteRetrieveJson(envelope));
 		return 2;
@@ -281,7 +385,11 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 
 	// Perform retrieval
 	const options = buildRetrieveOptions(ctx.flags);
-	let retrievalResult: { results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] };
+	let retrievalResult: {
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	};
 	try {
 		retrievalResult = await lite.retrieve(query, {
 			topK: topKResult.value ?? options.topK,
@@ -294,7 +402,12 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	}
 
 	// Build the envelope
-	const diagnostics = (retrievalResult.diagnostics ?? []).map(diagnosticProjection);
+	const staleEnvelopeDiagnostics = staleSourceDiagnostics(staleDiagnostics);
+	const diagnostics = [
+		...(refreshFailure ? [refreshFailure] : []),
+		...staleEnvelopeDiagnostics,
+		...(retrievalResult.diagnostics ?? []).map(diagnosticProjection),
+	];
 	const results: LiteRetrieveResultItem[] = retrievalResult.results.map((r, i) => ({
 		number: i + 1,
 		source: r.source,
@@ -307,7 +420,9 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const envelope: LiteRetrieveEnvelope = {
 		ok: true,
 		query,
+		stale: staleEnvelopeDiagnostics.length > 0,
 		results,
+		unsearched: retrievalResult.unsearched.map(unsearchedProjection),
 		diagnostics,
 	};
 

@@ -143,11 +143,17 @@ is impossible, refresh continues without this optimization and the user is
 told duplicate exclusion is off. Set `"excludeExactDuplicates": false` to
 index every copy.
 
-MinSync's default embedder is local EmbeddingGemma (768 dimensions, served
-locally via Ollama). The default needs no embedder flags and no API key, and
-no corpus text is sent to a remote embedding service. During setup, verify the
-local model is available (`ollama pull embeddinggemma` with `ollama serve`
-running) instead of silently falling back.
+MinSync's default embedder is in-process native Qwen3 embeddings
+(`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.5+). The
+default needs no embedder flags, no API key, and no external daemon (such as
+Ollama) — all embeddings run in-process locally and privately. For workspaces
+using the loopback llama-server gateway, prefetch the verified model with
+`autorag models prefetch --profile qwen3-embedding-0.6b` (or verify with
+`autorag models verify --profile qwen3-embedding-0.6b`).
+
+The legacy Ollama/TEI adapter path (EmbeddingGemma, 768 dimensions) is
+supported only for existing legacy workspaces and manual QA; do not use it as a
+fresh install default.
 
 Override the embedder only when intentionally using a different, for example
 remote, provider:
@@ -163,35 +169,45 @@ autorag init \
 
 Only store the environment-variable name, never its value. Dimension and batch
 size must be positive integers, and the dimension must match the embedder
-(EmbeddingGemma is 768; text-embedding-3-small is 1536).
+(default Qwen3 is 1024; legacy EmbeddingGemma is 768; text-embedding-3-small is 1536).
 
 ## Probe and configure datasource skills (setup wizard)
+
+Use `autorag setup` to probe the local runtime, model profile, and known
+datasources automatically:
+
+```bash
+autorag setup --format json
+```
 
 `autorag ui` is still in development — do not recommend it for datasource
 setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`katok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`), its
-   local store or archive is present, and any credentials it needs are
-   available as environment variables or in the tool's own external
-   configuration.
+   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`) and its
+   local store or archive is present. CLI-backed datasources own their own
+   archive, index, and authentication, so environment credentials (such as bot
+   tokens) are never required or checked for them. Non-CLI connectors
+   (such as `github`) require their credential environment variable
+   (`GITHUB_TOKEN`).
 2. Auto-configure every datasource that probes feasible — write its trusted
    `datasources` / `datasourceAccess` entries without asking. For example,
-   when Slack (`slacrawl`) and Discord (`discrawl`) are installed, set both up
-   automatically.
+   when Slack (`slacrawl`) and Discord (`discrawl`) are installed with local
+   stores present, set both up automatically. Discord uses discrawl's local
+   desktop wiretap archive; no Discord bot token is configured or needed.
 3. Skip every datasource that probes infeasible (for example Notion or
-   Telegram when their CLIs are not installed) and always report the skipped
-   list to the user, with what is missing for each.
+   Telegram when their CLIs or native stores are not present) and always
+   report the skipped list to the user, with what is missing for each.
 4. Set up a skipped datasource only when the user explicitly asks for it:
    install or authenticate the backing CLI first, then configure it.
-5. E-mail datasources (`gmail`, `mail-export`, `mailcrawl`) matter to most
+5. E-mail datasources (`mail-export`, `mailcrawl`) matter to most
    users — always probe them and report their status, even when they end up
    skipped.
 
 Datasource skills belong in trusted config and remain default-deny. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
-`clawgallery`, `notion`, `github`, `cloud-drive`, `gmail`, `mail-export`,
+`clawgallery`, `notion`, `github`, `cloud-drive`, `mail-export`,
 `mailcrawl`, `obsidian`, `rss`, and `spotlight`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
@@ -203,14 +219,13 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
     "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
     "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
-    "gmail": { "connector": { "tokenEnv": "GMAIL_ACCESS_TOKEN", "labelIds": ["INBOX"] } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["github", "cloud-drive", "gmail", "mailcrawl", "obsidian", "rss"],
-    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/gmail/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["github", "cloud-drive", "mailcrawl", "obsidian", "rss"],
+    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -218,26 +233,27 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration.
 
-Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.4` or newer)
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.6` or newer)
 and configured through its own Himalaya account. AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
 fails with `text array must be non-empty`.
-Use mailcrawl for Himalaya-backed IMAP/Maildir retrieval. The legacy
-`gmail` connector option `backend: "himalaya"` is no longer registered; migrate
-that configuration to an explicit `mailcrawl` datasource.
+Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
+datasource is removed.
 
 ## Verify and build indexes
 
 Configuration alone is not a successful setup:
 
 ```bash
+autorag setup --format json
 autorag status --json
 autorag health --json
 autorag refresh --json
 autorag search "summarize the collection" --top-k 3 --json --debug
 ```
 
+- `setup` probes runtime health, model profile, and datasource readiness.
 - `status` is model-free and path-opaque.
 - `health` resolves the single model, checks credential presence, and normally
   performs one live completion probe.

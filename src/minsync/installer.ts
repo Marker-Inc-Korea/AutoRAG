@@ -9,7 +9,7 @@ import { spawnProcess } from "./process.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.4.2";
+export const MINSYNC_VERSION = "0.4.5";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
@@ -53,6 +53,15 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 		if (fromCargo !== undefined) return fromCargo;
 	} catch (error) {
 		if (!(error instanceof MinSyncReleaseError)) throw error;
+	}
+	// Same rule as the cargo path: a bun/vitest suite must never reach the
+	// network. Without this, any test that refreshes with the default config
+	// downloads a real MinSync release and blows the test timeout instead of
+	// degrading. Installer tests inject `releaseProvider`/`assetInstaller`.
+	if (isIsolatedTestRuntime() && options.releaseProvider === undefined) {
+		throw new MinSyncReleaseError(
+			"MinSync auto-install is disabled in the test runtime; inject a releaseProvider to exercise the installer",
+		);
 	}
 	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
 	const release = await releaseProvider();

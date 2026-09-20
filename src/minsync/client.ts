@@ -4,6 +4,8 @@ import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
 import {
 	configuredMaxChunkSize,
 	configuredVectorDimension,
+	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
+	DEFAULT_MINSYNC_EMBEDDER_ID,
 	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
@@ -31,7 +33,7 @@ export interface MinSyncClientOptions {
 	readonly runtime?: MinSyncRuntime;
 }
 
-/** MinSync v0.4.2 supports vector, BM25, and hybrid query modes. */
+/** MinSync v0.4.5 supports native vector, BM25, and hybrid query modes. */
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -75,10 +77,43 @@ export class MinSyncClient {
 		runtimeReason?: string;
 	}> {
 		const configured = this.embedder;
+		const isExplicitNative = configured?.id?.startsWith("native:");
+		// A configured profile keeps the gateway, even when the config also carries the
+		// profile's model id: `autorag setup` wrote both before native became the default.
+		const isExplicitRemoteOrTei =
+			configured?.baseUrl !== undefined ||
+			(configured?.id !== undefined && !isExplicitNative && configured.profile === undefined);
 		const useRuntime =
 			this.runtime !== undefined &&
-			(configured === undefined || (configured.profile !== undefined && configured.baseUrl === undefined));
-		if (!useRuntime) return { config: configured ?? {} };
+			!isExplicitNative &&
+			!isExplicitRemoteOrTei &&
+			(configured?.profile !== undefined || (configured === undefined && this.runtime !== undefined));
+		if (!useRuntime) {
+			if (
+				configured?.baseUrl === undefined &&
+				(configured === undefined || isExplicitNative || configured.id === undefined)
+			) {
+				const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
+				const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
+				return {
+					config: {
+						...configured,
+						id,
+						dimension,
+					},
+					identity: {
+						provider: "native",
+						model: id.startsWith("native:") ? id.slice("native:".length) : id,
+						artifactRevision: "default",
+						dimension,
+						queryPrefix: configured?.queryPrefix ?? "",
+						passagePrefix: configured?.passagePrefix ?? "",
+						runtimeBuild: "minsync-native",
+					},
+				};
+			}
+			return { config: configured ?? {} };
+		}
 		try {
 			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile, cachedOnly: true });
 			if (!ensured) throw new Error("Embedding runtime did not return a runtime");
@@ -89,6 +124,14 @@ export class MinSyncClient {
 					dimension: ensured.profile.dimension,
 					queryPrefix: ensured.profile.queryPrefix,
 					passagePrefix: ensured.profile.passagePrefix,
+					// A profile selects the embedding model only. Batching, concurrency,
+					// retry, and timeout settings belong to the operator, so they must
+					// still reach MinSync's config instead of falling back to MinSync's
+					// own defaults.
+					...(configured?.batchSize !== undefined ? { batchSize: configured.batchSize } : {}),
+					...(configured?.maxRetries !== undefined ? { maxRetries: configured.maxRetries } : {}),
+					...(configured?.maxConcurrent !== undefined ? { maxConcurrent: configured.maxConcurrent } : {}),
+					...(configured?.timeoutMs !== undefined ? { timeoutMs: configured.timeoutMs } : {}),
 				},
 				identity: {
 					provider: ensured.identity.provider,
@@ -183,8 +226,8 @@ export class MinSyncClient {
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
 		if (!initialized) {
 			const initArgs = ["init", "--format", "json"];
-			if (embedder.id) {
-				initArgs.push("--embedder", embedder.id);
+			if (this.embedder?.id) {
+				initArgs.push("--embedder", this.embedder.id);
 			}
 			const init = await this.spawn(initArgs, spawnOpts);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
@@ -216,12 +259,29 @@ export class MinSyncClient {
 				synced: 0,
 				workspacePath: this.workspacePath,
 				reason: "check-failed",
+				diagnostic: {
+					code: "sync-failed",
+					message: check.stderr ? check.stderr.trim() : "MinSync check failed.",
+					retryable: true,
+				},
 			};
 		}
 		const checkFailure = readCheckFailure(check.stdout);
 		if (checkFailure) {
 			restoreConfig();
-			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: checkFailure,
+				diagnostic: {
+					// Only an embedder preflight failure points at the embedder; a vector
+					// store or generic preflight failure must not send users to `models prefetch`.
+					code: checkFailure.includes("embedder") ? "embedder-unavailable" : "sync-failed",
+					message: checkFailure,
+					retryable: true,
+				},
+			};
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
 		const dimensionChanged = embedder.dimension !== undefined && configuredDimension !== embedder.dimension;
@@ -237,6 +297,11 @@ export class MinSyncClient {
 				synced: 0,
 				workspacePath: this.workspacePath,
 				reason: "sync-failed",
+				diagnostic: {
+					code: "sync-failed",
+					message: result.stderr ? result.stderr.trim() : "MinSync sync failed.",
+					retryable: true,
+				},
 			};
 		}
 		if (!existsSync(cursorPath)) {
@@ -278,7 +343,8 @@ export class MinSyncClient {
 				`configured embedder dimension ${effective.config.dimension} does not match indexed dimension ${configuredDimension}; reindex required.${migration}`,
 			);
 		}
-		if (effective.identity !== undefined && this.identityMismatch(effective.identity)) {
+		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
+		if (existsSync(cursorPath) && effective.identity !== undefined && this.identityMismatch(effective.identity)) {
 			throw new MinSyncQueryError(
 				null,
 				"embedding identity does not match the indexed workspace; full reindex required",
@@ -344,7 +410,12 @@ function parseQueryHits(stdout: string): readonly MinSyncQueryHit[] {
 	const parsed = parseJson(stdout);
 	const candidates = Array.isArray(parsed) ? parsed : isRecord(parsed) ? parsed.results : [];
 	if (!Array.isArray(candidates)) return [];
-	return candidates.filter(isMinSyncQueryHit);
+	return candidates.filter(isMinSyncQueryHit).map((hit) => {
+		const docId = isRecord(hit) ? hit.doc_id : undefined;
+		return typeof docId === "string" && docId.length > 0
+			? { path: hit.path, score: hit.score, text: hit.text, docId }
+			: { path: hit.path, score: hit.score, text: hit.text };
+	});
 }
 
 function parseJson(text: string): unknown {

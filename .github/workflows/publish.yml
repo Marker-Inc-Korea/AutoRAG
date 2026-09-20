@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up the python environment
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install uv
@@ -55,7 +55,7 @@ jobs:
           enable-cache: 'true'
           cache-suffix: '3.11'
       - name: Download updated pyproject.toml
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyproject-toml
           path: legacy
