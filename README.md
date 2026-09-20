@@ -273,7 +273,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 
 AutoRAG Agent is an open-source project built by the community. We welcome contributions, bug reports, datasource connectors, and ideas!
 
-- **Contributing:** Feel free to open an issue or pull request. Please check our [Git Workflow in AGENTS.md](AGENTS.md) and run `bun test` before submitting.
+- **Contributing:** Feel free to open an issue or pull request. Start with [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, the `make ci` check we ask for, the `Signed-off-by` trailer every commit needs, and when to run the live end-to-end lanes. [MAINTAINERS](MAINTAINERS) lists who reviews which area.
 - **GitHub Contributors:** [View all contributors](https://github.com/Marker-Inc-Korea/AutoRAG/graphs/contributors) on GitHub.
 
 ---
