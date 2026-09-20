@@ -104,7 +104,8 @@ The JSON envelope is:
   `retrieval-method-failed` and `minsync-unavailable`. A degraded component
   produces a diagnostic, not a failed run; check `diagnostics` before trusting
   an empty result set.
-- `--debug` adds diagnostic detail to human output without printing real
+- `--debug` adds per-result metadata and the diagnostics list to human output.
+  Skipped-surface warnings print without it, and their reasons carry real
   filesystem paths.
 - Exit codes: 0 on success (results may be empty, and a stale index is a
   warning rather than a failure), 2 for usage, config, not-ready, or
