@@ -54,6 +54,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
 		...config.toolNames
+			.filter((name) => name.startsWith("search_datasource_") && name !== "search_datasource_documents")
+			.map(
+				(name) =>
+					`- **${name}**: search only the ${name.slice("search_datasource_".length).replace(/_/g, "-")} datasource connection, spawning no other datasource CLIs`,
+			),
+		...config.toolNames
 			.filter(
 				(name) =>
 					![
@@ -69,7 +75,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"check_memory",
 						"recommend_peer_targets",
 						"emit_autorag_results",
-					].includes(name),
+					].includes(name) && !name.startsWith("search_datasource_"),
 			)
 			.map((name) => `- **${name}**: caller-provided tool`),
 	].filter((line): line is string => line !== undefined);
