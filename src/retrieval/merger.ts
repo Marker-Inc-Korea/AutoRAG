@@ -1,3 +1,4 @@
+import { describeRetrievalError, groupUnsearchedSurfaces, type RetrievalSkip, retrievalSurfaceFor } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
 	RetrievalDiagnosticCode,
@@ -128,10 +129,12 @@ export class ParallelRetriever {
 	}
 
 	/**
-	 * Like {@link retrieve} but also returns path-opaque diagnostics for methods
-	 * that failed. Partial results from healthy methods are preserved; failed
-	 * methods yield an empty result set plus a diagnostic. The legacy
-	 * {@link retrieve} return shape is intentionally unchanged for compatibility.
+	 * Like {@link retrieve} but also returns diagnostics for methods that failed,
+	 * plus the retrieval surfaces those methods belong to. Partial results from
+	 * healthy methods are preserved; a failed method yields an empty result set,
+	 * a diagnostic quoting the underlying error, and an entry in `unsearched`
+	 * carrying that error verbatim. The legacy {@link retrieve} return shape is
+	 * intentionally unchanged for compatibility.
 	 */
 	async retrieveWithDiagnostics(
 		methods: RetrievalMethod[],
@@ -141,23 +144,28 @@ export class ParallelRetriever {
 		const results = new Map<string, RetrievalResult[]>();
 		for (const method of methods) results.set(method.describe().name, []);
 		const diagnostics: RetrievalDiagnostic[] = [];
+		const skips: RetrievalSkip[] = [];
 		await Promise.all(
 			methods.map(async (method) => {
-				const name = method.describe().name;
+				const descriptor = method.describe();
+				const name = descriptor.name;
 				try {
 					results.set(name, await method.retrieve(query, options));
-				} catch {
+				} catch (error) {
 					results.set(name, []);
+					const reason = describeRetrievalError(error);
+					skips.push({ method: name, surface: retrievalSurfaceFor(descriptor), reason });
 					diagnostics.push({
 						code: methodFailureCode(name),
 						severity: "warning",
-						message: `Retrieval method "${name}" failed and was skipped; partial results from other methods were used.`,
+						message: `Retrieval method "${name}" failed and was skipped; partial results from other methods were used: ${reason}`,
 						source: name,
+						reason,
 					});
 				}
 			}),
 		);
-		return { results, diagnostics };
+		return { results, diagnostics, unsearched: groupUnsearchedSurfaces(skips) };
 	}
 }
 

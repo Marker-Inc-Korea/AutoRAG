@@ -264,11 +264,13 @@ describe("DiscrawlSkill retrieval methods", () => {
 		expect(results[0]?.metadata.diagnostic).toBe("semantic-unavailable");
 	});
 
-	it("returns no results when the CLI fails, never throwing", async () => {
+	it("surfaces the CLI failure after the hybrid fallback also fails", async () => {
 		const stub = new StubClient();
-		stub.searchResult = { ok: false, reason: "nonzero-exit", stdout: "", stderr: "", code: 1 };
+		stub.searchResult = { ok: false, reason: "nonzero-exit", stdout: "", stderr: "discrawl: db locked", code: 1 };
 		const [hybrid] = new DiscrawlSkill({ client: asClient(stub) }).retrievalMethods();
-		await expect(hybrid?.retrieve("anything", { topK: 5 })).resolves.toEqual([]);
+		await expect(hybrid?.retrieve("anything", { topK: 5 })).rejects.toThrow(
+			"discord search --mode fts failed (nonzero-exit, exit code 1): discrawl: db locked",
+		);
 	});
 
 	it("skips the CLI entirely for an empty query", async () => {

@@ -89,6 +89,14 @@ describe("DiscrawlClient search", () => {
 		expect(result.stderr).toMatch(/^--json search --mode semantic --limit 7 q/);
 	});
 
+	it("treats a bare null payload as zero hits, not a failed search", async () => {
+		// The real discrawl CLI prints `null` with exit 0 when nothing matched.
+		const binaryPath = stubBinary("echo 'null'");
+		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.hits).toEqual([]);
+	});
+
 	it("reports invalid JSON as invalid-shape", async () => {
 		const binaryPath = stubBinary("echo 'not json'");
 		expect(await new DiscrawlClient({ binaryPath }).search("fts", "q")).toMatchObject({
@@ -128,11 +136,12 @@ describe("DiscrawlClient search", () => {
 		expect(await pending).toMatchObject({ ok: false, reason: "aborted" });
 	});
 
-	it("suppresses paths in stderr diagnostics", async () => {
+	it("reports stderr as discrawl wrote it, paths included", async () => {
 		const binaryPath = stubBinary("echo '/Users/secret/archive.db not found' >&2; exit 1");
 		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
 		expect(result.ok).toBe(false);
-		expect(result.stderr).not.toContain("/Users/secret");
+		// The operator debugging their own archive needs the real path.
+		expect(result.stderr).toContain("/Users/secret/archive.db not found");
 	});
 });
 

@@ -185,7 +185,7 @@ describe("KatokSkill index", () => {
 		expect(skill.polling().lastIndexedAt).toBeUndefined();
 	});
 
-	it("returns datasource-unavailable without throwing when a step throws", async () => {
+	it("returns datasource-unavailable without throwing when a step throws, quoting the error", async () => {
 		const stub = new StubSkillClient();
 		(stub as unknown as { doctor: () => Promise<never> }).doctor = async () => {
 			throw new Error("spawn ENOENT");
@@ -195,7 +195,27 @@ describe("KatokSkill index", () => {
 		const result = await skill.index();
 
 		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
-		expect(JSON.stringify(result)).not.toContain("spawn ENOENT");
+		// The underlying error reaches the operator verbatim, not a placeholder.
+		expect(JSON.stringify(result)).toContain("spawn ENOENT");
+		expect(JSON.stringify(result)).not.toContain("suppressed");
+	});
+
+	it("quotes path-bearing stderr from a failed sync instead of suppressing it", async () => {
+		const stub = new StubSkillClient();
+		stub.syncResult = {
+			ok: false,
+			reason: "nonzero-exit",
+			stdout: "",
+			stderr: "katok: database locked at /Users/me/Library/Application Support/katok/index.db",
+			code: 1,
+		};
+		const skill = new KatokSkill({ client: asClient(stub) });
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-index-failed" });
+		expect(JSON.stringify(result)).toContain("/Users/me/Library/Application Support/katok/index.db");
+		expect(JSON.stringify(result)).not.toContain("suppressed");
 	});
 });
 
@@ -234,9 +254,9 @@ describe("KatokSkill retrievalMethods", () => {
 		const skill = new KatokSkill({ client: asClient(stub) });
 
 		const [bm25] = skill.retrievalMethods();
-		const results = await bm25.retrieve("refund", {});
 
-		expect(results).toEqual([]);
+		// A failed CLI is reported, not hidden behind an empty result set.
+		await expect(bm25.retrieve("refund", {})).rejects.toThrow("katok: unavailable");
 	});
 });
 

@@ -1,7 +1,7 @@
 {
   "mode": "warm",
-  "root": "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e",
-  "startedAt": "2026-09-19T11:16:12.691Z",
+  "root": "/Volumes/SSD1/5/AutoRAG/scripts/live-e2e",
+  "startedAt": "2026-09-20T06:20:40.272Z",
   "commands": [
     {
       "command": [
@@ -9,7 +9,7 @@
         "scripts/live-e2e/runner.mjs",
         "verify-corpus",
         "--root",
-        "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e"
+        "/Volumes/SSD1/5/AutoRAG/scripts/live-e2e"
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
@@ -33,9 +33,9 @@
         "bun",
         "scripts/live-e2e/live-stack.mts",
         "--root",
-        "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e",
+        "/Volumes/SSD1/5/AutoRAG/scripts/live-e2e",
         "--workspace",
-        "/Volumes/SSD1/2/AutoRAG/.autorag-e2e/workspace",
+        "/Volumes/SSD1/5/AutoRAG/.autorag-e2e/workspace",
         "--mode",
         "warm"
       ],
@@ -55,7 +55,7 @@
       "status": "PASS",
       "reason": "absolute corpus source is readable",
       "evidence": {
-        "source": "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+        "source": "/Volumes/SSD1/5/AutoRAG/scripts/live-e2e/corpus/sample.txt",
         "identity": "local:corpus/sample.txt",
         "sourceAbsolute": true,
         "sourceReadable": true,
@@ -80,7 +80,7 @@
       "evidence": {
         "binary": "discrawl",
         "nativeStorePreserved": true,
-        "output": "annels / 6 guilds\n\n[discord-hybrid] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-hybrid] \"deploy failed\" -> 3 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n  2. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=0.5000\n  3. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.3333\n\n[discord-fts] \"meeting schedule\" -> 0 hit(s)\n\n[discord-fts] \"deploy failed\" -> 1 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n\n[discord-semantic] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-semantic] \"deploy failed\" -> 3 hit(s)\n  1. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=1.0000\n  2. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.5000\n  3. #B200을 차지하기 위한 로동 <Jeffrey Kim> 새로고침을 안했따\n     source=/discord/live/chunks/1534254501488234737 score=0.3333\n\nIncremental check: re-running index should sync 0 new messages.\n  second pass: 2928 new message(s)\n",
+        "output": "annels / 7 guilds\n\n[discord-hybrid] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-hybrid] \"deploy failed\" -> 3 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n  2. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=0.5000\n  3. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.3333\n\n[discord-fts] \"meeting schedule\" -> 0 hit(s)\n\n[discord-fts] \"deploy failed\" -> 1 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n\n[discord-semantic] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-semantic] \"deploy failed\" -> 3 hit(s)\n  1. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=1.0000\n  2. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.5000\n  3. #B200을 차지하기 위한 로동 <Jeffrey Kim> 새로고침을 안했따\n     source=/discord/live/chunks/1534254501488234737 score=0.3333\n\nIncremental check: re-running index should sync 0 new messages.\n  second pass: 2957 new message(s)\n",
         "nativeIdentity": true
       }
     },
@@ -121,7 +121,7 @@
       "evidence": {
         "binary": "mailcrawl",
         "nativeStorePreserved": true,
-        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789816596147-77e4e59caeed\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789816597810-e9c5e50aa945\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
+        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789885259306-b65852619a49\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789885260318-b1b92bfbcf93\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
         "nativeIdentity": true
       }
     },
@@ -142,7 +142,7 @@
   "preflight": {
     "verdict": "ready",
     "exitCode": 0,
-    "endpoint": "http://127.0.0.1:50382/",
+    "endpoint": "http://127.0.0.1:63020/",
     "openaiKeyPresent": false,
     "embedding": {
       "status": "ready",
@@ -182,13 +182,13 @@
     },
     "minsync": {
       "ok": true,
-      "synced": 1
+      "synced": 3
     }
   },
-  "cursorPath": "/Volumes/SSD1/2/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+  "cursorPath": "/Volumes/SSD1/5/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
   "hit": {
-    "source": "/Volumes/SSD1/2/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+    "source": "/Volumes/SSD1/5/AutoRAG/scripts/live-e2e/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
@@ -201,8 +201,48 @@
       "minsync": "ready"
     }
   },
+  "liteRetrieve": {
+    "healthy": {
+      "exitCode": 0,
+      "ok": true,
+      "stale": false,
+      "resultCount": 1,
+      "unsearched": [],
+      "sourceMatched": "/Volumes/SSD1/5/AutoRAG/scripts/live-e2e/corpus/sample.txt"
+    },
+    "embedderDown": {
+      "exitCode": 0,
+      "ok": true,
+      "unsearched": [
+        {
+          "surface": "minsync",
+          "methods": [
+            "minsync"
+          ],
+          "reason": "MinSyncQueryError: \u001b[2m2026-09-20T06:20:45.086131Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:45.482404Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:46.380646Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:47.706901Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\nError: embedding failed: retries exhausted after 4 attempts: TEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "minsync-unavailable",
+          "severity": "warning",
+          "message": "Retrieval method \"minsync\" failed and was skipped; partial results from other methods were used: MinSyncQueryError: \u001b[2m2026-09-20T06:20:45.086131Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:45.482404Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:46.380646Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:47.706901Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\nError: embedding failed: retries exhausted after 4 attempts: TEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n",
+          "source": "minsync",
+          "reason": "MinSyncQueryError: \u001b[2m2026-09-20T06:20:45.086131Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:45.482404Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:46.380646Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:47.706901Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\nError: embedding failed: retries exhausted after 4 attempts: TEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n"
+        }
+      ],
+      "skippedSurface": "minsync",
+      "skippedMethods": [
+        "minsync"
+      ],
+      "reasonVerbatim": "MinSyncQueryError: \u001b[2m2026-09-20T06:20:45.086131Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:45.482404Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:46.380646Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n\u001b[2m2026-09-20T06:20:47.706901Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)\nError: embedding failed: retries exhausted after 4 attempts: TEI request failed: error sending request for url (http://127.0.0.1:9/embed)\n",
+      "humanWarningWithoutDebug": [
+        "warning: not searched: minsync (minsync): MinSyncQueryError: \u001b[2m2026-09-20T06:20:51.566006Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mTEI request failed: error sending request for url (http://127.0.0.1:9/embed)"
+      ]
+    }
+  },
   "embedding": {
-    "endpoint": "http://127.0.0.1:50382",
+    "endpoint": "http://127.0.0.1:63020",
     "model": "Qwen3-Embedding-0.6B-Q8_0.gguf",
     "profileId": "qwen3-embedding-0.6b",
     "dimension": 1024,
@@ -218,7 +258,7 @@
     "skip": 7,
     "fail": 0
   },
-  "finishedAt": "2026-09-19T11:16:40.328Z",
+  "finishedAt": "2026-09-20T06:21:02.614Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",

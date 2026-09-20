@@ -4,6 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
+import { datasourceCliError } from "../../errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
 import type { MailcrawlSearchClient } from "./client.ts";
 import type { MailcrawlSearchMode, MailcrawlSearchResult } from "./types.ts";
@@ -45,13 +46,13 @@ export class MailcrawlMethod implements RetrievalMethod {
 	}
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		if (!query.trim()) return [];
-		let result: MailcrawlSearchResult;
-		try {
-			result = await this.client.search(this.mode, query, { topK: options.topK, signal: options.signal });
-		} catch {
-			return [];
-		}
-		if (!result.ok) return [];
+		// mailcrawl failures reach the caller verbatim: the pipeline reports this
+		// datasource as unsearched with the CLI's own error text.
+		const result: MailcrawlSearchResult = await this.client.search(this.mode, query, {
+			topK: options.topK,
+			signal: options.signal,
+		});
+		if (!result.ok) throw datasourceCliError("mailcrawl", `search --mode ${this.mode}`, result);
 		return result.hits
 			.filter((hit) => {
 				if (this.account !== undefined && hit.accountId !== this.account) return false;
