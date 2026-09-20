@@ -372,6 +372,85 @@ process.stdout.write("x".repeat(64));
 		expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
 	});
 
+	describe("real katok 0.3.x output shapes", () => {
+		it("derives doctor readiness from archive.status", async () => {
+			writeFakeKatok();
+			const client = fakeClient({
+				KATOK_FAKE_OUTPUT: jsonEnv({
+					name: "katok",
+					command: "katok",
+					archive: { status: "present" },
+					freshness: { last_sync: { source: "macos", total_messages: 50254 } },
+				}),
+			});
+
+			const result = await client.doctor();
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.data.ready).toBe(true);
+			expect(JSON.stringify(result.data.metadata)).not.toContain('"archive"');
+		});
+
+		it("maps sync counters to synced/messageCount", async () => {
+			writeFakeKatok();
+			const client = fakeClient({
+				KATOK_FAKE_OUTPUT: jsonEnv({
+					inserted_messages: 5110,
+					updated_messages: 2,
+					total_messages: 50254,
+					chunks: 33200,
+					rebuilt_chats: 77,
+				}),
+			});
+
+			const result = await client.sync();
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.data.synced).toBe(true);
+			expect(result.data.messageCount).toBe(50254);
+			expect(result.data.metadata).toMatchObject({ chunks: 33200, rebuilt_chats: 77 });
+		});
+
+		it("maps real index counters to chunkCount", async () => {
+			writeFakeKatok();
+			const client = fakeClient({
+				KATOK_FAKE_OUTPUT: jsonEnv({
+					archive_revision: "abc",
+					candidate_chunks: 33200,
+					embedded_texts: 9373,
+					written_documents: 9373,
+					embedding_calls: 147,
+					reused_vectors: 0,
+					full: false,
+					dry_run: false,
+				}),
+			});
+
+			const result = await client.index();
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.data.chunkCount).toBe(33200);
+			expect(result.data.metadata).toMatchObject({ written_documents: 9373 });
+		});
+
+		it("treats the { ok: false } error envelope as a sync failure", async () => {
+			writeFakeKatok();
+			const client = fakeClient({
+				KATOK_FAKE_OUTPUT: jsonEnv({
+					ok: false,
+					error: { code: "command_failed", message: "fixture source requires a JSONL path" },
+				}),
+			});
+
+			const result = await client.sync();
+
+			expect(result).toMatchObject({ ok: false, reason: "invalid-shape" });
+		});
+	});
+
 	describe("paths and source opacity", () => {
 		it("never includes the binary path in any failure result", async () => {
 			const client = new KatokClient({ binaryPath, env: {} });

@@ -130,9 +130,12 @@ export class KatokClient {
 	/** Single retrieval pipeline: build env, spawn, parse-free raw result. */
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
 		const env = controlledEnv(this.options.env);
+		// katok's CLI only accepts `--data-dir`/`--config` as global options
+		// BEFORE the subcommand; appending them after `sync --json`-style args
+		// makes clap reject the invocation, so they must be prepended.
 		return spawnKatok({
 			options: this.options,
-			args: [...args, ...commonArgs(this.options)],
+			args: [...commonArgs(this.options), ...args],
 			env,
 			signal,
 		});
@@ -309,26 +312,48 @@ function asBoolean(value: unknown): boolean | undefined {
 }
 
 function normalizeDoctor(raw: Record<string, unknown>): KatokDoctorInfo | undefined {
-	const version = asString(raw.version);
-	const ready = asBoolean(raw.ready);
-	if (ready === undefined) return undefined;
-	const metadata = stripKnown(raw, new Set(["version", "ready"]));
-	return { ...(version !== undefined ? { version } : {}), ready, metadata };
+	// Legacy envelope: { version?, ready: boolean, ... }
+	const legacyReady = asBoolean(raw.ready);
+	if (legacyReady !== undefined) {
+		const version = asString(raw.version);
+		const metadata = stripKnown(raw, new Set(["version", "ready"]));
+		return { ...(version !== undefined ? { version } : {}), ready: legacyReady, metadata };
+	}
+	// Real katok 0.3.x: { name, command, archive: { status: "present" | ... }, ... }
+	const archiveStatus = asString(asRecord(raw.archive)?.status);
+	if (archiveStatus === undefined) return undefined;
+	return { ready: archiveStatus === "present", metadata: stripKnown(raw, new Set(["archive"])) };
 }
 
 function normalizeSync(raw: Record<string, unknown>): KatokSyncInfo | undefined {
-	const synced = asBoolean(raw.synced);
-	if (synced === undefined) return undefined;
-	const messageCount = asNumber(raw.messageCount);
-	const metadata = stripKnown(raw, new Set(["synced", "messageCount"]));
-	return { synced, ...(messageCount !== undefined ? { messageCount } : {}), metadata };
+	// Legacy envelope: { synced: boolean, messageCount?: number, ... }
+	const legacySynced = asBoolean(raw.synced);
+	if (legacySynced !== undefined) {
+		const messageCount = asNumber(raw.messageCount);
+		const metadata = stripKnown(raw, new Set(["synced", "messageCount"]));
+		return { synced: legacySynced, ...(messageCount !== undefined ? { messageCount } : {}), metadata };
+	}
+	// katok reports CLI-level failures as { ok: false, error: {...} } with exit 0.
+	if (raw.ok === false) return undefined;
+	// Real katok 0.3.x: { inserted_messages, updated_messages, total_messages, chunks, ... }
+	const total = asNumber(raw.total_messages);
+	const inserted = asNumber(raw.inserted_messages);
+	const updated = asNumber(raw.updated_messages);
+	if (total === undefined && inserted === undefined && updated === undefined) return undefined;
+	const messageCount = total ?? (inserted ?? 0) + (updated ?? 0);
+	const metadata = stripKnown(raw, new Set(["ok", "inserted_messages", "updated_messages", "total_messages"]));
+	return { synced: true, messageCount, metadata };
 }
 
 function normalizeIndex(raw: Record<string, unknown>): KatokIndexInfo | undefined {
-	const chunkCount = asNumber(raw.chunkCount);
-	if (chunkCount === undefined) return undefined;
+	// Legacy envelope: { chunkCount: number, ... }
+	const legacyChunkCount = asNumber(raw.chunkCount);
 	const metadata = stripKnown(raw, new Set(["chunkCount"]));
-	return { chunkCount, metadata };
+	if (legacyChunkCount !== undefined) return { chunkCount: legacyChunkCount, metadata };
+	// Real katok 0.3.x: { candidate_chunks, embedded_texts, written_documents, ... }
+	const chunkCount = asNumber(raw.candidate_chunks) ?? asNumber(raw.embedded_texts);
+	if (chunkCount === undefined) return undefined;
+	return { chunkCount, metadata: stripKnown(raw, new Set(["candidate_chunks", "embedded_texts"])) };
 }
 
 function normalizeHits(raw: unknown): readonly KatokSearchHit[] | undefined {

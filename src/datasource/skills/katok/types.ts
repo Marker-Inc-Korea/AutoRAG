@@ -31,7 +31,10 @@ export interface KatokOptions {
 
 export const DEFAULT_KATOK_BINARY = "katok";
 export const DEFAULT_KATOK_TIMEOUT_MS = 60_000;
-export const DEFAULT_KATOK_MAX_BUFFER_BYTES = 1_048_576;
+// `katok index --json` reports every written document (chunk id + path), so a
+// real archive's index output alone is multiple MB (9.4k documents ≈ 2.2 MB).
+// The cap exists to bound memory on hostile output, not to fit index reports.
+export const DEFAULT_KATOK_MAX_BUFFER_BYTES = 16 * 1_048_576;
 export const DEFAULT_KATOK_OPTIONS = {
 	binaryPath: DEFAULT_KATOK_BINARY,
 	timeoutMs: DEFAULT_KATOK_TIMEOUT_MS,
