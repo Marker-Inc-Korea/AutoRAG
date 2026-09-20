@@ -641,6 +641,35 @@ describe("MinSyncVectorMethod", () => {
 		);
 	});
 
+	it("gives each chunk of one parsed mirror its own evidence id", async () => {
+		// Several chunks of one document share MinSync's `path` (the parsed mirror).
+		// Keying evidence on that path alone gave every passage the same id, so the
+		// merger treated them as one duplicate and only the best chunk survived.
+		// MinSync's per-chunk `doc_id` is what keeps them distinct.
+		writeFakeMinSync(
+			JSON.stringify({
+				results: [
+					{ path: parsedOutput, score: 0.93, text: "First passage.", doc_id: "chunk-aaa" },
+					{ path: parsedOutput, score: 0.9, text: "Second passage.", doc_id: "chunk-bbb" },
+					{ path: parsedOutput, score: 0.88, text: "Third passage.", doc_id: "chunk-ccc" },
+				],
+			}),
+		);
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		const results = await method.retrieve("renewal cancellation", { topK: 5 });
+
+		expect(results).toHaveLength(3);
+		expect(new Set(results.map((result) => result.id)).size).toBe(3);
+		// They remain one document: the source path is shared.
+		expect(new Set(results.map((result) => result.source)).size).toBe(1);
+		expect(results.map((result) => result.content)).toEqual(["First passage.", "Second passage.", "Third passage."]);
+	});
+
 	it("serializes parallel retrievals that share one MinSync workspace", async () => {
 		// MinSync allows a single operation per workspace: a second concurrent
 		// operation fails with "another sync is in progress". AutoRAG registers the

@@ -130,6 +130,19 @@ const SEARCH_TOOLS = [
 	JIKJI_FIND_TOOL_NAME,
 ] as const;
 
+/**
+ * Safety ceiling on merged evidence when the caller names no `topK`.
+ *
+ * The merged fan-out is bounded by what the methods themselves returned (each
+ * method caps its own fetch), so this only exists to stop a pathological
+ * registry from producing an unbounded list. It is deliberately far above a
+ * realistic fan-out: a live 16-method run over a personal corpus returned ~112
+ * chunks (~26k tokens), which every current model holds comfortably, and
+ * truncating below that silently hid evidence the librarian had already paid to
+ * retrieve.
+ */
+const MERGED_EVIDENCE_CEILING = 500;
+
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
 	readonly immediate?: boolean;
@@ -1922,7 +1935,7 @@ export class AutoRAGAgent {
 		return {
 			results: this.rerankWithMemory(
 				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
 			),
 			diagnostics,
 		};
@@ -1962,7 +1975,7 @@ export class AutoRAGAgent {
 		return {
 			results: this.rerankWithMemory(
 				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
 			),
 			diagnostics,
 		};
