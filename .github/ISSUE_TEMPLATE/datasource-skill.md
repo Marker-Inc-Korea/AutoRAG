@@ -4,6 +4,8 @@ description: Track a new AutoRAG datasource skill
 labels: ["datasource-skill", "integration"]
 ---
 
+Related: [Agent task template](./agent-task.md) for implementation work that is not a datasource skill, and the [PR template](../PULL_REQUEST_TEMPLATE.md) for the pull request itself.
+
 ## Datasource
 
 Name:
