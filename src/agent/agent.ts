@@ -1200,7 +1200,7 @@ export class AutoRAGAgent {
 		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 100 }).catch(() => undefined),
+				: this.findJikji(query, { topK: 30 }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
@@ -1725,8 +1725,13 @@ export class AutoRAGAgent {
 		};
 		const diagnostics: JikjiDiagnostic[] = [];
 		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
-		for (const sourcePath of this.searchPaths) {
-			const result: JikjiFindResult = await this.jikjiClient.find(sourcePath, query, findOpts);
+		const searchResults = await Promise.all(
+			this.searchPaths.map(async (sourcePath) => {
+				const result: JikjiFindResult = await this.jikjiClient!.find(sourcePath, query, findOpts);
+				return { sourcePath, result };
+			}),
+		);
+		for (const { sourcePath, result } of searchResults) {
 			if (result.ok) {
 				okPacks.push({ pack: result.answerPack, root: sourcePath });
 			} else {

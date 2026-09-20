@@ -28,6 +28,16 @@ function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
+function parseNextRead(value: unknown): JikjiNextRead | undefined {
+	if (typeof value === "string" && NEXT_READ_VALUES.has(value)) {
+		return value as JikjiNextRead;
+	}
+	if (isRecord(value) && typeof value.kind === "string" && NEXT_READ_VALUES.has(value.kind)) {
+		return value.kind as JikjiNextRead;
+	}
+	return undefined;
+}
+
 /**
  * Strict-parse and validate a `jikji find --json` answer-pack from raw stdout.
  *
@@ -57,15 +67,17 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 	const candidates: JikjiCandidate[] = [];
 	for (const entry of candidatesRaw) {
 		if (!isRecord(entry)) return undefined;
-		if (typeof entry.path !== "string") return undefined;
-		if (typeof entry.next_read !== "string" || !NEXT_READ_VALUES.has(entry.next_read)) return undefined;
+		const path = typeof entry.path === "string" ? entry.path : typeof entry.p === "string" ? entry.p : undefined;
+		if (path === undefined) return undefined;
+		const nextRead = parseNextRead(entry.next_read);
+		if (nextRead === undefined) return undefined;
 		if (entry.label !== undefined && typeof entry.label !== "string") return undefined;
-		if (entry.score !== undefined && typeof entry.score !== "number") return undefined;
+		const score = typeof entry.score === "number" ? entry.score : typeof entry.s === "number" ? entry.s : undefined;
 		const candidate: JikjiCandidate = {
-			path: entry.path,
-			nextRead: entry.next_read as JikjiNextRead,
+			path,
+			nextRead,
 			...(entry.label !== undefined ? { label: entry.label } : {}),
-			...(entry.score !== undefined ? { score: entry.score } : {}),
+			...(score !== undefined ? { score } : {}),
 		};
 		candidates.push(candidate);
 	}
@@ -75,9 +87,11 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 	const evidencePack: JikjiEvidence[] = [];
 	for (const entry of evidenceRaw) {
 		if (!isRecord(entry)) return undefined;
-		if (typeof entry.path !== "string") return undefined;
-		if (typeof entry.next_read !== "string" || !NEXT_READ_VALUES.has(entry.next_read)) return undefined;
-		evidencePack.push({ path: entry.path, nextRead: entry.next_read as JikjiNextRead });
+		const path = typeof entry.path === "string" ? entry.path : typeof entry.p === "string" ? entry.p : undefined;
+		if (path === undefined) return undefined;
+		const nextRead = parseNextRead(entry.next_read);
+		if (nextRead === undefined) return undefined;
+		evidencePack.push({ path, nextRead });
 	}
 
 	const handoffAction = parsed.handoff_action;
