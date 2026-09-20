@@ -89,12 +89,21 @@ Indexing without retrieval is a failed run. Probe retrieval per datasource with
 the model-free path, then once end to end:
 
 ```bash
-autorag lite retrieve "a word that certainly appears" --top-k 3 --json
-autorag lite retrieve "recent topic" --tags discord --top-k 3 --json
-autorag lite retrieve "recent mail subject" --scope "/mailcrawl/**" --top-k 3 --json
+autorag lite retrieve "a word that certainly appears" --top-k 3 --json --debug
+autorag lite retrieve "recent topic" --tags discord --top-k 3 --json --debug
+autorag lite retrieve "recent mail subject" --scope "/mailcrawl/**" --top-k 3 --json --debug
 autorag search "summarize the collection" --top-k 3 --json --debug
 ```
 
+- **Always pass `--debug` when diagnosing.** Plain `--json` omits the
+  `diagnostics` array, so a run that silently dropped a whole retrieval method
+  still looks like `"ok": true` with fewer results. `--debug` is what surfaces
+  `minsync-unavailable` or `retrieval-method-failed` for the skipped method.
+- A method missing from the returned `method` values means that method
+  contributed nothing. During a full MinSync re-sync this is expected: the
+  store is being rebuilt, `minsync status` reports `NotSynced`, and local-file
+  hits stay absent until it finishes. Confirm with `minsync status` before
+  treating it as a failure, and never kill a running sync to "fix" it.
 - `lite retrieve` needs no model, so it isolates retrieval from model failures.
 - Use `--tags` / `--scope` to force one datasource; they can only narrow
   trusted access, never grant it. A datasource absent from `datasourceAccess`
