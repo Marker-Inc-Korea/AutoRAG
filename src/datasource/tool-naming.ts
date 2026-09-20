@@ -12,6 +12,9 @@ export function datasourceSearchToolName(datasourceId: string): string {
 	const sanitized = datasourceId
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "_")
-		.replace(/^_+|_+$/g, "");
+		// Split trims: the alternation `/^_+|_+$/g` trips polynomial-ReDoS
+		// static analysis (CodeQL js/polynomial-redos) on `_`-heavy input.
+		.replace(/^_+/, "")
+		.replace(/_+$/, "");
 	return `search_datasource_${sanitized}`;
 }
