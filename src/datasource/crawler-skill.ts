@@ -5,6 +5,7 @@ import type {
 	RetrievalResult,
 } from "../retrieval/types.ts";
 import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
+import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
 import type {
 	DatasourceDiagnosticCode,
@@ -233,13 +234,10 @@ class CrawlerLexicalMethod implements RetrievalMethod {
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const trimmed = query.trim();
 		if (trimmed.length === 0) return [];
-		let result: CrawlerSearchResult;
-		try {
-			result = await this.options.client.search(trimmed, options);
-		} catch {
-			return [];
-		}
-		if (!result.ok) return [];
+		// Crawler failures reach the caller verbatim: the pipeline reports this
+		// datasource as unsearched with the CLI's own error text.
+		const result: CrawlerSearchResult = await this.options.client.search(trimmed, options);
+		if (!result.ok) throw datasourceCliError(this.options.datasourceId, "search", result);
 		const mapped: RetrievalResult[] = [];
 		for (const hit of result.hits) {
 			const source = datasourceSourcePath(this.options.datasourceId, this.options.instanceId, hit.id);

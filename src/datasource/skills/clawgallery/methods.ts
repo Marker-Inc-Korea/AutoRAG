@@ -4,6 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
+import { datasourceCliError } from "../../errors.ts";
 import { matchesDatasourceScope } from "../../scope.ts";
 import { CLAWGALLERY_DATASOURCE_ID, clawGallerySourcePath } from "./paths.ts";
 import type {
@@ -57,13 +58,13 @@ export class ClawGalleryMethod implements RetrievalMethod {
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const trimmed = query.trim();
 		if (!trimmed) return [];
-		let result: ClawGallerySearchResult;
-		try {
-			result = await this.client.search(this.mode, trimmed, { ...options, topK: options.topK ?? 20 });
-		} catch {
-			return [];
-		}
-		if (!result.ok) return [];
+		// clawgallery failures reach the caller verbatim: the pipeline reports this
+		// datasource as unsearched with the CLI's own error text.
+		const result: ClawGallerySearchResult = await this.client.search(this.mode, trimmed, {
+			...options,
+			topK: options.topK ?? 20,
+		});
+		if (!result.ok) throw datasourceCliError(CLAWGALLERY_DATASOURCE_ID, `search --mode ${this.mode}`, result);
 		const out: RetrievalResult[] = [];
 		for (const hit of result.hits) {
 			const source = clawGallerySourcePath(this.instanceId, hit.imageId);

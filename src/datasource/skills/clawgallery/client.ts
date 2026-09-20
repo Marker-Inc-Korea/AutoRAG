@@ -259,9 +259,17 @@ function failure(result: ProcessResult, reason?: ClawGalleryFailure["reason"]): 
 		ok: false,
 		reason: reason ?? result.reason ?? "nonzero-exit",
 		stdout: result.stdout,
-		stderr: result.stderr.includes("/")
-			? "clawgallery command failed; path details suppressed"
-			: result.stderr.trim().slice(0, 500),
+		stderr: boundDiagnosticText(result.stderr),
 		code: result.code,
 	};
+}
+
+/**
+ * clawgallery stderr reaches the operator as the CLI wrote it — paths
+ * included, because that is what makes a failed search debuggable. Only the
+ * length is bounded so one runaway process cannot flood a diagnostic.
+ */
+function boundDiagnosticText(value: string): string {
+	if (value.length === 0) return "";
+	return value.trim().slice(0, 4000);
 }

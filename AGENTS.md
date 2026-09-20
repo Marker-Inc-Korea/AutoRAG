@@ -104,8 +104,9 @@ at `scripts/manual-qa/run-qa-katok-live.ts`.
 Evidence is written to `.omo/evidence/task-6-fixed-live-e2e-environment.json`
 for this task and to the runner result directory (by default
 `.omo/evidence/live-core-cold/result.json` or `live-core-warm/result.json`).
-Evidence and diagnostics redact tokens, passwords, credentials, and absolute
-home paths. Assert local retrieval sources are absolute and readable; assert
+Diagnostics and error text are reported verbatim, including absolute paths and
+CLI stderr: an operator searching their own machine must be able to debug a
+failure from the output alone. Assert local retrieval sources are absolute and readable; assert
 native datasource results retain source-native identities such as
 `/kakao/<instance>/chunks/<chunk>` (opaque slash-hierarchical, not an OS path),
 not a retired `kakao:<chat>/<sender>/<chunk>` scheme and not a fake OS-absolute
@@ -264,16 +265,30 @@ Contributors and agents adding a CLI-backed datasource must:
   must not be passed to `bash`/`cat`;
 - provide a datasource skill with native command examples and `<binary>
   --help` guidance so the agent understands which CLI backs the datasource;
-- keep failure isolation per CLI (missing binary degrades to diagnostics,
-  never crashes the search loop);
+- keep failure isolation per CLI (one failing CLI degrades to diagnostics and
+  an `unsearched` entry, never crashes the search loop);
+- report failures verbatim: a retrieval method that cannot answer throws the
+  CLI's own error (failure kind, exit status, stderr) instead of returning an
+  empty result set, so the caller sees why the source was not searched;
 - retain small, focused guards where they matter (e.g. discrawl's user-token
   rejection);
 - add focused tests and live manual QA where a local store exists before
   registering the datasource.
 
 Secrets must remain external: store only environment-variable, keychain, or
-profile references and never tokens, cookies, passwords, or refresh
-credentials in files, logs, argv snapshots, or diagnostics.
+profile references, and never persist tokens, cookies, passwords, or refresh
+credentials into config files or argv snapshots. This is about where
+credentials live, not about muting errors — diagnostics and CLI stderr are
+never scrubbed or suppressed on the way to the operator.
+
+## Error Transparency
+
+Errors belong to the user, not to the agent. Retrieval, refresh, and datasource
+failures surface the underlying text verbatim — exit codes, stderr, and real
+filesystem paths included — in diagnostics, `unsearched` reasons, and CLI
+output. Do not classify a failure into a fixed enum in place of its message, do
+not replace it with a generic sentence, and do not drop it because it contains a
+path. Bounding runaway output by length is fine; suppressing content is not.
 
 ## Why AutoRAG Exists
 

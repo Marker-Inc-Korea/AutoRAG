@@ -360,12 +360,9 @@ export class ConnectorLexicalMethod implements RetrievalMethod {
 		const trimmed = query.trim();
 		if (trimmed.length === 0) return [];
 		const topK = options.topK ?? DEFAULT_TOP_K;
-		let hits: ReturnType<DatasourceChunkStore["search"]>;
-		try {
-			hits = this.options.store.search(trimmed, Math.max(topK * 3, topK));
-		} catch {
-			return [];
-		}
+		// A store failure is surfaced, not swallowed: the retrieval pipeline reports
+		// this datasource as unsearched and quotes the error.
+		const hits = this.options.store.search(trimmed, Math.max(topK * 3, topK));
 		const { skillName, instanceId } = this.options;
 		const mapped: RetrievalResult[] = [];
 		for (const { chunk, score } of hits) {
