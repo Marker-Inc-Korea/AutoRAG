@@ -361,6 +361,35 @@ describe("ParallelRetriever", () => {
 		);
 	});
 
+	it("retrieveWithDiagnostics reports one entry per surface even when methods fail differently", async () => {
+		const retriever = new ParallelRetriever();
+		const locked = (name: string, message: string): RetrievalMethod => ({
+			describe: () => ({
+				name,
+				type: "hybrid" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+			}),
+			retrieve: vi.fn().mockRejectedValue(new Error(message)),
+		});
+
+		const { unsearched } = await retriever.retrieveWithDiagnostics(
+			[
+				locked("minsync", "another sync is in progress for /tmp/workspace"),
+				locked("hybrid", "dimension mismatch at /tmp/index"),
+			],
+			"test",
+			{},
+		);
+
+		expect(unsearched).toHaveLength(1);
+		expect(unsearched[0]?.surface).toBe("minsync");
+		expect(unsearched[0]?.methods).toEqual(["hybrid", "minsync"]);
+		expect(unsearched[0]?.reason).toContain("another sync is in progress for /tmp/workspace");
+		expect(unsearched[0]?.reason).toContain("dimension mismatch at /tmp/index");
+	});
+
 	it("retrieveWithDiagnostics reports no unsearched surfaces when all methods succeed", async () => {
 		const retriever = new ParallelRetriever();
 		const { unsearched } = await retriever.retrieveWithDiagnostics(

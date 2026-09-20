@@ -57,18 +57,26 @@ export function describeRetrievalError(error: unknown): string {
 }
 
 /**
- * Collapse per-method skips into one entry per (surface, reason) pair, so two
- * methods that failed the same way report once. Deterministically ordered.
+ * Collapse per-method skips into one entry per surface. Distinct failures on
+ * the same surface are all preserved verbatim in the reason; methods are
+ * merged. Deterministically ordered.
  */
 export function groupUnsearchedSurfaces(skips: readonly RetrievalSkip[]): RetrievalUnsearchedSurface[] {
-	const groups = new Map<string, { surface: string; reason: string; methods: Set<string> }>();
+	const groups = new Map<string, { readonly reasons: Set<string>; readonly methods: Set<string> }>();
 	for (const skip of skips) {
-		const key = `${skip.surface}\u0000${skip.reason}`;
-		const existing = groups.get(key);
-		if (existing) existing.methods.add(skip.method);
-		else groups.set(key, { surface: skip.surface, reason: skip.reason, methods: new Set([skip.method]) });
+		const existing = groups.get(skip.surface);
+		if (existing) {
+			existing.methods.add(skip.method);
+			existing.reasons.add(skip.reason);
+		} else {
+			groups.set(skip.surface, { reasons: new Set([skip.reason]), methods: new Set([skip.method]) });
+		}
 	}
-	return Array.from(groups.values())
-		.map(({ surface, reason, methods }) => ({ surface, methods: Array.from(methods).sort(), reason }))
+	return Array.from(groups.entries())
+		.map(([surface, { reasons, methods }]) => ({
+			surface,
+			methods: Array.from(methods).sort(),
+			reason: Array.from(reasons).sort().join("; "),
+		}))
 		.sort((a, b) => a.surface.localeCompare(b.surface) || a.reason.localeCompare(b.reason));
 }
