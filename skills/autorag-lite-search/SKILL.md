@@ -91,22 +91,19 @@ The JSON envelope is:
   {
     "surface": "minsync",
     "methods": ["hybrid", "minsync"],
-    "reason": "sync-in-progress",
-    "action": "retry",
-    "message": "Local MinSync sources were not searched because an index sync holds the workspace lock."
+    "reason": "MinSyncQueryError: another sync is in progress (/Users/me/corpus/.autorag/minsync)"
   }
   ```
 
-  `surface` is `minsync` for local files or the datasource id (never a real
-  path). `reason` is one of `sync-in-progress`, `binary-missing`,
-  `embedder-unavailable`, `identity-mismatch`, `method-error`; `action` is one
-  of `retry`, `install-binary`, `prepare-embedder`, `reindex`. Both are stable
-  values — branch on them instead of on `message`.
-- `diagnostics` are path-opaque: `source` is a component or method label,
-  never a real filesystem path. Codes include `retrieval-method-failed` and
-  `minsync-unavailable`, and a skipped method also carries the same `reason`
-  and `action`. A degraded component produces a diagnostic, not a failed run;
-  check `diagnostics` before trusting an empty result set.
+  `surface` is `minsync` for local files or the datasource id. `reason` is the
+  underlying failure verbatim — the CLI's failure kind, exit status, stderr and
+  real paths — so the operator can act on it directly. Report it to the user as
+  given; do not summarize it away.
+- `diagnostics` carry the same transparency: `source` is the component or
+  method label, `reason` repeats the underlying error, and codes include
+  `retrieval-method-failed` and `minsync-unavailable`. A degraded component
+  produces a diagnostic, not a failed run; check `diagnostics` before trusting
+  an empty result set.
 - `--debug` adds diagnostic detail to human output without printing real
   filesystem paths.
 - Exit codes: 0 on success (results may be empty, and a stale index is a
@@ -192,6 +189,6 @@ autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json
 - Never expose provider credentials or authentication payloads.
 - Treat report `source` values as opaque: persist them verbatim, never read
   the filesystem through them.
-- Keep diagnostics path-opaque; do not reconstruct or disclose real paths
-  from them.
+- Surface diagnostics and `unsearched` reasons to the user as written; they
+  carry the real error text needed to fix the failure.
 - Prefer `--json` whenever another agent consumes the output.

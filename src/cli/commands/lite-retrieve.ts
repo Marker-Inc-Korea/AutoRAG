@@ -27,19 +27,17 @@ export interface LiteRetrieveEnvelope {
 	 * the workspace lock, leaving only datasource hits.
 	 */
 	readonly unsearched: readonly LiteRetrieveUnsearched[];
+
 	readonly diagnostics: readonly LiteRetrieveDiagnostic[];
 }
 
 export interface LiteRetrieveUnsearched {
-	/** Surface label: "minsync" for local files, or the datasource id. Never a real path. */
+	/** Surface label: "minsync" for local files, or the datasource id. */
 	readonly surface: string;
 	/** Retrieval method names on this surface that did not run. */
 	readonly methods: readonly string[];
-	/** Stable cause, e.g. `sync-in-progress`, `binary-missing`, `identity-mismatch`. */
+	/** The underlying failure verbatim, including CLI stderr and exit status. */
 	readonly reason: string;
-	/** Stable recovery hint, e.g. `retry`, `install-binary`, `reindex`. */
-	readonly action: string;
-	readonly message: string;
 }
 
 export interface LiteRetrieveResultItem {
@@ -144,7 +142,7 @@ function parseTopK(
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostic projection (path-opaque by contract)
+// Diagnostic projection
 // ---------------------------------------------------------------------------
 
 function diagnosticProjection(d: {
@@ -173,18 +171,12 @@ function diagnosticProjection(d: {
 }
 
 /**
- * Project the retrieval pipeline's skip report into the envelope. Surfaces and
- * reasons are already path-opaque labels, so the projection is a copy that pins
- * the field order of the machine contract.
+ * Project the retrieval pipeline's skip report into the envelope. The reason is
+ * copied through untouched so the caller sees the failure the retrieval method
+ * actually hit.
  */
 function unsearchedProjection(entry: RetrievalUnsearchedSurface): LiteRetrieveUnsearched {
-	return {
-		surface: entry.surface,
-		methods: [...entry.methods],
-		reason: entry.reason,
-		action: entry.action,
-		message: entry.message,
-	};
+	return { surface: entry.surface, methods: [...entry.methods], reason: entry.reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -211,9 +203,7 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	}
 	// Skipped surfaces are reported without --debug: the results below are partial.
 	for (const entry of okEnvelope.unsearched) {
-		lines.push(
-			`warning: not searched: ${entry.surface} (reason: ${entry.reason}, action: ${entry.action}) - ${entry.message}`,
-		);
+		lines.push(`warning: not searched: ${entry.surface} (${entry.methods.join(", ")}): ${entry.reason}`);
 	}
 	if (okEnvelope.results.length === 0) {
 		lines.push("retrieve: no results");
@@ -275,15 +265,20 @@ function staleSourceDiagnostics(
 }
 
 /**
- * Report a MinSync refresh that did not complete during `--refresh`. The refresh
- * reason is never echoed: it can carry real paths, and diagnostics stay opaque.
+ * Report a MinSync refresh that did not complete during `--refresh`, quoting the
+ * reason MinSync gave so the caller can act on it instead of re-running blind.
  */
 function refreshFailureDiagnostic(result: AutoRAGRefreshResult): LiteRetrieveDiagnostic | undefined {
 	if (result.minsync === undefined || result.minsync.ok !== false) return undefined;
+	const reason = result.minsync.reason;
 	return {
 		code: "minsync-unavailable",
 		severity: "warning",
-		message: "MinSync was not refreshed during this run; run `autorag lite refresh` for details.",
+		message:
+			reason === undefined
+				? "MinSync was not refreshed during this run."
+				: `MinSync was not refreshed during this run: ${reason}`,
+		...(reason === undefined ? {} : { reason }),
 	};
 }
 

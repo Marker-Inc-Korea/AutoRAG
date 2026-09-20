@@ -585,23 +585,20 @@ function toFailure(result: ProcessResult, reason?: DiscrawlFailure["reason"]): D
 		ok: false,
 		reason: reason ?? result.reason ?? "nonzero-exit",
 		stdout: result.stdout,
-		stderr: sanitizeDiagnosticText(result.stderr),
+		stderr: boundDiagnosticText(result.stderr),
 		code: result.code,
 		...(result.violatingKey !== undefined ? { violatingKey: result.violatingKey } : {}),
 	};
 }
 
 /**
- * discrawl stderr can contain absolute archive/cache paths. Those are dropped
- * from diagnostics while the exit code is preserved, matching the katok and
- * rclone connectors.
+ * discrawl stderr reaches the operator as the CLI wrote it — paths included,
+ * because that is what makes a failed archive lookup debuggable. Only the length
+ * is bounded so one runaway process cannot flood a diagnostic.
  */
-function sanitizeDiagnosticText(value: string): string {
+function boundDiagnosticText(value: string): string {
 	if (value.length === 0) return "";
-	if (value.includes("/") || value.includes("\\")) {
-		return "discrawl command failed; path details suppressed";
-	}
-	return value.trim().slice(0, 500);
+	return value.trim().slice(0, 4000);
 }
 
 function ok<T>(data: T, result: ProcessResult): DiscrawlOk<T> {

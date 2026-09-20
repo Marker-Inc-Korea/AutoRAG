@@ -9,12 +9,10 @@ export {
 	virtualPathScopeToRegExp,
 } from "./scope.ts";
 export {
-	classifyRetrievalSkip,
+	describeRetrievalError,
 	groupUnsearchedSurfaces,
 	MINSYNC_SURFACE,
 	type RetrievalSkip,
-	retrievalSkipAction,
-	retrievalSkipMessage,
 	retrievalSurfaceFor,
 } from "./skip.ts";
 export type {
@@ -26,8 +24,6 @@ export type {
 	RetrievalMethodDescriptor,
 	RetrievalOptions,
 	RetrievalResult,
-	RetrievalSkipAction,
-	RetrievalSkipReason,
 	RetrievalUnsearchedSurface,
 	RetrievalWithDiagnostics,
 } from "./types.ts";

@@ -234,9 +234,9 @@ describe("KatokSkill retrievalMethods", () => {
 		const skill = new KatokSkill({ client: asClient(stub) });
 
 		const [bm25] = skill.retrievalMethods();
-		const results = await bm25.retrieve("refund", {});
 
-		expect(results).toEqual([]);
+		// A failed CLI is reported, not hidden behind an empty result set.
+		await expect(bm25.retrieve("refund", {})).rejects.toThrow("katok: unavailable");
 	});
 });
 

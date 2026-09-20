@@ -18,7 +18,7 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
-import { MINSYNC_SURFACE, retrievalSkipAction, retrievalSkipMessage } from "./skip.ts";
+import { MINSYNC_SURFACE } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
 	RetrievalMethod,
@@ -219,6 +219,7 @@ export class RetrievalEngine {
 			});
 		if (emptyMinsync.length === 0) return unchanged;
 
+		const reason = "the minsync binary could not be resolved; MinSync retrieval did not run";
 		const alreadyReported = unsearched.some((entry) => entry.surface === MINSYNC_SURFACE);
 		return {
 			diagnostics: [
@@ -228,22 +229,12 @@ export class RetrievalEngine {
 					severity: "warning" as const,
 					message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
 					source: "minsync" as const,
-					reason: "binary-missing" as const,
-					action: retrievalSkipAction("binary-missing"),
+					reason,
 				},
 			],
 			unsearched: alreadyReported
 				? unsearched
-				: [
-						...unsearched,
-						{
-							surface: MINSYNC_SURFACE,
-							methods: Array.from(new Set(emptyMinsync)).sort(),
-							reason: "binary-missing" as const,
-							action: retrievalSkipAction("binary-missing"),
-							message: retrievalSkipMessage(MINSYNC_SURFACE, "binary-missing"),
-						},
-					],
+				: [...unsearched, { surface: MINSYNC_SURFACE, methods: Array.from(new Set(emptyMinsync)).sort(), reason }],
 		};
 	}
 

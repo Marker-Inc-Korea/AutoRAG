@@ -143,19 +143,16 @@ describe("autorag lite lifecycle dispatch", () => {
 					{
 						code: "minsync-unavailable",
 						severity: "warning",
-						message: 'Retrieval method "minsync" failed and was skipped.',
+						message: 'Retrieval method "minsync" failed and was skipped: Error: another sync is in progress',
 						source: "minsync",
-						reason: "sync-in-progress",
-						action: "retry",
+						reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
 					},
 				],
 				unsearched: [
 					{
 						surface: "minsync",
 						methods: ["hybrid", "minsync"],
-						reason: "sync-in-progress",
-						action: "retry",
-						message: "Local MinSync sources were not searched because an index sync holds the workspace lock.",
+						reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
 					},
 				],
 			});
@@ -164,23 +161,27 @@ describe("autorag lite lifecycle dispatch", () => {
 			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
 			expect(envelope.ok).toBe(true);
 			expect(envelope.results).toHaveLength(1);
+			// The underlying error reaches the caller verbatim, real paths included.
 			expect(envelope.unsearched).toEqual([
 				{
 					surface: "minsync",
 					methods: ["hybrid", "minsync"],
-					reason: "sync-in-progress",
-					action: "retry",
-					message: "Local MinSync sources were not searched because an index sync holds the workspace lock.",
+					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
 				},
 			]);
 			expect(envelope.diagnostics).toContainEqual(
-				expect.objectContaining({ code: "minsync-unavailable", reason: "sync-in-progress", action: "retry" }),
+				expect.objectContaining({
+					code: "minsync-unavailable",
+					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+				}),
 			);
 
 			// Human output warns about the skip without --debug.
 			expect(await main(["lite", "retrieve", "query", "--config", configPath])).toBe(0);
 			const human = String(out.mock.calls.at(-1)?.[0] ?? "");
-			expect(human).toContain("warning: not searched: minsync (reason: sync-in-progress, action: retry)");
+			expect(human).toContain(
+				"warning: not searched: minsync (hybrid, minsync): Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

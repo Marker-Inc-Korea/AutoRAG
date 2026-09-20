@@ -248,7 +248,9 @@ describe("ParallelRetriever", () => {
 		const diag = diagnostics.find((d) => d.source === "bad");
 		expect(diag?.code).toBe("retrieval-method-failed");
 		expect(diag?.severity).toBe("warning");
-		expect(diag?.message).not.toContain("/Users/");
+		// The failure reaches the operator as thrown, paths included.
+		expect(diag?.message).toContain("spawn /Users/x/bin/thing ENOENT");
+		expect(diag?.reason).toContain("spawn /Users/x/bin/thing ENOENT");
 		expect(diagnostics.some((d) => d.source === "good")).toBe(false);
 	});
 
@@ -266,7 +268,7 @@ describe("ParallelRetriever", () => {
 		};
 		const { diagnostics } = await retriever.retrieveWithDiagnostics([minsync], "test", {});
 		expect(diagnostics[0]?.code).toBe("minsync-unavailable");
-		expect(diagnostics[0]?.message).not.toContain("/opt/");
+		expect(diagnostics[0]?.message).toContain("spawn /opt/minsync ENOENT");
 	});
 
 	it("retrieveWithDiagnostics reports no diagnostics when all methods succeed", async () => {
@@ -279,7 +281,7 @@ describe("ParallelRetriever", () => {
 		expect(diagnostics).toEqual([]);
 	});
 
-	it("retrieveWithDiagnostics reports which surfaces were not searched, with a stable reason", async () => {
+	it("retrieveWithDiagnostics reports which surfaces were not searched, quoting the error", async () => {
 		const retriever = new ParallelRetriever();
 		const locked = (name: string): RetrievalMethod => ({
 			describe: () => ({
@@ -310,17 +312,11 @@ describe("ParallelRetriever", () => {
 		);
 
 		expect(results.get("discord-hybrid")).toHaveLength(1);
-		expect(unsearched).toEqual([
-			{
-				surface: "minsync",
-				methods: ["hybrid", "minsync"],
-				reason: "sync-in-progress",
-				action: "retry",
-				message: "Local MinSync sources were not searched because an index sync holds the workspace lock.",
-			},
-		]);
-		expect(JSON.stringify(unsearched)).not.toContain("/Users/");
-		expect(diagnostics.every((d) => d.reason === "sync-in-progress" && d.action === "retry")).toBe(true);
+		expect(unsearched).toHaveLength(1);
+		expect(unsearched[0]).toMatchObject({ surface: "minsync", methods: ["hybrid", "minsync"] });
+		// The workspace path in the error is kept: that is what makes the lock debuggable.
+		expect(unsearched[0]?.reason).toContain("another sync is in progress for /Users/x/workspace");
+		expect(diagnostics.every((d) => d.reason === unsearched[0]?.reason)).toBe(true);
 	});
 
 	it("retrieveWithDiagnostics reports a failing datasource under its datasource id", async () => {
@@ -337,18 +333,12 @@ describe("ParallelRetriever", () => {
 			retrieve: vi.fn().mockRejectedValue(new Error("spawn discrawl ENOENT")),
 		};
 		const { unsearched } = await retriever.retrieveWithDiagnostics([datasource], "test", {});
-		expect(unsearched).toEqual([
-			{
-				surface: "discord",
-				methods: ["discord-hybrid"],
-				reason: "binary-missing",
-				action: "install-binary",
-				message: 'Retrieval surface "discord" was not searched because the retrieval binary is not installed.',
-			},
-		]);
+		expect(unsearched).toHaveLength(1);
+		expect(unsearched[0]).toMatchObject({ surface: "discord", methods: ["discord-hybrid"] });
+		expect(unsearched[0]?.reason).toContain("spawn discrawl ENOENT");
 	});
 
-	it("retrieveWithDiagnostics maps an embedding identity failure to a reindex action", async () => {
+	it("retrieveWithDiagnostics keeps the embedding dimension mismatch text intact", async () => {
 		const retriever = new ParallelRetriever();
 		const minsync: RetrievalMethod = {
 			describe: () => ({
@@ -365,7 +355,10 @@ describe("ParallelRetriever", () => {
 				),
 		};
 		const { unsearched } = await retriever.retrieveWithDiagnostics([minsync], "test", {});
-		expect(unsearched[0]).toMatchObject({ surface: "minsync", reason: "identity-mismatch", action: "reindex" });
+		expect(unsearched[0]?.surface).toBe("minsync");
+		expect(unsearched[0]?.reason).toContain(
+			"configured embedder dimension 1024 does not match indexed dimension 768; reindex required.",
+		);
 	});
 
 	it("retrieveWithDiagnostics reports no unsearched surfaces when all methods succeed", async () => {

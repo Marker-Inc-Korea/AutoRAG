@@ -4,6 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
+import { datasourceCliError } from "../../errors.ts";
 import { katokSourcePath } from "./paths.ts";
 import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
 
@@ -106,13 +107,10 @@ async function retrieveKatok(
 	const topK = options.topK ?? DEFAULT_TOP_K;
 	const searchOptions: KatokSearchOptions = { topK, signal: options.signal };
 
-	let result: KatokSearchResult;
-	try {
-		result = await client.search(mode, trimmed, searchOptions);
-	} catch {
-		return [];
-	}
-	if (!result.ok) return [];
+	// katok failures reach the caller verbatim: the pipeline reports this
+	// datasource as unsearched with the CLI's own error text.
+	const result: KatokSearchResult = await client.search(mode, trimmed, searchOptions);
+	if (!result.ok) throw datasourceCliError(KAKAO_DATASOURCE_ID, `search --mode ${mode}`, result);
 
 	const mapped: RetrievalResult[] = [];
 	for (const hit of result.hits) {

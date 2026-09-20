@@ -406,17 +406,14 @@ describe("RetrievalEngine", () => {
 				severity: "warning",
 				message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
 				source: "minsync",
-				reason: "binary-missing",
-				action: "install-binary",
+				reason: "the minsync binary could not be resolved; MinSync retrieval did not run",
 			});
 			// The same skip is reported as an unsearched surface, not only as a method failure.
 			expect(unsearched).toEqual([
 				{
 					surface: "minsync",
 					methods: ["minsync"],
-					reason: "binary-missing",
-					action: "install-binary",
-					message: "Local MinSync sources were not searched because the retrieval binary is not installed.",
+					reason: "the minsync binary could not be resolved; MinSync retrieval did not run",
 				},
 			]);
 		});

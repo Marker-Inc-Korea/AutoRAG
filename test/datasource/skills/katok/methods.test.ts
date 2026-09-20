@@ -192,25 +192,22 @@ describe("KatokBm25Method retrieve", () => {
 		expect(results).toHaveLength(3);
 	});
 
-	it("returns [] without throwing when search yields a failed result", async () => {
+	it("surfaces the katok failure instead of answering with an empty result set", async () => {
 		const client = makeClient();
 		client.failReason = "binary-missing";
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
-		const results = await method.retrieve("refund", { topK: 5 });
-
-		expect(results).toEqual([]);
+		// The CLI's own words reach the retrieval pipeline, which reports kakao as unsearched.
+		await expect(method.retrieve("refund", { topK: 5 })).rejects.toThrow("katok: unavailable");
 		expect(client.calls).toHaveLength(1);
 	});
 
-	it("returns [] without throwing when search throws", async () => {
+	it("propagates a thrown client error unchanged", async () => {
 		const client = makeClient();
 		client.throwError = new Error("spawn ENOENT");
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
-		const results = await method.retrieve("refund", { topK: 5 });
-
-		expect(results).toEqual([]);
+		await expect(method.retrieve("refund", { topK: 5 })).rejects.toThrow("spawn ENOENT");
 	});
 });
 
@@ -231,13 +228,13 @@ describe("KatokSemanticMethod retrieve", () => {
 		});
 	});
 
-	it("returns [] without throwing on a failed semantic search", async () => {
+	it("surfaces a failed semantic search with the CLI reason", async () => {
 		const client = makeClient();
 		client.failReason = "nonzero-exit";
 		const method = new KatokSemanticMethod({ client, instanceId: INSTANCE_ID });
 
-		const results = await method.retrieve("chargeback", {});
-
-		expect(results).toEqual([]);
+		await expect(method.retrieve("chargeback", {})).rejects.toThrow(
+			"kakao search --mode semantic failed (nonzero-exit",
+		);
 	});
 });

@@ -128,11 +128,12 @@ describe("DiscrawlClient search", () => {
 		expect(await pending).toMatchObject({ ok: false, reason: "aborted" });
 	});
 
-	it("suppresses paths in stderr diagnostics", async () => {
+	it("reports stderr as discrawl wrote it, paths included", async () => {
 		const binaryPath = stubBinary("echo '/Users/secret/archive.db not found' >&2; exit 1");
 		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
 		expect(result.ok).toBe(false);
-		expect(result.stderr).not.toContain("/Users/secret");
+		// The operator debugging their own archive needs the real path.
+		expect(result.stderr).toContain("/Users/secret/archive.db not found");
 	});
 });
 
