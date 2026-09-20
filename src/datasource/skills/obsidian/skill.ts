@@ -1,5 +1,6 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
@@ -192,10 +193,13 @@ export class ObsidianSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence} via \`qmd update\` (+ \`qmd embed\` for semantic). You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
+				`Call the dedicated \`${datasourceSearchToolName(OBSIDIAN_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
 				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"",
+				"## Native CLI",
+				'This datasource runs the external `qmd` CLI with a workspace-managed config and cache (`QMD_CONFIG_DIR` / `XDG_CACHE_HOME` under the workspace). A bare `qmd` call through `bash` searches qmd\'s default global index instead of this vault, so prefer the dedicated tool; call qmd directly only if you first mirror that managed environment (e.g. `qmd search "<query>" --json -n 20 -c <collection>`).',
 				"",
 				"## Output rules",
 				"Datasource source identifiers such as `/obsidian/<instance>/chunks/<id>` are stable. Result metadata may carry real vault file paths; cite them when helpful. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.",

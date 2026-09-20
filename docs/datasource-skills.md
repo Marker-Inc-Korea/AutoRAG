@@ -412,10 +412,12 @@ and mirror available for query-time search. `include`, `exclude`,
 server configuration; model/tool arguments cannot change them.
 
 Before searching, the agent loads the datasource skill with
-`load_datasource_skill`, then calls `search_datasource_documents` using a
-natural-language query and, when useful, a narrowing scope such as
-`/company-onedrive/work/**`. It must not invoke `rclone` itself or request
-credentials.
+`load_datasource_skill`, then calls the connection's dedicated
+`search_datasource_<name>` tool using a natural-language query and, when
+useful, a narrowing scope such as `/company-onedrive/work/**`. Read-only
+`rclone` inspection (e.g. `rclone lsl <remote>:<path>`) may run directly
+through bash per the skill's Native CLI section; credentials stay with
+rclone and the agent never requests them.
 
 ## Chat channel selection
 

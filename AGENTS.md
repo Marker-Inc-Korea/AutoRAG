@@ -316,6 +316,7 @@ The librarian agent owns the full workflow:
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_documents` | Search authorized external datasource skills | Server-bound datasource retrieval |
+| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per authorized connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs | Targeted single-datasource retrieval |
 | `check_memory` | Query past search outcomes | Adaptive strategy |
 | `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |

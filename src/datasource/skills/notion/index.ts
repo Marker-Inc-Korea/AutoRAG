@@ -28,6 +28,7 @@ const NOTION_DEFINITION = {
 	manifestDescription:
 		"Search archived Notion pages, databases, titles, properties, and block text. Use for questions about Notion docs and wikis.",
 	backendName: "notcrawl",
+	nativeCliSearchExample: 'notcrawl search "<query>" --limit 20',
 } as const;
 
 export class NotcrawlClient extends CrawlerCliClient {

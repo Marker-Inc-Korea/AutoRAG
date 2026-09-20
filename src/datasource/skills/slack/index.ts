@@ -48,6 +48,7 @@ const SLACK_DEFINITION = {
 	manifestDescription:
 		"Search archived Slack messages across workspaces, channels, users, and threads. Use for questions about Slack conversations, decisions, or who said what.",
 	backendName: "slacrawl",
+	nativeCliSearchExample: 'slacrawl --json search -workspace <teamId> --limit 20 "<query>"',
 } as const;
 
 export class SlacrawlClient extends CrawlerCliClient {
