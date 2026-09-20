@@ -9,12 +9,14 @@
  * it stable: lowercase, non-alphanumerics collapse to `_`, edges trimmed.
  */
 export function datasourceSearchToolName(datasourceId: string): string {
-	const sanitized = datasourceId
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "_")
-		// Split trims: the alternation `/^_+|_+$/g` trips polynomial-ReDoS
-		// static analysis (CodeQL js/polynomial-redos) on `_`-heavy input.
-		.replace(/^_+/, "")
-		.replace(/_+$/, "");
+	const collapsed = datasourceId.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+	// Trim edge underscores with explicit loops instead of an anchored
+	// alternation: `/^_+|_+$/g` trips polynomial-ReDoS static analysis
+	// (CodeQL js/polynomial-redos) on `_`-heavy input.
+	let start = 0;
+	let end = collapsed.length;
+	while (start < end && collapsed[start] === "_") start += 1;
+	while (end > start && collapsed[end - 1] === "_") end -= 1;
+	const sanitized = collapsed.slice(start, end);
 	return `search_datasource_${sanitized}`;
 }
