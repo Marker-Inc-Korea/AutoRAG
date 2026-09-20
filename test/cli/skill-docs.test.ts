@@ -249,4 +249,24 @@ describe("parent-agent skill docs", () => {
 		expect(setup).toMatch(/`xlsx`, `xls`, `hwp`, `hwpx`/);
 		expect(setup).toMatch(/Do not present legacy\n`\.doc` as a supported parsed format/s);
 	});
+
+	it("documents Qwen3 native embeddings as default and demotes Ollama/EmbeddingGemma to legacy/QA", () => {
+		for (const name of ["autorag-setup", "autorag-lite-setup"] as const) {
+			const skill = readSkill(name);
+			expect(skill).toMatch(/Qwen3/);
+			expect(skill).toMatch(/1024/);
+			expect(skill).not.toMatch(/MinSync's default embedder is local EmbeddingGemma/);
+			expect(skill).toMatch(/legacy Ollama\/TEI/i);
+		}
+	});
+
+	it("documents autorag setup command and CLI-backed credential ownership", () => {
+		const setup = readSkill("autorag-setup");
+		expect(setup).toContain("autorag setup");
+		expect(setup).toMatch(/CLI-backed datasources own their own/);
+		expect(setup).toMatch(/Discord uses discrawl's local\s+desktop wiretap archive/);
+		const mainSkill = readSkill("autorag");
+		expect(mainSkill).toContain("autorag setup --format json");
+		expect(mainSkill).toMatch(/`setup`.*`gateway`/);
+	});
 });
