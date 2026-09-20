@@ -195,7 +195,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
-			const chunkId = `minsync:${entry.virtualPath}:${basename(hit.path)}`;
+			// `path` is the parsed mirror, shared by every chunk of one document, so
+			// MinSync's per-chunk `docId` is what keeps distinct passages distinct.
+			// Falling back to the mirror basename would give them one identity and the
+			// merger would treat them as the same evidence.
+			const chunkDiscriminator = hit.docId ?? basename(hit.path);
+			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
 			results.push({
 				id: chunkId,
 				content: hit.text,

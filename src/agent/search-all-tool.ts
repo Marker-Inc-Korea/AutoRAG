@@ -7,7 +7,12 @@ export const SEARCH_ALL_DOCUMENTS_TOOL_NAME = "search_all_documents";
 
 const searchAllSchema = Type.Object({
 	query: Type.String({ description: "Query to search across all configured retrieval methods." }),
-	topK: Type.Optional(Type.Integer({ description: "Maximum number of merged results to return. Defaults to 50." })),
+	topK: Type.Optional(
+		Type.Integer({
+			description:
+				"Upper bound on returned evidence. Omit it to receive every distinct chunk the methods found; set it only when you deliberately want a shorter list.",
+		}),
+	),
 	scope: Type.Optional(Type.String({ description: "Optional opaque virtual-path scope, e.g. /docs or /docs/**." })),
 });
 
@@ -48,7 +53,7 @@ export function createSearchAllDocumentsTool(
 		name: SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 		label: "Search All Documents",
 		description:
-			"Search across all configured retrieval methods (posix, MinSync, datasources) and return merged, deduplicated results. Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.",
+			"Search across all configured retrieval methods (posix, MinSync, datasources) and return every distinct chunk they found, with only pure duplicates removed. This is the exhaustive retrieval surface: one call can return many candidates, including several passages of the same document, so judge the evidence yourself rather than assuming it was pre-filtered. Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchAllSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchAllDocumentsDetails>> {
 			const query = params.query.trim();
