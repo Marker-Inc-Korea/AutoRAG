@@ -210,7 +210,7 @@ describe("LazykatokSkill index", () => {
 			ok: false,
 			reason: "nonzero-exit",
 			stdout: "",
-			stderr: "lazykatok: database locked at /Users/me/Library/~/Library/Application Support/katok/index.db",
+			stderr: "lazykatok: database locked at /Users/me/Library/Application Support/katok/index.db",
 			code: 1,
 		};
 		const skill = new LazykatokSkill({ client: asClient(stub) });
@@ -218,7 +218,7 @@ describe("LazykatokSkill index", () => {
 		const result = await skill.index();
 
 		expect(result).toMatchObject({ ok: false, code: "datasource-index-failed" });
-		expect(JSON.stringify(result)).toContain("/Users/me/Library/~/Library/Application Support/katok/index.db");
+		expect(JSON.stringify(result)).toContain("/Users/me/Library/Application Support/katok/index.db");
 		expect(JSON.stringify(result)).not.toContain("suppressed");
 	});
 });

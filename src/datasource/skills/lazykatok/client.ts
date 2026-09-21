@@ -226,7 +226,7 @@ function commandFor(binaryPath: string | undefined): string {
  * `--data-dir` and `--config` as global options; there is no `--workspace`
  * or global `--source` flag. AutoRAG never forces an AutoRAG-managed
  * workspace on lazykatok — without explicit options, lazykatok uses its own default
- * store (e.g. `~/Library/~/Library/Application Support/katok` on macOS).
+ * store (e.g. `~/Library/Application Support/katok` on macOS).
  */
 function commonArgs(options: LazykatokOptions): readonly string[] {
 	const args: string[] = [];

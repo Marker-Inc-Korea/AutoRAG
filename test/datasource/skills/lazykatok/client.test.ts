@@ -246,7 +246,7 @@ process.exit(2);
 
 	it("preserves CLI stderr verbatim on failure, paths included", async () => {
 		writeFakeLazykatok();
-		const stderrText = "lazykatok: index busy at /Users/me/Library/~/Library/Application Support/katok/index.db";
+		const stderrText = "lazykatok: index busy at /Users/me/Library/Application Support/katok/index.db";
 		writeFileSync(
 			binaryPath,
 			`#!/usr/bin/env node
