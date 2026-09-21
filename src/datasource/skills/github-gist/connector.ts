@@ -128,20 +128,26 @@ export class GitHubGistConnector implements DatasourceConnector {
 		// 3. Fetch full content only for new/changed gists.
 		const documents: ConnectorDocument[] = [];
 		const warnings: string[] = [];
+		const failedIds = new Set<string>();
 		for (const id of changedIds) {
 			const result = await httpJson(`${baseUrl}/gists/${encodeURIComponent(id)}`, request);
 			if (!result.ok) {
 				warnings.push(`gist ${id} fetch failed: ${result.message}`);
+				failedIds.add(id);
 				continue;
 			}
 			const document = toDocument(asRecord(result.json));
 			if (document !== undefined) documents.push(document);
 		}
 
-		// 4. Persist the new cursor only when the list completed.
+		// 4. Persist the new cursor only when the list completed. Gists whose full
+		// fetch failed stay out of the cursor so the next sync retries them
+		// instead of silently skipping the content until the gist changes again.
 		this.saveState({
 			version: STATE_VERSION,
-			gists: Object.fromEntries([...listed].map(([id, e]) => [id, e.updatedAt])),
+			gists: Object.fromEntries(
+				[...listed].filter(([id]) => !failedIds.has(id)).map(([id, e]) => [id, e.updatedAt]),
+			),
 		});
 
 		const changed = changedIds.length > 0 || deletedDocIds.length > 0;

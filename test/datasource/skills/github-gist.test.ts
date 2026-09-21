@@ -201,6 +201,40 @@ describe("GitHubGistConnector", () => {
 		expect(result.deletedDocIds).toEqual(["g1"]);
 	});
 
+	it("retries a gist whose content fetch failed instead of skipping it forever", async () => {
+		const workspace = tempWorkspace();
+		const statePath = join(workspace, "state.json");
+		// First sync: the list succeeds but g1's full fetch fails with a 502.
+		const failing = createMockFetch([
+			{ match: "/gists/g1", status: 502 },
+			{ match: "/gists/g2", json: GIST_FULL.g2 },
+			{ match: "/gists?", json: GIST_LIST },
+		]);
+		const first = await new GitHubGistConnector({
+			...NO_TOKEN,
+			token: "t",
+			fetchImpl: failing.fetchImpl,
+			statePath,
+		}).fetch();
+		expect(first).toMatchObject({ ok: true, changed: true });
+		if (!first.ok) return;
+		expect(first.documents.map((d) => d.docId)).toEqual(["g2"]);
+		expect(first.warnings?.some((warning) => warning.includes("gist g1 fetch failed"))).toBe(true);
+
+		// Second sync: g1 must be re-fetched because it never entered the cursor.
+		const second = listMock(GIST_LIST);
+		const retry = await new GitHubGistConnector({
+			...NO_TOKEN,
+			token: "t",
+			fetchImpl: second.fetchImpl,
+			statePath,
+		}).fetch();
+		expect(retry).toMatchObject({ ok: true, changed: true });
+		if (!retry.ok) return;
+		expect(retry.documents.map((d) => d.docId)).toEqual(["g1"]);
+		expect(second.requests.some((r) => r.includes("/gists/g1"))).toBe(true);
+	});
+
 	it("maps 401 to auth and 403 to rate-limited", async () => {
 		const authMock = createMockFetch([{ match: "/gists", status: 401 }]);
 		expect(
