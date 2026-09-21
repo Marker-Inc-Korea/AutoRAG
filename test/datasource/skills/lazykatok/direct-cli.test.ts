@@ -2,14 +2,14 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { KatokClient } from "../../../../src/datasource/skills/katok/client.ts";
-import { KatokBm25Method } from "../../../../src/datasource/skills/katok/methods.ts";
+import { LazykatokClient } from "../../../../src/datasource/skills/lazykatok/client.ts";
+import { LazykatokBm25Method } from "../../../../src/datasource/skills/lazykatok/methods.ts";
 import type {
-	KatokHit,
-	KatokSearchMode,
-	KatokSearchOptions,
-	KatokSearchResult,
-} from "../../../../src/datasource/skills/katok/types.ts";
+	LazykatokHit,
+	LazykatokSearchMode,
+	LazykatokSearchOptions,
+	LazykatokSearchResult,
+} from "../../../../src/datasource/skills/lazykatok/types.ts";
 
 let root: string;
 let binDir: string;
@@ -17,10 +17,10 @@ let binaryPath: string;
 let logPath: string;
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), "autorag-katok-direct-"));
+	root = mkdtempSync(join(tmpdir(), "autorag-lazykatok-direct-"));
 	binDir = join(root, "bin");
-	binaryPath = join(binDir, "katok");
-	logPath = join(root, "katok-calls.jsonl");
+	binaryPath = join(binDir, "lazykatok");
+	logPath = join(root, "lazykatok-calls.jsonl");
 	mkdirSync(binDir, { recursive: true });
 });
 
@@ -28,13 +28,13 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeKatok(): void {
+function writeFakeLazykatok(): void {
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2) }) + "\\n");
-process.stdout.write(process.env.KATOK_FAKE_OUTPUT ?? "{}");
+process.stdout.write(process.env.LAZYKATOK_FAKE_OUTPUT ?? "{}");
 `,
 	);
 	chmodSync(binaryPath, 0o755);
@@ -50,18 +50,22 @@ function loggedArgs(): readonly (readonly string[])[] {
 }
 
 class StubSearchClient {
-	public hits: readonly KatokHit[] = [];
-	async search(_mode: KatokSearchMode, _query: string, _options?: KatokSearchOptions): Promise<KatokSearchResult> {
+	public hits: readonly LazykatokHit[] = [];
+	async search(
+		_mode: LazykatokSearchMode,
+		_query: string,
+		_options?: LazykatokSearchOptions,
+	): Promise<LazykatokSearchResult> {
 		return { ok: true, hits: this.hits, data: { hits: this.hits }, stdout: "", stderr: "", code: 0 };
 	}
 }
 
-describe("KatokClient direct CLI execution", () => {
-	it("invokes katok without forcing an AutoRAG-managed --workspace", async () => {
-		writeFakeKatok();
-		const client = new KatokClient({
+describe("LazykatokClient direct CLI execution", () => {
+	it("invokes lazykatok without forcing an AutoRAG-managed --workspace", async () => {
+		writeFakeLazykatok();
+		const client = new LazykatokClient({
 			binaryPath,
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: JSON.stringify({ ready: true }) },
+			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, LAZYKATOK_FAKE_OUTPUT: JSON.stringify({ ready: true }) },
 		});
 
 		const result = await client.doctor();
@@ -71,8 +75,8 @@ describe("KatokClient direct CLI execution", () => {
 		expect(args).not.toContain("--workspace");
 	});
 
-	it("parses real katok search arrays with chat identity fields", async () => {
-		writeFakeKatok();
+	it("parses real lazykatok search arrays with chat identity fields", async () => {
+		writeFakeLazykatok();
 		const realHits = [
 			{
 				ranker: "keyword",
@@ -89,9 +93,9 @@ describe("KatokClient direct CLI execution", () => {
 				child_chunk_ids: [],
 			},
 		];
-		const client = new KatokClient({
+		const client = new LazykatokClient({
 			binaryPath,
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: JSON.stringify(realHits) },
+			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, LAZYKATOK_FAKE_OUTPUT: JSON.stringify(realHits) },
 		});
 
 		const result = await client.search("keyword", "류동현", { topK: 1 });
@@ -112,7 +116,7 @@ describe("KatokClient direct CLI execution", () => {
 	});
 });
 
-describe("Katok retrieval source identity", () => {
+describe("Lazykatok retrieval source identity", () => {
 	it("labels kakao hits with the canonical slash datasource source", async () => {
 		const client = new StubSearchClient();
 		client.hits = [
@@ -127,7 +131,7 @@ describe("Katok retrieval source identity", () => {
 				},
 			},
 		];
-		const method = new KatokBm25Method({ client, instanceId: "default" });
+		const method = new LazykatokBm25Method({ client, instanceId: "default" });
 
 		const results = await method.retrieve("류동현", { topK: 5 });
 

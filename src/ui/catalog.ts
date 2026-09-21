@@ -51,10 +51,10 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 	{
 		type: "kakao",
 		title: "KakaoTalk",
-		summary: "Search a local KakaoTalk archive through the katok CLI.",
+		summary: "Search a local KakaoTalk archive through the lazykatok CLI.",
 		defaultTags: ["kakaotalk", "personal", "pii"],
-		binaryName: "katok",
-		installHint: "Install the katok CLI, then connect. AutoRAG never reads KakaoTalk databases itself.",
+		binaryName: "lazykatok",
+		installHint: "Install the lazykatok CLI, then connect. AutoRAG never reads KakaoTalk databases itself.",
 		fields: [INSTANCE, BINARY],
 	},
 	{

@@ -61,6 +61,6 @@ describe("datasource UI catalog", () => {
 		expect(getDatasourceType("clawgallery")?.fields.some((field) => field.key === "connector.path")).toBe(true);
 		expect(getDatasourceType("rss")?.fields.some((field) => field.key === "connector.feeds")).toBe(true);
 		expect(getDatasourceType("obsidian")?.fields.some((field) => field.key === "connector.vaultPath")).toBe(true);
-		expect(getDatasourceType("kakao")?.binaryName).toBe("katok");
+		expect(getDatasourceType("kakao")?.binaryName).toBe("lazykatok");
 	});
 });

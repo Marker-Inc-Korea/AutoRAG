@@ -2,33 +2,33 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type {
-	KatokChunk,
-	KatokChunkResult,
-	KatokContext,
-	KatokContextResult,
-	KatokDoctorInfo,
-	KatokDoctorResult,
-	KatokFailure,
-	KatokIndexInfo,
-	KatokIndexResult,
-	KatokOk,
-	KatokOptions,
-	KatokParentResult,
-	KatokSearchHit,
-	KatokSearchMode,
-	KatokSearchOptions,
-	KatokSearchResult,
-	KatokSyncInfo,
-	KatokSyncResult,
+	LazykatokChunk,
+	LazykatokChunkResult,
+	LazykatokContext,
+	LazykatokContextResult,
+	LazykatokDoctorInfo,
+	LazykatokDoctorResult,
+	LazykatokFailure,
+	LazykatokIndexInfo,
+	LazykatokIndexResult,
+	LazykatokOk,
+	LazykatokOptions,
+	LazykatokParentResult,
+	LazykatokSearchHit,
+	LazykatokSearchMode,
+	LazykatokSearchOptions,
+	LazykatokSearchResult,
+	LazykatokSyncInfo,
+	LazykatokSyncResult,
 } from "./types.ts";
-import { DEFAULT_KATOK_BINARY, DEFAULT_KATOK_MAX_BUFFER_BYTES, DEFAULT_KATOK_TIMEOUT_MS } from "./types.ts";
+import { DEFAULT_LAZYKATOK_BINARY, DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES, DEFAULT_LAZYKATOK_TIMEOUT_MS } from "./types.ts";
 
 const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
-const SAFE_KATOK_ENV_PREFIX = "KATOK_";
+const SAFE_LAZYKATOK_ENV_PREFIX = "LAZYKATOK_";
 
 type ProcessResult = {
 	readonly ok: boolean;
-	readonly reason?: KatokFailure["reason"];
+	readonly reason?: LazykatokFailure["reason"];
 	readonly stdout: string;
 	readonly stderr: string;
 	readonly code: number | null;
@@ -41,7 +41,7 @@ type BufferState = {
 };
 
 type SpawnRequest = {
-	readonly options: KatokOptions;
+	readonly options: LazykatokOptions;
 	readonly args: readonly string[];
 	readonly env: NodeJS.ProcessEnv;
 	readonly signal?: AbortSignal;
@@ -49,20 +49,20 @@ type SpawnRequest = {
 };
 
 /**
- * Thin external `katok` CLI wrapper. Every method spawns the `katok` binary as
+ * Thin external `lazykatok` CLI wrapper. Every method spawns the `lazykatok` binary as
  * a child process, parses JSON from stdout, and returns a discriminated ok/fail
  * union. No method throws for expected failures (missing binary, CLI nonzero
  * exit, timeout, oversized output, or invalid JSON). The client never opens the
  * KakaoTalk database directly.
  */
-export class KatokClient {
-	private readonly options: KatokOptions;
+export class LazykatokClient {
+	private readonly options: LazykatokOptions;
 
-	constructor(options: KatokOptions = {}) {
+	constructor(options: LazykatokOptions = {}) {
 		this.options = options;
 	}
 
-	async doctor(signal?: AbortSignal): Promise<KatokDoctorResult> {
+	async doctor(signal?: AbortSignal): Promise<LazykatokDoctorResult> {
 		const result = await this.run(["doctor", "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
@@ -71,7 +71,7 @@ export class KatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	async sync(signal?: AbortSignal): Promise<KatokSyncResult> {
+	async sync(signal?: AbortSignal): Promise<LazykatokSyncResult> {
 		const result = await this.run(["sync", "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
@@ -80,7 +80,7 @@ export class KatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	async index(signal?: AbortSignal): Promise<KatokIndexResult> {
+	async index(signal?: AbortSignal): Promise<LazykatokIndexResult> {
 		const result = await this.run(["index", "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
@@ -89,7 +89,11 @@ export class KatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	async search(mode: KatokSearchMode, query: string, options?: KatokSearchOptions): Promise<KatokSearchResult> {
+	async search(
+		mode: LazykatokSearchMode,
+		query: string,
+		options?: LazykatokSearchOptions,
+	): Promise<LazykatokSearchResult> {
 		const args = ["search", mode, query, "--json"];
 		if (options?.topK !== undefined) args.push("--limit", String(options.topK));
 		const result = await this.run(args, options?.signal);
@@ -100,7 +104,7 @@ export class KatokClient {
 		return hits === undefined ? toFailure(result, "invalid-shape") : searchOk(hits, result);
 	}
 
-	async chunkGet(chunkId: string, signal?: AbortSignal): Promise<KatokChunkResult> {
+	async chunkGet(chunkId: string, signal?: AbortSignal): Promise<LazykatokChunkResult> {
 		const result = await this.run(["chunk", "get", chunkId, "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
@@ -109,7 +113,7 @@ export class KatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	async context(chunkId: string, signal?: AbortSignal): Promise<KatokContextResult> {
+	async context(chunkId: string, signal?: AbortSignal): Promise<LazykatokContextResult> {
 		const result = await this.run(["context", chunkId, "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
@@ -118,7 +122,7 @@ export class KatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	async parent(chunkId: string, signal?: AbortSignal): Promise<KatokParentResult> {
+	async parent(chunkId: string, signal?: AbortSignal): Promise<LazykatokParentResult> {
 		const result = await this.run(["parent", chunkId, "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
@@ -130,7 +134,7 @@ export class KatokClient {
 	/** Single retrieval pipeline: build env, spawn, parse-free raw result. */
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
 		const env = controlledEnv(this.options.env);
-		return spawnKatok({
+		return spawnLazykatok({
 			options: this.options,
 			args: [...args, ...commonArgs(this.options)],
 			env,
@@ -139,7 +143,7 @@ export class KatokClient {
 	}
 }
 
-function spawnKatok(request: SpawnRequest): Promise<ProcessResult> {
+function spawnLazykatok(request: SpawnRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const { options, args, env, signal } = request;
 		const portable = portableSpawnCommand(commandFor(options.binaryPath), args);
@@ -151,12 +155,12 @@ function spawnKatok(request: SpawnRequest): Promise<ProcessResult> {
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
-		let finalReason: KatokFailure["reason"] | undefined;
-		const maxBuffer = options.maxBufferBytes ?? DEFAULT_KATOK_MAX_BUFFER_BYTES;
+		let finalReason: LazykatokFailure["reason"] | undefined;
+		const maxBuffer = options.maxBufferBytes ?? DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES;
 		const timeout = setTimeout(() => {
 			finalReason = "timeout";
 			terminate(child);
-		}, options.timeoutMs ?? DEFAULT_KATOK_TIMEOUT_MS);
+		}, options.timeoutMs ?? DEFAULT_LAZYKATOK_TIMEOUT_MS);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
 			terminate(child);
@@ -208,17 +212,17 @@ function spawnKatok(request: SpawnRequest): Promise<ProcessResult> {
 }
 
 function commandFor(binaryPath: string | undefined): string {
-	return binaryPath === undefined ? DEFAULT_KATOK_BINARY : binaryPath;
+	return binaryPath === undefined ? DEFAULT_LAZYKATOK_BINARY : binaryPath;
 }
 
 /**
- * Flags common to every subcommand. katok's own CLI contract only exposes
+ * Flags common to every subcommand. lazykatok's own CLI contract only exposes
  * `--data-dir` and `--config` as global options; there is no `--workspace`
  * or global `--source` flag. AutoRAG never forces an AutoRAG-managed
- * workspace on katok — without explicit options, katok uses its own default
- * store (e.g. `~/Library/Application Support/katok` on macOS).
+ * workspace on lazykatok — without explicit options, lazykatok uses its own default
+ * store (e.g. `~/Library/~/Library/Application Support/katok` on macOS).
  */
-function commonArgs(options: KatokOptions): readonly string[] {
+function commonArgs(options: LazykatokOptions): readonly string[] {
 	const args: string[] = [];
 	if (options.workspacePath !== undefined) args.push("--data-dir", options.workspacePath);
 	if (options.configPath !== undefined) args.push("--config", options.configPath);
@@ -232,23 +236,23 @@ function commonArgs(options: KatokOptions): readonly string[] {
 function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(process.env)) {
-		if (value !== undefined && isAllowedKatokEnvKey(key)) env[key] = value;
+		if (value !== undefined && isAllowedLazykatokEnvKey(key)) env[key] = value;
 	}
 	for (const [key, value] of Object.entries(configuredEnv ?? {})) {
 		if (value === undefined) {
 			delete env[key];
-		} else if (isAllowedKatokEnvKey(key)) {
+		} else if (isAllowedLazykatokEnvKey(key)) {
 			env[key] = value;
 		}
 	}
 	return env;
 }
 
-function isAllowedKatokEnvKey(key: string): boolean {
-	return SAFE_INHERITED_ENV_KEYS.has(key) || key.startsWith(SAFE_KATOK_ENV_PREFIX);
+function isAllowedLazykatokEnvKey(key: string): boolean {
+	return SAFE_INHERITED_ENV_KEYS.has(key) || key.startsWith(SAFE_LAZYKATOK_ENV_PREFIX);
 }
 
-function searchOk(hits: readonly KatokSearchHit[], result: ProcessResult): KatokSearchResult {
+function searchOk(hits: readonly LazykatokSearchHit[], result: ProcessResult): LazykatokSearchResult {
 	return { ok: true, hits, data: { hits }, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 }
 function terminate(child: ChildProcess): void {
@@ -264,7 +268,9 @@ function terminate(child: ChildProcess): void {
 
 /** Path-opaque stderr replacement for spawn failures (the raw Node error leaks the binary path). */
 function describeSpawnFailure(reason: "binary-missing" | "spawn-error"): string {
-	return reason === "binary-missing" ? "the katok binary could not be found" : "the katok binary could not be started";
+	return reason === "binary-missing"
+		? "the lazykatok binary could not be found"
+		: "the lazykatok binary could not be started";
 }
 
 function appendBounded(state: BufferState, chunk: string, maxBytes: number): BufferState {
@@ -308,7 +314,7 @@ function asBoolean(value: unknown): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined;
 }
 
-function normalizeDoctor(raw: Record<string, unknown>): KatokDoctorInfo | undefined {
+function normalizeDoctor(raw: Record<string, unknown>): LazykatokDoctorInfo | undefined {
 	const version = asString(raw.version);
 	const ready = asBoolean(raw.ready);
 	if (ready === undefined) return undefined;
@@ -316,7 +322,7 @@ function normalizeDoctor(raw: Record<string, unknown>): KatokDoctorInfo | undefi
 	return { ...(version !== undefined ? { version } : {}), ready, metadata };
 }
 
-function normalizeSync(raw: Record<string, unknown>): KatokSyncInfo | undefined {
+function normalizeSync(raw: Record<string, unknown>): LazykatokSyncInfo | undefined {
 	const synced = asBoolean(raw.synced);
 	if (synced === undefined) return undefined;
 	const messageCount = asNumber(raw.messageCount);
@@ -324,18 +330,18 @@ function normalizeSync(raw: Record<string, unknown>): KatokSyncInfo | undefined 
 	return { synced, ...(messageCount !== undefined ? { messageCount } : {}), metadata };
 }
 
-function normalizeIndex(raw: Record<string, unknown>): KatokIndexInfo | undefined {
+function normalizeIndex(raw: Record<string, unknown>): LazykatokIndexInfo | undefined {
 	const chunkCount = asNumber(raw.chunkCount);
 	if (chunkCount === undefined) return undefined;
 	const metadata = stripKnown(raw, new Set(["chunkCount"]));
 	return { chunkCount, metadata };
 }
 
-function normalizeHits(raw: unknown): readonly KatokSearchHit[] | undefined {
-	// Real katok prints a bare JSON array; the legacy envelope wraps it in { hits }.
+function normalizeHits(raw: unknown): readonly LazykatokSearchHit[] | undefined {
+	// Real lazykatok prints a bare JSON array; the legacy envelope wraps it in { hits }.
 	const hits = Array.isArray(raw) ? raw : asRecord(raw)?.hits;
 	if (!Array.isArray(hits)) return undefined;
-	const normalized: KatokSearchHit[] = [];
+	const normalized: LazykatokSearchHit[] = [];
 	for (const entry of hits) {
 		const record = asRecord(entry);
 		if (record === undefined) return undefined;
@@ -347,13 +353,13 @@ function normalizeHits(raw: unknown): readonly KatokSearchHit[] | undefined {
 }
 
 /**
- * One katok search hit. Accepts both the AutoRAG-legacy object envelope
- * (`{ chunkId, score, content }`) and the real katok CLI fields
+ * One lazykatok search hit. Accepts both the AutoRAG-legacy object envelope
+ * (`{ chunkId, score, content }`) and the real lazykatok CLI fields
  * (`chunk_id`, `snippet`, `chat_name`, `sender_nickname`, `started_at`,
  * `ended_at`, `ranker`, `unit`, `rank`). Chat identity fields are surfaced
  * in metadata so callers can present a human-readable source.
  */
-function normalizeHit(record: Record<string, unknown>): KatokSearchHit | undefined {
+function normalizeHit(record: Record<string, unknown>): LazykatokSearchHit | undefined {
 	const chunkId = asString(record.chunkId) ?? asString(record.chunk_id);
 	const score = asNumber(record.score);
 	const content = asString(record.content) ?? asString(record.snippet);
@@ -377,7 +383,7 @@ function normalizeHit(record: Record<string, unknown>): KatokSearchHit | undefin
 	};
 }
 
-function normalizeChunk(raw: Record<string, unknown>): KatokChunk | undefined {
+function normalizeChunk(raw: Record<string, unknown>): LazykatokChunk | undefined {
 	const chunkId = asString(raw.chunkId);
 	const content = asString(raw.content);
 	if (chunkId === undefined || chunkId.length === 0 || content === undefined) return undefined;
@@ -385,10 +391,10 @@ function normalizeChunk(raw: Record<string, unknown>): KatokChunk | undefined {
 	return { chunkId, content, metadata };
 }
 
-function normalizeContext(raw: Record<string, unknown>): KatokContext | undefined {
+function normalizeContext(raw: Record<string, unknown>): LazykatokContext | undefined {
 	const chunksValue = raw.chunks;
 	if (!Array.isArray(chunksValue)) return undefined;
-	const chunks: KatokChunk[] = [];
+	const chunks: LazykatokChunk[] = [];
 	for (const entry of chunksValue) {
 		const record = asRecord(entry);
 		if (record === undefined) return undefined;
@@ -409,7 +415,7 @@ function stripKnown(raw: Record<string, unknown>, known: ReadonlySet<string>): R
 	return metadata;
 }
 
-function toFailure(result: ProcessResult, reason?: KatokFailure["reason"]): KatokFailure {
+function toFailure(result: ProcessResult, reason?: LazykatokFailure["reason"]): LazykatokFailure {
 	return {
 		ok: false,
 		reason: reason ?? result.reason ?? "nonzero-exit",
@@ -420,7 +426,7 @@ function toFailure(result: ProcessResult, reason?: KatokFailure["reason"]): Kato
 }
 
 /**
- * katok stderr reaches the operator as the CLI wrote it — paths included,
+ * lazykatok stderr reaches the operator as the CLI wrote it — paths included,
  * because that is what makes a failed search debuggable. Only the length is
  * bounded so one runaway process cannot flood a diagnostic.
  */
@@ -429,6 +435,6 @@ function boundDiagnosticText(value: string): string {
 	return value.trim().slice(0, 4000);
 }
 
-function ok<T>(data: T, result: ProcessResult): KatokOk<T> {
+function ok<T>(data: T, result: ProcessResult): LazykatokOk<T> {
 	return { ok: true, data, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 }
