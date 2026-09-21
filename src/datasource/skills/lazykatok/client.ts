@@ -24,7 +24,13 @@ import type {
 import { DEFAULT_LAZYKATOK_BINARY, DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES, DEFAULT_LAZYKATOK_TIMEOUT_MS } from "./types.ts";
 
 const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
-const SAFE_LAZYKATOK_ENV_PREFIX = "LAZYKATOK_";
+/**
+ * Environment namespaces the child may see. lazykatok still publishes its
+ * configuration through the historical `KATOK_*` namespace (`KATOK_EMBEDDER`,
+ * `KATOK_KAKAO_USER_ID`), so that prefix stays allowed alongside the
+ * `LAZYKATOK_*` one.
+ */
+const SAFE_CLI_ENV_PREFIXES = ["KATOK_", "LAZYKATOK_"] as const;
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -249,7 +255,7 @@ function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined
 }
 
 function isAllowedLazykatokEnvKey(key: string): boolean {
-	return SAFE_INHERITED_ENV_KEYS.has(key) || key.startsWith(SAFE_LAZYKATOK_ENV_PREFIX);
+	return SAFE_INHERITED_ENV_KEYS.has(key) || SAFE_CLI_ENV_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
 function searchOk(hits: readonly LazykatokSearchHit[], result: ProcessResult): LazykatokSearchResult {
@@ -316,24 +322,31 @@ function asBoolean(value: unknown): boolean | undefined {
 
 function normalizeDoctor(raw: Record<string, unknown>): LazykatokDoctorInfo | undefined {
 	const version = asString(raw.version);
-	const ready = asBoolean(raw.ready);
+	// The real CLI carries no boolean `ready` field: it reports readiness through
+	// the `freshness` block, the `archive` status, and the `source_adapter`
+	// probes. A payload holding that block is a doctor payload.
+	const ready = asBoolean(raw.ready) ?? (asRecord(raw.freshness) === undefined ? undefined : true);
 	if (ready === undefined) return undefined;
 	const metadata = stripKnown(raw, new Set(["version", "ready"]));
 	return { ...(version !== undefined ? { version } : {}), ready, metadata };
 }
 
 function normalizeSync(raw: Record<string, unknown>): LazykatokSyncInfo | undefined {
-	const synced = asBoolean(raw.synced);
+	// The real `sync --json` report counts messages instead of asserting `synced`.
+	const synced = asBoolean(raw.synced) ?? (asNumber(raw.total_messages) === undefined ? undefined : true);
 	if (synced === undefined) return undefined;
-	const messageCount = asNumber(raw.messageCount);
+	const messageCount = asNumber(raw.messageCount) ?? asNumber(raw.total_messages);
 	const metadata = stripKnown(raw, new Set(["synced", "messageCount"]));
 	return { synced, ...(messageCount !== undefined ? { messageCount } : {}), metadata };
 }
 
 function normalizeIndex(raw: Record<string, unknown>): LazykatokIndexInfo | undefined {
-	const chunkCount = asNumber(raw.chunkCount);
+	// The real `index --json` report names the archive size `candidate_chunks`.
+	const chunkCount = asNumber(raw.chunkCount) ?? asNumber(raw.candidate_chunks);
 	if (chunkCount === undefined) return undefined;
-	const metadata = stripKnown(raw, new Set(["chunkCount"]));
+	// `documents` is an inventory of the CLI's native semantic-store files; the
+	// client's contract is path-opaque, so those paths are not surfaced.
+	const metadata = stripKnown(raw, new Set(["chunkCount", "candidate_chunks", "documents"]));
 	return { chunkCount, metadata };
 }
 

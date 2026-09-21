@@ -7,6 +7,7 @@ import { LazykatokClient } from "../../../../src/datasource/skills/lazykatok/cli
 type LoggedCall = {
 	readonly args: readonly string[];
 	readonly envApiKey?: string | null;
+	readonly envEmbedder?: string | null;
 };
 
 const FAKE_CHILD_READY_TIMEOUT_MS = 10_000;
@@ -43,6 +44,7 @@ const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
   args,
   envApiKey: process.env.OPENAI_API_KEY ?? null,
+  envEmbedder: process.env.KATOK_EMBEDDER ?? null,
 }) + "\\n");
 
 const payload = process.env.LAZYKATOK_FAKE_OUTPUT ?? "{}";
@@ -84,7 +86,8 @@ function isLoggedCall(value: unknown): value is LoggedCall {
 	return (
 		Array.isArray(value.args) &&
 		value.args.every((arg) => typeof arg === "string") &&
-		(value.envApiKey === undefined || isNullableString(value.envApiKey))
+		(value.envApiKey === undefined || isNullableString(value.envApiKey)) &&
+		(value.envEmbedder === undefined || isNullableString(value.envEmbedder))
 	);
 }
 
@@ -288,8 +291,103 @@ process.exit(1);
 		const missingChunkContent = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv({ chunkId: "c1" }) });
 		await expect(missingChunkContent.chunkGet("c1")).resolves.toMatchObject({ ok: false, reason: "invalid-shape" });
 
-		const missingReady = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv({ version: "1.2.3" }) });
-		await expect(missingReady.doctor()).resolves.toMatchObject({ ok: false, reason: "invalid-shape" });
+		const unrecognizedDoctor = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv({ version: "1.2.3" }) });
+		await expect(unrecognizedDoctor.doctor()).resolves.toMatchObject({ ok: false, reason: "invalid-shape" });
+	});
+
+	/**
+	 * Real `lazykatok doctor --json` payload (upstream `run_doctor`, changeroa/lazykatok @ main,
+	 * verified against the installed CLI). Note there is no `ready` field: doctor reports
+	 * its readiness through the `freshness` block, the `archive` status, and the
+	 * `source_adapter` probes.
+	 */
+	const REAL_DOCTOR_JSON = {
+		archive: { status: "present" },
+		command: "lazykatok",
+		data_dir: "/Users/example/Library/Application Support/katok",
+		embedder: { dimension: 768, endpoint: null, mode: "local", model: "embeddinggemma-300m-q4", provider: "local" },
+		freshness: {
+			last_index: { archive_revision: "37e91a9f", completed_at: "2026-09-21T07:03:28.000771+00:00" },
+			last_sync: { chunks: 33272, completed_at: "2026-09-21T07:03:15.188930+00:00", total_messages: 50377 },
+			recommendation: { index_before_semantic_search: false, sync_before_search: false },
+		},
+		local_first: true,
+		macos: true,
+		name: "lazykatok",
+		semantic_index: "/Users/example/Library/Application Support/katok/semantic",
+		source_adapter: { configured: "fixture", fixture: "ok", kakaocli: "present" },
+	};
+
+	/** Real `lazykatok sync --json` payload (upstream `SyncReport`). There is no `synced` field. */
+	const REAL_SYNC_JSON = {
+		inserted_messages: 3,
+		updated_messages: 0,
+		total_messages: 50377,
+		chunks: 33272,
+		rebuilt_chats: 1,
+		timings_ms: { read_source: 12, upsert_messages: 31, rebuild_chunks: 8 },
+	};
+
+	/** Real `lazykatok index --dry-run --json` payload. There is no `chunkCount` field. */
+	const REAL_INDEX_JSON = {
+		full: false,
+		dry_run: true,
+		candidate_chunks: 33272,
+		written_documents: 0,
+		embedding_calls: 0,
+		documents: [
+			{
+				chunk_id: "window_fef9f5aa904ae1e9",
+				path: "/Users/example/Library/Application Support/katok/semantic/source/chunks/window_fef9f5aa904ae1e9.md",
+			},
+		],
+		embedder: "embeddinggemma-300m-q4",
+		semantic_units: "parent_windows",
+	};
+
+	it("passes the CLI's own KATOK_* environment namespace through to the child", async () => {
+		writeFakeLazykatok();
+		const client = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv({ ready: true }), KATOK_EMBEDDER: "mock" });
+
+		const result = await client.doctor();
+
+		expect(result.ok).toBe(true);
+		expect(loggedCalls()[0]?.envEmbedder).toBe("mock");
+	});
+
+	it("normalizes the real lazykatok doctor payload that carries no ready field", async () => {
+		writeFakeLazykatok();
+		const client = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv(REAL_DOCTOR_JSON) });
+
+		const result = await client.doctor();
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.ready).toBe(true);
+		expect(result.data.metadata).toMatchObject({ name: "lazykatok", archive: { status: "present" } });
+	});
+
+	it("normalizes the real lazykatok sync report into synced + messageCount", async () => {
+		writeFakeLazykatok();
+		const client = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv(REAL_SYNC_JSON) });
+
+		const result = await client.sync();
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data).toMatchObject({ synced: true, messageCount: 50377 });
+	});
+
+	it("normalizes the real lazykatok index report into chunkCount without leaking native paths", async () => {
+		writeFakeLazykatok();
+		const client = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv(REAL_INDEX_JSON) });
+
+		const result = await client.index();
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.chunkCount).toBe(33272);
+		expect(JSON.stringify(result.data)).not.toContain("Application Support");
 	});
 
 	it("does not forward unrelated parent or caller secrets to lazykatok", async () => {

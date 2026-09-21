@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildDatasourceSkills } from "../../../../src/datasource/skills/factory.ts";
 import { LazykatokClient } from "../../../../src/datasource/skills/lazykatok/client.ts";
 import { LazykatokBm25Method } from "../../../../src/datasource/skills/lazykatok/methods.ts";
 import type {
@@ -113,6 +114,88 @@ describe("LazykatokClient direct CLI execution", () => {
 			senderNickname: "투이컨설팅이헤지",
 			startedAt: "2026-04-13T05:57:50+00:00",
 		});
+	});
+});
+
+describe("KakaoTalk datasource through the config factory", () => {
+	it("spawns the default lazykatok binary from PATH and maps real CLI payloads to kakao sources", async () => {
+		const doctor = {
+			archive: { status: "present" },
+			command: "lazykatok",
+			freshness: {
+				last_sync: { chunks: 33272, total_messages: 50377 },
+				recommendation: { sync_before_search: false },
+			},
+			name: "lazykatok",
+			source_adapter: { configured: "fixture", fixture: "ok" },
+		};
+		const sync = {
+			inserted_messages: 3,
+			updated_messages: 0,
+			total_messages: 50377,
+			chunks: 33272,
+			rebuilt_chats: 1,
+		};
+		const index = {
+			full: false,
+			dry_run: false,
+			candidate_chunks: 33272,
+			written_documents: 33272,
+			embedder: "embeddinggemma-300m-q4",
+		};
+		const hits = [
+			{
+				ranker: "keyword",
+				unit: "micro_chunk",
+				rank: 1,
+				chunk_id: "chunk_58b3852eace05c64",
+				chat_id: "348487216782557",
+				chat_name: "오픈소스 개발과제",
+				sender_nickname: "정철현 박사님",
+				started_at: "2026-04-13T05:57:50+00:00",
+				ended_at: "2026-04-13T05:57:50+00:00",
+				snippet: "발표 작업 자료 위해 초대합니다.",
+				score: 1.0,
+			},
+		];
+		// The shim answers only the real lazykatok JSON shapes and is reachable
+		// solely under the name `lazykatok`, so PATH resolution proves the default
+		// binary name the product spawns.
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
+const reply = (value) => { process.stdout.write(JSON.stringify(value)); process.exit(0); };
+if (args[0] === "doctor") reply(${JSON.stringify(doctor)});
+if (args[0] === "sync") reply(${JSON.stringify(sync)});
+if (args[0] === "index") reply(${JSON.stringify(index)});
+if (args[0] === "search") reply(${JSON.stringify(hits)});
+process.exit(1);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const built = buildDatasourceSkills({
+			kakao: { connector: { env: { PATH: `${binDir}:${process.env.PATH ?? ""}` } } },
+		});
+		const skill = built.skills.find((candidate) => candidate.describe().datasourceId === "kakao");
+		expect(skill).toBeDefined();
+		if (skill === undefined) return;
+
+		const indexed = await skill.index();
+
+		expect(indexed).toMatchObject({ ok: true, chunkCount: 33272 });
+
+		const bm25 = skill.retrievalMethods().find((method) => method.describe().type === "bm25");
+		expect(bm25).toBeDefined();
+		if (bm25 === undefined) return;
+		const results = await bm25.retrieve("회의", { topK: 5 });
+
+		expect(results.map((result) => result.source)).toEqual(["/kakao/default/chunks/chunk_58b3852eace05c64"]);
+		expect(loggedArgs().map((args) => args[0])).toEqual(["doctor", "sync", "index", "search"]);
+		expect(loggedArgs()[1]).toEqual(["sync", "--json"]);
 	});
 });
 
