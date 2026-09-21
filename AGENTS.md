@@ -1,5 +1,30 @@
 # AutoRAG — Pi-Powered Librarian Agent
 
+## Guardrails
+
+These bind every agent and human working in this checkout. Force is CI, CODEOWNERS, and the `main` rulesets; this file is the instruction. Do not flatten the rest of this map into these four boxes.
+
+### Allowed
+
+Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay within the task.
+
+### Forbidden
+
+- Changing the `LICENSE` license identifier
+- Adding or committing secrets (`.env`, `*.key`, tokens, cookies, private corpus dumps)
+- Rewriting git history
+- Attaching `node_modules` to releases
+- Sending corpus text to remote embedders (no `OPENAI_API_KEY` / remote embedding endpoint for corpus text)
+- Creating git worktrees (this clone is the isolation boundary)
+
+### Required
+
+`bun run check && bun run lint && bun run typecheck`, plus the tests that cover the change. Dependency or license-allowlist edits also need the supply-chain gate (`bun run supply-chain`).
+
+### Ask first
+
+A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding profile or its license, and P2P default changes.
+
 ## Git Workflow (binding)
 
 This checkout is one of several clones of the same repository. Those clones are the isolation boundary. **Never create a git worktree.** Do not run `git worktree add`, do not create a linked checkout, and do not isolate a PR, review, or feature in a new worktree.
