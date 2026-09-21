@@ -24,38 +24,38 @@ afterEach(() => {
 });
 
 describe("live-e2e datasource matrix", () => {
-	it("registers an existing katok manual-QA harness", () => {
-		const katok = buildDatasourceMatrix().find((lane) => lane.name === "katok");
-		expect(katok?.command).toBeDefined();
-		expect(existsSync(katok?.command ?? "")).toBe(true);
+	it("registers an existing lazykatok manual-QA harness", () => {
+		const lazykatok = buildDatasourceMatrix().find((lane) => lane.name === "lazykatok");
+		expect(lazykatok?.command).toBeDefined();
+		expect(existsSync(lazykatok?.command ?? "")).toBe(true);
 	});
 
 	it("rejects a successful native command without a lane-native identity", async () => {
 		const result = await runDatasourceMatrix({
 			root: fixtureRoot(),
-			selection: ["katok"],
+			selection: ["lazykatok"],
 			which: () => true,
 			configured: () => true,
 			run: async () => ({ ok: true, stdout: "should not be reached", stderr: "", code: 0 }),
 		});
-		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "FAIL" });
+		expect(result.lanes[0]).toMatchObject({ name: "lazykatok", status: "FAIL" });
 		expect(result.lanes[0]?.reason).toContain("native identity");
 	});
 
 	it("accepts a canonical /kakao/<instance>/chunks/<chunk> identity from the live harness", async () => {
 		const result = await runDatasourceMatrix({
 			root: fixtureRoot(),
-			selection: ["katok"],
+			selection: ["lazykatok"],
 			which: () => true,
 			configured: () => true,
 			run: async () => ({
 				ok: true,
-				stdout: "KATOK_LIVE_QA_PASS source=/kakao/default/chunks/chunk-001",
+				stdout: "LAZYKATOK_LIVE_QA_PASS source=/kakao/default/chunks/chunk-001",
 				stderr: "",
 				code: 0,
 			}),
 		});
-		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "PASS" });
+		expect(result.lanes[0]).toMatchObject({ name: "lazykatok", status: "PASS" });
 		expect(result.lanes[0]?.evidence?.nativeIdentity).toBe(true);
 	});
 
@@ -64,7 +64,7 @@ describe("live-e2e datasource matrix", () => {
 		let observedCwd = "";
 		await runDatasourceMatrix({
 			root,
-			selection: ["katok"],
+			selection: ["lazykatok"],
 			which: () => true,
 			configured: () => true,
 			run: async (_command, _args, cwd) => {
@@ -88,19 +88,19 @@ describe("live-e2e datasource matrix", () => {
 	it("reports an available native lane failure as FAIL", async () => {
 		const result = await runDatasourceMatrix({
 			root: "/tmp/live-e2e-root",
-			selection: ["katok"],
+			selection: ["lazykatok"],
 			which: () => true,
 			configured: () => true,
 			run: async () => ({ ok: false, stderr: "fixture failed", stdout: "", code: 1 }),
 		});
-		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "FAIL" });
+		expect(result.lanes[0]).toMatchObject({ name: "lazykatok", status: "FAIL" });
 	});
 
-	it("accepts canonical katok slash identities and rejects retired scheme plus fake filesystem paths", () => {
-		expect(validateNativeIdentity("/kakao/default/chunks/chunk-001", "katok")).toBe(true);
-		expect(validateNativeIdentity("kakao:chat/sender/chunk", "katok")).toBe(false);
-		expect(validateNativeIdentity("/autorag/fake/chunks/1", "katok")).toBe(false);
-		expect(validateNativeIdentity("/kakao/default/chunk-001", "katok")).toBe(false);
+	it("accepts canonical lazykatok slash identities and rejects retired scheme plus fake filesystem paths", () => {
+		expect(validateNativeIdentity("/kakao/default/chunks/chunk-001", "lazykatok")).toBe(true);
+		expect(validateNativeIdentity("kakao:chat/sender/chunk", "lazykatok")).toBe(false);
+		expect(validateNativeIdentity("/autorag/fake/chunks/1", "lazykatok")).toBe(false);
+		expect(validateNativeIdentity("/kakao/default/chunk-001", "lazykatok")).toBe(false);
 	});
 
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {
