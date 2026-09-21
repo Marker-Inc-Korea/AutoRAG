@@ -204,10 +204,10 @@ describe("LazykatokClient", () => {
 		expect(ctx.ok).toBe(true);
 		if (ctx.ok) expect(ctx.data.chunks.map((c) => c.chunkId)).toEqual(["c1", "c2"]);
 
-		const parentClient = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv({ chunkId: "p1", content: "parent" }) });
+		const parentClient = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv([{ chunkId: "p1", content: "parent" }]) });
 		const parent = await parentClient.parent("c1");
 		expect(parent.ok).toBe(true);
-		if (parent.ok) expect(parent.data.chunkId).toBe("p1");
+		if (parent.ok) expect(parent.data[0]?.chunkId).toBe("p1");
 	});
 
 	it("returns binary-missing for a non-existent binary without throwing", async () => {
@@ -468,6 +468,114 @@ process.stdout.write("x".repeat(64));
 		const result = await client.doctor();
 
 		expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
+	});
+
+	describe("real chunk subcommand contract", () => {
+		/** Real payloads captured from a live lazykatok-lineage archive. */
+		const REAL_CHUNK_GET_JSON = {
+			chunk_id: "chunk_a48857402f678ddc",
+			chat_id: "348487216782557",
+			chat_name: "마커 노마다마스",
+			sender_nickname: "정철현 박사님",
+			started_at: "2022-11-24T05:26:28+00:00",
+			ended_at: "2022-11-24T05:26:28+00:00",
+			text: "애들아 오늘 원재 어머니 오시니 회의실과 복도 화장실 정리좀 부탁",
+			message_count: 1,
+			message_ids: [],
+			parent_chunk_ids: [],
+			window_parent_ids: ["window_9e30fe7c18d95df6"],
+		};
+		const REAL_CHUNK_CONTEXT_JSON = {
+			chunk: REAL_CHUNK_GET_JSON,
+			previous: [
+				{ chunk_id: "chunk_prev", chat_id: "1", chat_name: "room", started_at: "2022-11-24T05:20:00+00:00" },
+			],
+			next: [{ chunk_id: "chunk_next", chat_id: "1", chat_name: "room", started_at: "2022-11-24T05:30:00+00:00" }],
+			parent_windows: [{ parent_id: "window_9e30fe7c18d95df6", text: "[정철현 박사님] 애들아 오늘 원재" }],
+		};
+		const REAL_CHUNK_PARENT_JSON = [
+			{
+				parent_id: "window_9e30fe7c18d95df6",
+				chat_id: "348487216782557",
+				chat_name: "마커 노마다마스",
+				started_at: "2022-11-24T05:26:28+00:00",
+				ended_at: "2022-11-24T05:26:28+00:00",
+				text: "[정철현 박사님] 애들아 오늘 원재 어머니 오시니",
+				message_count: 1,
+				child_chunk_ids: ["chunk_a48857402f678ddc"],
+			},
+		];
+
+		/**
+		 * Fake CLI replicating the real clap dispatch: only `chunk get|context|parent`
+		 * exist, and an unknown subcommand exits nonzero like the real binary does.
+		 */
+		function writeChunkContractFake(): void {
+			writeFileSync(
+				binaryPath,
+				`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, envApiKey: null }) + "\\n");
+const reply = (value) => {
+  process.stdout.write(JSON.stringify(value));
+  process.exit(0);
+};
+if (args[0] === "chunk" && args[1] === "get") reply(${JSON.stringify(REAL_CHUNK_GET_JSON)});
+if (args[0] === "chunk" && args[1] === "context") reply(${JSON.stringify(REAL_CHUNK_CONTEXT_JSON)});
+if (args[0] === "chunk" && args[1] === "parent") reply(${JSON.stringify(REAL_CHUNK_PARENT_JSON)});
+process.stderr.write("error: unrecognized subcommand\\n");
+process.exit(1);
+`,
+			);
+			chmodSync(binaryPath, 0o755);
+		}
+
+		it("invokes the real `chunk get|context|parent` argv the CLI accepts", async () => {
+			writeChunkContractFake();
+			const client = fakeClient();
+
+			const chunk = await client.chunkGet("chunk_a48857402f678ddc");
+			const context = await client.context("chunk_a48857402f678ddc");
+			const parent = await client.parent("chunk_a48857402f678ddc");
+
+			expect([chunk.ok, context.ok, parent.ok]).toEqual([true, true, true]);
+			expect(loggedCalls().map((call) => call.args)).toEqual([
+				["chunk", "get", "chunk_a48857402f678ddc", "--json"],
+				["chunk", "context", "chunk_a48857402f678ddc", "--json"],
+				["chunk", "parent", "chunk_a48857402f678ddc", "--json"],
+			]);
+		});
+
+		it("parses the real chunk payloads instead of requiring the legacy envelope", async () => {
+			writeChunkContractFake();
+			const client = fakeClient();
+
+			const chunk = await client.chunkGet("chunk_a48857402f678ddc");
+			expect(chunk.ok).toBe(true);
+			if (!chunk.ok) return;
+			expect(chunk.data).toMatchObject({
+				chunkId: "chunk_a48857402f678ddc",
+				content: "애들아 오늘 원재 어머니 오시니 회의실과 복도 화장실 정리좀 부탁",
+			});
+			expect(chunk.data.metadata).toMatchObject({
+				chatName: "마커 노마다마스",
+				senderNickname: "정철현 박사님",
+			});
+
+			const context = await client.context("chunk_a48857402f678ddc");
+			expect(context.ok).toBe(true);
+			if (!context.ok) return;
+			expect(context.data.chunks.map((entry) => entry.chunkId)).toContain("chunk_a48857402f678ddc");
+			expect(context.data.metadata).toMatchObject({ previous: REAL_CHUNK_CONTEXT_JSON.previous });
+
+			const parent = await client.parent("chunk_a48857402f678ddc");
+			expect(parent.ok).toBe(true);
+			if (!parent.ok) return;
+			expect(parent.data.map((entry) => entry.chunkId)).toEqual(["window_9e30fe7c18d95df6"]);
+			expect(parent.data[0]?.content).toContain("애들아 오늘 원재");
+		});
 	});
 
 	describe("paths and source opacity", () => {

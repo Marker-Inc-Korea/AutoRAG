@@ -120,7 +120,7 @@ export class LazykatokClient {
 	}
 
 	async context(chunkId: string, signal?: AbortSignal): Promise<LazykatokContextResult> {
-		const result = await this.run(["context", chunkId, "--json"], signal);
+		const result = await this.run(["chunk", "context", chunkId, "--json"], signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -129,11 +129,11 @@ export class LazykatokClient {
 	}
 
 	async parent(chunkId: string, signal?: AbortSignal): Promise<LazykatokParentResult> {
-		const result = await this.run(["parent", chunkId, "--json"], signal);
+		const result = await this.run(["chunk", "parent", chunkId, "--json"], signal);
 		if (!result.ok) return toFailure(result);
-		const parsed = parseJsonObject(result.stdout);
+		const parsed = parseJsonValue(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
-		const data = normalizeChunk(parsed);
+		const data = normalizeParentWindows(parsed);
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
@@ -372,51 +372,85 @@ function normalizeHits(raw: unknown): readonly LazykatokSearchHit[] | undefined 
  * `ended_at`, `ranker`, `unit`, `rank`). Chat identity fields are surfaced
  * in metadata so callers can present a human-readable source.
  */
+/**
+ * Chat identity fields the CLI prints in snake_case. They are surfaced in
+ * camelCase metadata so callers can present a human-readable source, while the
+ * raw keys stay alongside them.
+ */
+function chatIdentityMetadata(record: Record<string, unknown>): Readonly<Record<string, unknown>> {
+	const chatName = asString(record.chat_name);
+	const senderNickname = asString(record.sender_nickname);
+	const startedAt = asString(record.started_at);
+	const endedAt = asString(record.ended_at);
+	return {
+		...(chatName !== undefined ? { chatName } : {}),
+		...(senderNickname !== undefined ? { senderNickname } : {}),
+		...(startedAt !== undefined ? { startedAt } : {}),
+		...(endedAt !== undefined ? { endedAt } : {}),
+	};
+}
+
 function normalizeHit(record: Record<string, unknown>): LazykatokSearchHit | undefined {
 	const chunkId = asString(record.chunkId) ?? asString(record.chunk_id);
 	const score = asNumber(record.score);
 	const content = asString(record.content) ?? asString(record.snippet);
 	if (chunkId === undefined || chunkId.length === 0 || score === undefined || content === undefined) return undefined;
 	const metadata = stripKnown(record, new Set(["chunkId", "chunk_id", "score", "content", "snippet"]));
-	const chatName = asString(record.chat_name);
-	const senderNickname = asString(record.sender_nickname);
-	const startedAt = asString(record.started_at);
-	const endedAt = asString(record.ended_at);
-	return {
-		chunkId,
-		score,
-		content,
-		metadata: {
-			...metadata,
-			...(chatName !== undefined ? { chatName } : {}),
-			...(senderNickname !== undefined ? { senderNickname } : {}),
-			...(startedAt !== undefined ? { startedAt } : {}),
-			...(endedAt !== undefined ? { endedAt } : {}),
-		},
-	};
+	return { chunkId, score, content, metadata: { ...metadata, ...chatIdentityMetadata(record) } };
 }
 
 function normalizeChunk(raw: Record<string, unknown>): LazykatokChunk | undefined {
-	const chunkId = asString(raw.chunkId);
-	const content = asString(raw.content);
+	// Real payloads key the chunk as `chunk_id` (a parent window as `parent_id`)
+	// and the body as `text`; the legacy AutoRAG envelope used `chunkId`/`content`.
+	const chunkId = asString(raw.chunkId) ?? asString(raw.chunk_id) ?? asString(raw.parent_id);
+	const content = asString(raw.content) ?? asString(raw.text);
 	if (chunkId === undefined || chunkId.length === 0 || content === undefined) return undefined;
-	const metadata = stripKnown(raw, new Set(["chunkId", "content"]));
-	return { chunkId, content, metadata };
+	const metadata = stripKnown(raw, new Set(["chunkId", "chunk_id", "parent_id", "content", "text"]));
+	return { chunkId, content, metadata: { ...metadata, ...chatIdentityMetadata(raw) } };
 }
 
 function normalizeContext(raw: Record<string, unknown>): LazykatokContext | undefined {
-	const chunksValue = raw.chunks;
-	if (!Array.isArray(chunksValue)) return undefined;
-	const chunks: LazykatokChunk[] = [];
-	for (const entry of chunksValue) {
-		const record = asRecord(entry);
-		if (record === undefined) return undefined;
-		const chunk = normalizeChunk(record);
-		if (chunk === undefined) return undefined;
-		chunks.push(chunk);
+	// Two accepted shapes: the legacy envelope (`{ chunks: [...] }`) and the real
+	// `chunk context --json` payload (`{ chunk, previous, next, parent_windows }`).
+	const legacyChunks = raw.chunks;
+	if (Array.isArray(legacyChunks)) {
+		const chunks = normalizeChunkList(legacyChunks);
+		return chunks === undefined ? undefined : { chunks, metadata: stripKnown(raw, new Set(["chunks"])) };
 	}
-	const metadata = stripKnown(raw, new Set(["chunks"]));
-	return { chunks, metadata };
+	const target = asRecord(raw.chunk);
+	if (target === undefined) return undefined;
+	const chunk = normalizeChunk(target);
+	if (chunk === undefined) return undefined;
+	// Neighbours carry chat identity but no `text`; text-less entries stay in
+	// metadata rather than being surfaced as empty chunks.
+	const before = normalizeChunkList(raw.previous) ?? [];
+	const after = normalizeChunkList(raw.next) ?? [];
+	return {
+		chunks: [...before, chunk, ...after],
+		metadata: stripKnown(raw, new Set(["chunk"])),
+	};
+}
+
+/** Normalizes a list of chunk objects, dropping entries that carry no text of their own. */
+function normalizeChunkList(value: unknown): LazykatokChunk[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const chunks: LazykatokChunk[] = [];
+	for (const entry of value) {
+		const record = asRecord(entry);
+		if (record === undefined) continue;
+		const chunk = normalizeChunk(record);
+		if (chunk !== undefined) chunks.push(chunk);
+	}
+	return chunks;
+}
+
+/** The real `chunk parent --json` payload is an array of parent windows. */
+function normalizeParentWindows(raw: unknown): readonly LazykatokChunk[] | undefined {
+	const windows = normalizeChunkList(raw);
+	if (windows !== undefined) return windows;
+	// Legacy envelope: `{ parent_windows: [...] }`.
+	const nested = asRecord(raw)?.parent_windows;
+	return normalizeChunkList(nested);
 }
 
 /** Returns a copy of `raw` minus the known top-level keys (preserved as typed fields). */

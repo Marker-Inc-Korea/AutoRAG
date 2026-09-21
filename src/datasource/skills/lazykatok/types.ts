@@ -133,7 +133,8 @@ export type LazykatokIndexResult = LazykatokOk<LazykatokIndexInfo> | LazykatokFa
 export type LazykatokSearchResult = LazykatokSearchOk | LazykatokFailure;
 export type LazykatokChunkResult = LazykatokOk<LazykatokChunk> | LazykatokFailure;
 export type LazykatokContextResult = LazykatokOk<LazykatokContext> | LazykatokFailure;
-export type LazykatokParentResult = LazykatokOk<LazykatokChunk> | LazykatokFailure;
+/** The real `chunk parent --json` payload is a list of parent windows. */
+export type LazykatokParentResult = LazykatokOk<readonly LazykatokChunk[]> | LazykatokFailure;
 
 /**
  * Search-specific options. Reuses the shared {@link RetrievalOptions} so the
