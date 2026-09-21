@@ -97,7 +97,7 @@ export function normalizeVirtualPath(virtual: string | undefined | null): string
  * 2. An OS-absolute real path contained in a configured source root becomes
  *    that root's virtual id (`/<prefix>/<relative>`); the longest containing
  *    root wins for nested roots.
- * 3. A datasource slash identity (`/kakao/<instance>/chunks/<chunk>`) is a
+ * 3. A datasource slash identity (`/discord/<instance>/chunks/<chunk>`) is a
  *    virtual id in a non-filesystem namespace and passes through validation.
  * 4. An absolute filesystem path outside every root passes through as its
  *    own canonical form — backslashes are converted to forward slashes so

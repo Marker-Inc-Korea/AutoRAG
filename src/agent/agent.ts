@@ -1170,7 +1170,7 @@ export class AutoRAGAgent {
 			if (!ctx.isAccessible(descriptor)) continue;
 			if (seen.has(descriptor.datasourceId)) continue;
 			seen.add(descriptor.datasourceId);
-			// Instance roots are two-segment sources like /kakao/personal; deeper
+			// Instance roots are two-segment sources like /discord/personal; deeper
 			// hierarchy entries would only bloat the tool description.
 			const instanceScopes = skill
 				.describeSources()

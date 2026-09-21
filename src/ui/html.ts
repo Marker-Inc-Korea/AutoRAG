@@ -102,7 +102,7 @@ export function renderUiPage(state: UiState): string {
     <div class="picker" id="picker">${pickerButtons}</div>
     <div id="handoff" hidden>
       <label for="alias">Name</label>
-      <input id="alias" placeholder="family-kakao">
+      <input id="alias" placeholder="work-discord">
       <label for="note">Description</label>
       <input id="note" placeholder="Family group chat — travel plans and reimbursements">
       <div id="extras"></div>

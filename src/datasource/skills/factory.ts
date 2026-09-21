@@ -20,7 +20,6 @@ import {
 	DiscrawlSkill,
 } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
-import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
@@ -156,15 +155,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				...(config.connector as NotcrawlOptions),
 				...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
 			},
-		}),
-	kakao: (config, _workspaceRoot, _registrationName) =>
-		new KatokSkill({
-			client: new KatokClient({
-				...(config.connector as KatokOptions),
-			}),
-			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
-			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
-			...(config.tags !== undefined ? { tags: config.tags } : {}),
 		}),
 	github: (config, workspaceRoot, registrationName) =>
 		new GitHubSkill({

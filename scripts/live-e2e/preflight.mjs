@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 
 export const DATASOURCE_BINARIES = Object.freeze([
-  "katok", "discrawl", "qmd", "rclone", "mailcrawl", "jikji", "minsync",
+  "discrawl", "qmd", "rclone", "mailcrawl", "jikji", "minsync",
 ]);
 
 const PROFILE_ID = "qwen3-embedding-0.6b";

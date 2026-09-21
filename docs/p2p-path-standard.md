@@ -10,7 +10,7 @@ local, datasource, and policy layers.
 |-------|------|---------|
 | Local file (virtual id) | `/<root-prefix>/<relative-path>` | `/docs/policy/refund.md` |
 | Local file (retrieval `source`) | OS-absolute real path | `/home/me/docs/policy/refund.md` |
-| Datasource identity | `/<kind>/<instance>/...` slash hierarchy | `/kakao/personal/chunks/chunk-1` |
+| Datasource identity | `/<kind>/<instance>/...` slash hierarchy | `/discord/personal/chunks/chunk-1` |
 
 Retrieval methods return local files as OS-absolute real paths (readable,
 `fs.existsSync`-able) and datasource results as slash-hierarchical identities
@@ -53,7 +53,7 @@ before glob matching or seen-source lookup:
 
 - An absolute real path under `searchPaths` matches the root's virtual globs
   (`/docs/**`).
-- A datasource identity matches its namespace globs (`/kakao/**`).
+- A datasource identity matches its namespace globs (`/discord/**`).
 - An absolute real path outside `searchPaths` matches absolute-path globs as
   itself.
 - A syntactically invalid source (traversal, scheme, backslash) resolves to

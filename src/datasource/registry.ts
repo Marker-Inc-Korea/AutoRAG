@@ -65,7 +65,7 @@ export class DatasourceSkillRegistry {
 	 * Only skills whose descriptor {@link DatasourceAccessContext.isAccessible}
 	 * allows contribute instances, and only their declared instance ids are
 	 * materialized. Each instance carries its opaque slash-hierarchical
-	 * {@link DatasourceInstance.sourcePath} (e.g. `/kakao/acct-1`), built from
+	 * {@link DatasourceInstance.sourcePath} (e.g. `/discord/acct-1`), built from
 	 * the trusted skill name and instance id — never from model input.
 	 */
 	resolveInstances(ctx: DatasourceAccessContext): readonly DatasourceInstance[] {

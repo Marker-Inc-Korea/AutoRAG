@@ -196,7 +196,6 @@ The shared runtime is a provider boundary, not a shared datasource store.
 |---|---|---|
 | MinSync | Gateway default | MinSync owns `.minsync`, CDC chunks, vectors, and source mapping; AutoRAG supplies the gateway endpoint and identity. |
 | discrawl | Managed native config | When `configPath` is not explicit and a workspace is available, AutoRAG writes `.autorag/datasources/discrawl/config.toml` with the marker `# AutoRAG managed discrawl embeddings v1` and native `[search.embeddings]` `provider`, `model`, `base_url`, and `dimensions`. discrawl owns SQLite, embeddings, FTS, and rebuilds. |
-| katok | Pending upstream provider contract | No shared-runtime wiring until the upstream loopback provider contract is released; see pending upstream issue #19. |
 | mailcrawl | Pending upstream provider contract | No shared-runtime wiring until the upstream loopback provider contract is released; see pending upstream issue #31. |
 | qmd | Untouched | qmd retains its own native update, BM25, vector, and query lifecycle. |
 | clawgallery | Untouched | ClawGallery retains its VDR/native retrieval lifecycle. |

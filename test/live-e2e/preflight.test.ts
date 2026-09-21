@@ -16,7 +16,6 @@ const readyFetch = async (): Promise<FetchResponse> =>
 	});
 
 const optionalBinaries = Object.freeze({
-	katok: false,
 	discrawl: false,
 	qmd: false,
 	rclone: false,
@@ -58,15 +57,15 @@ describe("live-e2e preflight", () => {
 			binaries: optionalBinaries,
 		});
 		expect(skipped.verdict).toBe("degraded");
-		expect(skipped.lanes.katok.status).toBe("SKIP");
+		expect(skipped.lanes.discrawl.status).toBe("SKIP");
 		const failed = await runPreflight({
 			endpoint: "http://127.0.0.1:12345",
 			fetchImpl: readyFetch,
 			binaries: optionalBinaries,
-			configuredLanes: ["katok"],
+			configuredLanes: ["discrawl"],
 		});
 		expect(failed.verdict).toBe("refused");
-		expect(failed.lanes.katok.status).toBe("FAIL");
+		expect(failed.lanes.discrawl.status).toBe("FAIL");
 	});
 
 	it("returns ready with zero exit code when the local service and all lanes are ready", async () => {

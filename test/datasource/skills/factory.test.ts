@@ -28,4 +28,15 @@ describe("datasource skill factory", () => {
 		expect(unknown).toEqual(["gmail"]);
 		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
 	});
+
+	it("treats leftover datasources.kakao config as unknown without crashing", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			kakao: { connector: { binaryPath: "/missing/katok" } },
+			"family-kakao": { type: "kakao" },
+			discord: true,
+		});
+
+		expect(unknown).toEqual(["kakao", "family-kakao"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["discord"]);
+	});
 });

@@ -14,7 +14,7 @@ import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from
  * from the question itself) still pays for — and receives — every other
  * datasource's hits. These generated tools fix that: one tool per authorized
  * datasource connection (e.g. `search_datasource_discord`,
- * `search_datasource_kakao_work` for a `kakao-work` account alias) whose
+ * `search_datasource_discord_work` for a `discord-work` account alias) whose
  * execution spawns only that connection's retrieval methods.
  *
  * Tools are generated from the configured, access-authorized datasource skills
@@ -29,11 +29,11 @@ export const singleDatasourceToolName: (datasourceId: string) => string = dataso
 
 /** Static per-connection descriptor used to generate one tool each. */
 export interface SingleDatasourceToolSpec {
-	/** Trusted datasource id (alias-aware, e.g. `kakao-work`). */
+	/** Trusted datasource id (alias-aware, e.g. `discord-work`). */
 	readonly datasourceId: string;
 	/** Operator/descriptor-authored context shown in the tool description. */
 	readonly description: string;
-	/** Authorized instance roots (e.g. `/kakao/personal`) for the description. */
+	/** Authorized instance roots (e.g. `/discord/personal`) for the description. */
 	readonly instanceScopes: readonly string[];
 }
 

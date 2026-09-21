@@ -148,7 +148,7 @@ function makeSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 			return {
 				name: "kakao",
 				type: "chat",
-				description: "KakaoTalk chats exported through katok",
+				description: "KakaoTalk chats exported through an external CLI",
 				capabilities: ["keyword", "polling"],
 				tags: ["kakao", "chat"],
 				status: "active",

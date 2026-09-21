@@ -9,7 +9,7 @@ const searchDatasourceSchema = Type.Object({
 	query: Type.String({ description: "Query to search across configured external datasource skills." }),
 	topK: Type.Optional(Type.Integer({ description: "Maximum number of datasource chunks to return. Defaults to 50." })),
 	scope: Type.Optional(
-		Type.String({ description: "Optional opaque datasource scope, e.g. /kakao/account or /kakao/account/**." }),
+		Type.String({ description: "Optional opaque datasource scope, e.g. /discord/account or /discord/account/**." }),
 	),
 });
 
@@ -36,7 +36,7 @@ export function createSearchDatasourceDocumentsTool(
 		name: SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 		label: "Search Datasource Documents",
 		description:
-			"Search configured external datasource skills such as cloud drives and KakaoTalk chats, fanning out to every datasource CLI. When the question targets one connection, prefer its dedicated search_datasource_<name> tool, which spawns only that connection's CLIs. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
+			"Search configured external datasource skills such as cloud drives and chat archives, fanning out to every datasource CLI. When the question targets one connection, prefer its dedicated search_datasource_<name> tool, which spawns only that connection's CLIs. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchDatasourceSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchDatasourceDocumentsDetails>> {
 			const query = params.query.trim();

@@ -58,9 +58,9 @@ const DEFAULT_DISCORD_TAGS = ["discord", "chat", "pii"] as const;
 /**
  * Discord datasource skill backed by the external `discrawl` CLI.
  *
- * Mirrors the katok model: the CLI owns the archive, the FTS5 index, and the
- * vector index; AutoRAG only spawns it and maps results. AutoRAG never calls
- * the Discord API itself and never reads the Discord Desktop cache directly.
+ * The CLI owns the archive, the FTS5 index, and the vector index; AutoRAG only
+ * spawns it and maps results. AutoRAG never calls the Discord API itself and
+ * never reads the Discord Desktop cache directly.
  *
  * `index()` runs the CLI's two-phase pipeline — `sync` (incremental, cursor
  * based) then `embed` (drains the embedding queue) — so a poll costs work

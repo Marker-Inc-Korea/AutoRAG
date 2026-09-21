@@ -3,18 +3,18 @@ import { ConfigError } from "../../src/cli/config.ts";
 import { buildRegistrationPrompt } from "../../src/ui/prompt.ts";
 
 describe("registration prompt", () => {
-	it("tells an agent to install katok and write trusted config without a CLI path from the user", () => {
+	it("tells an agent to install discrawl and write trusted config without a CLI path from the user", () => {
 		const result = buildRegistrationPrompt({
-			type: "kakao",
-			alias: "family-kakao",
-			note: "Mom and dad family chat",
+			type: "discord",
+			alias: "work-discord",
+			note: "Engineering Discord archive",
 		});
-		expect(result.title).toBe("KakaoTalk");
-		expect(result.prompt).toContain("family-kakao");
-		expect(result.prompt).toContain("Mom and dad family chat");
-		expect(result.prompt).toContain("katok");
+		expect(result.title).toBe("Discord");
+		expect(result.prompt).toContain("work-discord");
+		expect(result.prompt).toContain("Engineering Discord archive");
+		expect(result.prompt).toContain("discrawl");
 		expect(result.prompt).toContain("Do not ask me for a CLI path");
-		expect(result.prompt).toContain("/family-kakao/**");
+		expect(result.prompt).toContain("/work-discord/**");
 		expect(result.prompt).not.toContain("ghp_");
 	});
 
@@ -35,13 +35,6 @@ describe("registration prompt", () => {
 		expect(filled.questions).toEqual([]);
 		expect(filled.prompt).toContain("Marker-Inc-Korea/AutoRAG");
 		expect(filled.prompt).not.toContain("Ask me these before writing config");
-	});
-
-	it("does not ask which Kakao account to add", () => {
-		const result = buildRegistrationPrompt({ type: "kakao", alias: "family-kakao" });
-		expect(result.questions).toEqual([]);
-		expect(result.prompt).toContain("single-account");
-		expect(result.prompt).toContain("Do not ask which Kakao account");
 	});
 
 	it("rejects an unknown type", () => {

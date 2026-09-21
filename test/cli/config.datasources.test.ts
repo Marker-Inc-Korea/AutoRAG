@@ -369,15 +369,10 @@ describe("CLI config datasources wiring", () => {
 					type: "slack",
 					connector: { binaryPath: "/missing/slacrawl" },
 				},
-				"family-kakao": {
-					type: "kakao",
-					channels: { names: ["가족방"] },
-					connector: { binaryPath: "/missing/katok" },
-				},
 			},
 			datasourceAccess: {
-				allowedTags: ["mailcrawl", "github", "slack", "kakaotalk"],
-				allowedScopes: ["/personal-mail/**", "/company-github/**", "/engineering-slack/**", "/family-kakao/**"],
+				allowedTags: ["mailcrawl", "github", "slack"],
+				allowedScopes: ["/personal-mail/**", "/company-github/**", "/engineering-slack/**"],
 			},
 		});
 		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
@@ -386,16 +381,12 @@ describe("CLI config datasources wiring", () => {
 		expect(skills.map((skill) => skill.describe().name).sort()).toEqual([
 			"company-github",
 			"engineering-slack",
-			"family-kakao",
 			"personal-mail",
 		]);
 		for (const skill of skills) {
 			expect(skill.skillManifest().name).toBe(`datasource-${skill.describe().name}`);
 			expect(skill.describeSources()[0]?.source).toContain(`/${skill.describe().name}/`);
 		}
-		expect(skills.find((skill) => skill.describe().name === "family-kakao")?.skillManifest().content).toContain(
-			"가족방",
-		);
 	});
 
 	it("rejects malformed datasources and datasourceAccess sections", () => {

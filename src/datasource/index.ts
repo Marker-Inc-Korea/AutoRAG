@@ -79,22 +79,6 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
-export type {
-	KatokFailureReason,
-	KatokHit,
-	KatokOptions,
-	KatokSearchMode,
-	KatokSearchOptions,
-	KatokSearchResult,
-	KatokSkillClient,
-	KatokSkillOptions,
-} from "./skills/katok/index.ts";
-export {
-	KatokBm25Method,
-	KatokClient,
-	KatokSemanticMethod,
-	KatokSkill,
-} from "./skills/katok/index.ts";
 export {
 	MailExportConnector,
 	type MailExportConnectorOptions,

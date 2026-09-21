@@ -204,11 +204,11 @@ describe("createBashTool", () => {
 		await waitForProcessDeath(childPid);
 	}, 20_000);
 
-	it("never blocks datasource CLI binaries: the agent may drive katok/discrawl directly", async () => {
+	it("never blocks datasource CLI binaries: the agent may drive discrawl directly", async () => {
 		const tool = createBashTool({ cwd: tmpDir });
-		const result = await tool.execute("call-direct", { command: "echo katok search keyword x" });
+		const result = await tool.execute("call-direct", { command: "echo discrawl search --mode fts x" });
 		const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
-		expect(text).toContain("katok search keyword x");
+		expect(text).toContain("discrawl search --mode fts x");
 		expect(text).not.toContain("AUTORAG_MANAGED_CLI_BLOCKED");
 		expect(result.details.exitCode).toBe(0);
 	});

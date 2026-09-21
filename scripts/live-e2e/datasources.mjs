@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 const NATIVE_LANES = Object.freeze([
-	{ name: "katok", binary: "katok", command: "scripts/manual-qa/run-qa-katok-live.ts", identityPattern: /\/kakao\/[^/]+\/chunks\/[^/\s]+/u },
 	{ name: "discrawl", binary: "discrawl", command: "scripts/manual-qa/run-qa-discrawl-live.ts", identityPattern: /\/discord\/[^\s]+/u },
 	{ name: "wacrawl", binary: "wacrawl" },
 	{ name: "telecrawl", binary: "telecrawl" },
@@ -24,7 +23,6 @@ const NATIVE_LANES = Object.freeze([
 // E2E_DATASOURCE_<NAME>_CONFIGURED=1 still forces a lane on (the harness then
 // fails loudly if the store is unusable); the probe only decides the default.
 const NATIVE_STORE_PROBES = Object.freeze({
-	katok: () => existsSync(join(homedir(), "Library", "Application Support", "katok", "archive.sqlite3")),
 	discrawl: () => existsSync(join(homedir(), "Library", "Application Support", "discrawl", "discrawl.db")) || existsSync(join(homedir(), ".discrawl", "discrawl.db")),
 	wacrawl: () => existsSync(join(homedir(), ".wacrawl", "wacrawl.db")),
 	telecrawl: () => existsSync(join(homedir(), ".telecrawl", "telecrawl.db")),
@@ -79,9 +77,9 @@ export function parseDatasourceSelection(value = process.env.E2E_DATASOURCES || 
 
 export function validateNativeIdentity(source, laneName) {
 	if (typeof source !== "string") return false;
-	// Canonical katok source: /kakao/<instance>/chunks/<chunk>. Opaque slash
-	// hierarchy, not an OS path. Retired kakao:<chat>/<sender>/<chunk> is invalid.
-	if (laneName === "katok") return /^\/kakao\/[^/]+\/chunks\/[^/]+$/u.test(source);
+	// Canonical discrawl source: /discord/<instance>/... Opaque slash hierarchy,
+	// not an OS path.
+	if (laneName === "discrawl") return /^\/discord\/[^/\s]+(?:\/[^/\s]+)*$/u.test(source);
 	return !source.startsWith("/") && /^[a-z][a-z0-9-]*:.+/u.test(source);
 }
 

@@ -24,38 +24,38 @@ afterEach(() => {
 });
 
 describe("live-e2e datasource matrix", () => {
-	it("registers an existing katok manual-QA harness", () => {
-		const katok = buildDatasourceMatrix().find((lane) => lane.name === "katok");
-		expect(katok?.command).toBeDefined();
-		expect(existsSync(katok?.command ?? "")).toBe(true);
+	it("registers an existing discrawl manual-QA harness", () => {
+		const discrawl = buildDatasourceMatrix().find((lane) => lane.name === "discrawl");
+		expect(discrawl?.command).toBeDefined();
+		expect(existsSync(discrawl?.command ?? "")).toBe(true);
 	});
 
 	it("rejects a successful native command without a lane-native identity", async () => {
 		const result = await runDatasourceMatrix({
 			root: fixtureRoot(),
-			selection: ["katok"],
+			selection: ["discrawl"],
 			which: () => true,
 			configured: () => true,
 			run: async () => ({ ok: true, stdout: "should not be reached", stderr: "", code: 0 }),
 		});
-		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "FAIL" });
+		expect(result.lanes[0]).toMatchObject({ name: "discrawl", status: "FAIL" });
 		expect(result.lanes[0]?.reason).toContain("native identity");
 	});
 
-	it("accepts a canonical /kakao/<instance>/chunks/<chunk> identity from the live harness", async () => {
+	it("accepts a canonical /discord/... identity from the live harness", async () => {
 		const result = await runDatasourceMatrix({
 			root: fixtureRoot(),
-			selection: ["katok"],
+			selection: ["discrawl"],
 			which: () => true,
 			configured: () => true,
 			run: async () => ({
 				ok: true,
-				stdout: "KATOK_LIVE_QA_PASS source=/kakao/default/chunks/chunk-001",
+				stdout: "DISCRAWL_LIVE_QA_PASS source=/discord/default/chunks/chunk-001",
 				stderr: "",
 				code: 0,
 			}),
 		});
-		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "PASS" });
+		expect(result.lanes[0]).toMatchObject({ name: "discrawl", status: "PASS" });
 		expect(result.lanes[0]?.evidence?.nativeIdentity).toBe(true);
 	});
 
@@ -64,7 +64,7 @@ describe("live-e2e datasource matrix", () => {
 		let observedCwd = "";
 		await runDatasourceMatrix({
 			root,
-			selection: ["katok"],
+			selection: ["discrawl"],
 			which: () => true,
 			configured: () => true,
 			run: async (_command, _args, cwd) => {
@@ -88,19 +88,18 @@ describe("live-e2e datasource matrix", () => {
 	it("reports an available native lane failure as FAIL", async () => {
 		const result = await runDatasourceMatrix({
 			root: "/tmp/live-e2e-root",
-			selection: ["katok"],
+			selection: ["discrawl"],
 			which: () => true,
 			configured: () => true,
 			run: async () => ({ ok: false, stderr: "fixture failed", stdout: "", code: 1 }),
 		});
-		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "FAIL" });
+		expect(result.lanes[0]).toMatchObject({ name: "discrawl", status: "FAIL" });
 	});
 
-	it("accepts canonical katok slash identities and rejects retired scheme plus fake filesystem paths", () => {
-		expect(validateNativeIdentity("/kakao/default/chunks/chunk-001", "katok")).toBe(true);
-		expect(validateNativeIdentity("kakao:chat/sender/chunk", "katok")).toBe(false);
-		expect(validateNativeIdentity("/autorag/fake/chunks/1", "katok")).toBe(false);
-		expect(validateNativeIdentity("/kakao/default/chunk-001", "katok")).toBe(false);
+	it("accepts canonical discrawl slash identities and rejects fake filesystem paths", () => {
+		expect(validateNativeIdentity("/discord/default/chunks/chunk-001", "discrawl")).toBe(true);
+		expect(validateNativeIdentity("/autorag/fake/chunks/1", "discrawl")).toBe(false);
+		expect(validateNativeIdentity("discord:guild/channel", "discrawl")).toBe(false);
 	});
 
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {
