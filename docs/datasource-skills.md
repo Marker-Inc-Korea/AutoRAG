@@ -222,11 +222,13 @@ Datasource access is default-deny. Trusted server/API configuration supplies:
 - `datasourceAccess.allowedTags`
 - `datasourceAccess.allowedScopes`
 
-Model-controlled tool arguments cannot grant access. The LLM-visible `search_datasource_documents` tool schema is exactly:
+Model-controlled tool arguments cannot grant access. Every authorized connection gets its own generated `search_datasource_<id>` tool, and each one's schema is exactly:
 
 ```ts
 { query: string; topK?: number; scope?: string }
 ```
+
+There is no datasource fan-out tool: a question that spans every datasource (or everything else) uses `search_all_documents`, which already registers every authorized connection's retrieval methods alongside the local ones.
 
 `scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, katok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
 
@@ -481,7 +483,7 @@ const agent = new AutoRAGAgent({
 });
 
 await agent.refresh();
-const hits = await agent.searchDatasourceDocuments("contract renewal", { topK: 5 });
+const hits = await agent.searchSingleDatasourceDocuments("kakao", "contract renewal", { topK: 5 });
 ```
 
 ## New datasource checklist

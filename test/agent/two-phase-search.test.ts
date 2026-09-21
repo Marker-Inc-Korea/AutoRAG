@@ -164,7 +164,7 @@ function makeSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 			return {
 				name: "datasource-kakao",
 				description: "Search indexed KakaoTalk chats.",
-				content: "# KakaoTalk\nSearch with search_datasource_documents; scope /kakao/acct-1.",
+				content: "# KakaoTalk\nSearch with search_datasource_kakao; scope /kakao/acct-1.",
 			};
 		},
 		async index(): Promise<DatasourceIndexResult> {
@@ -293,7 +293,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 			true,
 			fastAnswerCall(),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			fauxAssistantMessage([fauxToolCall("search_datasource_documents", { query: "refund approval", topK: 5 })], {
+			fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "refund approval", topK: 5 })], {
 				stopReason: "toolUse",
 			}),
 			fauxAssistantMessage(
@@ -321,7 +321,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(response.searched).toBe(1);
 		expect(response.retrievalTrace).toHaveLength(1);
 		const entry = response.retrievalTrace?.[0];
-		expect(entry?.tool).toBe("search_datasource_documents");
+		expect(entry?.tool).toBe("search_datasource_kakao");
 		expect(entry?.resultCount).toBe(1);
 		expect(entry?.results[0]?.source).toBe("/kakao/acct-1/chunks/msg-1");
 		expect(entry?.results[0]?.excerpt).toContain("Director approval");

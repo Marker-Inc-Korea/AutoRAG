@@ -193,7 +193,7 @@ export class ObsidianSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence} via \`qmd update\` (+ \`qmd embed\` for semantic). You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				`Call the dedicated \`${datasourceSearchToolName(OBSIDIAN_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
+				`Call the dedicated \`${datasourceSearchToolName(OBSIDIAN_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Available authorized scopes:`,
 				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",

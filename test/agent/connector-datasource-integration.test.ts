@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createLoadDatasourceSkillTool } from "../../src/agent/datasource-skill.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { singleDatasourceToolName } from "../../src/agent/search-single-datasource-tool.ts";
 import type { CrawlerSkillClient } from "../../src/datasource/crawler-skill.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { GitHubSkill } from "../../src/datasource/skills/github/index.ts";
@@ -18,6 +19,15 @@ let tmpDir: string;
 beforeEach(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), "autorag-connector-integration-"));
 });
+
+/** The generated per-connection tool the agent registers for `datasourceId`. */
+function agentDatasourceTool(agent: AutoRAGAgent, datasourceId: string): AgentTool {
+	const tools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
+	const name = singleDatasourceToolName(datasourceId);
+	const tool = tools.find((entry) => entry.name === name);
+	if (tool === undefined) throw new Error(`agent exposes no generated tool ${name}`);
+	return tool;
+}
 
 afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
@@ -78,7 +88,7 @@ function githubSkill(): GitHubSkill {
 }
 
 describe("AutoRAGAgent with connector-backed datasource skills", () => {
-	it("indexes during refresh and searches via search_datasource_documents under trusted scopes", async () => {
+	it("indexes during refresh and searches each connection through its own generated tool", async () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
@@ -93,17 +103,21 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		const refresh = await agent.refresh(true, { methods: ["datasources"] });
 		expect(refresh.datasources?.every((result) => result.ok)).toBe(true);
 
-		const tool = createSearchDatasourceDocumentsTool(agent);
-		const slackResponse = await tool.execute("call-1", { query: "budget approved launch" });
+		const slackTool = agentDatasourceTool(agent, "slack");
+		const slackResponse = await slackTool.execute("call-1", { query: "budget approved launch" });
 		expect(slackResponse.details.resultCount).toBeGreaterThan(0);
-		expect(slackResponse.details.sources.every((source) => /^\/(slack|github)\//u.test(source))).toBe(true);
+		expect(slackResponse.details.sources.every((source: string) => source.startsWith("/slack/"))).toBe(true);
 
-		const githubResponse = await tool.execute("call-2", { query: "login retry token expires" });
-		expect(githubResponse.details.sources.some((source) => source.startsWith("/github/acme/chunks/"))).toBe(true);
+		const githubTool = agentDatasourceTool(agent, "github");
+		const githubResponse = await githubTool.execute("call-2", { query: "login retry token expires" });
+		expect(githubResponse.details.sources.some((source: string) => source.startsWith("/github/acme/chunks/"))).toBe(
+			true,
+		);
+		expect(githubResponse.details.sources.every((source: string) => source.startsWith("/github/"))).toBe(true);
 
-		// Scope narrows to slack only.
-		const scoped = await tool.execute("call-3", { query: "login retry token expires", scope: "/slack/**" });
-		expect(scoped.details.sources.every((source) => source.startsWith("/slack/"))).toBe(true);
+		// Scope narrows within the connection.
+		const scoped = await slackTool.execute("call-3", { query: "login retry token expires", scope: "/slack/**" });
+		expect(scoped.details.sources.every((source: string) => source.startsWith("/slack/"))).toBe(true);
 	});
 
 	it("stays default-deny for connector skills without trusted access", async () => {
@@ -115,17 +129,15 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		});
 		await agent.refresh(true, { methods: ["datasources"] });
 
-		const { results } = await agent.searchDatasourceDocuments("budget approved");
+		const { results } = await agent.searchSingleDatasourceDocuments("slack", "budget approved");
 		expect(results).toEqual([]);
 
-		const tool = createSearchDatasourceDocumentsTool(agent);
-		const response = await tool.execute("call-deny", {
-			query: "budget approved",
-			scope: "/slack/**",
-			allowedTags: ["slack"],
-			allowedScopes: ["/slack/**"],
-		} as never);
-		expect(response.details.resultCount).toBe(0);
+		// Default-deny does not merely empty the results: it exposes no datasource
+		// tool at all, so model arguments cannot reach a datasource.
+		const datasourceToolNames = (agent as unknown as { tools: readonly AgentTool[] }).tools
+			.map((tool) => tool.name)
+			.filter((name) => name.startsWith("search_datasource_"));
+		expect(datasourceToolNames).toEqual([]);
 	});
 
 	it("announces authorized connector skills in the system prompt and loads them on demand", async () => {
@@ -243,7 +255,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			datasourceAccess: { allowedTags: ["obsidian"], allowedScopes: ["/obsidian/**"] },
 		});
 		await agent.refresh(true, { methods: ["datasources"] });
-		const { results } = await agent.searchDatasourceDocuments("postgres core database decision");
+		const { results } = await agent.searchSingleDatasourceDocuments("obsidian", "postgres core database decision");
 		expect(results.length).toBeGreaterThan(0);
 		expect(results[0]?.source).toMatch(/^\/obsidian\/vault-1\/chunks\//);
 		expect(results[0]?.metadata?.path).toBe(join(vault, "notes", "decisions.md"));

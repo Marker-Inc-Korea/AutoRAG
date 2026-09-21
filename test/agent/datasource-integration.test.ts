@@ -1,10 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createLoadDatasourceSkillTool } from "../../src/agent/datasource-skill.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { singleDatasourceToolName } from "../../src/agent/search-single-datasource-tool.ts";
 import type {
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -23,6 +24,19 @@ let tmpDir: string;
 beforeEach(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), "autorag-agent-datasource-test-"));
 });
+
+/**
+ * The generated per-connection tool for `datasourceId`, exactly as the agent
+ * registers it. The fan-out `search_datasource_documents` tool is gone, so this
+ * is the only model-facing way to reach a datasource.
+ */
+function agentDatasourceTool(agent: AutoRAGAgent, datasourceId: string): AgentTool {
+	const tools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
+	const name = singleDatasourceToolName(datasourceId);
+	const tool = tools.find((entry) => entry.name === name);
+	if (tool === undefined) throw new Error(`agent exposes no generated tool ${name}`);
+	return tool;
+}
 
 afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
@@ -77,7 +91,7 @@ function makeSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 			return {
 				name: "datasource-kakao",
 				description: "Search indexed KakaoTalk chats.",
-				content: "# KakaoTalk\nSearch with search_datasource_documents; scope /kakao/acct-1.",
+				content: "# KakaoTalk\nSearch with search_datasource_kakao; scope /kakao/acct-1.",
 			};
 		},
 		async index(): Promise<DatasourceIndexResult> {
@@ -149,7 +163,7 @@ function makeScopedSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 		skillManifest: () => ({
 			name: "datasource-slack",
 			description: "Search Slack chats.",
-			content: "Search with search_datasource_documents.",
+			content: "Search with search_datasource_slack.",
 		}),
 		index: async () => ({
 			ok: true,
@@ -177,7 +191,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			datasourceAccess: { allowedTags: ["kakao"] },
 		});
 
-		const { results } = await agent.searchDatasourceDocuments("message");
+		const { results } = await agent.searchSingleDatasourceDocuments("kakao", "message");
 
 		expect(results.map((r) => r.source)).toEqual(["/kakao/personal/chunks/a", "/kakao/personal/chunks/b"]);
 	});
@@ -205,26 +219,45 @@ describe("AutoRAGAgent datasource integration", () => {
 		expect(results.map((row) => row.source)).toEqual(["/slack/allowed/channel/message"]);
 	});
 
-	it("keeps datasource default-deny even when tool args try to grant tags or scopes", async () => {
-		const agent = new AutoRAGAgent({
+	it("exposes no datasource tool under default-deny and ignores tool args that try to grant access", async () => {
+		const denied = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill([result("a", "/kakao/acct-1/chunks/a")])],
 		});
-		const tool = createSearchDatasourceDocumentsTool(agent);
+		// Default-deny generates no datasource tool at all, so model arguments can
+		// never reach a datasource in the first place.
+		const deniedToolNames = (denied as unknown as { tools: readonly AgentTool[] }).tools
+			.map((entry) => entry.name)
+			.filter((name) => name.startsWith("search_datasource_"));
+		expect(deniedToolNames).toEqual([]);
+
+		const authorized = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			jikji: false,
+			minSync: { autoInstall: false },
+			datasourceSkills: [
+				makeScopedSkill([
+					result("allowed", "/slack/allowed/channel/message"),
+					result("secret", "/slack/secret/channel/message"),
+				]),
+			],
+			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/allowed/**"] },
+		});
+		const tool = agentDatasourceTool(authorized, "slack");
 
 		const response = await tool.execute("call-1", {
 			query: "message",
 			topK: 10,
-			scope: "/kakao/acct-1/**",
-			allowedTags: ["kakao"],
-			allowedScopes: ["/kakao/**"],
+			allowedTags: ["slack"],
+			allowedScopes: ["/slack/**"],
 		} as never);
 
-		expect(response.details.resultCount).toBe(0);
-		expect(response.details.sources).toEqual([]);
+		// Injected trust fields are ignored: only the trusted scope survives.
+		expect(response.details.sources).toEqual(["/slack/allowed/channel/message"]);
 	});
 
 	it("announces authorized datasource skills in the system prompt (progressive disclosure) without raw paths", () => {
@@ -243,7 +276,8 @@ describe("AutoRAGAgent datasource integration", () => {
 		expect(prompt).toContain("datasource-kakao");
 		expect(prompt).toContain("Search indexed KakaoTalk chats.");
 		expect(prompt).toContain("load_datasource_skill");
-		expect(prompt).toContain("search_datasource_documents");
+		expect(prompt).toContain("search_datasource_kakao");
+		expect(prompt).not.toContain("search_datasource_documents");
 		// Full skill content (with example scopes) is loaded on demand, not in the prompt.
 		expect(prompt).not.toContain("/kakao/acct-1");
 		expect(prompt).not.toContain("/Users/");
@@ -308,7 +342,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		expect(response.details).toEqual({ skill: "datasource-kakao", loaded: true });
 		const text = response.content.map((part) => (part.type === "text" ? part.text : "")).join("");
 		expect(text).toContain('<skill name="datasource-kakao"');
-		expect(text).toContain("search_datasource_documents");
+		expect(text).toContain("search_datasource_kakao");
 	});
 
 	it("does not load datasource skills under default-deny or for unknown names", async () => {

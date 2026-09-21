@@ -256,13 +256,13 @@ describe("runTui", () => {
 		presenter.handle({
 			type: "tool_execution_start",
 			toolCallId: "tool-1",
-			toolName: "search_datasource_documents",
+			toolName: "search_datasource_kakao",
 			args: { query: "question" },
 		});
 		presenter.handle({
 			type: "tool_execution_end",
 			toolCallId: "tool-1",
-			toolName: "search_datasource_documents",
+			toolName: "search_datasource_kakao",
 			result: { details: { count: 2 } },
 			isError: false,
 		});
@@ -288,7 +288,7 @@ describe("runTui", () => {
 
 		expect(presenter.lines()).toEqual([
 			"\u001b[90m\u001b[2mthinking: (collapsed)\u001b[0m",
-			"✓ search_datasource_documents: done",
+			"✓ search_datasource_kakao: done",
 			"✓ verify_sources: done",
 			"assistant: final answer",
 		]);
@@ -467,7 +467,7 @@ describe("runTui", () => {
 							{
 								type: "tool_execution_start",
 								toolCallId: "tool-1",
-								toolName: "search_datasource_documents",
+								toolName: "search_datasource_kakao",
 								args: {},
 							},
 							new AbortController().signal,
@@ -501,7 +501,7 @@ describe("runTui", () => {
 		expect(await running).toBe(0);
 		expect(queries).toEqual(["question"]);
 		expect(tui.rendered.join("\n")).toContain("answer");
-		expect(tui.rendered.join("\n")).toContain("search_datasource_documents");
+		expect(tui.rendered.join("\n")).toContain("search_datasource_kakao");
 		expect(tui.rendered.join("\n")).toContain("assistant: streamed");
 		expect(tui.stopped).toBe(true);
 	});

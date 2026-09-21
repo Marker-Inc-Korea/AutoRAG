@@ -84,7 +84,7 @@ describe("KatokSkill skillManifest (Pi agent-skill layer)", () => {
 
 		expect(manifest.name).toBe("datasource-kakao");
 		expect(manifest.description.toLowerCase()).toContain("kakaotalk");
-		expect(manifest.content).toContain("search_datasource_documents");
+		expect(manifest.content).toContain("search_datasource_kakao");
 		expect(manifest.content).toContain("/kakao/work");
 		expect(manifest.content).not.toContain("/Users/");
 		expect(manifest.content).not.toContain("Library/Containers");

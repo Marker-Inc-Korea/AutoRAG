@@ -4,8 +4,8 @@
  *
  * Detects which tokens are present in the environment and live-tests each
  * available skill against the REAL service through the full agent path
- * (refresh -> index -> search_datasource_documents). Skills without a token
- * are skipped with setup instructions.
+ * (refresh -> index -> each connection's own search_datasource_<id> tool).
+ * Skills without a token are skipped with setup instructions.
  *
  * Tokens (set any subset):
  *  - SLACK_BOT_TOKEN     https://api.slack.com/apps → Create App → OAuth &
@@ -22,8 +22,9 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { singleDatasourceToolName } from "../../src/agent/search-single-datasource-tool.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../../src/datasource/skills/factory.ts";
 
 const queries = process.argv.slice(2);
@@ -60,7 +61,6 @@ const agent = new AutoRAGAgent({
 	searchPaths: [docs],
 	workspacePath: ws,
 	minSync: false,
-	bm25: false,
 	datasourceSkills: skills,
 	datasourceAccess: { allowedTags: enabled, allowedScopes: enabled.map((name) => `/${name}/**`) },
 });
@@ -77,13 +77,21 @@ for (const result of refresh.datasources ?? []) {
 	}
 }
 
-const tool = createSearchDatasourceDocumentsTool(agent);
+const agentTools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
 const effectiveQueries = queries.length > 0 ? queries : ["meeting", "프로젝트", "invoice payment", "일정"];
-for (const query of effectiveQueries) {
-	const response = await tool.execute(`tenant-${query}`, { query, topK: 3 });
-	console.log(`\nQ: "${query}" → ${response.details.resultCount} hit(s)`);
-	const text = response.content.map((part) => (part.type === "text" ? part.text : "")).join("");
-	console.log(text.split("\n").slice(0, 10).join("\n"));
+for (const connection of enabled) {
+	const tool = agentTools.find((entry) => entry.name === singleDatasourceToolName(connection));
+	if (tool === undefined) {
+		failures += 1;
+		console.log(`\n${connection}: FAILED — no generated search tool for this connection`);
+		continue;
+	}
+	for (const query of effectiveQueries) {
+		const response = await tool.execute(`tenant-${connection}-${query}`, { query, topK: 3 });
+		console.log(`\n[${connection}] Q: "${query}" → ${response.details.resultCount} hit(s)`);
+		const text = response.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+		console.log(text.split("\n").slice(0, 10).join("\n"));
+	}
 }
 
 if (failures > 0) process.exitCode = 1;

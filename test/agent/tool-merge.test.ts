@@ -60,7 +60,6 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 			"semantic_search_local_docs",
 			"semantic_search_local_docs",
 			"search_all_documents",
-			"search_datasource_documents",
 			"emit_autorag_results",
 		]) {
 			expect(names).toContain(name);

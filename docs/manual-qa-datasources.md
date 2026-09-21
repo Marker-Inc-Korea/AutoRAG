@@ -87,9 +87,11 @@ mapping. Configure credentials in notcrawl itself, then set
       unauthorized skills are omitted entirely.
 - [x] `load_datasource_skill` returns full path-opaque instructions for
       authorized names and not-available for denied/unknown names.
-- [x] `search_datasource_documents` returns hits for each skill with opaque
-      slash-hierarchical sources (`/<skill>/<instance>/chunks/<id>`); no `#`
-      fragments, no real filesystem paths.
+- [x] Each authorized connection's dedicated `search_datasource_<id>` tool
+      returns hits with opaque slash-hierarchical sources
+      (`/<skill>/<instance>/chunks/<id>`); no `#` fragments, no real filesystem
+      paths. There is no datasource fan-out tool: every authorized connection is
+      reachable through its own generated tool, and default-deny generates none.
 - [x] `scope` narrows results for scope-capable datasources (e.g. `/mail-export/**` excludes Slack hits) and can
       never widen access.
 
