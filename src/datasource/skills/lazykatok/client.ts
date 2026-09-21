@@ -1,5 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type {
 	LazykatokChunk,
@@ -152,7 +154,7 @@ export class LazykatokClient {
 function spawnLazykatok(request: SpawnRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const { options, args, env, signal } = request;
-		const portable = portableSpawnCommand(commandFor(options.binaryPath), args);
+		const portable = portableSpawnCommand(commandFor(options, env), args);
 		const child = spawn(portable.command, [...portable.args], {
 			env,
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
@@ -217,8 +219,25 @@ function spawnLazykatok(request: SpawnRequest): Promise<ProcessResult> {
 	});
 }
 
-function commandFor(binaryPath: string | undefined): string {
-	return binaryPath === undefined ? DEFAULT_LAZYKATOK_BINARY : binaryPath;
+function commandFor(options: LazykatokOptions, env: NodeJS.ProcessEnv): string {
+	if (options.binaryPath !== undefined) return options.binaryPath;
+	// Windows cannot execute a shebang script that child_process resolves by a
+	// bare PATH name, so resolve the default binary to a concrete PATH entry and
+	// let portableSpawnCommand route it through its interpreter. A name that is
+	// not on PATH stays bare so a missing binary still degrades as binary-missing.
+	return lookupInPath(DEFAULT_LAZYKATOK_BINARY, env) ?? DEFAULT_LAZYKATOK_BINARY;
+}
+
+/** Resolve an executable name against a PATH environment value. */
+function lookupInPath(executable: string, env: NodeJS.ProcessEnv): string | undefined {
+	const pathEnv = env.PATH;
+	if (typeof pathEnv !== "string" || pathEnv.length === 0) return undefined;
+	for (const dir of pathEnv.split(delimiter)) {
+		if (dir.length === 0) continue;
+		const candidate = join(dir, executable);
+		if (existsSync(candidate)) return candidate;
+	}
+	return undefined;
 }
 
 /**

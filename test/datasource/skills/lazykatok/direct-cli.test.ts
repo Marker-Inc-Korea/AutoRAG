@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildDatasourceSkills } from "../../../../src/datasource/skills/factory.ts";
 import { LazykatokClient } from "../../../../src/datasource/skills/lazykatok/client.ts";
@@ -66,7 +66,10 @@ describe("LazykatokClient direct CLI execution", () => {
 		writeFakeLazykatok();
 		const client = new LazykatokClient({
 			binaryPath,
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, LAZYKATOK_FAKE_OUTPUT: JSON.stringify({ ready: true }) },
+			env: {
+				PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
+				LAZYKATOK_FAKE_OUTPUT: JSON.stringify({ ready: true }),
+			},
 		});
 
 		const result = await client.doctor();
@@ -96,7 +99,10 @@ describe("LazykatokClient direct CLI execution", () => {
 		];
 		const client = new LazykatokClient({
 			binaryPath,
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, LAZYKATOK_FAKE_OUTPUT: JSON.stringify(realHits) },
+			env: {
+				PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
+				LAZYKATOK_FAKE_OUTPUT: JSON.stringify(realHits),
+			},
 		});
 
 		const result = await client.search("keyword", "류동현", { topK: 1 });
@@ -178,7 +184,7 @@ process.exit(1);
 		chmodSync(binaryPath, 0o755);
 
 		const built = buildDatasourceSkills({
-			kakao: { connector: { env: { PATH: `${binDir}:${process.env.PATH ?? ""}` } } },
+			kakao: { connector: { env: { PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}` } } },
 		});
 		const skill = built.skills.find((candidate) => candidate.describe().datasourceId === "kakao");
 		expect(skill).toBeDefined();
