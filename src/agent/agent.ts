@@ -92,10 +92,6 @@ import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
-	createSearchDatasourceDocumentsTool,
-	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
-} from "./search-datasource-tool.ts";
-import {
 	createEmptySearchDocumentsResponse,
 	createPreliminarySearchDocumentsResponse,
 	recordNumberedFeedback,
@@ -127,7 +123,6 @@ import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } 
 const SEARCH_TOOLS = [
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
-	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
 ] as const;
 
@@ -459,12 +454,12 @@ export class AutoRAGAgent {
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 		// One tool per authorized datasource connection, so a question that
 		// targets a single connection spawns only that connection's CLIs instead
 		// of fanning out to every datasource. Generated from the same trusted
 		// config + access context as the skill list, so disabled or denied
-		// datasources never appear as tools.
+		// datasources never appear as tools. These are the only datasource
+		// retrieval tools: cross-datasource fan-out lives in search_all_documents.
 		const singleDatasourceTools = createSingleDatasourceSearchTools(this, this.singleDatasourceToolSpecs());
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
@@ -500,7 +495,6 @@ export class AutoRAGAgent {
 		const reservedNames = new Set<string>([
 			BASH_TOOL_NAME,
 			"check_memory",
-			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 			...singleDatasourceTools.map((tool) => tool.name),
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
@@ -531,7 +525,6 @@ export class AutoRAGAgent {
 			checkMemoryTool,
 			searchMinSyncTool,
 			searchAllTool,
-			searchDatasourceTool,
 			...singleDatasourceTools,
 			loadDatasourceSkillTool,
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
@@ -1992,47 +1985,16 @@ export class AutoRAGAgent {
 		return this.retrieveWithDiagnostics(query, { topK: options.topK, scope: options.scope });
 	}
 
-	async searchDatasourceDocuments(
-		query: string,
-		options: { readonly topK?: number; readonly scope?: string } = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
-		const retrievalOptions: RetrievalOptions = {
-			...this.activeRetrievalOptions,
-			topK: options.topK,
-			scope: options.scope,
-		};
-		const ctx = this.datasourceAccessContext(retrievalOptions);
-		const methods = this.methodRegistry.list().filter((method) => {
-			const descriptor = method.describe();
-			return descriptor.datasourceId !== undefined && ctx.isAccessible(descriptor);
-		});
-		if (methods.length === 0) return { results: [], diagnostics: [] };
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
-			methods,
-			query,
-			retrievalOptions,
-		);
-		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
-		for (const results of filteredByMethod.values()) {
-			for (const result of results) retrievalOptions.observedSources?.add(result.source);
-		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
-			),
-			diagnostics,
-		};
-	}
-
 	/**
-	 * Search one datasource connection only. Unlike
-	 * {@link searchDatasourceDocuments}, which fans out to every authorized
-	 * datasource and filters afterwards, this registers only the target
-	 * connection's retrieval methods with the retriever, so no other
-	 * datasource CLI is spawned at all. Access is still gated by the trusted
-	 * datasource context: an unknown or unauthorized `datasourceId` yields an
-	 * empty result set.
+	 * Search one datasource connection only. Only the target connection's
+	 * retrieval methods are registered with the retriever, so no other
+	 * datasource CLI is spawned at all and only that connection's hits are
+	 * returned. Access is still gated by the trusted datasource context: an
+	 * unknown or unauthorized `datasourceId` yields an empty result set.
+	 *
+	 * This backs the generated `search_datasource_<id>` tools; every authorized
+	 * connection has one. Cross-datasource fan-out is
+	 * {@link searchAllDocuments}, which spans every retrieval method.
 	 */
 	async searchSingleDatasourceDocuments(
 		datasourceId: string,

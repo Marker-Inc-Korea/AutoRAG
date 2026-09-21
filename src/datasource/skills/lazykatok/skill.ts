@@ -162,7 +162,7 @@ export class LazykatokSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				`Call the dedicated \`${datasourceSearchToolName(KAKAO_DATASOURCE_ID)}\` tool with a natural-language \`query\` and \`topK\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. This datasource does not support per-source scope narrowing. Authorized datasource:`,
+				`Call the dedicated \`${datasourceSearchToolName(KAKAO_DATASOURCE_ID)}\` tool with a natural-language \`query\` and \`topK\`. This datasource does not support per-source scope narrowing. Authorized datasource:`,
 				instanceSources.length > 0 ? instanceSources : "- (no configured instances)",
 				"",
 				"Access is controlled by the trusted datasource tag; chat/channel filtering is owned by lazykatok.",

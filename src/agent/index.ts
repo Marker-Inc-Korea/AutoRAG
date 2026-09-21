@@ -42,12 +42,6 @@ export {
 	type SearchAllDocumentsProvider,
 	type SearchAllDocumentsResult,
 } from "./search-all-tool.ts";
-export {
-	createSearchDatasourceDocumentsTool,
-	type DatasourceSearchProvider,
-	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
-	type SearchDatasourceDocumentsDetails,
-} from "./search-datasource-tool.ts";
 export type {
 	SearchDocumentDiagnostic,
 	SearchDocumentDiagnosticCode,
@@ -65,6 +59,7 @@ export {
 } from "./search-minsync-tool.ts";
 export {
 	createSingleDatasourceSearchTools,
+	formatDatasourceResults,
 	SEARCH_SINGLE_DATASOURCE_TOOL_PREFIX,
 	type SearchSingleDatasourceDetails,
 	type SingleDatasourceSearchProvider,

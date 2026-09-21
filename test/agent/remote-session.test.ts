@@ -48,12 +48,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 		for (const name of ["bash", "jikji_find", "check_memory"]) {
 			expect(names, name).toContain(name);
 		}
-		for (const name of [
-			"semantic_search_local_docs",
-			"search_all_documents",
-			"search_datasource_documents",
-			"emit_autorag_results",
-		]) {
+		for (const name of ["semantic_search_local_docs", "search_all_documents", "emit_autorag_results"]) {
 			expect(names, name).toContain(name);
 		}
 

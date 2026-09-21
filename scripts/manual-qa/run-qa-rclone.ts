@@ -8,7 +8,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { createSingleDatasourceSearchTools } from "../../src/agent/search-single-datasource-tool.ts";
 import { CloudDriveSkill } from "../../src/datasource/skills/cloud-drive/skill.ts";
 import type { RcloneRunResult } from "../../src/datasource/skills/cloud-drive/rclone-connector.ts";
 import { RcloneConnector } from "../../src/datasource/skills/cloud-drive/rclone-connector.ts";
@@ -26,9 +26,9 @@ const listings = () =>
 	JSON.stringify(
 		version === 1
 			? [
-					{ Path: "reports/q3.md", Name: "q3.md", Size: 20, Hashes: { md5: "q3-v1" }, ModTime: "2026-08-01T00:00:00Z" },
-					{ Path: "old.md", Name: "old.md", Size: 10, Hashes: { md5: "old-v1" }, ModTime: "2026-08-01T00:00:00Z" },
-				]
+				{ Path: "reports/q3.md", Name: "q3.md", Size: 20, Hashes: { md5: "q3-v1" }, ModTime: "2026-08-01T00:00:00Z" },
+				{ Path: "old.md", Name: "old.md", Size: 10, Hashes: { md5: "old-v1" }, ModTime: "2026-08-01T00:00:00Z" },
+			]
 			: [{ Path: "reports/q3-renamed.md", Name: "q3-renamed.md", Size: 20, Hashes: { md5: "q3-v2" }, ModTime: "2026-08-02T00:00:00Z" }],
 	);
 
@@ -78,17 +78,30 @@ try {
 	check("previous snapshot remains searchable after failure", (previous?.length ?? 0) > 0);
 
 	failCopy = false;
-	const tool = createSearchDatasourceDocumentsTool({
-		async searchDatasourceDocuments(query, options) {
-			const results = (await method?.retrieve(query, { topK: options?.topK ?? 5, scope: options?.scope })) ?? [];
-			return { results, diagnostics: [] };
+	const [tool] = createSingleDatasourceSearchTools(
+		{
+			async searchSingleDatasourceDocuments(_datasourceId, query, options) {
+				const results =
+					(await method?.retrieve(query, { topK: options?.topK ?? 5, scope: options?.scope })) ?? [];
+				return { results, diagnostics: [] };
+			},
 		},
-	});
-	const toolResult = await tool.execute("manual-qa", {
+		[
+			{
+				datasourceId: "personal-google-drive",
+				description: "rclone-backed personal Drive",
+				instanceScopes: ["/personal-google-drive/personal"],
+			},
+		],
+	);
+	const toolResult = await tool?.execute("manual-qa", {
 		query: "q3-renamed",
 		scope: "/personal-google-drive/personal/**",
 	});
-	check("search_datasource_documents returns scoped personal-drive hit", toolResult.details.resultCount > 0);
+	check(
+		"search_datasource_personal_google_drive returns scoped personal-drive hit",
+		(toolResult?.details.resultCount ?? 0) > 0,
+	);
 	check(
 		"manifest is isolated under the connection alias",
 		readFileSync(

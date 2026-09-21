@@ -167,8 +167,7 @@ function kakaoSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 			return {
 				name: "datasource-kakao",
 				description: "Search indexed KakaoTalk chats.",
-				content:
-					"# KakaoTalk\nSearch with search_all_documents or search_datasource_documents; scope /kakao/acct-1.",
+				content: "# KakaoTalk\nSearch with search_all_documents or search_datasource_kakao; scope /kakao/acct-1.",
 			};
 		},
 		async index(): Promise<DatasourceIndexResult> {
@@ -274,7 +273,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			"check_memory",
 			"semantic_search_local_docs",
 			"search_all_documents",
-			"search_datasource_documents",
+			"search_datasource_kakao",
 			"jikji_find",
 			"emit_autorag_results",
 		]) {

@@ -23,8 +23,8 @@ new AutoRAGAgent({
 
 1. **Default deny**
    - Remove `datasourceAccess`.
-   - Run `searchDatasourceDocuments("hello")`.
-   - Expected: zero datasource results; no error.
+   - Run `agent.searchSingleDatasourceDocuments("kakao", "hello")`.
+   - Expected: zero datasource results; no error, and no `search_datasource_kakao` tool is generated at all.
 
 2. **Trusted allow**
    - Restore `allowedTags: ["kakaotalk"]`.
