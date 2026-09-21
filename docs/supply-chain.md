@@ -25,3 +25,5 @@ GitHub already attaches source zip/tar from the tag. Each `v*` release additiona
 - `SHA256SUMS.txt` covering those files
 
 Stage locally after a build: `bun scripts/supply-chain/stage-release-assets.ts --out release-assets`. Do not attach `node_modules` or a second full-tree zip.
+
+OpenSSF Scorecard publishes from [`.github/workflows/scorecard.yml`](../.github/workflows/scorecard.yml) on `main` and a weekly cron. It does not replace OSV, CodeQL, or the SBOM/license gate. The OSPS Baseline mapping and remaining accepted gaps (signed commits, Action SHA pins on older workflows, historical secret scan) are in [openssf-baseline.md](openssf-baseline.md).
