@@ -1,0 +1,14 @@
+# Who must look at high-cost paths. Keep this file small; it is not a directory listing.
+# Repository ruleset `main-review-required` already sets require_code_owner_review: true.
+# Default owner is the project lead. Area owners can be split later without rewriting the ruleset.
+
+* @vkehfdl1
+/.github/workflows/ @vkehfdl1
+/LICENSE @vkehfdl1
+/GOVERNANCE.md @vkehfdl1
+/AGENTS.md @vkehfdl1
+/scripts/supply-chain/ @vkehfdl1
+/.github/dependency-review-config.yml @vkehfdl1
+/licenses/ @vkehfdl1
+/src/embedding-runtime/ @vkehfdl1
+/src/p2p/ @vkehfdl1

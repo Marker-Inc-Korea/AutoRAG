@@ -33,7 +33,7 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "mailcrawl-qa" }] });
 	registration.setResponses([
 		fauxAssistantMessage([fauxToolCall("load_datasource_skill", { name: "datasource-mailcrawl" })], { stopReason: "toolUse" }),
-		fauxAssistantMessage([fauxToolCall("search_datasource_documents", { query: "refund approval", topK: 5, scope: "/mailcrawl/personal/**" })], { stopReason: "toolUse" }),
+		fauxAssistantMessage([fauxToolCall("search_datasource_mailcrawl", { query: "refund approval", topK: 5, scope: "/mailcrawl/personal/**" })], { stopReason: "toolUse" }),
 		fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 			answer: "[1] Director approval is required before payout.",
 			results: [{ number: 1, title: "Refund approval", summary: "Director approval is required before payout.", evidence: [{ excerpt: "Director approval is required before payout." }], confidence: 0.99 }],
@@ -46,7 +46,6 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 			searchPaths: [root],
 			memoryPath: join(root, "memory.json"),
 			minSync: false,
-			bm25: false,
 			dupey: false,
 			datasourceSkills: [skill],
 			datasourceAccess: { allowedTags: ["mailcrawl"], allowedScopes: ["/mailcrawl/personal/**"] },

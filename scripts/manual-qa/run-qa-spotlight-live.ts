@@ -19,8 +19,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { singleDatasourceToolName } from "../../src/agent/search-single-datasource-tool.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { SpotlightConnector } from "../../src/datasource/skills/spotlight/connector.ts";
 
@@ -84,7 +85,6 @@ try {
 		searchPaths: [docsDir],
 		workspacePath: tmpRoot,
 		minSync: false,
-		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: { allowedTags: ["spotlight"], allowedScopes: ["/spotlight/**"] },
 	});
@@ -97,25 +97,28 @@ try {
 		spotlight?.ok ? `${spotlight.chunkCount} chunk(s)` : `${spotlight?.code}: ${spotlight?.message}`,
 	);
 
-	const tool = createSearchDatasourceDocumentsTool(agent);
-	const hits = await tool.execute("live-spotlight", { query: token, topK: 5, scope: "/spotlight/**" });
+	const agentTools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
+	const spotlightTool = agentTools.find((entry) => entry.name === singleDatasourceToolName("spotlight"));
+	const hits = await spotlightTool?.execute("live-spotlight", { query: token, topK: 5, scope: "/spotlight/**" });
 	check(
 		"live search: spotlight returns scoped opaque hits",
-		hits.details.sources.length > 0 &&
-			hits.details.sources.every((source) => source.startsWith("/spotlight/") && !source.includes(tmpRoot)),
-		hits.details.sources[0],
+		(hits?.details.sources.length ?? 0) > 0 &&
+		(hits?.details.sources ?? []).every(
+			(source: string) => source.startsWith("/spotlight/") && !source.includes(tmpRoot),
+		),
+		hits?.details.sources[0],
 	);
-	const body = hits.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+	const body = (hits?.content ?? []).map((block) => (block.type === "text" ? block.text : "")).join("\n");
 	check("live search: hit content contains the fixture token", body.includes(token));
 
 	const manifest = skills[0]?.skillManifest();
 	check(
 		"manifest documents macOS-only, FDA, and mdfind/mdls/mdutil",
 		manifest?.content.includes("macOS") === true &&
-			manifest.content.includes("Full Disk Access") &&
-			manifest.content.includes("mdfind") &&
-			manifest.content.includes("mdls") &&
-			manifest.content.includes("mdutil"),
+		manifest.content.includes("Full Disk Access") &&
+		manifest.content.includes("mdfind") &&
+		manifest.content.includes("mdls") &&
+		manifest.content.includes("mdutil"),
 	);
 
 	console.log(failures === 0 ? "\nSPOTLIGHT LIVE QA PASSED" : `\nSPOTLIGHT LIVE QA: ${failures} failure(s)`);

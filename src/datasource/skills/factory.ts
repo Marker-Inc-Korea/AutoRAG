@@ -21,7 +21,7 @@ import {
 } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
-import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
+import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
@@ -159,9 +159,9 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			},
 		}),
 	kakao: (config, _workspaceRoot, _registrationName) =>
-		new KatokSkill({
-			client: new KatokClient({
-				...(config.connector as KatokOptions),
+		new LazykatokSkill({
+			client: new LazykatokClient({
+				...(config.connector as LazykatokOptions),
 			}),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),

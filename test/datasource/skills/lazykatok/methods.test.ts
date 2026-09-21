@@ -1,30 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
-	KatokBm25Method,
-	type KatokSearchClient,
-	KatokSemanticMethod,
-} from "../../../../src/datasource/skills/katok/methods.ts";
+	LazykatokBm25Method,
+	type LazykatokSearchClient,
+	LazykatokSemanticMethod,
+} from "../../../../src/datasource/skills/lazykatok/methods.ts";
 import type {
-	KatokFailureReason,
-	KatokHit,
-	KatokSearchMode,
-	KatokSearchOptions,
-	KatokSearchResult,
-} from "../../../../src/datasource/skills/katok/types.ts";
+	LazykatokFailureReason,
+	LazykatokHit,
+	LazykatokSearchMode,
+	LazykatokSearchOptions,
+	LazykatokSearchResult,
+} from "../../../../src/datasource/skills/lazykatok/types.ts";
 
 interface SearchCall {
-	readonly mode: KatokSearchMode;
+	readonly mode: LazykatokSearchMode;
 	readonly query: string;
-	readonly options?: KatokSearchOptions;
+	readonly options?: LazykatokSearchOptions;
 }
 
-class StubSearchClient implements KatokSearchClient {
+class StubSearchClient implements LazykatokSearchClient {
 	public readonly calls: SearchCall[] = [];
-	public hits: readonly KatokHit[] = [];
-	public failReason: KatokFailureReason | null = null;
+	public hits: readonly LazykatokHit[] = [];
+	public failReason: LazykatokFailureReason | null = null;
 	public throwError: Error | null = null;
 
-	async search(mode: KatokSearchMode, query: string, options?: KatokSearchOptions): Promise<KatokSearchResult> {
+	async search(
+		mode: LazykatokSearchMode,
+		query: string,
+		options?: LazykatokSearchOptions,
+	): Promise<LazykatokSearchResult> {
 		this.calls.push({ mode, query, options });
 		if (this.throwError !== null) throw this.throwError;
 		if (this.failReason !== null) {
@@ -33,7 +37,7 @@ class StubSearchClient implements KatokSearchClient {
 				reason: this.failReason,
 				hits: [],
 				stdout: "",
-				stderr: "katok: unavailable",
+				stderr: "lazykatok: unavailable",
 				code: null,
 			};
 		}
@@ -43,7 +47,7 @@ class StubSearchClient implements KatokSearchClient {
 
 const INSTANCE_ID = "default";
 
-const BASE_HITS: readonly KatokHit[] = [
+const BASE_HITS: readonly LazykatokHit[] = [
 	{
 		chunkId: "chunk-001",
 		content: "refund policy approval workflow",
@@ -73,9 +77,9 @@ function makeClient(): StubSearchClient {
 	return client;
 }
 
-describe("KatokBm25Method descriptor", () => {
+describe("LazykatokBm25Method descriptor", () => {
 	it("exposes kakao-bm25 name, bm25 type, kakao datasource id, and pii tags", () => {
-		const method = new KatokBm25Method({ client: makeClient(), instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client: makeClient(), instanceId: INSTANCE_ID });
 		const descriptor = method.describe();
 
 		expect(descriptor.name).toBe("kakao-bm25");
@@ -87,7 +91,7 @@ describe("KatokBm25Method descriptor", () => {
 	});
 
 	it("forwards custom tags when provided", () => {
-		const method = new KatokBm25Method({
+		const method = new LazykatokBm25Method({
 			client: makeClient(),
 			instanceId: INSTANCE_ID,
 			tags: ["kakaotalk", "team"],
@@ -96,9 +100,9 @@ describe("KatokBm25Method descriptor", () => {
 	});
 });
 
-describe("KatokSemanticMethod descriptor", () => {
+describe("LazykatokSemanticMethod descriptor", () => {
 	it("exposes kakao-semantic name and vector type", () => {
-		const method = new KatokSemanticMethod({ client: makeClient(), instanceId: INSTANCE_ID });
+		const method = new LazykatokSemanticMethod({ client: makeClient(), instanceId: INSTANCE_ID });
 		const descriptor = method.describe();
 
 		expect(descriptor.name).toBe("kakao-semantic");
@@ -108,10 +112,10 @@ describe("KatokSemanticMethod descriptor", () => {
 	});
 });
 
-describe("KatokBm25Method retrieve", () => {
+describe("LazykatokBm25Method retrieve", () => {
 	it("maps hits to the canonical slash datasource source", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10 });
 
@@ -129,7 +133,7 @@ describe("KatokBm25Method retrieve", () => {
 
 	it("calls client.search in keyword mode with the trimmed query and topK", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		await method.retrieve("  refund  ", { topK: 5 });
 
@@ -138,7 +142,7 @@ describe("KatokBm25Method retrieve", () => {
 
 	it("attaches method, datasourceId, instanceId, mode, and chunkId metadata", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const [first] = await method.retrieve("refund", { topK: 1 });
 
@@ -157,7 +161,7 @@ describe("KatokBm25Method retrieve", () => {
 
 	it("limits results to topK", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 2 });
 
@@ -166,7 +170,7 @@ describe("KatokBm25Method retrieve", () => {
 
 	it("returns [] for an empty query without calling the client", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("   ", {});
 
@@ -176,45 +180,45 @@ describe("KatokBm25Method retrieve", () => {
 
 	it("keeps hits for the kakao instance scope", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10, scope: "/kakao/default" });
 
 		expect(results).toHaveLength(3);
 	});
 
-	it("ignores source scope because katok has no scope capability", async () => {
+	it("ignores source scope because lazykatok has no scope capability", async () => {
 		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10, scope: "/kakao/other" });
 
 		expect(results).toHaveLength(3);
 	});
 
-	it("surfaces the katok failure instead of answering with an empty result set", async () => {
+	it("surfaces the lazykatok failure instead of answering with an empty result set", async () => {
 		const client = makeClient();
 		client.failReason = "binary-missing";
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		// The CLI's own words reach the retrieval pipeline, which reports kakao as unsearched.
-		await expect(method.retrieve("refund", { topK: 5 })).rejects.toThrow("katok: unavailable");
+		await expect(method.retrieve("refund", { topK: 5 })).rejects.toThrow("lazykatok: unavailable");
 		expect(client.calls).toHaveLength(1);
 	});
 
 	it("propagates a thrown client error unchanged", async () => {
 		const client = makeClient();
 		client.throwError = new Error("spawn ENOENT");
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		await expect(method.retrieve("refund", { topK: 5 })).rejects.toThrow("spawn ENOENT");
 	});
 });
 
-describe("KatokSemanticMethod retrieve", () => {
+describe("LazykatokSemanticMethod retrieve", () => {
 	it("calls client.search in semantic mode", async () => {
 		const client = makeClient();
-		const method = new KatokSemanticMethod({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokSemanticMethod({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("chargeback", { topK: 2 });
 
@@ -231,7 +235,7 @@ describe("KatokSemanticMethod retrieve", () => {
 	it("surfaces a failed semantic search with the CLI reason", async () => {
 		const client = makeClient();
 		client.failReason = "nonzero-exit";
-		const method = new KatokSemanticMethod({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokSemanticMethod({ client, instanceId: INSTANCE_ID });
 
 		await expect(method.retrieve("chargeback", {})).rejects.toThrow(
 			"kakao search --mode semantic failed (nonzero-exit",

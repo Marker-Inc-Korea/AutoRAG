@@ -184,7 +184,7 @@ export class ClawGallerySkill implements DatasourceSkill {
 				"- Never use `lexical` unless a sparse V-SPLADE index exists; it must not fall back to dense vectors.",
 				"- `hybrid` is the default and asks ClawGallery to RRF-fuse keyword results with every available dense and sparse vector channel.",
 				"",
-				`Use the dedicated \`${datasourceSearchToolName(CLAWGALLERY_DATASOURCE_ID)}\` tool with a natural-language query. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Prefer hybrid/default search unless you know which index capability is available. If an explicit vector mode is needed, inspect \`clawgallery vdr status --json\` first when capability details are available.`,
+				`Use the dedicated \`${datasourceSearchToolName(CLAWGALLERY_DATASOURCE_ID)}\` tool with a natural-language query. Prefer hybrid/default search unless you know which index capability is available. If an explicit vector mode is needed, inspect \`clawgallery vdr status --json\` first when capability details are available.`,
 				"",
 				"With only V-SPLADE synced, use lexical or hybrid. With only dense VDR synced, use embedding or hybrid. When both are synced, use hybrid so dense VDR and sparse V-SPLADE results can coexist and be RRF-combined.",
 				"",

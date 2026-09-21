@@ -1,6 +1,6 @@
 ---
 name: autorag-doctor
-description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding gateway, and every CLI-backed datasource (katok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the gateway will not start, or the user asks to check, diagnose, verify, or repair AutoRAG.
+description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding gateway, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the gateway will not start, or the user asks to check, diagnose, verify, or repair AutoRAG.
 license: MIT
 ---
 
@@ -16,7 +16,7 @@ Always finish with the status table in [Report](#report).
 ## Safety
 
 - Never delete, move, or edit source documents.
-- Never delete a datasource's **native** store (`~/.katok`, `~/.discrawl`,
+- Never delete a datasource's **native** store (`~/Library/Application Support/katok`, `~/.discrawl`,
   `~/.mailcrawl`, `.qmd`, Telegram/WhatsApp/Notion archives). AutoRAG only
   reads them; rebuilding them is the owning CLI's job.
 - Only AutoRAG-owned state under `AUTORAG_HOME` and the workspace `.autorag`
@@ -58,7 +58,7 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 |---|---|---|
 | MinSync (local docs) | `minsync status`, `minsync check`, `minsync verify` | `autorag refresh --method minsync` |
 | Jikji (discovery) | `jikji doctor` | `autorag refresh --method jikji` |
-| KakaoTalk | `katok doctor` | `katok sync && katok index` |
+| KakaoTalk | `lazykatok doctor` | `lazykatok sync && lazykatok index` |
 | Discord | `discrawl --json metadata` | `discrawl sync` |
 | Slack | `slacrawl --json doctor` | `slacrawl sync` |
 | WhatsApp | `wacrawl --json doctor` | `wacrawl import` |

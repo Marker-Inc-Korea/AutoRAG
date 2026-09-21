@@ -2,7 +2,7 @@
  * Datasource core contract.
  *
  * A *datasource* is an external, server-bound source of retrieval evidence
- * (e.g. a KakaoTalk export reached through the external `katok` CLI). The
+ * (e.g. a KakaoTalk export reached through the external `lazykatok` CLI). The
  * datasource layer sits *on top of* the existing retrieval pipeline: it owns
  * access gating and slash-hierarchical source naming, while actual retrieval
  * still flows through {@link RetrievalMethod} instances returned by a skill.
@@ -24,7 +24,7 @@ import type { RetrievalMethod } from "../retrieval/types.ts";
 export type { RetrievalMethod } from "../retrieval/types.ts";
 
 /**
- * Descriptor for a datasource skill (e.g. KakaoTalk via `katok`).
+ * Descriptor for a datasource skill (e.g. KakaoTalk via `lazykatok`).
  *
  * Structurally compatible with {@link RetrievalMethodDescriptor} so that
  * retrieval method descriptors can be gated by the same access context.
@@ -45,7 +45,7 @@ export interface DatasourceSkillDescriptor {
 	 */
 	readonly tags: readonly string[];
 	readonly status: "active" | "stub";
-	/** True when the skill shells out to an external CLI (e.g. `katok`). */
+	/** True when the skill shells out to an external CLI (e.g. `lazykatok`). */
 	readonly requiresExternalCli?: boolean;
 	/**
 	 * Set when this descriptor describes a datasource-backed surface.
@@ -119,7 +119,7 @@ export interface DatasourceSkillManifest {
 
 /**
  * A configured, running instance of a datasource skill (e.g. one KakaoTalk
- * account reached through `katok`).
+ * account reached through `lazykatok`).
  */
 export interface DatasourceInstance {
 	/** Stable instance id, unique within a skill. */

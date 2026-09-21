@@ -3,7 +3,7 @@ import { ConfigError } from "../../src/cli/config.ts";
 import { buildRegistrationPrompt } from "../../src/ui/prompt.ts";
 
 describe("registration prompt", () => {
-	it("tells an agent to install katok and write trusted config without a CLI path from the user", () => {
+	it("tells an agent to install lazykatok and write trusted config without a CLI path from the user", () => {
 		const result = buildRegistrationPrompt({
 			type: "kakao",
 			alias: "family-kakao",
@@ -12,7 +12,7 @@ describe("registration prompt", () => {
 		expect(result.title).toBe("KakaoTalk");
 		expect(result.prompt).toContain("family-kakao");
 		expect(result.prompt).toContain("Mom and dad family chat");
-		expect(result.prompt).toContain("katok");
+		expect(result.prompt).toContain("lazykatok");
 		expect(result.prompt).toContain("Do not ask me for a CLI path");
 		expect(result.prompt).toContain("/family-kakao/**");
 		expect(result.prompt).not.toContain("ghp_");
