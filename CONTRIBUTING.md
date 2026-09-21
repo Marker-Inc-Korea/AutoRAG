@@ -114,7 +114,7 @@ of working around it.
   (`Fixes #123`, `Refs #123`).
 - Report failures verbatim: real error text, exit status, and paths stay in the
   description. Do not summarise a failure into a sentence that hides it.
-- If an agent wrote part of the change, say so in the pull request body.
+- If an agent wrote part of the change, say so in the pull request body. AI tools are allowed; the submitter is fully responsible. The inbound rule is [AI_POLICY.md](AI_POLICY.md). Unverified dumps and large auto-generated PRs with no prior issue may be closed without review.
 - Force-pushing your own branch during review is fine, and commit history inside the
   pull request does not have to be perfect: merges to `main` are squash-only. The
   squashed commit message should still describe the change.

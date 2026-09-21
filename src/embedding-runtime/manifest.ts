@@ -90,6 +90,12 @@ export const MODEL_ASSETS = {
 		sha256: "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
 		license: "Apache-2.0",
 		noticeReference: "Qwen3 model card and Apache-2.0 license",
+		intendedUse:
+			"Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
+		unsuitableUse:
+			"Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256.",
+		upstreamCardUrl: "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
+		modelCard: "docs/model-cards/qwen3-embedding-0.6b.md",
 	},
 	embeddinggemma: {
 		url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf",
@@ -97,6 +103,12 @@ export const MODEL_ASSETS = {
 		sha256: "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
 		license: "Gemma Terms of Use",
 		noticeReference: "Google EmbeddingGemma model card and Gemma Terms of Use",
+		intendedUse:
+			"Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
+		unsuitableUse:
+			"Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256, uses restricted by the Gemma Prohibited Use Policy.",
+		upstreamCardUrl: "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
+		modelCard: "docs/model-cards/embeddinggemma-300m.md",
 	},
 } as const;
 

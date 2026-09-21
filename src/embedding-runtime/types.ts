@@ -75,6 +75,10 @@ export interface ModelAsset {
 	readonly sha256: string;
 	readonly license: string;
 	readonly noticeReference: string;
+	readonly intendedUse: string;
+	readonly unsuitableUse: string;
+	readonly upstreamCardUrl: string;
+	readonly modelCard: string;
 }
 
 export interface RuntimeAsset {
