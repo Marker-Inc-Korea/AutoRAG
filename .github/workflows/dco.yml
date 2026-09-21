@@ -1,0 +1,36 @@
+name: DCO
+
+# Every commit in a pull request must carry a `Signed-off-by` trailer matching the
+# commit author or committer. The rule and its rationale are in CONTRIBUTING.md
+# ("Licensing and the DCO"); the check itself lives in scripts/ci/check-dco.mjs.
+#
+# Applying this check as a repository ruleset, which adds it to the merge gate, is a
+# maintainer decision: the job reports on every pull request from the moment it lands.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: dco
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The check reads the commits between base.sha and head.sha, so both ends
+          # of the range must be present in the local object database.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Check Signed-off-by trailers
+        env:
+          DCO_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DCO_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/check-dco.mjs
