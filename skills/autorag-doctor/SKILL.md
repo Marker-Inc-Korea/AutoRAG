@@ -1,6 +1,6 @@
 ---
 name: autorag-doctor
-description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding gateway, and every CLI-backed datasource (discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the gateway will not start, or the user asks to check, diagnose, verify, or repair AutoRAG.
+description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding gateway, and every CLI-backed datasource (katok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the gateway will not start, or the user asks to check, diagnose, verify, or repair AutoRAG.
 license: MIT
 ---
 
@@ -16,7 +16,7 @@ Always finish with the status table in [Report](#report).
 ## Safety
 
 - Never delete, move, or edit source documents.
-- Never delete a datasource's **native** store (`~/.discrawl`,
+- Never delete a datasource's **native** store (`~/.katok`, `~/.discrawl`,
   `~/.mailcrawl`, `.qmd`, Telegram/WhatsApp/Notion archives). AutoRAG only
   reads them; rebuilding them is the owning CLI's job.
 - Only AutoRAG-owned state under `AUTORAG_HOME` and the workspace `.autorag`
@@ -58,6 +58,7 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 |---|---|---|
 | MinSync (local docs) | `minsync status`, `minsync check`, `minsync verify` | `autorag refresh --method minsync` |
 | Jikji (discovery) | `jikji doctor` | `autorag refresh --method jikji` |
+| KakaoTalk | `katok doctor` | `katok sync && katok index` |
 | Discord | `discrawl --json metadata` | `discrawl sync` |
 | Slack | `slacrawl --json doctor` | `slacrawl sync` |
 | WhatsApp | `wacrawl --json doctor` | `wacrawl import` |
@@ -115,7 +116,7 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   shows the exact chunk behind a numbered result; use it to confirm a hit is
   real and its source is readable.
 - Local-file hits must map to an absolute, existing path. Datasource hits keep
-  source-native identities such as `/discord/personal/chunks/42`; those are not
+  source-native identities such as `/kakao/personal/chunks/42`; those are not
   filesystem paths and must never be passed to `cat`.
 
 ## 4. Repair playbook

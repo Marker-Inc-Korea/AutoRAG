@@ -53,6 +53,7 @@ const LOCK_STALE_MS = 30_000;
 const REMEDIATION =
 	"Semantic embeddings are unavailable. Run `autorag models prefetch` or `autorag models import <file>`, then run `autorag setup` again.";
 const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
+	kakao: "katok",
 	whatsapp: "wacrawl",
 	telegram: "telecrawl",
 	slack: "slacrawl",
@@ -109,6 +110,7 @@ function storeFor(name: string, entry: Record<string, unknown> | undefined, work
 		if (typeof entry?.[key] === "string") return entry[key] as string;
 	}
 	if (name === "discord") return join(workspace, ".autorag", "datasources", "discrawl", "discrawl.db");
+	if (name === "kakao") return join(workspace, ".autorag", "datasources", "katok");
 	return undefined;
 }
 function datasourceNames(config: Record<string, unknown>): string[] {
@@ -117,6 +119,7 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 		...new Set([
 			...configured,
 			"discord",
+			"kakao",
 			"slack",
 			"telegram",
 			"whatsapp",
@@ -222,7 +225,7 @@ export async function runSetup(options: {
 				datasources.push({ name, state: "skipped", reason: "not configured" });
 				continue;
 			}
-			const semanticDatasource = new Set(["discord", "slack", "telegram", "whatsapp", "mailcrawl"]);
+			const semanticDatasource = new Set(["discord", "kakao", "slack", "telegram", "whatsapp", "mailcrawl"]);
 			if (semanticDatasource.has(type) && !modelValid) {
 				datasources.push({ name, state: "blocked", reason: "embedding model is unavailable" });
 			} else {

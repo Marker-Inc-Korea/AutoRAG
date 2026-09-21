@@ -35,15 +35,16 @@ export const ENGLISH_ONLY_EMBEDDING_MODELS: ReadonlySet<string> = new Set([
 /**
  * Default embedding model AutoRAG configures for workspace-managed discrawl
  * configs. `embeddinggemma`
- * (Gemma 3 300M, 768 dimensions) covers 100+ languages, so every CLI-backed
+ * (Gemma 3 300M, 768 dimensions) covers 100+ languages and matches the
+ * EmbeddingGemma embedder katok uses for KakaoTalk, so every CLI-backed
  * datasource shares one local embedding model (served through Ollama).
  */
 export const DEFAULT_DISCRAWL_EMBEDDING_MODEL = "embeddinggemma";
 export const DEFAULT_DISCRAWL_EMBEDDING_PROVIDER = "ollama";
 
 /**
- * Configuration for the discrawl client. All fields optional. The client
- * spawns the `discrawl` binary as a child process
+ * Configuration for the discrawl client. All fields optional; defaults mirror
+ * the katok client. The client spawns the `discrawl` binary as a child process
  * — it never opens the Discord archive database directly.
  *
  * AutoRAG drives discrawl's local archive only: `wiretap` to import the

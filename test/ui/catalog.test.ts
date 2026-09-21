@@ -32,7 +32,10 @@ describe("datasource UI catalog", () => {
 		}
 	});
 
-	it("gives GitHub, Drive, and mail optional extras", () => {
+	it("gives KakaoTalk no extras and GitHub/Drive/mail optional extras", () => {
+		const kakao = SOURCE_PICKER.find((entry) => entry.type === "kakao");
+		expect(kakao?.supportsMultiple).toBe(false);
+		expect(kakao?.extras).toEqual([]);
 		const github = SOURCE_PICKER.find((entry) => entry.type === "github");
 		expect(github?.supportsMultiple).toBe(true);
 		expect(github?.extras.some((extra) => extra.key === "repos")).toBe(true);
@@ -58,5 +61,6 @@ describe("datasource UI catalog", () => {
 		expect(getDatasourceType("clawgallery")?.fields.some((field) => field.key === "connector.path")).toBe(true);
 		expect(getDatasourceType("rss")?.fields.some((field) => field.key === "connector.feeds")).toBe(true);
 		expect(getDatasourceType("obsidian")?.fields.some((field) => field.key === "connector.vaultPath")).toBe(true);
+		expect(getDatasourceType("kakao")?.binaryName).toBe("katok");
 	});
 });

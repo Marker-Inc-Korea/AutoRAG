@@ -79,9 +79,10 @@ The zero-configuration boundary is narrow:
   `base_url`, and `dimensions`, and checks discrawl metadata before asking the
   native CLI to rebuild. An explicit `configPath` is authoritative and is
   never rewritten.
-- **mailcrawl** remains pending an upstream provider contract
-  (issue [#31](https://github.com/NomaDamas/mailcrawl/issues/31)). AutoRAG does not
-  force the shared runtime into that CLI before the contract is released.
+- **katok** and **mailcrawl** remain pending upstream provider contracts
+  (issues [#19](https://github.com/NomaDamas/katok/issues/19) and
+  [#31](https://github.com/NomaDamas/mailcrawl/issues/31)). AutoRAG does not
+  force the shared runtime into either CLI before those contracts are released.
 - **qmd** and **clawgallery** are untouched. qmd retains its native retrieval;
   ClawGallery retains its VDR/native retrieval.
 - **Lexical-only crawlers** are unchanged and receive no semantic provider
@@ -173,10 +174,10 @@ Every datasource entry can use a reusable template with a connection alias:
       "type": "slack",
       "connector": { "configPath": "/secure/company-slack.toml" }
     },
-    "work-discord": {
-      "type": "discord",
-      "channels": { "names": ["release-engineering"] },
-      "connector": { "binaryPath": "discrawl" }
+    "family-kakao": {
+      "type": "kakao",
+      "channels": { "names": ["가족방"] },
+      "connector": { "binaryPath": "katok" }
     }
   }
 }
@@ -227,7 +228,7 @@ Model-controlled tool arguments cannot grant access. The LLM-visible `search_dat
 { query: string; topK?: number; scope?: string }
 ```
 
-`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability are authorized at the datasource/tag level and own any narrower filtering themselves.
+`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, katok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
 
 ## Security responsibility
 
@@ -249,10 +250,10 @@ A skill can publish `instances`, for example:
 
 - Slack workspace -> channel
 - Google Drive account -> folder
-- Discord account -> guild/channel corpus
+- KakaoTalk account -> chat corpus
 - Notion workspace -> database/page tree
 
-Every instance maps to a slash-hierarchical datasource root like `/discord/personal` or `/slack/local`. Chunks hang under `/<skill>/<instance>/chunks/<id>`.
+Every instance maps to a slash-hierarchical datasource root like `/kakao/personal` or `/slack/local`. Chunks hang under `/<skill>/<instance>/chunks/<id>`.
 
 ## Slack via slacrawl
 
@@ -420,7 +421,7 @@ rclone and the agent never requests them.
 
 ## Chat channel selection
 
-Chat/archive datasources (`discord`, `telegram`, `whatsapp`, and
+Chat/archive datasources (`kakao`, `discord`, `telegram`, `whatsapp`, and
 `slack`) search all channels, rooms, chats, and DMs by default. To expose a
 restricted datasource, create another alias and use trusted configuration:
 
@@ -453,6 +454,35 @@ alias filters returned channel/chat metadata, while the default alias remains
 all-channel. The agent skill manifest states whether it is all-channel or
 allowlisted, so the orchestrator can select the correct datasource before
 searching.
+
+## KakaoTalk via katok
+
+KakaoTalk support is implemented through the external [`katok`](https://github.com/NomaDamas/katok) CLI.
+
+Rules:
+
+- AutoRAG never reads KakaoTalk databases directly.
+- Missing binary, permission, sync, or indexing failures return diagnostics instead of throwing.
+- Remote embedding egress configuration is rejected before spawning `katok`.
+- Katok stdout/stderr and thrown error text surface as datasource diagnostics.
+
+Example:
+
+```ts
+import { AutoRAGAgent, KatokSkill } from "@autorag/librarian";
+
+const agent = new AutoRAGAgent({
+  searchPaths: ["/docs"],
+  datasourceSkills: [new KatokSkill({ instanceId: "personal" })],
+  datasourceAccess: {
+    allowedTags: ["kakaotalk"],
+    allowedScopes: ["/kakao/personal/**"],
+  },
+});
+
+await agent.refresh();
+const hits = await agent.searchDatasourceDocuments("contract renewal", { topK: 5 });
+```
 
 ## New datasource checklist
 

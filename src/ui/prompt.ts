@@ -46,6 +46,9 @@ export function buildRegistrationPrompt(input: RegistrationPromptInput): Registr
 		`Name: ${alias}`,
 		`What's in it: ${note && note.length > 0 ? note : "(not specified — ask me if you need more context)"}`,
 	];
+	if (!entry.supportsMultiple) {
+		lines.push("KakaoTalk is single-account. Do not ask which Kakao account to add.");
+	}
 	if (chosen.length > 0) {
 		lines.push("", "Already chosen:", ...chosen.map((item) => `- ${item}`));
 	}

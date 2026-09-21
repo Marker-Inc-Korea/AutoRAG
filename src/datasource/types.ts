@@ -2,7 +2,7 @@
  * Datasource core contract.
  *
  * A *datasource* is an external, server-bound source of retrieval evidence
- * (e.g. a chat export reached through an external CLI). The
+ * (e.g. a KakaoTalk export reached through the external `katok` CLI). The
  * datasource layer sits *on top of* the existing retrieval pipeline: it owns
  * access gating and slash-hierarchical source naming, while actual retrieval
  * still flows through {@link RetrievalMethod} instances returned by a skill.
@@ -24,17 +24,17 @@ import type { RetrievalMethod } from "../retrieval/types.ts";
 export type { RetrievalMethod } from "../retrieval/types.ts";
 
 /**
- * Descriptor for a datasource skill.
+ * Descriptor for a datasource skill (e.g. KakaoTalk via `katok`).
  *
  * Structurally compatible with {@link RetrievalMethodDescriptor} so that
  * retrieval method descriptors can be gated by the same access context.
  */
 export interface DatasourceSkillDescriptor {
-	/** Stable skill name, e.g. `"discord"`. */
+	/** Stable skill name, e.g. `"kakao"`. */
 	readonly name: string;
 	/** Compatibility alias for public API examples; equal to `name` when present. */
 	readonly id?: string;
-	/** Skill kind, e.g. `"discord"` or `"chat-export"`. */
+	/** Skill kind, e.g. `"kakao"` or `"chat-export"`. */
 	readonly type: string;
 	readonly description: string;
 	/** Capability tags such as `"chat"`, `"external-cli"`, `"polling"`. */
@@ -45,7 +45,7 @@ export interface DatasourceSkillDescriptor {
 	 */
 	readonly tags: readonly string[];
 	readonly status: "active" | "stub";
-	/** True when the skill shells out to an external CLI. */
+	/** True when the skill shells out to an external CLI (e.g. `katok`). */
 	readonly requiresExternalCli?: boolean;
 	/**
 	 * Set when this descriptor describes a datasource-backed surface.
@@ -118,15 +118,15 @@ export interface DatasourceSkillManifest {
 }
 
 /**
- * A configured, running instance of a datasource skill (e.g. one chat
- * account reached through an external CLI).
+ * A configured, running instance of a datasource skill (e.g. one KakaoTalk
+ * account reached through `katok`).
  */
 export interface DatasourceInstance {
 	/** Stable instance id, unique within a skill. */
 	readonly id: string;
 	readonly skill: DatasourceSkill;
 	readonly descriptor: DatasourceSkillDescriptor;
-	/** Slash-hierarchical opaque root, e.g. `/discord/<instance-id>`. */
+	/** Slash-hierarchical opaque root, e.g. `/kakao/<instance-id>`. */
 	readonly sourcePath: string;
 	readonly polling?: PollingMetadata;
 }
@@ -198,7 +198,7 @@ export interface DatasourceDiagnostic {
  * `#` fragment.
  */
 export interface SourceDescription {
-	/** Slash-hierarchical opaque path, e.g. `/discord/acct-1/chunks/c-42`. */
+	/** Slash-hierarchical opaque path, e.g. `/kakao/acct-1/chunks/c-42`. */
 	readonly source: string;
 	readonly datasourceId?: string;
 	readonly skill?: string;

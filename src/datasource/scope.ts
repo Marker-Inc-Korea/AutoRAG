@@ -2,7 +2,7 @@
  * Slash-hierarchical source-path helpers for the datasource layer.
  *
  * Datasource sources are opaque, slash-hierarchical paths such as
- * `/discord/<instance-id>` and `/discord/<instance-id>/chunks/<chunk-id>`.
+ * `/kakao/<instance-id>` and `/kakao/<instance-id>/chunks/<chunk-id>`.
  * `#` fragments are NEVER produced or matched — sources are pure path trees.
  *
  * Reuses {@link normalizeVirtualPath} and {@link matchesVirtualPathScope} from
@@ -17,7 +17,7 @@ export const DATASOURCE_CHUNKS_SEGMENT = "chunks";
 
 /**
  * Build the opaque root source for a datasource instance, e.g.
- * `/discord/acct-1`.
+ * `/kakao/acct-1`.
  */
 export function buildDatasourceInstanceSource(skillName: string, instanceId: string): string {
 	return normalizeVirtualPath(`/${skillName}/${instanceId}`);
@@ -25,7 +25,7 @@ export function buildDatasourceInstanceSource(skillName: string, instanceId: str
 
 /**
  * Build the opaque source for a single datasource chunk, e.g.
- * `/discord/acct-1/chunks/c-42`.
+ * `/kakao/acct-1/chunks/c-42`.
  */
 export function buildDatasourceChunkSource(skillName: string, instanceId: string, chunkId: string): string {
 	return normalizeVirtualPath(`/${skillName}/${instanceId}/${DATASOURCE_CHUNKS_SEGMENT}/${chunkId}`);

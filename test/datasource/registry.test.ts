@@ -19,7 +19,7 @@ const makeSkill = (
 	const descriptor: DatasourceSkillDescriptor = {
 		name: "kakao",
 		type: "kakao",
-		description: "KakaoTalk chats",
+		description: "KakaoTalk via katok",
 		capabilities: ["chat"],
 		tags: ["kakao"],
 		status: "active",

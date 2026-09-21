@@ -49,6 +49,15 @@ const BINARY: CatalogField = {
 
 export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 	{
+		type: "kakao",
+		title: "KakaoTalk",
+		summary: "Search a local KakaoTalk archive through the katok CLI.",
+		defaultTags: ["kakaotalk", "personal", "pii"],
+		binaryName: "katok",
+		installHint: "Install the katok CLI, then connect. AutoRAG never reads KakaoTalk databases itself.",
+		fields: [INSTANCE, BINARY],
+	},
+	{
 		type: "whatsapp",
 		title: "WhatsApp",
 		summary: "Local WhatsApp archive through the wacrawl CLI.",
@@ -269,7 +278,7 @@ export interface SourcePickerEntry {
 	readonly kind: SourcePickerKind;
 	readonly binaryName?: string;
 	readonly installHint?: string;
-	/** False when a source cannot attach a second account. */
+	/** False for sources that cannot attach a second account (KakaoTalk). */
 	readonly supportsMultiple: boolean;
 	readonly extras: readonly PickerExtra[];
 }
@@ -289,6 +298,7 @@ export interface PickerExtra {
 }
 
 const EXTRAS_BY_TYPE: Readonly<Record<string, readonly PickerExtra[]>> = {
+	kakao: [],
 	whatsapp: [
 		{
 			key: "account",
@@ -417,7 +427,7 @@ export const SOURCE_PICKER: readonly SourcePickerEntry[] = DATASOURCE_TYPE_CATAL
 	title: entry.title,
 	summary: entry.summary,
 	kind: "datasource" as const,
-	supportsMultiple: true,
+	supportsMultiple: entry.type !== "kakao",
 	extras: EXTRAS_BY_TYPE[entry.type] ?? [],
 	...(entry.binaryName !== undefined ? { binaryName: entry.binaryName } : {}),
 	...(entry.installHint !== undefined ? { installHint: entry.installHint } : {}),

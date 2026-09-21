@@ -145,7 +145,7 @@ of working around it.
   persist tokens, cookies, passwords, or refresh credentials into config files, argv,
   or captured snapshots.
 - Datasource results carry opaque source-native identities such as
-  `/discord/<instance>/chunks/<chunk>`. They are not filesystem paths — never pass them
+  `/kakao/<instance>/chunks/<chunk>`. They are not filesystem paths — never pass them
   to `cat`, a shell, or any path API, and never synthesise a fake OS-absolute path.
 - Tests must not depend on timing luck. No fixed sleeps: subscribe to the exact event
   or state change before triggering the action, then await it with a bounded timeout.
@@ -207,7 +207,7 @@ make e2e-live      E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"   # warm run, reusing state
   OS-absolute original `source`, that path existing and reading back, and no request
   leaving the machine.
 - Cleanup is limited to runner-owned state: `rm -rf .autorag-e2e` from your own clone.
-  Leave discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores
+  Leave katok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores
   untouched, and do not stage `.debug-journal.md`.
 - If a behavioural change invalidates previously recorded cold/warm evidence,
   regenerate it in the same pull request. Stale green evidence is not proof.

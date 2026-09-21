@@ -11,6 +11,7 @@ import { datasourceSearchToolName } from "../../src/datasource/tool-naming.ts";
  */
 describe("datasource skill manifests and dedicated search tools", () => {
 	const { skills, unknown } = buildDatasourceSkills({
+		kakao: true,
 		discord: true,
 		slack: true,
 		notion: true,
@@ -28,7 +29,7 @@ describe("datasource skill manifests and dedicated search tools", () => {
 
 	it("builds every requested built-in skill", () => {
 		expect(unknown).toEqual([]);
-		expect(skills.length).toBe(13);
+		expect(skills.length).toBe(14);
 	});
 
 	it("every manifest names its dedicated tool, forbids the fan-out tool, and documents the native CLI", () => {
@@ -48,14 +49,14 @@ describe("datasource skill manifests and dedicated search tools", () => {
 
 	it("an aliased connection's manifest names the alias's tool, never the template's", () => {
 		const { skills: aliasedSkills, unknown: aliasedUnknown } = buildDatasourceSkills({
-			"discord-work": { type: "discord" },
+			"kakao-work": { type: "kakao" },
 		});
 		expect(aliasedUnknown).toEqual([]);
 		const skill = aliasedSkills[0];
 		expect(skill).toBeDefined();
 		const content = skill!.skillManifest().content;
-		expect(content).toContain("search_datasource_discord_work");
+		expect(content).toContain("search_datasource_kakao_work");
 		// No other per-datasource tool reference may survive the rewrite.
-		expect(content).not.toMatch(/search_datasource_discord(?![a-z0-9_])/);
+		expect(content).not.toMatch(/search_datasource_kakao(?![a-z0-9_])/);
 	});
 });

@@ -184,7 +184,7 @@ autorag setup --format json
 setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
-   anything: the backing CLI exists (`discrawl`, `slacrawl`,
+   anything: the backing CLI exists (`katok`, `discrawl`, `slacrawl`,
    `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
@@ -206,7 +206,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
    skipped.
 
 Datasource skills belong in trusted config and remain default-deny. Builtin
-template names are `whatsapp`, `telegram`, `slack`, `discord`,
+template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `clawgallery`, `notion`, `github`, `cloud-drive`, `mail-export`,
 `mailcrawl`, `obsidian`, `rss`, and `spotlight`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an

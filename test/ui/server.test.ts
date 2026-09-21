@@ -117,11 +117,17 @@ describe("datasource UI server", () => {
 		expect(page.status).toBe(200);
 		expect(page.text).toContain("Data sources");
 		expect(page.text).toContain("Copy for coding agent");
+		expect(page.text).toContain("KakaoTalk");
+		expect(page.text).toContain('data-type="kakao"');
 		expect(page.text).not.toContain('type="radio"');
 		expect(page.text).not.toContain('data-type="minsync"');
 		expect(page.text).not.toContain('data-type="jikji"');
 		expect(page.text).not.toContain("CLI path");
 		expect(page.headers.get("set-cookie") ?? "").toContain("autorag_ui=");
+
+		const prompt = await request(server, "/api/prompt?type=kakao&alias=family-kakao", { token: server.token });
+		expect(prompt.status).toBe(200);
+		expect(String((prompt.json as { prompt?: string }).prompt)).toContain("katok");
 
 		const github = await request(
 			server,
