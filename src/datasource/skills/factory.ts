@@ -20,6 +20,7 @@ import {
 	DiscrawlSkill,
 } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
+import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
@@ -171,6 +172,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions: config.connector as GitHubConnectorOptions,
+		}),
+	"github-gist": (config, workspaceRoot, registrationName) =>
+		new GitHubGistSkill({
+			...common(config, workspaceRoot),
+			skillName: registrationName,
+			connectorOptions: config.connector as GitHubGistConnectorOptions,
 		}),
 	"cloud-drive": (config, workspaceRoot, registrationName) =>
 		new CloudDriveSkill({
