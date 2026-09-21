@@ -5,19 +5,19 @@ import type {
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
 import { datasourceCliError } from "../../errors.ts";
-import { katokSourcePath } from "./paths.ts";
-import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
+import { lazykatokSourcePath } from "./paths.ts";
+import type { LazykatokHit, LazykatokSearchMode, LazykatokSearchOptions, LazykatokSearchResult } from "./types.ts";
 
 /**
  * Narrow client surface required by the KakaoTalk retrieval methods.
- * The real {@link KatokClient} satisfies this structurally; tests may stub it.
+ * The real {@link LazykatokClient} satisfies this structurally; tests may stub it.
  */
-export interface KatokSearchClient {
-	search(mode: KatokSearchMode, query: string, options?: KatokSearchOptions): Promise<KatokSearchResult>;
+export interface LazykatokSearchClient {
+	search(mode: LazykatokSearchMode, query: string, options?: LazykatokSearchOptions): Promise<LazykatokSearchResult>;
 }
 
-export interface KatokMethodOptions {
-	readonly client: KatokSearchClient;
+export interface LazykatokMethodOptions {
+	readonly client: LazykatokSearchClient;
 	readonly instanceId: string;
 	readonly tags?: readonly string[];
 }
@@ -28,16 +28,16 @@ const DEFAULT_TOP_K = 20;
 
 /**
  * Lexical (BM25) retrieval over a KakaoTalk datasource via the external
- * `katok` CLI in keyword mode. Katok does not expose source scopes; access is
+ * `lazykatok` CLI in keyword mode. Lazykatok does not expose source scopes; access is
  * controlled at the datasource/tag level. All client failures collapse to an
  * empty result set; retrieval never throws.
  */
-export class KatokBm25Method implements RetrievalMethod {
-	private readonly client: KatokSearchClient;
+export class LazykatokBm25Method implements RetrievalMethod {
+	private readonly client: LazykatokSearchClient;
 	private readonly instanceId: string;
 	private readonly tags: readonly string[];
 
-	constructor(options: KatokMethodOptions) {
+	constructor(options: LazykatokMethodOptions) {
 		this.client = options.client;
 		this.instanceId = options.instanceId;
 		this.tags = options.tags ?? DEFAULT_KAKAO_TAGS;
@@ -47,7 +47,7 @@ export class KatokBm25Method implements RetrievalMethod {
 		return {
 			name: "kakao-bm25",
 			type: "bm25",
-			description: "BM25 lexical retrieval over KakaoTalk chat chunks via the external katok CLI",
+			description: "BM25 lexical retrieval over KakaoTalk chat chunks via the external lazykatok CLI",
 			status: "active",
 			capabilities: ["lexical", "keyword-mode", "external-cli", "path-opaque-sources"],
 			datasourceId: KAKAO_DATASOURCE_ID,
@@ -56,22 +56,22 @@ export class KatokBm25Method implements RetrievalMethod {
 	}
 
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		return retrieveKatok(this.client, "keyword", "kakao-bm25", this.instanceId, query, options);
+		return retrieveLazykatok(this.client, "keyword", "kakao-bm25", this.instanceId, query, options);
 	}
 }
 
 /**
  * Semantic (vector) retrieval over a KakaoTalk datasource via the external
- * `katok` CLI in semantic mode. Katok does not expose source scopes; access is
+ * `lazykatok` CLI in semantic mode. Lazykatok does not expose source scopes; access is
  * controlled at the datasource/tag level. All client failures collapse to an
  * empty result set; retrieval never throws.
  */
-export class KatokSemanticMethod implements RetrievalMethod {
-	private readonly client: KatokSearchClient;
+export class LazykatokSemanticMethod implements RetrievalMethod {
+	private readonly client: LazykatokSearchClient;
 	private readonly instanceId: string;
 	private readonly tags: readonly string[];
 
-	constructor(options: KatokMethodOptions) {
+	constructor(options: LazykatokMethodOptions) {
 		this.client = options.client;
 		this.instanceId = options.instanceId;
 		this.tags = options.tags ?? DEFAULT_KAKAO_TAGS;
@@ -81,7 +81,7 @@ export class KatokSemanticMethod implements RetrievalMethod {
 		return {
 			name: "kakao-semantic",
 			type: "vector",
-			description: "Semantic vector retrieval over KakaoTalk chat chunks via the external katok CLI",
+			description: "Semantic vector retrieval over KakaoTalk chat chunks via the external lazykatok CLI",
 			status: "active",
 			capabilities: ["semantic", "vector-mode", "external-cli", "path-opaque-sources"],
 			datasourceId: KAKAO_DATASOURCE_ID,
@@ -90,13 +90,13 @@ export class KatokSemanticMethod implements RetrievalMethod {
 	}
 
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		return retrieveKatok(this.client, "semantic", "kakao-semantic", this.instanceId, query, options);
+		return retrieveLazykatok(this.client, "semantic", "kakao-semantic", this.instanceId, query, options);
 	}
 }
 
-async function retrieveKatok(
-	client: KatokSearchClient,
-	mode: KatokSearchMode,
+async function retrieveLazykatok(
+	client: LazykatokSearchClient,
+	mode: LazykatokSearchMode,
 	methodName: string,
 	instanceId: string,
 	query: string,
@@ -105,32 +105,32 @@ async function retrieveKatok(
 	const trimmed = query.trim();
 	if (trimmed.length === 0) return [];
 	const topK = options.topK ?? DEFAULT_TOP_K;
-	const searchOptions: KatokSearchOptions = { topK, signal: options.signal };
+	const searchOptions: LazykatokSearchOptions = { topK, signal: options.signal };
 
-	// katok failures reach the caller verbatim: the pipeline reports this
+	// lazykatok failures reach the caller verbatim: the pipeline reports this
 	// datasource as unsearched with the CLI's own error text.
-	const result: KatokSearchResult = await client.search(mode, trimmed, searchOptions);
+	const result: LazykatokSearchResult = await client.search(mode, trimmed, searchOptions);
 	if (!result.ok) throw datasourceCliError(KAKAO_DATASOURCE_ID, `search --mode ${mode}`, result);
 
 	const mapped: RetrievalResult[] = [];
 	for (const hit of result.hits) {
-		const source = katokSource(instanceId, hit);
+		const source = lazykatokSource(instanceId, hit);
 		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode));
 		if (mapped.length >= topK) break;
 	}
 	return mapped;
 }
 
-function katokSource(instanceId: string, hit: KatokHit): string {
-	return katokSourcePath(instanceId, hit.chunkId);
+function lazykatokSource(instanceId: string, hit: LazykatokHit): string {
+	return lazykatokSourcePath(instanceId, hit.chunkId);
 }
 
 function toRetrievalResult(
-	hit: KatokHit,
+	hit: LazykatokHit,
 	source: string,
 	methodName: string,
 	instanceId: string,
-	mode: KatokSearchMode,
+	mode: LazykatokSearchMode,
 ): RetrievalResult {
 	return {
 		id: `kakao:${instanceId}:${hit.chunkId}`,

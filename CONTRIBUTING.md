@@ -207,7 +207,7 @@ make e2e-live      E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"   # warm run, reusing state
   OS-absolute original `source`, that path existing and reading back, and no request
   leaving the machine.
 - Cleanup is limited to runner-owned state: `rm -rf .autorag-e2e` from your own clone.
-  Leave katok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores
+  Leave lazykatok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores
   untouched, and do not stage `.debug-journal.md`.
 - If a behavioural change invalidates previously recorded cold/warm evidence,
   regenerate it in the same pull request. Stale green evidence is not proof.

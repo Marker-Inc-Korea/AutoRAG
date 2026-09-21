@@ -79,9 +79,9 @@ The zero-configuration boundary is narrow:
   `base_url`, and `dimensions`, and checks discrawl metadata before asking the
   native CLI to rebuild. An explicit `configPath` is authoritative and is
   never rewritten.
-- **katok** and **mailcrawl** remain pending upstream provider contracts
-  (issues [#19](https://github.com/NomaDamas/katok/issues/19) and
-  [#31](https://github.com/NomaDamas/mailcrawl/issues/31)). AutoRAG does not
+- **lazykatok** and **mailcrawl** remain pending upstream provider contracts
+  ([lazykatok](https://github.com/changeroa/lazykatok) and
+  [mailcrawl#31](https://github.com/NomaDamas/mailcrawl/issues/31)). AutoRAG does not
   force the shared runtime into either CLI before those contracts are released.
 - **qmd** and **clawgallery** are untouched. qmd retains its native retrieval;
   ClawGallery retains its VDR/native retrieval.
@@ -177,7 +177,7 @@ Every datasource entry can use a reusable template with a connection alias:
     "family-kakao": {
       "type": "kakao",
       "channels": { "names": ["가족방"] },
-      "connector": { "binaryPath": "katok" }
+      "connector": { "binaryPath": "lazykatok" }
     }
   }
 }
@@ -228,7 +228,7 @@ Model-controlled tool arguments cannot grant access. The LLM-visible `search_dat
 { query: string; topK?: number; scope?: string }
 ```
 
-`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, katok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
+`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, lazykatok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
 
 ## Security responsibility
 
@@ -455,25 +455,25 @@ all-channel. The agent skill manifest states whether it is all-channel or
 allowlisted, so the orchestrator can select the correct datasource before
 searching.
 
-## KakaoTalk via katok
+## KakaoTalk via lazykatok
 
-KakaoTalk support is implemented through the external [`katok`](https://github.com/NomaDamas/katok) CLI.
+KakaoTalk support is implemented through the external [`lazykatok`](https://github.com/changeroa/lazykatok) CLI.
 
 Rules:
 
 - AutoRAG never reads KakaoTalk databases directly.
 - Missing binary, permission, sync, or indexing failures return diagnostics instead of throwing.
-- Remote embedding egress configuration is rejected before spawning `katok`.
-- Katok stdout/stderr and thrown error text surface as datasource diagnostics.
+- Remote embedding egress configuration is rejected before spawning `lazykatok`.
+- Lazykatok stdout/stderr and thrown error text surface as datasource diagnostics.
 
 Example:
 
 ```ts
-import { AutoRAGAgent, KatokSkill } from "@autorag/librarian";
+import { AutoRAGAgent, LazykatokSkill } from "@autorag/librarian";
 
 const agent = new AutoRAGAgent({
   searchPaths: ["/docs"],
-  datasourceSkills: [new KatokSkill({ instanceId: "personal" })],
+  datasourceSkills: [new LazykatokSkill({ instanceId: "personal" })],
   datasourceAccess: {
     allowedTags: ["kakaotalk"],
     allowedScopes: ["/kakao/personal/**"],
