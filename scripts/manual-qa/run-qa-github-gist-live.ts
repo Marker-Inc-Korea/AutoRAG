@@ -16,7 +16,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
 import { releaseRuntimeHandles, stopRuntime } from "../../src/embedding-runtime/index.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { GitHubGistSkill } from "../../src/datasource/skills/github-gist/index.ts";
@@ -77,18 +76,19 @@ try {
 		`${firstChunks} -> ${secondChunks}`,
 	);
 
-	const tool = createSearchDatasourceDocumentsTool(agent);
-	const lexical = await tool.execute("gist-lexical", {
-		query: "Virtual File System",
-		topK: 5,
-		scope: "/github-gist/**",
-	});
-	check(
-		"lexical: exact-term gist hit through search_datasource_documents",
-		lexical.details.sources.length > 0 &&
-		lexical.details.sources.every((source) => source.startsWith("/github-gist/")),
-		lexical.details.sources[0],
-	);
+	// The retired fan-out `search_datasource_documents` tool was replaced by the
+	// per-connection `search_datasource_<id>` tools; QA exercises the same lexical
+	// retrieval method those tools route to.
+	const lexicalMethod = skill.retrievalMethods().find((method) => method.describe().name === "github-gist-lexical");
+	check("lexical method registered", lexicalMethod !== undefined);
+	if (lexicalMethod !== undefined) {
+		const hits = await lexicalMethod.retrieve("Virtual File System", { topK: 5, scope: "/github-gist/**" });
+		check(
+			"lexical: exact-term gist hit via github-gist-lexical",
+			hits.length > 0 && hits.every((hit) => hit.source.startsWith("/github-gist/")),
+			hits[0]?.source,
+		);
+	}
 
 	// Semantic path through the real loopback gateway (lazy ensure, cachedOnly).
 	const semantic = skill.retrievalMethods().find((method) => method.describe().name === "github-gist-semantic");
