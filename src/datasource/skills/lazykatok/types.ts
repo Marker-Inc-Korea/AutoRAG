@@ -19,7 +19,7 @@ export interface LazykatokOptions {
 	readonly binaryPath?: string;
 	/** Spawn timeout in milliseconds. Default 60_000 (sync/index over large archives can be slow). */
 	readonly timeoutMs?: number;
-	/** Max stdout/stderr bytes retained. Default 1_048_576 (1 MiB). */
+	/** Max stdout/stderr bytes retained. Default 16 MiB (an `index --json` report alone is multiple MB on a real archive). */
 	readonly maxBufferBytes?: number;
 	/** Explicit native lazykatok data directory, passed as `--data-dir`. */
 	readonly workspacePath?: string;
@@ -31,7 +31,11 @@ export interface LazykatokOptions {
 
 export const DEFAULT_LAZYKATOK_BINARY = "lazykatok";
 export const DEFAULT_LAZYKATOK_TIMEOUT_MS = 60_000;
-export const DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES = 1_048_576;
+// `lazykatok index --json` reports every written document (chunk id + path), so
+// a real archive's index output alone is multiple MB (9.4k documents ≈ 2.2 MB
+// measured against katok 0.3.3, whose CLI lazykatok continues). The cap exists
+// to bound memory on hostile output, not to fit index reports.
+export const DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES = 16 * 1_048_576;
 export const DEFAULT_LAZYKATOK_OPTIONS = {
 	binaryPath: DEFAULT_LAZYKATOK_BINARY,
 	timeoutMs: DEFAULT_LAZYKATOK_TIMEOUT_MS,

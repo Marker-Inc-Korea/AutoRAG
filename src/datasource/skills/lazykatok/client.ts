@@ -1,8 +1,8 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
 import type {
 	LazykatokChunk,
 	LazykatokChunkResult,
@@ -142,9 +142,12 @@ export class LazykatokClient {
 	/** Single retrieval pipeline: build env, spawn, parse-free raw result. */
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
 		const env = controlledEnv(this.options.env);
+		// lazykatok's CLI (clap) only accepts `--data-dir`/`--config` as global
+		// options BEFORE the subcommand; appending them after `sync --json`-style
+		// args makes clap reject the invocation, so they must be prepended.
 		return spawnLazykatok({
 			options: this.options,
-			args: [...args, ...commonArgs(this.options)],
+			args: [...commonArgs(this.options), ...args],
 			env,
 			signal,
 		});
@@ -158,20 +161,44 @@ function spawnLazykatok(request: SpawnRequest): Promise<ProcessResult> {
 		const child = spawn(portable.command, [...portable.args], {
 			env,
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
 		let finalReason: LazykatokFailure["reason"] | undefined;
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
 		const maxBuffer = options.maxBufferBytes ?? DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES;
+		const settleWith = (result: ProcessResult): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			if (pipeGuard !== undefined) clearTimeout(pipeGuard);
+			signal?.removeEventListener("abort", abortHandler);
+			resolve(result);
+		};
+		const finish = (code: number | null): void => {
+			if (finalReason !== undefined) {
+				settleWith({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
+				return;
+			}
+			settleWith({
+				ok: code === 0,
+				reason: code === 0 ? undefined : "nonzero-exit",
+				stdout: stdout.text,
+				stderr: stderr.text,
+				code,
+			});
+		};
 		const timeout = setTimeout(() => {
 			finalReason = "timeout";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		}, options.timeoutMs ?? DEFAULT_LAZYKATOK_TIMEOUT_MS);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		};
 		if (signal?.aborted) abortHandler();
 		signal?.addEventListener("abort", abortHandler, { once: true });
@@ -181,40 +208,30 @@ function spawnLazykatok(request: SpawnRequest): Promise<ProcessResult> {
 			stdout = appendBounded(stdout, chunk, maxBuffer);
 			if (stdout.capped) {
 				finalReason = "stdout-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr = appendBounded(stderr, chunk, maxBuffer);
 			if (stderr.capped) {
 				finalReason = "stderr-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.on("error", (error: NodeJS.ErrnoException) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			signal?.removeEventListener("abort", abortHandler);
 			const reason = error.code === "ENOENT" ? "binary-missing" : "spawn-error";
-			resolve({ ok: false, reason, stdout: stdout.text, stderr: describeSpawnFailure(reason), code: null });
+			settleWith({ ok: false, reason, stdout: stdout.text, stderr: describeSpawnFailure(reason), code: null });
+		});
+		child.on("exit", () => {
+			if (settled) return;
+			// The direct child is gone; its descendants may still hold the stdio
+			// pipes, which would delay `close` for minutes. Kill the tree and give
+			// those holders a bounded grace before settling anyway.
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
 		});
 		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			signal?.removeEventListener("abort", abortHandler);
-			if (finalReason !== undefined) {
-				resolve({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
-				return;
-			}
-			resolve({
-				ok: code === 0,
-				reason: code === 0 ? undefined : "nonzero-exit",
-				stdout: stdout.text,
-				stderr: stderr.text,
-				code,
-			});
+			finish(code);
 		});
 	});
 }
@@ -280,16 +297,6 @@ function isAllowedLazykatokEnvKey(key: string): boolean {
 function searchOk(hits: readonly LazykatokSearchHit[], result: ProcessResult): LazykatokSearchResult {
 	return { ok: true, hits, data: { hits }, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 }
-function terminate(child: ChildProcess): void {
-	if (child.killed) return;
-	if (process.platform !== "win32" && child.pid !== undefined) {
-		try {
-			process.kill(-child.pid, "SIGKILL");
-			return;
-		} catch {}
-	}
-	child.kill("SIGKILL");
-}
 
 /** Path-opaque stderr replacement for spawn failures (the raw Node error leaks the binary path). */
 function describeSpawnFailure(reason: "binary-missing" | "spawn-error"): string {
@@ -353,7 +360,9 @@ function normalizeDoctor(raw: Record<string, unknown>): LazykatokDoctorInfo | un
 function normalizeSync(raw: Record<string, unknown>): LazykatokSyncInfo | undefined {
 	// The real `sync --json` report counts messages instead of asserting `synced`.
 	const synced = asBoolean(raw.synced) ?? (asNumber(raw.total_messages) === undefined ? undefined : true);
-	if (synced === undefined) return undefined;
+	// lazykatok can report a CLI-level failure as `{ ok: false, error: {...} }`;
+	// never read counters out of an error envelope.
+	if (synced === undefined || raw.ok === false) return undefined;
 	const messageCount = asNumber(raw.messageCount) ?? asNumber(raw.total_messages);
 	const metadata = stripKnown(raw, new Set(["synced", "messageCount"]));
 	return { synced, ...(messageCount !== undefined ? { messageCount } : {}), metadata };
