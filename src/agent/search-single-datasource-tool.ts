@@ -2,20 +2,23 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
-import { formatDatasourceResults } from "./search-datasource-tool.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 /**
  * Per-datasource search tools.
  *
- * `search_datasource_documents` always fans out to every authorized datasource:
- * the retriever spawns every datasource CLI and only then filters results, so
- * an agent that already knows which connection holds the answer (from memory or
- * from the question itself) still pays for — and receives — every other
- * datasource's hits. These generated tools fix that: one tool per authorized
- * datasource connection (e.g. `search_datasource_discord`,
- * `search_datasource_kakao_work` for a `kakao-work` account alias) whose
- * execution spawns only that connection's retrieval methods.
+ * One tool is generated per authorized datasource connection (e.g.
+ * `search_datasource_discord`, or `search_datasource_kakao_work` for a
+ * `kakao-work` account alias). Its execution registers only that connection's
+ * retrieval methods with the retriever, so no other datasource CLI is spawned
+ * and the result set carries only that connection's hits.
+ *
+ * These generated tools are the only model-facing datasource retrieval
+ * surface. Cross-datasource fan-out belongs to `search_all_documents`, which
+ * already spans every configured retrieval method — including datasources — so
+ * a datasource-only fan-out tool would be redundant. Every authorized
+ * connection must therefore appear here; a datasource with no generated tool
+ * would become unreachable except through the full fan-out.
  *
  * Tools are generated from the configured, access-authorized datasource skills
  * at agent construction, so a datasource that is disabled in config or denied
@@ -80,7 +83,7 @@ function createTool(
 		label: `Search ${spec.datasourceId}`,
 		description:
 			`Search only the "${spec.datasourceId}" datasource connection: ${spec.description} ` +
-			`Unlike search_datasource_documents this spawns no other datasource CLIs; prefer it whenever the question targets this connection.${scopeLine} ` +
+			`This tool spawns only this connection's CLIs and returns only this connection's hits.${scopeLine} ` +
 			`Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.`,
 		parameters: searchSingleDatasourceSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchSingleDatasourceDetails>> {
@@ -114,4 +117,21 @@ function createTool(
 			};
 		},
 	};
+}
+
+/** Shared rendering for datasource search tool results (fan-out removed). */
+export function formatDatasourceResults(
+	results: readonly RetrievalResult[],
+	diagnostics: readonly RetrievalDiagnostic[],
+): string {
+	const diagnosticSummary =
+		diagnostics.length > 0
+			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "datasource"}:${d.code}`).join(", ")}`
+			: "";
+	if (results.length === 0) return `No datasource results.${diagnosticSummary}`;
+	const rows = results.map((result, index) => {
+		const line = result.content.replace(/\s+/gu, " ").slice(0, 500);
+		return `[${index + 1}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+	});
+	return `Datasource results:\n\n${rows.join("\n\n")}${diagnosticSummary}`;
 }

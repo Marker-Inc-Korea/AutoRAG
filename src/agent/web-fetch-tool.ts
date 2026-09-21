@@ -77,7 +77,7 @@ export function createWebFetchTool(
 					content: [
 						{
 							type: "text",
-							text: `web_fetch only reads http(s) URLs; received "${url}". Local files belong to bash and datasource virtual ids to search_datasource_documents.`,
+							text: `web_fetch only reads http(s) URLs; received "${url}". Local files belong to bash and datasource virtual ids to their dedicated datasource search tools.`,
 						},
 					],
 					details: {

@@ -39,7 +39,6 @@ try {
 		searchPaths: [docs],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		bm25: false,
 		minSync: false,
 	});
 	const tool = createScanDuplicateDocumentsTool(agent);

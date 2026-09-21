@@ -27,6 +27,16 @@ EmbeddingGemma is available as a selectable profile. Its terms and required
 flow-down text are in [`licenses/`](../licenses/), and legal approval remains a
 release gate.
 
+Each bundled embedding profile has a model card covering intended use,
+unsuitable use, limitations, license, and the pinned GGUF hash:
+
+- [`docs/model-cards/qwen3-embedding-0.6b.md`](model-cards/qwen3-embedding-0.6b.md)
+- [`docs/model-cards/embeddinggemma-300m.md`](model-cards/embeddinggemma-300m.md)
+
+These cards are documentation for the two GGUF embedding assets. They are not a
+generative-model catalog, and they do not replace the software CycloneDX/SPDX
+SBOMs.
+
 ## Cache, import, and offline operation
 
 The default cache root is `~/.autorag` on macOS and `%USERPROFILE%\\.autorag` on
@@ -196,7 +206,7 @@ The shared runtime is a provider boundary, not a shared datasource store.
 |---|---|---|
 | MinSync | Gateway default | MinSync owns `.minsync`, CDC chunks, vectors, and source mapping; AutoRAG supplies the gateway endpoint and identity. |
 | discrawl | Managed native config | When `configPath` is not explicit and a workspace is available, AutoRAG writes `.autorag/datasources/discrawl/config.toml` with the marker `# AutoRAG managed discrawl embeddings v1` and native `[search.embeddings]` `provider`, `model`, `base_url`, and `dimensions`. discrawl owns SQLite, embeddings, FTS, and rebuilds. |
-| katok | Pending upstream provider contract | No shared-runtime wiring until the upstream loopback provider contract is released; see pending upstream issue #19. |
+| lazykatok | Pending upstream provider contract | No shared-runtime wiring until the upstream loopback provider contract is released; track it in the upstream [`lazykatok`](https://github.com/changeroa/lazykatok) repository. |
 | mailcrawl | Pending upstream provider contract | No shared-runtime wiring until the upstream loopback provider contract is released; see pending upstream issue #31. |
 | qmd | Untouched | qmd retains its own native update, BM25, vector, and query lifecycle. |
 | clawgallery | Untouched | ClawGallery retains its VDR/native retrieval lifecycle. |
@@ -285,7 +295,11 @@ compares this block with the machine manifest and with the pinned values in
       "modelAssetId": "qwen3-embedding-0.6b",
       "licenseId": "Apache-2.0",
       "noticeFile": "licenses/qwen3-embedding-notice.txt",
-      "noticeReference": "Qwen3 model card and Apache-2.0 license"
+      "noticeReference": "Qwen3 model card and Apache-2.0 license",
+      "intendedUse": "Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
+      "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256.",
+      "upstreamCardUrl": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
+      "modelCard": "docs/model-cards/qwen3-embedding-0.6b.md"
     },
     {
       "profileId": "embeddinggemma-300m",
@@ -301,7 +315,11 @@ compares this block with the machine manifest and with the pinned values in
       "modelAssetId": "embeddinggemma-300m",
       "licenseId": "Gemma Terms of Use",
       "noticeFile": "licenses/gemma-notice.txt",
-      "noticeReference": "Google EmbeddingGemma model card and Gemma Terms of Use"
+      "noticeReference": "Google EmbeddingGemma model card and Gemma Terms of Use",
+      "intendedUse": "Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
+      "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256, uses restricted by the Gemma Prohibited Use Policy.",
+      "upstreamCardUrl": "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
+      "modelCard": "docs/model-cards/embeddinggemma-300m.md"
     }
   ],
   "assets": [
@@ -314,7 +332,11 @@ compares this block with the machine manifest and with the pinned values in
       "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
       "licenseId": "Apache-2.0",
       "noticeFile": "licenses/qwen3-embedding-notice.txt",
-      "noticeReference": "Qwen3 model card and Apache-2.0 license"
+      "noticeReference": "Qwen3 model card and Apache-2.0 license",
+      "intendedUse": "Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
+      "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256.",
+      "upstreamCardUrl": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
+      "modelCard": "docs/model-cards/qwen3-embedding-0.6b.md"
     },
     {
       "kind": "model",
@@ -325,7 +347,11 @@ compares this block with the machine manifest and with the pinned values in
       "sha256": "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
       "licenseId": "Gemma Terms of Use",
       "noticeFile": "licenses/gemma-notice.txt",
-      "noticeReference": "Google EmbeddingGemma model card and Gemma Terms of Use"
+      "noticeReference": "Google EmbeddingGemma model card and Gemma Terms of Use",
+      "intendedUse": "Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
+      "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256, uses restricted by the Gemma Prohibited Use Policy.",
+      "upstreamCardUrl": "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
+      "modelCard": "docs/model-cards/embeddinggemma-300m.md"
     },
     {
       "kind": "runtime",

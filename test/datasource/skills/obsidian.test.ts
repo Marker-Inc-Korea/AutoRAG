@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +25,25 @@ beforeEach(() => {
 afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
+
+/** kill(pid, 0) is true for zombies until init reaps them. Those are not running. */
+function posixProcessIsRunnable(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+		throw error;
+	}
+	try {
+		const stat = execFileSync("ps", ["-p", String(pid), "-o", "stat="], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return stat.length > 0 && stat.charAt(0) !== "Z";
+	} catch {
+		return false;
+	}
+}
 
 class StubClient implements ObsidianSkillClient {
 	public ensureResult: QmdEnsureResult = {
@@ -323,8 +343,12 @@ process.stdout.write("{}");
 			`#!/usr/bin/env node
 import { spawn } from "node:child_process";
 const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 5000)"], { stdio: "inherit" });
-process.stdout.write(JSON.stringify([{ docid: "descendant", score: 1, file: "notes/descendant.md", snippet: "descendant", grandchildPid: descendant.pid }]));
-process.exit(0);
+// Wait until exec has finished so inherited stdio is actually held, matching
+// qmd 2.8.3 (runtime already running when the launcher exits).
+descendant.on("spawn", () => {
+	process.stdout.write(JSON.stringify([{ docid: "descendant", score: 1, file: "notes/descendant.md", snippet: "descendant", grandchildPid: descendant.pid }]));
+	process.exit(0);
+});
 `,
 		);
 		chmodSync(binaryPath, 0o755);
@@ -368,13 +392,9 @@ process.exit(0);
 		const pidText = pidMatch?.[1];
 		if (pidText === undefined) throw new Error("qmd fixture did not report its descendant PID");
 		if (process.platform === "win32") return;
-		try {
-			process.kill(Number(pidText), 0);
-		} catch (error) {
-			if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
-			throw error;
+		if (posixProcessIsRunnable(Number(pidText))) {
+			throw new Error(`qmd descendant ${pidText} survived after the client settled`);
 		}
-		throw new Error(`qmd descendant ${pidText} survived after the client settled`);
 	}, 10_000);
 });
 

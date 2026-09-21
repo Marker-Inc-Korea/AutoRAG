@@ -4,10 +4,10 @@ import { datasourceSearchToolName } from "../../src/datasource/tool-naming.ts";
 
 /**
  * Manifest contract for the per-datasource search tools: every built-in skill
- * manifest must name its dedicated `search_datasource_<id>` tool, steer the
- * agent away from the fan-out `search_datasource_documents` tool, and carry a
- * Native CLI section. Aliased connections must name the alias's tool, not the
- * template's.
+ * manifest must name its dedicated `search_datasource_<id>` tool (a tool the
+ * agent actually registers), carry a Native CLI section, and never reference a
+ * tool that no longer exists. Aliased connections must name the alias's tool,
+ * not the template's.
  */
 describe("datasource skill manifests and dedicated search tools", () => {
 	const { skills, unknown } = buildDatasourceSkills({
@@ -32,7 +32,7 @@ describe("datasource skill manifests and dedicated search tools", () => {
 		expect(skills.length).toBe(14);
 	});
 
-	it("every manifest names its dedicated tool, forbids the fan-out tool, and documents the native CLI", () => {
+	it("every manifest names its dedicated tool, references no removed tool, and documents the native CLI", () => {
 		for (const skill of skills) {
 			const descriptor = skill.describe();
 			const datasourceId = descriptor.datasourceId;
@@ -40,8 +40,10 @@ describe("datasource skill manifests and dedicated search tools", () => {
 			const manifest = skill.skillManifest();
 			const toolName = datasourceSearchToolName(datasourceId!);
 			expect(manifest.content, `${datasourceId} names its tool`).toContain(toolName);
-			expect(manifest.content, `${datasourceId} forbids the fan-out tool`).toContain(
-				"Do not use `search_datasource_documents`",
+			// The removed fan-out datasource tool must not survive anywhere: a manifest
+			// that steers the model at a tool the agent never registers is a defect.
+			expect(manifest.content, `${datasourceId} references no removed tool`).not.toContain(
+				"search_datasource_documents",
 			);
 			expect(manifest.content, `${datasourceId} has a Native CLI section`).toContain("## Native CLI");
 		}

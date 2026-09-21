@@ -7,7 +7,7 @@
  * own words: failure kind, exit status, and stderr verbatim.
  */
 
-/** The failure payload every datasource CLI client returns (katok, discrawl, qmd, …). */
+/** The failure payload every datasource CLI client returns (lazykatok, discrawl, qmd, …). */
 export interface DatasourceCliFailure {
 	readonly reason: string;
 	readonly stderr?: string;

@@ -166,7 +166,7 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				this.definition.manifestDescription,
 				"",
 				"## How to search",
-				`Call the dedicated \`${datasourceSearchToolName(this.definition.datasourceId)}\` tool with a query and optional narrowing scope. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
+				`Call the dedicated \`${datasourceSearchToolName(this.definition.datasourceId)}\` tool with a query and optional narrowing scope. Available authorized scopes:`,
 				scopes,
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",

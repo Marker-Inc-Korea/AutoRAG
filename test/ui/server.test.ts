@@ -127,7 +127,7 @@ describe("datasource UI server", () => {
 
 		const prompt = await request(server, "/api/prompt?type=kakao&alias=family-kakao", { token: server.token });
 		expect(prompt.status).toBe(200);
-		expect(String((prompt.json as { prompt?: string }).prompt)).toContain("katok");
+		expect(String((prompt.json as { prompt?: string }).prompt)).toContain("lazykatok");
 
 		const github = await request(
 			server,
