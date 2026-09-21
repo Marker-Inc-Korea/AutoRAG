@@ -18,8 +18,10 @@ export const TREE_KILL_GRACE_MS = 500;
  * live parent/child chain and therefore requires `detached: false` there.
  *
  * Returns whether the process group / tree was signalled.
+ * Default SIGKILL: SIGTERM lets a Node descendant close inherited stdio during
+ * shutdown while the pid is still kill(pid,0)-visible (zombie or exiting).
  */
-export function terminateProcessTree(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): boolean {
+export function terminateProcessTree(child: ChildProcess, signal: NodeJS.Signals = "SIGKILL"): boolean {
 	const pid = child.pid;
 	if (pid === undefined) return false;
 	if (process.platform === "win32") {
