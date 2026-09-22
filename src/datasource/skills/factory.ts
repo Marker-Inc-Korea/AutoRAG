@@ -21,6 +21,7 @@ import {
 } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
+import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
@@ -158,6 +159,14 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
 			},
 		}),
+	lark: (config, _workspaceRoot, registrationName) =>
+		new LarkSkill({
+			datasourceId: registrationName,
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			...(config.channels?.ids !== undefined ? { chatIds: config.channels.ids } : {}),
+			...larkConnectorOptions(config.connector),
+		}),
 	kakao: (config, _workspaceRoot, _registrationName) =>
 		new LazykatokSkill({
 			client: new LazykatokClient({
@@ -230,6 +239,19 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 /** Skill names this factory can build. */
 export const BUILTIN_DATASOURCE_SKILL_NAMES: readonly string[] = Object.keys(BUILDERS);
 
+function larkConnectorOptions(connector: Record<string, unknown> | undefined): {
+	readonly binaryPath?: string;
+	readonly embedderBaseUrl?: string;
+} {
+	if (connector === undefined) return {};
+	const binaryPath = connector.binaryPath;
+	const embedderBaseUrl = connector.embedderBaseUrl;
+	return {
+		...(typeof binaryPath === "string" ? { binaryPath } : {}),
+		...(typeof embedderBaseUrl === "string" ? { embedderBaseUrl } : {}),
+	};
+}
+
 function common(config: DatasourceSkillConfig, workspaceRoot: string | undefined) {
 	return {
 		...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -273,13 +295,17 @@ export function buildDatasourceSkills(
 			unknown.push(name);
 			continue;
 		}
-		const hasChannelFilter = (entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0;
+		// Lark applies chat ids as a message-search flag. The generic alias
+		// filter would drop document hits, which have no chat id.
+		const larkOwnsChannels = templateName === "lark";
+		const hasChannelFilter =
+			!larkOwnsChannels && ((entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0);
 		let aliased: DatasourceSkill = skill;
 		if (name !== templateName || hasChannelFilter) {
 			aliased = new AliasedDatasourceSkill(skill, {
 				alias: name,
-				...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
-				...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
+				...(!larkOwnsChannels && entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
+				...(!larkOwnsChannels && entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
 			});
 		}
 		skills.push(

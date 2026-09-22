@@ -14,6 +14,9 @@ Issue #1477 adds the live ClawGallery CLI path.
 Issue #1496 adds the live mailcrawl local email CLI path.
 Issue #1588 adds the live github-gist path (authenticated account gists,
 incremental cursor sync, lexical + local-gateway semantic search).
+Issue #1672 adds Lark/Feishu remote search through `lark-cli` (no local
+archive). A real tenant run needs `lark-cli auth login` and must not copy
+tenant content into CI fixtures.
 
 ## Harnesses
 
@@ -34,6 +37,8 @@ incremental cursor sync, lexical + local-gateway semantic search).
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |
+| `test/datasource/skills/lark.test.ts` | Fake `lark-cli`: message and doc identities, no local archive, default deny, chat vs docs scope, `--chat-id`, hash-fragment rejection, auth/rate-limit stderr, remote-embedder rejection | `bunx vitest run test/datasource/skills/lark.test.ts` |
+| `scripts/manual-qa/run-qa-lark-live.ts` | Real `lark-cli` on a logged-in tenant. Prints `/lark/...` identities. Refuses to pass with no hits. | `bun scripts/manual-qa/run-qa-lark-live.ts "<query>"` |
 | `test/datasource/skills/notcrawl.test.ts` | Real child-process boundary with a deterministic fake notcrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/notcrawl.test.ts` |
 
 Skills that need tenant credentials are QA'd against the mock services, which

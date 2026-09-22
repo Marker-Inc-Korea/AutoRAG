@@ -12,6 +12,7 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "wacrawl", binary: "wacrawl" },
 	{ name: "telecrawl", binary: "telecrawl" },
 	{ name: "slacrawl", binary: "slacrawl" },
+	{ name: "lark", binary: "lark-cli", command: "scripts/manual-qa/run-qa-lark-live.ts", identityPattern: /\/lark\/[^/]+\/(?:messages|docs)\/[^/\s]+/u },
 	{ name: "notcrawl", binary: "notcrawl" },
 	{ name: "qmd", binary: "qmd" },
 	{ name: "rclone", binary: "rclone" },

@@ -109,7 +109,7 @@ make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 
 Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
 executes the `local` lane plus every native CLI lane (lazykatok, discrawl, wacrawl,
-telecrawl, slacrawl, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
+telecrawl, slacrawl, lark, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
 `E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
 skips native lanes entirely). The summary separates the core MinSync result
 (`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
@@ -477,7 +477,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per authorized datasource connection with model-safe `{ query, topK?, scope? }` parameters |
 | `src/cli/commands/ui.ts` | `autorag ui` loopback dashboard for connecting and managing datasource skills |
 | `src/ui/` | Local datasource UI catalog, config store, probes, HTML, and 127.0.0.1 HTTP server |
