@@ -28,4 +28,19 @@ describe("datasource skill factory", () => {
 		expect(unknown).toEqual(["gmail"]);
 		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
 	});
+
+	it("builds a github-gist skill from a typed alias entry", () => {
+		const { skills, unknown } = buildDatasourceSkills(
+			{
+				"my-gists": {
+					type: "github-gist",
+					connector: { tokenEnv: "GITHUB_GIST_TEST_UNSET" },
+				},
+			},
+			undefined,
+		);
+		expect(unknown).toEqual([]);
+		const gist = skills.find((skill) => skill.describe().name === "my-gists");
+		expect(gist?.describe().type).toBe("github-gist");
+	});
 });
