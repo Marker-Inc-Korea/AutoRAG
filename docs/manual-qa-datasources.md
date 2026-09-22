@@ -27,7 +27,7 @@ incremental cursor sync, lexical + local-gateway semantic search).
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
-| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.1.6` fixture sync, no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.2.0` fixture sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
 | `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the local embedding gateway (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
 | `scripts/manual-qa/run-qa-ui.ts` | Local loopback `autorag ui`: list/add/test/toggle/remove connections, secret stripping, folder browse | `bun scripts/manual-qa/run-qa-ui.ts` |

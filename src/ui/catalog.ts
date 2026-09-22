@@ -216,7 +216,7 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 		summary: "Search a local email archive through the mailcrawl CLI.",
 		defaultTags: ["mailcrawl", "email", "pii"],
 		binaryName: "mailcrawl",
-		installHint: "Install @nomadamas/mailcrawl@0.1.6 or newer, then configure Himalaya in mailcrawl itself.",
+		installHint: "Install @nomadamas/mailcrawl@0.2.0 or newer, then configure Himalaya in mailcrawl itself.",
 		fields: [
 			INSTANCE,
 			{

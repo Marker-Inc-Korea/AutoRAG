@@ -1,20 +1,27 @@
 /**
- * Live mailcrawl 0.1.6 QA (#1496 / #1499).
+ * Live mailcrawl 0.2.0 QA (#1496 / #1499, refreshed for the 0.2.0 contract).
  *
  * Prerequisites:
- *   npm install -g @nomadamas/mailcrawl@0.1.6
+ *   npm install -g @nomadamas/mailcrawl@0.2.0
  *   Node.js 24+
  *
- * Fixture sync needs no Himalaya account or credentials. The first `index`
- * downloads local EmbeddingGemma ONNX weights when the Hugging Face cache is
- * cold. 0.1.3 fails the second index after a no-op sync with
- * `text array must be non-empty`.
+ * Fixture sync needs no Himalaya account or credentials. Since 0.2.0 the
+ * default embedder is the in-process native Qwen3-Embedding-0.6B model, so a
+ * cold Hugging Face cache makes the first `index` download ONNX weights and
+ * re-embed the archive; that run legitimately outlives an interactive timeout.
+ * Set `MAILCRAWL_EMBEDDER=mock` to exercise the same CLI contract with a hash
+ * embedder when only the interface is under test. 0.1.3 and earlier fail the
+ * second index after a no-op sync with `text array must be non-empty`.
+ *
+ * 0.2.0 also moved semantic vectors from JSON-in-SQLite to a LanceDB table
+ * (`<data-dir>/semantic.lance` + `semantic.identity.json`) and replaced the
+ * index report with `{ embedded, reused, archiveRevision, rebuilt, embedder }`.
  *
  * Usage:
  *   bun scripts/manual-qa/run-qa-mailcrawl-live.ts
  *   MAILCRAWL_BINARY=/path/to/mailcrawl bun scripts/manual-qa/run-qa-mailcrawl-live.ts
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MailcrawlClient, MailcrawlSkill } from "../../src/datasource/skills/mailcrawl/index.ts";
@@ -66,6 +73,17 @@ try {
 
 	const firstIndex = await client.index();
 	if (!firstIndex.ok) throw new Error(`first index failed: ${firstIndex.reason}`);
+	if (firstIndex.data.archiveRevision === undefined) {
+		throw new Error(`0.2.0 index report is missing archiveRevision: ${JSON.stringify(firstIndex.data)}`);
+	}
+	if (!firstIndex.data.embedder) {
+		throw new Error(`0.2.0 index report is missing the embedder identity: ${JSON.stringify(firstIndex.data)}`);
+	}
+	for (const entry of ["semantic.lance", "semantic.identity.json"]) {
+		if (!existsSync(join(dataDir, entry))) {
+			throw new Error(`0.2.0 LanceDB semantic store is missing ${entry} under the data directory`);
+		}
+	}
 
 	const secondSync = await client.sync();
 	if (!secondSync.ok) throw new Error(`no-op sync failed: ${secondSync.reason}`);
@@ -75,10 +93,18 @@ try {
 
 	const secondIndex = await client.index();
 	if (!secondIndex.ok) {
-		throw new Error(`0.1.6 no-op reindex failed: ${secondIndex.reason}`);
+		throw new Error(`0.2.0 no-op reindex failed: ${secondIndex.reason}`);
 	}
 	if ((secondIndex.data.reused ?? 0) < 1) {
 		throw new Error(`expected reused vectors after no-op sync, got ${JSON.stringify(secondIndex.data)}`);
+	}
+	if (secondIndex.data.rebuilt === true) {
+		throw new Error(`a no-op reindex must not rebuild the vector store: ${JSON.stringify(secondIndex.data)}`);
+	}
+	if (secondIndex.data.embedder !== firstIndex.data.embedder) {
+		throw new Error(
+			`embedder identity changed across a no-op reindex: ${firstIndex.data.embedder} -> ${secondIndex.data.embedder}`,
+		);
 	}
 
 	const bm25 = await client.search("bm25", "refund", { topK: 5 });
@@ -116,6 +142,9 @@ try {
 			firstIndex: firstIndex.data,
 			secondSync: secondSync.data,
 			secondIndex: secondIndex.data,
+			embedder: firstIndex.data.embedder,
+			archiveRevision: firstIndex.data.archiveRevision,
+			semanticStore: join(dataDir, "semantic.lance"),
 			bm25Hits: bm25.hits.length,
 			semanticHits: semantic.hits.length,
 			hybridHits: hybrid.hits.length,

@@ -16,15 +16,20 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-function writeFake(output: string): void {
+function writeFake(output: string, delayMs = 0): void {
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
+if (${delayMs} > 0) await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
+const embeddingEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => key.startsWith("MAILCRAWL_")),
+);
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
   args: process.argv.slice(2),
   dataDir: process.env.MAILCRAWL_DATA_DIR ?? null,
-  openai: process.env.OPENAI_API_KEY ?? null
+  openai: process.env.OPENAI_API_KEY ?? null,
+  embeddingEnv
 }) + "\\n");
 process.stdout.write(${JSON.stringify(output)});
 `,
@@ -36,6 +41,7 @@ function calls(): readonly {
 	readonly args: readonly string[];
 	readonly dataDir: string | null;
 	readonly openai: string | null;
+	readonly embeddingEnv: Record<string, string>;
 }[] {
 	if (!existsSync(logPath)) return [];
 	return readFileSync(logPath, "utf8")
@@ -167,6 +173,78 @@ process.exit(3);
 		});
 	});
 
+	it("accepts the 0.2.0 LanceDB index report and keeps the native embedder identity", async () => {
+		writeFake(
+			JSON.stringify({
+				embedded: 2,
+				reused: 3,
+				archiveRevision: "rev-2",
+				rebuilt: false,
+				embedder: "native:Qwen/Qwen3-Embedding-0.6B:1024",
+			}),
+		);
+		const client = new MailcrawlClient({ binaryPath, dataDir: join(root, "data") });
+
+		expect(await client.index()).toMatchObject({
+			ok: true,
+			data: {
+				embedded: 2,
+				reused: 3,
+				archiveRevision: "rev-2",
+				rebuilt: false,
+				embedder: "native:Qwen/Qwen3-Embedding-0.6B:1024",
+			},
+		});
+		expect(calls()[0]?.args).toEqual(["index", "--json"]);
+	});
+
+	it("lets a long 0.2.0 native index run outlive the interactive search timeout", async () => {
+		writeFake(JSON.stringify({ embedded: 1, reused: 0, embedder: "native:Qwen/Qwen3-Embedding-0.6B:1024" }), 900);
+		const client = new MailcrawlClient({ binaryPath, timeoutMs: 200, indexTimeoutMs: 5_000 });
+
+		expect(await client.index()).toMatchObject({ ok: true });
+		expect(await client.search("bm25", "refund")).toMatchObject({ ok: false, reason: "timeout" });
+	});
+
+	it("rejects a non-loopback 0.2.0 loopback-http embedding endpoint before spawning", async () => {
+		writeFake(JSON.stringify({ embedded: 1, reused: 0, embedder: "loopback-http:qwen:1024" }));
+		const client = new MailcrawlClient({
+			binaryPath,
+			env: {
+				MAILCRAWL_EMBEDDER_PROVIDER: "loopback-http",
+				MAILCRAWL_EMBED_URL: "https://embeddings.example.com",
+				MAILCRAWL_EMBED_MODEL: "qwen3-embedding-0.6b",
+				MAILCRAWL_EMBED_DIM: "1024",
+			},
+		});
+
+		expect(await client.index()).toMatchObject({ ok: false, reason: "remote-embedding-rejected" });
+		expect(calls()).toEqual([]);
+	});
+
+	it("forwards a loopback 0.2.0 embedding endpoint so the shared runtime stays local", async () => {
+		writeFake(JSON.stringify({ embedded: 1, reused: 0, embedder: "loopback-http:qwen3-embedding-0.6b:1024" }));
+		const client = new MailcrawlClient({
+			binaryPath,
+			env: {
+				MAILCRAWL_EMBEDDER_PROVIDER: "loopback-http",
+				MAILCRAWL_EMBED_URL: "http://127.0.0.1:18080",
+				MAILCRAWL_EMBED_MODEL: "qwen3-embedding-0.6b",
+				MAILCRAWL_EMBED_DIM: "1024",
+				MAILCRAWL_EMBED_BATCH_SIZE: "4",
+			},
+		});
+
+		expect(await client.index()).toMatchObject({ ok: true });
+		expect(calls()[0]?.embeddingEnv).toMatchObject({
+			MAILCRAWL_EMBEDDER_PROVIDER: "loopback-http",
+			MAILCRAWL_EMBED_URL: "http://127.0.0.1:18080",
+			MAILCRAWL_EMBED_MODEL: "qwen3-embedding-0.6b",
+			MAILCRAWL_EMBED_DIM: "1024",
+			MAILCRAWL_EMBED_BATCH_SIZE: "4",
+		});
+	});
+
 	it("rejects remote embedding configuration before spawning", async () => {
 		const client = new MailcrawlClient({
 			binaryPath,
@@ -288,6 +366,58 @@ describe("MailcrawlSkill", () => {
 
 		expect(result).toHaveLength(1);
 		expect(result?.[0]?.metadata.accountId).toBe("personal");
+	});
+
+	it("keeps BM25 available and maps sources when the 0.2.0 semantic index is unavailable", async () => {
+		const client = {
+			async sync() {
+				return { ok: true as const, data: { messages: 1, chunksAdded: 1 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return {
+					ok: false as const,
+					reason: "nonzero-exit" as const,
+					stdout: "",
+					stderr: "semantic index embedder mismatch: indexed with legacy-onnx, active embedder is native",
+					code: 1,
+				};
+			},
+			async search() {
+				return {
+					ok: true as const,
+					hits: [
+						{
+							chunkId: "m1:latest:0",
+							messageId: "m1",
+							threadId: "t1",
+							accountId: "acct",
+							mailbox: "INBOX",
+							subject: "Policy",
+							from: "a@example.com",
+							to: [],
+							date: "2026-08-31",
+							snippet: "Director approval required.",
+							score: 1,
+							mode: "bm25" as const,
+						},
+					],
+					stdout: "",
+					stderr: "",
+					code: 0,
+				};
+			},
+		};
+		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
+
+		const indexed = await skill.index();
+		expect(indexed.ok).toBe(true);
+		expect(indexed.diagnostics?.[0]?.code).toBe("datasource-index-failed");
+		expect(indexed.diagnostics?.[0]?.message).toContain("BM25 remains available");
+
+		const retrieved = await skill
+			.retrievalMethods()[0]
+			?.retrieve("approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
+		expect(retrieved?.[0]?.source).toBe("/mailcrawl/personal/chunks/m1:latest:0");
 	});
 
 	it("rejects unsafe instance identifiers", () => {

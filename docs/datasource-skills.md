@@ -79,10 +79,14 @@ The zero-configuration boundary is narrow:
   `base_url`, and `dimensions`, and checks discrawl metadata before asking the
   native CLI to rebuild. An explicit `configPath` is authoritative and is
   never rewritten.
-- **lazykatok** and **mailcrawl** remain pending upstream provider contracts
-  ([lazykatok](https://github.com/changeroa/lazykatok) and
-  [mailcrawl#31](https://github.com/NomaDamas/mailcrawl/issues/31)). AutoRAG does not
-  force the shared runtime into either CLI before those contracts are released.
+- **mailcrawl** released its provider contract in 0.2.0: the default
+  `native:Qwen/Qwen3-Embedding-0.6B` profile matches the AutoRAG gateway model
+  and dimension, and `loopback-http` is available as an explicit override.
+  AutoRAG does not rewrite mailcrawl's embedder; it forwards a loopback
+  endpoint when one is configured and refuses a non-loopback one.
+- **lazykatok** remains a pending upstream provider contract
+  ([lazykatok](https://github.com/changeroa/lazykatok)). AutoRAG does not force
+  the shared runtime into it before that contract is released.
 - **qmd** and **clawgallery** are untouched. qmd retains its native retrieval;
   ClawGallery retains its VDR/native retrieval.
 - **Lexical-only crawlers** are unchanged and receive no semantic provider
@@ -115,12 +119,30 @@ A skill must also provide `describeSources()` entries so the librarian prompt ca
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.1.6` or newer
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.0` or newer
 (Node.js 24+) and configure Himalaya separately; AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
 native archive. Set `connector.dataDir` only when the operator explicitly
 wants a different mailcrawl data directory.
+
+0.2.0 replaced the semantic store and embedder contract:
+
+- Vectors live in a LanceDB table (`<data-dir>/semantic.lance`) with the
+  embedder identity in `semantic.identity.json`. A mismatch rebuilds the
+  table, and a search against a different embedder fails loudly instead of
+  returning silently wrong neighbours.
+- The default embedder is the in-process native `Qwen/Qwen3-Embedding-0.6B`
+  (1024 dimensions, the model identity AutoRAG's gateway profile pins), so a
+  cold cache downloads ONNX weights on the first `index`. AutoRAG gives
+  `sync`/`index` a 30-minute budget (`connector.indexTimeoutMs`) while search
+  keeps its 60-second interactive budget.
+- `index` reports `{ embedded, reused, archiveRevision, rebuilt, embedder }`
+  instead of the 0.1.x generation report.
+- An explicit `loopback-http` embedding endpoint is supported through
+  `connector.env` (`MAILCRAWL_EMBEDDER_PROVIDER`, `MAILCRAWL_EMBED_URL`,
+  `MAILCRAWL_EMBED_MODEL`, `MAILCRAWL_EMBED_DIM`). AutoRAG forwards only
+  loopback endpoints and refuses a non-loopback URL before spawning the CLI.
 
 ```json
 {
