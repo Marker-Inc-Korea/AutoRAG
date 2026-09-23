@@ -54,6 +54,27 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
 
+## Releases
+
+Publishing the GitHub Release is not the announcement. People watching Discussions do not see the release feed. Every release also gets one Discussion in the **Announcements** category, with the same user-facing notes.
+
+This applies to both tags:
+
+- `v*` — AutoRAG 2.0, published by `.github/workflows/release.yml`
+- `legacy-v*` — legacy Python, published by `.github/workflows/publish.yml`
+
+After the release exists:
+
+1. Search first. If an Announcements discussion for that tag already exists, comment on it. Do not open a second one.
+   `gh discussion list --repo Marker-Inc-Korea/AutoRAG --category Announcements --search "vX.Y.Z"`
+2. Post the user-facing notes (what changed, who it affects, upgrade steps) and link the tag:
+   `gh discussion create --repo Marker-Inc-Korea/AutoRAG --category Announcements --title "AutoRAG vX.Y.Z" --body-file notes.md`
+   Use `AutoRAG Legacy legacy-vX.Y.Z` as the title for a legacy tag.
+3. Generated notes from commits are the source, not the post. Trim commit noise before posting.
+4. Keep corpus text, secrets, tokens, cookies, and machine-local paths out of both the release notes and the discussion.
+
+This is a maintainer step when cutting a release. It is not a requirement on contributor pull requests.
+
 ## Developer Commands
 
 The repository root includes a `Makefile` for AutoRAG 2.0 validation:
