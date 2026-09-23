@@ -1,4 +1,4 @@
-export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
+export type { AutoRAGAgentOptions, AutoRefreshOptions, PeerQueryOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
 	buildDatasourceSkillsPrompt,

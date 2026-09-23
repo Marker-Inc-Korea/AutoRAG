@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { connect as connectTcp } from "node:net";
 
 /**
  * Thin adapter over the simplex-chat CLI (AGPLv3), spawned as a subprocess
@@ -123,7 +124,7 @@ async function waitForPort(port: number, proc: ChildProcess, timeoutMs: number):
 class SimplexClient implements SimplexTransport {
 	readonly dbPrefix: string;
 	readonly displayName: string;
-	private readonly proc: ChildProcess;
+	private readonly proc: ChildProcess | undefined;
 	private readonly ws: WebSocket;
 	private nextCorrId = 1;
 	private readonly pending = new Map<string, { resolve: (resp: unknown) => void; reject: (error: Error) => void }>();
@@ -131,7 +132,7 @@ class SimplexClient implements SimplexTransport {
 	private closed = false;
 	private userId: number | undefined;
 
-	constructor(dbPrefix: string, displayName: string, proc: ChildProcess, ws: WebSocket) {
+	constructor(dbPrefix: string, displayName: string, proc: ChildProcess | undefined, ws: WebSocket) {
 		this.dbPrefix = dbPrefix;
 		this.displayName = displayName;
 		this.proc = proc;
@@ -351,13 +352,15 @@ class SimplexClient implements SimplexTransport {
 		} catch {
 			/* already closed */
 		}
-		this.proc.kill("SIGTERM");
+		const proc = this.proc;
+		if (proc === undefined) return;
+		proc.kill("SIGTERM");
 		await new Promise<void>((resolve) => {
 			const timer = setTimeout(() => {
-				this.proc.kill("SIGKILL");
+				proc.kill("SIGKILL");
 				resolve();
 			}, 3000);
-			this.proc.once("exit", () => {
+			proc.once("exit", () => {
 				clearTimeout(timer);
 				resolve();
 			});
@@ -386,4 +389,67 @@ export async function startSimplexChat(options: StartSimplexOptions): Promise<Si
 	const client = new SimplexClient(options.dbPrefix, options.displayName, proc, ws);
 	await client.getUserId();
 	return client;
+}
+
+export interface OpenPeerQueryTransportOptions extends StartSimplexOptions {
+	readonly portOpen?: (port: number) => Promise<boolean>;
+	readonly start?: (options: StartSimplexOptions) => Promise<SimplexTransport>;
+	readonly attach?: (options: StartSimplexOptions) => Promise<SimplexTransport>;
+}
+
+function defaultPortOpen(port: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = connectTcp({ host: "127.0.0.1", port });
+		let settled = false;
+		const finish = (open: boolean) => {
+			if (settled) return;
+			settled = true;
+			socket.destroy();
+			resolve(open);
+		};
+		socket.once("connect", () => finish(true));
+		socket.once("error", () => finish(false));
+		socket.setTimeout(200, () => finish(false));
+	});
+}
+
+/**
+ * Attach to a simplex-chat WebSocket that is already listening.
+ * Does not spawn a process and does not kill one on close, so an
+ * `autorag serve` that owns the database stays up.
+ */
+export async function attachSimplexChat(options: StartSimplexOptions): Promise<SimplexTransport> {
+	const port = options.port ?? 5225;
+	const ws = await new Promise<WebSocket>((resolve, reject) => {
+		const sock = new WebSocket(`ws://127.0.0.1:${port}`);
+		const timer = setTimeout(() => {
+			sock.close();
+			reject(new SimplexError(`WebSocket connect failed on port ${port}`));
+		}, options.connectTimeoutMs ?? 15_000);
+		sock.addEventListener("open", () => {
+			clearTimeout(timer);
+			resolve(sock);
+		});
+		sock.addEventListener("error", () => {
+			clearTimeout(timer);
+			reject(new SimplexError(`WebSocket connect failed on port ${port}`));
+		});
+	});
+	const client = new SimplexClient(options.dbPrefix, options.displayName, undefined, ws);
+	await client.getUserId();
+	return client;
+}
+
+/**
+ * Reuse a simplex-chat already bound on the p2p port. Spawn one only when
+ * nothing is listening, so a second process does not open the same database.
+ */
+export async function openPeerQueryTransport(options: OpenPeerQueryTransportOptions): Promise<SimplexTransport> {
+	const port = options.port ?? 5225;
+	const probe = options.portOpen ?? defaultPortOpen;
+	const start = options.start ?? startSimplexChat;
+	const attach = options.attach ?? attachSimplexChat;
+	const listening = await probe(port);
+	if (listening) return attach({ ...options, port });
+	return start({ ...options, port });
 }
