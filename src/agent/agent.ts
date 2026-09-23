@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
@@ -48,6 +48,7 @@ import {
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
 import type { PolicyResolver } from "../p2p/policy-filter.ts";
+import { openPeerQueryTransport, type SimplexTransport } from "../p2p/simplex-transport.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -89,7 +90,14 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import {
+	createListPeerContactsTool,
+	createUpdatePeerContactDescriptionTool,
+	LIST_PEER_CONTACTS_TOOL_NAME,
+	UPDATE_PEER_CONTACT_DESCRIPTION_TOOL_NAME,
+} from "./peer-contacts-tool.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
+import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -260,6 +268,13 @@ export interface AutoRAGThinkingOptions {
 	readonly final?: AutoRAGThinkingLevel;
 }
 
+export interface PeerQueryOptions {
+	readonly port?: number;
+	readonly simplexDbPrefix?: string;
+	readonly timeoutMs?: number;
+	readonly openTransport?: () => Promise<SimplexTransport>;
+}
+
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
 	apiKey?: string;
@@ -296,6 +311,13 @@ export interface AutoRAGAgentOptions {
 	searchTimeoutMs?: number;
 	/** Maximum number of retrieval/tool executions allowed in one search. */
 	maxSearchToolCalls?: number;
+	/**
+	 * Outbound SimpleX queries to trusted peer AutoRAG agents.
+	 * Default attaches to a simplex-chat already listening on the p2p port,
+	 * or starts one. `false` omits `query_peer_agent`. Remote sessions never
+	 * receive peer-contact or peer-query tools.
+	 */
+	peerQuery?: PeerQueryOptions | false;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
@@ -477,6 +499,30 @@ export class AutoRAGAgent {
 			cwd: this.workspaceProjectRoot,
 		});
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
+		const listPeerContactsTool = this.remoteSession
+			? undefined
+			: createListPeerContactsTool(this.workspaceProjectRoot);
+		const updatePeerDescriptionTool = this.remoteSession
+			? undefined
+			: createUpdatePeerContactDescriptionTool(this.workspaceProjectRoot);
+		const peerQuery = options.peerQuery;
+		const queryPeerTool =
+			this.remoteSession || peerQuery === false
+				? undefined
+				: createQueryPeerAgentTool({
+						workspacePath: this.workspaceProjectRoot,
+						...(peerQuery?.timeoutMs !== undefined ? { timeoutMs: peerQuery.timeoutMs } : {}),
+						openTransport:
+							peerQuery?.openTransport ??
+							(() =>
+								openPeerQueryTransport({
+									dbPrefix:
+										peerQuery?.simplexDbPrefix ??
+										join(this.workspaceProjectRoot, ".autorag", "p2p", "simplex"),
+									displayName: `autorag-${basename(this.workspaceProjectRoot) || "node"}`,
+									...(peerQuery?.port !== undefined ? { port: peerQuery.port } : {}),
+								})),
+					});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
@@ -504,6 +550,9 @@ export class AutoRAGAgent {
 			JIKJI_FIND_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
+			LIST_PEER_CONTACTS_TOOL_NAME,
+			UPDATE_PEER_CONTACT_DESCRIPTION_TOOL_NAME,
+			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
 		]);
@@ -533,6 +582,9 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
+			...(listPeerContactsTool !== undefined ? [listPeerContactsTool] : []),
+			...(updatePeerDescriptionTool !== undefined ? [updatePeerDescriptionTool] : []),
+			...(queryPeerTool !== undefined ? [queryPeerTool] : []),
 		];
 		const seenToolNames = new Set<string>();
 		const tools = orderedTools.filter((tool) => {
