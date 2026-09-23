@@ -2198,6 +2198,8 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+		parserName: diagnostic.parserName,
+		rootCause: diagnostic.rootCause,
 	};
 }
 

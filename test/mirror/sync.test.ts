@@ -87,7 +87,7 @@ describe("syncParsedMirrors", () => {
 		const index = loadMirrorIndex(root);
 		const paths = outputPaths(index);
 
-		expect(result).toMatchObject({ scanned: 1, written: 1, deleted: 0 });
+		expect(result).toMatchObject({ scanned: 2, written: 1, skipped: 1, deleted: 0 });
 		expect(paths).toHaveLength(1);
 		const outputPath = requireValue(paths[0], "output path");
 		expect(outputPath).toContain(parsedMirrorRoot(root));
@@ -240,21 +240,20 @@ describe("syncParsedMirrors", () => {
 		const index = loadMirrorIndex(root);
 
 		expect(result.deleted).toBe(1);
-		expect(result.skipped).toBe(0);
+		expect(result.skipped).toBe(1);
 		expect(readFileSync(outside, "utf8")).toBe("do not delete unsupported\n");
 		expect(index.entries["/docs/skip.bin"]).toBeUndefined();
 	});
-	it("ignores unknown extensions instead of emitting unsupported-file diagnostics", async () => {
-		// Scans only registered parser extensions, so bare binaries never enter the worklist.
+	it("reports unsupported extensions as per-file diagnostics", async () => {
 		writeFileSync(join(source, "note.txt"), "Alpha\n");
 		writeFileSync(join(source, "skip.bin"), Buffer.from([0, 1]));
 
 		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const diag = result.diagnostics.find((d) => d.code === "unsupported-file");
 
-		expect(result.scanned).toBe(1);
+		expect(result.scanned).toBe(2);
 		expect(result.written).toBe(1);
-		expect(diag).toBeUndefined();
+		expect(diag).toMatchObject({ code: "unsupported-file", source: "/docs/skip.bin" });
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
 	});
 
@@ -268,6 +267,15 @@ describe("syncParsedMirrors", () => {
 				input.virtualPath,
 				new Error("UnsupportedClassVersionError: class file version 55.0"),
 			);
+		}
+	}
+
+	class FailingHwpParser extends Parser {
+		readonly name = "sentinel-hwp";
+		readonly extensions = [".hwp"];
+
+		async parse(input: { readonly virtualPath: string }): Promise<never> {
+			throw new ParseError(this.name, input.virtualPath, new Error("root cause sentinel"));
 		}
 	}
 
@@ -286,6 +294,8 @@ describe("syncParsedMirrors", () => {
 			severity: "warning",
 			message: "PDF parsing requires Java 11 or newer; the Java runtime selected from PATH is too old.",
 			source: "/docs/legacy.pdf",
+			parserName: "opendataloader-pdf",
+			rootCause: "UnsupportedClassVersionError: class file version 55.0",
 		});
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
 	});
@@ -294,11 +304,81 @@ describe("syncParsedMirrors", () => {
 		// .hwp is routed by extension but fails with a typed ParseError (legacy binary).
 		writeFileSync(join(source, "legacy.hwp"), Buffer.from([1, 2, 3, 4]));
 
-		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new FailingHwpParser()]),
+		});
 		const diag = result.diagnostics.find((d) => d.code === "parser-failed");
 
-		expect(diag?.source).toBe("/docs/legacy.hwp");
+		expect(diag).toMatchObject({
+			parserName: "sentinel-hwp",
+			rootCause: "root cause sentinel",
+			source: "/docs/legacy.hwp",
+		});
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+	});
+
+	it("bounds parser root causes without dropping their verbatim prefix", async () => {
+		const cause = "root cause sentinel ".repeat(100);
+		class LongCauseParser extends Parser {
+			readonly name = "long-cause";
+			readonly extensions = [".hwp"];
+
+			async parse(input: { readonly virtualPath: string }): Promise<never> {
+				throw new ParseError(this.name, input.virtualPath, new Error(cause));
+			}
+		}
+
+		writeFileSync(join(source, "long.hwp"), Buffer.from([1]));
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new LongCauseParser()]),
+		});
+		const diagnostic = result.diagnostics.find((entry) => entry.code === "parser-failed");
+
+		expect(diagnostic?.rootCause).toBe(`${cause.slice(0, 500)}...`);
+		expect(diagnostic?.rootCause).toHaveLength(503);
+	});
+
+	it("does not expose absolute paths embedded in parser causes", async () => {
+		class PathCauseParser extends Parser {
+			readonly name = "path-cause";
+			readonly extensions = [".hwp"];
+
+			async parse(input: { readonly virtualPath: string; readonly sourcePath?: string }): Promise<never> {
+				throw new ParseError(this.name, input.virtualPath, new Error(`${input.sourcePath}: root cause sentinel`));
+			}
+		}
+
+		const pathDir = join(source, "with spaces");
+		mkdirSync(pathDir);
+		writeFileSync(join(pathDir, "path.hwp"), Buffer.from([1]));
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new PathCauseParser()]),
+		});
+		const diagnostic = result.diagnostics.find((entry) => entry.source === "/docs/with spaces/path.hwp");
+
+		expect(diagnostic?.rootCause).toBe("<path>: root cause sentinel");
+		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+	});
+
+	it("distinguishes an unavailable parser from an unsupported extension", async () => {
+		const file = join(source, "removed.hwp");
+		writeFileSync(file, Buffer.from([1, 2, 3]));
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new FailingHwpParser()]),
+		});
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: new ParserRegistry([]) });
+		const diagnostic = result.diagnostics.find((entry) => entry.source === "/docs/removed.hwp");
+
+		expect(diagnostic?.code).toBe("parser-unavailable");
 	});
 
 	it("returns deleted-mirror diagnostics when previously indexed files disappear", async () => {
@@ -331,7 +411,7 @@ describe("syncParsedMirrors", () => {
 		expect(result.written).toBe(0);
 		expect(result.skipped).toBe(1);
 		expect(index.entries["/docs/huge.txt"]).toBeUndefined();
-		expect(result.diagnostics.some((d) => d.code === "parser-skipped")).toBe(true);
+		expect(result.diagnostics.some((d) => d.code === "oversized")).toBe(true);
 	});
 });
 
@@ -406,7 +486,7 @@ describe("mirror staleness decisions", () => {
 
 		expect(persistedSkipReasons()).toEqual({
 			"/docs/dup-copy.txt": "duplicate-excluded",
-			"/docs/huge.txt": "parser-skipped",
+			"/docs/huge.txt": "oversized",
 			"/docs/broken.hwp": "parser-failed",
 		});
 	});
@@ -438,7 +518,7 @@ describe("mirror staleness decisions", () => {
 			registry: createDefaultParserRegistry(),
 			maxSourceBytes: 100,
 		});
-		expect(persistedSkipReasons()["/docs/big.txt"]).toBe("parser-skipped");
+		expect(persistedSkipReasons()["/docs/big.txt"]).toBe("oversized");
 
 		writeFileSync(file, "fits now\n");
 		await syncParsedMirrors({
