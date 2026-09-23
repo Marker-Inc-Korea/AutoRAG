@@ -372,7 +372,7 @@ describe("CLI config datasources wiring", () => {
 				"family-kakao": {
 					type: "kakao",
 					channels: { names: ["가족방"] },
-					connector: { binaryPath: "/missing/katok" },
+					connector: { binaryPath: "/missing/lazykatok" },
 				},
 			},
 			datasourceAccess: {

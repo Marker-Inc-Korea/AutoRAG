@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { KatokSkill, type KatokSkillClient } from "../../../../src/datasource/skills/katok/skill.ts";
-import type { KatokFailureReason, KatokHit, KatokSearchResult } from "../../../../src/datasource/skills/katok/types.ts";
+import { LazykatokSkill, type LazykatokSkillClient } from "../../../../src/datasource/skills/lazykatok/skill.ts";
+import type {
+	LazykatokFailureReason,
+	LazykatokHit,
+	LazykatokSearchResult,
+} from "../../../../src/datasource/skills/lazykatok/types.ts";
 
 type StepResult =
 	| { ok: true; stdout: string; stderr: string; code: number }
-	| { ok: false; reason: KatokFailureReason; stdout: string; stderr: string; code: number | null };
+	| { ok: false; reason: LazykatokFailureReason; stdout: string; stderr: string; code: number | null };
 
 class StubSkillClient {
 	public doctorResult: StepResult = okStep();
 	public syncResult: StepResult = okStep();
 	public indexResult: StepResult = okStep();
-	public searchResult: KatokSearchResult = okSearch([]);
+	public searchResult: LazykatokSearchResult = okSearch([]);
 
 	async doctor(): Promise<StepResult> {
 		return this.doctorResult;
@@ -21,7 +25,7 @@ class StubSkillClient {
 	async index(): Promise<StepResult> {
 		return this.indexResult;
 	}
-	async search(): Promise<KatokSearchResult> {
+	async search(): Promise<LazykatokSearchResult> {
 		return this.searchResult;
 	}
 }
@@ -30,19 +34,19 @@ function okStep(): StepResult {
 	return { ok: true, stdout: "", stderr: "", code: 0 };
 }
 
-function failStep(reason: KatokFailureReason): StepResult {
-	return { ok: false, reason, stdout: "", stderr: "katok: unavailable", code: 1 };
+function failStep(reason: LazykatokFailureReason): StepResult {
+	return { ok: false, reason, stdout: "", stderr: "lazykatok: unavailable", code: 1 };
 }
 
-function okSearch(hits: readonly KatokHit[]): KatokSearchResult {
+function okSearch(hits: readonly LazykatokHit[]): LazykatokSearchResult {
 	return { ok: true, hits, data: { hits }, stdout: "", stderr: "", code: 0 };
 }
 
-function asClient(stub: StubSkillClient): KatokSkillClient {
-	return stub as unknown as KatokSkillClient;
+function asClient(stub: StubSkillClient): LazykatokSkillClient {
+	return stub as unknown as LazykatokSkillClient;
 }
 
-const HITS: readonly KatokHit[] = [
+const HITS: readonly LazykatokHit[] = [
 	{
 		chunkId: "chunk-001",
 		content: "refund policy approval workflow",
@@ -52,9 +56,9 @@ const HITS: readonly KatokHit[] = [
 	},
 ];
 
-describe("KatokSkill descriptor", () => {
+describe("LazykatokSkill descriptor", () => {
 	it("publishes kakao id, kakaotalk type, default instance, and pii tags", () => {
-		const skill = new KatokSkill({ client: asClient(new StubSkillClient()) });
+		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()) });
 		const descriptor = skill.describe();
 
 		expect(descriptor).toMatchObject({
@@ -66,7 +70,7 @@ describe("KatokSkill descriptor", () => {
 	});
 
 	it("honors a custom instance id and tags", () => {
-		const skill = new KatokSkill({
+		const skill = new LazykatokSkill({
 			client: asClient(new StubSkillClient()),
 			instanceId: "work",
 			tags: ["kakaotalk", "team"],
@@ -77,23 +81,23 @@ describe("KatokSkill descriptor", () => {
 	});
 });
 
-describe("KatokSkill skillManifest (Pi agent-skill layer)", () => {
+describe("LazykatokSkill skillManifest (Pi agent-skill layer)", () => {
 	it("exposes a progressive-disclosure manifest with path-opaque authorized scopes in content", () => {
-		const skill = new KatokSkill({ client: asClient(new StubSkillClient()), instanceId: "work" });
+		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()), instanceId: "work" });
 		const manifest = skill.skillManifest();
 
 		expect(manifest.name).toBe("datasource-kakao");
 		expect(manifest.description.toLowerCase()).toContain("kakaotalk");
-		expect(manifest.content).toContain("search_datasource_documents");
+		expect(manifest.content).toContain("search_datasource_kakao");
 		expect(manifest.content).toContain("/kakao/work");
 		expect(manifest.content).not.toContain("/Users/");
 		expect(manifest.content).not.toContain("Library/Containers");
 	});
 });
 
-describe("KatokSkill polling", () => {
+describe("LazykatokSkill polling", () => {
 	it("defaults to poll mode at a 15 minute interval with no lastIndexedAt", () => {
-		const skill = new KatokSkill({ client: asClient(new StubSkillClient()) });
+		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()) });
 		const polling = skill.polling();
 
 		expect(polling).toEqual({
@@ -104,7 +108,7 @@ describe("KatokSkill polling", () => {
 	});
 
 	it("honors a custom polling interval and seeded lastIndexedAt", () => {
-		const skill = new KatokSkill({
+		const skill = new LazykatokSkill({
 			client: asClient(new StubSkillClient()),
 			pollingIntervalMs: 60_000,
 			lastIndexedAt: 1_700_000_000_000,
@@ -118,7 +122,7 @@ describe("KatokSkill polling", () => {
 	});
 
 	it("sets lastIndexedAt after a successful index", async () => {
-		const skill = new KatokSkill({ client: asClient(new StubSkillClient()) });
+		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()) });
 		expect(skill.polling().lastIndexedAt).toBeUndefined();
 
 		const result = await skill.index();
@@ -131,10 +135,10 @@ describe("KatokSkill polling", () => {
 	});
 });
 
-describe("KatokSkill index", () => {
+describe("LazykatokSkill index", () => {
 	it("runs doctor -> sync -> index and returns ok with indexedAt", async () => {
 		const stub = new StubSkillClient();
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const result = await skill.index();
 
@@ -147,7 +151,7 @@ describe("KatokSkill index", () => {
 	it("returns datasource-unavailable without throwing when doctor fails (binary missing)", async () => {
 		const stub = new StubSkillClient();
 		stub.doctorResult = failStep("binary-missing");
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const result = await skill.index();
 
@@ -158,7 +162,7 @@ describe("KatokSkill index", () => {
 	it("returns datasource-index-failed when sync fails", async () => {
 		const stub = new StubSkillClient();
 		stub.syncResult = failStep("nonzero-exit");
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const result = await skill.index();
 
@@ -168,7 +172,7 @@ describe("KatokSkill index", () => {
 	it("returns datasource-index-failed when index fails (degraded)", async () => {
 		const stub = new StubSkillClient();
 		stub.indexResult = failStep("invalid-json");
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const result = await skill.index();
 
@@ -178,7 +182,7 @@ describe("KatokSkill index", () => {
 	it("does not set lastIndexedAt on failure", async () => {
 		const stub = new StubSkillClient();
 		stub.doctorResult = failStep("binary-missing");
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		await skill.index();
 
@@ -190,7 +194,7 @@ describe("KatokSkill index", () => {
 		(stub as unknown as { doctor: () => Promise<never> }).doctor = async () => {
 			throw new Error("spawn ENOENT");
 		};
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const result = await skill.index();
 
@@ -206,10 +210,10 @@ describe("KatokSkill index", () => {
 			ok: false,
 			reason: "nonzero-exit",
 			stdout: "",
-			stderr: "katok: database locked at /Users/me/Library/Application Support/katok/index.db",
+			stderr: "lazykatok: database locked at /Users/me/Library/Application Support/katok/index.db",
 			code: 1,
 		};
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const result = await skill.index();
 
@@ -219,11 +223,11 @@ describe("KatokSkill index", () => {
 	});
 });
 
-describe("KatokSkill retrievalMethods", () => {
+describe("LazykatokSkill retrievalMethods", () => {
 	it("returns kakao-bm25 and kakao-semantic methods sharing the client and instance", async () => {
 		const stub = new StubSkillClient();
 		stub.searchResult = okSearch(HITS);
-		const skill = new KatokSkill({
+		const skill = new LazykatokSkill({
 			client: asClient(stub),
 			instanceId: "default",
 		});
@@ -248,21 +252,21 @@ describe("KatokSkill retrievalMethods", () => {
 			reason: "binary-missing",
 			hits: [],
 			stdout: "",
-			stderr: "katok: unavailable",
+			stderr: "lazykatok: unavailable",
 			code: null,
 		};
-		const skill = new KatokSkill({ client: asClient(stub) });
+		const skill = new LazykatokSkill({ client: asClient(stub) });
 
 		const [bm25] = skill.retrievalMethods();
 
 		// A failed CLI is reported, not hidden behind an empty result set.
-		await expect(bm25.retrieve("refund", {})).rejects.toThrow("katok: unavailable");
+		await expect(bm25.retrieve("refund", {})).rejects.toThrow("lazykatok: unavailable");
 	});
 });
 
-describe("KatokSkill describeSources", () => {
+describe("LazykatokSkill describeSources", () => {
 	it("surfaces a single path-opaque instance source by default", () => {
-		const skill = new KatokSkill({ client: asClient(new StubSkillClient()) });
+		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()) });
 		const sources = skill.describeSources();
 
 		expect(sources).toHaveLength(1);
@@ -275,7 +279,7 @@ describe("KatokSkill describeSources", () => {
 	});
 
 	it("surfaces one path-opaque source per configured instance", () => {
-		const skill = new KatokSkill({
+		const skill = new LazykatokSkill({
 			client: asClient(new StubSkillClient()),
 			instances: ["default", "work"],
 		});
@@ -289,7 +293,7 @@ describe("KatokSkill describeSources", () => {
 	});
 
 	it("keeps sources path-opaque with no chunk ids in instance sources", () => {
-		const skill = new KatokSkill({ client: asClient(new StubSkillClient()) });
+		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()) });
 		const sources = skill.describeSources();
 
 		for (const source of sources) {

@@ -12,6 +12,8 @@ wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
 Issue #1477 adds the live ClawGallery CLI path.
 Issue #1496 adds the live mailcrawl local email CLI path.
+Issue #1588 adds the live github-gist path (authenticated account gists,
+incremental cursor sync, lexical + local-gateway semantic search).
 
 ## Harnesses
 
@@ -19,6 +21,7 @@ Issue #1496 adds the live mailcrawl local email CLI path.
 |---|---|---|
 | `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
+| `scripts/manual-qa/run-qa-lazykatok-live.ts` | Real KakaoTalk archive through the external `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval); Apple Silicon macOS with Full Disk Access | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
@@ -26,6 +29,7 @@ Issue #1496 adds the live mailcrawl local email CLI path.
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.1.6` fixture sync, no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
+| `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the local embedding gateway (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
 | `scripts/manual-qa/run-qa-ui.ts` | Local loopback `autorag ui`: list/add/test/toggle/remove connections, secret stripping, folder browse | `bun scripts/manual-qa/run-qa-ui.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
@@ -87,9 +91,11 @@ mapping. Configure credentials in notcrawl itself, then set
       unauthorized skills are omitted entirely.
 - [x] `load_datasource_skill` returns full path-opaque instructions for
       authorized names and not-available for denied/unknown names.
-- [x] `search_datasource_documents` returns hits for each skill with opaque
-      slash-hierarchical sources (`/<skill>/<instance>/chunks/<id>`); no `#`
-      fragments, no real filesystem paths.
+- [x] Each authorized connection's dedicated `search_datasource_<id>` tool
+      returns hits with opaque slash-hierarchical sources
+      (`/<skill>/<instance>/chunks/<id>`); no `#` fragments, no real filesystem
+      paths. There is no datasource fan-out tool: every authorized connection is
+      reachable through its own generated tool, and default-deny generates none.
 - [x] `scope` narrows results for scope-capable datasources (e.g. `/mail-export/**` excludes Slack hits) and can
       never widen access.
 

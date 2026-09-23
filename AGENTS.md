@@ -1,5 +1,30 @@
 # AutoRAG — Pi-Powered Librarian Agent
 
+## Guardrails
+
+These bind every agent and human working in this checkout. Force is CI, CODEOWNERS, and the `main` rulesets; this file is the instruction. Do not flatten the rest of this map into these four boxes.
+
+### Allowed
+
+Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay within the task.
+
+### Forbidden
+
+- Changing the `LICENSE` license identifier
+- Adding or committing secrets (`.env`, `*.key`, tokens, cookies, private corpus dumps)
+- Rewriting git history
+- Attaching `node_modules` to releases
+- Sending corpus text to remote embedders (no `OPENAI_API_KEY` / remote embedding endpoint for corpus text)
+- Creating git worktrees (this clone is the isolation boundary)
+
+### Required
+
+`bun run check && bun run lint && bun run typecheck`, plus the tests that cover the change. Dependency or license-allowlist edits also need the supply-chain gate (`bun run supply-chain`).
+
+### Ask first
+
+A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding profile or its license, and P2P default changes.
+
 ## Git Workflow (binding)
 
 This checkout is one of several clones of the same repository. Those clones are the isolation boundary. **Never create a git worktree.** Do not run `git worktree add`, do not create a linked checkout, and do not isolate a PR, review, or feature in a new worktree.
@@ -83,7 +108,7 @@ make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 ```
 
 Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
-executes the `local` lane plus every native CLI lane (katok, discrawl, wacrawl,
+executes the `local` lane plus every native CLI lane (lazykatok, discrawl, wacrawl,
 telecrawl, slacrawl, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
 `E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
 skips native lanes entirely). The summary separates the core MinSync result
@@ -98,8 +123,8 @@ configured.
 Native stores, profiles, and keychains remain owned by their CLIs: the runner
 does not copy datasource data or force an AutoRAG workspace. Native datasource
 references and setup details are in `docs/manual-qa-datasources.md` and the
-individual scripts under `scripts/manual-qa/`, including the real katok harness
-at `scripts/manual-qa/run-qa-katok-live.ts`.
+individual scripts under `scripts/manual-qa/`, including the real lazykatok harness
+at `scripts/manual-qa/run-qa-lazykatok-live.ts`.
 
 Evidence is written to `.omo/evidence/task-6-fixed-live-e2e-environment.json`
 for this task and to the runner result directory (by default
@@ -114,7 +139,7 @@ filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
-only. Leave katok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight
+only. Leave lazykatok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight
 native stores untouched.
 Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
 
@@ -229,7 +254,7 @@ Three core values drive every design decision. Features and PRs that conflict
 with any of them should be rejected or reshaped:
 
 1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
-   stores (katok, discrawl, qmd, msgvault, rclone, …) in place. No forced
+   stores (lazykatok, discrawl, qmd, msgvault, rclone, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
    (`/kakao/<instance>/chunks/<chunk>`) and scope-checked access, and secrets
@@ -249,7 +274,7 @@ source-native provenance is the durable differentiator.
 
 ## New CLI-backed datasource
 
-External datasource CLIs (katok, discrawl, slacrawl, qmd, rclone,
+External datasource CLIs (lazykatok, discrawl, slacrawl, qmd, rclone,
 crawlers) are driven **directly** with their own native stores. There is no
 AutoRAG-managed workspace/config forcing and no bash gate: the agent may run
 these CLIs through `bash` as well as through the datasource tools.
@@ -315,8 +340,7 @@ The librarian agent owns the full workflow:
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
-| `search_datasource_documents` | Search authorized external datasource skills | Server-bound datasource retrieval |
-| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per authorized connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs | Targeted single-datasource retrieval |
+| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per authorized connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
 | `check_memory` | Query past search outcomes | Adaptive strategy |
 | `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
@@ -354,16 +378,16 @@ AutoRAG is designed for **multi-method retrieval** — different methods for dif
 | BM25 (keyword) | Active | MinSync lexical ranking over shared CDC chunks from parsed mirrors |
 | MinSync vector (semantic) | Active | Incrementally indexed semantic retrieval over the same MinSync chunks |
 | Hybrid (vector+BM25) | Active | MinSync hybrid mode over the same canonical chunk IDs |
-| Datasource skills | Active | External server-configured sources (e.g. KakaoTalk via `katok`) |
+| Datasource skills | Active | External server-configured sources (e.g. KakaoTalk via `lazykatok`) |
 | Vector (other backends) | Planned | Other dense-document backends, "find similar to X" |
 
 The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods are registered and routed through `ParallelRetriever` + `ResultMerger`. New methods implement the `RetrievalMethod` interface and plug into the same pipeline. Plain-directory content search is handled directly through the agent's `bash` tool.
 
 Jikji is intentionally not a retrieval method. It is an optional local-discovery layer: AutoRAG calls `jikji find ROOT "query" --json` through `jikji_find`, parses the upstream answer pack, and exposes `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct `bash` reading remains available so Jikji never prevents source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
-Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `DatasourceResultFilter` → `ResultMerger`. Datasource access is default-deny and server-bound: LLM tool arguments cannot grant `allowedTags` or `allowedScopes`, and `search_datasource_documents` exposes only `{ query, topK?, scope? }` where `scope` can only narrow trusted access. Results are not redacted — traceability is preferred over opacity, so pair AutoRAG with a local LLM when privacy matters.
+Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `DatasourceResultFilter` → `ResultMerger`. Datasource access is default-deny and server-bound: LLM tool arguments cannot grant `allowedTags` or `allowedScopes`, and a generated `search_datasource_<id>` tool exposes only `{ query, topK?, scope? }` where `scope` can only narrow trusted access. There is no datasource fan-out tool: every authorized connection gets its own tool, and `search_all_documents` already spans every retrieval method including datasources. Results are not redacted — traceability is preferred over opacity, so pair AutoRAG with a local LLM when privacy matters.
 
-CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `katok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
+CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
 External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable and datasource access stays default-deny. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
@@ -373,10 +397,10 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, `search_datasource_documents`, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per authorized datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
-- **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `katok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
+- **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
 - **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by trusted datasource access, and indexed during `refresh()`.
 
 ## Usage
@@ -445,7 +469,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
 | `src/minsync/method.ts` | MinSync retrieval method (vector / BM25 / hybrid over shared CDC chunks) |
-| `src/datasource/` | Datasource skill contracts, trusted access context, result filtering, polling metadata, diagnostics, and KakaoTalk/katok skill implementation |
+| `src/datasource/` | Datasource skill contracts, trusted access context, result filtering, polling metadata, diagnostics, and KakaoTalk/lazykatok skill implementation |
 | `src/p2p/` | SimpleX P2P sharing: policy, injection/PII gates, approval store, wire protocol |
 | `src/cli/commands/serve.ts` | `autorag serve` P2P peer query server |
 | `src/cli/commands/p2p.ts` | `autorag p2p` peer trust and request approval |
@@ -453,7 +477,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: katok, discrawl, wacrawl, telecrawl, slack, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
-| `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |
+| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
+| `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per authorized datasource connection with model-safe `{ query, topK?, scope? }` parameters |
 | `src/cli/commands/ui.ts` | `autorag ui` loopback dashboard for connecting and managing datasource skills |
 | `src/ui/` | Local datasource UI catalog, config store, probes, HTML, and 127.0.0.1 HTTP server |

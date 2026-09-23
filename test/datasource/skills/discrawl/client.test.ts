@@ -128,6 +128,47 @@ describe("DiscrawlClient search", () => {
 		});
 	});
 
+	it("reaps a descendant that keeps the inherited stdio open after the direct child exits", async () => {
+		if (process.platform === "win32") return;
+		const binaryPath = join(tmpdir(), `discrawl-descendant-${process.pid}-${Date.now()}`);
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { spawn } from "node:child_process";
+const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 5000)"], { stdio: "inherit" });
+process.stdout.write(JSON.stringify([{ id: "descendant", content: "descendant", score: 1, grandchildPid: descendant.pid }]));
+process.exit(0);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const client = new DiscrawlClient({ binaryPath, timeoutMs: 30_000 });
+		let bound: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const result = await Promise.race([
+				client.search("fts", "descendant"),
+				new Promise<never>((_, reject) => {
+					bound = setTimeout(
+						() => reject(new Error("discrawl search never settled after the direct child exited")),
+						2_000,
+					);
+				}),
+			]);
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
+			if (pidMatch?.[1] === undefined) throw new Error("discrawl fixture did not report its descendant PID");
+			try {
+				process.kill(Number(pidMatch[1]), 0);
+			} catch (error) {
+				if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
+				throw error;
+			}
+			throw new Error(`discrawl descendant ${pidMatch[1]} survived after the client settled`);
+		} finally {
+			clearTimeout(bound);
+		}
+	}, 10_000);
+
 	it("honors an abort signal", async () => {
 		const controller = new AbortController();
 		const binaryPath = stubBinary("sleep 5");
@@ -311,7 +352,7 @@ describe("nativeGatewayBaseUrl", () => {
 	});
 
 	it("handles many repeated trailing slashes", () => {
-		expect(nativeGatewayBaseUrl("http://localhost:8080/path/" + "/".repeat(100))).toBe(
+		expect(nativeGatewayBaseUrl(`http://localhost:8080/path/${"/".repeat(100)}`)).toBe(
 			"http://localhost:8080/path/v1",
 		);
 	});

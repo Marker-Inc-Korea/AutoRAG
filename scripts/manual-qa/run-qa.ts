@@ -6,8 +6,8 @@
  * fixtures for Obsidian and mail exports), builds all skills through the
  * trusted config factory, registers them on a real AutoRAGAgent, then walks
  * the checklist in docs/manual-qa-datasources.md: setup -> refresh/index ->
- * skill announcement -> load_datasource_skill -> search_datasource_documents
- * -> scope narrowing -> default-deny.
+ * skill announcement -> load_datasource_skill -> per-connection
+ * search_datasource_<id> tools -> scope narrowing -> default-deny.
  *
  * Run: npx tsx scripts/manual-qa/run-qa.ts  (or bun scripts/manual-qa/run-qa.ts)
  */
@@ -15,9 +15,10 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createLoadDatasourceSkillTool } from "../../src/agent/datasource-skill.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { singleDatasourceToolName } from "../../src/agent/search-single-datasource-tool.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { startMockServices } from "./mock-services.mjs";
 
@@ -78,7 +79,6 @@ try {
 		searchPaths: [docsDir],
 		workspacePath: tmpRoot,
 		minSync: false,
-		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: {
 			allowedTags: ["github", "mail-export", "obsidian", "rss"],
@@ -112,8 +112,17 @@ try {
 	const loaded = await loadTool.execute("qa-load", { name: "datasource-github" });
 	check("skill: load_datasource_skill returns instructions", loaded.details.loaded === true);
 
-	// --- 4. Search via the agent tool per skill ---
-	const searchTool = createSearchDatasourceDocumentsTool(agent);
+	// --- 4. Search via each connection's own generated tool ---
+	const agentTools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
+	const generatedToolNames = agentTools
+		.map((tool) => tool.name)
+		.filter((name) => name.startsWith("search_datasource_"));
+	check(
+		"search: every authorized connection has its own generated tool and no fan-out tool exists",
+		names.every((name) => generatedToolNames.includes(singleDatasourceToolName(name))) &&
+		!generatedToolNames.includes("search_datasource_documents"),
+		generatedToolNames.join(", "),
+	);
 	const queries: Record<string, string> = {
 		github: "Korean queries tokenized ranking",
 		"mail-export": "hiring frozen budget approved",
@@ -121,19 +130,25 @@ try {
 		rss: "release incremental indexing",
 	};
 	for (const [skillName, query] of Object.entries(queries)) {
+		const searchTool = agentTools.find((tool) => tool.name === singleDatasourceToolName(skillName));
+		if (searchTool === undefined) {
+			check(`search: ${skillName} returns scoped hit`, false, `no generated tool for ${skillName}`);
+			continue;
+		}
 		const response = await searchTool.execute(`qa-${skillName}`, { query, topK: 5 });
-		const hit = response.details.sources.find((source) => source.startsWith(`/${skillName}/`));
+		const hit = response.details.sources.find((source: string) => source.startsWith(`/${skillName}/`));
 		check(`search: ${skillName} returns scoped hit`, hit !== undefined, hit ?? "no hit");
 	}
 
 	// --- 5. Scope narrowing (tool arg can only narrow) ---
-	const narrowed = await searchTool.execute("qa-narrow", {
+	const mailExportTool = agentTools.find((tool) => tool.name === singleDatasourceToolName("mail-export"));
+	const narrowed = await mailExportTool?.execute("qa-narrow", {
 		query: "hiring frozen budget approved",
 		scope: "/mail-export/**",
 	});
 	check(
 		"scope: narrowing excludes other skills",
-		narrowed.details.sources.every((source) => source.startsWith("/mail-export/")),
+		narrowed !== undefined && narrowed.details.sources.every((source: string) => source.startsWith("/mail-export/")),
 	);
 
 	// --- 6. Default-deny agent (no trusted access) ---
@@ -141,15 +156,18 @@ try {
 		searchPaths: [docsDir],
 		workspacePath: tmpRoot,
 		minSync: false,
-		bm25: false,
 		datasourceSkills: buildDatasourceSkills(
 			{ rss: { connector: { feeds: [{ url: `${base}/rss/feed.xml` }] } } },
 			tmpRoot,
 		).skills,
 	});
 	await denied.refresh(true, { methods: ["datasources"] });
-	const deniedSearch = await denied.searchDatasourceDocuments("release incremental indexing");
+	const deniedSearch = await denied.searchSingleDatasourceDocuments("rss", "release incremental indexing");
 	check("security: default-deny returns no results", deniedSearch.results.length === 0);
+	const deniedTools = (denied as unknown as { tools: readonly AgentTool[] }).tools
+		.map((tool) => tool.name)
+		.filter((name) => name.startsWith("search_datasource_"));
+	check("security: default-deny exposes no datasource tool at all", deniedTools.length === 0, deniedTools.join(", "));
 	check("security: denied prompt hides skills", !denied.getSystemPrompt().includes("datasource-rss"));
 
 	// --- summary ---

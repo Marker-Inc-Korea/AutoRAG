@@ -54,6 +54,10 @@ const expectedProfiles = profileDefinitions.map(({ profile, model, notice, asset
 	licenseId: model.license,
 	noticeFile: notice,
 	noticeReference: model.noticeReference,
+	intendedUse: model.intendedUse,
+	unsuitableUse: model.unsuitableUse,
+	upstreamCardUrl: model.upstreamCardUrl,
+	modelCard: model.modelCard,
 }));
 const runtimeDefinitions = [
 	"darwin-arm64-metal",
@@ -71,6 +75,10 @@ const expectedAssets = [
 		licenseId: model.license,
 		noticeFile: notice,
 		noticeReference: model.noticeReference,
+		intendedUse: model.intendedUse,
+		unsuitableUse: model.unsuitableUse,
+		upstreamCardUrl: model.upstreamCardUrl,
+		modelCard: model.modelCard,
 	})),
 
 	...runtimeDefinitions.map((asset) => ({
@@ -97,6 +105,10 @@ assertEqual(jsonBlock, declared, "docs/embedding-runtime.md manifest block");
 for (const entry of [...expectedProfiles, ...expectedAssets]) {
 	if (!docs.includes(entry.noticeFile)) throw new Error(`docs/embedding-runtime.md does not reference ${entry.noticeFile}`);
 	if (!existsSync(join(repoRoot, entry.noticeFile))) throw new Error(`missing notice file ${entry.noticeFile}`);
+	if (entry.modelCard) {
+		if (!docs.includes(entry.modelCard)) throw new Error(`docs/embedding-runtime.md does not reference ${entry.modelCard}`);
+		if (!existsSync(join(repoRoot, entry.modelCard))) throw new Error(`missing model card ${entry.modelCard}`);
+	}
 }
 process.stdout.write(`embedding manifest OK: ${expectedProfiles.length} profiles, ${expectedAssets.length} pinned assets\n`);
 

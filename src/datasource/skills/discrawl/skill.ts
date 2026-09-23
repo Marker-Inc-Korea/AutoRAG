@@ -58,7 +58,7 @@ const DEFAULT_DISCORD_TAGS = ["discord", "chat", "pii"] as const;
 /**
  * Discord datasource skill backed by the external `discrawl` CLI.
  *
- * Mirrors the katok model: the CLI owns the archive, the FTS5 index, and the
+ * Mirrors the lazykatok model: the CLI owns the archive, the FTS5 index, and the
  * vector index; AutoRAG only spawns it and maps results. AutoRAG never calls
  * the Discord API itself and never reads the Discord Desktop cache directly.
  *
@@ -231,7 +231,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. Sync is incremental (cursor-based) and embeddings are queued per changed message. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				`Call the dedicated \`${datasourceSearchToolName(DISCORD_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Do not use \`search_datasource_documents\` for this datasource — it fans out to every datasource CLI. Available authorized scopes:`,
+				`Call the dedicated \`${datasourceSearchToolName(DISCORD_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Available authorized scopes:`,
 				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",

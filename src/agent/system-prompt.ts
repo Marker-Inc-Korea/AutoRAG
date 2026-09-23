@@ -33,11 +33,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
 		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
-		toolLine(
-			config,
-			"search_datasource_documents",
-			"search authorized external datasources; scope may only narrow access",
-		),
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(
@@ -54,7 +49,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
 		...config.toolNames
-			.filter((name) => name.startsWith("search_datasource_") && name !== "search_datasource_documents")
+			.filter((name) => name.startsWith("search_datasource_"))
 			.map(
 				(name) =>
 					`- **${name}**: search only the ${name.slice("search_datasource_".length).replace(/_/g, "-")} datasource connection, spawning no other datasource CLIs`,
@@ -67,7 +62,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"jikji_find",
 						"search_all_documents",
 						"semantic_search_local_docs",
-						"search_datasource_documents",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
 						"web_search",
@@ -108,7 +102,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolAvailable(config, "web_search") || toolAvailable(config, "web_fetch")
 			? `## Web Research
 
-\`web_search\` searches the public internet for current information beyond the local corpus and the model's knowledge cutoff; prefer primary sources (official docs, papers) and corroborate key claims with multiple sources. \`web_fetch\` reads a specific http(s) URL as markdown/text — pages found via web_search, official docs, papers. web_fetch only accepts http(s) URLs: never local file paths (use bash) or datasource virtual ids such as /kakao/... (use search_datasource_documents). Keep result URLs for traceability. Web queries leave the machine: never include private corpus content or secrets in web_search queries or fetched URLs.
+\`web_search\` searches the public internet for current information beyond the local corpus and the model's knowledge cutoff; prefer primary sources (official docs, papers) and corroborate key claims with multiple sources. \`web_fetch\` reads a specific http(s) URL as markdown/text — pages found via web_search, official docs, papers. web_fetch only accepts http(s) URLs: never local file paths (use bash) or datasource virtual ids such as /kakao/... (use that connection's dedicated search_datasource_<id> tool). Keep result URLs for traceability. Web queries leave the machine: never include private corpus content or secrets in web_search queries or fetched URLs.
 `
 			: "";
 
@@ -138,7 +132,7 @@ ${noSearchTools}
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
-- Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search or fetch them through \`search_datasource_documents\` and the loaded datasource skill/native CLI.
+- Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every authorized connection has its own tool, and \`search_all_documents\` still spans all of them at once.
 - When exploring local files and folders, actively use \`jikji_find\` as your primary discovery tool. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed).
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
 - Cross-check important claims against the original source and preserve real source paths.

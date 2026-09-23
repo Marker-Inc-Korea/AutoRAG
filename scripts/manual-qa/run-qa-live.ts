@@ -13,8 +13,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import { singleDatasourceToolName } from "../../src/agent/search-single-datasource-tool.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "autorag-live-qa-"));
@@ -40,7 +41,6 @@ try {
 		searchPaths: [docsDir],
 		workspacePath: tmpRoot,
 		minSync: false,
-		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: { allowedTags: ["github", "rss"], allowedScopes: ["/github/**", "/rss/**"] },
 	});
@@ -54,20 +54,38 @@ try {
 		);
 	}
 
-	const tool = createSearchDatasourceDocumentsTool(agent);
-	const githubHits = await tool.execute("live-gh", { query: "datasource skill retrieval", topK: 5, scope: "/github/**" });
+	const agentTools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
+	const generatedToolNames = agentTools
+		.map((entry) => entry.name)
+		.filter((name) => name.startsWith("search_datasource_"));
+	check(
+		"live tools: every authorized connection has its own generated tool and no fan-out datasource tool",
+		generatedToolNames.length === 2 &&
+		generatedToolNames.includes(singleDatasourceToolName("github")) &&
+		generatedToolNames.includes(singleDatasourceToolName("rss")) &&
+		!generatedToolNames.includes("search_datasource_documents"),
+		generatedToolNames.join(", "),
+	);
+	const githubTool = agentTools.find((entry) => entry.name === singleDatasourceToolName("github"));
+	const githubHits = await githubTool?.execute("live-gh", {
+		query: "datasource skill retrieval",
+		topK: 5,
+		scope: "/github/**",
+	});
 	check(
 		"live search: github issues return scoped hits",
-		githubHits.details.sources.length > 0 &&
-		githubHits.details.sources.every((source) => source.startsWith("/github/")),
-		githubHits.details.sources[0],
+		(githubHits?.details.sources.length ?? 0) > 0 &&
+		(githubHits?.details.sources ?? []).every((source: string) => source.startsWith("/github/")),
+		githubHits?.details.sources[0],
 	);
 
-	const rssHits = await tool.execute("live-rss", { query: "the a and", topK: 5, scope: "/rss/**" });
+	const rssTool = agentTools.find((entry) => entry.name === singleDatasourceToolName("rss"));
+	const rssHits = await rssTool?.execute("live-rss", { query: "the a and", topK: 5, scope: "/rss/**" });
 	check(
 		"live search: rss frontpage returns scoped hits",
-		rssHits.details.sources.length > 0 && rssHits.details.sources.every((source) => source.startsWith("/rss/")),
-		rssHits.details.sources[0],
+		(rssHits?.details.sources.length ?? 0) > 0 &&
+		(rssHits?.details.sources ?? []).every((source: string) => source.startsWith("/rss/")),
+		rssHits?.details.sources[0],
 	);
 
 	console.log(failures === 0 ? "\nLIVE QA PASSED" : `\nLIVE QA: ${failures} failure(s)`);

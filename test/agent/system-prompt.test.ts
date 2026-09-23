@@ -55,14 +55,14 @@ describe("buildSystemPrompt single-agent contract", () => {
 			connector: { fetch: async () => ({ ok: true, documents: [] }) },
 		});
 		const prompt = buildSystemPrompt({
-			toolNames: ["search_datasource_documents", "load_datasource_skill"],
+			toolNames: ["search_datasource_cloud_drive", "load_datasource_skill"],
 			manifests: [],
 			datasourceSkills: [toDatasourceAgentSkill(skill.skillManifest())],
 		});
 
 		expect(prompt).toContain("datasource-cloud-drive");
 		expect(prompt).toContain("load_datasource_skill");
-		expect(prompt).toContain("search_datasource_documents");
+		expect(prompt).toContain("search_datasource_cloud_drive");
 		const manifest = skill.skillManifest().content;
 		expect(manifest).toContain("Google Drive");
 		expect(manifest).toContain("OneDrive");
@@ -84,7 +84,11 @@ describe("buildSystemPrompt single-agent contract", () => {
 			connector: { fetch: async () => ({ ok: true, documents: [] }) },
 		});
 		const prompt = buildSystemPrompt({
-			toolNames: ["search_datasource_documents", "load_datasource_skill"],
+			toolNames: [
+				"search_datasource_personal_google_drive",
+				"search_datasource_company_onedrive",
+				"load_datasource_skill",
+			],
 			manifests: [],
 			datasourceSkills: [personal, work].map((skill) => toDatasourceAgentSkill(skill.skillManifest())),
 		});

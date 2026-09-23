@@ -72,7 +72,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeMinSync(queryJson: string, strictQuery = false): void {
+function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 0): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
@@ -97,6 +97,7 @@ if (args[0] === "check") {
 }
 
 if (args[0] === "sync") {
+  ${syncDelayMs > 0 ? `await new Promise((resolve) => setTimeout(resolve, ${syncDelayMs}));` : ""}
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ files_processed: 1, files_processed_paths: ["files/docs/policy.txt.md"] }));
@@ -1607,6 +1608,26 @@ describe("AutoRAG embedding runtime integration", () => {
 			max_concurrent: 2,
 			timeout_seconds: 120,
 		});
+	});
+
+	it("lets a long sync outlive a small embedder timeout instead of killing the process", async () => {
+		// The embedder timeoutMs is a per-batch embedding HTTP timeout (written to
+		// config.toml as timeout_seconds). It must not SIGTERM `minsync sync`:
+		// a full reindex can legitimately run far longer than any per-request
+		// timeout, so an operator tuning batches to fail fast must not kill the
+		// sync process mid-run.
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 400);
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { id: "openai", timeoutMs: 150 },
+		}).sync();
+		expect(result).toMatchObject({ ok: true, synced: 1 });
+		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(config.embedder).toMatchObject({ id: "openai", timeout_seconds: 1 });
 	});
 
 	it("forces full reindex for stale identity without deleting the prior cursor", async () => {
