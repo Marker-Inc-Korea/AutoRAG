@@ -54,6 +54,7 @@ const REMEDIATION =
 	"Semantic embeddings are unavailable. Run `autorag models prefetch` or `autorag models import <file>`, then run `autorag setup` again.";
 const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	kakao: "lazykatok",
+	lark: "lark-cli",
 	whatsapp: "wacrawl",
 	telegram: "telecrawl",
 	slack: "slacrawl",
@@ -120,6 +121,7 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 			...configured,
 			"discord",
 			"kakao",
+			"lark",
 			"slack",
 			"telegram",
 			"whatsapp",

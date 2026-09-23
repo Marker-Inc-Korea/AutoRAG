@@ -4,6 +4,8 @@ Use `.github/ISSUE_TEMPLATE/datasource-skill.md` and labels `datasource-skill`, 
 
 ## Proposed issues
 
+Lark/Feishu v1 is not in this list: it ships as remote search through `lark-cli` (issue #1672). A later local archive is a separate issue. Local materialization is intentionally out of scope for v1.
+
 1. Slack datasource skill — workspace/channel hierarchy, bot/user token scopes, message/thread indexing, file attachments.
 2. Cloud-drive datasource skill — provider-neutral account/folder hierarchy, file parsing, and shared-drive permissions.
 3. Notion datasource skill — workspace/database/page hierarchy, block tree indexing, integration-token boundaries.

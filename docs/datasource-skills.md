@@ -508,6 +508,41 @@ await agent.refresh();
 const hits = await agent.searchSingleDatasourceDocuments("kakao", "contract renewal", { topK: 5 });
 ```
 
+## Lark / Feishu via lark-cli
+
+Lark (larksuite.com) and Feishu (feishu.cn) are the same product on separate
+hosts. v1 searches the tenant in place through the official `lark-cli`. There
+is no local archive and `index()` stores nothing (`chunkCount: 0`).
+Credentials stay in the CLI keychain. AutoRAG never reads the desktop
+client's private databases and never accepts an app secret.
+
+```json
+{
+  "datasources": {
+    "lark": {
+      "instanceId": "default",
+      "channels": { "ids": ["oc_xxx"] }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["lark:chat", "lark:docs"],
+    "allowedScopes": ["/lark/default/**"]
+  }
+}
+```
+
+`channels.ids` narrows message search with `--chat-id`. It does not hide
+documents. A query `scope` under `/lark/<instance>/messages` or
+`/lark/<instance>/docs` selects one surface. Install with
+`npm install -g @larksuite/cli`, then `lark-cli auth login` with explicit
+scopes `search:message` and `search:docs:read`, and confirm with
+`lark-cli auth status`. Read a hit with
+`lark-cli im +messages-mget --message-ids <id> --format json` or
+`lark-cli docs +fetch --doc <token> --doc-format markdown`. Sources are
+`/lark/<instance>/messages/<message_id>` and
+`/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
+coverage of older messages is not guaranteed.
+
 ## New datasource checklist
 
 - Implement `DatasourceSkill`.

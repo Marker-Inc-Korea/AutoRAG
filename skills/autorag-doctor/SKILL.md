@@ -68,6 +68,7 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 | Mail | `mailcrawl doctor`, `mailcrawl status` | `mailcrawl sync && mailcrawl index` |
 | Cloud drive | `rclone listremotes` | `autorag refresh --method datasources` |
 | Spotlight (macOS) | `mdutil -s /` | indexed by the OS; no AutoRAG sync |
+| Lark / Feishu | `lark-cli auth status --format json` | no local sync; search is remote |
 
 Rules:
 

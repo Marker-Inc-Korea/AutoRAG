@@ -8,7 +8,7 @@ export interface RetrievalResult {
 
 export interface RetrievalMethodDescriptor {
 	name: string;
-	type: "posix" | "vector" | "bm25" | "hybrid" | "visual";
+	type: "posix" | "vector" | "bm25" | "hybrid" | "visual" | "remote";
 	description: string;
 	status: "active" | "stub";
 	capabilities: string[];

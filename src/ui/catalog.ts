@@ -95,6 +95,15 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 		],
 	},
 	{
+		type: "lark",
+		title: "Lark / Feishu",
+		summary: "Live message and document search through lark-cli. No local archive. Credentials stay in the CLI.",
+		defaultTags: ["lark:chat", "lark:docs"],
+		binaryName: "lark-cli",
+		installHint: "npm install -g @larksuite/cli, then lark-cli auth login with search:message and search:docs:read.",
+		fields: [INSTANCE, BINARY],
+	},
+	{
 		type: "discord",
 		title: "Discord",
 		summary: "Guild archive through the discrawl CLI.",

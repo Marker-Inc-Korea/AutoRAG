@@ -88,7 +88,7 @@ Datasource skills belong in trusted config and remain default-deny.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`,
-`mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`) or connection
+`mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `datasourceAccess.allowedTags` and `allowedScopes` narrow trusted access and

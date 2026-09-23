@@ -25,11 +25,12 @@ describe("datasource skill manifests and dedicated search tools", () => {
 		spotlight: true,
 		"cloud-drive": true,
 		"mail-export": true,
+		lark: true,
 	});
 
 	it("builds every requested built-in skill", () => {
 		expect(unknown).toEqual([]);
-		expect(skills.length).toBe(14);
+		expect(skills.length).toBe(15);
 	});
 
 	it("every manifest names its dedicated tool, references no removed tool, and documents the native CLI", () => {

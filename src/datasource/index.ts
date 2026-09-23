@@ -79,6 +79,7 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
+export { LarkClient, type LarkClientOptions, LarkSkill, type LarkSkillOptions } from "./skills/lark/index.ts";
 export type {
 	LazykatokFailureReason,
 	LazykatokHit,
