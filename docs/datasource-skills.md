@@ -487,6 +487,9 @@ Rules:
 
 - AutoRAG never reads KakaoTalk databases directly.
 - Missing binary, permission, sync, or indexing failures return diagnostics instead of throwing.
+- `sync` names the live adapter explicitly (`--source macos` on macOS). A bare `sync --json`
+  falls back to the CLI's config file, whose default adapter is `fixture` and fails without a
+  JSONL path; set `connector.source` to use another adapter.
 - Remote embedding egress configuration is rejected before spawning `lazykatok`.
 - Lazykatok stdout/stderr and thrown error text surface as datasource diagnostics.
 

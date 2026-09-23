@@ -201,7 +201,11 @@ process.exit(1);
 
 		expect(results.map((result) => result.source)).toEqual(["/kakao/default/chunks/chunk_58b3852eace05c64"]);
 		expect(loggedArgs().map((args) => args[0])).toEqual(["doctor", "sync", "index", "search"]);
-		expect(loggedArgs()[1]).toEqual(["sync", "--json"]);
+		// The product names the live macOS adapter on macOS; elsewhere the CLI's own
+		// config adapter decides, so no --source flag is added.
+		expect(loggedArgs()[1]).toEqual(
+			process.platform === "darwin" ? ["sync", "--source", "macos", "--json"] : ["sync", "--json"],
+		);
 	});
 });
 
