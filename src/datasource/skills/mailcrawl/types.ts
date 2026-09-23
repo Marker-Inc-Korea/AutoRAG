@@ -15,7 +15,13 @@ export interface MailcrawlOptions {
 	readonly source?: string;
 	readonly fixture?: string;
 	readonly himalayaConfig?: string;
+	/**
+	 * Applies to every operation. `sync`/`index` additionally honor
+	 * `indexTimeoutMs`, because a 0.2.0 native index run is not interactive.
+	 */
 	readonly timeoutMs?: number;
+	/** Non-interactive budget for `sync`/`index`; defaults to 30 minutes. */
+	readonly indexTimeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
 }
@@ -54,6 +60,12 @@ export interface MailcrawlIndexInfo {
 	readonly embedded?: number;
 	readonly reused?: number;
 	readonly generation?: string;
+	/** 0.2.0 LanceDB index report: archive revision the vectors were built for. */
+	readonly archiveRevision?: string;
+	/** 0.2.0: the store was rebuilt instead of incrementally extended. */
+	readonly rebuilt?: boolean;
+	/** 0.2.0: embedder identity the vectors belong to, e.g. `native:Qwen/Qwen3-Embedding-0.6B:1024`. */
+	readonly embedder?: string;
 }
 
 export interface MailcrawlSearchHit {

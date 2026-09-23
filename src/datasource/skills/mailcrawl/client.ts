@@ -28,12 +28,32 @@ type BoundedOutput = {
 	readonly exceeded: boolean;
 };
 const DEFAULT_BINARY = "mailcrawl";
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
+/**
+ * `sync` and `index` are not interactive. Since mailcrawl 0.2.0 the default
+ * embedder is the in-process native Qwen3 model, which downloads ONNX weights
+ * on a cold cache and then re-embeds the archive, so a full index routinely
+ * outlives an interactive timeout. A process-wide kill timer must not truncate
+ * that run.
+ */
+const DEFAULT_INDEX_TIMEOUT_MS = 1_800_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const SAFE_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR"]);
 const SAFE_MAILCRAWL_ENV_KEYS = new Set([
 	"MAILCRAWL_DATA_DIR",
 	"MAILCRAWL_EMBEDDER",
+	"MAILCRAWL_EMBEDDER_PROVIDER",
+	"MAILCRAWL_EMBED_URL",
+	"MAILCRAWL_EMBED_MODEL",
+	"MAILCRAWL_EMBED_DIM",
+	"MAILCRAWL_EMBED_TIMEOUT",
+	"MAILCRAWL_EMBED_BATCH_SIZE",
+	"MAILCRAWL_QUERY_PREFIX",
+	"MAILCRAWL_PASSAGE_PREFIX",
+	"MAILCRAWL_NATIVE_MODEL",
+	"MAILCRAWL_NATIVE_DEVICE",
+	"MAILCRAWL_NATIVE_DTYPE",
 	"MAILCRAWL_KIWI_MODEL",
 	"MAILCRAWL_JA_HELPER",
 	"MAILCRAWL_ZH_HELPER",
@@ -71,7 +91,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			...(this.options.fixture === undefined ? [] : ["--fixture", this.options.fixture]),
 			...(this.options.himalayaConfig === undefined ? [] : ["--himalaya-config", this.options.himalayaConfig]),
 		];
-		const result = await this.run(args, signal);
+		const result = await this.run(args, signal, this.indexTimeoutMs());
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (parsed === undefined || !hasAnyNumber(parsed, ["added", "updated", "deleted", "unchanged", "chunksAdded"])) {
@@ -109,7 +129,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			"--json",
 			query.trim(),
 		];
-		const result = await this.run(args, options?.signal);
+		const result = await this.run(args, options?.signal, this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
 		if (!result.ok) return failure(result);
 		const parsed = parseJson(result.stdout);
 		if (parsed === undefined) return failure({ ...result, ok: false, reason: "invalid-output" });
@@ -128,7 +148,16 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 		};
 	}
 
-	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
+	/** `sync`/`index` share the long non-interactive budget. */
+	private indexTimeoutMs(): number {
+		return this.options.indexTimeoutMs ?? this.options.timeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS;
+	}
+
+	private async run(
+		args: readonly string[],
+		signal: AbortSignal | undefined,
+		timeoutMs: number,
+	): Promise<ProcessResult> {
 		const violation = findRemoteEmbeddingViolation({ ...process.env, ...(this.options.env ?? {}) });
 		if (violation !== undefined) {
 			return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
@@ -144,11 +173,11 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			else if (SAFE_ENV_KEYS.has(key) || SAFE_MAILCRAWL_ENV_KEYS.has(key)) env[key] = value;
 		}
 		if (dataDir !== undefined) env.MAILCRAWL_DATA_DIR = dataDir;
-		return spawnMailcrawl(this.options.binaryPath ?? DEFAULT_BINARY, args, env, this.options, signal);
+		return spawnMailcrawl(this.options.binaryPath ?? DEFAULT_BINARY, args, env, this.options, signal, timeoutMs);
 	}
 
 	async index(signal?: AbortSignal): Promise<MailcrawlOk<MailcrawlIndexInfo> | MailcrawlFailure> {
-		const result = await this.run(["index", "--json"], signal);
+		const result = await this.run(["index", "--json"], signal, this.indexTimeoutMs());
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (
@@ -164,6 +193,12 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 				embedded: number(parsed, "embedded"),
 				reused: number(parsed, "reused"),
 				generation: string(parsed, "generation"),
+				// 0.2.0 replaced the JSON-in-SQLite generation report with a
+				// LanceDB index report; the embedder identity is what makes a
+				// rebuild-vs-reuse decision observable.
+				archiveRevision: string(parsed, "archiveRevision"),
+				rebuilt: typeof parsed.rebuilt === "boolean" ? parsed.rebuilt : undefined,
+				embedder: string(parsed, "embedder"),
 			},
 			result,
 		);
@@ -176,6 +211,7 @@ function spawnMailcrawl(
 	env: NodeJS.ProcessEnv,
 	options: MailcrawlOptions,
 	signal: AbortSignal | undefined,
+	timeoutMs: number,
 ): Promise<ProcessResult> {
 	return new Promise((resolveResult) => {
 		const portable = portableSpawnCommand(binary, args);
@@ -192,7 +228,7 @@ function spawnMailcrawl(
 		const timer = setTimeout(() => {
 			reason = "timeout";
 			terminate(child);
-		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+		}, timeoutMs);
 		const abort = () => {
 			reason = "aborted";
 			terminate(child);
@@ -355,10 +391,30 @@ function findRemoteEmbeddingViolation(env: NodeJS.ProcessEnv): string | undefine
 	for (const [key, value] of Object.entries(env)) {
 		if (value === undefined) continue;
 		const lower = key.toLowerCase();
+		// Legacy pre-0.2.0 keys: their mere presence pointed the CLI at a
+		// remote embedding sidecar.
 		if (REMOTE_EMBEDDING_ENV_KEYS.has(lower)) return key;
-		if (lower === "mailcrawl_embedder" && /^https?:\/\//iu.test(value.trim())) return key;
+		// 0.2.0 keeps `MAILCRAWL_EMBEDDER` as the mock switch and adds
+		// `MAILCRAWL_EMBEDDER_PROVIDER=loopback-http` + `MAILCRAWL_EMBED_URL`.
+		// The AutoRAG default runtime is a loopback gateway, so a loopback
+		// endpoint is forwarded; anything else would ship corpus text off the
+		// machine and is refused before the CLI is spawned.
+		if (lower === "mailcrawl_embedder" || lower === "mailcrawl_embed_url") {
+			if (isRemoteHttpEndpoint(value)) return key;
+		}
 	}
 	return undefined;
+}
+
+function isRemoteHttpEndpoint(value: string): boolean {
+	const trimmed = value.trim();
+	if (!/^https?:\/\//iu.test(trimmed)) return false;
+	try {
+		return !LOOPBACK_HOSTS.has(new URL(trimmed).hostname);
+	} catch {
+		// An unparseable endpoint cannot be proven loopback, so it is refused.
+		return true;
+	}
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {

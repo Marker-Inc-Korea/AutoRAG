@@ -234,11 +234,13 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration.
 
-Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.6` or newer)
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.2.0` or newer)
 and configured through its own Himalaya account. AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
-fails with `text array must be non-empty`.
+fails with `text array must be non-empty`. 0.2.0 defaults to the in-process
+native `Qwen/Qwen3-Embedding-0.6B` embedder and keeps vectors in LanceDB, so a
+cold cache makes the first `index` download ONNX weights and run for minutes.
 Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
 datasource is removed.
 
