@@ -37,9 +37,13 @@ Rules for the split:
 - For a new feature, a new datasource skill, a retrieval change, or anything touching
   several areas, open an issue (or comment on the existing one) and agree on the
   approach before writing code. It saves a rewrite.
-- Issues labelled `good first issue` are scoped to be doable without deep project
-  knowledge; `help wanted` means we would like someone to pick it up. Asking questions
+- Starter issues carry `good first issue` or `help wanted` **and** `AutoRAG-2.0`.
+  `good first issue` means the task is doable without deep project knowledge;
+  `help wanted` means we would like someone to pick it up. Asking questions
   in the issue is normal, not a nuisance.
+- Issues labelled only `AutoRAG-legacy` are the Python tree under `legacy/`.
+  They are not the newcomer path for AutoRAG Agent. Leave those labels in place;
+  do not add `good first issue` or `help wanted` to a legacy issue.
 - Security problems never go in a public issue: follow [SECURITY.md](SECURITY.md).
 
 ## Development setup (AutoRAG 2.0)
