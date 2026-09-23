@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LazykatokClient } from "../../../../src/datasource/skills/lazykatok/client.ts";
+import { LazykatokClient, syncArgs } from "../../../../src/datasource/skills/lazykatok/client.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
@@ -515,6 +515,79 @@ process.stdout.write("x".repeat(64));
 		const result = await client.doctor();
 
 		expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
+	});
+
+	describe("sync source adapter and the index output bound", () => {
+		/** Fake that streams a payload from a file, for reports too large to pass through env. */
+		function writeFakeLazykatokStreaming(payload: string): void {
+			const payloadPath = join(root, "payload.json");
+			writeFileSync(payloadPath, payload);
+			writeFileSync(
+				binaryPath,
+				`#!/usr/bin/env node
+import { appendFileSync, readFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2), envApiKey: null }) + "\\n");
+process.stdout.write(readFileSync(${JSON.stringify(payloadPath)}, "utf8"));
+`,
+			);
+			chmodSync(binaryPath, 0o755);
+		}
+
+		it("pins the sync source policy per platform", () => {
+			expect(syncArgs({}, "darwin")).toEqual(["sync", "--source", "macos", "--json"]);
+			expect(syncArgs({}, "linux")).toEqual(["sync", "--json"]);
+			expect(syncArgs({}, "win32")).toEqual(["sync", "--json"]);
+			expect(syncArgs({ source: "fixture" }, "darwin")).toEqual(["sync", "--source", "fixture", "--json"]);
+			expect(syncArgs({ source: "kakaocli" }, "linux")).toEqual(["sync", "--source", "kakaocli", "--json"]);
+		});
+
+		it("spawns sync with the configured --source and defaults to macos on macOS", async () => {
+			writeFakeLazykatok();
+			const configured = new LazykatokClient({
+				binaryPath,
+				source: "fixture",
+				env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, LAZYKATOK_FAKE_OUTPUT: jsonEnv(REAL_SYNC_JSON) },
+			});
+
+			const configuredResult = await configured.sync();
+
+			expect(configuredResult.ok).toBe(true);
+			expect(loggedCalls()[0]?.args).toEqual(["sync", "--source", "fixture", "--json"]);
+
+			// A bare `sync --json` makes the CLI use its config file, whose default
+			// adapter is `fixture` and fails without a JSONL path, so the live macOS
+			// source has to be named explicitly.
+			const defaulted = new LazykatokClient({
+				binaryPath,
+				env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, LAZYKATOK_FAKE_OUTPUT: jsonEnv(REAL_SYNC_JSON) },
+			});
+			const defaultedResult = await defaulted.sync();
+
+			expect(defaultedResult.ok).toBe(true);
+			expect(loggedCalls()[1]?.args).toEqual(
+				process.platform === "darwin" ? ["sync", "--source", "macos", "--json"] : ["sync", "--json"],
+			);
+		});
+
+		it("accepts an archive-scale index report instead of rejecting it as stdout-too-large", async () => {
+			// The real `index --json` lists one document per candidate chunk, so a
+			// 33k-chunk archive prints ~1.6 MB — well past the 1 MiB general cap.
+			const documents = Array.from({ length: 33_000 }, (_, i) => ({
+				chunk_id: `window_${i}`,
+				path: `/native/katok/semantic/source/chunks/window_${i}.md`,
+			}));
+			const payload = JSON.stringify({ candidate_chunks: 33_000, documents });
+			expect(Buffer.byteLength(payload)).toBeGreaterThan(1_048_576);
+			writeFakeLazykatokStreaming(payload);
+			const client = fakeClient();
+
+			const result = await client.index();
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.data.chunkCount).toBe(33_000);
+			expect(JSON.stringify(result.data)).not.toContain("/native/katok");
+		});
 	});
 
 	describe("real chunk subcommand contract", () => {

@@ -23,7 +23,12 @@ import type {
 	LazykatokSyncInfo,
 	LazykatokSyncResult,
 } from "./types.ts";
-import { DEFAULT_LAZYKATOK_BINARY, DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES, DEFAULT_LAZYKATOK_TIMEOUT_MS } from "./types.ts";
+import {
+	DEFAULT_LAZYKATOK_BINARY,
+	DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES,
+	DEFAULT_LAZYKATOK_SOURCE,
+	DEFAULT_LAZYKATOK_TIMEOUT_MS,
+} from "./types.ts";
 
 const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
 /**
@@ -80,7 +85,7 @@ export class LazykatokClient {
 	}
 
 	async sync(signal?: AbortSignal): Promise<LazykatokSyncResult> {
-		const result = await this.run(["sync", "--json"], signal);
+		const result = await this.run(syncArgs(this.options, process.platform), signal);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -258,9 +263,20 @@ function lookupInPath(executable: string, env: NodeJS.ProcessEnv): string | unde
 }
 
 /**
+ * `sync` argv for the configured source adapter. A bare `sync --json` makes the CLI
+ * fall back to its config file, whose default adapter is `fixture` and fails with
+ * "fixture source requires a JSONL path", so the live macOS adapter is named
+ * explicitly on darwin while other platforms defer to the CLI's own config.
+ */
+export function syncArgs(options: LazykatokOptions, platform: NodeJS.Platform = process.platform): readonly string[] {
+	const source = options.source ?? (platform === "darwin" ? DEFAULT_LAZYKATOK_SOURCE : undefined);
+	return ["sync", ...(source === undefined ? [] : ["--source", source]), "--json"];
+}
+
+/**
  * Flags common to every subcommand. lazykatok's own CLI contract only exposes
  * `--data-dir` and `--config` as global options; there is no `--workspace`
- * or global `--source` flag. AutoRAG never forces an AutoRAG-managed
+ * flag, and `--source` belongs to `sync` alone. AutoRAG never forces an AutoRAG-managed
  * workspace on lazykatok — without explicit options, lazykatok uses its own default
  * store (e.g. `~/Library/Application Support/katok` on macOS).
  */

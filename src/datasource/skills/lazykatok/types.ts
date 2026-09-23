@@ -25,12 +25,22 @@ export interface LazykatokOptions {
 	readonly workspacePath?: string;
 	/** Explicit operator-owned configuration/workspace transport. */
 	readonly configPath?: string;
+	/**
+	 * Source adapter passed to `sync --source`. Without it the CLI falls back to its
+	 * config file, whose default adapter is `fixture` and fails without a JSONL path.
+	 * AutoRAG names the live adapter (`macos`) on macOS and passes no flag elsewhere,
+	 * so a non-macOS operator's own CLI config still decides; set this to use another
+	 * adapter (`kakaocli`, `fixture`, …).
+	 */
+	readonly source?: string;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 export const DEFAULT_LAZYKATOK_BINARY = "lazykatok";
 export const DEFAULT_LAZYKATOK_TIMEOUT_MS = 60_000;
+/** The live macOS adapter `sync` names by default on darwin. */
+export const DEFAULT_LAZYKATOK_SOURCE = "macos";
 // `lazykatok index --json` reports every written document (chunk id + path), so
 // a real archive's index output alone is multiple MB (9.4k documents ≈ 2.2 MB
 // measured against katok 0.3.3, whose CLI lazykatok continues). The cap exists
