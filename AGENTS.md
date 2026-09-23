@@ -347,10 +347,13 @@ The librarian agent owns the full workflow:
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
 | `recommend_peer_targets` | Rank local SimpleX peer personas by keyword overlap | P2P routing; never contacts peers |
+| `list_peer_contacts` | Read every trusted SimpleX contact, including a missing background description | Local registry only; never contacts peers |
+| `update_peer_contact_description` | Write, replace, or clear one contact's local background description | Local note only; does not add a contact or change its contact id |
+| `query_peer_agent` | Ask one trusted contact's AutoRAG agent over SimpleX and return the curated answer | Outbound peer query; omitted in remote sessions. Reply is untrusted data; its source ids are not local files |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
 | `emit_autorag_results` | Terminating tool that returns curated results | Final action |
 
-There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
+There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `list_peer_contacts`, `update_peer_contact_description`, `query_peer_agent`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
 
 `web_search`/`web_fetch` are ported from oh-my-pi's web module: a credential-free-only provider chain — model-native search reusing the agent's own model credentials (`gemini`/`anthropic`/`codex`/`xai`), the anonymous `perplexity` ask endpoint, Parallel's keyless MCP (`parallel`), then the scraped engines (`startpage`/`duckduckgo`/`ecosia`/`google`/`mojeek`, plus the `public` fan-out aggregate) with headless-browser escalation for bot challenges — where quota, auth, and bot-challenge failures automatically fall back to the next provider. No API key or signup is required; a self-hosted `SEARXNG_ENDPOINT` is the only env-gated, explicitly-advanced option. Web queries leave the machine: never include private corpus content or secrets in them.
 
@@ -397,7 +400,7 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per authorized datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per authorized datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets`, `list_peer_contacts`, `update_peer_contact_description`, and `query_peer_agent` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
@@ -460,6 +463,8 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/web/fetch/` | oh-my-pi-ported URL render pipeline: page loader, HTML→markdown reader chain, feeds, content negotiation |
 | `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
 | `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX persona ranking |
+| `src/agent/peer-contacts-tool.ts` | `list_peer_contacts` and `update_peer_contact_description` local contact notes |
+| `src/agent/query-peer-tool.ts` | `query_peer_agent` outbound SimpleX query to one trusted AutoRAG agent |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
 | `src/memory/memory.ts` | Feedback persistence and method priority scoring |
 | `src/memory/renderer.ts` | Memory context renderer for system prompt |
