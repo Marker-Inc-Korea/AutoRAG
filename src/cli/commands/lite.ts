@@ -4,7 +4,6 @@ import { runInit } from "./init.ts";
 import { runLiteRefresh } from "./lite-refresh.ts";
 import { runStatus } from "./status.ts";
 import type { CommandContext } from "./types.ts";
-import { runUi } from "./ui.ts";
 import { runWatch } from "./watch.ts";
 
 const LITE_USAGE = `autorag lite - model-free AutoRAG lifecycle CLI
@@ -15,8 +14,6 @@ Subcommands:
   autorag lite init
                        Write the configured model-free lifecycle config
                        (--search-paths PATHS  --workspace DIR  --memory-path FILE  --force)
-  autorag lite ui      Open the local datasource setup UI
-                       (--port N  --host 127.0.0.1  --no-open  --allow-remote)
   autorag lite refresh Run an incremental index refresh (no model required)
                        (--full  --force  --method minsync,parsed,datasources,jikji,all)
   autorag lite watch  Watch configured roots (or --once for one refresh tick)
@@ -67,8 +64,6 @@ export async function runLite(ctx: CommandContext): Promise<number> {
 	switch (sub) {
 		case "init":
 			return runInit(subCtx);
-		case "ui":
-			return runUi(subCtx);
 		case "refresh":
 			return runLiteRefresh(subCtx);
 		case "watch":

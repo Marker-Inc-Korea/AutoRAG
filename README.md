@@ -204,9 +204,6 @@ autorag search "What are our primary Q3 deliverables?"
 
 # Launch the interactive Terminal UI (beta)
 autorag tui
-
-# Open the loopback web management dashboard (127.0.0.1)
-autorag ui
 ```
 
 ### 3. Programmatic Usage (TypeScript API)
@@ -244,7 +241,6 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 | `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag tui` | Open the interactive librarian terminal UI |
-| `autorag ui` | Open the local loopback web dashboard to configure datasources visually |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | Model-free indexing, retrieval, report generation, and status |
 | `autorag feedback <session>` | Record useful / not-useful feedback by item number |

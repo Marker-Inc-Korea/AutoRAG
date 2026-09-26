@@ -179,7 +179,6 @@ export type {
 	ResolvedAgentModelDetailed,
 	ResolvedAgentModelRole,
 	ResolvedConfigPath,
-	UiConfig,
 } from "./cli/config.ts";
 export {
 	AUTORAG_HOME_ENV,
