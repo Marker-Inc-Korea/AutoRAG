@@ -65,6 +65,11 @@ jobs:
                   uv run python -c "import nltk; nltk.download('punkt_tab')"
                   uv run python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
             - name: Run AutoRAG tests
+              # The job wall is 40 minutes, but a stalled test then burns that
+              # budget silently: #1706 reached 98% and produced no output for 35
+              # minutes before the job was cancelled. The whole suite finishes in
+              # ~3 minutes, so bound the step itself and let a stall fail loudly.
+              timeout-minutes: 20
               run: |
                   uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
             - name: Check clean legacy ty scope
