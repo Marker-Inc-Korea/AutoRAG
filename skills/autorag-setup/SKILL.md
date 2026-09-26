@@ -180,7 +180,7 @@ datasources automatically:
 autorag setup --format json
 ```
 
-`autorag ui` is still in development — do not recommend it for datasource
+A datasource setup UI is not shipped in this build — do not recommend it for datasource
 setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user

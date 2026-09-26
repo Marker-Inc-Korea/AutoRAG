@@ -59,7 +59,7 @@ include `AUTORAG_HOME`, `AUTORAG_CONFIG`, `AUTORAG_SEARCH_PATHS`,
 
 ## Probe and configure datasources (setup wizard)
 
-`autorag lite ui` is still in development — do not recommend it for datasource
+A datasource setup UI is not shipped in this build — do not recommend it for datasource
 setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user

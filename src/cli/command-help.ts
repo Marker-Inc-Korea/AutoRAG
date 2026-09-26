@@ -189,17 +189,6 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --final-thinking <lvl> Thinking level for the verified answer",
 		"  --single-phase         Disable the two-phase progressive-answer flow",
 	]),
-	ui: usage([
-		"autorag ui - local datasource setup page",
-		"",
-		"Usage: autorag ui [flags]",
-		"",
-		"Flags:",
-		"  --port <n>       Loopback port (default 8787, 0 for ephemeral)",
-		"  --host <addr>    Bind address (127.0.0.1 or ::1)",
-		"  --no-open        Print the URL without launching a browser",
-		"  --allow-remote   Permit a non-loopback bind",
-	]),
 	serve: usage([
 		"autorag serve - P2P peer query server over SimpleX",
 		"",

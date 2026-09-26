@@ -119,11 +119,10 @@ describe("P2pConfig normalization", () => {
 		expect(config.p2p!.enabled).toBe(false);
 	});
 
-	it("existing config.json without p2p key still loads correctly (no crash)", () => {
+	it("loads an existing config.json that still carries the retired ui key (no crash)", () => {
 		const path = writeConfig({ ui: { host: "localhost" } });
 		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
-		expect(config.ui).toBeDefined();
-		expect(config.ui!.host).toBe("localhost");
+		expect((config as unknown as Record<string, unknown>).ui).toBeUndefined();
 		expect(config.p2p).toBeDefined();
 		expect(config.p2p!.enabled).toBe(false);
 	});

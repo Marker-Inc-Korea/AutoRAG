@@ -148,6 +148,29 @@ describe("main routing", () => {
 	});
 });
 
+describe("retired datasource UI surface", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("retires the datasource UI command surface", async () => {
+		const help = captureStdio();
+		expect(await main(["--help"])).toBe(0);
+		expect(help.stdout()).not.toMatch(/^\s*ui\s/m);
+		expect(help.stdout()).not.toContain("--no-open");
+		vi.restoreAllMocks();
+
+		const unknown = captureStdio();
+		expect(await main(["ui"])).toBe(2);
+		expect(unknown.stderr()).toContain("Unknown command: ui");
+		vi.restoreAllMocks();
+
+		const liteUnknown = captureStdio();
+		expect(await main(["lite", "ui"])).toBe(2);
+		expect(liteUnknown.stderr()).toContain("Unknown lite subcommand: ui");
+	});
+});
+
 describe("parseArgs health flags", () => {
 	it("accepts health as a command", () => {
 		const parsed = parseArgs(["health"]);
@@ -253,7 +276,6 @@ const COMMANDS_WITH_OWN_HELP = [
 	"health",
 	"duplicates",
 	"tui",
-	"ui",
 	"serve",
 	"p2p",
 	"models",
@@ -275,7 +297,6 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	health: ["--skip-probes", "--timeout-ms"],
 	duplicates: ["DIR"],
 	tui: ["Usage: autorag tui"],
-	ui: ["--port", "--host", "--no-open", "--allow-remote"],
 	serve: ["--port", "--force"],
 	p2p: ["peers", "requests", "--contact-id"],
 	models: ["prefetch", "import", "verify", "--profile"],

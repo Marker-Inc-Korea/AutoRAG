@@ -97,15 +97,6 @@ export interface P2pConfig {
 	newFilesPublic?: boolean;
 }
 
-export interface UiConfig {
-	host?: string;
-	port?: number;
-	allowRemote?: boolean;
-	publicOrigin?: string;
-	corsOrigins?: string[];
-	tokenEnv?: string;
-}
-
 export interface AgentModelConfig {
 	/** Provider identity used for auth lookup and Model.provider (e.g. openrouter, fireworks, ollama). */
 	provider: string;
@@ -153,8 +144,6 @@ export interface CliConfig {
 	datasources?: DatasourcesConfig;
 	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
 	datasourceAccess?: DatasourceAccessContextOptions;
-	/** Optional local/deployment settings for the datasource UI. */
-	ui?: UiConfig;
 	/** P2P sharing configuration. Disabled by default. */
 	p2p?: P2pConfig;
 }
@@ -592,82 +581,6 @@ const MINSYNC_ALLOWLIST = new Set<string>([
  */
 const MINSYNC_LEGACY_IGNORED = new Set<string>(["binaryPath"]);
 
-const UI_TOKEN_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-function normalizeUiConfig(raw: unknown): UiConfig {
-	if (raw === undefined || raw === null) return {};
-	if (typeof raw !== "object" || Array.isArray(raw)) throw new ConfigError("Config field 'ui' must be an object");
-	const record = raw as Record<string, unknown>;
-	const allowed = new Set(["host", "port", "allowRemote", "publicOrigin", "corsOrigins", "tokenEnv"]);
-	for (const key of Object.keys(record)) {
-		if (!allowed.has(key)) throw new ConfigError(`ui.${key} is not a recognized field`);
-	}
-	const out: UiConfig = {};
-	if (record.host !== undefined) {
-		if (typeof record.host !== "string" || record.host.trim().length === 0) {
-			throw new ConfigError("ui.host must be a non-empty string");
-		}
-		out.host = record.host.trim();
-	}
-	if (record.port !== undefined) {
-		if (typeof record.port !== "number" || !Number.isInteger(record.port) || record.port < 0 || record.port > 65535) {
-			throw new ConfigError("ui.port must be an integer between 0 and 65535");
-		}
-		out.port = record.port;
-	}
-	if (record.allowRemote !== undefined) {
-		if (typeof record.allowRemote !== "boolean") throw new ConfigError("ui.allowRemote must be a boolean");
-		out.allowRemote = record.allowRemote;
-	}
-	if (record.publicOrigin !== undefined) {
-		if (typeof record.publicOrigin !== "string" || record.publicOrigin.trim().length === 0) {
-			throw new ConfigError("ui.publicOrigin must be a non-empty origin");
-		}
-		let origin: URL;
-		try {
-			origin = new URL(record.publicOrigin);
-		} catch {
-			throw new ConfigError("ui.publicOrigin must be a valid http(s) origin");
-		}
-		if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/" || origin.search || origin.hash) {
-			throw new ConfigError("ui.publicOrigin must be a valid http(s) origin");
-		}
-		out.publicOrigin = origin.origin;
-	}
-	if (record.corsOrigins !== undefined) {
-		if (!Array.isArray(record.corsOrigins)) throw new ConfigError("ui.corsOrigins must be an array of origins");
-		const origins: string[] = [];
-		for (const value of record.corsOrigins) {
-			if (typeof value !== "string" || value.trim().length === 0) {
-				throw new ConfigError("ui.corsOrigins must contain non-empty origins");
-			}
-			let origin: URL;
-			try {
-				origin = new URL(value);
-			} catch {
-				throw new ConfigError("ui.corsOrigins must contain valid http(s) origins");
-			}
-			if (
-				!["http:", "https:"].includes(origin.protocol) ||
-				origin.pathname !== "/" ||
-				origin.search ||
-				origin.hash
-			) {
-				throw new ConfigError("ui.corsOrigins must contain valid http(s) origins");
-			}
-			if (!origins.includes(origin.origin)) origins.push(origin.origin);
-		}
-		out.corsOrigins = origins;
-	}
-	if (record.tokenEnv !== undefined) {
-		if (typeof record.tokenEnv !== "string" || !UI_TOKEN_ENV_PATTERN.test(record.tokenEnv)) {
-			throw new ConfigError("ui.tokenEnv must match /^[A-Za-z_][A-Za-z0-9_]*$/");
-		}
-		out.tokenEnv = record.tokenEnv;
-	}
-	return out;
-}
-
 const P2P_ALLOWLIST = new Set([
 	"enabled",
 	"port",
@@ -975,7 +888,6 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
 	}
-	if (file.ui !== undefined) config.ui = normalizeUiConfig(file.ui);
 	config.p2p = normalizeP2pConfig(file.p2p);
 	return config;
 }
@@ -1449,7 +1361,6 @@ export function writeDefaultConfig(
 	full.dupey = partial.dupey ?? { enabled: true };
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
-	if (partial.ui !== undefined) full.ui = normalizeUiConfig(partial.ui);
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
 	mkdirSync(dirname(path), { recursive: true });

@@ -17,8 +17,6 @@ const BOOLEAN_FLAGS = new Set([
 	"once",
 	"immediate",
 	"skip-probes",
-	"no-open",
-	"allow-remote",
 	"full",
 	"single-phase",
 	"strict",
@@ -50,7 +48,6 @@ const VALUE_FLAGS = new Set([
 	"minsync-max-chunk-size",
 	"timeout-ms",
 	"port",
-	"host",
 	"peer",
 	"accept",
 	"alias",
@@ -87,7 +84,6 @@ const COMMANDS = [
 	"health",
 	"duplicates",
 	"tui",
-	"ui",
 	"serve",
 	"p2p",
 	"lite",
@@ -121,7 +117,7 @@ Commands:
   index reset          Remove parsed/minsync indexes (--method)
   index rebuild        Reset then re-run a refresh (--method minsync|all)
   health               Check model/provider auth and completion access (no index check)
-  lite init|ui|refresh|watch|status|index|duplicates|health
+  lite init|refresh|watch|status|index|duplicates|health
                        Model-free setup, indexing, status, and datasource lifecycle
                        (lite refresh: --full --force --method; watch: --once)
   lite retrieve <query>
@@ -130,8 +126,6 @@ Commands:
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
-  ui                   Open a local loopback page to connect and manage data sources
-                       (--port N  --host 127.0.0.1  --no-open  --allow-remote)
   serve                Start the P2P peer query server over SimpleX
                        (--port N  --force)
   p2p                  SimpleX peer trust management
@@ -166,9 +160,6 @@ Global flags:
   --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,all
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
-  --port <n>           For ui: loopback port (default 8787, 0 for ephemeral)
-  --host <addr>        For ui: bind address (127.0.0.1 or ::1)
-  --no-open            For ui: print the URL and do not launch a browser
   --version, -V        Print the package version
   --help, -h           Show this help
 
@@ -295,10 +286,6 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "tui": {
 			const { runTui } = await import("./commands/tui.ts");
 			return runTui(ctx);
-		}
-		case "ui": {
-			const { runUi } = await import("./commands/ui.ts");
-			return runUi(ctx);
 		}
 		case "serve": {
 			const { runServe } = await import("./commands/serve.ts");
