@@ -367,7 +367,7 @@ The librarian agent owns the full workflow:
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
-| `recommend_peer_targets` | Rank local SimpleX peer personas by keyword overlap | P2P routing; never contacts peers |
+| `recommend_peer_targets` | Rank local SimpleX peer contacts (the profile a peer shared plus your local name and note) by keyword overlap | P2P routing; never contacts peers |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
 | `emit_autorag_results` | Terminating tool that returns curated results | Final action |
 
@@ -480,7 +480,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/web/search/` | oh-my-pi-ported web search: provider chain, structured query parsing, keyed + credential-free providers |
 | `src/web/fetch/` | oh-my-pi-ported URL render pipeline: page loader, HTML→markdown reader chain, feeds, content negotiation |
 | `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
-| `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX persona ranking |
+| `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX peer-contact ranking (shared profile + your name/note) |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
 | `src/memory/memory.ts` | Feedback persistence and method priority scoring |
 | `src/memory/renderer.ts` | Memory context renderer for system prompt |
