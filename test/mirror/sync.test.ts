@@ -395,6 +395,32 @@ describe("syncParsedMirrors", () => {
 		expect(JSON.stringify(result.diagnostics)).not.toContain("C:\\Users\\other source\\secret.txt");
 	});
 
+	it("does not expose a spaced Windows path followed by parser prose", async () => {
+		class WindowsPathCauseParser extends Parser {
+			readonly name = "windows-path-cause";
+			readonly extensions = [".hwp"];
+
+			async parse(input: { readonly virtualPath: string }): Promise<never> {
+				throw new ParseError(
+					this.name,
+					input.virtualPath,
+					new Error("C:\\Users\\other source\\secret.txt while parsing"),
+				);
+			}
+		}
+
+		writeFileSync(join(source, "windows.hwp"), Buffer.from([1]));
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new WindowsPathCauseParser()]),
+		});
+		const diagnostic = result.diagnostics.find((entry) => entry.source === "/docs/windows.hwp");
+
+		expect(diagnostic?.rootCause).toBe("<path> while parsing");
+		expect(JSON.stringify(result.diagnostics)).not.toContain("C:\\Users\\other source\\secret.txt");
+	});
+
 	it("preserves URLs embedded in parser causes", async () => {
 		class UrlCauseParser extends Parser {
 			readonly name = "url-cause";

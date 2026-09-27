@@ -132,6 +132,7 @@ function parserRootCause(error: ParseError, sourcePath: string): string {
 		.replaceAll(sourcePath, "<path>")
 		.replace(/(^|[\s("'=])\/[^:\n]+(?=[:\n]|$)/g, "$1<path>")
 		.replace(/(?<![:/])\/(?:[^/\s]+\/)+[^/\s]+/g, "<path>")
+		.replace(/[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)+[^\\/:*?"<>|\r\n\s]+(?:\.[A-Za-z0-9]+)?/g, "<path>")
 		.replace(/[A-Za-z]:\\[^:\n]+(?=[:\n]|$)/g, "<path>")
 		.replace(/\u0000URL(\d+)\u0000/g, (_match, index: string) => urls[Number(index)] ?? "<path>");
 	return pathOpaque.length > MAX_ROOT_CAUSE_LENGTH ? `${pathOpaque.slice(0, MAX_ROOT_CAUSE_LENGTH)}...` : pathOpaque;
