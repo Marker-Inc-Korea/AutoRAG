@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runP2p } from "../../src/cli/commands/p2p.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
+import { parseArgs } from "../../src/cli/index.ts";
 import {
 	listPendingPeerRequests,
 	loadPeerRequestDecision,
 	savePendingPeerRequest,
 } from "../../src/p2p/approval-store.ts";
-import { loadSimplexPeerRegistry } from "../../src/p2p/simplex-server.ts";
+import { loadSimplexPeerRegistry, saveSimplexPeerRegistry } from "../../src/p2p/simplex-server.ts";
 
 let root: string;
 const noop = (): void => undefined;
@@ -101,7 +102,7 @@ describe("autorag p2p peers", () => {
 		expect(stdout.join("\n")).toMatch(/No peers registered/i);
 	});
 
-	it("stores and shows local persona metadata without policy hints", async () => {
+	it("stores your local contact name and note on top of the SimpleX profile", async () => {
 		const add = await runP2p(
 			makeCtx({
 				positionals: ["peers"],
@@ -109,36 +110,64 @@ describe("autorag p2p peers", () => {
 					config: join(root, "config.json"),
 					add: "alice",
 					"contact-id": "42",
-					"display-name": "Alice",
-					description: "Finance owner",
-					role: "Manager",
-					org: "Finance",
-					"access-hint": "budget,tax",
-					"default-policy-hint": "always",
+					description: "재무 담당자",
 				},
 			}),
 		);
 		expect(add).toBe(0);
 		const peer = loadSimplexPeerRegistry(root).alice;
-		expect(peer).toMatchObject({
-			displayName: "Alice",
-			description: "Finance owner",
-			role: "Manager",
-			org: "Finance",
-			accessHint: ["budget", "tax"],
-		});
-		expect(peer).not.toHaveProperty("defaultPolicyHint");
+		expect(peer).toMatchObject({ contactId: 42, description: "재무 담당자" });
+		// The registry is keyed by your contact name; the retired persona
+		// fields no longer exist because the SimpleX profile carries them.
+		expect(peer).not.toHaveProperty("displayName");
+		expect(peer).not.toHaveProperty("role");
+		expect(peer).not.toHaveProperty("org");
+		expect(peer).not.toHaveProperty("accessHint");
+	});
 
-		const output: string[] = [];
-		await runP2p(
-			makeCtx({
-				positionals: ["peers"],
-				flags: { config: join(root, "config.json"), show: "alice" },
-				json: true,
-				stdout: (line) => output.push(line),
-			}),
-		);
-		expect(JSON.parse(output[0] ?? "{}")).not.toHaveProperty("defaultPolicyHint");
+	it("shows the SimpleX profile a peer shared alongside your local name and note", async () => {
+		saveSimplexPeerRegistry(root, {
+			alice: {
+				contactId: 42,
+				addedAt: "2026-01-01T00:00:00.000Z",
+				description: "재무 담당자",
+				profile: { displayName: "김철수", fullName: "Kim Cheolsu", shortDescr: "재무팀장" },
+				profileSyncedAt: "2026-02-02T00:00:00.000Z",
+			},
+		});
+
+		const listOut: string[] = [];
+		expect(await runP2p(makeCtx({ positionals: ["peers"], stdout: (line) => listOut.push(line) }))).toBe(0);
+		expect(listOut.join("\n")).toContain("김철수");
+		expect(listOut.join("\n")).toContain("재무 담당자");
+
+		const showOut: string[] = [];
+		expect(
+			await runP2p(
+				makeCtx({
+					positionals: ["peers"],
+					flags: { config: join(root, "config.json"), show: "alice" },
+					json: true,
+					stdout: (line) => showOut.push(line),
+				}),
+			),
+		).toBe(0);
+		expect(JSON.parse(showOut[0] ?? "{}")).toMatchObject({
+			ok: true,
+			alias: "alice",
+			contactId: 42,
+			description: "재무 담당자",
+			profile: { displayName: "김철수", fullName: "Kim Cheolsu", shortDescr: "재무팀장" },
+			profileSyncedAt: "2026-02-02T00:00:00.000Z",
+		});
+	});
+
+	it("rejects the retired persona flags", () => {
+		for (const flag of ["--display-name", "--role", "--org", "--access-hint"]) {
+			const parsed = parseArgs(["p2p", "peers", flag, "x"]);
+			expect(parsed).toHaveProperty("error");
+			if ("error" in parsed) expect(parsed.error).toMatch(/Unknown flag/);
+		}
 	});
 
 	it("rejects removing an unknown peer", async () => {
