@@ -37,7 +37,7 @@ export function createRecommendPeerTargetsTool(
 				return {
 					alias: match.alias,
 					matchedTerms: match.matchedTerms,
-					...(peer?.displayName !== undefined ? { displayName: peer.displayName } : {}),
+					...(peer?.profile?.displayName !== undefined ? { displayName: peer.profile.displayName } : {}),
 					...(peer?.description !== undefined ? { description: peer.description } : {}),
 				};
 			});

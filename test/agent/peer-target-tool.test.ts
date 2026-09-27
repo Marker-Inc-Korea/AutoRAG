@@ -19,15 +19,13 @@ function writePeerRegistry(workspace: string): void {
 			alice: {
 				contactId: 42,
 				addedAt: "2026-01-01T00:00:00.000Z",
-				displayName: "Alice",
 				description: "Finance and budget specialist",
-				role: "finance lead",
+				profile: { displayName: "Alice", shortDescr: "Finance lead" },
 			},
 			bob: {
 				contactId: 43,
 				addedAt: "2026-01-01T00:00:00.000Z",
-				displayName: "Bob",
-				description: "Design documents",
+				profile: { displayName: "Design Studio", shortDescr: "Design documents" },
 			},
 		}),
 	);
@@ -70,6 +68,15 @@ describe("peer persona target tool", () => {
 					description: "Finance and budget specialist",
 				},
 			],
+		});
+
+		// A peer with no local note still ranks: the match comes from the
+		// SimpleX profile it shared.
+		const profileOnly = await tool?.execute("test-call", { query: "design studio" });
+		expect(profileOnly?.details).toEqual({
+			method: "recommend_peer_targets",
+			resultCount: 1,
+			matches: [{ alias: "bob", matchedTerms: ["design", "studio"], displayName: "Design Studio" }],
 		});
 	});
 

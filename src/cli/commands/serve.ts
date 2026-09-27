@@ -9,6 +9,7 @@ import {
 	type SimplexPeerServer,
 	type StartSimplexPeerServerOptions,
 	startSimplexPeerServer,
+	syncSimplexPeers,
 } from "../../p2p/simplex-server.ts";
 import { type SimplexTransport, type StartSimplexOptions, startSimplexChat } from "../../p2p/simplex-transport.ts";
 import {
@@ -144,6 +145,31 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			),
 		);
 		return 1;
+	}
+
+	// SimpleX owns contact identity: merge the profiles peers shared into the
+	// records you already trusted so local routing ranks on real metadata.
+	// Unknown contacts are reported, never trusted.
+	const contacts = await transport.listContacts().catch(() => undefined);
+	if (contacts === undefined) {
+		ctx.stderr("warning: could not read SimpleX contacts; stored peer profiles were not refreshed.");
+	} else {
+		const synced = syncSimplexPeers(config.workspacePath, contacts);
+		if (synced.updated.length > 0) {
+			ctx.stderr(`peer profiles refreshed from SimpleX: ${synced.updated.join(", ")}`);
+		}
+		if (synced.untrusted.length > 0) {
+			const described = synced.untrusted
+				.map((contact) =>
+					contact.profile !== undefined
+						? `${contact.contactId} (${contact.profile.displayName})`
+						: String(contact.contactId),
+				)
+				.join(", ");
+			ctx.stderr(
+				`warning: ${synced.untrusted.length} SimpleX contact(s) are not trusted peers: ${described}. Trust one with 'autorag p2p peers --add <alias> --contact-id <n>'.`,
+			);
+		}
 	}
 
 	try {

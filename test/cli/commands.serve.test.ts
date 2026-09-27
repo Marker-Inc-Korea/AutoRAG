@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runServe } from "../../src/cli/commands/serve.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { main, parseArgs } from "../../src/cli/index.ts";
-import type { SimplexPeerServer } from "../../src/p2p/simplex-server.ts";
-import type { SimplexIncomingMessage, SimplexTransport } from "../../src/p2p/simplex-transport.ts";
+import {
+	loadSimplexPeerRegistry,
+	type SimplexPeerServer,
+	saveSimplexPeerRegistry,
+} from "../../src/p2p/simplex-server.ts";
+import type { SimplexContact, SimplexIncomingMessage, SimplexTransport } from "../../src/p2p/simplex-transport.ts";
 
 let root: string;
 let configPath: string;
@@ -48,7 +52,7 @@ function stubServer(): SimplexPeerServer {
 	return { close: async () => undefined };
 }
 
-function stubTransport(): SimplexTransport & { closed: boolean } {
+function stubTransport(contacts: readonly SimplexContact[] = []): SimplexTransport & { closed: boolean } {
 	const state = { closed: false };
 	return {
 		dbPrefix: "stub",
@@ -60,7 +64,7 @@ function stubTransport(): SimplexTransport & { closed: boolean } {
 		getOrCreateAddress: async () => "simplex:/contact#stub",
 		createInvitation: async () => "simplex:/invitation#stub",
 		connect: async () => undefined,
-		listContacts: async () => [],
+		listContacts: async () => [...contacts],
 		sendMessage: async () => undefined,
 		onMessage: (_handler: (message: SimplexIncomingMessage) => void) => () => {},
 		close: async () => {
@@ -173,6 +177,45 @@ describe("autorag serve", () => {
 		expect(stdoutText).not.toContain("privateKey");
 		expect(stdoutText).not.toContain("pubkey");
 		expect(stdoutText).not.toContain("secret");
+	});
+
+	it("stores the SimpleX profile each trusted peer shared and warns about untrusted contacts", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				p2p: { enabled: true, injectionClassifier: false },
+			}),
+		);
+		saveSimplexPeerRegistry(root, {
+			alice: { contactId: 42, addedAt: "2026-01-01T00:00:00.000Z", description: "재무 담당자" },
+		});
+		const stderr: string[] = [];
+		const code = await runServe(makeCtx({ flags: { config: configPath }, stderr: (line) => stderr.push(line) }), {
+			startSimplexChat: async () =>
+				stubTransport([
+					{ contactId: 42, localDisplayName: "peer", profile: { displayName: "김철수", shortDescr: "재무팀장" } },
+					{ contactId: 99, localDisplayName: "stranger", profile: { displayName: "Stranger" } },
+				]),
+			startSimplexPeerServer: async () => stubServer(),
+			waitUntilStopped: async (server) => {
+				await server.close();
+			},
+		});
+		expect(code).toBe(0);
+		expect(loadSimplexPeerRegistry(root)).toEqual({
+			alice: {
+				contactId: 42,
+				addedAt: "2026-01-01T00:00:00.000Z",
+				description: "재무 담당자",
+				profile: { displayName: "김철수", shortDescr: "재무팀장" },
+				profileSyncedAt: expect.any(String),
+			},
+		});
+		expect(stderr.join("\n")).toMatch(/not trusted peers/i);
+		expect(stderr.join("\n")).toContain("99");
 	});
 
 	it("constructs the production search agent in remote-session mode", async () => {
