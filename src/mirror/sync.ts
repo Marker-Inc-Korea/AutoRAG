@@ -125,8 +125,9 @@ function parserRootCause(error: ParseError, sourcePath: string): string {
 	const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : String(cause);
 	const pathOpaque = message
 		.replaceAll(sourcePath, "<path>")
+		.replace(/(^|[\s("'=])\/[^:\n]+(?=[:\n]|$)/g, "$1<path>")
 		.replace(/\/(?:[^/\s]+\/)+[^/\s]+/g, "<path>")
-		.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+		.replace(/[A-Za-z]:\\[^:\n]+(?=[:\n]|$)/g, "<path>");
 	return pathOpaque.length > MAX_ROOT_CAUSE_LENGTH ? `${pathOpaque.slice(0, MAX_ROOT_CAUSE_LENGTH)}...` : pathOpaque;
 }
 

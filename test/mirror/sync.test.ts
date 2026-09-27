@@ -366,6 +366,35 @@ describe("syncParsedMirrors", () => {
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
 	});
 
+	it("does not expose unrelated absolute paths with spaces in parser causes", async () => {
+		class UnrelatedPathCauseParser extends Parser {
+			readonly name = "unrelated-path-cause";
+			readonly extensions = [".hwp"];
+
+			async parse(input: { readonly virtualPath: string }): Promise<never> {
+				throw new ParseError(
+					this.name,
+					input.virtualPath,
+					new Error(
+						"/private/tmp/other source/secret.txt: C:\\Users\\other source\\secret.txt: root cause sentinel",
+					),
+				);
+			}
+		}
+
+		writeFileSync(join(source, "other.hwp"), Buffer.from([1]));
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new UnrelatedPathCauseParser()]),
+		});
+		const diagnostic = result.diagnostics.find((entry) => entry.source === "/docs/other.hwp");
+
+		expect(diagnostic?.rootCause).toBe("<path>: <path>: root cause sentinel");
+		expect(JSON.stringify(result.diagnostics)).not.toContain("/private/tmp/other source/secret.txt");
+		expect(JSON.stringify(result.diagnostics)).not.toContain("C:\\Users\\other source\\secret.txt");
+	});
+
 	it("distinguishes an unavailable parser from an unsupported extension", async () => {
 		const file = join(source, "removed.hwp");
 		writeFileSync(file, Buffer.from([1, 2, 3]));
