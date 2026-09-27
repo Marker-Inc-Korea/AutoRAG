@@ -123,11 +123,17 @@ const MAX_ROOT_CAUSE_LENGTH = 500;
 function parserRootCause(error: ParseError, sourcePath: string): string {
 	const cause = error.cause;
 	const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : String(cause);
+	const urls: string[] = [];
 	const pathOpaque = message
+		.replace(/\bhttps?:\/\/[^\s]+/g, (url) => {
+			const index = urls.push(url) - 1;
+			return `\u0000URL${index}\u0000`;
+		})
 		.replaceAll(sourcePath, "<path>")
 		.replace(/(^|[\s("'=])\/[^:\n]+(?=[:\n]|$)/g, "$1<path>")
-		.replace(/\/(?:[^/\s]+\/)+[^/\s]+/g, "<path>")
-		.replace(/[A-Za-z]:\\[^:\n]+(?=[:\n]|$)/g, "<path>");
+		.replace(/(?<![:/])\/(?:[^/\s]+\/)+[^/\s]+/g, "<path>")
+		.replace(/[A-Za-z]:\\[^:\n]+(?=[:\n]|$)/g, "<path>")
+		.replace(/\u0000URL(\d+)\u0000/g, (_match, index: string) => urls[Number(index)] ?? "<path>");
 	return pathOpaque.length > MAX_ROOT_CAUSE_LENGTH ? `${pathOpaque.slice(0, MAX_ROOT_CAUSE_LENGTH)}...` : pathOpaque;
 }
 

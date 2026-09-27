@@ -395,6 +395,31 @@ describe("syncParsedMirrors", () => {
 		expect(JSON.stringify(result.diagnostics)).not.toContain("C:\\Users\\other source\\secret.txt");
 	});
 
+	it("preserves URLs embedded in parser causes", async () => {
+		class UrlCauseParser extends Parser {
+			readonly name = "url-cause";
+			readonly extensions = [".hwp"];
+
+			async parse(input: { readonly virtualPath: string }): Promise<never> {
+				throw new ParseError(
+					this.name,
+					input.virtualPath,
+					new Error("see https://example.com/a/b for details: root cause sentinel"),
+				);
+			}
+		}
+
+		writeFileSync(join(source, "url.hwp"), Buffer.from([1]));
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new UrlCauseParser()]),
+		});
+		const diagnostic = result.diagnostics.find((entry) => entry.source === "/docs/url.hwp");
+
+		expect(diagnostic?.rootCause).toBe("see https://example.com/a/b for details: root cause sentinel");
+	});
+
 	it("distinguishes an unavailable parser from an unsupported extension", async () => {
 		const file = join(source, "removed.hwp");
 		writeFileSync(file, Buffer.from([1, 2, 3]));
