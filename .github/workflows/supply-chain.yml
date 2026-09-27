@@ -88,7 +88,7 @@ jobs:
                   output-file: autorag.spdx.json
                   upload-artifact: true
                   upload-release-assets: false
-            - uses: actions/attest-sbom@v2
+            - uses: actions/attest-sbom@v4
               if: github.event_name == 'workflow_call'
               with:
                   subject-path: autorag.cdx.json
