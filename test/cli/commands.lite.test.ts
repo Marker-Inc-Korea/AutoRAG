@@ -241,15 +241,17 @@ describe("autorag lite lifecycle dispatch", () => {
 		}
 	});
 
-	it("routes UI, duplicates, and model-free health", async () => {
+	it("routes duplicates and model-free health, and no longer routes a datasource UI", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-lite-lifecycle-"));
 		const configPath = join(root, "config.json");
 		writeConfig(root, configPath, true);
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 		const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		try {
-			expect(await main(["lite", "ui", "--config", configPath, "--host", "0.0.0.0", "--no-open"])).toBe(2);
-			expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toContain("loopback");
+			expect(await main(["lite", "ui", "--config", configPath, "--port", "-1"])).toBe(2);
+			// The pre-removal UI command rejected the negative port before binding a socket, so this
+			// invocation cannot hang whichever branch answers it.
+			expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toContain("Unknown lite subcommand: ui");
 			expect(await main(["lite", "duplicates", "--config", join(root, "missing.json"), "--json"])).toBe(2);
 			expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toContain("Config file not found");
 			expect(await main(["lite", "health", "--config", configPath, "--json"])).toBe(0);
