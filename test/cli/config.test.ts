@@ -70,22 +70,12 @@ describe("single-model CLI config", () => {
 				memoryPath: join(root, "memory.json"),
 				model: { provider: "openai", id: "gpt-4o" },
 				minSync: { enabled: false },
-				ui: {
-					host: "localhost",
-					port: 8787,
-					corsOrigins: ["https://admin.example.test"],
-				},
 			},
 			{ cwd: root },
 		);
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
 		expect(written.model).toEqual({ provider: "openai", id: "gpt-4o" });
 		expect(written.minSync?.enabled).toBe(false);
-		expect(written.ui).toEqual({
-			host: "localhost",
-			port: 8787,
-			corsOrigins: ["https://admin.example.test"],
-		});
 		expect(JSON.stringify(written)).not.toMatch(/explorer|orchestrator/i);
 	});
 
@@ -149,36 +139,5 @@ describe("single-model CLI config", () => {
 		mkdirSync(root, { recursive: true });
 		writeFileSync(path, "{");
 		expect(() => resolveConfig({ flags: { config: path }, cwd: root })).toThrow(ConfigError);
-	});
-
-	it("resolves deployment UI settings without weakening local defaults", () => {
-		const path = join(root, "ui.json");
-		writeFileSync(
-			path,
-			JSON.stringify({
-				searchPaths: ["."],
-				workspacePath: root,
-				memoryPath: join(root, "memory.json"),
-				ui: {
-					host: "0.0.0.0",
-					port: 8080,
-					allowRemote: true,
-					publicOrigin: "https://admin.example.test",
-					corsOrigins: ["https://admin.example.test"],
-					tokenEnv: "AUTORAG_UI_TOKEN",
-				},
-			}),
-		);
-
-		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
-
-		expect(config.ui).toEqual({
-			host: "0.0.0.0",
-			port: 8080,
-			allowRemote: true,
-			publicOrigin: "https://admin.example.test",
-			corsOrigins: ["https://admin.example.test"],
-			tokenEnv: "AUTORAG_UI_TOKEN",
-		});
 	});
 });

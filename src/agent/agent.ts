@@ -2156,7 +2156,7 @@ function buildMissingFinalEmitAnswer(
 		reason === undefined
 			? "The agent did not record why it stopped."
 			: `The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`,
-		"Next steps: broaden the configured searchPaths, connect additional datasources (for example via `autorag ui` or the datasources configuration), or retry with a narrower or different query.",
+		"Next steps: broaden the configured searchPaths, connect additional datasources via the datasources configuration, or retry with a narrower or different query.",
 		trace.length > 0
 			? "Retrieval candidates gathered before the run ended are attached under `retrievalTrace` for inspection."
 			: "No retrieval candidates were gathered before the run ended.",
