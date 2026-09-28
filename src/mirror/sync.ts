@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Dir, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { dirname, extname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "../parser/defaults.ts";
 import { ParseError } from "../parser/errors.ts";
@@ -68,7 +68,8 @@ export interface ParsedMirrorSyncOptions {
 
 export type ParsedMirrorDiagnosticCode =
 	| "unsupported-file"
-	| "parser-skipped"
+	| "parser-unavailable"
+	| "oversized"
 	| "parser-failed"
 	| "pdf-java-version"
 	| "duplicate-excluded"
@@ -83,6 +84,8 @@ export interface ParsedMirrorDiagnostic {
 	readonly severity: "info" | "warning";
 	readonly message: string;
 	readonly source: string;
+	readonly parserName?: string;
+	readonly rootCause?: string;
 	readonly reason?: string;
 }
 
@@ -112,14 +115,25 @@ function parserFailureMessage(parser: Parser, error: ParseError): string {
 	if (parserFailureCode(parser, error) === "pdf-java-version") {
 		return "PDF parsing requires Java 11 or newer; the Java runtime selected from PATH is too old.";
 	}
-	return "The registered parser failed on this file; it was skipped during indexing.";
+	return `The ${parser.name} parser failed on this file; it was skipped during indexing.`;
+}
+
+const MAX_ROOT_CAUSE_LENGTH = 500;
+
+function parserRootCause(error: ParseError, sourcePath: string): string {
+	const cause = error.cause;
+	const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : String(cause);
+	const pathOpaque = message
+		.replaceAll(sourcePath, "<path>")
+		.replace(/\/(?:[^/\s]+\/)+[^/\s]+/g, "<path>")
+		.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
+	return pathOpaque.length > MAX_ROOT_CAUSE_LENGTH ? `${pathOpaque.slice(0, MAX_ROOT_CAUSE_LENGTH)}...` : pathOpaque;
 }
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
 	const maxSourceBytes = options.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES;
-	const supportedExtensions = supportedExtensionSet(registry);
-	const current = await listCurrentFiles(options.searchPaths, supportedExtensions);
+	const current = await listCurrentFiles(options.searchPaths);
 	const previous = loadMirrorIndex(options.root);
 	const nextEntries: Record<string, ParsedMirrorEntry> = {};
 	const nextSkipped: Record<string, ParsedMirrorSkipEntry> = {};
@@ -174,11 +188,25 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		}
 		const parser = registry.getForVirtualPath(entry.virtualPath);
 		if (!parser) {
-			// Collect only filters to known extensions, so this is rare (double-check safety).
+			const previousSkip = previous.skipped?.[entry.virtualPath];
+			const hadParser =
+				previous.entries[entry.virtualPath] !== undefined ||
+				(previousSkip !== undefined &&
+					previousSkip.reason !== "unsupported-file" &&
+					previousSkip.reason !== "duplicate-excluded");
+			const code: ParsedMirrorDiagnosticCode = hadParser ? "parser-unavailable" : "unsupported-file";
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;
-			recordSkip(entry, "parser-skipped");
+			recordSkip(entry, code);
+			diagnostics.push({
+				code,
+				severity: "info",
+				message: hadParser
+					? "The parser previously used for this file is unavailable; it was skipped during indexing."
+					: "No parser is registered for this file extension; it was skipped during indexing.",
+				source: entry.virtualPath,
+			});
 			continue;
 		}
 
@@ -186,12 +214,13 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;
-			recordSkip(entry, "parser-skipped");
+			recordSkip(entry, "oversized");
 			diagnostics.push({
-				code: "parser-skipped",
+				code: "oversized",
 				severity: "warning",
 				message: "Source exceeds the configured max parse size and was skipped during indexing.",
 				source: entry.virtualPath,
+				parserName: parser.name,
 			});
 			sinceCheckpoint += 1;
 			if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
@@ -225,6 +254,8 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 					severity: "warning",
 					message: parserFailureMessage(parser, error),
 					source: entry.virtualPath,
+					parserName: error.parserName,
+					rootCause: parserRootCause(error, entry.sourcePath),
 				});
 				sinceCheckpoint += 1;
 				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
@@ -237,6 +268,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 					severity: diagnostic.severity,
 					message: diagnostic.message,
 					source: entry.virtualPath,
+					parserName: parser.name,
 				});
 			}
 			written += 1;
@@ -296,8 +328,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
  */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
-	const supportedExtensions = supportedExtensionSet(registry);
-	const current = await listCurrentFiles(options.searchPaths, supportedExtensions);
+	const current = await listCurrentFiles(options.searchPaths);
 	const previous = loadMirrorIndex(options.root);
 	const diagnostics: ParsedMirrorDiagnostic[] = [];
 	for (const entry of current) {
@@ -333,39 +364,16 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 	return diagnostics;
 }
 
-function supportedExtensionSet(registry: ParserRegistry): ReadonlySet<string> {
-	const extensions = new Set<string>();
-	for (const parser of registry.list()) {
-		for (const extension of parser.extensions) {
-			extensions.add(normalizeExtension(extension));
-		}
-	}
-	return extensions;
-}
-
-function normalizeExtension(extension: string): string {
-	const lower = extension.toLowerCase();
-	return lower.startsWith(".") ? lower : `.${lower}`;
-}
-
-async function listCurrentFiles(
-	searchPaths: readonly string[],
-	supportedExtensions: ReadonlySet<string>,
-): Promise<CurrentEntry[]> {
+async function listCurrentFiles(searchPaths: readonly string[]): Promise<CurrentEntry[]> {
 	const entries: CurrentEntry[] = [];
 	for (const sourceRoot of planSourceRoots(searchPaths)) {
-		await collectFiles(sourceRoot, sourceRoot.rootPath, entries, supportedExtensions);
+		await collectFiles(sourceRoot, sourceRoot.rootPath, entries);
 	}
 	entries.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
 	return entries;
 }
 
-async function collectFiles(
-	sourceRoot: SourceRoot,
-	directory: string,
-	entries: CurrentEntry[],
-	supportedExtensions: ReadonlySet<string>,
-): Promise<void> {
+async function collectFiles(sourceRoot: SourceRoot, directory: string, entries: CurrentEntry[]): Promise<void> {
 	let dir: Dir;
 	try {
 		dir = await opendir(directory);
@@ -377,12 +385,10 @@ async function collectFiles(
 		if (PRODUCT_ARTIFACT_FILE_NAMES.has(entry.name)) continue;
 		const sourcePath = resolve(directory, entry.name);
 		if (entry.isDirectory()) {
-			await collectFiles(sourceRoot, sourcePath, entries, supportedExtensions);
+			await collectFiles(sourceRoot, sourcePath, entries);
 			continue;
 		}
 		if (!entry.isFile()) continue;
-		const extension = normalizeExtension(extname(entry.name));
-		if (!supportedExtensions.has(extension)) continue;
 		let fileStat: Awaited<ReturnType<typeof stat>>;
 		try {
 			fileStat = await stat(sourcePath, { bigint: true });

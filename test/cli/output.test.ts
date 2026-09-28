@@ -24,6 +24,41 @@ const report: HealthReportV1 = {
 };
 
 describe("renderRefresh", () => {
+	it("preserves parser identity and bounded root causes in JSON and debug text", () => {
+		const result: AutoRAGRefreshResult = {
+			scanned: 1,
+			written: 0,
+			deleted: 0,
+			skipped: 1,
+			indexPath: "/tmp/workspace/.autorag/parsed/index.json",
+			diagnostics: [
+				{
+					code: "parser-failed",
+					severity: "warning",
+					message: "The hwp parser failed on this file; it was skipped during indexing.",
+					source: "/docs/broken.hwp",
+					parserName: "hwp",
+					rootCause: "root cause sentinel",
+				},
+			],
+		};
+
+		const parsed = JSON.parse(renderRefresh(result, { json: true })) as {
+			diagnostics: Array<Record<string, string>>;
+		};
+		expect(parsed.diagnostics[0]).toMatchObject({
+			code: "parser-failed",
+			source: "/docs/broken.hwp",
+			parserName: "hwp",
+			rootCause: "root cause sentinel",
+		});
+
+		const debug = renderRefresh(result, { debug: true });
+		expect(debug).toContain("source=/docs/broken.hwp");
+		expect(debug).toContain("parser=hwp");
+		expect(debug).toContain("rootCause=root cause sentinel");
+	});
+
 	it("carries the MinSync staging-exclusion count in the JSON envelope", () => {
 		// A file name with no canonical source-id form is excluded from the
 		// MinSync index; the count must be visible where the reporter looks.

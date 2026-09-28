@@ -15,18 +15,31 @@ function diagnosticProjection(d: {
 	readonly severity: string;
 	readonly message: string;
 	readonly source?: string;
+	readonly parserName?: string;
+	readonly rootCause?: string;
 }): {
 	code: string;
 	severity: string;
 	message: string;
 	source?: string;
+	parserName?: string;
+	rootCause?: string;
 } {
-	const out: { code: string; severity: string; message: string; source?: string } = {
+	const out: {
+		code: string;
+		severity: string;
+		message: string;
+		source?: string;
+		parserName?: string;
+		rootCause?: string;
+	} = {
 		code: d.code,
 		severity: d.severity,
 		message: d.message,
 	};
 	if (d.source !== undefined) out.source = d.source;
+	if (d.parserName !== undefined) out.parserName = d.parserName;
+	if (d.rootCause !== undefined) out.rootCause = d.rootCause;
 	return out;
 }
 
@@ -108,7 +121,14 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	}
 	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
 		for (const d of result.diagnostics) {
-			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
+			const details = [
+				d.source === undefined ? undefined : `source=${d.source}`,
+				d.parserName === undefined ? undefined : `parser=${d.parserName}`,
+				d.rootCause === undefined ? undefined : `rootCause=${d.rootCause}`,
+			].filter((value): value is string => value !== undefined);
+			lines.push(
+				`  diagnostic: [${d.severity}] ${d.code}${details.length > 0 ? ` (${details.join(", ")})` : ""}: ${d.message}`,
+			);
 		}
 	}
 	return lines.join("\n");

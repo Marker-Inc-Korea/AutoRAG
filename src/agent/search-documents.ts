@@ -23,7 +23,8 @@ export type SearchDocumentDiagnosticCode =
 	| "minsync-sync-failed"
 	| "embedder-unavailable"
 	| "embedding-identity-mismatch"
-	| "parser-skipped"
+	| "parser-unavailable"
+	| "oversized"
 	| "parser-failed"
 	| "pdf-java-version"
 	| "duplicate-excluded"
@@ -48,6 +49,8 @@ export interface SearchDocumentDiagnostic {
 	readonly message: string;
 	/** Component label (e.g. "sanitizer", "minsync") or opaque virtual path — never a real filesystem path. */
 	readonly source?: string;
+	readonly parserName?: string;
+	readonly rootCause?: string;
 }
 
 export interface SearchDocumentEvidence {
