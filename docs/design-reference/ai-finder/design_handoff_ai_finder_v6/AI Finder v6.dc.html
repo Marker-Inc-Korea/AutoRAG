@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#E9E9EE;}
+*{box-sizing:border-box;}
+body{font-family:Inter,Pretendard,-apple-system,system-ui,sans-serif;color:#1A1A2E;-webkit-font-smoothing:antialiased;}
+a{color:#FF6363;text-decoration:none;}a:hover{color:#FF8A8A;}
+::-webkit-scrollbar{width:10px;height:10px;}::-webkit-scrollbar-thumb{background:#E3E3EA;border-radius:10px;border:3px solid transparent;background-clip:padding-box;}::-webkit-scrollbar-track{background:transparent;}
+input,textarea,button{font-family:inherit;}
+input::placeholder,textarea::placeholder{color:#6E6E80;}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="width:{{ appW }};height:{{ appH }};zoom:{{ zoom }};padding:18px;background:#E9E9EE;display:flex;">
+<div style="flex:1;display:grid;grid-template-columns:212px minmax(640px,1.4fr) minmax(440px,1fr);background:#FFFFFF;border:1px solid #E3E3EA;border-radius:14px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;position:relative;">
+
+<!-- SIDEBAR -->
+<aside data-screen-label="Sidebar" style="background:#F6F6F8;background:#F6F6F8;border-right:1px solid #E3E3EA;display:flex;flex-direction:column;min-height:0;">
+  <div style="height:48px;display:flex;align-items:center;gap:8px;padding:0 16px;flex:none;">
+    <div style="width:12px;height:12px;border-radius:50%;background:#FF5F57;"></div>
+    <div style="width:12px;height:12px;border-radius:50%;background:#FEBC2E;"></div>
+    <div style="width:12px;height:12px;border-radius:50%;background:#28C840;"></div>
+  </div>
+  <div style="flex:1;overflow:auto;padding:4px 10px 12px;display:flex;flex-direction:column;gap:14px;">
+    <sc-for list="{{ sideGroups }}" as="g" hint-placeholder-count="3">
+      <div style="display:flex;flex-direction:column;gap:1px;">
+        <div style="font-size:11px;font-weight:600;color:#6E6E80;padding:4px 8px 6px;letter-spacing:0.02em;">{{ g.label }}</div>
+        <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+          <button onClick="{{ it.onClick }}" style="height:32px;display:flex;align-items:center;gap:10px;padding:0 8px;border:none;border-radius:6px;background:{{ it.bg }};color:{{ it.fg }};font-size:14px;cursor:pointer;text-align:left;" style-hover="background:rgba(26,26,46,0.05);">
+            <sc-if value="{{ it.isSource }}">
+              <span style="width:16px;height:16px;border-radius:4px;background:{{ it.tileBg }};color:{{ it.tileFg }};font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;">{{ it.tile }}</span>
+            </sc-if>
+            <sc-if value="{{ it.isPlace }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ it.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><path d="{{ it.icon }}"></path></svg>
+            </sc-if>
+            <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ it.label }}</span>
+            <sc-if value="{{ it.syncing }}"><span style="width:6px;height:6px;border-radius:50%;background:#F59E0B;"></span></sc-if>
+            <sc-if value="{{ it.error }}"><span style="width:6px;height:6px;border-radius:50%;background:#FF8C00;"></span></sc-if>
+          </button>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+  <div style="flex:none;border-top:1px solid #E3E3EA;padding:10px;display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;flex-direction:column;gap:6px;padding:4px 6px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#6E6E80;"><span>Indexing · Gmail</span><span style="color:#3A3A4E;">88%</span></div>
+      <div style="height:4px;border-radius:4px;background:#F0F0F4;overflow:hidden;"><div style="width:88%;height:100%;background:#F59E0B;border-radius:4px;"></div></div>
+    </div>
+    <button onClick="{{ openInbox }}" style="height:32px;display:flex;align-items:center;gap:10px;padding:0 8px;border:none;border-radius:6px;background:{{ inboxBtnBg }};color:#3A3A4E;font-size:14px;cursor:pointer;" style-hover="background:rgba(26,26,46,0.05);">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6E6E80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"></path></svg>
+      <span style="flex:1;text-align:left;">Requests</span>
+      <sc-if value="{{ hasPending }}"><span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#D64545;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ pendingCount }}</span></sc-if>
+    </button>
+    <button onClick="{{ openSettings }}" style="height:32px;display:flex;align-items:center;gap:10px;padding:0 8px;border:none;border-radius:6px;background:transparent;color:#3A3A4E;font-size:14px;cursor:pointer;" style-hover="background:rgba(26,26,46,0.05);">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6E6E80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+      <span style="flex:1;text-align:left;">Settings</span>
+      <sc-if value="{{ showHotkeys }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;color:#6E6E80;padding:1px 5px;border:1px solid #E3E3EA;border-radius:5px;background:rgba(26,26,46,0.04);">⌘,</span></sc-if>
+    </button>
+  </div>
+</aside>
+
+<!-- FINDER -->
+<section data-screen-label="Finder" style="display:flex;flex-direction:column;min-width:0;min-height:0;">
+  <div style="height:48px;flex:none;display:flex;align-items:flex-end;gap:2px;padding:0 8px 0 6px;background:#F6F6F8;border-bottom:1px solid #E3E3EA;">
+    <sc-for list="{{ tabs }}" as="tb" hint-placeholder-count="3">
+      <div onClick="{{ tb.onClick }}" style="flex:1 1 0;min-width:84px;max-width:190px;height:36px;display:flex;align-items:center;gap:8px;padding:0 6px 0 12px;border-radius:10px 10px 0 0;background:{{ tb.bg }};color:{{ tb.fg }};border:1px solid {{ tb.border }};border-bottom:none;margin-bottom:-1px;cursor:pointer;font-size:12px;transition:background 200ms;">
+        <sc-if value="{{ tb.flash }}"><span style="width:6px;height:6px;border-radius:50%;background:#FF6363;flex:none;"></span></sc-if>
+        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;">{{ tb.title }}</span>
+        <button onClick="{{ tb.onClose }}" title="Close tab ⌘W" style="width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.08);color:#1A1A2E;">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+    </sc-for>
+    <button onClick="{{ newTab }}" title="New tab ⌘T" style="width:32px;height:32px;margin-bottom:2px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
+  </div>
+  <div style="height:52px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #E3E3EA;background:#FFFFFF;">
+    <button onClick="{{ goBack }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:{{ backColor }};cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg></button>
+    <button onClick="{{ goFwd }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:{{ fwdColor }};cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></button>
+    <div style="flex:1;min-width:0;display:flex;align-items:center;gap:2px;overflow:hidden;">
+      <sc-for list="{{ crumbs }}" as="c" hint-placeholder-count="2">
+        <sc-if value="{{ c.notFirst }}"><span style="color:#C9C9D4;font-size:14px;padding:0 2px;">/</span></sc-if>
+        <button onClick="{{ c.onClick }}" title="{{ c.label }}" style="height:28px;padding:0 6px;border:none;border-radius:6px;background:transparent;color:{{ c.fg }};font-size:14px;font-weight:{{ c.weight }};cursor:pointer;white-space:nowrap;min-width:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;flex:{{ c.flex }};" style-hover="background:rgba(26,26,46,0.06);">{{ c.label }}</button>
+      </sc-for>
+    </div>
+    <div style="width:236px;height:32px;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border-radius:10px;background:#F0F0F4;border:1px solid {{ searchBorder }};transition:border-color 200ms;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6E80" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <input ref="{{ searchRef }}" value="{{ query }}" onChange="{{ onQuery }}" onFocus="{{ onSearchFocus }}" onBlur="{{ onSearchBlur }}" onKeyDown="{{ onSearchKey }}" placeholder="{{ searchPh }}" style="flex:1;min-width:0;height:100%;border:none;outline:none;background:transparent;color:#1A1A2E;font-size:12px;">
+      <sc-if value="{{ showHotkeys }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;color:#6E6E80;padding:1px 5px;border:1px solid #E3E3EA;border-radius:5px;background:rgba(26,26,46,0.04);flex:none;">⌘F</span></sc-if>
+    </div>
+  </div>
+  <sc-if value="{{ isFiles }}" hint-placeholder-val="{{ true }}">
+  <div style="height:30px;flex:none;display:grid;grid-template-columns:minmax(0,1fr) 100px 60px 96px 66px 76px;gap:12px;align-items:center;padding:0 16px 0 20px;border-bottom:1px solid #E3E3EA;font-size:12px;color:#6E6E80;font-weight:500;">
+    <sc-for list="{{ sortCols }}" as="sc" hint-placeholder-count="4"><button onClick="{{ sc.onClick }}" title="Sort by {{ sc.label }}" style="height:22px;min-width:0;display:flex;align-items:center;justify-content:{{ sc.justify }};gap:4px;padding:0;border:none;background:transparent;color:{{ sc.fg }};font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;" style-hover="color:#1A1A2E;"><span style="overflow:hidden;text-overflow:ellipsis;">{{ sc.label }}</span><sc-if value="{{ sc.active }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="flex:none;transform:{{ sc.rot }};"><path d="M6 15l6-6 6 6"></path></svg></sc-if></button></sc-for><span>Index</span><span>Access</span>
+  </div>
+  <div ref="{{ listRef }}" style="flex:1;min-height:0;overflow:auto;padding:4px 8px;">
+    <sc-if value="{{ searching }}">
+      <div style="padding:6px 12px 8px;font-size:12px;color:#6E6E80;">{{ searchSummary }}</div>
+    </sc-if>
+    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="12">
+      <div draggable="true" onDragStart="{{ r.onDragStart }}" onDragEnd="{{ onDragEnd }}" onClick="{{ r.onClick }}" onDoubleClick="{{ r.onOpen }}" onContextMenu="{{ r.onCtx }}" style="height:32px;display:grid;grid-template-columns:minmax(0,1fr) 100px 60px 96px 66px 76px;gap:12px;align-items:center;padding:0 8px 0 12px;user-select:none;border-radius:6px;background:{{ r.bg }};box-shadow:{{ r.ring }};cursor:default;transition:background 600ms,box-shadow 600ms;" style-hover="background:rgba(26,26,46,0.04);">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;padding-left:{{ r.indent }};">
+          <sc-if value="{{ r.isChild }}"><span style="width:8px;height:14px;flex:none;margin:-10px -4px 0 0;border-left:1px solid #C9C9D4;border-bottom:1px solid #C9C9D4;border-bottom-left-radius:4px;"></span></sc-if>
+          <sc-if value="{{ r.isFolder }}"><svg width="18" height="18" viewBox="0 0 24 24" style="flex:none;"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="#7C86E8"></path></svg></sc-if>
+          <sc-if value="{{ r.isFile }}"><span style="width:18px;height:18px;flex:none;border-radius:5px;background:{{ r.tileBg }};color:{{ r.tileFg }};font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ r.tile }}</span></sc-if>
+          <span style="font-size:14px;color:{{ r.nameFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.name }}</span>
+          <sc-if value="{{ r.hasStack }}"><span title="{{ r.stackTitle }}" style="height:18px;flex:none;display:flex;align-items:center;gap:3px;padding:0 6px;border-radius:9px;background:{{ r.stackBg }};color:#3A3A4E;font-size:11px;font-weight:600;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:{{ r.stackRot }};transition:transform 150ms;"><path d="M9 6l6 6-6 6"></path></svg>{{ r.stackN }}</span></sc-if>
+        </div>
+        <span style="font-size:12px;color:#6E6E80;white-space:nowrap;">{{ r.date }}</span>
+        <span style="font-size:12px;color:#6E6E80;text-align:right;white-space:nowrap;">{{ r.size }}</span>
+        <span style="font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.last }}</span>
+        <div style="display:flex;min-width:0;">
+          <sc-if value="{{ r.hasIdx }}"><button onClick="{{ r.onIdx }}" title="{{ r.idxTitle }}" style="height:22px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:11px;border:1px solid {{ r.idxBorder }};background:{{ r.idxBg }};color:{{ r.idxFg }};font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;" style-hover="border-color:#C9C9D4;"><sc-if value="{{ r.idxFail }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none;transform:{{ r.idxSpin }};transition:transform 1.4s linear;"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"></path></svg></sc-if><sc-if value="{{ r.idxDotShow }}"><span style="width:6px;height:6px;border-radius:50%;flex:none;background:{{ r.idxDot }};box-shadow:{{ r.idxRing }};"></span></sc-if>{{ r.idxLabel }}</button></sc-if>
+        </div>
+        <div data-perm-menu="1" style="position:relative;display:flex;min-width:0;">
+          <button onClick="{{ r.onPerm }}" title="{{ r.permTitle }}" style="height:22px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:11px;border:1px solid {{ r.permBorder }};background:{{ r.permBg }};color:{{ r.permFg }};font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;" style-hover="border-color:#C9C9D4;"><span style="width:6px;height:6px;border-radius:50%;flex:none;background:{{ r.permDot }};"></span>{{ r.permLabel }}</button>
+          <sc-if value="{{ r.menuOpen }}">
+            <div style="position:absolute;right:0;top:{{ r.menuTop }};bottom:{{ r.menuBottom }};z-index:20;width:248px;display:flex;flex-direction:column;padding:6px;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:10px;box-shadow:0 20px 60px rgba(20,20,40,0.18);animation:rise 150ms ease-out;">
+              <div style="padding:6px 8px 4px;font-size:11px;font-weight:600;color:#6E6E80;">에이전트 요청 시 공유</div>
+              <sc-for list="{{ r.permOpts }}" as="po">
+                <button onClick="{{ po.onClick }}" style="display:flex;align-items:flex-start;gap:10px;padding:8px;border:none;border-radius:6px;background:transparent;color:#1A1A2E;text-align:left;cursor:pointer;" style-hover="background:#F0F0F4;">
+                  <span style="width:8px;height:8px;margin-top:5px;border-radius:50%;flex:none;background:{{ po.dot }};"></span>
+                  <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;"><span style="font-size:14px;">{{ po.label }}</span><span style="font-size:12px;color:#6E6E80;">{{ po.sub }}</span></span>
+                  <span style="font-size:12px;color:#FF6363;font-weight:700;width:12px;">{{ po.check }}</span>
+                </button>
+              </sc-for>
+              <div style="padding:6px 8px 4px;border-top:1px solid #EDEDF2;margin-top:4px;font-size:12px;color:#6E6E80;">{{ r.permNote }}</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-for>
+    <sc-if value="{{ noRows }}">
+      <div style="padding:40px 12px;text-align:center;font-size:14px;color:#6E6E80;">{{ emptyText }}</div>
+    </sc-if>
+  </div>
+  </sc-if>
+  <sc-if value="{{ isContacts }}">
+    <div data-screen-label="Contacts" style="flex:1;min-height:0;overflow:auto;padding:16px 16px 20px;display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;align-items:center;gap:12px;padding:0 4px 4px;">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+          <span style="font-size:14px;font-weight:600;">Contacts</span>
+          <span style="font-size:12px;color:#6E6E80;">내 에이전트가 이 사람들의 에이전트에게 대신 묻고 답을 받아옵니다. 채팅으로 끌어다 놓으면 해당 연락처에게 물어봅니다.</span>
+        </div>
+        <button onClick="{{ addContact }}" style="height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;border:none;border-radius:6px;background:#FF6363;color:#1A1A2E;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;" style-hover="background:#FF7A7A;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Add contact</button>
+      </div>
+      <sc-for list="{{ contacts }}" as="ct" hint-placeholder-count="4">
+        <div draggable="true" onDragStart="{{ ct.onDragStart }}" onDragEnd="{{ onDragEnd }}" style="display:flex;gap:14px;padding:14px;border:1px solid #E3E3EA;border-radius:10px;background:#FFFFFF;cursor:grab;transition:border-color 150ms;" style-hover="border-color:#C9C9D4;">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+              <span style="font-size:14px;font-weight:600;white-space:nowrap;">{{ ct.name }}</span>
+              <span style="font-size:12px;color:#6E6E80;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ ct.role }}</span>
+              
+              <div style="flex:1;"></div>
+              <button onClick="{{ ct.onEdit }}" title="Edit contact" style="height:28px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#3A3A4E;font-size:12px;font-weight:500;cursor:pointer;" style-hover="background:#F6F6F8;color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg>Edit</button>
+            </div>
+            <div style="font-size:12px;line-height:1.5;color:#3A3A4E;text-wrap:pretty;">{{ ct.desc }}</div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ noContacts }}"><div style="padding:40px 12px;text-align:center;font-size:14px;color:#6E6E80;">“{{ query }}”와 일치하는 연락처가 없습니다</div></sc-if>
+    </div>
+  </sc-if>
+  <div style="height:32px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-top:1px solid #E3E3EA;font-size:12px;color:#6E6E80;">
+    <span>{{ statusText }}</span>
+    <span style="display:flex;align-items:center;gap:6px;white-space:nowrap;"><span style="font-size:11px;padding:0 5px;border:1px solid #E3E3EA;border-radius:5px;background:#FFFFFF;">space</span>Quick Look · Drag into chat to ask</span>
+  </div>
+  <!-- EVIDENCE -->
+  <div data-screen-label="Evidence" style="flex:{{ evFlex }};min-height:0;display:flex;flex-direction:column;border-top:1px solid #E3E3EA;background:#FAFAFB;position:relative;">
+    <div style="height:40px;flex:none;display:flex;align-items:flex-end;background:#F6F6F8;border-bottom:1px solid {{ evStripBorder }};">
+      <div style="flex:1;min-width:0;display:flex;align-items:flex-end;gap:2px;overflow-x:auto;scrollbar-width:none;padding-left:12px;">
+        <sc-for list="{{ evTabs }}" as="e" hint-placeholder-count="4">
+          <button onClick="{{ e.onClick }}" title="{{ e.title }}" style="flex:0 0 auto;width:40px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px 8px 0 0;background:{{ e.bg }};color:{{ e.fg }};border:1px solid {{ e.border }};border-bottom:none;margin-bottom:-1px;font-size:12px;font-weight:600;cursor:pointer;transition:background 200ms;" style-hover="background:{{ e.hover }};">{{ e.n }}</button>
+        </sc-for>
+      </div>
+      <button onClick="{{ toggleEv }}" title="Toggle evidence ⌘E" style="width:44px;align-self:stretch;flex:none;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:#3A3A4E;cursor:pointer;" style-hover="background:rgba(26,26,46,0.05);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform:{{ evChevron }};transition:transform 200ms;"><path d="M6 7l6 6 6-6M6 13l6 6 6-6"></path></svg>
+      </button>
+    </div>
+    <sc-if value="{{ evOpen }}" hint-placeholder-val="{{ true }}">
+      <div onMouseDown="{{ focusEvidence }}" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+        <div style="flex:none;display:flex;flex-direction:column;gap:6px;padding:14px 16px 10px 20px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="width:22px;height:22px;flex:none;border-radius:6px;background:{{ ev.tileBg }};color:{{ ev.tileFg }};font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ ev.tile }}</span>
+            <span style="flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ ev.n }}. {{ ev.title }}</span>
+            <div style="display:flex;align-items:center;gap:4px;flex:none;">
+              <button onClick="{{ evUp }}" title="이 근거가 도움이 됨" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid {{ evUpBorder }};border-radius:6px;background:{{ evUpBg }};color:{{ evUpFg }};cursor:pointer;transition:background 150ms,color 150ms;" style-hover="color:#1A1A2E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"></path></svg></button>
+              <button onClick="{{ evDown }}" title="이 근거는 도움이 안 됨" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid {{ evDownBorder }};border-radius:6px;background:{{ evDownBg }};color:{{ evDownFg }};cursor:pointer;transition:background 150ms,color 150ms;" style-hover="color:#1A1A2E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scale(1,-1);"><path d="M7 10v12M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"></path></svg></button>
+            </div>
+            <button onClick="{{ openEvQL }}" title="Quick Look" style="height:32px;flex:none;white-space:nowrap;display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#1A1A2E;font-size:12px;font-weight:500;cursor:pointer;" style-hover="background:#F6F6F8;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>Quick Look
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;padding-left:32px;">
+            <button onClick="{{ revealEv }}" title="Show in Finder" style="min-width:0;height:24px;display:flex;align-items:center;gap:4px;padding:0 8px;border:none;border-radius:6px;background:#F0F0F4;color:#3A3A4E;font-size:12px;cursor:pointer;" style-hover="background:#E7E7EE;color:#1A1A2E;">
+              <sc-for list="{{ ev.crumbs }}" as="lc"><sc-if value="{{ lc.notFirst }}"><span style="color:#A0A0B0;">›</span></sc-if><span style="white-space:nowrap;font-weight:{{ lc.weight }};overflow:hidden;text-overflow:ellipsis;">{{ lc.label }}</span></sc-for>
+            </button>
+            <span style="min-width:0;font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ ev.detail }}</span>
+          </div>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:4px 20px 20px 52px;display:flex;flex-direction:column;gap:8px;">
+            <sc-for list="{{ ev.md }}" as="b">
+              <sc-if value="{{ b.isH }}"><div style="font-size:14px;font-weight:600;color:#1A1A2E;padding-top:4px;"><span style="color:#6E6E80;font-weight:400;">## </span>{{ b.x }}</div></sc-if>
+              <sc-if value="{{ b.isMeta }}"><div style="font-size:12px;color:#6E6E80;">{{ b.x }}</div></sc-if>
+              <sc-if value="{{ b.isP }}"><div style="font-size:12px;line-height:1.6;color:#3A3A4E;text-wrap:pretty;">{{ b.x }}</div></sc-if>
+              <sc-if value="{{ b.isMark }}"><div style="font-size:12px;line-height:1.6;color:#1A1A2E;text-wrap:pretty;"><span style="background:linear-gradient(transparent 55%, rgba(255,214,10,0.55) 55%);-webkit-box-decoration-break:clone;box-decoration-break:clone;padding:0 1px;">{{ b.x }}</span></div></sc-if>
+              <sc-if value="{{ b.isLi }}"><div style="display:flex;gap:8px;font-size:12px;line-height:1.6;color:#3A3A4E;"><span style="color:#6E6E80;">–</span><span>{{ b.x }}</span></div></sc-if>
+              <sc-if value="{{ b.isQ }}"><div style="font-size:12px;line-height:1.6;color:#6E6E80;padding-left:10px;box-shadow:inset 2px 0 0 #E3E3EA;">{{ b.x }}</div></sc-if>
+              <sc-if value="{{ b.isCode }}"><pre style="margin:0;font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;color:#3A3A4E;padding:8px 10px;border-radius:6px;background:#F4F4F7;border:1px solid #E3E3EA;overflow:auto;white-space:pre;">{{ b.x }}</pre></sc-if>
+            </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- AI PANEL -->
+<section data-screen-label="AI Search" style="display:flex;flex-direction:column;min-width:0;min-height:0;border-left:1px solid #E3E3EA;position:relative;">
+  <div style="height:48px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px 0 20px;background:#F6F6F8;border-bottom:1px solid #E3E3EA;">
+    <span style="font-size:14px;font-weight:600;white-space:nowrap;flex:none;">AI Search</span>
+    <div style="flex:1;"></div>
+    <div style="display:flex;align-items:center;gap:2px;flex:none;">
+      <button onClick="{{ toggleHist }}" title="Chat history ⌘⇧H" style="width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:{{ histBtnBg }};color:#3A3A4E;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></svg></button>
+      <button onClick="{{ newChat }}" title="New chat ⌘N" style="width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#3A3A4E;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>
+    </div>
+  </div>
+
+  <sc-if value="{{ histOpen }}">
+    <div onClick="{{ closeHist }}" style="position:absolute;inset:0;z-index:25;"></div>
+    <div data-screen-label="Chat History" style="position:absolute;top:52px;right:12px;z-index:26;width:360px;max-width:calc(100% - 24px);max-height:72%;display:flex;flex-direction:column;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:12px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;animation:rise 150ms ease-out;">
+      <div style="flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid #E3E3EA;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6E80" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        <input ref="{{ histRef }}" value="{{ histQuery }}" onChange="{{ onHistQuery }}" onKeyDown="{{ onHistKey }}" placeholder="대화 기록 검색" style="flex:1;min-width:0;height:32px;border:none;outline:none;background:transparent;color:#1A1A2E;font-size:14px;">
+        <button onClick="{{ closeHist }}" title="Close" style="width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:2px;">
+        <sc-for list="{{ histGroups }}" as="g">
+          <div style="padding:10px 10px 4px;font-size:11px;font-weight:600;color:#6E6E80;">{{ g.label }}</div>
+          <sc-for list="{{ g.items }}" as="c">
+            <button onClick="{{ c.onClick }}" style="width:100%;display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:none;border-radius:8px;background:{{ c.bg }};color:#1A1A2E;text-align:left;cursor:pointer;" style-hover="background:#F0F0F4;">
+              <span style="width:6px;height:6px;margin-top:7px;border-radius:50%;flex:none;background:{{ c.dot }};"></span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.title }}</span>
+                <span style="font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.snippet }}</span>
+              </span>
+              <span style="font-size:11px;color:#6E6E80;flex:none;margin-top:2px;">{{ c.time }}</span>
+            </button>
+          </sc-for>
+        </sc-for>
+        <sc-if value="{{ histEmpty }}"><div style="padding:28px 12px;text-align:center;font-size:12px;color:#6E6E80;">“{{ histQuery }}”에 해당하는 대화가 없습니다</div></sc-if>
+      </div>
+    </div>
+  </sc-if>
+  <div ref="{{ chatRef }}" style="flex:1;min-height:0;overflow:auto;padding:20px 20px 8px;display:flex;flex-direction:column;gap:20px;">
+    <sc-if value="{{ chatEmpty }}">
+      <div style="margin:auto;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
+        <div style="font-size:18px;font-weight:600;">무엇을 찾아드릴까요?</div>
+        <div style="font-size:14px;color:#6E6E80;max-width:360px;text-wrap:pretty;">파일, 메일, Slack, Notion 전체에서 찾아 빠른 답변과 정확한 답변을 함께 드립니다.</div>
+      </div>
+    </sc-if>
+    <sc-for list="{{ messages }}" as="m" hint-placeholder-count="2">
+      <sc-if value="{{ m.isUser }}">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;animation:rise 200ms ease-out;">
+          <div style="font-size:12px;color:#6E6E80;">You</div>
+          <div style="max-width:78%;padding:10px 14px;border-radius:10px;background:#F0F0F4;border:1px solid #E3E3EA;font-size:14px;line-height:1.5;color:#1A1A2E;text-wrap:pretty;">{{ m.text }}</div>
+          <sc-if value="{{ m.hasAttach }}">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;">
+              <sc-for list="{{ m.attach }}" as="a"><span style="display:flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px;background:#F3F3F7;border:1px solid #E3E3EA;font-size:12px;color:#3A3A4E;"><span style="width:14px;height:14px;border-radius:4px;background:{{ a.tileBg }};color:{{ a.tileFg }};font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ a.tile }}</span>{{ a.name }}</span></sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+      <sc-if value="{{ m.isAsst }}">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="font-size:12px;color:#6E6E80;">Assistant</div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px;">
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:10px;background:#FAFAFC;border:1px solid #E3E3EA;">
+              <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#3A3A4E;"></span>
+                <span style="font-weight:600;color:#3A3A4E;">Quick</span>
+                <span style="color:#6E6E80;">{{ m.quickMeta }}</span>
+              </div>
+              <sc-if value="{{ m.quickPending }}">{{ m.quickSkeleton }}</sc-if>
+              <sc-if value="{{ m.quickStopped }}"><div style="font-size:14px;color:#6E6E80;">응답 생성을 중단했습니다.</div></sc-if>
+              <sc-for list="{{ m.quick }}" as="p">
+                <p style="margin:0;font-size:14px;line-height:1.5;color:#3A3A4E;text-wrap:pretty;animation:rise 200ms ease-out;"><sc-for list="{{ p.segs }}" as="s"><sc-if value="{{ s.isText }}">{{ s.x }}</sc-if><sc-if value="{{ s.isBold }}"><strong style="color:#1A1A2E;font-weight:600;">{{ s.x }}</strong></sc-if><sc-if value="{{ s.isCite }}"><button onClick="{{ s.onClick }}" style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;margin:0 2px;border:none;border-radius:5px;background:{{ s.bg }};color:{{ s.fg }};font-size:11px;font-weight:600;cursor:pointer;vertical-align:1px;transition:background 200ms;">{{ s.n }}</button></sc-if></sc-for></p>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:10px;background:#FAFAFC;border:1px solid {{ m.deepBorder }};">
+              <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#FF6363;"></span>
+                <span style="font-weight:600;color:#1A1A2E;">Deep</span>
+                <span style="color:#6E6E80;">{{ m.deepMeta }}</span>
+              </div>
+              <sc-if value="{{ m.deepPending }}">{{ m.deepSkeleton }}</sc-if>
+              <sc-if value="{{ m.deepStopped }}"><div style="font-size:14px;color:#6E6E80;">응답 생성을 중단했습니다.</div></sc-if>
+              <sc-for list="{{ m.deep }}" as="p">
+                <p style="margin:0;font-size:14px;line-height:1.5;color:#3A3A4E;text-wrap:pretty;animation:rise 200ms ease-out;"><sc-for list="{{ p.segs }}" as="s"><sc-if value="{{ s.isText }}">{{ s.x }}</sc-if><sc-if value="{{ s.isBold }}"><strong style="color:#1A1A2E;font-weight:600;">{{ s.x }}</strong></sc-if><sc-if value="{{ s.isCite }}"><button onClick="{{ s.onClick }}" style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;margin:0 2px;border:none;border-radius:5px;background:{{ s.bg }};color:{{ s.fg }};font-size:11px;font-weight:600;cursor:pointer;vertical-align:1px;transition:background 200ms;">{{ s.n }}</button></sc-if></sc-for></p>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ isDragging }}">
+    <div onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="position:absolute;inset:60px 16px 16px 16px;z-index:20;border-radius:14px;border:1.5px dashed {{ dropRing }};background:{{ dropBg }};backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;transition:background 150ms, border-color 150ms;animation:rise 150ms ease-out;">
+      <div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;transform:{{ dropScale }};transition:transform 150ms;">
+        <div style="position:relative;width:64px;height:64px;">
+          <span style="position:absolute;inset:0;border-radius:14px;background:#FFFFFF;border:1px solid #E3E3EA;transform:rotate(-8deg) translate(-6px,2px);"></span>
+          <span style="position:absolute;inset:0;border-radius:14px;background:{{ dragItem.tileBg }};color:{{ dragItem.tileFg }};font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(20,20,40,0.12);">{{ dragItem.tile }}</span>
+          <span style="position:absolute;right:-8px;bottom:-8px;width:24px;height:24px;border-radius:50%;background:#FF6363;color:#FFFFFF;display:flex;align-items:center;justify-content:center;border:2px solid #FFFFFF;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:14px;font-weight:600;color:#1A1A2E;">{{ dropTitle }}</span>
+          <span style="max-width:320px;font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ dragItem.name }}</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <div style="flex:none;padding:8px 20px 14px;">
+    <div onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="display:flex;flex-direction:column;gap:8px;padding:10px 10px 10px 14px;border-radius:10px;background:#F0F0F4;border:1px solid {{ composerBorder }};box-shadow:0 4px 16px rgba(20,20,40,0.08);transition:border-color 200ms;">
+      <sc-if value="{{ hasDraftAttach }}">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <sc-for list="{{ draftAttach }}" as="a"><span style="display:flex;align-items:center;gap:6px;height:26px;padding:0 4px 0 8px;border-radius:6px;background:#FAFAFC;border:1px solid #E3E3EA;font-size:12px;color:#3A3A4E;"><span style="width:14px;height:14px;border-radius:4px;background:{{ a.tileBg }};color:{{ a.tileFg }};font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ a.tile }}</span>{{ a.name }}<button onClick="{{ a.onRemove }}" style="width:18px;height:18px;border:none;background:transparent;color:#6E6E80;cursor:pointer;font-size:12px;">×</button></span></sc-for>
+        </div>
+      </sc-if>
+      <div style="display:flex;align-items:center;gap:8px;padding-left:4px;">
+        <input ref="{{ composerRef }}" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onComposerKey }}" placeholder="{{ composerPlaceholder }}" style="flex:1;min-width:0;height:32px;border:none;outline:none;background:transparent;color:#1A1A2E;font-size:14px;">
+        <button onClick="{{ sendOrStop }}" title="{{ sendTitle }}" style="width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:{{ sendBg }};color:#1A1A2E;cursor:pointer;transition:background 200ms;"><sc-if value="{{ generating }}"><span style="width:10px;height:10px;border-radius:2px;background:#FFFFFF;"></span></sc-if><sc-if value="{{ notGenerating }}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></sc-if></button>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<sc-if value="{{ ctxOpen }}">
+  <div data-ctx-menu="1" style="position:fixed;left:{{ ctxX }};top:{{ ctxY }};z-index:60;width:220px;display:flex;flex-direction:column;padding:5px;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:10px;box-shadow:0 20px 60px rgba(20,20,40,0.18);animation:rise 120ms ease-out;">
+    <sc-for list="{{ ctxItems }}" as="ci">
+      <sc-if value="{{ ci.sep }}"><div style="height:1px;background:#EDEDF2;margin:4px 6px;"></div></sc-if>
+      <sc-if value="{{ ci.item }}"><button onClick="{{ ci.onClick }}" style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;border:none;border-radius:6px;background:transparent;color:{{ ci.fg }};font-size:13px;text-align:left;cursor:pointer;" style-hover="background:#F0F0F4;"><span style="flex:1;">{{ ci.label }}</span><span style="font-size:11px;color:#6E6E80;">{{ ci.key }}</span></button></sc-if>
+    </sc-for>
+  </div>
+</sc-if>
+<!-- TOAST -->
+<sc-if value="{{ toast }}">
+  <div style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:36px;padding:0 14px;border-radius:10px;background:#F0F0F4;border:1px solid #E3E3EA;box-shadow:0 4px 16px rgba(20,20,40,0.08);font-size:12px;color:#1A1A2E;z-index:30;animation:rise 200ms ease-out;"><span style="width:6px;height:6px;border-radius:50%;background:#22C55E;"></span>{{ toast }}</div>
+</sc-if>
+
+<!-- QUICK LOOK -->
+<sc-if value="{{ qlOpen }}">
+  <div onClick="{{ closeQL }}" style="position:absolute;inset:0;z-index:35;background:rgba(20,20,40,0.16);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;">
+    <div onClick="{{ stop }}" data-screen-label="Quick Look" style="width:760px;max-width:calc(100% - 80px);height:80%;display:flex;flex-direction:column;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:14px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;animation:rise 200ms ease-out;">
+      <div style="flex:none;height:52px;display:flex;align-items:center;gap:10px;padding:0 12px 0 14px;border-bottom:1px solid #E3E3EA;background:#F6F6F8;">
+        <button onClick="{{ closeQL }}" title="Close (space)" style="width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+        <span style="width:20px;height:20px;flex:none;border-radius:5px;background:{{ ql.tileBg }};color:{{ ql.tileFg }};font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ ql.tile }}</span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+          <span style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ ql.name }}</span>
+          <span style="font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ ql.locLabel }}</span>
+        </div>
+        <sc-if value="{{ ql.fromFinder }}"><button onClick="{{ qlAsk }}" style="height:32px;flex:none;white-space:nowrap;display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#1A1A2E;font-size:12px;font-weight:500;cursor:pointer;" style-hover="background:#F0F0F4;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF6363" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>Ask AI about this</button></sc-if>
+        <sc-if value="{{ ql.fromEv }}"><button onClick="{{ revealEv }}" style="height:32px;flex:none;white-space:nowrap;display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #FF6363;border-radius:6px;background:rgba(255,99,99,0.08);color:#C73A3A;font-size:12px;font-weight:600;cursor:pointer;" style-hover="background:rgba(255,99,99,0.16);">Show in Finder<sc-if value="{{ showHotkeys }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;color:#6E6E80;padding:0 5px;border:1px solid #E3E3EA;border-radius:5px;background:#FFFFFF;">⌘⇧R</span></sc-if></button></sc-if>
+        <span style="font-size:11px;color:#6E6E80;padding:1px 6px;border:1px solid #E3E3EA;border-radius:5px;background:#FFFFFF;flex:none;">space</span>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;padding:20px;background:#F6F6F8;">
+            <sc-if value="{{ ql.isSheet }}">
+              <div style="border-radius:6px;overflow:hidden;background:#FFFFFF;color:#1A1A2E;font-size:11px;box-shadow:0 4px 16px rgba(20,20,40,0.08);">
+                <div style="display:flex;gap:6px;align-items:center;height:26px;padding:0 10px;background:#EDEDF2;border-bottom:1px solid #D8D8E0;color:#555566;font-size:11px;"><span style="font-weight:600;color:#1A1A2E;">{{ ql.sheet }}</span><span>· {{ ql.range }}</span></div>
+                <div style="display:grid;grid-template-columns:24px 1.1fr 1fr 1fr 1fr;background:#F4F4F7;border-bottom:1px solid #D8D8E0;color:#777788;text-align:center;height:20px;align-items:center;"><span></span><span>A</span><span>B</span><span>C</span><span>D</span></div>
+                <sc-for list="{{ ql.rows }}" as="row">
+                  <div style="display:grid;grid-template-columns:24px 1.1fr 1fr 1fr 1fr;border-bottom:1px solid #E6E6EC;background:{{ row.bg }};font-weight:{{ row.weight }};min-height:24px;align-items:center;">
+                    <span style="text-align:center;color:#777788;background:#F4F4F7;align-self:stretch;display:flex;align-items:center;justify-content:center;">{{ row.idx }}</span>
+                    <sc-for list="{{ row.cells }}" as="cell"><span style="padding:4px 6px;border-left:1px solid #E6E6EC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:{{ cell.align }};">{{ cell.v }}</span></sc-for>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ ql.isDoc }}">
+              <div style="background:#FFFFFF;border:1px solid #E3E3EA;color:#1A1A2E;border-radius:6px;padding:22px 24px;display:flex;flex-direction:column;gap:10px;box-shadow:0 4px 16px rgba(20,20,40,0.08);min-height:100%;">
+                <div style="font-size:11px;color:#777788;">{{ ql.sub }}</div>
+                <div style="font-size:18px;font-weight:700;line-height:1.3;letter-spacing:-0.01em;text-wrap:pretty;">{{ ql.title }}</div>
+                <div style="height:1px;background:#E2E2E8;"></div>
+                <sc-for list="{{ ql.blocks }}" as="b">
+                  <sc-if value="{{ b.isH }}"><div style="font-size:12px;font-weight:700;padding-top:4px;">{{ b.x }}</div></sc-if>
+                  <sc-if value="{{ b.isP }}"><div style="font-size:12px;line-height:1.6;color:#3A3A4E;text-wrap:pretty;">{{ b.x }}</div></sc-if>
+                  <sc-if value="{{ b.isMeta }}"><div style="font-size:11px;color:#777788;">{{ b.x }}</div></sc-if>
+                  <sc-if value="{{ b.isMark }}"><div style="font-size:12px;line-height:1.6;font-weight:600;padding:2px 4px;margin:0 -4px;background:rgba(255,99,99,0.22);border-radius:3px;text-wrap:pretty;">{{ b.x }}</div></sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ ql.isMail }}">
+              <div style="background:#FAFAFC;border:1px solid #E3E3EA;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;">
+                <div style="font-size:14px;font-weight:600;line-height:1.3;">{{ ql.subject }}</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="width:32px;height:32px;border-radius:50%;background:#E3E3EA;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none;">{{ ql.init }}</span>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;"><span style="font-size:12px;font-weight:600;">{{ ql.from }}</span><span style="font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">to {{ ql.to }}</span></div>
+                  <span style="font-size:12px;color:#6E6E80;flex:none;">{{ ql.date }}</span>
+                </div>
+                <div style="height:1px;background:#E3E3EA;"></div>
+                <sc-for list="{{ ql.body }}" as="b">
+                  <sc-if value="{{ b.isP }}"><div style="font-size:12px;line-height:1.6;color:#3A3A4E;">{{ b.x }}</div></sc-if>
+                  <sc-if value="{{ b.isMark }}"><div style="font-size:12px;line-height:1.6;color:#1A1A2E;padding:2px 4px;margin:0 -4px;border-radius:3px;background:rgba(255,99,99,0.2);">{{ b.x }}</div></sc-if>
+                  <sc-if value="{{ b.isQ }}"><div style="font-size:12px;line-height:1.6;color:#6E6E80;padding-left:10px;box-shadow:inset 2px 0 0 #E3E3EA;">{{ b.x }}</div></sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ ql.isChat }}">
+              <div style="background:#FAFAFC;border:1px solid #E3E3EA;border-radius:10px;overflow:hidden;">
+                <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #E3E3EA;font-size:12px;"><span style="font-weight:600;">{{ ql.channel }}</span><span style="color:#6E6E80;">{{ ql.app }}</span></div>
+                <div style="padding:12px 14px;display:flex;flex-direction:column;gap:12px;">
+                  <sc-for list="{{ ql.msgs }}" as="mm">
+                    <div style="display:flex;gap:10px;padding:6px;margin:-6px;border-radius:6px;background:{{ mm.bg }};">
+                      <span style="width:28px;height:28px;flex:none;border-radius:6px;background:{{ mm.av }};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#FFFFFF;">{{ mm.init }}</span>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+                        <div style="display:flex;gap:8px;align-items:baseline;"><span style="font-size:12px;font-weight:600;">{{ mm.who }}</span><span style="font-size:11px;color:#6E6E80;">{{ mm.time }}</span></div>
+                        <div style="font-size:12px;line-height:1.5;color:#3A3A4E;text-wrap:pretty;">{{ mm.x }}</div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ ql.isGeneric }}">
+              <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;">
+                <sc-if value="{{ ql.isFolderG }}"><svg width="96" height="96" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="#7C86E8"></path></svg></sc-if>
+                <sc-if value="{{ ql.isFileG }}"><span style="width:88px;height:108px;border-radius:12px;background:{{ ql.tileBg }};color:{{ ql.tileFg }};font-size:32px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(20,20,40,0.08);">{{ ql.tile }}</span></sc-if>
+                <div style="font-size:18px;font-weight:600;">{{ ql.name }}</div>
+                <div style="font-size:12px;color:#6E6E80;">{{ ql.info }}</div>
+                <div style="font-size:12px;color:#6E6E80;">{{ ql.date }}</div>
+              </div>
+            </sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- REQUESTS -->
+<sc-if value="{{ inboxOpen }}">
+  <div onClick="{{ closeInbox }}" style="position:absolute;inset:0;z-index:30;"></div>
+  <div data-screen-label="Requests" style="position:absolute;left:220px;bottom:12px;z-index:31;width:420px;max-height:calc(100% - 24px);display:flex;flex-direction:column;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:12px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;animation:rise 150ms ease-out;">
+    <div style="flex:none;display:flex;align-items:center;gap:10px;height:52px;padding:0 10px 0 16px;border-bottom:1px solid #E3E3EA;">
+      <span style="font-size:14px;font-weight:600;">Requests</span>
+      <div style="display:flex;gap:2px;padding:3px;border-radius:8px;background:#F0F0F4;">
+        <sc-for list="{{ inboxTabs }}" as="it"><button onClick="{{ it.onClick }}" style="height:24px;padding:0 10px;border:none;border-radius:6px;background:{{ it.bg }};color:{{ it.fg }};font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;">{{ it.label }}</button></sc-for>
+      </div>
+      <div style="flex:1;"></div>
+      <button onClick="{{ closeInbox }}" title="Close" style="width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+    </div>
+    <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;">
+      <sc-for list="{{ inboxItems }}" as="n">
+        <div style="display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-bottom:1px solid #EDEDF2;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+              <span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><b style="font-weight:600;">{{ n.name }}</b>의 에이전트가 요청</span>
+              <span style="font-size:12px;color:#6E6E80;">{{ n.role }} · {{ n.time }}</span>
+            </div>
+            
+          </div>
+          <div style="padding:10px 12px;border-radius:8px;background:#F6F6F8;font-size:14px;line-height:1.5;color:#1A1A2E;text-wrap:pretty;">{{ n.q }}</div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:#6E6E80;">요청한 자료</span>
+            <sc-for list="{{ n.files }}" as="f">
+              <div style="display:flex;align-items:center;gap:8px;height:28px;min-width:0;">
+                <span style="width:16px;height:16px;flex:none;border-radius:4px;background:{{ f.tileBg }};color:{{ f.tileFg }};font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ f.tile }}</span>
+                <span style="flex:1;min-width:0;font-size:12px;color:#1A1A2E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.name }}</span>
+                <span style="font-size:11px;color:#6E6E80;white-space:nowrap;">{{ f.loc }}</span>
+                <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:{{ f.permFg }};white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:{{ f.permDot }};"></span>{{ f.permLabel }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ n.pending }}">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button onClick="{{ n.onReveal }}" style="flex:none;height:32px;padding:0 10px;border:none;border-radius:6px;background:transparent;color:#3A3A4E;font-size:12px;cursor:pointer;white-space:nowrap;" style-hover="background:#F0F0F4;">Show in Finder</button>
+              <div style="flex:1;"></div>
+              <button onClick="{{ n.onDeny }}" style="flex:none;white-space:nowrap;height:32px;padding:0 14px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#C62828;font-size:12px;font-weight:600;cursor:pointer;" style-hover="background:rgba(239,68,68,0.08);">거부</button>
+              <button onClick="{{ n.onAllow }}" style="flex:none;white-space:nowrap;height:32px;padding:0 14px;border:none;border-radius:6px;background:#FF6363;color:#1A1A2E;font-size:12px;font-weight:600;cursor:pointer;" style-hover="background:#FF7A7A;">허용</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{ n.done }}">
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:{{ n.doneFg }};font-weight:600;"><span style="width:6px;height:6px;border-radius:50%;background:{{ n.doneDot }};"></span>{{ n.doneLabel }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+      <sc-if value="{{ inboxEmpty }}"><div style="padding:40px 16px;text-align:center;font-size:12px;color:#6E6E80;">{{ inboxEmptyText }}</div></sc-if>
+    </div>
+  </div>
+</sc-if>
+
+<!-- CONTACT EDITOR -->
+<sc-if value="{{ ceOpen }}">
+  <div onClick="{{ closeCE }}" style="position:absolute;inset:0;z-index:40;background:rgba(20,20,40,0.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;">
+    <div onClick="{{ stop }}" data-screen-label="Contact Editor" style="width:540px;max-width:calc(100% - 48px);max-height:calc(100% - 48px);display:flex;flex-direction:column;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:14px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;animation:rise 200ms ease-out;">
+      <div style="flex:none;display:flex;align-items:center;gap:12px;height:56px;padding:0 12px 0 20px;border-bottom:1px solid #E3E3EA;">
+        <span style="font-size:18px;font-weight:600;flex:1;">{{ ceTitle }}</span>
+        <button onClick="{{ closeCE }}" title="Close" style="width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px;">
+        <sc-if value="{{ ceIsNew }}">
+          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:12px;font-weight:600;color:#3A3A4E;">Contact ID <span style="color:#D64545;">*</span></span><input value="{{ ce.cid }}" onChange="{{ ce_cid }}" placeholder="예: jihoon.park@markr.ai" style="height:36px;padding:0 10px;border:1px solid {{ ceCidBorder }};border-radius:8px;background:#FFFFFF;color:#1A1A2E;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;outline:none;" style-focus="border-color:#FF6363;"><span style="font-size:11px;color:{{ ceCidHintFg }};">{{ ceCidHint }}</span></label>
+        </sc-if>
+        <sc-if value="{{ ceIsEdit }}">
+          <div style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:12px;font-weight:600;color:#3A3A4E;">Contact ID</span>
+            <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid #E3E3EA;border-radius:8px;background:#F6F6F8;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A0A0B0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 018 0v4"></path></svg>
+              <span style="flex:1;min-width:0;font-size:14px;color:#3A3A4E;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:text;">{{ ce.cid }}</span>
+            </div>
+          </div>
+        </sc-if>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;">
+          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:12px;font-weight:600;color:#3A3A4E;">이름</span><input value="{{ ce.name }}" onChange="{{ ce_name }}" placeholder="예: 박지훈" style="height:36px;padding:0 10px;border:1px solid #E3E3EA;border-radius:8px;background:#FFFFFF;color:#1A1A2E;font-size:14px;outline:none;" style-focus="border-color:#FF6363;"></label>
+          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:12px;font-weight:600;color:#3A3A4E;">역할 / 소속</span><input value="{{ ce.role }}" onChange="{{ ce_role }}" placeholder="예: CFO · Finance" style="height:36px;padding:0 10px;border:1px solid #E3E3EA;border-radius:8px;background:#FFFFFF;color:#1A1A2E;font-size:14px;outline:none;" style-focus="border-color:#FF6363;"></label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:12px;font-weight:600;color:#3A3A4E;">설명 <span style="font-weight:400;color:#6E6E80;">· 사람과 에이전트가 같은 설명을 봅니다</span></span><textarea value="{{ ce.desc }}" onChange="{{ ce_desc }}" placeholder="담당 업무와 어떤 질문에 답할 수 있는지" rows="3" style="resize:none;padding:8px 10px;border:1px solid #E3E3EA;border-radius:8px;background:#FFFFFF;color:#1A1A2E;font-size:14px;line-height:1.5;outline:none;" style-focus="border-color:#FF6363;"></textarea></label>
+        
+      </div>
+      <div style="flex:none;display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #E3E3EA;">
+        <sc-if value="{{ ceIsEdit }}">
+          <button onClick="{{ ceTestConn }}" style="height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#3A3A4E;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;" style-hover="border-color:#FF6363;color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"></path></svg>Test connection</button>
+          <sc-if value="{{ ceTestShow }}"><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:{{ ceTestFg }};white-space:nowrap;"><span style="width:7px;height:7px;border-radius:50%;background:{{ ceTestDot }};flex:none;"></span>{{ ceTestText }}</span></sc-if>
+        </sc-if>
+        <sc-if value="{{ ceCanDelete }}"><button onClick="{{ ceDelete }}" style="height:32px;padding:0 12px;border:none;border-radius:6px;background:transparent;color:#C62828;font-size:12px;font-weight:500;cursor:pointer;" style-hover="background:rgba(239,68,68,0.08);">Delete</button></sc-if>
+        <div style="flex:1;"></div>
+        <button onClick="{{ closeCE }}" style="height:32px;padding:0 14px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#3A3A4E;font-size:12px;font-weight:500;cursor:pointer;" style-hover="background:#F6F6F8;">Cancel</button>
+        <button onClick="{{ ceSave }}" style="height:32px;padding:0 14px;border:none;border-radius:6px;background:{{ ceSaveBg }};color:#1A1A2E;font-size:12px;font-weight:600;cursor:pointer;">Save</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- PERM CONFIRM -->
+<sc-if value="{{ pcOpen }}">
+  <div onClick="{{ closePC }}" style="position:absolute;inset:0;z-index:45;background:rgba(20,20,40,0.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;">
+    <div onClick="{{ stop }}" data-screen-label="Permission Confirm" style="width:460px;max-width:calc(100% - 48px);display:flex;flex-direction:column;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:14px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;animation:rise 200ms ease-out;">
+      <div style="padding:20px 20px 16px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <svg width="22" height="22" viewBox="0 0 24 24" style="flex:none;"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="#7C86E8"></path></svg>
+          <span style="flex:1;min-width:0;font-size:18px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ pcTitle }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:#F6F6F8;">
+          <span style="height:22px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:11px;background:#FFFFFF;border:1px solid #E3E3EA;color:#3A3A4E;font-size:11px;font-weight:600;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:{{ pcFromDot }};"></span>{{ pcFromLabel }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A0A0B0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          <span style="height:22px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:11px;background:{{ pcToBg }};color:{{ pcToFg }};font-size:11px;font-weight:600;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:{{ pcToDot }};"></span>{{ pcToLabel }}</span>
+          <span style="flex:1;min-width:0;text-align:right;font-size:12px;color:#6E6E80;white-space:nowrap;">{{ pcCount }}</span>
+        </div>
+        <div style="font-size:14px;line-height:1.5;color:#3A3A4E;text-wrap:pretty;">{{ pcBody }}</div>
+        <sc-if value="{{ pcHasMix }}"><div style="font-size:12px;line-height:1.5;color:#B45309;padding:10px 12px;border-radius:8px;background:rgba(245,158,11,0.10);text-wrap:pretty;">{{ pcMixText }}</div></sc-if>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #E3E3EA;">
+        <div style="flex:1;"></div>
+        <button onClick="{{ closePC }}" style="height:32px;padding:0 14px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#3A3A4E;font-size:12px;font-weight:500;cursor:pointer;" style-hover="background:#F6F6F8;">Cancel</button>
+        <sc-if value="{{ pcHasMix }}"><button onClick="{{ pcKeep }}" style="height:32px;padding:0 14px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#1A1A2E;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;" style-hover="background:#F6F6F8;">개별 설정 유지</button></sc-if>
+        <button onClick="{{ pcApply }}" style="height:32px;padding:0 14px;border:none;border-radius:6px;background:#FF6363;color:#1A1A2E;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;" style-hover="background:#FF7A7A;">{{ pcApplyLabel }}</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- SETTINGS -->
+<sc-if value="{{ settingsOpen }}">
+  <div onClick="{{ closeSettings }}" style="position:absolute;inset:0;z-index:40;background:rgba(20,20,40,0.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;">
+    <div onClick="{{ stop }}" data-screen-label="Settings" style="width:760px;max-width:calc(100% - 48px);height:580px;max-height:calc(100% - 48px);display:flex;flex-direction:column;background:#FFFFFF;border:1px solid #E3E3EA;border-radius:14px;box-shadow:0 20px 60px rgba(20,20,40,0.18);overflow:hidden;animation:rise 200ms ease-out;">
+      <div style="flex:none;display:flex;align-items:center;gap:12px;height:56px;padding:0 16px 0 20px;border-bottom:1px solid #E3E3EA;">
+        <span style="font-size:18px;font-weight:600;">Settings</span>
+        <div style="display:flex;gap:4px;padding:3px;border-radius:10px;background:#F0F0F4;margin-left:8px;">
+          <sc-for list="{{ settingsTabs }}" as="st"><button onClick="{{ st.onClick }}" style="height:28px;padding:0 12px;border:none;border-radius:7px;background:{{ st.bg }};color:{{ st.fg }};font-size:12px;font-weight:500;cursor:pointer;">{{ st.label }}</button></sc-for>
+        </div>
+        <div style="flex:1;"></div>
+        <button onClick="{{ closeSettings }}" title="Close" style="width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:rgba(26,26,46,0.06);color:#1A1A2E;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;padding:20px;display:flex;flex-direction:column;">
+        <sc-if value="{{ stGeneral }}">
+          <div style="display:flex;flex-direction:column;gap:20px;">
+            <div style="display:flex;flex-direction:column;gap:8px;"><span style="font-size:12px;font-weight:600;color:#6E6E80;">일반</span>
+              <div style="display:flex;flex-direction:column;border:1px solid #E3E3EA;border-radius:10px;overflow:hidden;"><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border-bottom:1px solid #EDEDF2;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Language</span><span style="font-size:12px;color:#6E6E80;">앱 인터페이스 언어</span></div><select value="{{ lang }}" onChange="{{ onLang }}" style="height:32px;min-width:140px;padding:0 10px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#1A1A2E;font-size:14px;cursor:pointer;"><sc-for list="{{ langs }}" as="lg"><option value="{{ lg.id }}">{{ lg.label }}</option></sc-for></select></div><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border-bottom:1px solid #EDEDF2;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Global shortcut</span><span style="font-size:12px;color:#6E6E80;">어디서든 AutoRAG Agent 열기</span></div><span style="display:flex;gap:4px;"><span style="font-size:12px;padding:2px 8px;border:1px solid #E3E3EA;border-radius:5px;background:#F6F6F8;">⌥</span><span style="font-size:12px;padding:2px 8px;border:1px solid #E3E3EA;border-radius:5px;background:#F6F6F8;">Space</span></span></div><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border-bottom:1px solid #EDEDF2;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Launch at login</span><span style="font-size:12px;color:#6E6E80;">Mac 로그인 시 자동 실행</span></div><button onClick="{{ toggleLogin }}" style="width:36px;height:22px;flex:none;border:none;border-radius:11px;background:{{ loginBg }};position:relative;cursor:pointer;transition:background 200ms;"><span style="position:absolute;top:3px;left:{{ loginKnob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left 200ms;"></span></button></div><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Show in menu bar</span><span style="font-size:12px;color:#6E6E80;">메뉴 막대에 아이콘 표시</span></div><button onClick="{{ toggleMenu }}" style="width:36px;height:22px;flex:none;border:none;border-radius:11px;background:{{ menuBg }};position:relative;cursor:pointer;transition:background 200ms;"><span style="position:absolute;top:3px;left:{{ menuKnob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left 200ms;"></span></button></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;"><span style="font-size:12px;font-weight:600;color:#6E6E80;">소프트웨어 업데이트</span>
+              <div style="display:flex;flex-direction:column;border:1px solid #E3E3EA;border-radius:10px;overflow:hidden;"><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border-bottom:1px solid #EDEDF2;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">AutoRAG Agent 1.4.2</span><span style="font-size:12px;color:#6E6E80;">{{ updateStatus }}</span></div><button onClick="{{ checkUpdate }}" style="height:32px;flex:none;padding:0 12px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#1A1A2E;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;" style-hover="background:#F6F6F8;">{{ updateLabel }}</button></div><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border-bottom:1px solid #EDEDF2;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Automatically install updates</span><span style="font-size:12px;color:#6E6E80;">백그라운드에서 다운로드 후 재시작 시 적용</span></div><button onClick="{{ toggleAutoUp }}" style="width:36px;height:22px;flex:none;border:none;border-radius:11px;background:{{ autoUpBg }};position:relative;cursor:pointer;transition:background 200ms;"><span style="position:absolute;top:3px;left:{{ autoUpKnob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left 200ms;"></span></button></div><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Beta updates</span><span style="font-size:12px;color:#6E6E80;">새 기능을 먼저 받아보기</span></div><button onClick="{{ toggleBeta }}" style="width:36px;height:22px;flex:none;border:none;border-radius:11px;background:{{ betaBg }};position:relative;cursor:pointer;transition:background 200ms;"><span style="position:absolute;top:3px;left:{{ betaKnob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left 200ms;"></span></button></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;"><span style="font-size:12px;font-weight:600;color:#6E6E80;">개인정보</span>
+              <div style="display:flex;flex-direction:column;border:1px solid #E3E3EA;border-radius:10px;overflow:hidden;"><div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;">Clear chat history</span><span style="font-size:12px;color:#6E6E80;">저장된 모든 AI Search 대화를 삭제</span></div><button onClick="{{ clearHistory }}" style="height:32px;flex:none;padding:0 12px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#D64545;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;" style-hover="background:rgba(255,99,99,0.08);">Clear…</button></div></div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ stModels }}">
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:16px;">
+            <div style="flex:none;display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #E3E3EA;border-radius:10px;">
+              <span style="width:36px;height:36px;flex:none;border-radius:8px;background:{{ curModel.bg }};color:#FFFFFF;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ curModel.tile }}</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+                <span style="font-size:14px;font-weight:600;">{{ curModel.name }}</span>
+                <span style="font-size:12px;color:#6E6E80;">{{ curModel.provider }}</span>
+              </div>
+              <span style="font-size:12px;color:#6E6E80;padding:2px 8px;border-radius:6px;background:#F0F0F4;white-space:nowrap;">Quick · Deep 공통</span>
+            </div>
+            <div style="flex:1;min-height:220px;display:flex;flex-direction:column;border:1px solid #E3E3EA;border-radius:10px;overflow:hidden;background:#FAFAFB;">
+              <div ref="{{ cfgRef }}" style="flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;">
+                <sc-for list="{{ cfgMsgs }}" as="cm">
+                  <div style="display:flex;justify-content:{{ cm.justify }};">
+                    <div style="flex:0 0 auto;width:max-content;max-width:80%;word-break:keep-all;padding:8px 14px 8px 12px;border-radius:10px;background:{{ cm.bg }};border:1px solid {{ cm.border }};font-size:14px;line-height:1.5;color:#1A1A2E;text-wrap:pretty;animation:rise 200ms ease-out;">{{ cm.text }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="flex:none;display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px;">
+                <sc-for list="{{ cfgChips }}" as="cc"><button onClick="{{ cc.onClick }}" style="height:28px;flex:none;white-space:nowrap;padding:0 10px;border:1px solid #E3E3EA;border-radius:14px;background:#FFFFFF;color:#3A3A4E;font-size:12px;cursor:pointer;" style-hover="border-color:#FF6363;color:#1A1A2E;">{{ cc.label }}</button></sc-for>
+              </div>
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:8px 8px 8px 14px;border-top:1px solid #E3E3EA;background:#FFFFFF;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF6363" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+                <input value="{{ cfgDraft }}" onChange="{{ onCfgDraft }}" onKeyDown="{{ onCfgKey }}" placeholder="예: 회사 데이터는 밖으로 안 나가게 해줘" style="flex:1;min-width:0;height:32px;border:none;outline:none;background:transparent;color:#1A1A2E;font-size:14px;">
+                <button onClick="{{ cfgSend }}" title="Send" style="width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:{{ cfgSendBg }};color:#1A1A2E;cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ stSources }}">
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;">
+            <div style="flex:none;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;font-weight:600;">Connected sources</span><span style="font-size:12px;color:#6E6E80;">{{ sourcesSummary }}</span></div>
+            <div ref="{{ srcListRef }}" style="flex:1 1 auto;min-height:220px;overflow:auto;display:flex;flex-direction:column;border:1px solid #E3E3EA;border-radius:10px;">
+              <sc-for list="{{ sources }}" as="so" hint-placeholder-count="6">
+                <div data-src="{{ so.id }}" style="flex:none;display:flex;flex-direction:column;border-bottom:1px solid #EDEDF2;background:{{ so.rowBg }};">
+                  <div style="display:grid;grid-template-columns:28px minmax(0,1fr) 150px 28px 36px;gap:12px;align-items:center;padding:10px 14px;">
+                    <span style="width:28px;height:28px;border-radius:7px;background:{{ so.tileBg }};color:{{ so.tileFg }};font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;opacity:{{ so.opacity }};">{{ so.tile }}</span>
+                    <div onClick="{{ so.onDetail }}" style="display:flex;flex-direction:column;gap:2px;min-width:0;cursor:pointer;opacity:{{ so.opacity }};"><span style="font-size:14px;">{{ so.name }}</span><span style="font-size:12px;color:#6E6E80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ so.detail }}</span></div>
+                    <div style="display:flex;flex-direction:column;gap:6px;opacity:{{ so.opacity }};">
+                      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;background:{{ so.badgeBg }};color:{{ so.badgeFg }};">{{ so.status }}</span><span style="color:#6E6E80;">{{ so.pctLabel }}</span></div>
+                      <div style="height:4px;border-radius:4px;background:#F0F0F4;overflow:hidden;"><div style="height:100%;width:{{ so.pct }};background:{{ so.bar }};border-radius:4px;"></div></div>
+                    </div>
+                    <button onClick="{{ so.onDetail }}" title="Description" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6E6E80;cursor:pointer;" style-hover="background:#F0F0F4;color:#1A1A2E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ so.chev }});transition:transform 200ms;"><path d="M6 9l6 6 6-6"></path></svg></button>
+                    <button onClick="{{ so.onToggle }}" style="width:36px;height:22px;border:none;border-radius:11px;background:{{ so.swBg }};position:relative;cursor:pointer;transition:background 200ms;"><span style="position:absolute;top:3px;left:{{ so.knob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left 200ms;"></span></button>
+                  </div>
+                  <sc-if value="{{ so.open }}">
+                    <div style="display:flex;flex-direction:column;gap:8px;margin:0 14px 12px 54px;padding:12px 14px;border:1px solid #E3E3EA;border-radius:8px;background:#FFFFFF;animation:rise 200ms ease-out;">
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:12px;font-weight:600;color:#3A3A4E;">Description</span>
+                        <div style="flex:1;"></div>
+                        <button onClick="{{ so.onEditDesc }}" style="height:26px;flex:none;white-space:nowrap;padding:0 10px;border:1px solid #E3E3EA;border-radius:6px;background:#FFFFFF;color:#3A3A4E;font-size:12px;cursor:pointer;" style-hover="border-color:#FF6363;color:#1A1A2E;">채팅으로 수정</button>
+                      </div>
+                      <p style="margin:0;font-size:13px;line-height:1.6;color:#1A1A2E;white-space:pre-wrap;text-wrap:pretty;">{{ so.desc }}</p>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex:none;height:240px;display:flex;flex-direction:column;border:1px solid #E3E3EA;border-radius:10px;overflow:hidden;background:#FAFAFB;">
+              <div ref="{{ srcRef }}" style="flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;">
+                <sc-for list="{{ srcMsgs }}" as="sm">
+                  <div style="display:flex;justify-content:{{ sm.justify }};">
+                    <div style="flex:0 0 auto;width:max-content;max-width:80%;word-break:keep-all;padding:8px 14px 8px 12px;border-radius:10px;background:{{ sm.bg }};border:1px solid #E3E3EA;font-size:14px;line-height:1.5;color:#1A1A2E;white-space:pre-wrap;text-wrap:pretty;animation:rise 200ms ease-out;">{{ sm.text }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="flex:none;display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px;">
+                <sc-for list="{{ srcChips }}" as="sc"><button onClick="{{ sc.onClick }}" style="height:28px;flex:none;white-space:nowrap;padding:0 10px;border:1px solid #E3E3EA;border-radius:14px;background:#FFFFFF;color:#3A3A4E;font-size:12px;cursor:pointer;" style-hover="border-color:#FF6363;color:#1A1A2E;">{{ sc.label }}</button></sc-for>
+              </div>
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:8px 8px 8px 14px;border-top:1px solid #E3E3EA;background:#FFFFFF;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF6363" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+                <input ref="{{ srcInputRef }}" value="{{ srcDraft }}" onChange="{{ onSrcDraft }}" onKeyDown="{{ onSrcKey }}" placeholder="예: Outlook 연결해줘, Slack 설명 손봐줘" style="flex:1;min-width:0;height:32px;border:none;outline:none;background:transparent;color:#1A1A2E;font-size:14px;">
+                <button onClick="{{ srcSend }}" title="Send" style="width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:{{ srcSendBg }};color:#1A1A2E;cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showHotkeys&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;deepLatency&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:4,&quot;min&quot;:1,&quot;max&quot;:12,&quot;step&quot;:1,&quot;unit&quot;:&quot;s&quot;,&quot;tsType&quot;:&quot;number&quot;},&quot;evidenceOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const KD = {
+  folder:{kind:'Folder'},
+  xlsx:{l:'X',bg:'oklch(0.62 0.14 150)',kind:'Excel Spreadsheet'},
+  csv:{l:'C',bg:'oklch(0.58 0.1 175)',kind:'CSV Document'},
+  pdf:{l:'P',bg:'oklch(0.6 0.17 28)',kind:'PDF Document'},
+  docx:{l:'W',bg:'oklch(0.58 0.15 258)',kind:'Word Document'},
+  pptx:{l:'P',bg:'oklch(0.66 0.15 55)',kind:'PowerPoint'},
+  md:{l:'M',bg:'#8A8A9C',kind:'Markdown'},
+  png:{l:'I',bg:'oklch(0.58 0.13 305)',kind:'PNG Image'},
+  zip:{l:'Z',bg:'#8A8A9C',kind:'ZIP Archive'},
+  slack:{l:'S',bg:'oklch(0.52 0.16 340)',kind:'Slack Thread'},
+  mail:{l:'M',bg:'oklch(0.58 0.15 12)',kind:'Email'},
+  notion:{l:'N',bg:'#1A1A2E',fg:'#FFFFFF',kind:'Notion Page'},
+  discord:{l:'D',bg:'oklch(0.56 0.17 278)',kind:'Discord Thread'},
+  telegram:{l:'T',bg:'oklch(0.64 0.13 232)',kind:'Telegram Message'},
+  contact:{l:'@',bg:'oklch(0.52 0.13 285)',kind:'Contact'},
+};
+const PERM = {
+  ask:{label:'Ask', title:'허용 시 공유', sub:'요청이 오면 Requests에서 확인', dot:'#F59E0B', fg:'#B45309', bg:'rgba(245,158,11,0.14)'},
+  allow:{label:'Allow', title:'항상 허용', sub:'에이전트 요청에 자동으로 공유', dot:'#3B82F6', fg:'#1D4ED8', bg:'rgba(59,130,246,0.12)'},
+  deny:{label:'Deny', title:'항상 거부', sub:'요청을 자동으로 거절', dot:'#EF4444', fg:'#C62828', bg:'rgba(239,68,68,0.12)'},
+};
+const CONTACTS0 = [
+  {id:'p1', cid:'jihoon.park@markr.ai', name:'박지훈', role:'CFO · Finance',
+    desc:'재무 총괄. 예산 승인·결재 일정의 최종 결정권자로, Finance 폴더와 결재 문서 기준으로 답변합니다.'},
+  {id:'p2', cid:'doyoon.lee@markr.ai', name:'이도윤', role:'Marketing Lead',
+    desc:'마케팅 팀장. 채널별 예산 배분, 캠페인 성과(CPA/CAC) 질문에 답합니다.'},
+  {id:'p3', cid:'haneul.jung@markr.ai', name:'정하늘', role:'Growth Marketer',
+    desc:'Notion 플래닝 문서와 에이전시 일정·미디어 플랜 커뮤니케이션 담당.'},
+  {id:'p4', cid:'mina.park@blueagency.co', name:'Mina Park', role:'Account Manager · Blue Agency',
+    desc:'외부 에이전시 담당자. 견적서와 미디어 플랜 버전 확인만 가능하며 내부 재무 자료는 공유하지 않습니다.'},
+  {id:'p5', cid:'jiwon.lee@markr-global.com', name:'Jiwon Lee', role:'Global Ops · 해외법인',
+    desc:'해외법인 운영. 국가별 예산 정렬과 현지 플랜 일정을 조율합니다. 영어로 질의.'},
+];
+const REQ0 = [
+  {id:'r1', from:'p2', time:'10분 전', q:'Q3 퍼포먼스 광고 9월 중간 집행 내역을 공유해 줄 수 있나요? 주간 리뷰에 필요합니다.', files:[['집행내역_9월_중간.csv','csv','Documents/Finance/2026 Q3']], status:'pending'},
+  {id:'r2', from:'p4', time:'1시간 전', q:'최종 승인된 Q3 예산 금액과 집행 시작일을 확인하고 싶습니다.', files:[['예산승인_품의서_0915.pdf','pdf','Documents/Finance/2026 Q3']], status:'pending'},
+  {id:'r3', from:'p5', time:'어제', q:'Could you share the original KR Q3 budget sheet so we can align local plans?', files:[['Q3_마케팅예산_v3.xlsx','xlsx','Documents/Finance/2026 Q3'],['해외법인_마케팅_가이드.pdf','pdf','Google Drive/Shared with me']], status:'pending'},
+  {id:'r4', from:'p3', time:'어제', q:'주간보고 슬라이드 최신본 요청', files:[['주간보고_0919.pptx','pptx','Desktop']], status:'allowed', auto:true},
+  {id:'r5', from:'p4', time:'9월 20일', q:'인사 평가 기준 문서가 있나요?', files:[['휴가계획_Q3.xlsx','xlsx','Documents/HR']], status:'denied', auto:true},
+];
+const AG = name => ({quick:[name+'의 에이전트에게 물어봤습니다. 공유가 허용된 자료 범위에서 답변을 받았어요. [2]'],
+  deep:['**'+name+' 에이전트 답변** — Q3 마케팅 예산은 ₩3.8억으로 승인됐고, 조건은 에이전시 재견적 반영이었습니다. [2][4]','상대 에이전트는 접근이 거부된 폴더(HR, Contracts)는 조회하지 않았습니다.'],
+  quickMeta:'1.2s · via agent', deepMeta:name+' agent · 3 files shared · 9s'});
+const F = (n,k,d,s) => ({n,k,d,s:s||'—'});
+const D = (n,d) => ({n,k:'folder',d,s:'—'});
+const FS = {
+  'Recents':[F('Q3_마케팅예산_v3.xlsx','xlsx','Sep 13, 16:48','84 KB'),F('주간보고_0919.pptx','pptx','Sep 19, 18:02','4.8 MB'),F('예산승인_품의서_0915.pdf','pdf','Sep 15, 17:10','312 KB'),F('Q3_캠페인_브리프.docx','docx','Sep 5, 11:20','1.1 MB'),F('회의록_0922.md','md','Sep 22, 10:05','6 KB')],
+  'Desktop':[D('스크린샷','Sep 22, 11:40'),F('주간보고_0919.pptx','pptx','Sep 19, 18:02','4.8 MB'),F('회의록_0922.md','md','Sep 22, 10:05','6 KB'),F('스크린샷 2026-09-22.png','png','Sep 22, 11:40','1.2 MB')],
+  'Desktop/스크린샷':[F('대시보드_캡처_01.png','png','Sep 22, 11:40','1.2 MB'),F('대시보드_캡처_02.png','png','Sep 22, 11:41','1.1 MB')],
+  'Downloads':[F('Blue_Agency_견적서_v2.pdf','pdf','Sep 14, 09:12','680 KB'),F('media_plan_v3.xlsx','xlsx','Sep 16, 15:30','142 KB'),F('8월_광고성과_리포트.pdf','pdf','Sep 3, 14:22','2.4 MB'),F('brand_assets.zip','zip','Aug 30, 10:00','48 MB'),F('invoice_0831.pdf','pdf','Aug 31, 18:40','96 KB')],
+  'Documents':[D('Finance','Sep 15, 17:10'),D('Marketing','Sep 19, 18:02'),D('Contracts','Aug 21, 13:00'),D('HR','Jul 30, 09:45'),F('업무인수인계.docx','docx','Jun 2, 16:10','220 KB')],
+  'Documents/Finance':[D('2026 Q2','Jun 30, 18:00'),D('2026 Q3','Sep 15, 17:10'),F('연간예산_2026.xlsx','xlsx','Jan 12, 10:30','210 KB'),F('비용집행_가이드.pdf','pdf','Feb 3, 09:00','1.4 MB')],
+  'Documents/Finance/2026 Q2':[F('Q2_결산.xlsx','xlsx','Jul 4, 17:00','190 KB')],
+  'Documents/Finance/2026 Q3':[D('벤더 견적','Sep 14, 09:12'),F('Q3_마케팅예산_v1.xlsx','xlsx','Aug 28, 11:02','78 KB'),F('Q3_마케팅예산_v2.xlsx','xlsx','Sep 8, 15:40','81 KB'),F('Q3_마케팅예산_v3.xlsx','xlsx','Sep 13, 16:48','84 KB'),F('예산승인_품의서_0915.pdf','pdf','Sep 15, 17:10','312 KB'),F('집행내역_8월.csv','csv','Sep 2, 09:30','44 KB'),F('집행내역_9월_중간.csv','csv','Sep 20, 12:15','39 KB')],
+  'Documents/Finance/2026 Q3/벤더 견적':[F('Blue_Agency_견적서_v2.pdf','pdf','Sep 14, 09:12','680 KB')],
+  'Documents/Marketing':[F('Q3_캠페인_캘린더.xlsx','xlsx','Sep 1, 10:00','66 KB'),F('브랜드_가이드_2026.pdf','pdf','Mar 3, 12:00','12 MB')],
+  'Documents/Contracts':[F('Blue_Agency_MSA.pdf','pdf','Aug 21, 13:00','840 KB')],
+  'Documents/HR':[F('휴가계획_Q3.xlsx','xlsx','Jul 30, 09:45','24 KB')],
+  'iCloud Drive':[D('Personal','Sep 1, 08:00'),F('메모_예산아이디어.md','md','Aug 20, 22:14','3 KB')],
+  'iCloud Drive/Personal':[],
+  'Google Drive':[D('Marketing','Sep 5, 11:20'),D('Shared with me','Sep 18, 16:00')],
+  'Google Drive/Marketing':[F('Q3_캠페인_브리프.docx','docx','Sep 5, 11:20','1.1 MB'),F('KPI_트래커.xlsx','xlsx','Sep 21, 09:00','120 KB')],
+  'Google Drive/Shared with me':[F('해외법인_마케팅_가이드.pdf','pdf','Sep 18, 16:00','2.2 MB')],
+  'Dropbox':[F('agency_creatives_Q3.zip','zip','Sep 10, 19:30','320 MB')],
+  'Slack':[D('#mkt-budget','Sep 12, 14:11'),D('#marketing','Sep 22, 09:40'),D('#general','Sep 23, 08:30')],
+  'Slack/#mkt-budget':[F('2026-09-12 · 예산 조정 스레드','slack','Sep 12, 14:11','14 msgs'),F('2026-09-08 · v2 리뷰','slack','Sep 8, 16:02','9 msgs'),F('2026-08-28 · v1 초안 공유','slack','Aug 28, 11:10','5 msgs')],
+  'Slack/#marketing':[F('2026-09-22 · 캠페인 킥오프','slack','Sep 22, 09:40','22 msgs')],
+  'Slack/#general':[F('2026-09-23 · 사내 공지','slack','Sep 23, 08:30','3 msgs')],
+  'Gmail':[D('Inbox','Sep 23, 08:12'),D('Sent','Sep 15, 11:02')],
+  'Gmail/Inbox':[F('RE: Q3 마케팅 예산 최종 승인 요청','mail','Sep 15, 10:24','1 thread'),F('[Blue Agency] 재견적서 송부','mail','Sep 14, 09:10','1 thread'),F('8월 광고 성과 리포트','mail','Sep 3, 14:20','1 thread')],
+  'Gmail/Sent':[F('Q3 마케팅 예산 최종 승인 요청','mail','Sep 13, 17:02','1 thread')],
+  'Notion':[D('Marketing Wiki','Aug 29, 18:20')],
+  'Notion/Marketing Wiki':[F('Q3 Planning','notion','Aug 29, 18:20','12 blocks'),F('채널별 운영 원칙','notion','Jul 2, 10:00','30 blocks')],
+  'Discord':[D('#agency-sync','Sep 16, 15:28')],
+  'Discord/#agency-sync':[F('2026-09-16 · 미디어 플랜 v3','discord','Sep 16, 15:28','6 msgs')],
+  'Telegram':[D('해외법인 공지','Sep 18, 21:05')],
+  'Telegram/해외법인 공지':[F('2026-09-18 · Q3 budget notice','telegram','Sep 18, 21:05','2 msgs')],
+};
+FS['Downloads'].push(F('Q3_마케팅예산_v3 (1).xlsx','xlsx','Sep 13, 16:52','84 KB'),F('Q3_캠페인_브리프 (1).docx','docx','Sep 5, 11:24','1.1 MB'));
+FS['Desktop'].push(F('Q3_캠페인_브리프_초안.docx','docx','Aug 29, 14:10','1.0 MB'));
+const FAMS = [
+  {head:'Documents/Finance/2026 Q3/Q3_마케팅예산_v3.xlsx', m:[['Documents/Finance/2026 Q3','Q3_마케팅예산_v2.xlsx','near'],['Documents/Finance/2026 Q3','Q3_마케팅예산_v1.xlsx','near'],['Downloads','Q3_마케팅예산_v3 (1).xlsx','exact']]},
+  {head:'Documents/Finance/2026 Q3/벤더 견적/Blue_Agency_견적서_v2.pdf', m:[['Downloads','Blue_Agency_견적서_v2.pdf','exact']]},
+  {head:'Google Drive/Marketing/Q3_캠페인_브리프.docx', m:[['Downloads','Q3_캠페인_브리프 (1).docx','exact'],['Desktop','Q3_캠페인_브리프_초안.docx','near']]},
+];
+const REL = {exact:'동일본', near:'유사본', contains:'포함본'};
+const IDX_FAIL = {'Documents/Finance/2026 Q3/집행내역_9월_중간.csv':'인코딩 오류로 CSV를 읽지 못했습니다','Downloads/brand_assets.zip':'압축 해제 실패','Desktop/스크린샷 2026-09-22.png':'텍스트 인식(OCR) 시간 초과','Downloads/8월_광고성과_리포트.pdf':'암호로 보호된 PDF'};
+const MEM = {}, HEAD = {};
+FAMS.forEach(f=>{ HEAD[f.head]=f; f.m.forEach(([w,n,rel])=>{ MEM[w+'/'+n]={f,rel}; }); });
+const PLACES = [
+  {label:'Favorites',items:[['Recents','M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z'],['Desktop','M3 5h18v11H3zM8 20h8M12 16v4'],['Downloads','M12 4v11m0 0l-4-4m4 4l4-4M5 20h14'],['Documents','M6 3h8l4 4v14H6zM14 3v4h4']]},
+  {label:'Cloud',items:[['iCloud Drive','M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 7 18z'],['Google Drive','M8.5 4h7l6 10.5-3.5 6h-12l-3.5-6z'],['Dropbox','M4 7l8-4 8 4-8 4zM4 7v10l8 4 8-4V7']]},
+  {label:'Sources',items:[['Slack','slack'],['Gmail','mail'],['Notion','notion'],['Discord','discord'],['Telegram','telegram']]},
+  {label:'People',items:[['Contacts','M15 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM21 19v-1a3.5 3.5 0 0 0-2.6-3.4M15.5 4.2a3 3 0 0 1 0 5.6']]},
+];
+const B = (t,x) => ({t,x});
+const EV = [
+  {n:1,k:'xlsx',title:'Q3_마케팅예산_v3.xlsx',loc:'Documents/Finance/2026 Q3',file:'Q3_마케팅예산_v3.xlsx',meta:'Documents › Finance › 2026 Q3 · Sheet "Summary" · 수정 9월 13일 김서연',
+    md:[B('h','Summary — Q3 Marketing Budget'),B('meta','Sheet 1 · Range A1:D6'),B('code','| 항목       | v1 (8/28)   | v3 (9/13)   |\n|------------|-------------|-------------|\n| 브랜드     | 120,000,000 | 120,000,000 |\n| 퍼포먼스   | 160,000,000 | 120,000,000 |\n| 콘텐츠     |  80,000,000 |  80,000,000 |\n| 이벤트     |  60,000,000 |  60,000,000 |'),B('mark','**합계** v1 420,000,000 → v3 380,000,000 (−40,000,000, 퍼포먼스)'),B('q','Cell D3 comment (김서연): "9/12 Slack 합의 반영"')],
+    pv:{kind:'sheet',sheet:'Summary',range:'A1:D6',hl:[2,5],rows:[['항목','v1 (8/28)','v3 (9/13)','변동'],['브랜드','120,000,000','120,000,000','—'],['퍼포먼스','160,000,000','120,000,000','−40,000,000'],['콘텐츠','80,000,000','80,000,000','—'],['이벤트/오프라인','60,000,000','60,000,000','—'],['합계','420,000,000','380,000,000','−40,000,000']]}},
+  {n:2,k:'mail',title:'RE: Q3 마케팅 예산 최종 승인 요청',loc:'Gmail/Inbox',file:'RE: Q3 마케팅 예산 최종 승인 요청',meta:'Gmail › Inbox · 박지훈 → 김서연 · Sep 15, 10:24',
+    md:[B('h','RE: Q3 마케팅 예산 최종 승인 요청'),B('meta','**From** 박지훈 (CFO) · **To** 김서연 · **Cc** 이도윤 · 2026-09-15 10:24'),B('p','서연님,'),B('mark','에이전시 재견적 반영하는 조건으로 Q3 마케팅 예산 3.8억 승인합니다.'),B('p','품의서는 오늘 중 전자결재로 올려주세요. 집행은 10월 1일부터 가능합니다.'),B('q','> On Sep 13, 김서연 wrote: v3 기준 3.8억으로 최종 승인 요청드립니다. 퍼포먼스 광고 4천만 원 감액…')],
+    pv:{kind:'mail',subject:'RE: Q3 마케팅 예산 최종 승인 요청',from:'박지훈 · CFO',init:'박',to:'김서연, cc 이도윤',date:'Sep 15, 10:24',body:[B('p','서연님,'),B('mark','에이전시 재견적 반영하는 조건으로 Q3 마케팅 예산 3.8억 승인합니다.'),B('p','품의서는 오늘 중 전자결재로 올려주세요. 집행은 10월 1일부터 가능합니다.'),B('p','박지훈 드림'),B('q','On Sep 13, 김서연 wrote: v3 기준 3.8억으로 최종 승인 요청드립니다. 퍼포먼스 광고 4천만 원 감액했습니다.')]}},
+  {n:3,k:'slack',title:'#mkt-budget · 예산 조정 스레드',loc:'Slack/#mkt-budget',file:'2026-09-12 · 예산 조정 스레드',meta:'Slack › #mkt-budget · Thread · Sep 12, 14:02–14:11',
+    md:[B('h','#mkt-budget — thread'),B('meta','2026-09-12 · 3 participants · 14 messages'),B('p','**김서연** 14:02 — v2 기준 4.2억인데 CFO 쪽에서 4억 이하로 맞춰달라고 하셨어요.'),B('p','**이도윤** 14:05 — 8월 CPA가 많이 올라서 퍼포먼스에서 줄이는 게 맞을 듯요.'),B('mark','**김서연** 14:11 — 좋아요. 퍼포먼스 4천 줄이고 3.8억으로 가죠. v3 올릴게요.'),B('p','**정하늘** 14:12 — 👍 에이전시엔 제가 공유할게요.')],
+    pv:{kind:'chat',channel:'#mkt-budget',app:'Slack · Thread',msgs:[['김서연','14:02','v2 기준 4.2억인데 CFO 쪽에서 4억 이하로 맞춰달라고 하셨어요.'],['이도윤','14:05','8월 CPA가 많이 올라서 퍼포먼스에서 줄이는 게 맞을 듯요.'],['김서연','14:11','좋아요. 퍼포먼스 4천 줄이고 3.8억으로 가죠. v3 올릴게요.',1],['정하늘','14:12','에이전시엔 제가 공유할게요.']]}},
+  {n:4,k:'pdf',title:'예산승인_품의서_0915.pdf',loc:'Documents/Finance/2026 Q3',file:'예산승인_품의서_0915.pdf',meta:'Documents › Finance › 2026 Q3 · p.1 · 전자결재 완료',
+    md:[B('h','품의서 — 2026년 3분기 마케팅 예산 집행'),B('meta','문서번호 FIN-2026-0915-03 · page 1 of 2'),B('p','1. 품의 금액'),B('mark','금 삼억팔천만원정 (₩380,000,000)'),B('p','2. 결재'),B('li','기안 김서연 (09.15 11:02)'),B('li','검토 이도윤 (09.15 14:30)'),B('mark','승인 박지훈 CFO (2026.09.15 17:10)')],
+    pv:{kind:'doc',sub:'FIN-2026-0915-03 · page 1 of 2',title:'품의서 — 2026년 3분기 마케팅 예산 집행',blocks:[B('h','1. 품의 금액'),B('mark','금 삼억팔천만원정 (₩380,000,000)'),B('p','Q3 캠페인 운영을 위한 브랜드·퍼포먼스·콘텐츠·이벤트 예산 집행을 품의합니다. 세부 내역은 첨부 Q3_마케팅예산_v3.xlsx를 따릅니다.'),B('h','2. 결재'),B('p','기안 김서연 (09.15 11:02) · 검토 이도윤 (09.15 14:30)'),B('mark','승인 박지훈 CFO (2026.09.15 17:10)'),B('h','3. 조건'),B('p','에이전시 재견적서(Blue Agency v2) 반영 후 집행.')]}},
+  {n:5,k:'notion',title:'Q3 Planning',loc:'Notion/Marketing Wiki',file:'Q3 Planning',meta:'Notion › Marketing Wiki · Last edited Aug 29 by 정하늘',
+    md:[B('h','Q3 Planning'),B('meta','Last edited Aug 29, 18:20 · 정하늘'),B('p','## Goals — 신규 가입 +18%, CAC −10%'),B('mark','Q3 총 예산: ₩420,000,000 (확정)'),B('li','브랜드 1.2억 / 퍼포먼스 1.6억 / 콘텐츠 0.8억 / 이벤트 0.6억'),B('q','⚠ 9/13 이후 v3와 동기화되지 않음')],
+    pv:{kind:'doc',sub:'Marketing Wiki / Q3 Planning',title:'Q3 Planning',blocks:[B('meta','Last edited Aug 29 · 정하늘'),B('h','Goals'),B('p','신규 가입 +18%, CAC −10%, 브랜드 검색량 +25%.'),B('h','Budget'),B('mark','Q3 총 예산: ₩420,000,000 (확정)'),B('p','브랜드 1.2억 / 퍼포먼스 1.6억 / 콘텐츠 0.8억 / 이벤트 0.6억')]}},
+  {n:6,k:'discord',title:'#agency-sync · 미디어 플랜 v3',loc:'Discord/#agency-sync',file:'2026-09-16 · 미디어 플랜 v3',meta:'Discord › Blue Agency › #agency-sync · Sep 16, 15:28',
+    md:[B('h','#agency-sync'),B('meta','2026-09-16 · Blue Agency server'),B('mark','**Mina (Blue Agency)** 15:21 — 수정 미디어 플랜 공유드립니다. 퍼포먼스 1.2억 기준으로 재견적했습니다.'),B('p','**정하늘** 15:28 — 확인했습니다. 10/1부터 집행 시작할게요.')],
+    pv:{kind:'chat',channel:'#agency-sync',app:'Discord · Blue Agency',msgs:[['Mina (Blue Agency)','15:21','수정 미디어 플랜 공유드립니다. 퍼포먼스 1.2억 기준으로 재견적했습니다. media_plan_v3.xlsx',1],['정하늘','15:28','확인했습니다. 10/1부터 집행 시작할게요.']]}},
+  {n:7,k:'telegram',title:'해외법인 공지 · Q3 budget notice',loc:'Telegram/해외법인 공지',file:'2026-09-18 · Q3 budget notice',meta:'Telegram › 해외법인 공지 · Sep 18, 21:05',
+    md:[B('h','해외법인 공지'),B('meta','Channel · 2026-09-18'),B('mark','**Jiwon Lee** 21:05 — Q3 KR marketing budget finalized at KRW 380M (approved 9/15). Please align local plans.'),B('p','**Kenji T.** 21:20 — Noted for JP.')],
+    pv:{kind:'chat',channel:'해외법인 공지',app:'Telegram · Channel',msgs:[['Jiwon Lee','21:05','Q3 KR marketing budget finalized at KRW 380M (approved 9/15). Please align local plans.',1],['Kenji T.','21:20','Noted for JP.']]}},
+  {n:8,k:'docx',title:'Q3_캠페인_브리프.docx',loc:'Google Drive/Marketing',file:'Q3_캠페인_브리프.docx',meta:'Google Drive › Marketing · p.3 · Sep 5',
+    md:[B('h','Q3 캠페인 브리프'),B('meta','page 3 · 예산 가정'),B('mark','예산은 Q2 대비 +12% 수준인 4.2억을 가정한다. 최종 금액은 CFO 승인 후 확정.'),B('p','채널 믹스: 퍼포먼스 38%, 브랜드 29%, 콘텐츠 19%, 이벤트 14%.')],
+    pv:{kind:'doc',sub:'Google Drive / Marketing · page 3',title:'Q3 캠페인 브리프',blocks:[B('h','3. 예산 가정'),B('mark','예산은 Q2 대비 +12% 수준인 4.2억을 가정한다. 최종 금액은 CFO 승인 후 확정.'),B('p','채널 믹스: 퍼포먼스 38%, 브랜드 29%, 콘텐츠 19%, 이벤트 14%.'),B('h','4. 일정'),B('p','9월 예산 확정 → 10월 1일 집행 시작 → 12월 중간 리뷰.')]}},
+  {n:9,k:'pptx',title:'주간보고_0919.pptx',loc:'Desktop',file:'주간보고_0919.pptx',meta:'Desktop · Slide 4 of 12 · Sep 19',
+    md:[B('h','Slide 4 — Q3 예산 확정'),B('mark','Q3 마케팅 예산 3.8억 확정 (9/15 CFO 승인)'),B('li','퍼포먼스 −4천: 8월 CPA 상승 반영'),B('li','Notion 플래닝 문서 업데이트 필요')],
+    pv:{kind:'doc',sub:'주간보고 · Slide 4 of 12',title:'Q3 예산 확정',blocks:[B('mark','Q3 마케팅 예산 3.8억 확정 (9/15 CFO 승인)'),B('p','퍼포먼스 −4천만 원: 8월 CPA 상승 반영'),B('p','Notion 플래닝 문서 업데이트 필요 — 담당 정하늘')]}},
+];
+const A1 = {
+  q:'Q3 마케팅 예산 최종 승인 금액이랑, 누가 언제 승인했는지 알려줘',
+  quick:['최종 승인액은 **₩3.8억**이며, 9월 15일 CFO 박지훈이 이메일로 승인했습니다. [2][4]'],
+  deep:['최종 승인액은 **₩380,000,000**입니다. 초안(v1)은 ₩4.2억이었지만 9월 12일 Slack #mkt-budget에서 퍼포먼스 광고 ₩4천만을 줄이기로 합의했고, v3에 반영됐습니다. [1][3]','승인은 두 단계였습니다. 9월 15일 10:24 CFO 박지훈이 메일로 **조건부 승인**(에이전시 재견적 반영)을 했고, 같은 날 17:10 품의서 전자결재가 완료됐습니다. [2][4]','주의: Notion "Q3 Planning"은 아직 ₩4.2억으로 남아 있어 최신값과 다릅니다. 에이전시는 9월 16일 Discord에서 조정된 플랜을 확인했습니다. [5][6]'],
+  quickMeta:'0.9s · 2 sources', deepMeta:'14 sources read · 41s'
+};
+const mk = (quick, deep, qm, dm) => ({quick:[quick], deep:[deep], quickMeta:qm, deepMeta:dm});
+const HIST = [
+  {id:'c1', group:'오늘', time:'10:42', title:'Q3 마케팅 예산 승인', q:null},
+  {id:'c2', group:'오늘', time:'09:15', title:'퍼포먼스 광고 감액 사유', q:'퍼포먼스 광고 예산이 왜 4천만 원 줄었어?',
+    a:mk('9월 12일 Slack #mkt-budget에서 CPA 악화를 이유로 감액이 합의됐습니다. [3]','8월 CPA가 목표 대비 31% 높았고 [3], 이에 따라 v3에서 퍼포먼스 항목을 ₩1.6억 → ₩1.2억으로 조정했습니다. [1] CFO도 승인 메일에서 이 조정을 확인했습니다. [2]','0.7s · 1 source','9 sources read · 22s')},
+  {id:'c3', group:'어제', time:'17:30', title:'CFO 승인 메일 찾기', q:'박지훈 CFO가 보낸 예산 승인 메일 찾아줘',
+    a:mk('9월 15일 오후 4:12에 보낸 “RE: Q3 마케팅 예산안 v3” 메일입니다. [2]','해당 메일은 전자결재 품의서 [4] 와 함께 승인 근거로 쓰였고, 첨부 파일은 v3 시트입니다. [1][2]','0.6s · 1 source','6 sources read · 15s')},
+  {id:'c4', group:'어제', time:'11:02', title:'v1 vs v3 예산안 차이', q:'예산안 v1이랑 v3 차이 정리해줘',
+    a:mk('총액이 ₩4.2억 → ₩3.8억으로 줄었고, 퍼포먼스 광고가 가장 크게 감소했습니다. [1]','브랜드·콘텐츠 항목은 동일하며, 퍼포먼스 광고 −₩4천만이 유일한 변경입니다. [1][3] 변경 배경은 9/5 브리프의 가정 수정입니다. [5]','0.8s · 1 source','11 sources read · 27s')},
+  {id:'c5', group:'지난 7일', time:'9월 18일', title:'해외법인 예산 분리 여부', q:'해외법인 마케팅 예산은 이번 Q3에 포함돼?',
+    a:mk('포함되지 않으며 별도 품의로 분리됩니다. [6]','Notion 회의록에서 해외법인은 Q4 별도 품의로 분리하기로 결정했습니다. [6] 주간보고에도 동일하게 기재되어 있습니다. [7]','0.9s · 1 source','8 sources read · 19s')},
+  {id:'c6', group:'지난 7일', time:'9월 16일', title:'9월 주간보고 요약', q:'9월 3주차 마케팅 주간보고 요약해줘',
+    a:mk('예산 확정, 캠페인 일정 확정, 해외법인 분리가 주요 안건입니다. [7]','예산은 ₩3.8억으로 확정 [2], 캠페인은 10월 1주차 시작, 해외법인은 별도 품의 [6] 로 정리되었습니다. [7]','0.8s · 1 source','12 sources read · 30s')},
+  {id:'c7', group:'지난 30일', time:'8월 29일', title:'Q3 캠페인 브리프 초안 위치', q:'Q3 캠페인 브리프 초안 어디 있어?',
+    a:mk('Documents › Marketing › Briefs 폴더에 있습니다. [5]','최신본은 8/28 작성본이며, Slack에 공유된 링크도 같은 파일을 가리킵니다. [5][3]','0.5s · 1 source','5 sources read · 12s')},
+];
+const A2 = {
+  quick:['근거 자료 9건을 찾았습니다. 핵심은 품의서와 CFO 승인 메일입니다. [4][2]'],
+  deep:['시간순 정리: 9/5 브리프에서 4.2억 가정 [8] → 9/12 Slack 감액 합의 [3] → 9/13 v3 작성 [1] → 9/15 CFO 승인·결재 [2][4] → 9/19 주간보고 반영 [9]. 해외법인에는 9/18 Telegram으로 공유됐습니다. [7]','이 9개 항목을 **"Q3 예산 승인 근거"** 폴더로 모아 드릴 수 있습니다. 원본은 옮기지 않고 링크로 정리합니다.'],
+  quickMeta:'0.8s · 2 sources', deepMeta:'22 sources read · 38s'
+};
+const SRC = [
+  {id:'local',name:'Local Files',tile:'⌘',bg:'#E3E3EA',detail:'Desktop, Documents, Downloads · 128,402 items',status:'Indexed',pct:100,sub:'2m ago'},
+  {id:'icloud',name:'iCloud Drive',tile:'i',bg:'oklch(0.62 0.12 240)',detail:'3,210 items',status:'Indexed',pct:100,sub:'5m ago'},
+  {id:'gdrive',name:'Google Drive',tile:'G',bg:'oklch(0.62 0.14 150)',detail:'seoyeon@markr.ai · 18,944 items',status:'Syncing',pct:64,sub:'64%'},
+  {id:'dropbox',name:'Dropbox',tile:'B',bg:'oklch(0.58 0.15 255)',detail:'Paused by you',status:'Paused',pct:41,sub:'41%',off:true},
+  {id:'slack',name:'Slack',tile:'S',bg:KD.slack.bg,detail:'markr · 12 channels · 48,120 messages',status:'Indexed',pct:100,sub:'1m ago'},
+  {id:'gmail',name:'Gmail',tile:'M',bg:KD.mail.bg,detail:'seoyeon@markr.ai · 22,407 threads',status:'Syncing',pct:88,sub:'88%'},
+  {id:'notion',name:'Notion',tile:'N',bg:'#1A1A2E',fg:'#FFFFFF',detail:'Marketing Wiki · 1,284 pages',status:'Indexed',pct:100,sub:'12m ago'},
+  {id:'discord',name:'Discord',tile:'D',bg:KD.discord.bg,detail:'Token expired — reconnect to resume',status:'Error',pct:72,sub:'72%'},
+  {id:'telegram',name:'Telegram',tile:'T',bg:KD.telegram.bg,detail:'2 channels · 3,902 messages',status:'Indexed',pct:100,sub:'8m ago'},
+];
+const SRC_DESC = {
+  local:'이 Mac의 Desktop, Documents, Downloads 폴더. 계약서·견적서·보고서 초안 등 개인 작업 파일이 대부분이며, 최신 버전의 문서는 보통 여기에 있다. Documents/HR, Documents/Contracts는 접근이 거부되어 있으므로 검색하지 않는다.',
+  icloud:'개인 백업용 iCloud Drive. 스캔한 영수증, 여권·신분증 사본, 개인 사진이 주로 있다. 업무 질문에는 거의 필요하지 않으므로 사용자가 개인 자료를 명시할 때만 참고한다.',
+  gdrive:'팀 공유 Google Drive(seoyeon@markr.ai). 마케팅 캠페인 자료, 분기별 KPI 스프레드시트, 회의록, 발표 슬라이드가 있다. 여러 사람이 편집한 공동 문서의 최신본은 로컬보다 여기가 우선이다.',
+  dropbox:'외부 에이전시와 주고받는 디자인 원본과 영상 파일. 현재 동기화가 일시 중지되어 있어 최근 변경 사항이 반영되지 않았을 수 있다.',
+  slack:'markr 워크스페이스의 공개 채널 12개. 결정 사항, 일정 변경, 담당자 확인처럼 문서에 남지 않은 맥락을 찾을 때 먼저 본다. #general, #marketing, #launch-q4가 가장 활발하다.',
+  gmail:'업무 메일(seoyeon@markr.ai). 고객사·파트너와의 계약 협의, 견적 요청, 청구서 첨부 파일을 찾을 때 사용한다. 외부 발신자의 첨부 파일은 원본 출처로 간주한다.',
+  notion:'마케팅 팀 위키. 브랜드 가이드라인, 온보딩 문서, 프로세스 정의 등 잘 정리된 기준 문서가 있다. "공식 기준"이나 "정책"을 묻는 질문에서 가장 신뢰도가 높다.',
+  discord:'커뮤니티 운영용 서버. 사용자 피드백과 버그 제보가 모인다. 토큰이 만료되어 현재 새 메시지를 가져오지 못한다.',
+  telegram:'해외 파트너와 연락하는 채널 2개. 짧은 확인 메시지와 파일 전달 위주이며, 일본·동남아 파트너 관련 질문에서 참고한다.',
+};
+const SRC_AVAIL = [
+  {id:'outlook',name:'Outlook',tile:'O',bg:'oklch(0.55 0.14 250)',detail:'Microsoft 365 메일 · 캘린더',desc:'Microsoft 365 메일과 캘린더. 외부 고객사와의 미팅 일정, 초대장, 회의 첨부 파일을 찾을 때 사용한다.'},
+  {id:'onedrive',name:'OneDrive',tile:'1',bg:'oklch(0.6 0.13 235)',detail:'Microsoft 365 파일',desc:'Microsoft 365 개인·공유 파일. Word, Excel, PowerPoint 원본 문서가 있다.'},
+  {id:'teams',name:'Microsoft Teams',tile:'T',bg:'oklch(0.5 0.13 280)',detail:'채팅 · 채널 메시지',desc:'Teams 채팅과 채널 메시지. 외부 파트너와 협업한 대화 맥락을 찾을 때 참고한다.'},
+  {id:'kakao',name:'KakaoTalk',tile:'K',bg:'oklch(0.86 0.16 95)',fg:'#1A1A2E',detail:'업무 채팅방',desc:'업무용 카카오톡 채팅방. 국내 거래처와의 빠른 확인과 파일 전달 내역이 있다.'},
+  {id:'confluence',name:'Confluence',tile:'C',bg:'oklch(0.52 0.14 255)',detail:'팀 위키',desc:'엔지니어링 팀 위키. 기술 문서와 스펙, 회고록이 있다.'},
+  {id:'github',name:'GitHub',tile:'G',bg:'#1A1A2E',detail:'저장소 · 이슈 · PR',desc:'코드 저장소와 이슈, PR. 기능 구현 여부나 변경 이력을 확인할 때 사용한다.'},
+];
+const MODELS = {
+  'claude-opus':{name:'Claude Opus', provider:'Anthropic', tile:'A', bg:'oklch(0.55 0.12 45)', note:'가장 정확함 · Cloud'},
+  'claude-sonnet':{name:'Claude Sonnet', provider:'Anthropic', tile:'A', bg:'oklch(0.55 0.12 45)', note:'속도와 정확도 균형 · Cloud'},
+  'claude-haiku':{name:'Claude Haiku', provider:'Anthropic', tile:'A', bg:'oklch(0.55 0.12 45)', note:'가장 빠름 · Cloud'},
+  'gpt':{name:'GPT-5', provider:'OpenAI', tile:'O', bg:'oklch(0.35 0.02 260)', note:'Cloud'},
+  'gemini':{name:'Gemini 2.5 Pro', provider:'Google', tile:'G', bg:'oklch(0.55 0.15 255)', note:'긴 문서에 강함 · Cloud'},
+  'local':{name:'Llama 3.1 8B', provider:'On-device (Ollama)', tile:'L', bg:'oklch(0.5 0.12 150)', note:'데이터가 기기 밖으로 나가지 않음'},
+};
+const cfgIntent = t => { t = t.toLowerCase();
+  if (/로컬|온디바이스|기기|밖으로|보안|private|local|llama|오프라인/.test(t)) return 'local';
+  if (/opus|가장 정확|정확한|최고/.test(t)) return 'claude-opus';
+  if (/haiku|빠른|빠르게|속도/.test(t)) return 'claude-haiku';
+  if (/sonnet|균형|적당/.test(t)) return 'claude-sonnet';
+  if (/gpt|openai/.test(t)) return 'gpt';
+  if (/gemini|google|구글|긴 문서/.test(t)) return 'gemini';
+  return null; };
+const parse = s => s.split(/(\*\*[^*]+\*\*|\[\d+\])/).filter(Boolean).map(x => {
+  if (x.startsWith('**')) return {b:x.slice(2,-2)};
+  const m = x.match(/^\[(\d+)\]$/); if (m) return {c:+m[1]};
+  return {x};
+});
+const tileOf = k => { const d = KD[k] || KD.md; return {tile:d.l||'', tileBg:d.bg||'#8A8A9C', tileFg:d.fg||'#FFFFFF'}; };
+const flags = b => ({...b, x:(b.x||'').replace(/\*\*/g,''), isH:b.t==='h',isMeta:b.t==='meta',isP:b.t==='p',isMark:b.t==='mark',isLi:b.t==='li',isQ:b.t==='q',isCode:b.t==='code'});
+const AV = ['oklch(0.55 0.14 20)','oklch(0.55 0.13 150)','oklch(0.55 0.14 260)','oklch(0.58 0.14 60)'];
+
+class Component extends DCLogic {
+  state = {
+    tabs:[{id:1,path:'Documents/Finance/2026 Q3',sel:'Q3_마케팅예산_v3.xlsx',back:['Documents','Documents/Finance'],fwd:[]},{id:2,path:'Downloads',sel:null,back:[],fwd:[]},{id:3,path:'Slack/#mkt-budget',sel:null,back:[],fwd:[]}],
+    active:1, nextId:4, query:'', searchFocus:false,
+    messages:[{role:'user',text:A1.q,attach:[]},{role:'asst',a:A1,quickReady:true,deepReady:true}],
+    ev:1, evOpen:null, settings:false, settingsTab:'general', model:'claude-opus', parallel:true, lang:'ko', theme:'light', login:true, menu:true, autoUp:true, beta:false, telem:false, upd:'idle',
+    srcDraft:'', srcOpen:null, srcDesc:{...SRC_DESC}, srcDescEdited:{}, srcExtra:[], srcMsgs:[{role:'asst', text:'데이터 소스를 연결하거나, 에이전트가 읽는 소스 설명을 다듬어 드릴게요.'}], cfgDraft:'', cfgMsgs:[{role:'asst', text:'모델 설정을 도와드릴게요. 원하는 방식을 말씀해 주세요. Quick과 Deep 답변은 같은 모델을 사용합니다.'}],
+    contacts:CONTACTS0, requests:REQ0, perms:{'Documents/HR':'deny','Documents/Contracts':'deny','Documents/Marketing':'allow','Slack/#general':'allow','Desktop':'allow'}, permMenu:null, inboxOpen:false, inboxTab:'pending', ce:null,
+    sort:null, evFb:{}, permConfirm:null, idxRetry:{}, idxFixed:{}, srcOff:{dropbox:true}, ql:null, zone:'finder', draft:'', attach:[], dropHover:false, dragging:null, histOpen:false, histQuery:'', curChat:'c1', flash:null, toast:null, deepStep:0, idx:{}, trashed:{}, ctx:null,
+  };
+  chatRef = React.createRef(); cfgRef = React.createRef(); srcRef = React.createRef(); srcListRef = React.createRef(); srcInputRef = React.createRef(); histRef = React.createRef(); listRef = React.createRef(); searchRef = React.createRef(); composerRef = React.createRef();
+  componentDidMount() {
+    this.onKey = e => {
+      const m = e.metaKey || e.ctrlKey, tag = (e.target.tagName||'').toLowerCase(), typing = tag==='input'||tag==='textarea';
+      if (e.key==='Escape' && this.state.permConfirm) { this.setState({permConfirm:null}); return; }
+      if (e.key==='Escape' && this.state.ce) { this.setState({ce:null}); return; }
+      if (this.state.ctx && e.key==='Escape') { this.setState({ctx:null}); return; }
+      if (!typing && (e.key==='Delete' || e.key==='Backspace') && this.state.zone==='finder' && !this.state.settings) { const ks = this.selKeys(this.tab()); if (ks.length) { e.preventDefault(); this.trashMany(ks); } return; }
+      if (e.key==='Escape' && (this.state.inboxOpen || this.state.permMenu)) { this.setState({inboxOpen:false, permMenu:null}); return; }
+      if (this.state.ce) return;
+      if (e.key==='Escape' && this.state.histOpen) { this.setState({histOpen:false}); return; }
+      if (m && e.shiftKey && e.key.toLowerCase()==='h') { e.preventDefault(); this.openHist(!this.state.histOpen); return; }
+      if (this.state.histOpen) return;
+      if (e.key==='Escape' && this.state.ql) { this.setState({ql:null}); return; }
+      if (!typing && e.key===' ' && !this.state.settings) { e.preventDefault(); this.setState(s=> s.ql ? {ql:null} : {ql: s.zone==='evidence'?'ev':'finder'}); return; }
+      if (!typing && this.state.zone==='evidence' && (e.key==='ArrowLeft'||e.key==='ArrowRight')) { e.preventDefault(); this.setState(s=>({ev: Math.min(this.evCount()||1, Math.max(1, s.ev + (e.key==='ArrowRight'?1:-1)))})); return; }
+      if (e.key==='Escape') { if (this.state.settings) this.setState({settings:false}); else if (this.state.query) this.setState({query:''}); return; }
+      if (m && e.key===',') { e.preventDefault(); this.setState({settings:true}); return; }
+      if (m && e.key.toLowerCase()==='k') { e.preventDefault(); this.composerRef.current?.focus(); return; }
+      if (m && e.key.toLowerCase()==='f') { e.preventDefault(); this.searchRef.current?.focus(); return; }
+      if (m && e.key.toLowerCase()==='t') { e.preventDefault(); this.newTab(); return; }
+      if (m && e.key.toLowerCase()==='e') { e.preventDefault(); this.setState(s=>({evOpen:!this.isEvOpen(s)})); return; }
+      if (m && e.shiftKey && e.key.toLowerCase()==='r') { e.preventDefault(); this.reveal(); return; }
+      if (m && e.key.toLowerCase()==='o') { e.preventDefault(); this.reveal(); return; }
+      if (e.altKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); this.setState({ev:+e.key, evOpen:true}); return; }
+      if (!typing && (e.key==='ArrowDown'||e.key==='ArrowUp')) { e.preventDefault(); if (this.state.zone==='evidence') this.setState(s=>({ev: Math.min(this.evCount()||1, Math.max(1, s.ev + (e.key==='ArrowDown'?1:-1)))})); else this.moveSel(e.key==='ArrowDown'?1:-1); }
+      if (!typing && e.key==='Enter') { const r = this.curRows().find(r=>r.n===this.tab().sel); if (r) this.openItem(r); }
+    };
+    window.addEventListener('keydown', this.onKey);
+    this.onDown = e => { if (this.state.ctx && !(e.target.closest && e.target.closest('[data-ctx-menu]'))) this.setState({ctx:null}); if (this.state.permMenu && !(e.target.closest && e.target.closest('[data-perm-menu]'))) this.setState({permMenu:null}); };
+    window.addEventListener('mousedown', this.onDown);
+    this.onResize = () => this.setState({vw:window.innerWidth, vh:window.innerHeight});
+    window.addEventListener('resize', this.onResize); this.onResize();
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this.onKey); window.removeEventListener('mousedown', this.onDown); (this.timers||[]).forEach(clearTimeout); clearInterval(this.stepTimer); }
+  componentDidUpdate(pp, ps) {
+    if (this._lastMsgs !== this.state.messages) { this._lastMsgs = this.state.messages; if (this.chatRef.current) this.chatRef.current.scrollTop = this.chatRef.current.scrollHeight; }
+    if (this.scrollToSel && this.listRef.current) {
+      const i = this.curRows().findIndex(r=>r.n===this.tab().sel);
+      if (i>=0) this.listRef.current.scrollTop = Math.max(0, i*32 - 80);
+      this.scrollToSel = false;
+    }
+  }
+  openHist(on) { this.setState({histOpen:on, histQuery:''}); if (on) setTimeout(()=>this.histRef.current?.focus(), 0); }
+  loadChat(c) { const messages = c.q ? [{role:'user',text:c.q,attach:[]},{role:'asst',a:c.a,quickReady:true,deepReady:true}] : [{role:'user',text:A1.q,attach:[]},{role:'asst',a:A1,quickReady:true,deepReady:true}];
+    (this.timers||[]).forEach(clearTimeout); this.setState({messages, curChat:c.id, histOpen:false, ev:1}); }
+  revealSrc(id) { setTimeout(()=>{ const c=this.srcListRef.current; const r=c&&c.querySelector('[data-src="'+id+'"]'); if (!r) return;
+    const top=r.offsetTop-c.offsetTop, bot=top+r.offsetHeight; if (bot>c.scrollTop+c.clientHeight) c.scrollTop=Math.min(top, bot-c.clientHeight); else if (top<c.scrollTop) c.scrollTop=top; }, 30); }
+  srcAsk(text) { text = (text ?? this.state.srcDraft).trim(); if (!text) return;
+    const s = this.state, all = [...SRC, ...s.srcExtra], lo = text.toLowerCase();
+    const avail = SRC_AVAIL.filter(a=>!s.srcExtra.some(x=>x.id===a.id));
+    const hitAvail = avail.find(a=>lo.includes(a.name.toLowerCase()) || (a.id==='kakao' && text.includes('카카오')));
+    const hitSrc = all.find(a=>lo.includes(a.name.toLowerCase()) || lo.includes(a.id));
+    let reply, patch = {};
+    if (/연결 가능|목록|나열|뭐가 있/.test(text)) reply = avail.length ? '연결할 수 있는 데이터 소스예요:\n' + avail.map(a=>'• '+a.name+' — '+a.detail).join('\n') + '\n\n연결할 소스 이름을 말씀해 주세요.' : '추가로 연결할 수 있는 소스가 없어요.';
+    else if (hitAvail && !/설명/.test(text)) { const n = {...hitAvail, status:'Syncing', pct:3, sub:'3%'}; patch = {srcExtra:[...s.srcExtra, n], srcDesc:{...s.srcDesc, [n.id]:n.desc}, srcOpen:n.id};
+      reply = hitAvail.name + '을(를) 연결했어요. 인덱싱을 시작했고, 에이전트용 설명 초안도 작성해 두었어요. 목록에서 확인해 보세요.'; }
+    else if (/설명/.test(text)) {
+      if (!hitSrc) reply = '어떤 소스의 설명을 손볼까요? 예: "Slack 설명에 #launch-q4는 출시 일정 결정 채널이라고 추가해줘"';
+      else { const extra = text.replace(new RegExp(hitSrc.name,'i'),'').replace(/설명|손보기|손봐줘|수정|추가해줘|에|을|를|:/g,' ').replace(/\s+/g,' ').trim();
+        const base = s.srcDesc[hitSrc.id] || '';
+        const next = extra.length > 6 ? base + ' ' + extra.replace(/[.。]?$/,'.') : base.replace(/\s*므로.*?\./,'. ').trim();
+        patch = {srcDesc:{...s.srcDesc,[hitSrc.id]:next}, srcDescEdited:{...s.srcDescEdited,[hitSrc.id]:true}, srcOpen:hitSrc.id};
+        reply = hitSrc.name + ' 설명을 수정했어요. 에이전트는 다음 질문부터 새 설명을 기준으로 이 소스를 검색할지 판단해요.'; } }
+    else if (/재연결|다시 연결|오류|에러/.test(text)) reply = 'Discord 토큰이 만료됐어요. 브라우저에서 다시 로그인하면 중단된 72% 지점부터 이어서 인덱싱해요.';
+    else reply = '소스 연결, 연결 해제, 에이전트용 설명 수정을 도와드릴 수 있어요. 무엇을 할까요?';
+    this.setState(x=>({srcDraft:'', srcMsgs:[...x.srcMsgs,{role:'user',text}]}));
+    const sc = ()=>{ const el=this.srcRef.current; if (el) setTimeout(()=>el.scrollTop=el.scrollHeight,0); };
+    setTimeout(()=>{ this.setState(x=>({srcMsgs:[...x.srcMsgs,{role:'asst',text:reply}], ...patch})); sc(); if (patch.srcOpen) this.revealSrc(patch.srcOpen); }, 500); sc(); }
+  cfgAsk(text) { text = (text ?? this.state.cfgDraft).trim(); if (!text) return;
+    const id = cfgIntent(text), cur = MODELS[this.state.model];
+    const reply = !id ? '어떤 점이 중요한지 알려주세요 — 정확도, 속도, 또는 데이터가 기기 밖으로 나가지 않는 것 중에서요.'
+      : id===this.state.model ? `이미 ${cur.name} (${cur.provider})를 사용하고 있어요.`
+      : `${MODELS[id].name} (${MODELS[id].provider})로 변경했습니다. ${MODELS[id].note}. Quick · Deep 모두 적용돼요.`;
+    this.setState(s=>({cfgDraft:'', cfgMsgs:[...s.cfgMsgs,{role:'user',text}]}));
+    setTimeout(()=>{ this.setState(s=>({cfgMsgs:[...s.cfgMsgs,{role:'asst',text:reply}], ...(id?{model:id}:{})})); const el=this.cfgRef.current; if (el) setTimeout(()=>el.scrollTop=el.scrollHeight,0); }, 500);
+    const el=this.cfgRef.current; if (el) setTimeout(()=>el.scrollTop=el.scrollHeight,0); }
+  evCount() { const a = [...this.state.messages].reverse().find(m=>m.role==='asst' && m.quickReady); if (!a) return 0;
+    const txt = [...a.a.quick, ...(a.deepReady?a.a.deep:[])].join(' '); const ns = [...txt.matchAll(/\[(\d+)\]/g)].map(m=>+m[1]); return Math.min(EV.length, ns.length?Math.max(...ns):0); }
+  permOf(path) { const P = this.state.perms, segs = path.split('/');
+    for (let i = segs.length; i > 0; i--) { const p = segs.slice(0,i).join('/'); if (P[p]) return {v:P[p], explicit:i===segs.length, from:p}; }
+    return {v:'ask', explicit:false, from:null}; }
+  permMix(path, base) { const P = this.state.perms, kids = Object.keys(P).filter(k=>k.startsWith(path+'/') && P[k]!==base);
+    return kids.length ? {n:kids.length, vals:[...new Set([base, ...kids.map(k=>P[k])])]} : null; }
+  setPerm(path, v, keepKids) { this.setState(s=>{ const perms = {}; Object.keys(s.perms).forEach(k=>{ if (keepKids || !k.startsWith(path+'/')) perms[k] = s.perms[k]; }); perms[path] = v; return {perms, permMenu:null, permConfirm:null}; }); }
+  reqPerm(path, v, isDir) { if (!isDir) return this.setPerm(path, v);
+    const cur = this.permOf(path), mix = this.permMix(path, cur.v);
+    if (!mix && cur.v===v && cur.explicit) return this.setState({permMenu:null});
+    this.setState({permMenu:null, permConfirm:{path, v, from: mix?'mixed':cur.v, mixN: mix?mix.n:0, n:this.countDesc(path)}}); }
+  countDesc(path) { return (FS[path]||[]).reduce((a,it)=> a + 1 + (it.k==='folder' ? this.countDesc(path+'/'+it.n) : 0), 0); }
+  startDrag(e, name, k) { e.dataTransfer.setData('text/plain', name); e.dataTransfer.effectAllowed='copy'; this.drag = {name, k};
+    const t = tileOf(k), g = document.createElement('div');
+    g.style.cssText = 'position:fixed;top:-100px;left:0;display:flex;align-items:center;gap:8px;height:32px;padding:0 12px 0 8px;border-radius:8px;background:#FFFFFF;border:1px solid #E3E3EA;box-shadow:0 8px 24px rgba(20,20,40,0.16);font:500 12px Inter,system-ui,sans-serif;color:#1A1A2E;white-space:nowrap;';
+    g.innerHTML = '<span style="width:18px;height:18px;border-radius:'+(k==='contact'?'50%':'5px')+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:'+t.tileBg+';color:'+t.tileFg+'">'+t.tile+'</span>'+name.replace(/</g,'&lt;');
+    document.body.appendChild(g); e.dataTransfer.setDragImage(g, 16, 16); setTimeout(()=>g.remove(), 0);
+    setTimeout(()=>this.setState({dragging:{name, k}}), 0); }
+  resolveReq(id, status) { const r = this.state.requests.find(x=>x.id===id); const c = this.state.contacts.find(x=>x.id===r.from);
+    this.setState(s=>({requests:s.requests.map(x=>x.id===id?{...x,status,time:'방금'}:x)}));
+    this.showToast((c?c.name:'')+'의 요청을 '+(status==='allowed'?'허용했습니다 · 파일을 공유했어요':'거부했습니다')); }
+  revealPath(loc, file) { this.setState(s=>{ const id = s.nextId; return {tabs:[...s.tabs,{id,path:loc,sel:file,back:[],fwd:[],flash:true}], active:id, nextId:id+1, query:'', flash:id, inboxOpen:false, zone:'finder'}; });
+    this.scrollToSel = true; clearTimeout(this.flashT); this.flashT = setTimeout(()=>this.setState(s=>({flash:null, tabs:s.tabs.map(t=>({...t,flash:false}))})), 1800); }
+  isEvOpen(s) { return s.evOpen ?? (this.props.evidenceOpen ?? true); }
+  tab() { return this.state.tabs.find(t=>t.id===this.state.active) || this.state.tabs[0]; }
+  curRows() {
+    const q = this.state.query.trim().toLowerCase();
+    if (this.tab().path==='Contacts') return [];
+    const tr = this.state.trashed||{}, t = this.tab(), srt = this.sortFn();
+    if (!q) {
+      const selP = t.sel ? (t.selWhere||t.path)+'/'+t.sel : null, out = [];
+      srt(FS[t.path]||[]).forEach(it => { const r = {...it, where:t.path}, p = t.path+'/'+it.n; if (tr[p]) return;
+        const mem = MEM[p]; if (mem && !tr[mem.f.head] && mem.f.head.slice(0, mem.f.head.lastIndexOf('/'))===t.path) return;
+        const f = HEAD[p];
+        if (f) { const kids = f.m.filter(([w,n])=>!tr[w+'/'+n]); const open = kids.length>0 && (selP===p || kids.some(([w,n])=>w+'/'+n===selP));
+          out.push({...r, fam:f, stackN:kids.length, open});
+          if (open) kids.forEach(([w,n,rel])=>{ const x = (FS[w]||[]).find(y=>y.n===n); if (x) out.push({...x, where:w, child:true, rel}); });
+          return; }
+        out.push(r); });
+      return out;
+    }
+    const out = [];
+    Object.keys(FS).forEach(p => { if (p==='Recents') return; FS[p].forEach(it => { if (!tr[p+'/'+it.n] && it.n.toLowerCase().includes(q)) out.push({...it, where:p}); }); });
+    return srt(out);
+  }
+  patchTab(fn) { this.setState(s=>({tabs:s.tabs.map(t=>t.id===s.active?fn(t):t)})); }
+  navigate(path, sel=null) { this.patchTab(t=> t.path===path ? {...t,sel,selWhere:null,selSet:null,anchor:null} : {...t,path,sel,selWhere:null,selSet:null,anchor:null,back:[...t.back,t.path],fwd:[]}); this.setState({query:''}); this.scrollToSel = !!sel; }
+  openItem(r) {
+    if (r.k==='folder') this.navigate(r.where+'/'+r.n);
+    else if (this.state.query || r.where!==this.tab().path) this.navigate(r.where, r.n);
+    else this.setState({ql:'finder', zone:'finder'});
+  }
+  moveSel(d) {
+    const rows = this.curRows(); if (!rows.length) return;
+    const i = rows.findIndex(r=>r.n===this.tab().sel);
+    const n = rows[Math.min(rows.length-1, Math.max(0, i<0?0:i+d))];
+    this.patchTab(t=>({...t, sel:n.n, selWhere:n.where, selSet:null, anchor:null})); this.scrollToSel = true;
+  }
+  newTab = () => this.setState(s=>{ const cur = s.tabs.find(t=>t.id===s.active); const id = s.nextId; return {tabs:[...s.tabs,{id,path:cur?cur.path:'Recents',sel:null,back:[],fwd:[]}], active:id, nextId:id+1}; });
+  reveal = () => {
+    const e = EV.find(e=>e.n===this.state.ev); if (!e) return;
+    this.setState(s=>{ const id = s.nextId; return {tabs:[...s.tabs,{id,path:e.loc,sel:e.file,back:[],fwd:[],flash:true}], active:id, nextId:id+1, query:'', flash:id, ql:null, zone:'finder'}; });
+    this.scrollToSel = true;
+    clearTimeout(this.flashT); this.flashT = setTimeout(()=>this.setState(s=>({flash:null, tabs:s.tabs.map(t=>({...t,flash:false}))})), 1800);
+  };
+  idxOf(p) { const v = (this.state.idx||{})[p]; return v!==undefined ? v : !MEM[p]; }
+  toggleIdx(p) { const on = this.idxOf(p); this.setState(s=>({idx:{...s.idx,[p]:!on}})); this.showToast(p.split('/').pop()+(on?' — 인덱싱에서 제외했습니다':' — 인덱싱에 포함했습니다')); }
+  trash(p) { this.setState(s=>({trashed:{...s.trashed,[p]:true}, ctx:null})); this.patchTab(x=>({...x, sel:null, selWhere:null})); this.showToast(p.split('/').pop()+' — 휴지통으로 이동했습니다'); }
+  selKeys(t) { const pk = t.sel ? (t.selWhere||t.path)+'/'+t.sel : null; return t.selSet && pk && t.selSet.includes(pk) ? t.selSet : (pk ? [pk] : []); }
+  clickRow(e, r, list) { const key = r.where+'/'+r.n, t = this.tab(), cur = this.selKeys(t), split = k => [k.slice(0, k.lastIndexOf('/')), k.slice(k.lastIndexOf('/')+1)];
+    if (e.metaKey || e.ctrlKey) { const has = cur.includes(key), next = has ? cur.filter(k=>k!==key) : [...cur, key], last = next[next.length-1];
+      this.patchTab(x=>({...x, selSet:next, anchor:key, sel: last ? split(last)[1] : null, selWhere: last ? split(last)[0] : null})); }
+    else if (e.shiftKey) { const keys = list.map(y=>y.where+'/'+y.n), a0 = keys.indexOf(t.anchor || cur[cur.length-1] || key), b = keys.indexOf(key), a = a0<0 ? b : a0;
+      this.patchTab(x=>({...x, selSet:keys.slice(Math.min(a,b), Math.max(a,b)+1), sel:r.n, selWhere:r.where, anchor: keys[a]})); }
+    else this.patchTab(x=>({...x, selSet:null, anchor:key, sel:r.n, selWhere:r.where}));
+    this.setState({zone:'finder'}); }
+  trashMany(ks) { if (ks.length===1) return this.trash(ks[0]); this.setState(s=>{ const tr = {...s.trashed}; ks.forEach(k=>tr[k]=true); return {trashed:tr, ctx:null}; });
+    this.patchTab(x=>({...x, sel:null, selWhere:null, selSet:null})); this.showToast(ks.length+'개 항목을 휴지통으로 이동했습니다'); }
+  retryIdx(p) { if (this.state.idxRetry[p]) return; this.setState(s=>({idxRetry:{...s.idxRetry,[p]:true}}));
+    setTimeout(()=>{ this.setState(s=>({idxRetry:{...s.idxRetry,[p]:false}, idxFixed:{...s.idxFixed,[p]:true}})); this.showToast(p.split('/').pop()+' — 인덱싱을 완료했습니다'); }, 1500); }
+  isGenerating() { const m = this.state.messages[this.state.messages.length-1]; return !!(m && m.role==='asst' && !m.stopped && (!m.quickReady || (this.state.parallel && !m.deepReady))); }
+  stopGen = () => { (this.timers||[]).forEach(clearTimeout); clearInterval(this.stepTimer); this.setState(s=>({messages:s.messages.map((m,i)=> i===s.messages.length-1 && m.role==='asst' ? {...m, stopped:true} : m)})); };
+  sortFn() { const so = this.state.sort; if (!so) return a=>a;
+    const MON = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+    const dv = d => { const m = /^(\w+) (\d+), (\d+):(\d+)/.exec(d||''); return m ? ((MON[m[1]]*100 + +m[2])*100 + +m[3])*100 + +m[4] : 0; };
+    const sv = x => { const m = /^([\d.]+)\s*(KB|MB|GB)/.exec(x||''); return m ? +m[1]*({KB:1,MB:1024,GB:1048576}[m[2]]) : (parseFloat(x)||0)/1000; };
+    const kv = r => (KD[r.k]||{}).kind||'';
+    const f = {name:(a,b)=>a.n.localeCompare(b.n,'ko'), date:(a,b)=>dv(a.d)-dv(b.d), size:(a,b)=>sv(a.s)-sv(b.s), kind:(a,b)=>kv(a).localeCompare(kv(b))||a.n.localeCompare(b.n,'ko'), where:(a,b)=>(a.where||'').localeCompare(b.where||'','ko')||a.n.localeCompare(b.n,'ko')}[so.key];
+    return arr => [...arr].sort((a,b)=> (a.k==='folder')!==(b.k==='folder') ? (a.k==='folder'?-1:1) : f(a,b)*so.dir); }
+  showToast(msg) { this.setState({toast:msg}); clearTimeout(this.toastT); this.toastT = setTimeout(()=>this.setState({toast:null}), 2400); }
+  send = () => {
+    if (this.isGenerating()) return;
+    const text = this.state.draft.trim(); const attach = this.state.attach;
+    if (!text && !attach.length) return;
+    const lat = (this.props.deepLatency ?? 4) * 1000;
+    const idx = this.state.messages.length + 1;
+    this.setState(s=>({draft:'', attach:[], deepStep:0, messages:[...s.messages,{role:'user',text:text||(attach.some(a=>a.k==='contact')?'Q3 예산 관련해서 확인 부탁해':'첨부한 파일 기준으로 정리해줘'),attach},{role:'asst',a:(attach.find(a=>a.k==='contact') ? AG(attach.find(a=>a.k==='contact').name.replace(/^@/,'')) : A2),quickReady:false,deepReady:false}]}));
+    const upd = patch => this.setState(s=>({messages:s.messages.map((m,i)=>i===idx?{...m,...patch}:m)}));
+    this.timers = [setTimeout(()=>upd({quickReady:true}), 800)];
+    if (this.state.parallel) {
+      clearInterval(this.stepTimer); this.stepTimer = setInterval(()=>this.setState(s=>({deepStep:Math.min(3,s.deepStep+1)})), lat/4);
+      this.timers.push(setTimeout(()=>{ clearInterval(this.stepTimer); upd({deepReady:true}); }, lat));
+    }
+  };
+  renderVals() {
+    const s = this.state, t = this.tab(), q = s.query.trim();
+    const showHotkeys = this.props.showHotkeys ?? true;
+    const evOpen = this.isEvOpen(s);
+    const root = t.path.split('/')[0];
+    const offMap = {Discord:'discord',Gmail:'gmail'};
+    const sideGroups = PLACES.map(g=>({label:g.label, items:g.items.map(([label,icon])=>{
+      const isSource = g.label==='Sources'; const act = root===label;
+      return {label, icon, isSource, isPlace:!isSource, ...(isSource?tileOf(icon):{}), iconColor: act?'#FF6363':'#6E6E80',
+        bg: act?'#EAEAF0':'transparent', fg: act?'#1A1A2E':'#3A3A4E', syncing: label==='Gmail'||label==='Google Drive', error: label==='Discord',
+        onClick:()=>this.navigate(label)};
+    })}));
+    const tabs = s.tabs.map(tb=>{ const act = tb.id===s.active; return {title: q&&act&&tb.path!=='Contacts' ? `Search “${q}”` : tb.path.split('/').pop(), flash:!!tb.flash,
+      bg: act?'#FFFFFF':'transparent', fg: act?'#1A1A2E':'#6E6E80', border: act?'#E3E3EA':'transparent',
+      onClick:()=>this.setState({active:tb.id, query:''}),
+      onClose:e=>{ e.stopPropagation(); this.setState(st=>{ if (st.tabs.length<2) return null; const i = st.tabs.findIndex(x=>x.id===tb.id); const tabs = st.tabs.filter(x=>x.id!==tb.id); return {tabs, active: st.active===tb.id ? tabs[Math.max(0,i-1)].id : st.active}; }); }}; });
+    const segs = t.path.split('/');
+    const start = Math.max(0, segs.length-2);
+    const crumbs = segs.map((c,i)=>({label:c, i, notFirst:i>start||(start>0&&i===start), fg: i===segs.length-1?'#1A1A2E':'#6E6E80', weight: i===segs.length-1?600:400, flex: i===segs.length-1?'0 0 auto':'0 1 auto', onClick:()=>this.navigate(segs.slice(0,i+1).join('/'))})).filter(c=>c.i>=start);
+    if (start>0) crumbs.unshift({label:'…', notFirst:false, fg:'#6E6E80', weight:400, flex:'0 0 auto', onClick:()=>this.navigate(segs.slice(0,start).join('/'))});
+    const list = this.curRows(), selKeys = this.selKeys(t);
+    const rows = list.map((r,idx)=>{ const key = r.where+'/'+r.n, sel = selKeys.includes(key); const fl = sel && s.flash===t.id;
+      return {...tileOf(r.k), name:r.n, isFolder:r.k==='folder', isFile:r.k!=='folder', date:r.d, size:r.s, last: r.child ? REL[r.rel]+(r.where!==t.path?' · '+r.where.split('/').pop():'') : q ? r.where.replace(/\//g,' › ') : KD[r.k].kind,
+        indent: r.child?'18px':'0px', isChild:!!r.child, nameFg: r.child?'#3A3A4E':'#1A1A2E',
+        hasStack:!!r.fam, stackN:r.fam?String(r.stackN):'', stackTitle:r.fam?'다른 버전 '+r.stackN+'개 · 클릭하면 펼쳐집니다':'', stackBg:r.open?'#E3E3EA':'#F0F0F4', stackRot:r.open?'rotate(90deg)':'none',
+        ...(()=>{ const p = r.where+'/'+r.n, fail = !s.idxFixed[p] && IDX_FAIL[p], retrying = !!s.idxRetry[p];
+          const onCtx = e=>{ e.preventDefault(); this.patchTab(x=>({...x, sel:r.n, selWhere:r.where, selSet: selKeys.includes(p) ? x.selSet : null})); this.setState({zone:'finder', permMenu:null, ctx:{x:e.clientX, y:e.clientY, p, r}}); };
+          if (fail) return {hasIdx:true, idxFail:true, idxDotShow:false, idxSpin: retrying?'rotate(360deg)':'none', idxLabel: retrying?'재시도 중':'재시도', idxTitle:'인덱싱 실패 · '+fail+' — 클릭하면 다시 시도',
+            idxFg:'#C2410C', idxBg:'rgba(255,140,0,0.12)', idxBorder:'transparent', idxDot:'transparent', idxRing:'none', onIdx:e=>{ e.stopPropagation(); this.retryIdx(p); }, onCtx};
+          const on = this.idxOf(p); return {hasIdx:r.k!=='folder', idxFail:false, idxDotShow:true, idxSpin:'none', idxLabel:on?'포함':'제외', idxTitle:on?'에이전트 검색에 포함됨 · 클릭하면 제외':'인덱싱에서 제외됨 · 클릭하면 포함',
+          idxFg:on?'#3A3A4E':'#6E6E80', idxBg:on?'transparent':'#F0F0F4', idxBorder:on?'#E3E3EA':'transparent', idxDot:on?'oklch(0.62 0.14 150)':'transparent', idxRing:on?'none':'inset 0 0 0 1.5px #A0A0B0',
+          onIdx:e=>{ e.stopPropagation(); this.toggleIdx(p); }, onCtx}; })(),
+        bg: fl?'rgba(255,99,99,0.18)':sel?(s.zone==='finder'?'rgba(255,99,99,0.12)':'#F0F0F4'):'transparent', ring: fl?'inset 0 0 0 1px rgba(255,99,99,0.6)':'none',
+        onClick:e=>this.clickRow(e, r, list), onOpen:()=>this.openItem(r),
+        onDragStart:e=>{ if (selKeys.length>1 && selKeys.includes(key)) { const items = selKeys.map(k=>{ const w = k.slice(0,k.lastIndexOf('/')), n = k.slice(k.lastIndexOf('/')+1), it = (FS[w]||[]).find(y=>y.n===n); return {name:n, k:it?it.k:'md'}; }); this.startDrag(e, items.length+'개 항목', r.k); this.drag.many = items; } else this.startDrag(e, r.n, r.k); },
+        ...(()=>{ const path = r.where+'/'+r.n, p = this.permOf(path), P = PERM[p.v], open = s.permMenu===path, up = idx >= list.length-4 && list.length > 6;
+          const mix = r.k==='folder' ? this.permMix(path, p.v) : null;
+          if (mix) { const dots = ['ask','allow','deny'].filter(v=>mix.vals.includes(v)).map(v=>PERM[v].dot), st = 100/dots.length;
+            return {permLabel:'Mixed', permTitle:'하위 항목 '+mix.n+'개가 다르게 설정됨', permDot:'conic-gradient('+dots.map((d,i)=>d+' '+(i*st)+'% '+((i+1)*st)+'%').join(',')+')', permFg:'#3A3A4E', permBg:'#F0F0F4', permBorder:'transparent',
+              menuOpen:open, menuTop: up?'auto':'28px', menuBottom: up?'28px':'auto',
+              permNote: '하위 항목 '+mix.n+'개가 다르게 설정되어 있습니다. 변경 전에 적용 범위를 확인합니다.',
+              onPerm:e=>{ e.stopPropagation(); this.setState({permMenu: open?null:path}); },
+              permOpts:['ask','allow','deny'].map(v=>({label:PERM[v].title, sub:PERM[v].sub, dot:PERM[v].dot, check:'', onClick:e=>{ e.stopPropagation(); this.reqPerm(path, v, true); }}))}; }
+          return {permLabel:P.label, permTitle:P.title+(p.explicit?'':' · 상위 폴더 설정'), permDot:P.dot, permFg:p.explicit?P.fg:'#6E6E80', permBg:p.explicit?P.bg:'transparent', permBorder:p.explicit?'transparent':'#E3E3EA',
+            menuOpen:open, menuTop: up?'auto':'28px', menuBottom: up?'28px':'auto',
+            permNote: r.k==='folder' ? '하위 폴더와 파일에 모두 적용됩니다' : (p.explicit ? '이 파일에만 적용됨' : (p.from ? p.from.split('/').pop()+' 폴더 설정을 따르는 중' : '기본값')),
+            onPerm:e=>{ e.stopPropagation(); this.setState({permMenu: open?null:path}); },
+            permOpts:['ask','allow','deny'].map(v=>({label:PERM[v].title, sub:PERM[v].sub, dot:PERM[v].dot, check: v===p.v?'✓':'', onClick:e=>{ e.stopPropagation(); this.reqPerm(path, v, r.k==='folder'); }}))}; })() }; });
+    const selCount = selKeys.length ? ' · '+selKeys.length+' selected' : '';
+    const ev = EV.find(e=>e.n===Math.min(s.ev, this.evCount())) || EV[0];
+    const buildPv = pvRaw => ({...pvRaw, isSheet:pvRaw.kind==='sheet', isDoc:pvRaw.kind==='doc', isMail:pvRaw.kind==='mail', isChat:pvRaw.kind==='chat',
+      rows:(pvRaw.rows||[]).map((r,i)=>({idx:i+1, bg:(pvRaw.hl||[]).includes(i)?'rgba(255,99,99,0.2)':i===0?'#F4F4F7':'#FFFFFF', weight:i===0||i===pvRaw.rows.length-1?600:400, cells:r.map((v,j)=>({v, align:j===0?'left':'right'}))})),
+      blocks:(pvRaw.blocks||[]).map(flags), body:(pvRaw.body||[]).map(flags),
+      msgs:(pvRaw.msgs||[]).map(([who,time,x,hl],i)=>({who,time,x,init:who[0],av:AV[i%AV.length],bg:hl?'rgba(255,99,99,0.14)':'transparent'}))});
+    const locLabel = p => p.split('/').join(' › ');
+    let ql = null;
+    if (s.ql==='ev') ql = {...buildPv(ev.pv), ...tileOf(ev.k), name:ev.file, locLabel:locLabel(ev.loc), fromEv:true};
+    else if (s.ql==='finder') {
+      const r = list.find(r=>r.n===t.sel);
+      if (r) { const m = EV.find(e=>e.loc===r.where && e.file===r.n);
+        ql = m ? {...buildPv(m.pv), ...tileOf(r.k), name:r.n, locLabel:locLabel(r.where), fromFinder:true, item:r}
+               : {isGeneric:true, isFolderG:r.k==='folder', isFileG:r.k!=='folder', ...tileOf(r.k), name:r.n, locLabel:locLabel(r.where), fromFinder:true, item:r,
+                  info: r.k==='folder' ? 'Folder · '+((FS[r.where+'/'+r.n]||[]).length)+' items' : KD[r.k].kind+' · '+r.s, date:'Modified '+r.d}; }
+    }
+    const evCrumbs = [...ev.loc.split('/'), ev.file].map((c,i,a)=>({label:c, notFirst:i>0, weight:i===a.length-1?600:400}));
+    const cite = n => { const act = n===s.ev; return {isCite:true, n, bg: act?'#FF6363':'rgba(255,99,99,0.16)', fg: act?'#1A1A2E':'#D64545', onClick:()=>this.setState({ev:n, evOpen:true, zone:'evidence'})}; };
+    const paras = arr => arr.map(p=>({segs:parse(p).map(g=> g.c ? cite(g.c) : g.b ? {isBold:true,x:g.b} : {isText:true,x:g.x})}));
+    const sk = (ws) => React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:8,padding:'4px 0'}}, ws.map((w,i)=>React.createElement('div',{key:i,style:{height:10,width:w,borderRadius:5,background:'linear-gradient(90deg,#F0F0F4 0%,#E4E4EA 50%,#F0F0F4 100%)',backgroundSize:'200% 100%',animation:'shimmer 1.4s linear infinite'}})));
+    const steps = ['Searching 9 sources…','Reading 22 documents…','Cross-checking figures…','Writing answer…'];
+    const messages = s.messages.map((m,i)=> m.role==='user'
+      ? {isUser:true, text:m.text, attach:m.attach.map(a=>({...tileOf(a.k),name:a.name})), hasAttach:m.attach.length>0}
+      : {isAsst:true, quick: m.quickReady?paras(m.a.quick):[], quickPending:!m.quickReady && !m.stopped, quickStopped:!m.quickReady && !!m.stopped, quickSkeleton:sk(['90%','70%']), quickMeta: m.quickReady?m.a.quickMeta:m.stopped?'Stopped':'Thinking…',
+         deep: m.deepReady?paras(m.a.deep):[], deepPending:!m.deepReady && !m.stopped, deepStopped:!m.deepReady && !!m.stopped, deepSkeleton:sk(['96%','100%','82%','94%','58%']),
+         deepMeta: m.deepReady ? m.a.deepMeta : m.stopped ? 'Stopped' : (s.parallel ? steps[s.deepStep] : 'Off · run from Settings'), deepBorder: m.deepReady||m.stopped?'#E3E3EA':'rgba(255,99,99,0.35)'});
+    const hq = s.histQuery.trim().toLowerCase();
+    const histHits = HIST.filter(c=> !hq || c.title.toLowerCase().includes(hq) || (c.q||A1.q).toLowerCase().includes(hq) || (c.a||A1).quick.join(' ').toLowerCase().includes(hq));
+    const histGroups = [...new Set(histHits.map(c=>c.group))].map(g=>({label:g, items:histHits.filter(c=>c.group===g).map(c=>{ const on = c.id===s.curChat;
+      return {title:c.title, time:c.time, snippet:(c.a||A1).quick[0].replace(/\*\*|\[\d+\]/g,'').trim(), bg:on?'rgba(255,99,99,0.08)':'transparent', dot:on?'#FF6363':'transparent', onClick:()=>this.loadChat(c)}; })}));
+    const evN = this.evCount(), evSel = Math.min(s.ev, evN);
+    const evTabs = EV.slice(0, evN).map(e=>{ const act = e.n===evSel; return {n:e.n, title:e.title, bg: act?'#FAFAFB':'transparent', fg: act?'#1A1A2E':'#6E6E80', border: act?'#E3E3EA':'transparent', hover: act?'#FAFAFB':'rgba(26,26,46,0.05)', onClick:()=>this.setState({ev:e.n, evOpen:true, zone:'evidence'})}; });
+    const sw = on => ({bg: on?'#FF6363':'#CFCFD9', knob: on?'17px':'3px'});
+    const mOptUnused = (arr,cur,key) => arr.map(([id,name,note])=>{ const on = id===cur; return {name,note, bg:on?'rgba(26,26,46,0.04)':'transparent', ring:on?'#FF6363':'#C9C9D4', dot:on?'#FF6363':'transparent', onClick:()=>this.setState({[key]:id})}; });
+    const sources = [...SRC, ...s.srcExtra].map(so=>{ const off = !!s.srcOff[so.id]; const st = off?'Paused':so.status;
+      const badge = {Indexed:['rgba(34,197,94,0.14)','#15803D'],Syncing:['rgba(245,158,11,0.16)','#B45309'],Paused:['#F0F0F4','#6E6E80'],Error:['rgba(255,140,0,0.16)','#C2410C']}[st];
+      return {...so, tileBg:so.bg, tileFg:so.fg||'#FFFFFF', status:st, badgeBg:badge[0], badgeFg:badge[1], pct:so.pct+'%', pctLabel: off?so.pct+'%':so.sub,
+        bar: st==='Indexed'?'#22C55E':st==='Syncing'?'#F59E0B':st==='Error'?'#FF8C00':'#C9C9D4', opacity: off?0.6:1, open: s.srcOpen===so.id, chev: s.srcOpen===so.id?'180deg':'0deg', rowBg: s.srcOpen===so.id?'#FAFAFB':'#FFFFFF',
+        desc: s.srcDesc[so.id]||'', descMeta: s.srcDescEdited[so.id]?'방금 수정됨 · 채팅에서 변경':'자동 생성 · 인덱싱된 내용 기준',
+        onDetail:()=>{ const opening = s.srcOpen!==so.id; this.setState({srcOpen: opening?so.id:null}); if (opening) this.revealSrc(so.id); },
+        onEditDesc:()=>{ this.setState({srcDraft: so.name+' 설명 손보기: '}); const el=this.srcInputRef.current; if (el) setTimeout(()=>el.focus(),0); },
+        swBg: off?'#CFCFD9':'#FF6363', knob: off?'3px':'17px', onToggle:()=>this.setState(x=>({srcOff:{...x.srcOff,[so.id]:!x.srcOff[so.id]}}))}; });
+    const canSend = s.draft.trim() || s.attach.length;
+    const isContacts = t.path==='Contacts', ql2 = q.toLowerCase();
+    const contacts = s.contacts.filter(c=> !ql2 || (c.name+c.role+c.desc+(c.cid||'')).toLowerCase().includes(ql2)).map(c=>({...c, init:c.name[0], external:!!c.external,
+            onEdit:e=>{ e.stopPropagation(); this.setState({ce:{...c}, ceTest:null}); }, onDragStart:e=>this.startDrag(e, '@'+c.name, 'contact')}));
+    const cById = id => s.contacts.find(c=>c.id===id) || {name:'Unknown', role:'', av:'#8A8A9C'};
+    const pendingCount = s.requests.filter(r=>r.status==='pending').length;
+    const inboxItems = s.requests.filter(r=> s.inboxTab==='pending' ? r.status==='pending' : r.status!=='pending').map(r=>{ const c = cById(r.from);
+      return {name:c.name, role:c.role, av:c.av, init:c.name[0], external:!!c.external, time:r.time, q:r.q, pending:r.status==='pending', done:r.status!=='pending',
+        doneLabel: (r.status==='allowed'?'허용됨':'거부됨')+(r.auto?' · 권한 설정에 따라 자동 처리':' · '+r.time), doneDot: r.status==='allowed'?'#3B82F6':'#EF4444', doneFg: r.status==='allowed'?'#1D4ED8':'#C62828',
+        files:r.files.map(([name,k,loc])=>{ const p = this.permOf(loc+'/'+name), P = PERM[p.v]; return {...tileOf(k), name, loc:loc.split('/').pop(), permLabel:P.label, permDot:P.dot, permFg:P.fg}; }),
+        onAllow:()=>this.resolveReq(r.id,'allowed'), onDeny:()=>this.resolveReq(r.id,'denied'), onReveal:()=>this.revealPath(r.files[0][2], r.files[0][0])}; });
+    const ce = s.ce;
+    const ceDup = !!(ce && !ce.id && (ce.cid||'').trim() && s.contacts.some(c=>c.cid===(ce.cid||'').trim()));
+    const ceValid = !!(ce && ce.name.trim() && (ce.id || ((ce.cid||'').trim() && !ceDup)));
+    const ceSet = k => e => { const v = e.target.value; this.setState(x=>({ce:{...x.ce,[k]:v}})); };
+    const vw = s.vw || 1440, vh = s.vh || 900, zoom = Math.min(1, vw/1360, vh/820);
+    const cx = s.ctx, isDir = cx && cx.r.k==='folder';
+    const ctxItems = !cx ? [] : [
+      {item:true, label:isDir?'열기':'Quick Look', key:isDir?'↩':'space', fg:'#1A1A2E', onClick:()=>{ this.setState({ctx:null}); if (isDir) this.openItem(cx.r); else this.setState({ql:'finder'}); }},
+      ...(isDir?[]:[{sep:true},(IDX_FAIL[cx.p] && !s.idxFixed[cx.p]) ? {item:true, label:'인덱싱 다시 시도', key:'', fg:'#C2410C', onClick:()=>{ this.setState({ctx:null}); this.retryIdx(cx.p); }} : {item:true, label:this.idxOf(cx.p)?'인덱싱에서 제외':'인덱싱에 포함', key:'', fg:'#1A1A2E', onClick:()=>{ this.setState({ctx:null}); this.toggleIdx(cx.p); }}]),
+      {sep:true},{item:true, label: selKeys.length>1 && selKeys.includes(cx.p) ? selKeys.length+'개 항목 휴지통으로 이동' : '휴지통으로 이동', key:'⌫', fg:'#D64545', onClick:()=>{ selKeys.length>1 && selKeys.includes(cx.p) ? this.trashMany(selKeys) : this.trash(cx.p); }}];
+    const gen = this.isGenerating();
+    const fbKey = (s.curChat||'new')+':'+ev.n, fb = s.evFb[fbKey];
+    const setFb = v => { const off = s.evFb[fbKey]===v; this.setState(x=>({evFb:{...x.evFb,[fbKey]: off?null:v}})); if (!off) this.showToast(v==='up' ? '근거 '+ev.n+' — 도움이 됨으로 기록했습니다' : '근거 '+ev.n+' — 다음 검색부터 우선순위를 낮춥니다'); };
+    const sortCols = [['name','Name','flex-start'],['date','Date Modified','flex-start'],['size','Size','flex-end'],[q&&!isContacts?'where':'kind', q&&!isContacts?'Where':'Kind','flex-start']].map(([key,label,justify])=>{ const act = !!(s.sort && s.sort.key===key);
+      return {label, justify, active:act, fg: act?'#1A1A2E':'#6E6E80', rot: act && s.sort.dir<0 ? 'rotate(180deg)' : 'none',
+        onClick:()=>this.setState(x=>({sort: x.sort && x.sort.key===key ? (x.sort.flipped ? null : {key, dir:-x.sort.dir, flipped:true}) : {key, dir: key==='date'||key==='size' ? -1 : 1}}))}; });
+    const pc = s.permConfirm, pcFrom = pc ? (pc.from==='mixed' ? {label:'Mixed', dot:'#A0A0B0'} : PERM[pc.from]) : null, pcTo = pc ? PERM[pc.v] : null;
+    return {
+      generating: gen, notGenerating: !gen, sendTitle: gen ? 'Stop generating (Esc)' : 'Send',
+      sendOrStop: ()=> gen ? this.stopGen() : this.send(),
+      evUp:()=>setFb('up'), evDown:()=>setFb('down'),
+      evUpBg: fb==='up'?'rgba(34,197,94,0.12)':'#FFFFFF', evUpFg: fb==='up'?'#15803D':'#6E6E80', evUpBorder: fb==='up'?'rgba(34,197,94,0.45)':'#E3E3EA',
+      evDownBg: fb==='down'?'rgba(239,68,68,0.10)':'#FFFFFF', evDownFg: fb==='down'?'#C62828':'#6E6E80', evDownBorder: fb==='down'?'rgba(239,68,68,0.4)':'#E3E3EA',
+      sortCols,
+      pcOpen:!!pc, closePC:()=>this.setState({permConfirm:null}),
+      pcTitle: pc ? '“'+pc.path.split('/').pop()+'” 폴더 권한 변경' : '',
+      pcFromLabel: pcFrom ? pcFrom.label : '', pcFromDot: pcFrom ? pcFrom.dot : '', pcToLabel: pcTo ? pcTo.label : '', pcToDot: pcTo ? pcTo.dot : '', pcToBg: pcTo ? pcTo.bg : '', pcToFg: pcTo ? pcTo.fg : '',
+      pcCount: pc ? '하위 항목 '+pc.n+'개' : '',
+      pcBody: pc ? '이 폴더와 하위 항목 '+pc.n+'개가 ‘'+pcTo.title+'’으로 바뀝니다. '+pcTo.sub+'.' : '',
+      pcHasMix: !!(pc && pc.mixN), pcMixText: pc ? '하위 항목 '+pc.mixN+'개는 따로 설정되어 있습니다. ‘모두 적용’은 개별 설정을 덮어쓰고, ‘개별 설정 유지’는 그 항목들을 그대로 둡니다.' : '',
+      pcApplyLabel: pc && pc.mixN ? '모두 적용' : '적용',
+      pcApply:()=>{ this.setPerm(pc.path, pc.v, false); this.showToast(pc.path.split('/').pop()+' — '+pcTo.title+' · 하위 '+pc.n+'개에 적용'); },
+      pcKeep:()=>{ this.setPerm(pc.path, pc.v, true); this.showToast(pc.path.split('/').pop()+' — '+pcTo.title+' · 개별 설정 '+pc.mixN+'개 유지'); },
+      appW: (vw/zoom)+'px', appH: (vh/zoom)+'px', zoom, ctxOpen:!!cx, ctxItems, ctxX: cx?(cx.x/zoom)+'px':'0px', ctxY: cx?(cx.y/zoom)+'px':'0px',
+      isFiles:!isContacts, isContacts, contacts, noContacts: isContacts && contacts.length===0, searchPh: isContacts ? 'Search contacts' : 'Instant search',
+      addContact:()=>this.setState({ce:{id:null, cid:'', name:'', role:'', desc:''}, ceTest:null}),
+      hasPending: pendingCount>0, pendingCount, inboxBtnBg: s.inboxOpen?'#EAEAF0':'transparent',
+      inboxOpen:s.inboxOpen, openInbox:()=>this.setState(x=>({inboxOpen:!x.inboxOpen})), closeInbox:()=>this.setState({inboxOpen:false}),
+      inboxTabs:[['pending','대기 중 '+pendingCount],['done','처리됨']].map(([id,label])=>({label, bg:s.inboxTab===id?'#FFFFFF':'transparent', fg:s.inboxTab===id?'#1A1A2E':'#6E6E80', onClick:()=>this.setState({inboxTab:id})})),
+      inboxItems, inboxEmpty: inboxItems.length===0, inboxEmptyText: s.inboxTab==='pending' ? '대기 중인 요청이 없습니다' : '처리된 요청이 없습니다',
+      ceOpen:!!ce, ce:ce||{}, ceTitle: ce&&ce.id ? 'Edit contact' : 'New contact', ceIsNew: !!(ce&&!ce.id), ceIsEdit: !!(ce&&ce.id),
+      ce_cid:ceSet('cid'), ceCidBorder: ceDup?'#EF4444':'#E3E3EA', ceCidHintFg: ceDup?'#C62828':'#6E6E80',
+      ceCidHint: ceDup ? '이미 등록된 Contact ID입니다' : '상대 에이전트의 고유 ID. 등록 후에는 변경할 수 없습니다.',
+      ceTestShow: !!s.ceTest, ceTestText: {testing:'연결 확인 중…', ok:'연결됨 · 응답 '+(s.ceTestMs||0)+'ms', fail:'응답 없음'}[s.ceTest]||'',
+      ceTestDot: {testing:'#F59E0B', ok:'#22C55E', fail:'#EF4444'}[s.ceTest]||'#C9C9D4', ceTestFg: s.ceTest==='fail'?'#C62828':'#3A3A4E',
+      ceTestConn:()=>{ const id=ce.id; this.setState({ceTest:'testing'}); clearTimeout(this.ceT); this.ceT=setTimeout(()=>{ if (!this.state.ce||this.state.ce.id!==id) return; const ok = id!=='p5'; this.setState({ceTest: ok?'ok':'fail', ceTestMs: 80+Math.round(Math.random()*160)}); }, 1100); }, ceCanDelete: !!(ce&&ce.id), closeCE:()=>this.setState({ce:null, ceTest:null}),
+      ce_name:ceSet('name'), ce_role:ceSet('role'), ce_desc:ceSet('desc'),
+      ceSaveBg: ceValid ? '#FF6363' : '#C9C9D4',
+      ceSave:()=>{ if (!ceValid) return; this.setState(x=>({ce:null, contacts: ce.id ? x.contacts.map(c=>c.id===ce.id?{...c,...ce}:c) : [...x.contacts, {...ce, cid:ce.cid.trim(), id:'p'+Date.now()}]})); this.showToast(ce.id?'연락처를 저장했습니다':'연락처를 추가했습니다'); },
+      ceDelete:()=>{ this.setState(x=>({ce:null, contacts:x.contacts.filter(c=>c.id!==ce.id)})); this.showToast('연락처를 삭제했습니다'); },
+      showHotkeys, sideGroups, tabs, crumbs, rows, query:s.query, searching:!!q && !isContacts, noRows:rows.length===0 && !isContacts,
+      emptyText: q ? `“${q}”와 일치하는 파일이 없습니다` : '빈 폴더', lastColLabel: q?'Where':'Kind',
+      searchSummary: `${rows.length} results across all locations`, statusText: isContacts ? `${contacts.length} contacts` : `${rows.length} items${selCount}`,
+      searchBorder: s.searchFocus?'#FF6363':'#E3E3EA', searchRef:this.searchRef, listRef:this.listRef, chatRef:this.chatRef, composerRef:this.composerRef,
+      onQuery:e=>this.setState({query:e.target.value}), onSearchFocus:()=>this.setState({searchFocus:true}), onSearchBlur:()=>this.setState({searchFocus:false}),
+      onSearchKey:e=>{ if (e.key==='Enter' && list[0]) this.openItem(list[0]); if (e.key==='Escape') { this.setState({query:''}); e.target.blur(); } },
+      backColor: t.back.length?'#3A3A4E':'#C9C9D4', fwdColor: t.fwd.length?'#3A3A4E':'#C9C9D4',
+      goBack:()=>this.patchTab(x=> x.back.length ? {...x, path:x.back[x.back.length-1], back:x.back.slice(0,-1), fwd:[x.path,...x.fwd], sel:null} : x),
+      goFwd:()=>this.patchTab(x=> x.fwd.length ? {...x, path:x.fwd[0], fwd:x.fwd.slice(1), back:[...x.back,x.path], sel:null} : x),
+      newTab:this.newTab, focusComposer:()=>this.composerRef.current?.focus(),
+      openSettings:()=>this.setState({settings:true}), closeSettings:()=>this.setState({settings:false}), stop:e=>e.stopPropagation(), settingsOpen:s.settings,
+      newChat:()=>this.setState({messages:[], draft:'', curChat:null, histOpen:false}),
+      histOpen:s.histOpen, histBtnBg: s.histOpen?'#EAEAF0':'transparent', toggleHist:()=>this.openHist(!s.histOpen), closeHist:()=>this.setState({histOpen:false}), histRef:this.histRef,
+      histQuery:s.histQuery, onHistQuery:e=>this.setState({histQuery:e.target.value}), histGroups, histEmpty: histGroups.length===0,
+      onHistKey:e=>{ if (e.key==='Escape') this.setState({histOpen:false}); if (e.key==='Enter' && histHits[0]) this.loadChat(histHits[0]); }, chatEmpty:s.messages.length===0, messages,
+      draft:s.draft, onDraft:e=>this.setState({draft:e.target.value}), onComposerKey:e=>{ if (e.key==='Escape' && gen) { e.preventDefault(); this.stopGen(); return; } if (e.key==='Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); this.send(); } },
+      composerPlaceholder: s.dropHover ? '여기에 놓으면 첨부됩니다' : '파일, 메일, 메신저 전체에서 물어보세요', send:this.send, sendBg: gen?'#1A1A2E':canSend?'#FF6363':'#C9C9D4',
+      composerBorder: s.dropHover?'#FF6363':'#E3E3EA',
+      onDragOver:e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; if (!s.dropHover) this.setState({dropHover:true}); }, onDragLeave:()=>this.setState({dropHover:false}),
+      onDragEnd:()=>{ this.drag = null; this.setState({dragging:null, dropHover:false}); },
+      isDragging:!!s.dragging, dragItem: s.dragging ? {...tileOf(s.dragging.k), name:s.dragging.name} : {},
+      dropTitle: s.dragging && s.dragging.k==='contact' ? (s.dropHover ? '놓으면 '+s.dragging.name.slice(1)+'의 에이전트에게 물어봅니다' : '여기로 끌어서 이 연락처에게 물어보기') : (s.dropHover ? '놓으면 대화에 첨부됩니다' : '여기로 끌어서 AI에게 물어보기'),
+      dropRing: s.dropHover ? '#FF6363' : '#C9C9D4', dropBg: s.dropHover ? 'rgba(255,99,99,0.07)' : 'rgba(250,250,252,0.86)', dropScale: s.dropHover ? 'scale(1.04)' : 'none',
+      onDrop:e=>{ e.preventDefault(); const d = this.drag; this.drag = null; this.setState(x=>({dropHover:false, dragging:null, attach: d ? [...x.attach, ...(d.many||[d]).filter(y=>!x.attach.some(a=>a.name===y.name)).map(y=>({name:y.name, k:y.k}))] : x.attach})); this.composerRef.current?.focus(); },
+      draftAttach: s.attach.map(a=>({...tileOf(a.k), name:a.name, onRemove:()=>this.setState(x=>({attach:x.attach.filter(y=>y.name!==a.name)}))})), hasDraftAttach:s.attach.length>0,
+      evOpen, evFlex: evOpen?'0 0 44%':'0 0 auto', evChevron: evOpen?'none':'rotate(180deg)', evStripBorder: evOpen?'#E3E3EA':'transparent', toggleEv:()=>this.setState({evOpen:!evOpen}),
+      evTabs, ev:{...ev, ...tileOf(ev.k), md:ev.md.map(flags), crumbs:evCrumbs, detail:ev.meta.split(' · ').slice(1).join(' · ')}, revealEv:this.reveal,
+      qlOpen:!!ql, ql:ql||{}, closeQL:()=>this.setState({ql:null}), openEvQL:()=>this.setState({ql:'ev', zone:'evidence'}), focusEvidence:()=>{ if (s.zone!=='evidence') this.setState({zone:'evidence'}); },
+      qlAsk:()=>{ const it = ql && ql.item; if (!it) return; this.setState(x=>({ql:null, attach: x.attach.some(a=>a.name===it.n) ? x.attach : [...x.attach,{name:it.n,k:it.k}]})); this.composerRef.current?.focus(); }, toast:s.toast,
+      settingsTabs:[['general','General'],['models','Models'],['sources','Data Sources']].map(([id,label])=>({label, bg:s.settingsTab===id?'#FFFFFF':'transparent', fg:s.settingsTab===id?'#1A1A2E':'#6E6E80', onClick:()=>this.setState({settingsTab:id})})),
+      stGeneral:s.settingsTab==='general', stModels:s.settingsTab==='models',
+      lang:s.lang, onLang:e=>this.setState({lang:e.target.value}), langs:[['ko','한국어'],['en','English'],['ja','日本語'],['zh','简体中文']].map(([id,label])=>({id,label})),
+      themes:[['light','Light'],['dark','Dark'],['system','System']].map(([id,label])=>({label, bg:s.theme===id?'#FFFFFF':'transparent', fg:s.theme===id?'#1A1A2E':'#6E6E80', onClick:()=>this.setState({theme:id})})),
+      loginBg:sw(s.login).bg, loginKnob:sw(s.login).knob, toggleLogin:()=>this.setState(x=>({login:!x.login})),
+      menuBg:sw(s.menu).bg, menuKnob:sw(s.menu).knob, toggleMenu:()=>this.setState(x=>({menu:!x.menu})),
+      autoUpBg:sw(s.autoUp).bg, autoUpKnob:sw(s.autoUp).knob, toggleAutoUp:()=>this.setState(x=>({autoUp:!x.autoUp})),
+      betaBg:sw(s.beta).bg, betaKnob:sw(s.beta).knob, toggleBeta:()=>this.setState(x=>({beta:!x.beta})),
+      telemBg:sw(s.telem).bg, telemKnob:sw(s.telem).knob, toggleTelem:()=>this.setState(x=>({telem:!x.telem})),
+      updateStatus: s.upd==='checking'?'업데이트 확인 중…':s.upd==='done'?'최신 버전입니다 · 방금 확인':'마지막 확인: 오늘 09:00',
+      updateLabel: s.upd==='checking'?'Checking…':'Check for Updates',
+      checkUpdate:()=>{ if (s.upd==='checking') return; this.setState({upd:'checking'}); setTimeout(()=>this.setState({upd:'done'}), 1200); },
+      clearHistory:()=>this.showToast('대화 기록을 삭제했습니다'),
+      curModel: MODELS[s.model], cfgRef:this.cfgRef, cfgDraft:s.cfgDraft, onCfgDraft:e=>this.setState({cfgDraft:e.target.value}),
+      onCfgKey:e=>{ if (e.key==='Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); this.cfgAsk(); } }, cfgSend:()=>this.cfgAsk(), cfgSendBg: s.cfgDraft.trim()?'#FF6363':'#C9C9D4',
+      cfgMsgs: s.cfgMsgs.map(m=>({text:m.text, justify:m.role==='user'?'flex-end':'flex-start', bg:m.role==='user'?'#F0F0F4':'#FFFFFF', border:'#E3E3EA'})),
+      cfgChips: ['가장 정확한 모델로','빠른 응답 위주로','데이터가 기기 밖으로 안 나가게'].map(label=>({label, onClick:()=>this.cfgAsk(label)})), stSources:s.settingsTab==='sources',
+      srcRef:this.srcRef, srcListRef:this.srcListRef, srcInputRef:this.srcInputRef, srcDraft:s.srcDraft, onSrcDraft:e=>this.setState({srcDraft:e.target.value}),
+      onSrcKey:e=>{ if (e.key==='Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); this.srcAsk(); } }, srcSend:()=>this.srcAsk(), srcSendBg: s.srcDraft.trim()?'#FF6363':'#C9C9D4',
+      srcMsgs: s.srcMsgs.map(m=>({text:m.text, justify:m.role==='user'?'flex-end':'flex-start', bg:m.role==='user'?'#F0F0F4':'#FFFFFF'})),
+      srcChips: ['연결 가능한 데이터소스들 나열','데이터소스 설명 손보기','Discord 다시 연결'].map(label=>({label, onClick:()=>label==='데이터소스 설명 손보기'?this.srcAsk('설명 손보기'):this.srcAsk(label)})),
+      sources, sourcesSummary:`${SRC.length} sources · 226,269 items indexed · 2 syncing · 1 needs attention`,
+    };
+  }
+}
+</script>
+</body>
+</html>
