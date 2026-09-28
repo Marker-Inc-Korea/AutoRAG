@@ -13,6 +13,26 @@ export interface SimplexIncomingMessage {
 	readonly chatItemId: number;
 }
 
+/**
+ * The profile a peer publishes over SimpleX. It is the identity AutoRAG stores
+ * for the contact; only your local name and note are added on top of it.
+ */
+export interface SimplexPeerProfile {
+	readonly displayName: string;
+	readonly fullName?: string;
+	readonly shortDescr?: string;
+	readonly description?: string;
+	readonly image?: string;
+}
+
+/** A SimpleX contact: the peer's own profile plus the name you call it locally. */
+export interface SimplexContact {
+	readonly contactId: number;
+	readonly localDisplayName: string;
+	/** The profile the peer shared; absent until the peer publishes one. */
+	readonly profile?: SimplexPeerProfile;
+}
+
 export interface SimplexTransport {
 	readonly dbPrefix: string;
 	readonly displayName: string;
@@ -20,7 +40,7 @@ export interface SimplexTransport {
 	getOrCreateAddress(): Promise<string>;
 	createInvitation(): Promise<string>;
 	connect(link: string): Promise<void>;
-	listContacts(): Promise<{ contactId: number; localDisplayName: string }[]>;
+	listContacts(): Promise<SimplexContact[]>;
 	sendMessage(contactId: number, text: string): Promise<void>;
 	onMessage(handler: (message: SimplexIncomingMessage) => void): () => void;
 	close(): Promise<void>;
@@ -64,13 +84,35 @@ function responseType(payload: unknown): string | undefined {
 	return typeof payload.type === "string" ? payload.type : undefined;
 }
 
+/** Extract the stored subset of a SimpleX `LocalProfile`; SimpleX-internal fields are dropped. */
+export function parseSimplexProfile(value: unknown): SimplexPeerProfile | undefined {
+	if (!isRecord(value)) return undefined;
+	if (typeof value.displayName !== "string" || value.displayName.trim().length === 0) return undefined;
+	const fullName = typeof value.fullName === "string" ? value.fullName : undefined;
+	const shortDescr = typeof value.shortDescr === "string" ? value.shortDescr : undefined;
+	const description = typeof value.description === "string" ? value.description : undefined;
+	const image = typeof value.image === "string" ? value.image : undefined;
+	return {
+		displayName: value.displayName,
+		...(fullName !== undefined ? { fullName } : {}),
+		...(shortDescr !== undefined ? { shortDescr } : {}),
+		...(description !== undefined ? { description } : {}),
+		...(image !== undefined ? { image } : {}),
+	};
+}
+
 /** Minimal shape extraction from the auto-generated API types. */
-function contactOf(payload: unknown): { contactId: number; localDisplayName: string } | undefined {
+function contactOf(payload: unknown): SimplexContact | undefined {
 	if (!isRecord(payload)) return undefined;
 	const contact = payload.contact;
 	if (!isRecord(contact)) return undefined;
 	if (typeof contact.contactId !== "number" || typeof contact.localDisplayName !== "string") return undefined;
-	return { contactId: contact.contactId, localDisplayName: contact.localDisplayName };
+	const profile = parseSimplexProfile(contact.profile);
+	return {
+		contactId: contact.contactId,
+		localDisplayName: contact.localDisplayName,
+		...(profile !== undefined ? { profile } : {}),
+	};
 }
 
 function userIdOf(payload: unknown): number | undefined {
@@ -311,13 +353,13 @@ class SimplexClient implements SimplexTransport {
 		throw new SimplexError(`failed to connect via link: ${JSON.stringify(resp).slice(0, 300)}`);
 	}
 
-	async listContacts(): Promise<{ contactId: number; localDisplayName: string }[]> {
+	async listContacts(): Promise<SimplexContact[]> {
 		const userId = await this.requireUserId();
 		const resp = await this.cmd(`/_contacts ${userId}`);
 		if (responseType(resp) !== "contactsList" || !isRecord(resp) || !Array.isArray(resp.contacts)) {
 			throw new SimplexError(`failed to list contacts: ${JSON.stringify(resp).slice(0, 300)}`);
 		}
-		const contacts: { contactId: number; localDisplayName: string }[] = [];
+		const contacts: SimplexContact[] = [];
 		for (const entry of resp.contacts) {
 			const contact = contactOf({ contact: entry });
 			if (contact !== undefined) contacts.push(contact);

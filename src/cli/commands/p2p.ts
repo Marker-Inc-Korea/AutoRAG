@@ -31,11 +31,11 @@ export async function runP2p(ctx: CommandContext): Promise<number> {
 		ctx.stdout(`Usage: autorag p2p <subcommand> [options]
 
 Subcommands:
-  peers                     List trusted peers and local persona metadata
-  peers --add <alias> --contact-id <n> [persona flags]   Trust/update a peer
-  peers --edit <alias> [persona flags]                   Update local persona
+  peers                     List trusted peers: local name, SimpleX profile, note
+  peers --add <alias> --contact-id <n> --description <text>   Trust/update a peer
+  peers --edit <alias> [--description <text>]                 Update your local note
   peers --remove <alias>    Remove a peer from the registry
-  peers --show <alias>      Show one peer and local persona
+  peers --show <alias>      Show one peer
   peers --rank <query>      Rank local peers by keyword overlap (no send)
   requests                  List pending peer-query approvals
   requests approve <id>     Allow sending the pending response
@@ -43,6 +43,8 @@ Subcommands:
 
   help                      Show this help
 
+A contact is the SimpleX profile the peer shared plus the name and note you add.
+\`autorag serve\` refreshes the stored profiles from SimpleX at startup.
 Peers connect via SimpleX addresses printed by \`autorag serve\`.
 `);
 		return 0;
@@ -63,7 +65,7 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 			const edit = flags.edit;
 			const show = flags.show;
 			const rank = flags.rank;
-			const persona = readPersonaFlags(flags);
+			const local = readLocalFlags(flags);
 			if (remove !== undefined) {
 				if (typeof remove !== "string" || remove.length === 0) {
 					ctx.stderr(renderError(new ConfigError("--remove requires a peer alias."), { json: ctx.json }));
@@ -118,7 +120,7 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 					...(existing ?? {}),
 					contactId,
 					addedAt: existing?.addedAt ?? new Date().toISOString(),
-					...persona,
+					...local,
 				};
 				registry[add] = record;
 				saveSimplexPeerRegistry(workspace, registry);
@@ -133,7 +135,7 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 					ctx.stderr(renderError(new ConfigError(`Peer not found: ${edit}`), { json: ctx.json }));
 					return 2;
 				}
-				registry[edit] = { ...existing, ...persona };
+				registry[edit] = { ...existing, ...local };
 				saveSimplexPeerRegistry(workspace, registry);
 				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, alias: edit, ...registry[edit] }));
 				else ctx.stdout(`Updated peer: ${edit}`);
@@ -153,11 +155,11 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 				ctx.stdout("No peers registered.");
 				ctx.stdout("Use `autorag p2p peers --add <alias> --contact-id <n>` to trust a peer.");
 			} else {
-				ctx.stdout(`${"Alias".padEnd(24)} ${"Contact ID".padEnd(12)} Added At`);
-				ctx.stdout("-".repeat(72));
+				ctx.stdout(`${"Alias".padEnd(20)} ${"Contact ID".padEnd(11)} ${"SimpleX profile".padEnd(24)} Note`);
+				ctx.stdout("-".repeat(88));
 				for (const [alias, peer] of entries) {
 					ctx.stdout(
-						`${alias.padEnd(24)} ${String(peer.contactId).padEnd(12)} ${peer.displayName ?? ""} ${peer.addedAt}`,
+						`${alias.padEnd(20)} ${String(peer.contactId).padEnd(11)} ${(peer.profile?.displayName ?? "-").padEnd(24)} ${peer.description ?? ""}`,
 					);
 				}
 			}
@@ -223,22 +225,9 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 	}
 }
 
-function readPersonaFlags(
-	flags: CommandContext["flags"],
-): Pick<SimplexPeerRecord, "displayName" | "description" | "role" | "org" | "accessHint"> {
-	const accessHint = flags["access-hint"];
+/** The only local additions to a contact: your note. The name is the registry key. */
+function readLocalFlags(flags: CommandContext["flags"]): Pick<SimplexPeerRecord, "description"> {
 	return {
-		...(typeof flags["display-name"] === "string" ? { displayName: flags["display-name"] } : {}),
 		...(typeof flags.description === "string" ? { description: flags.description } : {}),
-		...(typeof flags.role === "string" ? { role: flags.role } : {}),
-		...(typeof flags.org === "string" ? { org: flags.org } : {}),
-		...(typeof accessHint === "string"
-			? {
-					accessHint: accessHint
-						.split(",")
-						.map((value) => value.trim())
-						.filter(Boolean),
-				}
-			: {}),
 	};
 }

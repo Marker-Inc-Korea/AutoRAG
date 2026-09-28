@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import {
+	parseSimplexProfile,
 	type SimplexIncomingMessage,
 	type SimplexTransport,
 	startSimplexChat,
@@ -84,7 +85,28 @@ function startFakeSimplex(port: number): Promise<{ wss: WebSocketServer; sendEve
 				respond({
 					type: "contactsList",
 					user: { userId: 1 },
-					contacts: [{ contactId: 2, localDisplayName: "peer" }],
+					contacts: [
+						{
+							contactId: 2,
+							localDisplayName: "peer",
+							profile: {
+								profileId: 11,
+								displayName: "김철수",
+								fullName: "Kim Cheolsu",
+								shortDescr: "재무팀장",
+								description: "Finance owner",
+								image: "data:image/png;base64,AA",
+								localAlias: "peer",
+								contactLink: "simplex:/contact#peer",
+							},
+						},
+						{
+							contactId: 3,
+							localDisplayName: "bare",
+							profile: { profileId: 12, displayName: "Bare", fullName: "" },
+						},
+						{ contactId: 4, localDisplayName: "anonymous" },
+					],
 				});
 				return;
 			}
@@ -122,6 +144,12 @@ function startWithFake(port: number, dbPrefix: string): Promise<SimplexTransport
 }
 
 describe("startSimplexChat", () => {
+	it("rejects profiles without a non-empty display name", () => {
+		expect(parseSimplexProfile({ displayName: "" })).toBeUndefined();
+		expect(parseSimplexProfile({ displayName: "   " })).toBeUndefined();
+		expect(parseSimplexProfile({ displayName: "Peer" })).toEqual({ displayName: "Peer" });
+	});
+
 	it("creates/reuses the user profile and returns a stable userId", async () => {
 		const port = 25_801;
 		await startFakeSimplex(port);
@@ -156,13 +184,29 @@ describe("startSimplexChat", () => {
 		await transport.connect("simplex:/contact#/?v=2&smp=peer");
 	});
 
-	it("lists contacts", async () => {
+	it("lists contacts together with the SimpleX profile each peer shared", async () => {
 		const port = 25_805;
 		await startFakeSimplex(port);
 		const transport = await startWithFake(port, join(workspace(), "bot"));
 		transports.push(transport);
 		const contacts = await transport.listContacts();
-		expect(contacts).toEqual([{ contactId: 2, localDisplayName: "peer" }]);
+		// Only the profile fields AutoRAG stores are carried; SimpleX-internal
+		// fields (profileId, localAlias, contactLink) are dropped.
+		expect(contacts).toEqual([
+			{
+				contactId: 2,
+				localDisplayName: "peer",
+				profile: {
+					displayName: "김철수",
+					fullName: "Kim Cheolsu",
+					shortDescr: "재무팀장",
+					description: "Finance owner",
+					image: "data:image/png;base64,AA",
+				},
+			},
+			{ contactId: 3, localDisplayName: "bare", profile: { displayName: "Bare", fullName: "" } },
+			{ contactId: 4, localDisplayName: "anonymous" },
+		]);
 	});
 
 	it("sends a text message to a contact", async () => {

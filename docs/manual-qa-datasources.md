@@ -147,6 +147,12 @@ bun scripts/manual-qa/p2p-simplex-qa.ts
 
 The harness spawns two `simplex-chat` WebSocket servers on loopback with separate database prefixes, connects them via a one-time invitation link, sends a unique payload, and asserts byte-exact delivery. Both CLIs are stopped and their temp databases removed on exit. Gate behavior (injection, policy, quotas, deterministic egress) is covered deterministically by `test/p2p/simplex-server.test.ts` without external services.
 
+The profile-based contact model has its own live harness: one real profile publishes a SimpleX profile, the other receives it, and the harness asserts that `listContacts()` carries it, that the trusted registry stores it next to your local name and note, that an unknown SimpleX contact is never trusted, and that `autorag p2p peers` shows it. Evidence lands in `.omo/evidence/p2p-profile-qa.json`.
+
+```bash
+bun scripts/manual-qa/p2p-simplex-profile-qa.ts
+```
+
 ## Last run
 
 - `run-qa.ts`: 27/27 checks passed (mock APIs + real filesystem fixtures).
