@@ -138,13 +138,63 @@ autorag lite report "key findings in the Q3 report" --input report.json --json
 cat report.json | autorag lite report "key findings in the Q3 report" --json
 ```
 
-The input is the `emit_autorag_results` JSON schema: `answer`, numbered
-`results` (with `number`, `title`, `summary`, `confidence` in `[0, 1]`,
-optional `source`), and a `mapping` whose entries map each result number to
-its `method` and `source`, plus optional `evidenceRefs` and `warnings`.
-Result and mapping numbers must be one-to-one positive integers. Evidence
-confidence values must be in `[0, 1]`. Invalid input exits with code 2 and
-`{"ok": false, "error": "..."}`.
+The input is the `emit_autorag_results` JSON schema. Every field below that is
+not marked optional is required — `results[].evidence` and `mapping[].content`
+are the two that are easiest to forget:
+
+- `answer` (string) — the curated answer, citing results as `[1]`, `[2]`.
+- `results` (array) — one entry per numbered knowledge unit, each with
+  `number` (1-based integer), `title` (string), `summary` (string),
+  `evidence` (array of `{"excerpt": "..."}` objects, each with an optional
+  `lineNumber`), and `confidence` (number in `[0, 1]`). A result carries no
+  `source`; source identity lives in `mapping`.
+- `mapping` (array) — exactly one entry per result `number`, each with
+  `number`, `source` (the opaque identity carried from retrieve), `method`,
+  and `content` (the raw snippet kept for feedback tracking). `evidenceRefs`
+  is optional; each ref needs `method` and `source` and may add `excerpt`,
+  `content`, `chunkIndex`, `lineNumber`, `retrievalResultId`, and
+  `confidence` in `[0, 1]`.
+- `warnings` (optional array of strings).
+
+Result and mapping numbers must be one-to-one positive integers, and every
+`confidence` must be in `[0, 1]`. A complete minimal input:
+
+```json
+{
+  "answer": "[1] Refund exceptions need director approval before payout.",
+  "results": [
+    {
+      "number": 1,
+      "title": "Refund exception approval",
+      "summary": "Refund exceptions require director approval before payout.",
+      "evidence": [
+        {
+          "excerpt": "Refund exceptions require director approval.",
+          "lineNumber": 12
+        }
+      ],
+      "confidence": 0.9
+    }
+  ],
+  "mapping": [
+    {
+      "number": 1,
+      "source": "/Users/me/corpus/refund-policy.txt",
+      "method": "minsync",
+      "content": "Refund exceptions require director approval before payout."
+    }
+  ],
+  "warnings": []
+}
+```
+
+Invalid input exits with code 2 and `{"ok": false, "error": "..."}`. The
+rejection names every field that failed, by JSON path, so fix exactly what it
+points at instead of guessing:
+
+```text
+{"ok": false, "error": "Invalid report: expected the emit_autorag_results JSON schema (/results/0: must have required properties evidence; /mapping/0: must have required properties content)"}
+```
 
 `source` values in a report are opaque identifiers carried from retrieval
 output. Report persistence performs no filesystem reads against them; it

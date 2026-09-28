@@ -28,7 +28,8 @@ function describeSchemaErrors(value: unknown): string {
 	return hidden > 0 ? `${described.join("; ")}; (+${hidden} more)` : described.join("; ");
 }
 
-function validateReport(value: unknown): AutoRAGResultsDetails {
+/** Validate a curated report payload against the `emit_autorag_results` contract. */
+export function validateReport(value: unknown): AutoRAGResultsDetails {
 	if (!Value.Check(emitResultsSchema, value)) {
 		const details = describeSchemaErrors(value);
 		throw new Error(

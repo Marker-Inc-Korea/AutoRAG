@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
+import { validateReport } from "../../src/cli/commands/report.ts";
 import { normalizeIndexingConfig } from "../../src/cli/config.ts";
 import { renderSearch } from "../../src/cli/output.ts";
 import { BUILTIN_DATASOURCE_SKILL_NAMES } from "../../src/datasource/skills/factory.ts";
@@ -74,6 +75,13 @@ function autoragInvocations(markdown: string): { command: string; flags: string[
 function section(markdown: string, heading: string): string {
 	const pattern = new RegExp(`^## ${heading}\\s*$([\\s\\S]*?)(?=^## |\\Z)`, "m");
 	return pattern.exec(markdown)?.[1] ?? "";
+}
+
+/** Every fenced ```json block inside one `## <heading>` section, parsed. */
+function jsonFences(markdown: string, heading: string): unknown[] {
+	return [...section(markdown, heading).matchAll(/```json\n([\s\S]*?)```/g)].map(
+		(match) => JSON.parse(match[1]) as unknown,
+	);
 }
 
 /** Every string literal used as a diagnostic/warning code anywhere in the shipped source. */
@@ -180,6 +188,21 @@ describe("parent-agent skill docs", () => {
 		expect(search).toContain("sessionId");
 		expect(search).toContain("autorag evidence");
 		expect(search).toContain("autorag feedback");
+	});
+
+	it("ships a lite report input example the real validator accepts", () => {
+		const fences = jsonFences(readSkill("autorag-lite-search"), "Persisting a curated report");
+		const inputs = fences.filter(
+			(fence): fence is Record<string, unknown> =>
+				typeof fence === "object" && fence !== null && "results" in fence && "mapping" in fence,
+		);
+		expect(inputs.length, "lite-search skill must show a complete report input example").toBeGreaterThan(0);
+		for (const input of inputs) {
+			const details = validateReport(input);
+			expect(details.results.length).toBeGreaterThan(0);
+			expect(details.results.every((result) => result.evidence.length > 0)).toBe(true);
+			expect(details.mapping.every((entry) => entry.content.length > 0)).toBe(true);
+		}
 	});
 
 	it("documents the lite refresh method values and force flags", () => {
