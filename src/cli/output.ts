@@ -133,6 +133,15 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 			`  counts: scanned=${status.counts.scanned} written=${status.counts.written} deleted=${status.counts.deleted} skipped=${status.counts.skipped}`,
 		);
 	}
+	if (status.progress) {
+		lines.push(`  progress: phase=${status.progress.phase}`);
+		if (status.progress.sourceFiles) {
+			lines.push(`    sourceFiles: total=${status.progress.sourceFiles.total}`);
+		}
+		if (status.progress.minsync?.synced !== undefined) {
+			lines.push(`    minsync: synced=${status.progress.minsync.synced}`);
+		}
+	}
 	const comps = status.components;
 	const compParts: string[] = [];
 	if (comps.minsync) compParts.push(`minsync=${comps.minsync}`);

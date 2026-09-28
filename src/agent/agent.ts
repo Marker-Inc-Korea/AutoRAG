@@ -90,6 +90,15 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
+import {
+	isRefreshOwnerAlive,
+	type PersistedRefreshProgress,
+	type RefreshProgressCounts,
+	type RefreshProgressPhase,
+	readRefreshProgress,
+	updateRefreshProgress,
+	writeRefreshProgress,
+} from "./refresh-progress.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -188,6 +197,13 @@ export interface AutoRAGRefreshStatus {
 	readonly stale: boolean;
 	readonly diagnostics: readonly SearchDocumentDiagnostic[];
 	readonly components: AutoRAGRefreshComponentStatus;
+	readonly progress?: {
+		readonly phase: RefreshProgressPhase;
+		readonly sourceFiles?: { readonly total: number };
+		readonly parsedCounts?: RefreshProgressCounts;
+		readonly minsync?: { readonly synced?: number };
+		readonly ownerAlive?: boolean;
+	};
 	/** Path-free failure summary of the last refresh, if it failed. */
 	readonly lastError?: string;
 }
@@ -1405,18 +1421,62 @@ export class AutoRAGAgent {
 		// since they index over the parsed mirrors. Also run it when explicitly
 		// requested or when all methods are selected.
 		const needsParsed = allMethods || wants("parsed") || wants("minsync");
+		const runId = randomUUID();
+		const startedAt = new Date().toISOString();
+		let progress: PersistedRefreshProgress = {
+			version: 1,
+			runId,
+			pid: process.pid,
+			state: "running",
+			phase: "parsed",
+			startedAt,
+			updatedAt: startedAt,
+		};
+		writeRefreshProgress(this.workspaceProjectRoot, progress);
 		this.refreshState = {
 			...this.refreshState,
 			inFlight: true,
-			lastStartedAt: new Date().toISOString(),
+			lastStartedAt: startedAt,
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
+			progress = updateRefreshProgress(progress, {
+				phase: wants("minsync")
+					? "minsync"
+					: wants("datasources")
+						? "datasources"
+						: wants("jikji")
+							? "jikji"
+							: "finalizing",
+				sourceFiles: { total: summary.scanned },
+				parsedCounts: {
+					scanned: summary.scanned,
+					written: summary.written,
+					deleted: summary.deleted,
+					skipped: summary.skipped,
+				},
+			});
+			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			const minsync = wants("minsync") ? await this.syncMinSync(force) : undefined;
+			if (minsync !== undefined) {
+				progress = updateRefreshProgress(progress, {
+					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
+					minsync: { synced: minsync.synced },
+				});
+				writeRefreshProgress(this.workspaceProjectRoot, progress);
+			}
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
+			if (wants("datasources")) {
+				progress = updateRefreshProgress(progress, {
+					phase: wants("jikji") || allMethods ? "jikji" : "finalizing",
+				});
+				writeRefreshProgress(this.workspaceProjectRoot, progress);
+			}
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
 			const jikji = allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare() : undefined;
+			progress = updateRefreshProgress(progress, { phase: "finalizing" });
+			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
 				this.workspaceProjectRoot,
 				this.searchPaths,
@@ -1447,6 +1507,11 @@ export class AutoRAGAgent {
 					'{"version":1,"completed":true,"parsed":true}\n',
 				);
 			}
+			progress = updateRefreshProgress(progress, {
+				state: "success",
+				finishedAt: new Date().toISOString(),
+			});
+			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
@@ -1476,6 +1541,12 @@ export class AutoRAGAgent {
 				lastOutcome: "failed",
 				lastError: error instanceof Error ? `Refresh failed: ${error.name}` : "Refresh failed.",
 			};
+			progress = updateRefreshProgress(progress, {
+				state: "failed",
+				error: this.refreshState.lastError,
+				finishedAt: new Date().toISOString(),
+			});
+			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			throw error;
 		} finally {
 			this.refreshState = {
@@ -1496,6 +1567,7 @@ export class AutoRAGAgent {
 	 * source has changed since.
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
+		const persistedProgress = readRefreshProgress(this.workspaceProjectRoot);
 		const staleDiagnostics = await detectMirrorStaleness({
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
@@ -1536,23 +1608,54 @@ export class AutoRAGAgent {
 				source: "watch",
 			});
 		}
-		const state: AutoRAGRefreshStatus["state"] = this.refreshState.inFlight
-			? "indexing"
-			: this.refreshState.lastOutcome === "never"
-				? "idle"
-				: this.refreshState.lastOutcome;
+		const persistedRunning = persistedProgress?.state === "running";
+		const ownerAlive = persistedProgress !== undefined && isRefreshOwnerAlive(persistedProgress);
+		const interrupted = persistedRunning && !ownerAlive && !this.refreshState.inFlight;
+		if (interrupted) {
+			diagnostics.push({
+				code: "refresh-interrupted",
+				severity: "error",
+				message: "A previous refresh stopped before it completed.",
+				source: "refresh",
+			});
+		}
+		const state: AutoRAGRefreshStatus["state"] =
+			this.refreshState.inFlight || (persistedRunning && ownerAlive)
+				? "indexing"
+				: interrupted
+					? "failed"
+					: persistedProgress?.state === "success" || persistedProgress?.state === "failed"
+						? persistedProgress.state
+						: this.refreshState.lastOutcome === "never"
+							? "idle"
+							: this.refreshState.lastOutcome;
 		const parsedMirrorReady =
-			this.refreshState.lastOutcome === "success" || existsSync(refreshReadinessPath(this.workspaceProjectRoot));
+			this.refreshState.lastOutcome === "success" ||
+			persistedProgress?.state === "success" ||
+			existsSync(refreshReadinessPath(this.workspaceProjectRoot));
+		const effectiveProgress = this.refreshState.inFlight || persistedRunning ? persistedProgress : undefined;
 		return {
 			state,
 			inFlight: this.refreshState.inFlight,
-			lastStartedAt: this.refreshState.lastStartedAt,
-			lastFinishedAt: this.refreshState.lastFinishedAt,
+			lastStartedAt: this.refreshState.lastStartedAt ?? persistedProgress?.startedAt,
+			lastFinishedAt: this.refreshState.lastFinishedAt ?? persistedProgress?.finishedAt,
 			counts: this.refreshState.counts,
+			progress:
+				effectiveProgress === undefined
+					? undefined
+					: {
+							phase: effectiveProgress.phase,
+							sourceFiles: effectiveProgress.sourceFiles,
+							parsedCounts: effectiveProgress.parsedCounts,
+							minsync: effectiveProgress.minsync,
+							ownerAlive,
+						},
 			stale: !parsedMirrorReady || staleDiagnostics.length > 0,
 			diagnostics,
 			components: this.refreshComponentStatus(),
-			lastError: this.refreshState.lastError,
+			lastError:
+				this.refreshState.lastError ??
+				(persistedProgress?.state === "failed" ? persistedProgress.error : undefined),
 		};
 	}
 

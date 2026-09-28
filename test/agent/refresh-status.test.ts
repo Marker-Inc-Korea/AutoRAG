@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeRefreshProgress } from "../../src/agent/refresh-progress.ts";
 import { AutoRAGAgent } from "../../src/index.ts";
 
 let root: string;
@@ -37,6 +38,32 @@ describe("getRefreshStatus", () => {
 		expect(status.inFlight).toBe(false);
 		expect(status.stale).toBe(true);
 		expect(status.counts).toBeUndefined();
+	});
+
+	it("reports the active indexing phase and known document progress", async () => {
+		const agent = makeAgent();
+		const releaseMinSync = deferred<void>();
+		const minSyncStarted = deferred<void>();
+		vi.spyOn(agent, "syncMinSync").mockImplementation(async () => {
+			minSyncStarted.resolve();
+			await releaseMinSync.promise;
+			return undefined;
+		});
+
+		const refresh = agent.refresh(true, { methods: ["minsync"] });
+		await minSyncStarted.promise;
+		expect((await agent.getRefreshStatus()).inFlight).toBe(true);
+
+		const status = await agent.getRefreshStatus();
+		expect(status.state).toBe("indexing");
+		expect(status.progress).toMatchObject({
+			phase: "minsync",
+			sourceFiles: { total: 1 },
+		});
+		expect(status.progress?.minsync?.synced).toBeUndefined();
+
+		releaseMinSync.resolve();
+		await refresh;
 	});
 
 	it("reports success, counts, and freshness after a manual refresh, with no real paths", async () => {
@@ -89,6 +116,37 @@ describe("getRefreshStatus", () => {
 		const status = await makeAgent().getRefreshStatus();
 
 		expect(status.stale).toBe(false);
+	});
+
+	it("reports a dead persisted refresh owner as interrupted instead of indexing", async () => {
+		writeRefreshProgress(root, {
+			version: 1,
+			runId: "dead-refresh",
+			pid: 2_147_483_647,
+			state: "running",
+			phase: "minsync",
+			startedAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			sourceFiles: { total: 338 },
+		});
+
+		const status = await makeAgent().getRefreshStatus();
+
+		expect(status.state).toBe("failed");
+		expect(status.inFlight).toBe(false);
+		expect(status.progress).toMatchObject({
+			phase: "minsync",
+			sourceFiles: { total: 338 },
+			ownerAlive: false,
+		});
+		expect(status.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "refresh-interrupted",
+					severity: "error",
+				}),
+			]),
+		);
 	});
 
 	it("stays current after a refresh that deliberately skipped sources", async () => {
@@ -170,7 +228,7 @@ describe("getRefreshStatus", () => {
 		const agent = makeAgent();
 		const handle = agent.startWatchRefresh({
 			maxWatchers: 0,
-			watcherFactory: () => ({ close: () => {} }),
+			watcherFactory: () => ({ close: () => undefined }),
 		});
 		const status = await agent.getRefreshStatus();
 		handle.stop();
@@ -224,3 +282,11 @@ process.exit(2);
 		expect(status.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
 	});
 });
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolver) => {
+		resolve = resolver;
+	});
+	return { promise, resolve };
+}
