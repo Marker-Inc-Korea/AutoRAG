@@ -87,7 +87,7 @@ function responseType(payload: unknown): string | undefined {
 /** Extract the stored subset of a SimpleX `LocalProfile`; SimpleX-internal fields are dropped. */
 export function parseSimplexProfile(value: unknown): SimplexPeerProfile | undefined {
 	if (!isRecord(value)) return undefined;
-	if (typeof value.displayName !== "string") return undefined;
+	if (typeof value.displayName !== "string" || value.displayName.trim().length === 0) return undefined;
 	const fullName = typeof value.fullName === "string" ? value.fullName : undefined;
 	const shortDescr = typeof value.shortDescr === "string" ? value.shortDescr : undefined;
 	const description = typeof value.description === "string" ? value.description : undefined;

@@ -218,6 +218,25 @@ describe("autorag serve", () => {
 		expect(stderr.join("\n")).toContain("99");
 	});
 
+	it("closes SimpleX when profile synchronization cannot persist", async () => {
+		const transport = stubTransport([{ contactId: 42, localDisplayName: "peer", profile: { displayName: "Peer" } }]);
+		const stderr: string[] = [];
+		const code = await runServe(
+			makeCtx({ flags: { config: configPath, force: true }, stderr: (line) => stderr.push(line) }),
+			{
+				startSimplexChat: async () => transport,
+				startSimplexPeerServer: async () => stubServer(),
+				syncSimplexPeers: () => {
+					throw new Error("registry write failed");
+				},
+			},
+		);
+
+		expect(code).toBe(1);
+		expect(transport.closed).toBe(true);
+		expect(stderr.join("\n")).toContain("registry write failed");
+	});
+
 	it("constructs the production search agent in remote-session mode", async () => {
 		writeFileSync(
 			configPath,

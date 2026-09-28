@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import {
+	parseSimplexProfile,
 	type SimplexIncomingMessage,
 	type SimplexTransport,
 	startSimplexChat,
@@ -143,6 +144,12 @@ function startWithFake(port: number, dbPrefix: string): Promise<SimplexTransport
 }
 
 describe("startSimplexChat", () => {
+	it("rejects profiles without a non-empty display name", () => {
+		expect(parseSimplexProfile({ displayName: "" })).toBeUndefined();
+		expect(parseSimplexProfile({ displayName: "   " })).toBeUndefined();
+		expect(parseSimplexProfile({ displayName: "Peer" })).toEqual({ displayName: "Peer" });
+	});
+
 	it("creates/reuses the user profile and returns a stable userId", async () => {
 		const port = 25_801;
 		await startFakeSimplex(port);
