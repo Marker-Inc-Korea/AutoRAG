@@ -1,5 +1,7 @@
 import { join } from "node:path";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, clipboard, shell } from "electron";
+import { createFsService } from "./fs-service";
+import { registerFsIpcHandlers } from "./ipc";
 
 function createMainWindow(): BrowserWindow {
 	const window = new BrowserWindow({
@@ -25,6 +27,7 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+	registerFsIpcHandlers(createFsService({ shell, clipboard }));
 	createMainWindow();
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
