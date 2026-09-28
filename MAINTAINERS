@@ -44,7 +44,7 @@ Areas are also how we route review. Paths are relative to the repository root.
 |---|---|---|
 | Agent loop, tools, and prompt | `src/agent/`, `src/web/`, `skills/` | [@vkehfdl1](https://github.com/vkehfdl1) |
 | Retrieval, MinSync, manifests | `src/retrieval/`, `src/minsync/`, `src/manifest/` | [@vkehfdl1](https://github.com/vkehfdl1) |
-| Datasource skills | `src/datasource/`, `src/ui/`, `scripts/manual-qa/` | [@vkehfdl1](https://github.com/vkehfdl1) |
+| Datasource skills | `src/datasource/`, `scripts/manual-qa/` | [@vkehfdl1](https://github.com/vkehfdl1) |
 | CLI, P2P, embedding runtime | `src/cli/`, `src/p2p/`, `src/embedding-runtime/` | [@vkehfdl1](https://github.com/vkehfdl1) |
 | Tests, CI, live end-to-end | `test/`, `scripts/`, `.github/workflows/` | NomaDamas maintainers |
 | Supply chain and licensing gates | `scripts/supply-chain/`, `NOTICE`, `licenses/` | NomaDamas maintainers |

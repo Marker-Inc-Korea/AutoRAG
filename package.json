@@ -49,10 +49,10 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.85.1",
-    "@earendil-works/pi-ai": "^0.85.1",
-    "@earendil-works/pi-coding-agent": "0.85.1",
-    "@earendil-works/pi-tui": "0.85.1",
+    "@earendil-works/pi-agent-core": "^0.86.1",
+    "@earendil-works/pi-ai": "^0.86.1",
+    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-tui": "0.86.1",
     "@opendataloader/pdf": "^2.5.7",
     "@rhwp/core": "0.8.6",
     "chardet": "^2.2.0",
@@ -69,7 +69,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.13",
+    "@biomejs/biome": "2.5.14",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^26.4.1",
     "@types/ws": "^8.18.1",

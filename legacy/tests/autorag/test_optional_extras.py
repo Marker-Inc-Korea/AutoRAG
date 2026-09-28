@@ -47,3 +47,37 @@ def test_legacy_unit_test_job_skips_vllm_install_and_bounds_runtime():
 	assert all("--all-extras" not in line for line in sync_lines)
 	assert all("--extra vllm" not in line for line in sync_lines)
 	assert any("--extra gpu" in line for line in sync_lines)
+
+
+def test_legacy_unit_test_job_bounds_the_pytest_step():
+	# A stalled test reached 98% and then sat silent for 35 minutes until the
+	# 40-minute job wall killed it. The job bound alone cannot surface that:
+	# the step must carry its own bound so a stall fails fast and loudly.
+	text = (REPO_ROOT / ".github/workflows/test.yml").read_text()
+	steps = text.split("- name:")
+	pytest_step = next((step for step in steps if step.lstrip().startswith("Run AutoRAG tests")), None)
+	assert pytest_step is not None, "legacy-test must run pytest"
+	assert "pytest" in pytest_step, "Run AutoRAG tests must invoke pytest"
+	assert re.search(r"timeout-minutes:\s*[1-9]\d*", pytest_step), "pytest step must bound its runtime"
+
+
+def _extra_vllm_specifier() -> str:
+	# _extra_items() splits on commas, so read the specifier straight off the line.
+	match = re.search(r'^vllm = \["vllm([^"]*)"\]', (LEGACY_ROOT / "pyproject.toml").read_text(), re.M)
+	assert match is not None, "missing optional extra vllm"
+	return match.group(1)
+
+
+def _locked_vllm_specifier() -> str:
+	for line in (LEGACY_ROOT / "uv.lock").read_text().splitlines():
+		if 'name = "vllm"' in line and "extra == 'vllm'" in line:
+			match = re.search(r'specifier = "([^"]*)"', line)
+			assert match is not None, f"vllm lock entry has no specifier: {line.strip()}"
+			return match.group(1)
+	raise AssertionError("legacy/uv.lock has no vllm entry for the 'vllm' extra")
+
+
+def test_vllm_extra_specifier_matches_the_lock():
+	# Dependabot rewrites the pyproject extra but never uv.lock, so the specifier
+	# recorded in the lock drifts and CI silently re-locks. Keep them equal.
+	assert _locked_vllm_specifier() == _extra_vllm_specifier()

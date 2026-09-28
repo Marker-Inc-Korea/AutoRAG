@@ -584,7 +584,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.51.3" },
     { name = "unstructured", extras = ["pdf"], marker = "python_full_version >= '3.11' and extra == 'parse'", specifier = ">=0.24.0" },
-    { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.11.0,<0.30.0" },
+    { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.11.0,<0.31.0" },
     { name = "voyageai", specifier = ">=0.3.2" },
     { name = "weaviate-client", specifier = ">=4.15.2" },
     { name = "xgrammar", marker = "extra == 'gpu'", specifier = ">=0.1.32,<0.3.0" },
