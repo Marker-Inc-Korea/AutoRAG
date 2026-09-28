@@ -85,6 +85,26 @@ If you are an AI coding agent or LLM (Claude Code, Cursor, Windsurf, Codex, Senp
 | **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Initializing and maintaining the model-free AutoRAG Lite lifecycle without an LLM. |
 | **`autorag-lite-search`** | [`skills/autorag-lite-search/`](skills/autorag-lite-search/SKILL.md) | Performing model-free retrieval, reporting evidence, and recording feedback without an LLM. |
 
+### Install the skills into your coding agent
+
+Skills are not auto-discovered — copy the folders you want into the agent's skill directory. For **Claude Code** that directory is `.claude/skills/` in the project (or `~/.claude/skills/` to enable them everywhere). Once `autorag-lite-setup` and `autorag-lite-search` are in place, Claude Code drives `autorag lite retrieve` as a search tool:
+
+```bash
+# From a clone of this repository
+mkdir -p .claude/skills
+cp -R skills/autorag-lite-setup skills/autorag-lite-search .claude/skills/
+```
+
+```bash
+# From a global install — the npm package ships the same skills/ folder
+AUTORAG_SKILLS="$(npm root -g)/@autorag/librarian/skills"
+# Bun global installs live at ~/.bun/install/global/node_modules/@autorag/librarian/skills
+mkdir -p .claude/skills
+cp -R "$AUTORAG_SKILLS/autorag-lite-setup" "$AUTORAG_SKILLS/autorag-lite-search" .claude/skills/
+```
+
+Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent should also drive the model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other agents read their own directories (for example `~/.agents/skills/`) — copy the same folders there and reload the agent session so it picks them up.
+
 ### Quick Agent Workflow
 
 1. **Install CLI:**

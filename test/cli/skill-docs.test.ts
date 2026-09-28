@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -75,6 +75,14 @@ function autoragInvocations(markdown: string): { command: string; flags: string[
 function section(markdown: string, heading: string): string {
 	const pattern = new RegExp(`^## ${heading}\\s*$([\\s\\S]*?)(?=^## |\\Z)`, "m");
 	return pattern.exec(markdown)?.[1] ?? "";
+}
+
+/**
+ * Extract one `### <heading>` subsection body from a markdown document. Only
+ * `##`/`###` headings end it, so a `# comment` inside a bash fence is kept.
+ */
+function subsection(markdown: string, heading: string): string {
+	return new RegExp(`\\n### ${heading}\\s*\\n([\\s\\S]*?)(?=\\n#{2,3} |$)`).exec(markdown)?.[1] ?? "";
 }
 
 /** Every fenced ```json block inside one `## <heading>` section, parsed. */
@@ -167,6 +175,19 @@ describe("parent-agent skill docs", () => {
 		expect(setup).not.toContain("autorag ui --no-open");
 		for (const name of BUILTIN_DATASOURCE_SKILL_NAMES) {
 			expect(setup).toContain(name);
+		}
+	});
+
+	it("keeps the README skill-install snippet pointing at skills that exist", () => {
+		const readme = readFileSync(join(repoRoot, "README.md"), "utf8").replace(/\r\n?/g, "\n");
+		const install = subsection(readme, "Install the skills into your coding agent");
+		expect(install.length, "README needs a skill-install subsection").toBeGreaterThan(0);
+		expect(install, "the install subsection must name Claude Code's skill directory").toContain(".claude/skills");
+		const copied = [...install.matchAll(/skills\/(autorag[a-z0-9-]*)/g)].map((match) => match[1]);
+		expect(copied.length, "the install snippet must name the skill folders it copies").toBeGreaterThan(0);
+		for (const name of new Set(copied)) {
+			expect(skillFolders(), `README install snippet copies unknown skill "${name}"`).toContain(name);
+			expect(existsSync(join(repoRoot, "skills", name, "SKILL.md")), `${name}: missing SKILL.md`).toBe(true);
 		}
 	});
 
