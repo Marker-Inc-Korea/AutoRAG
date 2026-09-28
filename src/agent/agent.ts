@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
+import {
+	Agent,
+	type AgentEvent,
+	type AgentMessage,
+	type AgentTool,
+	formatSkillInvocation,
+	type Skill,
+} from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
@@ -260,6 +267,17 @@ export interface AutoRAGThinkingOptions {
 	readonly final?: AutoRAGThinkingLevel;
 }
 
+export interface AutoRAGPersonaOptions {
+	/**
+	 * System prompt replacing the librarian prompt. A string is used verbatim;
+	 * a function receives the live {@link SystemPromptConfig} and may call the
+	 * exported {@link buildSystemPrompt} to extend rather than replace.
+	 */
+	readonly systemPrompt: string | ((config: SystemPromptConfig) => string);
+	/** Pi skills whose FULL content is appended to every system prompt build (always loaded). */
+	readonly skills?: readonly Skill[];
+}
+
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
 	apiKey?: string;
@@ -300,6 +318,8 @@ export interface AutoRAGAgentOptions {
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
 	thinking?: AutoRAGThinkingOptions | false;
+	/** Persona seam: replaces or extends the librarian system prompt and pins always-loaded skills. */
+	persona?: AutoRAGPersonaOptions;
 }
 
 export interface AutoRAGSearchSession {
@@ -307,6 +327,13 @@ export interface AutoRAGSearchSession {
 	prompt(text: string): Promise<void>;
 	abort(): Promise<void> | void;
 	dispose(): void;
+}
+
+export interface AutoRAGChatSessionOptions {
+	/** Tools available to the chat session. Exactly these, never the search tool surface. */
+	readonly tools?: readonly AgentTool[];
+	/** Overrides the composed system prompt for this chat session. */
+	readonly systemPrompt?: string;
 }
 
 export type AutoRAGJikjiPrepareResult =
@@ -382,6 +409,7 @@ export class AutoRAGAgent {
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	private readonly excludeExactDuplicates: boolean;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
+	private readonly persona: AutoRAGPersonaOptions | undefined;
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
@@ -426,6 +454,7 @@ export class AutoRAGAgent {
 		this.parserOptions = options.parserOptions;
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
+		this.persona = options.persona;
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -551,7 +580,7 @@ export class AutoRAGAgent {
 			jikjiIndexingEnabled: options.jikji !== false,
 			retrievedContentGuard: false,
 		};
-		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
+		const systemPrompt = this.composeSystemPrompt(this.currentSystemPromptConfig());
 
 		this.innerAgent = new Agent({
 			initialState: {
@@ -718,6 +747,49 @@ export class AutoRAGAgent {
 		};
 	}
 
+	private composeSystemPrompt(config: SystemPromptConfig): string {
+		const persona = this.persona;
+		if (persona === undefined) return buildSystemPrompt(config);
+		const base = typeof persona.systemPrompt === "string" ? persona.systemPrompt : persona.systemPrompt(config);
+		const skills = persona.skills;
+		if (skills === undefined || skills.length === 0) return base;
+		return `${base}\n\n## Always-Loaded Skills\n\n${skills.map((skill) => formatSkillInvocation(skill)).join("\n\n")}`;
+	}
+
+	/**
+	 * Public chat seam for non-search conversation (e.g. a settings assistant).
+	 * Chat sessions deliberately skip the search-session machinery: no memory
+	 * context transform, no search-tool budget, and no shared run state
+	 * (`activeRun`/`resultCapture`/`lastQuery`) — chat turns never read or
+	 * write retrieval memory.
+	 */
+	createChatSession(options: AutoRAGChatSessionOptions = {}): AutoRAGSearchSession {
+		const resolved = this.resolveSessionModel();
+		const agent = new Agent({
+			initialState: {
+				systemPrompt:
+					options.systemPrompt ??
+					this.composeSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
+				model: resolved.model,
+				tools: [...(options.tools ?? [])],
+			},
+			streamFn: streamSimple,
+			getApiKey: (provider) =>
+				resolved.providerApiKeys?.[provider] ??
+				(provider === resolved.model.provider ? resolved.apiKey : undefined),
+			convertToLlm: (messages) =>
+				messages.filter(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				),
+		});
+		return {
+			agent,
+			prompt: async (prompt) => agent.prompt(prompt),
+			abort: async () => agent.abort(),
+			dispose: () => {},
+		};
+	}
+
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
 		this.listeners.add(listener);
 		return () => {
@@ -848,7 +920,7 @@ export class AutoRAGAgent {
 			searchStarted = true;
 			session = this.createSearchSession(
 				resolved,
-				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
+				this.composeSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);

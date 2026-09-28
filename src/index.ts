@@ -1,10 +1,14 @@
+export type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
 export {
 	AutoRAGAgent,
 	type AutoRAGAgentOptions,
+	type AutoRAGChatSessionOptions,
+	type AutoRAGPersonaOptions,
 	type AutoRAGRefreshComponentStatus,
 	type AutoRAGRefreshOptions,
 	type AutoRAGRefreshResult,
 	type AutoRAGRefreshStatus,
+	type AutoRAGSearchSession,
 	type AutoRAGWatchRefreshHandle,
 	type AutoRAGWatchRefreshOptions,
 	type AutoRefreshOptions,

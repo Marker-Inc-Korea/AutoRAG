@@ -1,4 +1,10 @@
-export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
+export type {
+	AutoRAGAgentOptions,
+	AutoRAGChatSessionOptions,
+	AutoRAGPersonaOptions,
+	AutoRAGSearchSession,
+	AutoRefreshOptions,
+} from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
 	buildDatasourceSkillsPrompt,
