@@ -1,0 +1,25 @@
+# osv-scanner drops the version of a bun URL dependency, so the SheetJS CE
+# 0.20.3 tarball is recorded as xlsx with an empty version and matches every
+# historical advisory. The resolved package is 0.20.3, which is outside these
+# ranges. test/supply-chain/advisory-floors.test.ts fails if that version drops
+# below 0.20.2. A new xlsx advisory is not listed here and will still fail CI.
+
+[[IgnoredVulns]]
+id = "GHSA-3x9f-74h4-2fqr"
+reason = "Fixed in xlsx 0.17.0. The 0.20.3 tarball only matches because osv-scanner stores URL dependencies with an empty version."
+
+[[IgnoredVulns]]
+id = "GHSA-4r6h-8v6p-xvw6"
+reason = "Affected range is xlsx < 0.19.3. Resolved tarball is SheetJS CE 0.20.3."
+
+[[IgnoredVulns]]
+id = "GHSA-5pgg-2g8v-p4x9"
+reason = "Affected range is xlsx < 0.20.2. Resolved tarball is SheetJS CE 0.20.3."
+
+[[IgnoredVulns]]
+id = "GHSA-8vcr-vxm8-293m"
+reason = "Fixed in xlsx 0.17.0. The 0.20.3 tarball only matches because osv-scanner stores URL dependencies with an empty version."
+
+[[IgnoredVulns]]
+id = "GHSA-g973-978j-2c3p"
+reason = "Fixed in xlsx 0.17.0. The 0.20.3 tarball only matches because osv-scanner stores URL dependencies with an empty version."
