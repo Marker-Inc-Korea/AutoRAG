@@ -18,7 +18,7 @@ Expected parser markers:
 - Top-level table cell marker 1: `제목`
 - Top-level table cell marker 2: `담당자`
 - Top-level table cell marker 3: `세부 내용`
-- Rendered top-level table row: `Row 1: 제목 | 담당자 | 세부 내용`
+- Rendered top-level table row: `| 제목 | 담당자 | 세부 내용 |` (kordoc renders real table markup; the retired rhwp path emitted `Row 1: a | b`)
 
 The fixture is copied byte-for-byte from the immutable source URL. To verify it:
 

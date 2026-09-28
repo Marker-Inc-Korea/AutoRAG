@@ -53,23 +53,9 @@ export async function createPptxFixture(text: string): Promise<Buffer> {
 }
 
 export async function createXlsxFixture(text: string): Promise<Buffer> {
-	const zip = new JSZip();
-	zip.file(
-		"xl/sharedStrings.xml",
-		xml(`<?xml version="1.0" encoding="UTF-8"?>
-		<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-			<si><t>Topic</t></si>
-			<si><t>${escapeXml(text)}</t></si>
-		</sst>`),
-	);
-	zip.file(
-		"xl/worksheets/sheet1.xml",
-		xml(`<?xml version="1.0" encoding="UTF-8"?>
-		<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-			<sheetData><row><c t="s"><v>1</v></c></row></sheetData>
-		</worksheet>`),
-	);
-	return Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+	const workbook = XLSX.utils.book_new();
+	XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Topic", text]]), "Summary");
+	return Buffer.from(XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }));
 }
 
 export function createXlsFixture(text: string): Buffer {
@@ -110,6 +96,69 @@ export async function createHwpxFixture(text: string): Promise<Buffer> {
 		</hp:sec>`),
 	);
 	return Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+}
+
+/**
+ * HWPX whose outer 1x1 table cell contains an inner 2x2 table, plus a
+ * `Contents/header.xml` part carrying a sentinel that must never reach the body.
+ * Flat XML text extraction both loses the nesting and leaks the header token.
+ */
+export async function createNestedTableHwpxFixture(): Promise<Buffer> {
+	const zip = new JSZip();
+	zip.file("mimetype", "application/hwp+zip");
+	zip.file(
+		"Contents/header.xml",
+		xml(`<?xml version="1.0" encoding="UTF-8"?>
+		<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" version="1.4">
+			<hh:refList><hh:fontfaces><hh:fontface>hwpxHeaderLeakToken</hh:fontface></hh:fontfaces></hh:refList>
+		</hh:head>`),
+	);
+	const innerCell = (marker: string) =>
+		`<hp:tc><hp:subList><hp:p><hp:run><hp:t>${marker}</hp:t></hp:run></hp:p></hp:subList></hp:tc>`;
+	zip.file(
+		"Contents/section0.xml",
+		xml(`<?xml version="1.0" encoding="UTF-8"?>
+		<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+			<hp:p><hp:run><hp:t>bodyBeforeMarker</hp:t></hp:run></hp:p>
+			<hp:p><hp:run>
+				<hp:tbl rowCnt="1" colCnt="1">
+					<hp:tr><hp:tc><hp:subList>
+						<hp:p><hp:run><hp:t>outerCellMarker</hp:t></hp:run></hp:p>
+						<hp:p><hp:run>
+							<hp:tbl rowCnt="2" colCnt="2">
+								<hp:tr>${innerCell("innerA1Marker")}${innerCell("innerB1Marker")}</hp:tr>
+								<hp:tr>${innerCell("innerA2Marker")}${innerCell("innerB2Marker")}</hp:tr>
+							</hp:tbl>
+						</hp:run></hp:p>
+					</hp:subList></hp:tc></hp:tr>
+				</hp:tbl>
+			</hp:run></hp:p>
+			<hp:p><hp:run><hp:t>bodyAfterMarker</hp:t></hp:run></hp:p>
+		</hp:sec>`),
+	);
+	return Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+}
+
+/** Real multi-sheet XLSX workbook: sheet boundaries and rows must survive parsing. */
+export function createMultiSheetXlsxFixture(): Buffer {
+	const workbook = XLSX.utils.book_new();
+	XLSX.utils.book_append_sheet(
+		workbook,
+		XLSX.utils.aoa_to_sheet([
+			["Quarter", "Revenue", "Owner"],
+			["Q3", 742000, "finance team"],
+		]),
+		"RevenueSheet",
+	);
+	XLSX.utils.book_append_sheet(
+		workbook,
+		XLSX.utils.aoa_to_sheet([
+			["Risk", "Status"],
+			["supply chain", "open"],
+		]),
+		"RiskSheet",
+	);
+	return Buffer.from(XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }));
 }
 
 export function createEmlFixture(text: string): Buffer {

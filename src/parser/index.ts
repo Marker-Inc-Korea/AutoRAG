@@ -1,17 +1,21 @@
-export { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "./defaults.ts";
+export {
+	createDefaultParserRegistry,
+	type DefaultParserRegistryOptions,
+	resolveParserOptions,
+} from "./defaults.ts";
 export { EmlParser } from "./eml.ts";
 export { ParseError } from "./errors.ts";
-export { HwpParser, type HwpParserOptions } from "./hwp.ts";
-export { ImageOcrParser, type OcrEngine, type OcrEngineInput, type OcrParserOptions } from "./ocr.ts";
-export { DocxParser, PptxParser, XlsxParser } from "./office.ts";
 export {
-	OpendataloaderPdfParser,
-	type OpendataloaderPdfParserOptions,
-	type PdfConverter,
-} from "./opendataloader-pdf.ts";
+	KORDOC_EXTENSIONS,
+	type KordocOcrProvider,
+	type KordocParseFn,
+	KordocParser,
+	type KordocParserOptions,
+} from "./kordoc.ts";
+export { ImageOcrParser, type OcrEngine, type OcrEngineInput, type OcrParserOptions } from "./ocr.ts";
+export { PptxParser } from "./office.ts";
 export { PlainTextParser } from "./plain-text.ts";
 export { ParserRegistry } from "./registry.ts";
-export type { HwpExtractionLimits, HwpExtractor } from "./rhwp-adapter.ts";
 export {
 	type ParseDiagnostic,
 	type ParseDiagnosticCode,

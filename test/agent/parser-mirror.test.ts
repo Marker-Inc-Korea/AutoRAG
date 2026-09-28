@@ -16,7 +16,7 @@ import { createMinimalPdfBuffer } from "../fixtures/minimal-pdf.ts";
 
 let root: string;
 
-const pdfMarker = "OpenDataLoader AutoRAG PDF marker refund policy alpha";
+const pdfMarker = "AutoRAG PDF marker refund policy alpha";
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-agent-mirror-"));

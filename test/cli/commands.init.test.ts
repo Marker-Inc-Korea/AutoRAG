@@ -192,6 +192,7 @@ describe("runInit", () => {
 					"memory-path": join(root, "memory.json"),
 					"model-provider": "openai",
 					"model-id": "gpt-4o",
+					languages: "ja,en",
 				},
 				stdout: (line) => stdout.push(line),
 			}),
@@ -206,6 +207,30 @@ describe("runInit", () => {
 		expect(config.workspacePath).toBe(root);
 		expect(config.memoryPath).toBe(join(root, "memory.json"));
 		expect(config.model).toEqual({ provider: "openai", id: "gpt-4o" });
+		expect(config.languages).toEqual(["ja", "en"]);
+	});
+
+	it("writes env languages unless a flag overrides them", async () => {
+		const previous = process.env.AUTORAG_LANGUAGES;
+		try {
+			process.env.AUTORAG_LANGUAGES = "vi,fr";
+			expect(await runInit(makeCtx())).toBe(0);
+			expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).languages).toEqual(["vi", "fr"]);
+			process.env.AUTORAG_LANGUAGES = "de";
+			expect(await runInit(makeCtx({ flags: { languages: " ja , EN ", force: true } }))).toBe(0);
+			expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).languages).toEqual(["ja", "en"]);
+		} finally {
+			if (previous === undefined) delete process.env.AUTORAG_LANGUAGES;
+			else process.env.AUTORAG_LANGUAGES = previous;
+		}
+	});
+
+	it("rejects invalid language flags without writing a config", async () => {
+		const stderr: string[] = [];
+		const code = await runInit(makeCtx({ flags: { languages: "kr" }, stderr: (line) => stderr.push(line) }));
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toContain("Unsupported language");
+		expect(existsSync(homeConfigPath())).toBe(false);
 	});
 
 	it("returns 2 and writes an error when the config already exists without --force", async () => {

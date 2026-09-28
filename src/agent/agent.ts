@@ -26,6 +26,7 @@ import {
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
+import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
@@ -48,7 +49,7 @@ import {
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
 import type { PolicyResolver } from "../p2p/policy-filter.ts";
-import type { DefaultParserRegistryOptions } from "../parser/index.ts";
+import { type DefaultParserRegistryOptions, resolveParserOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
@@ -281,6 +282,7 @@ export interface AutoRAGAgentOptions {
 	apiKey?: string;
 	providerApiKeys?: Readonly<Record<string, string>>;
 	searchPaths: string[];
+	languages?: readonly LanguageTag[];
 	manifestDir?: string;
 	memoryPath?: string;
 	workspacePath?: string;
@@ -380,6 +382,7 @@ export class AutoRAGAgent {
 
 	private readonly searchPaths: string[];
 	private readonly configuredSearchPaths: readonly string[];
+	readonly languages: readonly LanguageTag[];
 	private retrievalScopeBindings: readonly RetrievalScopeBinding[];
 	private readonly datasourceVirtualScopePrefixes: readonly string[];
 	private readonly workspaceProjectRoot: string;
@@ -432,6 +435,7 @@ export class AutoRAGAgent {
 		this.startupDiagnostics = options.startupDiagnostics ?? [];
 		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
+		this.languages = options.languages ?? DEFAULT_LANGUAGES;
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
 		this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -439,7 +443,8 @@ export class AutoRAGAgent {
 			this.searchPaths,
 			this.configuredSearchPaths,
 		);
-		this.parserOptions = options.parserOptions;
+		// The global language setting drives OCR engine selection inside the registry.
+		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages);
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 
