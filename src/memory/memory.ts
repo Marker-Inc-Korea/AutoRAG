@@ -18,7 +18,6 @@ export interface SignalDefaults {
 	readonly followupWeight: number;
 	readonly retryWeight: number;
 	readonly implicitCap: number;
-	readonly decayHalfLifeMs?: number;
 }
 
 export interface EvidenceContext {
