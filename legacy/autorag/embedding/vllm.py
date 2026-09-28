@@ -81,7 +81,6 @@ class VllmEmbedding(MultiModalEmbedding):
 			)
 		self._client = VLLModel(
 			model=model_name,
-			task="embed",
 			max_num_seqs=embed_batch_size,
 			tensor_parallel_size=tensor_parallel_size,
 			trust_remote_code=trust_remote_code,
