@@ -1,0 +1,25 @@
+{
+	"name": "@autorag/app",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"main": "out/main/index.js",
+	"scripts": {
+		"dev": "electron-vite dev",
+		"build": "electron-vite build",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+	},
+	"devDependencies": {
+		"@types/node": "^26.4.1",
+		"@types/react": "^19.3.0",
+		"@types/react-dom": "^19.3.0",
+		"electron": "^44.4.5",
+		"electron-vite": "^5.0.0",
+		"react": "^19.3.0",
+		"react-dom": "^19.3.0",
+		"typescript": "^7.0.2",
+		"vite": "^7.0.0",
+		"vitest": "^5.0.2"
+	}
+}

@@ -1,0 +1,255 @@
+/* ============================================================================
+ * AI Finder v6 — design tokens
+ *
+ * Machine-consumed copy of app/DESIGN.md §2–§7. Every custom property below
+ * appears in that document with the same name and the same value.
+ *
+ * Source of truth:
+ *   docs/design-reference/ai-finder/design_handoff_ai_finder_v6/README.md
+ * Values the README documents only through the prototype are cited in
+ * DESIGN.md as `proto:<line>` against:
+ *   docs/design-reference/ai-finder/design_handoff_ai_finder_v6/AI Finder v6.dc.html
+ *
+ * Do not add, rename, or re-value a token here without changing DESIGN.md in
+ * the same commit. Components reference these tokens; they never inline a
+ * color, radius, shadow, duration, or font size.
+ * ========================================================================== */
+
+:root {
+  /* ---------------------------------------------------------------- §2.1 Surfaces */
+  --bg-desk: #E9E9EE;
+  --bg-window: #FFFFFF;
+  --bg-chrome: #F6F6F8;
+  --bg-subtle: #FAFAFB;
+  --bg-subtle-alt: #FAFAFC;
+  --bg-input: #F0F0F4;
+  --bg-selected-nav: #EAEAF0;
+  --bg-code: #F4F4F7;
+  --bg-chip-sent: #F3F3F7;
+  --bg-tile-fallback: #8A8A9C;
+
+  /* ------------------------------------------------------------ §2.2 Hover washes */
+  --bg-hover: rgba(26,26,46,0.05);
+  --bg-hover-row: rgba(26,26,46,0.04);
+  --bg-hover-icon: rgba(26,26,46,0.06);
+  --bg-hover-strong: rgba(26,26,46,0.08);
+
+  /* ----------------------------------------------------------------- §2.3 Borders */
+  --border: #E3E3EA;
+  --border-divider: #EDEDF2;
+  --border-strong: #C9C9D4;
+
+  /* -------------------------------------------------------------------- §2.4 Text */
+  --text-primary: #1A1A2E;
+  --text-body: #3A3A4E;
+  --text-muted: #6E6E80;
+  --text-faint: #A0A0B0;
+  --text-on-accent: #1A1A2E;
+  --text-on-tile: #FFFFFF;
+
+  /* ------------------------------------------------------------------ §2.5 Accent */
+  --accent: #FF6363;
+  --accent-hover: #FF7A7A;
+  --accent-text: #D64545;
+  --accent-text-strong: #C73A3A;
+  --accent-drop-hover: rgba(255,99,99,0.07);
+  --accent-history-current: rgba(255,99,99,0.08);
+  --accent-soft: rgba(255,99,99,0.12);
+  --accent-chat-mark: rgba(255,99,99,0.14);
+  --accent-chip: rgba(255,99,99,0.16);
+  --accent-flash: rgba(255,99,99,0.18);
+  --accent-preview-mark: rgba(255,99,99,0.2);
+  --accent-doc-mark: rgba(255,99,99,0.22);
+  --accent-pending-border: rgba(255,99,99,0.35);
+  --accent-flash-ring: rgba(255,99,99,0.6);
+
+  /* ---------------------------------------------------------- §2.6 Object colors */
+  --folder: #7C86E8;
+  --switch-off: #CFCFD9;
+  --highlight-marker: linear-gradient(transparent 55%, rgba(255,214,10,0.55) 55%);
+  --traffic-close: #FF5F57;
+  --traffic-min: #FEBC2E;
+  --traffic-max: #28C840;
+
+  /* ------------------------------------------------------------------ §2.7 Status */
+  --ok-dot: #22C55E;
+  --ok-text: #15803D;
+  --ok-bg: rgba(34,197,94,0.14);
+  --ok-bg-soft: rgba(34,197,94,0.12);
+  --ok-border: rgba(34,197,94,0.45);
+
+  --warn-dot: #F59E0B;
+  --warn-text: #B45309;
+  --warn-bg: rgba(245,158,11,0.14);
+  --warn-bg-strong: rgba(245,158,11,0.16);
+
+  --info-dot: #3B82F6;
+  --info-text: #1D4ED8;
+  --info-bg: rgba(59,130,246,0.12);
+
+  --danger-dot: #EF4444;
+  --danger-text: #C62828;
+  --danger-bg: rgba(239,68,68,0.12);
+  --danger-bg-soft: rgba(239,68,68,0.10);
+  --danger-border: rgba(239,68,68,0.4);
+
+  --error-orange-dot: #FF8C00;
+  --error-orange-text: #C2410C;
+  --error-orange-bg: rgba(255,140,0,0.12);
+  --error-orange-bg-strong: rgba(255,140,0,0.16);
+
+  --index-dot-included: oklch(0.62 0.14 150);
+  --index-dot-excluded-ring: inset 0 0 0 1.5px #A0A0B0;
+
+  /* ------------------------------------------------------------------ §2.8 Scrims */
+  --scrim-quicklook: rgba(20,20,40,0.16);
+  --scrim-modal: rgba(20,20,40,0.22);
+  --drop-overlay-bg: rgba(250,250,252,0.86);
+
+  /* -------------------------------------------------------- §2.9 File-type tiles */
+  --tile-xlsx: oklch(0.62 0.14 150);
+  --tile-csv: oklch(0.58 0.1 175);
+  --tile-pdf: oklch(0.6 0.17 28);
+  --tile-docx: oklch(0.58 0.15 258);
+  --tile-pptx: oklch(0.66 0.15 55);
+  --tile-md: #8A8A9C;
+  --tile-zip: #8A8A9C;
+  --tile-png: oklch(0.58 0.13 305);
+  --tile-slack: oklch(0.52 0.16 340);
+  --tile-mail: oklch(0.58 0.15 12);
+  --tile-notion: #1A1A2E;
+  --tile-notion-fg: #FFFFFF;
+  --tile-discord: oklch(0.56 0.17 278);
+  --tile-telegram: oklch(0.64 0.13 232);
+  --tile-contact: oklch(0.52 0.13 285);
+
+  /* -------------------------------------------------------------- §3 Typography */
+  --font-sans: Inter, Pretendard, -apple-system, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --font-size-title: 18px;
+  --font-size-body: 14px;
+  --font-size-sm: 13px;
+  --font-size-meta: 12px;
+  --font-size-badge: 11px;
+  --font-size-tile: 10px;
+  --font-size-tile-xs: 9px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-body: 1.5;
+  --leading-read: 1.6;
+  --tracking-label: 0.02em;
+
+  /* ------------------------------------------------------------------ §4 Spacing */
+  --space-1: 1px;
+  --space-2: 2px;
+  --space-3: 3px;
+  --space-4: 4px;
+  --space-5: 5px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-20: 20px;
+  --space-22: 22px;
+  --space-24: 24px;
+  --space-40: 40px;
+
+  /* ------------------------------------------------------------ §4 Control sizes */
+  --size-row: 32px;
+  --size-pill: 22px;
+  --size-icon-sm: 28px;
+  --size-chip: 24px;
+  --size-chip-draft: 26px;
+  --size-tab: 36px;
+  --size-bar: 48px;
+  --size-toolbar: 52px;
+  --size-col-header: 30px;
+  --size-status-bar: 32px;
+  --size-ev-strip: 40px;
+  --size-settings-row: 56px;
+  --size-dot: 6px;
+  --size-traffic: 12px;
+  --size-knob: 16px;
+  --knob-on: 17px;
+  --knob-off: 3px;
+
+  /* ---------------------------------------------------------------- §4 App shell */
+  --desk-padding: 18px;
+  --app-min-width: 1360px;
+  --app-min-height: 820px;
+  --grid-main: 212px minmax(640px, 1.4fr) minmax(440px, 1fr);
+  --col-sidebar: 212px;
+  --evidence-open-height: 44%;
+
+  /* ----------------------------------------------------------- §4 Component grids */
+  --grid-file-row: minmax(0,1fr) 100px 60px 96px 66px 76px;
+  --grid-source-row: 28px 1fr 150px 28px 36px;
+  --grid-sheet: 24px 1.1fr 1fr 1fr 1fr;
+
+  /* ------------------------------------------------------------ §4 Overlay widths */
+  --w-search-field: 236px;
+  --w-access-menu: 248px;
+  --w-context-menu: 220px;
+  --w-history: 360px;
+  --w-requests: 420px;
+  --w-quicklook: 760px;
+  --w-contact-editor: 540px;
+  --w-permission-confirm: 460px;
+  --w-settings: 760px;
+  --h-settings: 580px;
+  --w-tab-min: 84px;
+  --w-tab-max: 190px;
+  --w-crumb-max: 220px;
+  --w-bubble-max: 78%;
+
+  /* ------------------------------------------------------------------- §6 Motion */
+  --dur-menu: 120ms;
+  --dur-popover: 150ms;
+  --dur-modal: 200ms;
+  --dur-step: 250ms;
+  --dur-color: 150ms;
+  --dur-color-slow: 200ms;
+  --dur-knob: 200ms;
+  --dur-flash-fade: 600ms;
+  --dur-shimmer: 1.4s;
+  --dur-spin: 1.4s;
+  --time-retry: 1500ms;
+  --time-flash: 1800ms;
+  --time-toast: 2400ms;
+  --ease-out: ease-out;
+  --shimmer-gradient: linear-gradient(90deg,#F0F0F4 0%,#E4E4EA 50%,#F0F0F4 100%);
+
+  /* ------------------------------------------------------------------ §7 Shadows */
+  --shadow-raised: 0 4px 16px rgba(20,20,40,0.08);
+  --shadow-drag: 0 4px 16px rgba(20,20,40,0.12);
+  --shadow-window: 0 20px 60px rgba(20,20,40,0.18);
+
+  /* -------------------------------------------------------------------- §7 Radii */
+  --radius-2: 2px;
+  --radius-3: 3px;
+  --radius-4: 4px;
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-11: 11px;
+  --radius-12: 12px;
+  --radius-14: 14px;
+  --radius-full: 50%;
+
+  /* --------------------------------------------------------------- §7 Scrollbars */
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: #E3E3EA;
+  --scrollbar-radius: 10px;
+  --scrollbar-inset: 3px;
+}
