@@ -11,9 +11,31 @@ function readReportInput(input: string | boolean | undefined): string {
 	return readFileSync(0, "utf8");
 }
 
+/** Keep a pathological input from producing unbounded error text. */
+const MAX_REPORTED_SCHEMA_ERRORS = 8;
+
+/**
+ * Names every field that failed schema validation, so a curator learns which
+ * property is missing or malformed instead of only that the report was invalid.
+ */
+function describeSchemaErrors(value: unknown): string {
+	const errors = Value.Errors(emitResultsSchema, value);
+	if (errors.length === 0) return "";
+	const described = errors
+		.slice(0, MAX_REPORTED_SCHEMA_ERRORS)
+		.map((error) => `${error.instancePath === "" ? "/" : error.instancePath}: ${error.message}`);
+	const hidden = errors.length - described.length;
+	return hidden > 0 ? `${described.join("; ")}; (+${hidden} more)` : described.join("; ");
+}
+
 function validateReport(value: unknown): AutoRAGResultsDetails {
 	if (!Value.Check(emitResultsSchema, value)) {
-		throw new Error("Invalid report: expected the emit_autorag_results JSON schema");
+		const details = describeSchemaErrors(value);
+		throw new Error(
+			details.length > 0
+				? `Invalid report: expected the emit_autorag_results JSON schema (${details})`
+				: "Invalid report: expected the emit_autorag_results JSON schema",
+		);
 	}
 	const parsed = Value.Parse(emitResultsSchema, value);
 	const resultNumbers = parsed.results.map((result) => result.number);
