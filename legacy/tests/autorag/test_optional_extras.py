@@ -59,6 +59,7 @@ def test_legacy_unit_test_job_bounds_the_pytest_step():
 	assert pytest_step is not None, "legacy-test must run pytest"
 	assert "pytest" in pytest_step, "Run AutoRAG tests must invoke pytest"
 	assert re.search(r"timeout-minutes:\s*[1-9]\d*", pytest_step), "pytest step must bound its runtime"
+	assert "faulthandler_timeout=300" in pytest_step, "pytest step must dump stalled-test tracebacks"
 
 
 def _extra_vllm_specifier() -> str:

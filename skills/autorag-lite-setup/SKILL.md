@@ -125,7 +125,7 @@ autorag lite refresh --force --json
   different provider.
 - Exact duplicate exclusion during refresh is enabled by default via the
   external `dupey` CLI. Install dupey during setup when it is missing
-  (`command -v dupey || cargo install dupey`) and tell the user the feature is
+  (`command -v dupey || cargo install dupey --locked`) and tell the user the feature is
   available; when installation is impossible, refresh continues without it
   and the user is told duplicate exclusion is off. Set
   `"excludeExactDuplicates": false` to index every copy.
