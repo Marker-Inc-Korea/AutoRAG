@@ -3,8 +3,10 @@
  *
  * Flow: dupey CLI -> persisted snapshot (userData) -> UI. The UI is always
  * served from the snapshot; scans run once at startup and then on a repeating
- * interval that the app Settings control. Nothing here reacts to file
- * mutations — the interval is the only refresh trigger.
+ * interval that the app Settings control. Trashing a file is the one mutation
+ * that reacts here: the snapshot is pruned in place (no scan, no CLI) so a
+ * deleted duplicate leaves the UI immediately and stays gone across a scan
+ * that was already reading the disk.
  */
 
 import { scanWithDupey, type DupeyScanResult } from "@autorag/librarian";
@@ -31,6 +33,48 @@ interface DupeyMemberInfo {
 
 function clampRelation(value: string | undefined): FsVersionRelation {
 	return value === "exact" || value === "contains" ? value : "near";
+}
+
+/**
+ * Drops trashed paths from a snapshot without re-scanning. A family that lost
+ * its head re-heads to its newest remaining member (dupey's own pick rule); a
+ * family with no members left is no longer a family and disappears.
+ */
+export function pruneVersionFamilies(
+	families: readonly FsVersionFamily[],
+	removed: ReadonlySet<string>,
+): readonly FsVersionFamily[] {
+	if (removed.size === 0) return families;
+	const out: FsVersionFamily[] = [];
+	for (const family of families) {
+		const entries = family.entries.filter((entry) => !removed.has(entry.path));
+		if (entries.length === 0) continue;
+		const modifiedAt = new Map(family.entries.map((entry) => [entry.path, entry.modifiedAt]));
+		const members = family.members.filter((member) => !removed.has(member.path));
+		const head = removed.has(family.head) ? newestPath(members, modifiedAt) : family.head;
+		if (head === null) continue;
+		const rest = members.filter((member) => member.path !== head);
+		if (rest.length === 0) continue;
+		out.push({ head, members: rest, entries });
+	}
+	return out;
+}
+
+/** The member with the newest mtime, path as the deterministic tie-break. */
+function newestPath(
+	members: readonly FsVersionMember[],
+	modifiedAt: ReadonlyMap<string, string>,
+): string | null {
+	let best: string | null = null;
+	let bestAt = "";
+	for (const member of members) {
+		const at = modifiedAt.get(member.path) ?? "";
+		if (best === null || at > bestAt || (at === bestAt && member.path < best)) {
+			best = member.path;
+			bestAt = at;
+		}
+	}
+	return best;
 }
 
 /** dupey family (pick-keeper head + per-member relations) to the app contract. */
@@ -85,6 +129,11 @@ export interface VersionFamilyService {
 	stop(): void;
 	/** Re-reads the interval from Settings and re-arms the timer. */
 	reschedule(): void;
+	/**
+	 * Drops trashed paths from the snapshot and publishes it. Never scans and
+	 * never touches the dupey CLI: a deletion must land in the UI immediately.
+	 */
+	removePaths(paths: readonly string[]): Promise<FsVersionFamiliesResult>;
 }
 
 export function createVersionFamilyService(deps: VersionFamilyServiceDeps): VersionFamilyService {
@@ -97,6 +146,22 @@ export function createVersionFamilyService(deps: VersionFamilyServiceDeps): Vers
 	let snapshot: StoredVersionFamilies | null | undefined;
 	let lastError: FsVersionFamilyError | null = null;
 	let timer: unknown = null;
+	/** Paths trashed since the last completed scan; a fresh scan must not resurrect them. */
+	const trashedPaths = new Set<string>();
+	/**
+	 * Snapshot writes run one at a time: a scan that finished while a delete was
+	 * landing must not overwrite that delete (or the other way round).
+	 */
+	let writeQueue: Promise<unknown> = Promise.resolve();
+
+	function serialize<T>(work: () => Promise<T>): Promise<T> {
+		const run = writeQueue.then(work, work);
+		writeQueue = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
+	}
 
 	async function load(): Promise<StoredVersionFamilies | null> {
 		if (snapshot === undefined) snapshot = await deps.store.read();
@@ -173,16 +238,22 @@ export function createVersionFamilyService(deps: VersionFamilyServiceDeps): Vers
 			deps.onUpdate?.(current);
 			return current;
 		}
-		const { families, locations, errors } = await scanLocations();
-		if (families.length > 0 || errors.length === 0) {
-			const stored: StoredVersionFamilies = {
-				version: 1,
-				scannedAt: now().toISOString(),
-				locations,
-				families,
-			};
-			await deps.store.write(stored);
-			snapshot = stored;
+		// A scan reads the disk over seconds; a trash that landed meanwhile must
+		// win, or the deleted duplicate comes back until the next interval.
+		const { families: scanned, locations, errors } = await scanLocations();
+		if (scanned.length > 0 || errors.length === 0) {
+			await serialize(async () => {
+				const honored = new Set(trashedPaths);
+				const stored: StoredVersionFamilies = {
+					version: 1,
+					scannedAt: now().toISOString(),
+					locations,
+					families: pruneVersionFamilies(scanned, honored),
+				};
+				await deps.store.write(stored);
+				snapshot = stored;
+				for (const path of honored) trashedPaths.delete(path);
+			});
 		}
 		lastError =
 			errors.length === 0 ? null : { code: "scan-failed", message: errors.join("\n"), installCommand: null };
@@ -202,9 +273,35 @@ export function createVersionFamilyService(deps: VersionFamilyServiceDeps): Vers
 		}, minutes * 60_000);
 	}
 
+	async function removePaths(paths: readonly string[]): Promise<FsVersionFamiliesResult> {
+		if (paths.length === 0) return envelope(await load());
+		for (const path of paths) trashedPaths.add(path);
+		return serialize(async () => {
+			const stored = await load();
+			if (stored === null) return envelope(stored);
+			const removed = new Set(paths);
+			const touched = stored.families.some(
+				(family) => removed.has(family.head) || family.members.some((member) => removed.has(member.path)),
+			);
+			if (!touched) return envelope(stored);
+			// scannedAt still names the scan these families came from; the prune only
+			// subtracts paths the user sent to the Trash.
+			const pruned: StoredVersionFamilies = {
+				...stored,
+				families: pruneVersionFamilies(stored.families, removed),
+			};
+			await deps.store.write(pruned);
+			snapshot = pruned;
+			const current = envelope(pruned);
+			deps.onUpdate?.(current);
+			return current;
+		});
+	}
+
 	return {
 		result,
 		refresh,
+		removePaths,
 		async start(): Promise<FsVersionFamiliesResult> {
 			arm();
 			return refresh();

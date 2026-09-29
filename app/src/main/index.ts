@@ -141,7 +141,13 @@ app.whenReady().then(() => {
 	const devLabel = resolveDevLabel();
 	console.log(`[autorag] ${formatWindowTitle(APP_NAME, APP_VERSION, devLabel)}`);
 	const fsService = createFsService({ shell, clipboard });
-	registerFsIpcHandlers(fsService);
+	// Both delete surfaces (context menu, ⌘⌫) land on this channel, so the
+	// version-family snapshot learns about the Trash here.
+	registerFsIpcHandlers(fsService, {
+		onTrashed: async (paths) => {
+			await versionFamilyService?.removePaths(paths);
+		},
+	});
 	let scanIntervalMinutes = DEFAULT_SCAN_INTERVAL_MINUTES;
 	const sendToWindow = (channel: string, payload: unknown): void => {
 		BrowserWindow.getAllWindows()[0]?.webContents.send(channel, payload);

@@ -8,10 +8,11 @@ import {
 	createVersionFamilyService,
 	DEFAULT_SCAN_INTERVAL_MINUTES,
 	mapDupeyFamily,
+	pruneVersionFamilies,
 	type VersionFamilyServiceDeps,
 } from "../src/main/version-family-service";
-import { createFileVersionFamilyStore } from "../src/main/version-family-store";
-import type { FsEntry, FsLocation, FsVersionFamiliesResult } from "../src/shared/fs-contract";
+import { createFileVersionFamilyStore, type StoredVersionFamilies } from "../src/main/version-family-store";
+import type { FsEntry, FsLocation, FsVersionFamiliesResult, FsVersionFamily } from "../src/shared/fs-contract";
 
 const dupeyAvailable = { status: async () => ({ available: true, version: "dupey 0.1.2", error: null }) };
 const dupeyMissing = { status: async () => ({ available: false, version: null, error: "spawn dupey ENOENT" }) };
@@ -51,14 +52,18 @@ interface Harness {
 	readonly timers: { ms: number; fire: () => void }[];
 	readonly scans: string[];
 	readonly writes: number;
+	readonly persisted: () => StoredVersionFamilies | null;
 }
 
-function harness(overrides: Partial<VersionFamilyServiceDeps> = {}): Harness {
+function harness(
+	overrides: Partial<VersionFamilyServiceDeps> = {},
+	seed: StoredVersionFamilies | null = null,
+): Harness {
 	const updates: FsVersionFamiliesResult[] = [];
 	const timers: { ms: number; fire: () => void }[] = [];
 	const scans: string[] = [];
 	const state = { writes: 0 };
-	let snapshot: unknown = null;
+	let snapshot: unknown = seed;
 	const locations: FsLocation[] = [
 		{ name: "Desktop", path: "/home/Desktop", section: "favorites", available: true },
 	];
@@ -87,7 +92,16 @@ function harness(overrides: Partial<VersionFamilyServiceDeps> = {}): Harness {
 		clearTimer: () => {},
 		...overrides,
 	};
-	return { deps, updates, timers, scans, get writes() { return state.writes; } };
+	return {
+		deps,
+		updates,
+		timers,
+		scans,
+		get writes() {
+			return state.writes;
+		},
+		persisted: () => snapshot as StoredVersionFamilies | null,
+	};
 }
 
 describe("dupey probe", () => {
@@ -261,6 +275,179 @@ describe("version-family service — schedule", () => {
 		await service.start();
 		service.stop();
 		expect(cleared).toEqual([1]);
+	});
+});
+
+describe("version-family service — trash prune", () => {
+	function entryAt(path: string, modifiedAt: string): FsEntry {
+		return { ...fsEntry(path), modifiedAt };
+	}
+
+	function threeFileFamily(): FsVersionFamily {
+		return {
+			head: "/home/Desktop/a.txt",
+			members: [
+				{ path: "/home/Desktop/b.txt", relation: "exact" },
+				{ path: "/home/Desktop/c.txt", relation: "near" },
+			],
+			entries: [
+				entryAt("/home/Desktop/a.txt", "2026-09-29T03:00:00.000Z"),
+				entryAt("/home/Desktop/b.txt", "2026-09-29T01:00:00.000Z"),
+				entryAt("/home/Desktop/c.txt", "2026-09-29T02:00:00.000Z"),
+			],
+		};
+	}
+
+	function seeded(families: readonly FsVersionFamily[]): StoredVersionFamilies {
+		return { version: 1, scannedAt: "2026-09-29T09:00:00.000Z", locations: ["/home/Desktop"], families };
+	}
+
+	it("drops a trashed duplicate from the snapshot without scanning", async () => {
+		const h = harness({}, seeded([threeFileFamily()]));
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.removePaths(["/home/Desktop/b.txt"]);
+		expect(h.scans).toEqual([]);
+		expect(h.writes).toBe(1);
+		expect(h.updates).toHaveLength(1);
+		expect(result.families[0]?.head).toBe("/home/Desktop/a.txt");
+		expect(result.families[0]?.members.map((member) => member.path)).toEqual(["/home/Desktop/c.txt"]);
+		expect(result.families[0]?.entries.map((entry) => entry.path)).toEqual([
+			"/home/Desktop/a.txt",
+			"/home/Desktop/c.txt",
+		]);
+		// Persisted as well, so a restart cannot resurrect the deleted file.
+		expect(h.persisted()?.families).toEqual(result.families);
+		expect(h.persisted()?.scannedAt).toBe("2026-09-29T09:00:00.000Z");
+	});
+
+	it("re-heads to the newest remaining member when the head is trashed", async () => {
+		const h = harness({}, seeded([threeFileFamily()]));
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.removePaths(["/home/Desktop/a.txt"]);
+		expect(result.families[0]?.head).toBe("/home/Desktop/c.txt");
+		expect(result.families[0]?.members.map((member) => member.path)).toEqual(["/home/Desktop/b.txt"]);
+	});
+
+	it("drops the family once every member is gone", async () => {
+		const h = harness({}, seeded([threeFileFamily()]));
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.removePaths(["/home/Desktop/b.txt", "/home/Desktop/c.txt"]);
+		expect(result.families).toEqual([]);
+		expect(h.persisted()?.families).toEqual([]);
+	});
+
+	it("ignores a path no family claims", async () => {
+		const h = harness({}, seeded([threeFileFamily()]));
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.removePaths(["/home/Desktop/unrelated.txt"]);
+		expect(h.writes).toBe(0);
+		expect(h.updates).toHaveLength(0);
+		expect(result.families).toHaveLength(1);
+	});
+
+	it("serves the empty snapshot without writing when nothing was ever scanned", async () => {
+		const h = harness();
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.removePaths(["/home/Desktop/a.txt"]);
+		expect(h.writes).toBe(0);
+		expect(result.families).toEqual([]);
+	});
+
+	it("prunes even when the dupey CLI is missing", async () => {
+		const h = harness({ dupey: dupeyMissing }, seeded([threeFileFamily()]));
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.removePaths(["/home/Desktop/b.txt"]);
+		expect(result.families[0]?.members.map((member) => member.path)).toEqual(["/home/Desktop/c.txt"]);
+		expect(h.scans).toEqual([]);
+	});
+
+	it("keeps a delete that lands while the scan is writing the snapshot", async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let writeStarted!: () => void;
+		const writing = new Promise<void>((resolve) => {
+			writeStarted = resolve;
+		});
+		let stored: StoredVersionFamilies | null = seeded([threeFileFamily()]);
+		let writes = 0;
+		const h = harness({
+			store: {
+				read: async () => stored,
+				write: async (value) => {
+					writes += 1;
+					if (writes === 1) {
+						writeStarted();
+						await gate;
+					}
+					stored = value;
+				},
+			},
+			scanDuplicates: async () => scanOf([family("/home/Desktop/a.txt", "/home/Desktop/b.txt")]),
+		});
+		const service = createVersionFamilyService(h.deps);
+		const refreshed = service.refresh();
+		await writing;
+		const removed = service.removePaths(["/home/Desktop/b.txt"]);
+		release();
+		await refreshed;
+		await removed;
+		expect(writes).toBe(2);
+		expect(stored?.families).toEqual([]);
+	});
+
+	it("does not resurrect a path trashed while a scan was reading the disk", async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let scanned = 0;
+		const h = harness(
+			{
+				scanDuplicates: async () => {
+					scanned += 1;
+					await gate;
+					// The scan's view of the disk predates the deletion.
+					return scanOf([family("/home/Desktop/a.txt", "/home/Desktop/b.txt")]);
+				},
+			},
+			seeded([threeFileFamily()]),
+		);
+		const service = createVersionFamilyService(h.deps);
+		const refreshed = service.refresh();
+		await service.removePaths(["/home/Desktop/b.txt"]);
+		release();
+		await refreshed;
+		expect(scanned).toBe(1);
+		// The scan reported the deleted file; the trash still wins.
+		expect(h.persisted()?.families).toEqual([]);
+	});
+});
+
+describe("pruneVersionFamilies", () => {
+	it("breaks a mtime tie by path when re-heading", () => {
+		const families: FsVersionFamily[] = [
+			{
+				head: "/x/z.txt",
+				members: [
+					{ path: "/x/b.txt", relation: "exact" },
+					{ path: "/x/a.txt", relation: "exact" },
+				],
+				entries: [
+					{ ...fsEntry("/x/z.txt") },
+					{ ...fsEntry("/x/b.txt"), modifiedAt: "2026-09-29T00:00:00.000Z" },
+					{ ...fsEntry("/x/a.txt"), modifiedAt: "2026-09-29T00:00:00.000Z" },
+				],
+			},
+		];
+		const pruned = pruneVersionFamilies(families, new Set(["/x/z.txt"]));
+		expect(pruned[0]?.head).toBe("/x/a.txt");
+	});
+
+	it("returns the same array when nothing was removed", () => {
+		const families: FsVersionFamily[] = [];
+		expect(pruneVersionFamilies(families, new Set())).toBe(families);
 	});
 });
 
