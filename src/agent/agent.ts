@@ -67,6 +67,7 @@ import {
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
+import { extractPartialAnswer } from "./answer-delta.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -1142,21 +1143,64 @@ export class AutoRAGAgent {
 		let progressBuffer = "";
 		let wake: (() => void) | undefined;
 		let settled = false;
+		// The curated answer never arrives as assistant text: it is written into
+		// the emit_fast_answer / emit_autorag_results tool-call arguments, which
+		// stream as raw JSON fragments. Track the active emit tool call and
+		// decode the `answer` field from its partial JSON so the answer body can
+		// be rendered token-by-token; the preliminary/complete events that follow
+		// carry the authoritative full answer and supersede these deltas.
+		let answerIndex: number | undefined;
+		let answerPhase: "preliminary" | "final" | undefined;
+		let answerRaw = "";
+		let answerEmitted = "";
 		const unsubscribe = this.subscribe((event) => {
-			if (event.type !== "message_update" || event.assistantMessageEvent.type !== "text_delta") return;
-			const text = event.assistantMessageEvent.delta;
-			if (text.trim().length === 0) return;
-			progressBuffer += text;
-			if (!/[.!?。！？]\s*$/u.test(progressBuffer)) return;
-			queue.push({
-				type: "progress",
-				sessionId: this.lastSessionId ?? "",
-				query: query.trim(),
-				text: progressBuffer,
-			});
-			progressBuffer = "";
-			wake?.();
-			wake = undefined;
+			if (event.type !== "message_update") return;
+			const update = event.assistantMessageEvent;
+			if (update.type === "text_delta") {
+				const text = update.delta;
+				if (text.trim().length === 0) return;
+				progressBuffer += text;
+				if (!/[.!?。！？]\s*$/u.test(progressBuffer)) return;
+				queue.push({
+					type: "progress",
+					sessionId: this.lastSessionId ?? "",
+					query: query.trim(),
+					text: progressBuffer,
+				});
+				progressBuffer = "";
+				wake?.();
+				wake = undefined;
+				return;
+			}
+			if (update.type === "toolcall_start") answerIndex = undefined;
+			if (update.type === "toolcall_start" || update.type === "toolcall_delta") {
+				const block = update.partial.content[update.contentIndex];
+				const toolName = block !== undefined && block.type === "toolCall" ? block.name : undefined;
+				if (toolName !== EMIT_FAST_ANSWER_TOOL_NAME && toolName !== EMIT_AUTORAG_RESULTS_TOOL_NAME) return;
+				const phase = toolName === EMIT_FAST_ANSWER_TOOL_NAME ? "preliminary" : "final";
+				if (answerIndex !== update.contentIndex || answerPhase !== phase) {
+					answerIndex = update.contentIndex;
+					answerPhase = phase;
+					answerRaw = "";
+					answerEmitted = "";
+				}
+				if (update.type === "toolcall_delta") answerRaw += update.delta;
+				const decoded = extractPartialAnswer(answerRaw);
+				if (decoded !== undefined && decoded.length > answerEmitted.length && decoded.startsWith(answerEmitted)) {
+					queue.push({
+						type: "answer_delta",
+						phase,
+						sessionId: this.lastSessionId ?? "",
+						query: query.trim(),
+						text: decoded.slice(answerEmitted.length),
+					});
+					answerEmitted = decoded;
+					wake?.();
+					wake = undefined;
+				}
+				return;
+			}
+			if (update.type === "toolcall_end" && answerIndex === update.contentIndex) answerIndex = undefined;
 		});
 		queue.push({
 			type: "progress",
