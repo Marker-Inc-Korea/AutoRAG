@@ -327,6 +327,31 @@ check("the popover matches the reference metrics and colors", diffs.length === 0
 console.log(`app metrics: ${JSON.stringify(appMetrics)}`);
 console.log(`reference popover: ${JSON.stringify(await refPopover.boundingBox())}`);
 
+// 10. One artifact with the two popovers side by side, for the visual fidelity read.
+const compareHtml = join(EVIDENCE, "side-by-side.html");
+writeFileSync(
+	compareHtml,
+	`<body style="margin:0;display:flex;background:#E9E9EE;font:12px/1.5 -apple-system,sans-serif">
+	<figure style="margin:0;padding:12px"><figcaption style="padding:0 2px 6px;color:#1A1A2E">AI Finder app — v6 implementation</figcaption><img id="app" src="app-history-popover.png" style="display:block;width:360px;height:auto;border:1px solid #C9C9D4;border-radius:8px"></figure>
+	<figure style="margin:0;padding:12px"><figcaption style="padding:0 2px 6px;color:#1A1A2E">design_handoff_ai_finder_v6 — reference prototype</figcaption><img id="ref" src="reference-history-popover.png" style="display:block;width:360px;height:auto;border:1px solid #C9C9D4;border-radius:8px"></figure>
+</body>`,
+);
+const comparePage = await refBrowser.newPage({ viewport: { width: 800, height: 640 } });
+await comparePage.goto(`file://${compareHtml}`);
+const compareSizes = await comparePage
+	.waitForFunction(() => [...document.images].every((image) => image.complete && image.naturalWidth > 0), null, { timeout: 10_000 })
+	.then(() => comparePage.evaluate(() => [...document.images].map((image) => `${image.id}:${image.naturalWidth}x${image.naturalHeight}`)))
+	.catch(() => []);
+check("both popovers render in the side-by-side artifact", compareSizes.length === 2, JSON.stringify(compareSizes));
+const renderedWidths = await comparePage.evaluate(() => [...document.images].map((image) => ({ box: Math.round(image.getBoundingClientRect().width), content: image.clientWidth })));
+check(
+	"both popovers are shown at the same scale (their shared 360px width)",
+	renderedWidths.length === 2 && renderedWidths[0].box === renderedWidths[1].box && renderedWidths.every((image) => image.content === 360),
+	JSON.stringify(renderedWidths),
+);
+await comparePage.screenshot({ path: join(EVIDENCE, "reference-side-by-side.png") });
+await comparePage.close();
+
 sweep();
 console.log(failures.length === 0 ? "RESULT: PASS" : `RESULT: FAIL (${failures.join(", ")})`);
 console.log(`evidence: ${EVIDENCE}`);
