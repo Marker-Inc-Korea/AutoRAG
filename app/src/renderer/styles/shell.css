@@ -641,7 +641,7 @@
 	gap: var(--space-8);
 }
 
-.settings-row button {
+.settings-row button:not(.settings-switch) {
 	height: 32px;
 	flex: none;
 	padding: 0 12px;
@@ -654,7 +654,7 @@
 	white-space: nowrap;
 }
 
-.settings-row button:hover {
+.settings-row button:not(.settings-switch):hover {
 	background: var(--bg-chrome);
 }
 
@@ -687,48 +687,60 @@
 	appearance: none;
 }
 
-.settings-keycaps {
-	display: flex;
-	gap: var(--space-4);
-}
-
-.settings-keycaps kbd {
-	padding: 2px 8px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-5);
-	background: var(--bg-chrome);
-	color: var(--text-primary);
-	font-size: var(--font-size-meta);
-}
-
+/* shadcn/ui Switch (new-york-v4 registry item, verbatim geometry/motion);
+ * only the color values move to brand tokens (#FF6363 checked / #CFCFD9 off). */
 .settings-switch {
-	position: relative;
-	width: 36px !important;
-	height: 22px !important;
-	padding: 0 !important;
-	border: 0 !important;
-	border-radius: var(--radius-full) !important;
-	background: var(--switch-off) !important;
-	transition: background var(--dur-color);
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	width: 32px;
+	height: 18.4px;
+	padding: 0;
+	border-width: 1px;
+	border-style: solid;
+	border-color: transparent;
+	border-radius: 9999px;
+	outline: none;
+	background-color: var(--switch-off);
+	box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-xs */
+	transition-property: all;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 150ms;
 }
 
-.settings-switch span {
-	position: absolute;
-	top: 3px;
-	left: 3px;
-	width: 16px;
+.settings-switch[data-state="checked"] {
+	background-color: var(--accent);
+}
+
+.settings-switch:focus-visible {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-flash-ring);
+}
+
+.settings-switch:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.settings-switch__thumb {
+	display: block;
+	width: 16px; /* size-4 */
 	height: 16px;
-	border-radius: 50%;
-	background: var(--bg-window);
-	transition: transform var(--dur-color);
+	border-radius: 9999px;
+	background-color: var(--bg-window); /* shadcn bg-background (#fff) */
+	pointer-events: none;
+	box-shadow: none; /* ring-0 */
+	transition-property: transform;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 150ms;
 }
 
-.settings-switch.is-on {
-	background: var(--accent) !important;
+.settings-switch__thumb[data-state="unchecked"] {
+	transform: translateX(0);
 }
 
-.settings-switch.is-on span {
-	transform: translateX(14px);
+.settings-switch__thumb[data-state="checked"] {
+	transform: translateX(calc(100% - 2px));
 }
 
 .settings-danger-button {

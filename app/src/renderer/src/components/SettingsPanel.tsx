@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "
 import type { AppSettings, AssistantEvent, Contact, DataSourceRow } from "../../../shared/settings-contract";
 import type { SettingsBridge, AssistantSurface } from "../../../shared/settings-contract";
 import { ArrowUpIcon, CloseIcon, SparklesIcon } from "./icons";
+import { Switch } from "./primitives/Switch";
 
 const autorag = (window as unknown as { readonly autorag: { readonly settings: SettingsBridge } }).autorag;
 
@@ -192,10 +193,6 @@ export function SettingsPanel({
 									<div className="settings-select"><select value={settings.language} onChange={(event) => void autorag.settings.set({ language: event.target.value as AppSettings["language"] }).then(setSettings)}>
 										<option value="ko">한국어</option><option value="en">English</option><option value="ja">日本語</option><option value="zh">简体中文</option>
 									</select></div>
-								</SettingRow>
-								{/* WIP: the global shortcut is shown but main-process registration is not implemented. */}
-								<SettingRow label="Global shortcut" description="어디서든 AutoRAG Agent 열기">
-									<div className="settings-keycaps"><kbd>⌥</kbd><kbd>Space</kbd></div>
 								</SettingRow>
 								{/* WIP: launch-at-login persists but the app does not call app.setLoginItemSettings yet. */}
 								<SettingRow label="Launch at login" description="Mac 로그인 시 자동 실행">
@@ -427,8 +424,4 @@ function SettingRow({ label, description, children }: { readonly label: string; 
 			<div className="settings-row__control">{children}</div>
 		</div>
 	);
-}
-
-function Switch({ checked, onChange }: { readonly checked: boolean; readonly onChange: () => void }): ReactElement {
-	return <button type="button" role="switch" aria-checked={checked} className={`settings-switch${checked ? " is-on" : ""}`} onClick={onChange}><span /></button>;
 }
