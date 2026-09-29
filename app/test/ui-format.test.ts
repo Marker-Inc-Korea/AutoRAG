@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { RECENTS_PATH } from "../src/shared/fs-contract";
 import {
+	emptyStateText,
 	formatModified,
 	formatSize,
 	indexToast,
@@ -48,6 +50,18 @@ describe("status strings", () => {
 
 	it("summarises a search", () => {
 		expect(searchSummaryText(7)).toBe("7 results across all locations");
+	});
+});
+
+describe("emptyStateText", () => {
+	it("names the empty folder and the empty search", () => {
+		expect(emptyStateText("")).toBe("빈 폴더");
+		expect(emptyStateText("예산")).toBe('"예산"와 일치하는 파일이 없습니다');
+	});
+
+	it("names the empty Recents view instead of an empty folder", () => {
+		expect(emptyStateText("", RECENTS_PATH)).toBe("최근에 연 파일이 없습니다");
+		expect(emptyStateText("예산", RECENTS_PATH)).toBe('"예산"와 일치하는 파일이 없습니다');
 	});
 });
 

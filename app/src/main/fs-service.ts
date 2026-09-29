@@ -4,23 +4,25 @@ import { cp, lstat, readdir, rename as fsRename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { scanWithDupey, type DupeyScanResult } from "@autorag/librarian";
-import type {
-	DirListing,
-	FsBatchResult,
-	FsBridge,
-	FsClipboard,
-	FsEntry,
-	FsLocation,
-	FsOpError,
-	FsSearchResult,
-	FsVersionFamiliesResult,
-	FsVersionFamily,
-	FsVersionFamilyError,
-	FsVersionMember,
-	FsVersionRelation,
+import {
+	RECENTS_PATH,
+	type DirListing,
+	type FsBatchResult,
+	type FsBridge,
+	type FsClipboard,
+	type FsEntry,
+	type FsLocation,
+	type FsOpError,
+	type FsSearchResult,
+	type FsVersionFamiliesResult,
+	type FsVersionFamily,
+	type FsVersionFamilyError,
+	type FsVersionMember,
+	type FsVersionRelation,
 } from "../shared/fs-contract";
 import { createDupeyProbe, DUPEY_INSTALL_COMMAND, type DupeyProbe } from "./dupey";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
+import { createRecentsStore, type RecentsStore } from "./recents-store";
 
 /** Subset of Electron's shell used by the service (injected for testability). */
 export interface FsShell {
@@ -50,6 +52,8 @@ export interface FsServiceDeps {
 	readonly dupey?: DupeyProbe;
 	/** Clock for the family cache TTL; tests inject a fixed one. */
 	readonly now?: () => number;
+	/** Recently opened/previewed files. Defaults to `<homeDir>/recents`; production injects the userData store. */
+	readonly recents?: RecentsStore;
 }
 
 export type FsRenameErrorCode = "invalid-name" | "name-collision";
@@ -179,6 +183,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	const scanDuplicates = deps.scanDuplicates ?? ((dir: string) => scanWithDupey(dir));
 	const dupey = deps.dupey ?? createDupeyProbe();
 	const now = deps.now ?? (() => Date.now());
+	const recents = deps.recents ?? createRecentsStore({ directory: join(home, "recents") });
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
 	const familyCache = new Map<string, { readonly at: number; readonly families: readonly FsVersionFamily[] }>();
@@ -193,6 +198,9 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	}
 
 	async function listDir(path: string): Promise<DirListing> {
+		if (path === RECENTS_PATH) {
+			return { path, entries: await recentEntries() };
+		}
 		const dirents = await readdir(path, { withFileTypes: true });
 		const entries: FsEntry[] = [];
 		for (const dirent of dirents) {
@@ -208,7 +216,29 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		return { path, entries };
 	}
 
+	/**
+	 * The virtual Recents listing: recorded paths that still exist, most recent
+	 * first. A file that moved or was deleted simply drops out of the view; any
+	 * other failure keeps its verbatim reason visible.
+	 */
+	async function recentEntries(): Promise<FsEntry[]> {
+		const entries: FsEntry[] = [];
+		for (const stored of await recents.list()) {
+			try {
+				entries.push(await buildFsEntry(stored));
+			} catch (error) {
+				if (!hasErrorCode(error, "ENOENT") && !hasErrorCode(error, "ENOTDIR")) {
+					console.warn(`fs:listDir ${RECENTS_PATH} skipping ${stored}: ${errorMessage(error)}`);
+				}
+			}
+		}
+		return entries;
+	}
+
 	async function locations(): Promise<readonly FsLocation[]> {
+		const result: FsLocation[] = [
+			{ name: RECENTS_PATH, path: RECENTS_PATH, section: "favorites", available: true },
+		];
 		const fixed: readonly { readonly name: string; readonly path: string; readonly section: "favorites" | "cloud" }[] =
 			[
 				{ name: "Desktop", path: join(home, "Desktop"), section: "favorites" },
@@ -216,7 +246,6 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 				{ name: "Documents", path: join(home, "Documents"), section: "favorites" },
 				{ name: "iCloud Drive", path: join(home, "Library", "Mobile Documents", "com~apple~CloudDocs"), section: "cloud" },
 			];
-		const result: FsLocation[] = [];
 		for (const spec of fixed) {
 			result.push({ name: spec.name, path: spec.path, section: spec.section, available: await isAvailable(spec.path) });
 		}
@@ -250,7 +279,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		if (needle.length === 0) return [];
 		const results: FsSearchResult[] = [];
 		for (const location of await locations()) {
-			if (!location.available) continue;
+			if (!location.available || location.path === RECENTS_PATH) continue;
 			await walkForSearch(location.path, 0, { needle, location: location.name, results });
 			if (results.length >= SEARCH_MAX_RESULTS) break;
 		}
@@ -272,7 +301,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		const result: FsVersionFamily[] = [];
 		const scanErrors: string[] = [];
 		for (const location of await locations()) {
-			if (!location.available) continue;
+			if (!location.available || location.path === RECENTS_PATH) continue;
 			const cached = familyCache.get(location.path);
 			if (cached !== undefined && now() - cached.at < VERSION_FAMILY_TTL_MS) {
 				result.push(...cached.families);
@@ -388,6 +417,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 			deps.shell.showItemInFolder(path);
 		},
 		quickLook: async (path) => {
+			await recents.record(path);
 			spawnQuickLook(path);
 		},
 		open: async (path) => {
@@ -396,6 +426,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 			if (message !== "") {
 				throw new Error(message);
 			}
+			await recents.record(path);
 		},
 		clipboardSet: async (clipboard) => {
 			inAppClipboard = { op: clipboard.op, paths: [...clipboard.paths] };

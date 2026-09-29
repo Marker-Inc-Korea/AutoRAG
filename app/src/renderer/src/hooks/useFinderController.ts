@@ -351,14 +351,14 @@ export function useFinderController(
 				navigate(entry.path);
 				return;
 			}
-			if (searching || entry.location !== path) {
+			if (searching) {
 				revealEntry(entry);
 				return;
 			}
 			// Double-click / Enter on a file: the OS default application opens it.
 			source.open(entry.path).catch(reportError);
 		},
-		[navigate, path, revealEntry, searching, source, reportError],
+		[navigate, revealEntry, searching, source, reportError],
 	);
 
 	const trashPaths = useCallback(
@@ -665,7 +665,7 @@ export function useFinderController(
 		searchFocused,
 		searching,
 		searchSummary: searchSummaryText(rows.length),
-		emptyText: emptyStateText(query),
+		emptyText: emptyStateText(query, path),
 		rows,
 		stackRows,
 		sort,

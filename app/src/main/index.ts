@@ -6,6 +6,7 @@ import { BUILTIN_DATASOURCE_SKILL_NAMES, writeConfigObject, writeDefaultConfig }
 import type { DataSourceRow } from "../shared/settings-contract";
 import { createChatStore } from "./chat-store";
 import { createFsService } from "./fs-service";
+import { createRecentsStore } from "./recents-store";
 import { createDefaultAgentFactory, createSearchService } from "./search-service";
 import { createSettingsService } from "./settings-service";
 import { registerFsIpcHandlers, registerSearchIpcHandlers, registerSettingsIpcHandlers } from "./ipc";
@@ -111,7 +112,13 @@ function createMainWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
 	ensureAutoRAGConfig();
-	registerFsIpcHandlers(createFsService({ shell, clipboard }));
+	registerFsIpcHandlers(
+		createFsService({
+			shell,
+			clipboard,
+			recents: createRecentsStore({ directory: join(app.getPath("userData"), "recents") }),
+		}),
+	);
 	const searchService = createSearchService({
 		agentFactory: createDefaultAgentFactory(),
 		chatStore: createChatStore({ directory: join(app.getPath("userData"), "chat-history") }),
