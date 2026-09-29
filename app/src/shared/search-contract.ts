@@ -5,6 +5,9 @@
  * and streams `searchDocumentsStream` events to the renderer over IPC.
  * Quick = the stream's `preliminary` event (emit_fast_answer fast phase);
  * Deep = the stream's `complete` event (full SearchDocumentsResponse).
+ * `quick-delta` / `deep-delta` carry the token-level answer body streamed
+ * from the emit tool-call arguments; the following `quick` / `deep` event
+ * carries the authoritative full answer and supersedes them.
  * All payloads crossing IPC are plain serializable shapes defined here —
  * never pi/librarian class instances.
  */
@@ -50,6 +53,8 @@ export interface AnswerPhase {
 
 export type SearchStreamEvent =
 	| { readonly type: "progress"; readonly searchId: string; readonly text: string }
+	| { readonly type: "quick-delta"; readonly searchId: string; readonly text: string }
+	| { readonly type: "deep-delta"; readonly searchId: string; readonly text: string }
 	| { readonly type: "quick"; readonly searchId: string; readonly sessionId: string; readonly phase: AnswerPhase }
 	| { readonly type: "deep"; readonly searchId: string; readonly sessionId: string; readonly phase: AnswerPhase }
 	| { readonly type: "error"; readonly searchId: string; readonly message: string }
