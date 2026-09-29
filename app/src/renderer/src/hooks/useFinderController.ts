@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, RefObject } from "react";
+import { RECENTS_PATH } from "../../../shared/fs-contract";
 import type { FinderEntry } from "../data/entries";
 import type { NavItem } from "../data/places";
 import { type FinderLocation, type FinderSource, pickInitialPath } from "../data/source";
@@ -351,14 +352,15 @@ export function useFinderController(
 				navigate(entry.path);
 				return;
 			}
-			if (searching) {
+			// A Recents row always opens: the view is a history, not a folder to reveal into.
+			if (searching || (entry.location !== path && path !== RECENTS_PATH)) {
 				revealEntry(entry);
 				return;
 			}
 			// Double-click / Enter on a file: the OS default application opens it.
 			source.open(entry.path).catch(reportError);
 		},
-		[navigate, revealEntry, searching, source, reportError],
+		[navigate, path, revealEntry, searching, source, reportError],
 	);
 
 	const trashPaths = useCallback(

@@ -28,6 +28,17 @@ const sh = (cmd) => {
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Bounded poll for an external process to appear or a state to flip. */
+const waitFor = async (probe, timeoutMs = 8000) => {
+	const deadline = Date.now() + timeoutMs;
+	for (; ;) {
+		const value = probe();
+		if (value) return value;
+		if (Date.now() >= deadline) return "";
+		await sleep(250);
+	}
+};
+
 /** GUI application processes, so a launch from a double-click is observable. */
 const guiProcesses = () =>
 	new Set(
@@ -60,8 +71,16 @@ const handlerHolding = (needle) => {
 	}
 	return "";
 };
+/** Close only the fixtures this run handed to a handler, so the next check cannot read a stale document. */
+const closeHandlerDocuments = () => {
+	for (const app of DOCUMENT_HANDLERS) {
+		if (sh(`pgrep -x "${app}"`) === "") continue;
+		sh(`osascript -e 'tell application "${app}" to close (every document whose name contains "${RUN_PREFIX}")'`);
+	}
+};
 
 const RUN_ID = `ulw-recents-qa-${Date.now().toString(36)}`;
+const RUN_PREFIX = "ulw-recents-qa-";
 const textEditWasRunning = sh('pgrep -x "TextEdit"') !== ""; const FIXTURE_OPEN = join(process.env.HOME, "Documents", `${RUN_ID}-opened.txt`);
 const FIXTURE_PREVIEW = join(process.env.HOME, "Documents", `${RUN_ID}-previewed.txt`);
 const USER_DATA = join(tmpdir(), `${RUN_ID}-userdata`);
@@ -77,9 +96,14 @@ const check = (label, ok, detail) => {
 	if (!ok) failures.push(label);
 };
 
+const appLog = [];
 const openApp = async () => {
 	const app = await _electron.launch({ args: ["app", `--user-data-dir=${USER_DATA}`], cwd: ROOT });
+	app.process().stdout?.on("data", (chunk) => appLog.push(`stdout: ${String(chunk).trim()}`));
+	app.process().stderr?.on("data", (chunk) => appLog.push(`stderr: ${String(chunk).trim()}`));
+	app.process().on("exit", (code) => appLog.push(`app exited code=${code}`));
 	const page = await app.firstWindow();
+	page.on("crash", () => appLog.push("renderer crashed"));
 	await page.waitForSelector('[role="row"]');
 	return { app, page };
 };
@@ -127,11 +151,14 @@ const launchedByDoubleClick = [...guiProcesses()].filter((line) => !guiBefore.ha
 await page.screenshot({ path: join(EVIDENCE, "after-open-dblclick.png") });
 console.log(`apps newly running: ${launchedByDoubleClick.map(appNameOf).join(", ") || "none"}`);
 console.log(`frontmost after double-click: ${frontmostApp()}`);
+const handlerEvidence = await waitFor(() => handlerHolding(RUN_ID));
 check(
 	"double-click handed the file to an OS application",
-	handlerHolding(RUN_ID).length > 0,
-	handlerHolding(RUN_ID) || "no running handler lists the fixture document",
+	handlerEvidence.length > 0,
+	handlerEvidence || "no running handler lists the fixture document",
 );
+closeHandlerDocuments();
+check("the fixture document was closed again", handlerHolding(RUN_ID) === "", handlerHolding(RUN_ID) || "none");
 
 // 3. Space on a second file → Quick Look previews it and it becomes recent too.
 await page.bringToFront();
@@ -139,9 +166,21 @@ const previewRow = page.locator('[role="row"]', { hasText: `${RUN_ID}-previewed.
 await previewRow.click();
 await page.keyboard.press(" ");
 await sleep(4000);
+// The qlmanage process is host-dependent (macOS hands the preview to QuickLookUIService and
+// qlmanage can exit before ps sees it), so this stays an observation: the deterministic gate is
+// the store record below, which only quickLook() can write.
+const quickLookEvidence = await waitFor(
+	() => sh(`ps -axo command | grep -F 'qlmanage -p ${FIXTURE_PREVIEW}' | grep -v grep`),
+);
+console.log(
+	`observation (host-dependent): qlmanage for the previewed fixture = ${quickLookEvidence ? "seen" : "not seen — the preview went to QuickLookUIService"
+	}`,
+);
+const storeAfterPreview = existsSync(STORE) ? JSON.parse(readFileSync(STORE, "utf8")) : [];
 check(
-	"Space launched the native Quick Look preview",
-	sh(`ps -axo command | grep -F 'qlmanage -p ${FIXTURE_PREVIEW}' | grep -v grep`).length > 0,
+	"Space recorded the previewed file as the most recent",
+	storeAfterPreview[0] === FIXTURE_PREVIEW,
+	JSON.stringify(storeAfterPreview),
 );
 await page.screenshot({ path: join(EVIDENCE, "after-space-preview.png") });
 
@@ -170,21 +209,43 @@ check(
 );
 await page.screenshot({ path: join(EVIDENCE, "recents-populated.png") });
 
-// 5. Restart → the history is still there (persisted, not in-memory).
+// 5. Double-clicking a Recents row opens the file instead of jumping to its folder.
+const recentRow = page.locator('[role="row"]', { hasText: `${RUN_ID}-opened.txt` });
+await recentRow.dblclick();
+await sleep(4000);
+try {
+	const tabAfterRecentOpen = await page.locator(".tab--active .tab__title").innerText({ timeout: 5000 });
+	check("double-clicking a Recents row stays on the Recents view", tabAfterRecentOpen === "Recents", tabAfterRecentOpen);
+	const recentOpenEvidence = await waitFor(() => handlerHolding(RUN_ID));
+	check(
+		"double-clicking a Recents row opens the file with the OS application",
+		recentOpenEvidence.length > 0,
+		recentOpenEvidence || "no handler holds the fixture",
+	);
+	await page.screenshot({ path: join(EVIDENCE, "recents-row-dblclick.png") });
+} catch (error) {
+	check("double-clicking a Recents row stays on the Recents view", false, String(error).slice(0, 300));
+	console.log("app log:\n" + appLog.slice(-20).join("\n"));
+}
+closeHandlerDocuments();
+
+// 6. Restart → the history is still there (persisted, not in-memory). Step 5 re-opened
+//    the "opened" fixture, so that entry now leads the list.
 await app.close();
 ({ app, page } = await openApp());
 await clickNav(page, "Recents");
 const afterRestart = await rowNames(page);
 check(
 	"Recents survives an app restart",
-	JSON.stringify(afterRestart) === JSON.stringify([`${RUN_ID}-previewed.txt`, `${RUN_ID}-opened.txt`]),
+	JSON.stringify(afterRestart) === JSON.stringify([`${RUN_ID}-opened.txt`, `${RUN_ID}-previewed.txt`]),
 	JSON.stringify(afterRestart),
 );
 await page.screenshot({ path: join(EVIDENCE, "recents-after-restart.png") });
 
-// 6. Cleanup — only what this script created.
+// 7. Cleanup — only what this script created.
 await app.close();
-sh(`osascript -e 'tell application "TextEdit" to close (every document whose name contains "${RUN_ID}")'`);
+sh(`osascript -e 'tell application "TextEdit" to close (every document whose name contains "${RUN_PREFIX}")'`);
+closeHandlerDocuments();
 sh(`pkill -f 'qlmanage -p ${FIXTURE_PREVIEW}'`);
 for (const line of launchedByDoubleClick) {
 	const name = appNameOf(line);
