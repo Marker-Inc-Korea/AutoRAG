@@ -13,6 +13,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { RequestsPopover } from "./components/RequestsPopover";
 import { StatusBar } from "./components/StatusBar";
+import { formatDevLabel, type DevLabel } from "../../shared/app-info";
 import { TabStrip } from "./components/TabStrip";
 import { Toolbar } from "./components/Toolbar";
 import { useFinderController } from "./hooks/useFinderController";
@@ -20,6 +21,12 @@ import { useFinderSource } from "./hooks/useFinderSource";
 
 /** The reference's `showHotkeys` prop (default true): keycaps on or off. */
 const SHOW_HOTKEYS = true;
+
+/** Unpackaged runs label the window with their clone, branch, and commit. */
+const DEV_LABEL = (() => {
+	const dev = (window as unknown as { readonly autorag?: { readonly dev?: DevLabel | null } }).autorag?.dev;
+	return dev === undefined || dev === null ? null : formatDevLabel(dev);
+})();
 
 export function App(): ReactElement {
 	const source = useFinderSource();
@@ -120,7 +127,7 @@ export function App(): ReactElement {
 						permissions={permissions}
 						callbacks={rowCallbacks}
 					/>
-					<StatusBar text={finder.statusText} showHotkeys={SHOW_HOTKEYS} />
+					<StatusBar text={finder.statusText} showHotkeys={SHOW_HOTKEYS} devLabel={DEV_LABEL} />
 				</section>
 				<AiSearchPanel />
 				{finder.toast === null ? null : <Toast message={finder.toast} />}

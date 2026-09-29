@@ -474,3 +474,13 @@
 	gap: var(--space-6);
 	white-space: nowrap;
 }
+
+.status-bar__dev {
+	overflow: hidden;
+	max-width: 46ch;
+	color: var(--text-faint);
+	font-family: var(--font-mono);
+	font-size: var(--font-size-badge);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}

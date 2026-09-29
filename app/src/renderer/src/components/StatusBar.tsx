@@ -8,13 +8,16 @@ import { Keycap } from "./primitives/Keycap";
 export function StatusBar({
 	text,
 	showHotkeys,
+	devLabel,
 }: {
 	readonly text: string;
 	readonly showHotkeys: boolean;
+	readonly devLabel: string | null;
 }): ReactElement {
 	return (
 		<div className="status-bar">
 			<span>{text}</span>
+			{devLabel === null ? null : <span className="status-bar__dev" title={devLabel}>{devLabel}</span>}
 			<span className="status-bar__hint">
 				{showHotkeys ? <Keycap label="space" variant="surface" /> : null}
 				Quick Look · Drag into chat to ask

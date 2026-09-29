@@ -5,7 +5,9 @@ import { app, BrowserWindow, clipboard, shell } from "electron";
 import { BUILTIN_DATASOURCE_SKILL_NAMES, writeConfigObject, writeDefaultConfig } from "@autorag/librarian";
 import type { DataSourceRow } from "../shared/settings-contract";
 import { FS_CHANNELS } from "../shared/fs-contract";
+import { APP_NAME, APP_VERSION, formatWindowTitle, type DevLabel } from "../shared/app-info";
 import { createChatStore } from "./chat-store";
+import { readDevLabel, resolveClonePath } from "./dev-label";
 import { buildFsEntry } from "./fs-entry";
 import { createFsService } from "./fs-service";
 import { createDefaultAgentFactory, createSearchService } from "./search-service";
@@ -95,18 +97,32 @@ async function setConfiguredDatasourceEnabled(id: string, enabled: boolean): Pro
 	writeConfigObject(configPath, raw);
 }
 
-function createMainWindow(): BrowserWindow {
+/** Unpackaged runs (and AUTORAG_DEV_LABEL=1) carry the clone label. */
+function resolveDevLabel(): DevLabel | null {
+	if (app.isPackaged && process.env.AUTORAG_DEV_LABEL !== "1") return null;
+	return readDevLabel(resolveClonePath(app.getAppPath()));
+}
+
+function createMainWindow(devLabel: DevLabel | null): BrowserWindow {
 	const window = new BrowserWindow({
 		width: 1440,
 		height: 900,
 		minWidth: 1360,
 		minHeight: 820,
+		title: formatWindowTitle(APP_NAME, APP_VERSION, devLabel),
 		webPreferences: {
 			preload: join(import.meta.dirname, "../preload/index.mjs"),
 			contextIsolation: true,
 			nodeIntegration: false,
 			sandbox: false,
+			additionalArguments: devLabel === null ? [] : [`--autorag-dev-label=${JSON.stringify(devLabel)}`],
 		},
+	});
+
+	// The renderer's static <title> would otherwise replace the window title.
+	window.webContents.on("page-title-updated", (event) => {
+		event.preventDefault();
+		window.setTitle(formatWindowTitle(APP_NAME, APP_VERSION, devLabel));
 	});
 
 	const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -122,6 +138,8 @@ let versionFamilyService: VersionFamilyService | null = null;
 
 app.whenReady().then(() => {
 	ensureAutoRAGConfig();
+	const devLabel = resolveDevLabel();
+	console.log(`[autorag] ${formatWindowTitle(APP_NAME, APP_VERSION, devLabel)}`);
 	const fsService = createFsService({ shell, clipboard });
 	registerFsIpcHandlers(fsService);
 	let scanIntervalMinutes = DEFAULT_SCAN_INTERVAL_MINUTES;
@@ -168,10 +186,10 @@ app.whenReady().then(() => {
 		versionFamilyService?.reschedule();
 	});
 	void versionFamilyService.start();
-	createMainWindow();
+	createMainWindow(devLabel);
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
-			createMainWindow();
+			createMainWindow(devLabel);
 		}
 	});
 });
