@@ -214,6 +214,7 @@ async function serviceWith(scanResult: DupeyScanResult, home: string) {
 		homeDir: home,
 		dupey: dupeyAvailable,
 		scanDuplicates: async () => scanResult,
+		osKind: async () => null,
 	};
 	return createFsService(deps);
 }
@@ -285,6 +286,7 @@ describe("fs service versionFamilies", () => {
 				scans++;
 				return scanFixture;
 			},
+			osKind: async () => null,
 		};
 		const service = createFsService(deps);
 		const result = await service.versionFamilies();
