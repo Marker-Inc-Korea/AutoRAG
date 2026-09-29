@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ICON_LIMIT, type IconTarget, createIconProvider } from "../src/main/file-icon";
+import { ICON_LIMIT, type IconTarget, THUMBNAIL_CHUNK, createIconProvider } from "../src/main/file-icon";
 
 const BYTES = new Uint8Array([1, 2, 3, 4]);
 const target = (path: string, modifiedAt = "2026-09-29T00:00:00.000Z"): IconTarget => ({ path, modifiedAt });
@@ -52,11 +52,11 @@ describe("createIconProvider", () => {
 
 	it("caps one listing at the icon limit", async () => {
 		// Given more files than the limit
-		let planned: readonly string[] = [];
+		const planned: string[] = [];
 		const provider = createIconProvider({
 			platform: "darwin",
 			generate: async (paths, outDir) => {
-				planned = [...paths];
+				planned.push(...paths);
 				for (const path of paths) await writeThumbnail(path, outDir);
 			},
 		});
@@ -65,9 +65,73 @@ describe("createIconProvider", () => {
 		// When they are listed
 		const icons = await provider.icons(many);
 
-		// Then exactly the limit was generated and nothing beyond it got an icon
+		// Then exactly the limit was planned and nothing beyond it got an icon
 		expect(planned).toHaveLength(ICON_LIMIT);
 		expect(icons.size).toBe(ICON_LIMIT);
+	});
+
+	it("splits a large listing into small sequential chunks", async () => {
+		// Given more files than one chunk holds
+		const batches: string[][] = [];
+		const provider = createIconProvider({
+			platform: "darwin",
+			generate: async (paths, outDir) => {
+				batches.push([...paths]);
+				for (const path of paths) await writeThumbnail(path, outDir);
+			},
+		});
+		const many = Array.from({ length: THUMBNAIL_CHUNK * 2 + 1 }, (_value, index) => target(`/docs/f${index}.png`));
+
+		// When they are listed
+		const icons = await provider.icons(many);
+
+		// Then the generator never saw more than one chunk at a time
+		expect(batches.map((batch) => batch.length)).toEqual([THUMBNAIL_CHUNK, THUMBNAIL_CHUNK, 1]);
+		expect(icons.size).toBe(THUMBNAIL_CHUNK * 2 + 1);
+	});
+
+	it("skips a crashed chunk and keeps the rest", async () => {
+		// Given a generator whose first chunk crashes like qlmanage -t does
+		let call = 0;
+		const warnings: string[] = [];
+		const provider = createIconProvider({
+			platform: "darwin",
+			generate: async (paths, outDir) => {
+				call += 1;
+				if (call === 1) throw new Error("Segmentation fault: 11");
+				for (const path of paths) await writeThumbnail(path, outDir);
+			},
+			warn: (message) => {
+				warnings.push(message);
+			},
+		});
+		const many = Array.from({ length: THUMBNAIL_CHUNK + 1 }, (_value, index) => target(`/docs/f${index}.png`));
+
+		// When they are listed
+		const icons = await provider.icons(many);
+
+		// Then only the crashed chunk went without icons and the crash surfaced verbatim
+		expect(icons.size).toBe(1);
+		expect(icons.get(`/docs/f${THUMBNAIL_CHUNK}.png`)).toBeDefined();
+		expect(warnings.join("\n")).toContain("Segmentation fault: 11");
+	});
+
+	it("does not regenerate icons for files that produced none", async () => {
+		// Given a file with no OS thumbnail (qlmanage writes nothing)
+		let generateCalls = 0;
+		const provider = createIconProvider({
+			platform: "darwin",
+			generate: async () => {
+				generateCalls += 1;
+			},
+		});
+
+		// When the same file is listed twice
+		expect((await provider.icons([target("/docs/app.zip")])).size).toBe(0);
+		expect((await provider.icons([target("/docs/app.zip")])).size).toBe(0);
+
+		// Then the OS was only asked once — per-file nulls are cached too
+		expect(generateCalls).toBe(1);
 	});
 
 	it("skips a file the generator produced nothing for", async () => {
@@ -87,7 +151,7 @@ describe("createIconProvider", () => {
 	});
 
 	it("logs a generation failure verbatim and returns no icons", async () => {
-		// Given a generator that fails
+		// Given a generator that fails every chunk
 		const warnings: string[] = [];
 		const provider = createIconProvider({
 			platform: "darwin",

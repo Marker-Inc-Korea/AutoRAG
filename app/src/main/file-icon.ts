@@ -19,8 +19,12 @@ import { errorMessage, hasErrorCode } from "./fs-entry";
 export const ICON_SIZE = 64;
 /** One listing never generates more than this many icons. */
 export const ICON_LIMIT = 240;
+/** One qlmanage call only handles this many files at once — bigger in-process batches drive its internal thumbnail queue into a known SIGSEGV. */
+export const THUMBNAIL_CHUNK = 10;
+/** Chunk pools running side by side; each pool member is its own qlmanage process, so the per-process queue stays shallow. */
+export const THUMBNAIL_POOL = 3;
 
-const ICON_TIMEOUT_MS = 20000;
+const ICON_TIMEOUT_MS = 4000;
 const ICON_MAX_BUFFER = 1 << 20;
 const THUMBNAIL_SUFFIX = ".png";
 
@@ -82,25 +86,43 @@ export function createIconProvider(deps: IconProviderDeps = {}): IconProvider {
 	const systemIcon = deps.systemIcon ?? defaultSystemIcon;
 	const limit = deps.limit ?? ICON_LIMIT;
 	const warn = deps.warn ?? ((message: string) => console.warn(message));
-	const cache = new Map<string, string>();
+	// Nulls are cached too: files with no OS thumbnail (and timed-out chunks) must not be regenerated on every listing.
+	const cache = new Map<string, string | null>();
 
 	async function thumbnails(targets: readonly IconTarget[]): Promise<ReadonlyMap<string, string>> {
 		const outDir = await mkdtemp(join(tmpdir(), "autorag-icons-"));
+		const produced = new Map<string, string>();
 		try {
-			await generate(
-				targets.map((target) => target.path),
-				outDir,
-			);
-			const produced = new Map<string, string>();
-			for (const target of targets) {
-				const file = join(outDir, `${basename(target.path)}${THUMBNAIL_SUFFIX}`);
-				try {
-					produced.set(target.path, dataUrl(await readFile(file)));
-				} catch (error) {
-					// No thumbnail for this file: qlmanage simply writes nothing.
-					if (!hasErrorCode(error, "ENOENT")) throw error;
-				}
+			const chunks: IconTarget[][] = [];
+			for (let offset = 0; offset < targets.length; offset += THUMBNAIL_CHUNK) {
+				chunks.push(targets.slice(offset, offset + THUMBNAIL_CHUNK));
 			}
+			let cursor = 0;
+			const workers = Array.from({ length: Math.min(THUMBNAIL_POOL, chunks.length) }, async () => {
+				for (let i = cursor++; i < chunks.length; i = cursor++) {
+					const chunk = chunks[i] ?? [];
+					try {
+						await generate(
+							chunk.map((target) => target.path),
+							outDir,
+						);
+					} catch (error) {
+						// A crashed or stuck qlmanage costs only this chunk; the others keep trying.
+						warn(`file-icon: thumbnail chunk of ${chunk.length} failed: ${errorMessage(error)}`);
+						continue;
+					}
+					for (const target of chunk) {
+						const file = join(outDir, `${basename(target.path)}${THUMBNAIL_SUFFIX}`);
+						try {
+							produced.set(target.path, dataUrl(await readFile(file)));
+						} catch (error) {
+							// No thumbnail for this file: qlmanage simply writes nothing.
+							if (!hasErrorCode(error, "ENOENT")) throw error;
+						}
+					}
+				}
+			});
+			await Promise.all(workers);
 			return produced;
 		} finally {
 			await rm(outDir, { recursive: true, force: true });
@@ -123,7 +145,7 @@ export function createIconProvider(deps: IconProviderDeps = {}): IconProvider {
 			for (const target of targets) {
 				const cached = cache.get(cacheKey(target));
 				if (cached !== undefined) {
-					found.set(target.path, cached);
+					if (cached !== null) found.set(target.path, cached);
 					continue;
 				}
 				if (missing.length < limit) missing.push(target);
@@ -135,13 +157,13 @@ export function createIconProvider(deps: IconProviderDeps = {}): IconProvider {
 				produced = platform === "darwin" ? await thumbnails(missing) : await systemIcons(missing);
 			} catch (error) {
 				warn(`file-icon: icon generation failed for ${missing.length} file(s): ${errorMessage(error)}`);
+				for (const target of missing) cache.set(cacheKey(target), null);
 				return found;
 			}
 			for (const target of missing) {
 				const url = produced.get(target.path);
-				if (url === undefined) continue;
-				cache.set(cacheKey(target), url);
-				found.set(target.path, url);
+				cache.set(cacheKey(target), url ?? null);
+				if (url !== undefined) found.set(target.path, url);
 			}
 			return found;
 		},
