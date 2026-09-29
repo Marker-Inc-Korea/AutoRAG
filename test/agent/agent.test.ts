@@ -181,6 +181,16 @@ describe("AutoRAGAgent", () => {
 		expect((internals(agent).minSyncMethod as unknown as { maxChunkSize?: number }).maxChunkSize).toBe(1000);
 	});
 
+	it("accepts and retains configured languages", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			languages: ["ja", "en"],
+		});
+
+		expect(agent.languages).toEqual(["ja", "en"]);
+	});
+
 	it("registers the dupey duplicate scan tool by default", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

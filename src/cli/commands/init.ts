@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { LanguageError, parseLanguageList } from "../../language.ts";
 import {
 	type CliConfig,
 	ConfigError,
@@ -30,6 +31,18 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 	}
 	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];
+	const languageInput = typeof flags.languages === "string" ? flags.languages : process.env.AUTORAG_LANGUAGES;
+	if (languageInput !== undefined) {
+		try {
+			partial.languages = parseLanguageList(languageInput);
+		} catch (error) {
+			if (error instanceof LanguageError) {
+				ctx.stderr(renderError(new ConfigError(error.message), { json: ctx.json, debug: ctx.debug }));
+				return 2;
+			}
+			throw error;
+		}
+	}
 	if (typeof flags["minsync-max-chunk-size"] === "string") {
 		try {
 			const value = Number(flags["minsync-max-chunk-size"]);
@@ -90,6 +103,7 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			partial.workspacePath ??= normalizedLegacy.workspacePath;
 			partial.memoryPath ??= normalizedLegacy.memoryPath;
 			partial.model ??= legacy.model;
+			partial.languages ??= legacy.languages;
 			partial.minSync ??= legacy.minSync;
 			partial.jikji ??= legacy.jikji;
 			partial.parserOptions ??= legacy.parserOptions;

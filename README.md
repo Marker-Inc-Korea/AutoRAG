@@ -195,7 +195,7 @@ bun add @autorag/librarian
 
 ### System Prerequisites
 
-- **Java 11 or newer:** Required for PDF parsing via `@opendataloader/pdf`. Check with `java -version`.
+- **No Java required:** Document parsing (HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS) runs in-process through [`kordoc`](https://github.com/chrisryugj/kordoc).
 - **Rust Toolchain (Optional):** Automatically compiles Jikji (`jikji-cli`) if installed.
 - **MinSync:** Automatically downloaded and installed into `<workspace>/.autorag/bin` on first run.
 
@@ -209,12 +209,35 @@ bun add @autorag/librarian
 # Initialize configuration for your documents folder
 autorag init --search-paths ~/Documents/research
 
+# Korean + English is the default; set it explicitly for other corpora
+autorag init --search-paths ~/Documents/research --languages ja,en
+
 # Index documents (parses PDFs/Markdown, builds BM25 and MinSync vectors)
 autorag refresh
 
 # Check indexing health
 autorag status
 ```
+
+### Document languages and parsers
+
+One global `languages` setting describes the corpus. It is resolved from
+`--languages`, then `AUTORAG_LANGUAGES`, then `languages` in the config file,
+falling back to `["ko", "en"]`. Supported tags: `ko`, `en`, `ja`, `zh-hans`,
+`zh-hant`, `fr`, `de`, `es`, `ru`, `it`, `pt`, `vi`, `th`, `ar`, `hi`.
+
+| Extension | Parser |
+|---|---|
+| `.hwp` `.hwpx` `.hml` `.hwpml` `.pdf` `.docx` `.xlsx` `.xls` | `kordoc` (nested tables, per-sheet workbooks, no Java) |
+| `.pptx` | built-in PPTX reader |
+| `.eml` | built-in mail reader |
+| `.txt` `.text` `.md` `.markdown` | plain text (CP949/EUC-KR aware) |
+| `.png` `.jpg` `.jpeg` `.bmp` `.tiff` `.webp` | image OCR (opt-in) |
+
+OCR is opt-in and never runs unless enabled, so indexing downloads no model by
+default. When enabled, `languages` selects the recognition languages
+(`ja` → `jpn`, `zh-hans` → `chi_sim`, …) for both standalone images and scanned
+PDF pages.
 
 ### 2. Search from CLI
 
@@ -255,7 +278,7 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 
 | Command | Description |
 |---|---|
-| `autorag init` | Initialize `~/.autorag/config.json` with search roots and model settings |
+| `autorag init` | Initialize `~/.autorag/config.json` with search roots, document languages, and model settings |
 | `autorag refresh` | Refresh parsed mirrors, MinSync CDC chunks, datasources, and Jikji |
 | `autorag search "<query>"` | Run the librarian agent to curate structured answers |
 | `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
@@ -304,7 +327,7 @@ AutoRAG Agent stands on the shoulders of fantastic open-source projects:
 - **[Jikji](https://github.com/NomaDamas/jikji)** by [NomaDamas](https://github.com/NomaDamas) — High-performance find-first local document discovery.
 - **[dupey](https://github.com/NomaDamas/dupey)** by [NomaDamas](https://github.com/NomaDamas) — Fast duplicate and near-duplicate document family detection.
 - **Federated CLI Authors:** External datasource tools [`lazykatok`](https://github.com/changeroa/lazykatok), [`discrawl`](https://github.com/openclaw/discrawl), [`mailcrawl`](https://github.com/NomaDamas/mailcrawl), [`wacrawl`](https://github.com/openclaw/wacrawl), [`telecrawl`](https://github.com/openclaw/telecrawl), [`slacrawl`](https://github.com/openclaw/slacrawl), [`notcrawl`](https://github.com/openclaw/notcrawl), [`qmd`](https://github.com/tobi/qmd), and [`rclone`](https://rclone.org).
-- **[OpenDataLoader](https://github.com/opendataloader/opendataloader-pdf)** / **Docling** — Robust PDF and document parsing runtimes.
+- **[kordoc](https://github.com/chrisryugj/kordoc)** by [chrisryugj](https://github.com/chrisryugj) — HWP/HWPX/HWPML, PDF, DOCX and XLSX parsing with nested-table fidelity, used as AutoRAG's default document parser.
 
 ---
 

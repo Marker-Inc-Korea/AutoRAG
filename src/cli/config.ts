@@ -14,6 +14,7 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
 
@@ -129,6 +130,7 @@ export interface CliConfig {
 	searchPaths: string[];
 	workspacePath: string;
 	memoryPath: string;
+	languages?: string[];
 	model?: AgentModelConfig;
 	minSync?: MinSyncMethodConfig;
 	jikji?: Record<string, unknown> | false;
@@ -340,6 +342,15 @@ function envString(env: NodeJS.ProcessEnv, key: string): string | undefined {
 	const value = env[key];
 	if (typeof value === "string" && value.length > 0) return value;
 	return undefined;
+}
+
+function normalizeConfigLanguages(raw: unknown): LanguageTag[] {
+	try {
+		return normalizeLanguages(raw);
+	} catch (error) {
+		if (error instanceof LanguageError) throw new ConfigError(error.message);
+		throw error;
+	}
 }
 
 const AGENT_MODEL_APIS = new Set<Api>([
@@ -844,6 +855,14 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const fileMemoryPath =
 		typeof file.memoryPath === "string" ? resolvePersistedPath(file.memoryPath, workspacePath) : undefined;
 	const memoryPath = flagMemoryPath ?? envMemoryPath ?? fileMemoryPath ?? defaultMemoryPath;
+	const flagLanguages = typeof flags.languages === "string" ? flags.languages : undefined;
+	const envLanguages = env.AUTORAG_LANGUAGES;
+	const languages =
+		flagLanguages !== undefined
+			? normalizeConfigLanguages(flagLanguages)
+			: envLanguages !== undefined
+				? normalizeConfigLanguages(envLanguages)
+				: normalizeConfigLanguages(file.languages);
 
 	const fileModel = modelReference(file.model, "model");
 	const flagModelProvider = pickString(flags, env, "model-provider", "AUTORAG_MODEL_PROVIDER", undefined);
@@ -854,6 +873,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		searchPaths,
 		workspacePath,
 		memoryPath,
+		languages,
 	};
 	if (model) config.model = model;
 	const normalized = normalizeIndexingConfig({
@@ -968,6 +988,7 @@ function buildWebSearchAgentOption(
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
+		languages: config.languages,
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;
@@ -1355,6 +1376,7 @@ export function writeDefaultConfig(
 		searchPaths: resolveSearchPaths(partial.searchPaths ?? ["."], cwd),
 		workspacePath,
 		memoryPath,
+		languages: normalizeConfigLanguages(partial.languages),
 	};
 	if (partial.model) full.model = partial.model;
 	// Indexing method defaults: enabled when not explicitly provided.
