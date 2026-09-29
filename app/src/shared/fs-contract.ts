@@ -20,6 +20,7 @@ export const FS_CHANNELS = {
 	trash: "fs:trash",
 	reveal: "fs:reveal",
 	quickLook: "fs:quickLook",
+	open: "fs:open",
 	clipboardSet: "fs:clipboardSet",
 	clipboardGet: "fs:clipboardGet",
 	copyPathsToClipboard: "fs:copyPathsToClipboard",
@@ -105,6 +106,12 @@ export interface FsBridge {
 	 * Folders and missing paths are rejected by the caller, not here.
 	 */
 	quickLook(path: string): Promise<void>;
+	/**
+	 * Open the path with the OS default application for its type, exactly
+	 * like double-clicking the file in Finder / Explorer. Implementation:
+	 * Electron `shell.openPath`; a non-empty result message rejects.
+	 */
+	open(path: string): Promise<void>;
 	clipboardSet(clipboard: FsClipboard): Promise<void>;
 	clipboardGet(): Promise<FsClipboard | null>;
 	/** Write the absolute paths as text to the OS clipboard ("Copy Path"). */

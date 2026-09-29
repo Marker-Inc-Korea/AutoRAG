@@ -16,6 +16,7 @@ export function registerFsIpcHandlers(service: FsBridge): void {
 	ipcMain.handle(FS_CHANNELS.trash, (_event, paths: readonly string[]) => service.trash(paths));
 	ipcMain.handle(FS_CHANNELS.reveal, (_event, path: string) => service.reveal(path));
 	ipcMain.handle(FS_CHANNELS.quickLook, (_event, path: string) => service.quickLook(path));
+	ipcMain.handle(FS_CHANNELS.open, (_event, path: string) => service.open(path));
 	ipcMain.handle(FS_CHANNELS.clipboardSet, (_event, clipboard: FsClipboard) => service.clipboardSet(clipboard));
 	ipcMain.handle(FS_CHANNELS.clipboardGet, () => service.clipboardGet());
 	ipcMain.handle(FS_CHANNELS.copyPathsToClipboard, (_event, paths: readonly string[]) =>
