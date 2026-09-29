@@ -51,6 +51,13 @@ export interface DirListing {
 	readonly entries: readonly FsEntry[];
 }
 
+/**
+ * The virtual sidebar location listing recently opened or previewed files.
+ * It is not a directory on disk: the main process answers `listDir` for it from
+ * the app-owned recents store, and search / version-family scans skip it.
+ */
+export const RECENTS_PATH = "Recents";
+
 /** A browsable top-level location shown in the sidebar. */
 export interface FsLocation {
 	/** Display name, e.g. "Desktop", "Documents". */

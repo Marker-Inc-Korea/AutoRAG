@@ -44,9 +44,14 @@ export function patchActiveTab(state: TabsState, patch: (tab: FinderTab) => Find
 }
 
 export function openTab(state: TabsState): TabsState {
+	return openTabAt(state, activeTab(state).path);
+}
+
+/** A new tab on an explicit path, e.g. the folder that encloses a Recents row. */
+export function openTabAt(state: TabsState, path: string): TabsState {
 	const id = state.nextId;
 	return {
-		tabs: [...state.tabs, blankTab(id, activeTab(state).path)],
+		tabs: [...state.tabs, blankTab(id, path)],
 		activeId: id,
 		nextId: id + 1,
 	};

@@ -7,7 +7,7 @@
  * preload lands. Components never touch `window` directly.
  */
 
-import type { FsBridge, FsClipboard } from "../../../shared/fs-contract";
+import { RECENTS_PATH, type FsBridge, type FsClipboard } from "../../../shared/fs-contract";
 import { copyName } from "../state/collision";
 import { basename, dirname, joinPath } from "../state/paths";
 import {
@@ -69,7 +69,8 @@ export function createBridgeSource(fs: FsBridge, initialPath: string): FinderSou
 		pendingRequests: 0,
 		async list(path) {
 			const listing = await fs.listDir(path);
-			return listing.entries.map((entry) => entryFromFs(entry, path));
+			// Recents is virtual: a row's location is the real folder that holds the file.
+			return listing.entries.map((entry) => entryFromFs(entry, path === RECENTS_PATH ? undefined : path));
 		},
 		async search(query) {
 			const hits = await fs.search(query);
@@ -212,7 +213,7 @@ export function createFixtureSource(): FinderSource {
 			}
 			const hits: FinderEntry[] = [];
 			for (const [path, items] of state.tree) {
-				if (path === "Recents") {
+				if (path === RECENTS_PATH) {
 					continue;
 				}
 				for (const item of items) {
@@ -228,7 +229,7 @@ export function createFixtureSource(): FinderSource {
 				FIXTURE_ROOTS.map((name) => ({
 					name,
 					path: name,
-					section: name === "Recents" || name === "Desktop" || name === "Downloads" || name === "Documents"
+					section: name === RECENTS_PATH || name === "Desktop" || name === "Downloads" || name === "Documents"
 						? ("favorites" as const)
 						: ("cloud" as const),
 					available: state.tree.has(name),

@@ -12,7 +12,7 @@ import {
 	type VersionFamilyServiceDeps,
 } from "../src/main/version-family-service";
 import { createFileVersionFamilyStore, type StoredVersionFamilies } from "../src/main/version-family-store";
-import type { FsEntry, FsLocation, FsVersionFamiliesResult, FsVersionFamily } from "../src/shared/fs-contract";
+import { RECENTS_PATH, type FsEntry, type FsLocation, type FsVersionFamiliesResult, type FsVersionFamily } from "../src/shared/fs-contract";
 
 const dupeyAvailable = { status: async () => ({ available: true, version: "dupey 0.1.2", error: null }) };
 const dupeyMissing = { status: async () => ({ available: false, version: null, error: "spawn dupey ENOENT" }) };
@@ -275,6 +275,26 @@ describe("version-family service — schedule", () => {
 		await service.start();
 		service.stop();
 		expect(cleared).toEqual([1]);
+	});
+});
+
+describe("version-family service — location scope", () => {
+	it("never scans the virtual Recents location", async () => {
+		const scanned: string[] = [];
+		const h = harness({
+			locations: async () => [
+				{ name: RECENTS_PATH, path: RECENTS_PATH, section: "favorites", available: true },
+				{ name: "Desktop", path: "/home/Desktop", section: "favorites", available: true },
+			],
+			scanDuplicates: async (dir) => {
+				scanned.push(dir);
+				return scanOf([family("/home/Desktop/a.txt", "/home/Desktop/b.txt")]);
+			},
+		});
+		const service = createVersionFamilyService(h.deps);
+		const result = await service.refresh();
+		expect(scanned).toEqual(["/home/Desktop"]);
+		expect(result.families).toHaveLength(1);
 	});
 });
 

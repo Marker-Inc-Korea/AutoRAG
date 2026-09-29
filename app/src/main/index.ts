@@ -10,6 +10,7 @@ import { createChatStore } from "./chat-store";
 import { readDevLabel, resolveClonePath } from "./dev-label";
 import { buildFsEntry } from "./fs-entry";
 import { createFsService } from "./fs-service";
+import { createRecentsStore } from "./recents-store";
 import { createDefaultAgentFactory, createSearchService } from "./search-service";
 import { createSettingsService } from "./settings-service";
 import {
@@ -140,7 +141,11 @@ app.whenReady().then(() => {
 	ensureAutoRAGConfig();
 	const devLabel = resolveDevLabel();
 	console.log(`[autorag] ${formatWindowTitle(APP_NAME, APP_VERSION, devLabel)}`);
-	const fsService = createFsService({ shell, clipboard });
+	const fsService = createFsService({
+		shell,
+		clipboard,
+		recents: createRecentsStore({ directory: join(app.getPath("userData"), "recents") }),
+	});
 	// Both delete surfaces (context menu, ⌘⌫) land on this channel, so the
 	// version-family snapshot learns about the Trash here.
 	registerFsIpcHandlers(fsService, {

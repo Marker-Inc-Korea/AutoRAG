@@ -19,6 +19,7 @@ import type {
 	FsVersionMember,
 	FsVersionRelation,
 } from "../shared/fs-contract";
+import { RECENTS_PATH } from "../shared/fs-contract";
 import { createDupeyProbe, DUPEY_INSTALL_COMMAND, type DupeyProbe } from "./dupey";
 import type { StoredVersionFamilies, VersionFamilyStore } from "./version-family-store";
 
@@ -189,7 +190,9 @@ export function createVersionFamilyService(deps: VersionFamilyServiceDeps): Vers
 		const locations: string[] = [];
 		const errors: string[] = [];
 		for (const location of await deps.locations()) {
-			if (!location.available) continue;
+			// The virtual Recents location is a listing of recorded paths, not a
+			// directory dupey could scan.
+			if (!location.available || location.path === RECENTS_PATH) continue;
 			locations.push(location.path);
 			try {
 				const scan = await scanDuplicates(location.path);
