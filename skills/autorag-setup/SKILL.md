@@ -134,14 +134,20 @@ true). Set `"autoInstall": false` only when managing the binary yourself. Jikji
 auto-installs `jikji-cli` through cargo when enabled (`jikji.autoInstall`
 defaults to true; requires the Rust toolchain).
 
-Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
-`dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
-each exact canonical-text hash, and excludes older copies from the mirror.
-Install dupey during setup when it is missing (`command -v dupey || cargo
-install dupey --locked`) and tell the user the feature is available; when installation
-is impossible, refresh continues without this optimization and the user is
-told duplicate exclusion is off. Set `"excludeExactDuplicates": false` to
-index every copy.
+The external `dupey` CLI is REQUIRED. AutoRAG invokes it before parsed-mirror
+indexing (newest filesystem copy per exact canonical-text hash wins, older
+copies leave the mirror), and the desktop app cannot offer version stacks
+without it. Install it during setup when missing and fail loudly if that is
+impossible:
+
+```bash
+command -v dupey >/dev/null 2>&1 || cargo install dupey --locked
+```
+
+Do not proceed with a silent fallback. If cargo is unavailable, stop and tell
+the user the exact command and that the Rust toolchain is required; do not
+report the setup as complete. Set `"excludeExactDuplicates": false` only when
+the user explicitly asks to index every copy (dupey stays required for the app).
 
 MinSync's default embedder is in-process native Qwen3 embeddings
 (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.5+). The

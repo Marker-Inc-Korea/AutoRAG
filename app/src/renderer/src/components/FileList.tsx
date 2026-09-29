@@ -1,7 +1,7 @@
 import type { ReactElement, RefObject } from "react";
 import { FileRow, type RowCallbacks } from "./FileRow";
 import type { Permission } from "../../../shared/settings-contract";
-import type { StackRow } from "../state/version-family";
+import type { StackRow, VersionFamilyError } from "../state/version-family";
 
 /**
  * Scrolling file list (handoff README §2): the search summary, the rows, and
@@ -21,6 +21,8 @@ export function FileList({
 	indexOverrides,
 	permissions,
 	listPath,
+	versionFamilyError,
+	onRetryVersionFamilies,
 	callbacks,
 }: {
 	readonly rows: readonly StackRow[];
@@ -36,10 +38,23 @@ export function FileList({
 	readonly indexOverrides: Readonly<Record<string, boolean>>;
 	readonly permissions: Readonly<Record<string, Permission>>;
 	readonly listPath: string;
+	readonly versionFamilyError: VersionFamilyError | null;
+	readonly onRetryVersionFamilies: () => void;
 	readonly callbacks: RowCallbacks;
 }): ReactElement {
 	return (
 		<div className="list" ref={listRef}>
+			{versionFamilyError === null ? null : (
+				<div className="list__error" role="alert">
+					<span className="list__error-text">{versionFamilyError.message}</span>
+					{versionFamilyError.installCommand === null ? null : (
+						<code className="list__error-command">{versionFamilyError.installCommand}</code>
+					)}
+					<button type="button" className="list__error-retry" onClick={onRetryVersionFamilies}>
+						다시 확인
+					</button>
+				</div>
+			)}
 			{searching ? <div className="list__summary">{summary}</div> : null}
 			<div role="grid" aria-label="Files">
 				{rows.map((row) => (

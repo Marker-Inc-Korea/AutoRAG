@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFsService, mapDupeyFamily, type FsServiceDeps } from "../src/main/fs-service";
+import { createDupeyProbe, DUPEY_INSTALL_COMMAND } from "../src/main/dupey";
 import type { DupeyScanResult } from "@autorag/librarian";
 import type { FinderEntry } from "../src/renderer/src/data/entries";
 import {
@@ -200,26 +201,68 @@ describe("mapDupeyFamily", () => {
 	});
 });
 
-describe("fs service versionFamilies", () => {
-	async function serviceWith(scanResult: DupeyScanResult, home: string) {
-		const deps: FsServiceDeps = {
-			shell: {
-				trashItem: async () => {},
-				showItemInFolder: () => {},
+const dupeyAvailable = { status: async () => ({ available: true, version: "dupey 0.1.2", error: null }) };
+
+async function serviceWith(scanResult: DupeyScanResult, home: string) {
+	const deps: FsServiceDeps = {
+		shell: {
+			trashItem: async () => {},
+			showItemInFolder: () => {},
+		},
+		clipboard: { writeText: () => {} },
+		homeDir: home,
+		dupey: dupeyAvailable,
+		scanDuplicates: async () => scanResult,
+	};
+	return createFsService(deps);
+}
+
+describe("dupey probe", () => {
+	it("reports the version when the CLI answers", async () => {
+		const probe = createDupeyProbe({ run: async () => "dupey 0.1.2" });
+		expect(await probe.status()).toEqual({ available: true, version: "dupey 0.1.2", error: null });
+	});
+
+	it("reports the spawn failure when the CLI is missing", async () => {
+		const probe = createDupeyProbe({
+			run: async () => {
+				throw new Error("spawn dupey ENOENT");
 			},
-			clipboard: { writeText: () => {} },
-			homeDir: home,
-			scanDuplicates: async () => scanResult,
-		};
-		return createFsService(deps);
-	}
+		});
+		const status = await probe.status();
+		expect(status.available).toBe(false);
+		expect(status.error).toContain("ENOENT");
+	});
+
+	it("caches the result within the TTL and re-probes after it", async () => {
+		let calls = 0;
+		let clock = 0;
+		const probe = createDupeyProbe({
+			run: async () => {
+				calls += 1;
+				return "dupey 0.1.2";
+			},
+			ttlMs: 1000,
+			now: () => clock,
+		});
+		await probe.status();
+		clock = 500;
+		await probe.status();
+		expect(calls).toBe(1);
+		clock = 1500;
+		await probe.status();
+		expect(calls).toBe(2);
+	});
+});
+
+describe("fs service versionFamilies", () => {
 
 	it("maps dupey families into entries and caches per root", async () => {
 		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
 		await mkdir(join(home, "Desktop"), { recursive: true });
 		await writeFile(join(home, "Desktop", "a.txt"), "same");
 		await writeFile(join(home, "Desktop", "b.txt"), "same");
-		const result = scan([
+		const scanFixture = scan([
 			{
 				id: 0,
 				relation: "mixed",
@@ -236,17 +279,19 @@ describe("fs service versionFamilies", () => {
 			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
 			clipboard: { writeText: () => {} },
 			homeDir: home,
+			dupey: dupeyAvailable,
 			scanDuplicates: async () => {
 				scans++;
-				return result;
+				return scanFixture;
 			},
 		};
 		const service = createFsService(deps);
-		const families = await service.versionFamilies();
-		expect(families).toHaveLength(1);
-		expect(families[0]?.head).toBe(join(home, "Desktop", "a.txt"));
-		expect(families[0]?.members).toEqual([{ path: join(home, "Desktop", "b.txt"), relation: "exact" }]);
-		expect(families[0]?.entries.map((e) => e.path)).toEqual([
+		const result = await service.versionFamilies();
+		expect(result.error).toBeNull();
+		expect(result.families).toHaveLength(1);
+		expect(result.families[0]?.head).toBe(join(home, "Desktop", "a.txt"));
+		expect(result.families[0]?.members).toEqual([{ path: join(home, "Desktop", "b.txt"), relation: "exact" }]);
+		expect(result.families[0]?.entries.map((e) => e.path)).toEqual([
 			join(home, "Desktop", "a.txt"),
 			join(home, "Desktop", "b.txt"),
 		]);
@@ -255,18 +300,44 @@ describe("fs service versionFamilies", () => {
 		expect(scans).toBe(1);
 	});
 
-	it("returns empty when dupey fails", async () => {
+	it("reports dupey-missing with the install command instead of degrading silently", async () => {
 		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
-		const deps: FsServiceDeps = {
+		let scans = 0;
+		const service = createFsService({
 			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
 			clipboard: { writeText: () => {} },
 			homeDir: home,
+			dupey: { status: async () => ({ available: false, version: null, error: "spawn dupey ENOENT" }) },
 			scanDuplicates: async () => {
-				throw new Error("dupey missing");
+				scans += 1;
+				return scan([]);
 			},
-		};
-		const service = createFsService(deps);
-		expect(await service.versionFamilies()).toEqual([]);
+		});
+		const result = await service.versionFamilies();
+		expect(result.families).toEqual([]);
+		expect(result.error?.code).toBe("dupey-missing");
+		expect(result.error?.installCommand).toBe(DUPEY_INSTALL_COMMAND);
+		expect(result.error?.message).toContain("ENOENT");
+		expect(scans).toBe(0);
+	});
+
+	it("reports scan-failed when dupey runs but a root scan breaks", async () => {
+		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
+		await mkdir(join(home, "Desktop"), { recursive: true });
+		const service = createFsService({
+			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
+			clipboard: { writeText: () => {} },
+			homeDir: home,
+			dupey: dupeyAvailable,
+			scanDuplicates: async () => {
+				throw new Error("dupey scan exploded");
+			},
+		});
+		const result = await service.versionFamilies();
+		expect(result.families).toEqual([]);
+		expect(result.error?.code).toBe("scan-failed");
+		expect(result.error?.message).toContain("dupey scan exploded");
+		expect(result.error?.installCommand).toBeNull();
 	});
 
 	it("skips families whose files disappeared", async () => {
@@ -284,6 +355,8 @@ describe("fs service versionFamilies", () => {
 			},
 		]);
 		const service = await serviceWith(result, home);
-		expect(await service.versionFamilies()).toEqual([]);
+		const scanResult = await service.versionFamilies();
+		expect(scanResult.families).toEqual([]);
+		expect(scanResult.error).toBeNull();
 	});
 });

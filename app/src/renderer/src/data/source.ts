@@ -10,7 +10,7 @@
 import type { FsBridge, FsClipboard } from "../../../shared/fs-contract";
 import { copyName } from "../state/collision";
 import { basename, dirname, joinPath } from "../state/paths";
-import type { VersionFamilyData, VersionRelation } from "../state/version-family";
+import type { VersionFamiliesResult, VersionFamilyData, VersionRelation } from "../state/version-family";
 import { type FinderEntry, entryFromFixture, entryFromFs, entryFromSearchHit } from "./entries";
 import { FIXTURE_FAMILIES, FIXTURE_INITIAL_PATH, FIXTURE_PENDING_REQUESTS, FIXTURE_ROOTS, FIXTURE_TREE } from "./fixtures";
 import type { FixtureItem } from "./entries";
@@ -45,8 +45,8 @@ export interface FinderSource {
 	copyPaths(paths: readonly string[]): Promise<void>;
 	clipboardSet(clipboard: FsClipboard): Promise<void>;
 	clipboardGet(): Promise<FsClipboard | null>;
-	/** Version families from the duplicate detector; empty when unavailable. */
-	versionFamilies(): Promise<readonly VersionFamilyData[]>;
+	/** Version families from the duplicate detector, with an explicit error when dupey is missing. */
+	versionFamilies(): Promise<VersionFamiliesResult>;
 }
 
 /* -------------------------------------------------------------- real bridge */
@@ -94,14 +94,17 @@ export function createBridgeSource(fs: FsBridge, initialPath: string): FinderSou
 		clipboardSet: (clipboard) => fs.clipboardSet(clipboard),
 		clipboardGet: () => fs.clipboardGet(),
 		versionFamilies: async () => {
-			const families = await fs.versionFamilies();
-			return families.map((family) => ({
-				head: family.head,
-				members: family.members,
-				entriesByPath: Object.fromEntries(
-					family.entries.map((entry) => [entry.path, entryFromFs(entry)]),
-			),
-			}));
+			const result = await fs.versionFamilies();
+			return {
+				families: result.families.map((family) => ({
+					head: family.head,
+					members: family.members,
+					entriesByPath: Object.fromEntries(
+						family.entries.map((entry) => [entry.path, entryFromFs(entry)]),
+					),
+				})),
+				error: result.error,
+			};
 		},
 	};
 }
@@ -248,8 +251,8 @@ export function createFixtureSource(): FinderSource {
 		},
 		clipboardGet: () => Promise.resolve(state.clipboard),
 		versionFamilies: () =>
-			Promise.resolve(
-				FIXTURE_FAMILIES.flatMap((family) => {
+			Promise.resolve({
+				families: FIXTURE_FAMILIES.flatMap((family) => {
 					const headItem = findItem(state, family.head);
 					if (headItem === null) {
 						return [];
@@ -268,7 +271,8 @@ export function createFixtureSource(): FinderSource {
 					});
 					return [{ head: family.head, members, entriesByPath }];
 				}),
-			),
+				error: null,
+			}),
 	};
 }
 

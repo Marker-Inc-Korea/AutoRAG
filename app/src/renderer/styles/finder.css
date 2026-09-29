@@ -274,6 +274,46 @@
 	font-size: var(--font-size-meta);
 }
 
+.list__error {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-8);
+	margin: var(--space-8) var(--space-8) 0;
+	padding: var(--space-8) var(--space-10);
+	border: 1px solid var(--danger-border);
+	border-radius: var(--radius-8);
+	background: var(--danger-bg-soft);
+	color: var(--danger-text);
+	font-size: var(--font-size-meta);
+}
+
+.list__error-text {
+	flex: 1 1 240px;
+	min-width: 0;
+	white-space: pre-wrap;
+}
+
+.list__error-command {
+	padding: 1px var(--space-5);
+	border: 1px solid var(--danger-border);
+	border-radius: var(--radius-5);
+	background: var(--bg-window);
+	font-family: var(--font-mono);
+	font-size: var(--font-size-badge);
+}
+
+.list__error-retry {
+	height: var(--size-pill);
+	padding: 0 var(--space-10);
+	border: 1px solid var(--danger-border);
+	border-radius: var(--radius-6);
+	background: var(--bg-window);
+	color: var(--danger-text);
+	font-size: var(--font-size-meta);
+	cursor: pointer;
+}
+
 .list__empty {
 	padding: var(--space-40) var(--space-12);
 	color: var(--text-muted);

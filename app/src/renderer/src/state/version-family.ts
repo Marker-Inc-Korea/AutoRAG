@@ -39,9 +39,25 @@ export interface VersionFamilies {
 	readonly memberOf: ReadonlyMap<string, ResolvedMembership>;
 }
 
+export interface VersionFamilyError {
+	readonly code: "dupey-missing" | "scan-failed";
+	readonly message: string;
+	readonly installCommand: string | null;
+}
+
+export interface VersionFamiliesResult {
+	readonly families: readonly VersionFamilyData[];
+	readonly error: VersionFamilyError | null;
+}
+
 export const EMPTY_VERSION_FAMILIES: VersionFamilies = {
 	byHead: new Map(),
 	memberOf: new Map(),
+};
+
+export const EMPTY_VERSION_FAMILIES_RESULT: VersionFamiliesResult = {
+	families: [],
+	error: null,
 };
 
 export function buildVersionFamilies(families: readonly VersionFamilyData[]): VersionFamilies {

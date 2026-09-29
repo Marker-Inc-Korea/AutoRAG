@@ -100,6 +100,8 @@ export function App(): ReactElement {
 					<FileList
 						rows={finder.stackRows}
 						listPath={finder.path}
+						versionFamilyError={finder.versionFamilyError}
+						onRetryVersionFamilies={finder.retryVersionFamilies}
 						listRef={finder.listRef}
 						searching={finder.searching}
 						summary={finder.searchSummary}

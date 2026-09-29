@@ -27,6 +27,7 @@ import {
 	EMPTY_VERSION_FAMILIES,
 	type StackRow,
 	type VersionFamilies,
+	type VersionFamilyError,
 } from "../state/version-family";
 import {
 	activeTab,
@@ -84,6 +85,8 @@ export interface FinderController {
 	readonly renamePath: string | null;
 	readonly renameDraft: string;
 	readonly indexOverrides: Readonly<Record<string, boolean>>;
+	/** Non-null when dupey is missing or a version-family scan failed. */
+	readonly versionFamilyError: VersionFamilyError | null;
 	readonly activeNavLabel: string | null;
 	readonly pendingRequests: number;
 	readonly contextMenu: { readonly cursor: { readonly x: number; readonly y: number } } | null;
@@ -109,6 +112,7 @@ export interface FinderController {
 	runMenuAction(action: FinderMenuAction): void;
 	toggleIndex(entry: FinderEntry): void;
 	toggleStack(entry: FinderEntry): void;
+	retryVersionFamilies(): void;
 	setRenameDraft(value: string): void;
 	commitRename(): void;
 	cancelRename(): void;
@@ -131,6 +135,7 @@ export function useFinderController(source: FinderSource): FinderController {
 	const [searchFocused, setSearchFocused] = useState(false);
 	const [revision, setRevision] = useState(0);
 	const [families, setFamilies] = useState<VersionFamilies>(EMPTY_VERSION_FAMILIES);
+	const [versionFamilyError, setVersionFamilyError] = useState<VersionFamilyError | null>(null);
 	const [stackPinned, setStackPinned] = useState<ReadonlySet<string>>(new Set());
 
 	const listRef = useRef<HTMLDivElement | null>(null);
@@ -237,13 +242,27 @@ export function useFinderController(source: FinderSource): FinderController {
 		let live = true;
 		source
 			.versionFamilies()
-			.then((data) => {
-				if (live) setFamilies(buildVersionFamilies(data));
+			.then((result) => {
+				if (!live) return;
+				setFamilies(buildVersionFamilies(result.families));
+				setVersionFamilyError(result.error);
+				if (result.error !== null) {
+					console.error(
+						result.error.installCommand === null
+							? result.error.message
+							: `${result.error.message}\nInstall it with: ${result.error.installCommand}`,
+					);
+				}
 			})
 			.catch((error: unknown) => {
-				// dupey missing or failed: no stacks, reason stays in the console.
-				console.warn("version families unavailable", error);
-				if (live) setFamilies(EMPTY_VERSION_FAMILIES);
+				console.error("version families request failed", error);
+				if (!live) return;
+				setFamilies(EMPTY_VERSION_FAMILIES);
+				setVersionFamilyError({
+					code: "scan-failed",
+					message: error instanceof Error ? error.message : String(error),
+					installCommand: null,
+				});
 			});
 		return () => {
 			live = false;
@@ -652,6 +671,7 @@ export function useFinderController(source: FinderSource): FinderController {
 		renamePath: rename?.path ?? null,
 		renameDraft: rename?.draft ?? "",
 		indexOverrides: effectiveIndexOverrides,
+		versionFamilyError,
 		activeNavLabel,
 		pendingRequests: source.pendingRequests,
 		contextMenu: contextMenu === null ? null : { cursor: contextMenu.cursor },
@@ -696,6 +716,7 @@ export function useFinderController(source: FinderSource): FinderController {
 		runMenuAction,
 		toggleIndex,
 		toggleStack,
+		retryVersionFamilies: refresh,
 		setRenameDraft: (value) => setRename((current) => (current === null ? null : { ...current, draft: value })),
 		commitRename,
 		cancelRename: () => setRename(null),

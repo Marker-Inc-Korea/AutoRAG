@@ -112,10 +112,10 @@ export interface FsBridge {
 	copyPathsToClipboard(paths: readonly string[]): Promise<void>;
 	/**
 	 * Version families from the dupey duplicate detector: one entry per family
-	 * (head path, members with relations, entries for rendering). Empty when
-	 * dupey is unavailable or finds nothing.
+	 * (head path, members with relations, entries for rendering), plus an
+	 * explicit error when dupey is missing or a scan failed.
 	 */
-	versionFamilies(): Promise<readonly FsVersionFamily[]>;
+	versionFamilies(): Promise<FsVersionFamiliesResult>;
 }
 
 export type FsVersionRelation = "exact" | "near" | "contains";
@@ -129,4 +129,20 @@ export interface FsVersionFamily {
 	readonly head: string;
 	readonly members: readonly FsVersionMember[];
 	readonly entries: readonly FsEntry[];
+}
+
+export interface FsVersionFamilyError {
+	readonly code: "dupey-missing" | "scan-failed";
+	readonly message: string;
+	/** Present for dupey-missing: the command that installs the required CLI. */
+	readonly installCommand: string | null;
+}
+
+/**
+ * Version families never degrade silently: the renderer renders `error` when
+ * the dupey CLI is missing or a scan fails.
+ */
+export interface FsVersionFamiliesResult {
+	readonly families: readonly FsVersionFamily[];
+	readonly error: FsVersionFamilyError | null;
 }

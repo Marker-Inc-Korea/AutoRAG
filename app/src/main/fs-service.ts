@@ -13,10 +13,13 @@ import type {
 	FsLocation,
 	FsOpError,
 	FsSearchResult,
+	FsVersionFamiliesResult,
 	FsVersionFamily,
+	FsVersionFamilyError,
 	FsVersionMember,
 	FsVersionRelation,
 } from "../shared/fs-contract";
+import { createDupeyProbe, DUPEY_INSTALL_COMMAND, type DupeyProbe } from "./dupey";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
 
 /** Subset of Electron's shell used by the service (injected for testability). */
@@ -41,6 +44,8 @@ export interface FsServiceDeps {
 	readonly spawnQuickLook?: QuickLookSpawner;
 	/** Defaults to the dupey CLI; tests inject fixture scans. */
 	readonly scanDuplicates?: (dir: string) => Promise<DupeyScanResult>;
+	/** Defaults to probing the dupey CLI; tests inject a fixed status. */
+	readonly dupey?: DupeyProbe;
 	/** Clock for the family cache TTL; tests inject a fixed one. */
 	readonly now?: () => number;
 }
@@ -170,6 +175,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	const home = deps.homeDir ?? homedir();
 	const spawnQuickLook = deps.spawnQuickLook ?? defaultQuickLook;
 	const scanDuplicates = deps.scanDuplicates ?? ((dir: string) => scanWithDupey(dir));
+	const dupey = deps.dupey ?? createDupeyProbe();
 	const now = deps.now ?? (() => Date.now());
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
@@ -249,8 +255,20 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		return results;
 	}
 
-	async function versionFamilies(): Promise<readonly FsVersionFamily[]> {
+	async function versionFamilies(): Promise<FsVersionFamiliesResult> {
+		const status = await dupey.status();
+		if (!status.available) {
+			return {
+				families: [],
+				error: {
+					code: "dupey-missing",
+					message: `dupey CLI is required for version stacks: ${status.error ?? "not found on PATH"}`,
+					installCommand: DUPEY_INSTALL_COMMAND,
+				},
+			};
+		}
 		const result: FsVersionFamily[] = [];
+		const scanErrors: string[] = [];
 		for (const location of await locations()) {
 			if (!location.available) continue;
 			const cached = familyCache.get(location.path);
@@ -287,13 +305,18 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 				);
 				families = resolved.filter((family): family is FsVersionFamily => family !== null);
 			} catch (error) {
-				// dupey unavailable or failed: this root simply has no families.
-				console.warn(`fs:versionFamilies skipping ${location.path}: ${errorMessage(error)}`);
+				const message = `fs:versionFamilies failed for ${location.path}: ${errorMessage(error)}`;
+				console.error(message);
+				scanErrors.push(message);
 			}
 			familyCache.set(location.path, { at: now(), families });
 			result.push(...families);
 		}
-		return result;
+		const error: FsVersionFamilyError | null =
+			scanErrors.length === 0
+				? null
+				: { code: "scan-failed", message: scanErrors.join("\n"), installCommand: null };
+		return { families: result, error };
 	}
 
 	async function copy(paths: readonly string[], destDir: string): Promise<FsBatchResult> {
