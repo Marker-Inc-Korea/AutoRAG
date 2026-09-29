@@ -206,10 +206,11 @@ const dupeyAvailable = { status: async () => ({ available: true, version: "dupey
 async function serviceWith(scanResult: DupeyScanResult, home: string) {
 	const deps: FsServiceDeps = {
 		shell: {
-			trashItem: async () => {},
-			showItemInFolder: () => {},
+			trashItem: async () => { },
+			showItemInFolder: () => { },
+			openPath: async () => "",
 		},
-		clipboard: { writeText: () => {} },
+		clipboard: { writeText: () => { } },
 		homeDir: home,
 		dupey: dupeyAvailable,
 		scanDuplicates: async () => scanResult,
@@ -276,8 +277,8 @@ describe("fs service versionFamilies", () => {
 		]);
 		let scans = 0;
 		const deps: FsServiceDeps = {
-			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
-			clipboard: { writeText: () => {} },
+			shell: { trashItem: async () => { }, showItemInFolder: () => { }, openPath: async () => "" },
+			clipboard: { writeText: () => { } },
 			homeDir: home,
 			dupey: dupeyAvailable,
 			scanDuplicates: async () => {
@@ -304,8 +305,8 @@ describe("fs service versionFamilies", () => {
 		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
 		let scans = 0;
 		const service = createFsService({
-			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
-			clipboard: { writeText: () => {} },
+			shell: { trashItem: async () => { }, showItemInFolder: () => { }, openPath: async () => "" },
+			clipboard: { writeText: () => { } },
 			homeDir: home,
 			dupey: { status: async () => ({ available: false, version: null, error: "spawn dupey ENOENT" }) },
 			scanDuplicates: async () => {
@@ -325,8 +326,8 @@ describe("fs service versionFamilies", () => {
 		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
 		await mkdir(join(home, "Desktop"), { recursive: true });
 		const service = createFsService({
-			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
-			clipboard: { writeText: () => {} },
+			shell: { trashItem: async () => { }, showItemInFolder: () => { }, openPath: async () => "" },
+			clipboard: { writeText: () => { } },
 			homeDir: home,
 			dupey: dupeyAvailable,
 			scanDuplicates: async () => {
