@@ -13,7 +13,7 @@ PORT ?=
 
 help:
 	@printf '%s\n' \
-		'make install       Install dependencies from bun.lock' \
+		'make install       Install dependencies from bun.lock (and provision dupey)' \
 		'make lint          Check formatting and lint rules' \
 		'make format        Apply Biome formatting and safe fixes' \
 		'make typecheck     Run TypeScript type checking' \
@@ -40,6 +40,18 @@ help:
 
 install:
 	bun install --frozen-lockfile
+	@if [ "$(AUTORAG_SKIP_DUPEY)" = "1" ]; then \
+		echo 'skipping dupey provisioning (AUTORAG_SKIP_DUPEY=1) — version stacks stay disabled'; \
+	elif command -v dupey >/dev/null 2>&1; then \
+		echo "dupey present: $$(dupey --version)"; \
+	elif command -v cargo >/dev/null 2>&1; then \
+		echo 'installing required dupey CLI (cargo install dupey --locked)...'; \
+		cargo install dupey --locked; \
+	else \
+		echo 'dupey CLI is required (version stacks and duplicate exclusion)'; \
+		echo 'cargo was not found. Install Rust (https://rustup.rs), then run: cargo install dupey --locked'; \
+		exit 1; \
+	fi
 
 lint:
 	bun run lint

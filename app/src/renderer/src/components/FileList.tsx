@@ -1,7 +1,7 @@
 import type { ReactElement, RefObject } from "react";
-import type { FinderEntry } from "../data/entries";
 import { FileRow, type RowCallbacks } from "./FileRow";
 import type { Permission } from "../../../shared/settings-contract";
+import type { StackRow, VersionFamilyError } from "../state/version-family";
 
 /**
  * Scrolling file list (handoff README §2): the search summary, the rows, and
@@ -20,9 +20,12 @@ export function FileList({
 	renameDraft,
 	indexOverrides,
 	permissions,
+	listPath,
+	versionFamilyError,
+	onRetryVersionFamilies,
 	callbacks,
 }: {
-	readonly rows: readonly FinderEntry[];
+	readonly rows: readonly StackRow[];
 	readonly listRef: RefObject<HTMLDivElement | null>;
 	readonly searching: boolean;
 	readonly summary: string;
@@ -34,23 +37,42 @@ export function FileList({
 	readonly renameDraft: string;
 	readonly indexOverrides: Readonly<Record<string, boolean>>;
 	readonly permissions: Readonly<Record<string, Permission>>;
+	readonly listPath: string;
+	readonly versionFamilyError: VersionFamilyError | null;
+	readonly onRetryVersionFamilies: () => void;
 	readonly callbacks: RowCallbacks;
 }): ReactElement {
 	return (
 		<div className="list" ref={listRef}>
+			{versionFamilyError === null ? null : (
+				<div className="list__error" role="alert">
+					<span className="list__error-text">{versionFamilyError.message}</span>
+					{versionFamilyError.installCommand === null ? null : (
+						<code className="list__error-command">{versionFamilyError.installCommand}</code>
+					)}
+					<button type="button" className="list__error-retry" onClick={onRetryVersionFamilies}>
+						다시 확인
+					</button>
+				</div>
+			)}
 			{searching ? <div className="list__summary">{summary}</div> : null}
 			<div role="grid" aria-label="Files">
-				{rows.map((entry) => (
+				{rows.map((row) => (
 					<FileRow
-						key={entry.path}
-						entry={entry}
-						selected={selectedKeys.includes(entry.path)}
+						key={row.entry.path}
+						entry={row.entry}
+						selected={selectedKeys.includes(row.entry.path)}
 						zoneFocused={focusedZone}
-						flash={flashPath === entry.path}
+						flash={flashPath === row.entry.path}
 						searching={searching}
-						indexIncluded={indexOverrides[entry.path] ?? true}
-						permission={permissions[entry.path] ?? "ask"}
-						renameDraft={renamePath === entry.path ? renameDraft : null}
+						indexIncluded={indexOverrides[row.entry.path] ?? true}
+						permission={permissions[row.entry.path] ?? "ask"}
+						renameDraft={renamePath === row.entry.path ? renameDraft : null}
+						stackCount={row.stackCount}
+						stackOpen={row.stackOpen}
+						child={row.child}
+						relation={row.relation}
+						listPath={listPath}
 						callbacks={callbacks}
 					/>
 				))}

@@ -20,9 +20,11 @@ export const FS_CHANNELS = {
 	trash: "fs:trash",
 	reveal: "fs:reveal",
 	quickLook: "fs:quickLook",
+	open: "fs:open",
 	clipboardSet: "fs:clipboardSet",
 	clipboardGet: "fs:clipboardGet",
 	copyPathsToClipboard: "fs:copyPathsToClipboard",
+	versionFamilies: "fs:versionFamilies",
 } as const;
 
 export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];
@@ -105,8 +107,49 @@ export interface FsBridge {
 	 * Folders and missing paths are rejected by the caller, not here.
 	 */
 	quickLook(path: string): Promise<void>;
+	/**
+	 * Open the path with the OS default application for its type, exactly
+	 * like double-clicking the file in Finder / Explorer. Implementation:
+	 * Electron `shell.openPath`; a non-empty result message rejects.
+	 */
+	open(path: string): Promise<void>;
 	clipboardSet(clipboard: FsClipboard): Promise<void>;
 	clipboardGet(): Promise<FsClipboard | null>;
 	/** Write the absolute paths as text to the OS clipboard ("Copy Path"). */
 	copyPathsToClipboard(paths: readonly string[]): Promise<void>;
+	/**
+	 * Version families from the dupey duplicate detector: one entry per family
+	 * (head path, members with relations, entries for rendering), plus an
+	 * explicit error when dupey is missing or a scan failed.
+	 */
+	versionFamilies(): Promise<FsVersionFamiliesResult>;
+}
+
+export type FsVersionRelation = "exact" | "near" | "contains";
+
+export interface FsVersionMember {
+	readonly path: string;
+	readonly relation: FsVersionRelation;
+}
+
+export interface FsVersionFamily {
+	readonly head: string;
+	readonly members: readonly FsVersionMember[];
+	readonly entries: readonly FsEntry[];
+}
+
+export interface FsVersionFamilyError {
+	readonly code: "dupey-missing" | "scan-failed";
+	readonly message: string;
+	/** Present for dupey-missing: the command that installs the required CLI. */
+	readonly installCommand: string | null;
+}
+
+/**
+ * Version families never degrade silently: the renderer renders `error` when
+ * the dupey CLI is missing or a scan fails.
+ */
+export interface FsVersionFamiliesResult {
+	readonly families: readonly FsVersionFamily[];
+	readonly error: FsVersionFamilyError | null;
 }

@@ -3,7 +3,9 @@ import { accessBadge, indexBadge } from "../state/badges";
 import type { Permission } from "../../../shared/settings-contract";
 import type { FinderEntry } from "../data/entries";
 import { whereSegments } from "../state/paths";
+import { relationLabel, type VersionRelation } from "../state/version-family";
 import { isHiddenName } from "../state/visibility";
+import { ChevronRightIcon } from "./icons";
 import { FileTile } from "./primitives/FileTile";
 import { PillBadge } from "./primitives/PillBadge";
 
@@ -12,6 +14,7 @@ export interface RowCallbacks {
 	readonly onOpen: (entry: FinderEntry) => void;
 	readonly onContextMenu: (entry: FinderEntry, event: MouseEvent<HTMLDivElement>) => void;
 	readonly onToggleIndex: (entry: FinderEntry) => void;
+	readonly onToggleStack: (entry: FinderEntry) => void;
 	readonly onChangeAccess: (entry: FinderEntry) => void;
 	readonly onRenameChange: (value: string) => void;
 	readonly onRenameCommit: () => void;
@@ -32,6 +35,11 @@ export function FileRow({
 	indexIncluded,
 	permission,
 	renameDraft,
+	stackCount,
+	stackOpen,
+	child,
+	relation,
+	listPath,
 	callbacks,
 }: {
 	readonly entry: FinderEntry;
@@ -42,6 +50,11 @@ export function FileRow({
 	readonly indexIncluded: boolean;
 	readonly permission: Permission;
 	readonly renameDraft: string | null;
+	readonly stackCount: number;
+	readonly stackOpen: boolean;
+	readonly child: boolean;
+	readonly relation: VersionRelation | null;
+	readonly listPath: string;
 	readonly callbacks: RowCallbacks;
 }): ReactElement {
 	const classes = ["row"];
@@ -54,6 +67,9 @@ export function FileRow({
 	if (flash) {
 		classes.push("row--flash");
 	}
+	if (child) {
+		classes.push("row--child");
+	}
 
 	return (
 		<div
@@ -65,7 +81,7 @@ export function FileRow({
 			onContextMenu={(event) => callbacks.onContextMenu(entry, event)}
 		>
 			<div className="row__name" role="gridcell">
-				<FileTile kind={entry.fileKind} />
+				{child ? <span className="row__connector" aria-hidden="true" /> : <FileTile kind={entry.fileKind} />}
 				{renameDraft === null ? (
 					<span className="row__label">{entry.name}</span>
 				) : (
@@ -91,6 +107,22 @@ export function FileRow({
 						onBlur={callbacks.onRenameCancel}
 					/>
 				)}
+				{stackCount > 0 ? (
+					<button
+						type="button"
+						className={stackOpen ? "row__stackbadge row__stackbadge--open" : "row__stackbadge"}
+						title={`다른 버전 ${stackCount}개 · 클릭하면 펼쳐집니다`}
+						aria-label={`다른 버전 ${stackCount}개 · 클릭하면 펼쳐집니다`}
+						aria-expanded={stackOpen}
+						onClick={(event) => {
+							event.stopPropagation();
+							callbacks.onToggleStack(entry);
+						}}
+					>
+						<ChevronRightIcon size={9} />
+						{stackCount}
+					</button>
+				) : null}
 			</div>
 			<span className="row__meta" role="gridcell">
 				{entry.dateLabel}
@@ -99,7 +131,11 @@ export function FileRow({
 				{entry.sizeLabel}
 			</span>
 			<span className="row__meta" role="gridcell">
-				{searching ? whereSegments(entry.location) : entry.kindLabel}
+				{child && relation !== null
+					? relationLabel(relation, entry.location, listPath)
+					: searching
+						? whereSegments(entry.location)
+						: entry.kindLabel}
 			</span>
 			<div className="row__cell" role="gridcell">
 				{entry.kind === "file" ? (

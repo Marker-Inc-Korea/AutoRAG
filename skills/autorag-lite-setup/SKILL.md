@@ -123,12 +123,18 @@ autorag lite refresh --force --json
   The legacy Ollama/TEI adapter path (EmbeddingGemma, 768 dimensions) is for
   manual QA only. Override the embedder only when intentionally using a
   different provider.
-- Exact duplicate exclusion during refresh is enabled by default via the
-  external `dupey` CLI. Install dupey during setup when it is missing
-  (`command -v dupey || cargo install dupey --locked`) and tell the user the feature is
-  available; when installation is impossible, refresh continues without it
-  and the user is told duplicate exclusion is off. Set
-  `"excludeExactDuplicates": false` to index every copy.
+- The external `dupey` CLI is REQUIRED: refresh uses it for exact duplicate
+  exclusion and the desktop app cannot offer version stacks without it. Install
+  it during setup when missing and fail loudly if that is impossible:
+
+  ```bash
+  command -v dupey >/dev/null 2>&1 || cargo install dupey --locked
+  ```
+
+  Do not proceed with a silent fallback; when cargo is unavailable, stop and
+  report the exact command plus the Rust toolchain requirement. Set
+  `"excludeExactDuplicates": false` only when the user explicitly asks to index
+  every copy (dupey stays required for the app).
 
 Retrieval requires a completed refresh. `autorag lite retrieve` before any
 refresh exits with code 2 and an `index-not-ready` diagnostic; a successful
