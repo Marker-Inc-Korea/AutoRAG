@@ -215,3 +215,9 @@
 	margin: var(--space-4) var(--space-6);
 	background: var(--border-divider);
 }
+
+/* OS tile icon (Finder thumbnail): same square, image content instead of a letter. */
+.tile--image {
+	display: block;
+	object-fit: contain;
+}

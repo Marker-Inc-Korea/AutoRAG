@@ -21,6 +21,7 @@ function entry(path: string, name = path.split("/").pop() ?? ""): FinderEntry {
 		path,
 		kind: "file",
 		fileKind: "xlsx",
+		iconDataUrl: null,
 		dateLabel: "Sep 13, 16:48",
 		sizeLabel: "84 KB",
 		kindLabel: "Excel Spreadsheet",

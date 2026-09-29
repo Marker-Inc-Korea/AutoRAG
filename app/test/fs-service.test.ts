@@ -43,6 +43,7 @@ function makeDeps(homeDir: string): StubbedDeps {
 				quickLooked.push(path);
 			},
 			osKind: async () => null,
+			icons: { icons: async () => new Map() },
 		},
 		trashed,
 		revealed,
@@ -533,6 +534,32 @@ describe("osKind", () => {
 		const entry = listing.entries.find((candidate) => candidate.name === "clip.mp4");
 		expect(entry?.osKind).toBeNull();
 		expect(entry?.ext).toBe("mp4");
+		await rm(dir, { recursive: true, force: true });
+	});
+});
+
+describe("icons", () => {
+	it("annotates each file with the OS tile icon", async () => {
+		// Given a folder whose provider produced an icon for the video only
+		const dir = await mkdtemp(join(tmpdir(), "fs-icons-"));
+		await writeFile(join(dir, "clip.mp4"), "x");
+		await writeFile(join(dir, "note.txt"), "x");
+		const deps: FsServiceDeps = {
+			...makeDeps(dir).deps,
+			icons: {
+				icons: async (targets) =>
+					new Map(
+						targets.filter((target) => target.path.endsWith(".mp4")).map((target) => [target.path, "data:image/png;base64,AAAA"]),
+					),
+			},
+		};
+
+		// When listing the folder
+		const listing = await createFsService(deps).listDir(dir);
+
+		// Then the video carries the icon and the other file keeps the letter tile
+		expect(listing.entries.find((entry) => entry.name === "clip.mp4")?.iconDataUrl).toBe("data:image/png;base64,AAAA");
+		expect(listing.entries.find((entry) => entry.name === "note.txt")?.iconDataUrl).toBeNull();
 		await rm(dir, { recursive: true, force: true });
 	});
 });

@@ -48,6 +48,11 @@ export interface FsEntry {
 	 * renderer then falls back to the extension map.
 	 */
 	readonly osKind: string | null;
+	/**
+	 * OS-provided tile icon — a Finder thumbnail on macOS — as a PNG data URL.
+	 * Null when the OS produced none; the tile then renders its letter instead.
+	 */
+	readonly iconDataUrl: string | null;
 }
 
 export interface DirListing {

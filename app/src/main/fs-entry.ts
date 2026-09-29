@@ -93,5 +93,6 @@ export async function buildFsEntry(path: string): Promise<FsEntry> {
 		isSymlink,
 		// The OS metadata lookup lands in fs-service, which owns process spawning.
 		osKind: null,
+		iconDataUrl: null,
 	};
 }

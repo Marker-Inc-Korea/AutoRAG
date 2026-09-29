@@ -12,6 +12,7 @@ function fsEntry(over: Partial<FsEntry>): FsEntry {
 		modifiedAt: new Date(0).toISOString(),
 		isSymlink: false,
 		osKind: null,
+		iconDataUrl: null,
 		...over,
 	};
 }
@@ -36,5 +37,15 @@ describe("entryFromFs kind label", () => {
 
 	it("keeps the file tile family from the extension map", () => {
 		expect(entryFromFs(fsEntry({ ext: "xlsx", osKind: "Excel spreadsheet" })).fileKind).toBe("xlsx");
+	});
+
+	it("carries the OS tile icon through to the row", () => {
+		// Given a file the OS produced an icon for
+		const icon = "data:image/png;base64,AAAA";
+
+		// When the row is built
+		// Then the tile receives it
+		expect(entryFromFs(fsEntry({ iconDataUrl: icon })).iconDataUrl).toBe(icon);
+		expect(entryFromFs(fsEntry({ iconDataUrl: null })).iconDataUrl).toBeNull();
 	});
 });

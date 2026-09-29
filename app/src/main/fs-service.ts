@@ -20,6 +20,7 @@ import type {
 	FsVersionRelation,
 } from "../shared/fs-contract";
 import { createDupeyProbe, DUPEY_INSTALL_COMMAND, type DupeyProbe } from "./dupey";
+import { createIconProvider, type IconProvider } from "./file-icon";
 import { createOsKindResolver } from "./file-kind";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
 
@@ -50,6 +51,8 @@ export interface FsServiceDeps {
 	readonly spawnQuickLook?: QuickLookSpawner;
 	/** Defaults to the platform resolver (mdls on macOS, the registry on Windows). */
 	readonly osKind?: OsKindLookup;
+	/** Defaults to the platform icon provider (qlmanage thumbnails on macOS). */
+	readonly icons?: IconProvider;
 	/** Defaults to the dupey CLI; tests inject fixture scans. */
 	readonly scanDuplicates?: (dir: string) => Promise<DupeyScanResult>;
 	/** Defaults to probing the dupey CLI; tests inject a fixed status. */
@@ -162,6 +165,24 @@ function enrichOsKinds(entries: readonly FsEntry[], lookup: OsKindLookup): Promi
 	return Promise.all(entries.map((entry) => applyOsKind(entry, lookup)));
 }
 
+/** OS tile icons for a batch's files; the provider batches one call per listing. */
+async function resolveIcons(
+	entries: readonly FsEntry[],
+	provider: IconProvider,
+): Promise<ReadonlyMap<string, string>> {
+	const targets = entries
+		.filter((entry) => entry.kind === "file")
+		.map((entry) => ({ path: entry.path, modifiedAt: entry.modifiedAt }));
+	if (targets.length === 0) return new Map();
+	return provider.icons(targets);
+}
+
+/** A file the OS produced no icon for keeps its letter tile. */
+function withIcon(entry: FsEntry, icons: ReadonlyMap<string, string>): FsEntry {
+	const url = icons.get(entry.path);
+	return url === undefined ? entry : { ...entry, iconDataUrl: url };
+}
+
 interface DupeyMemberInfo {
 	readonly path?: string;
 	readonly relation?: string;
@@ -205,6 +226,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	const scanDuplicates = deps.scanDuplicates ?? ((dir: string) => scanWithDupey(dir));
 	const dupey = deps.dupey ?? createDupeyProbe();
 	const osKind: OsKindLookup = deps.osKind ?? createOsKindResolver().kindFor;
+	const iconProvider: IconProvider = deps.icons ?? createIconProvider();
 	const now = deps.now ?? (() => Date.now());
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
@@ -231,9 +253,10 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 				console.warn(`fs:listDir skipping ${fullPath}: ${errorMessage(error)}`);
 			}
 		}
-		const enriched = await enrichOsKinds(entries, osKind);
-		enriched.sort(compareEntries);
-		return { path, entries: enriched };
+		const [icons, enriched] = await Promise.all([resolveIcons(entries, iconProvider), enrichOsKinds(entries, osKind)]);
+		const rows = enriched.map((entry) => withIcon(entry, icons));
+		rows.sort(compareEntries);
+		return { path, entries: rows };
 	}
 
 	async function locations(): Promise<readonly FsLocation[]> {
@@ -282,7 +305,8 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 			await walkForSearch(location.path, 0, { needle, location: location.name, results, lookup: osKind });
 			if (results.length >= SEARCH_MAX_RESULTS) break;
 		}
-		return results;
+		const icons = await resolveIcons(results.map((result) => result.entry), iconProvider);
+		return results.map((result) => ({ location: result.location, entry: withIcon(result.entry, icons) }));
 	}
 
 	async function versionFamilies(): Promise<FsVersionFamiliesResult> {

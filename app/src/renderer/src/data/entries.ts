@@ -16,6 +16,8 @@ export interface FinderEntry extends SortableEntry {
 	readonly path: string;
 	readonly kind: "folder" | "file";
 	readonly fileKind: FileKind;
+	/** OS tile icon (Finder thumbnail) as a data URL; null renders the letter tile. */
+	readonly iconDataUrl: string | null;
 	readonly dateLabel: string;
 	readonly sizeLabel: string;
 }
@@ -27,6 +29,7 @@ export function entryFromFs(entry: FsEntry, location?: string): FinderEntry {
 		path: entry.path,
 		kind: entry.kind,
 		fileKind,
+		iconDataUrl: entry.iconDataUrl,
 		dateLabel: formatModified(entry.modifiedAt),
 		sizeLabel: formatSize(entry.kind === "folder" ? null : entry.size),
 		// The OS-reported kind wins; the extension map is the fallback.
@@ -55,6 +58,7 @@ export function entryFromFixture(item: FixtureItem, location: string): FinderEnt
 		path: joinPath(location, item.name),
 		kind: item.fileKind === "folder" ? "folder" : "file",
 		fileKind: item.fileKind,
+		iconDataUrl: null,
 		dateLabel: item.dateLabel,
 		sizeLabel: item.sizeLabel,
 		kindLabel: kindMeta(item.fileKind).label,
