@@ -79,6 +79,8 @@ const closeHandlerDocuments = () => {
 	}
 };
 
+let swept = false;
+let launchedByDoubleClick = [];
 const RUN_ID = `ulw-recents-qa-${Date.now().toString(36)}`;
 const RUN_PREFIX = "ulw-recents-qa-";
 const textEditWasRunning = sh('pgrep -x "TextEdit"') !== ""; const FIXTURE_OPEN = join(process.env.HOME, "Documents", `${RUN_ID}-opened.txt`);
@@ -89,6 +91,31 @@ const STORE = join(USER_DATA, "recents", "recents.json");
 await Bun.write(FIXTURE_OPEN, "AutoRAG Recents QA fixture (opened with the default app)\n");
 await Bun.write(FIXTURE_PREVIEW, "AutoRAG Recents QA fixture (previewed with Quick Look)\n");
 mkdirSync(USER_DATA, { recursive: true });
+
+/**
+ * Everything this run created, removable synchronously — so it also runs from the exit hook
+ * when a step throws and the normal cleanup never gets its turn.
+ */
+const sweepLeftovers = () => {
+	if (swept) return;
+	swept = true;
+	sh(`pkill -f 'qlmanage -p ${FIXTURE_PREVIEW}'`);
+	closeHandlerDocuments();
+	for (const line of launchedByDoubleClick) {
+		const name = appNameOf(line);
+		if (["TextEdit", "Preview", "Numbers", "Pages", "Keynote", "QuickTime Player"].includes(name)) {
+			sh(`osascript -e 'tell application "${name}" to quit'`);
+		}
+	}
+	if (!textEditWasRunning && sh('osascript -e \'tell application "TextEdit" to get name of every document\'') === "") {
+		sh('osascript -e \'tell application "TextEdit" to quit\'');
+	}
+	rmSync(FIXTURE_OPEN, { force: true });
+	rmSync(FIXTURE_PREVIEW, { force: true });
+	rmSync(USER_DATA, { recursive: true, force: true });
+	console.log(`cleanup: swept ${FIXTURE_OPEN} ${FIXTURE_PREVIEW} ${USER_DATA}; killed qlmanage for the preview fixture`);
+};
+process.on("exit", sweepLeftovers);
 
 const failures = [];
 const check = (label, ok, detail) => {
@@ -147,7 +174,7 @@ await openedRow.waitFor({ timeout: 10_000 });
 const guiBefore = guiProcesses();
 await openedRow.dblclick();
 await sleep(4000);
-const launchedByDoubleClick = [...guiProcesses()].filter((line) => !guiBefore.has(line));
+launchedByDoubleClick = [...guiProcesses()].filter((line) => !guiBefore.has(line));
 await page.screenshot({ path: join(EVIDENCE, "after-open-dblclick.png") });
 console.log(`apps newly running: ${launchedByDoubleClick.map(appNameOf).join(", ") || "none"}`);
 console.log(`frontmost after double-click: ${frontmostApp()}`);
@@ -244,22 +271,7 @@ await page.screenshot({ path: join(EVIDENCE, "recents-after-restart.png") });
 
 // 7. Cleanup — only what this script created.
 await app.close();
-sh(`osascript -e 'tell application "TextEdit" to close (every document whose name contains "${RUN_PREFIX}")'`);
-closeHandlerDocuments();
-sh(`pkill -f 'qlmanage -p ${FIXTURE_PREVIEW}'`);
-for (const line of launchedByDoubleClick) {
-	const name = appNameOf(line);
-	if (["TextEdit", "Preview", "Numbers", "Pages", "Keynote", "QuickTime Player"].includes(name)) {
-		sh(`osascript -e 'tell application "${name}" to quit'`);
-	}
-}
-if (!textEditWasRunning && sh('osascript -e \'tell application "TextEdit" to get name of every document\'') === "") {
-	sh('osascript -e \'tell application "TextEdit" to quit\'');
-}
-rmSync(FIXTURE_OPEN, { force: true });
-rmSync(FIXTURE_PREVIEW, { force: true });
-rmSync(USER_DATA, { recursive: true, force: true });
-console.log(`cleanup: removed ${FIXTURE_OPEN} ${FIXTURE_PREVIEW} ${USER_DATA}; killed qlmanage for the preview fixture`);
+sweepLeftovers();
 console.log(`cleanup: qlmanage alive = ${sh(`pgrep -fl 'qlmanage -p ${FIXTURE_PREVIEW}'`) || "none"}`);
 console.log(`cleanup: fixtures alive = ${existsSync(FIXTURE_OPEN) || existsSync(FIXTURE_PREVIEW)}`);
 console.log(`cleanup: document handler still holding the fixture = ${handlerHolding(RUN_ID) || "none"}`);
