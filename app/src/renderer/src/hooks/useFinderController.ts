@@ -350,7 +350,8 @@ export function useFinderController(source: FinderSource): FinderController {
 				revealEntry(entry);
 				return;
 			}
-			source.quickLook(entry.path).catch(reportError);
+			// Double-click / Enter on a file: the OS default application opens it.
+			source.open(entry.path).catch(reportError);
 		},
 		[navigate, path, revealEntry, searching, source, reportError],
 	);

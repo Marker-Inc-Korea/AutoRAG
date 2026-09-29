@@ -15,6 +15,7 @@ export function createFsBridge(ipcRenderer: IpcRenderer): FsBridge {
 		trash: (paths) => ipcRenderer.invoke(FS_CHANNELS.trash, paths),
 		reveal: (path) => ipcRenderer.invoke(FS_CHANNELS.reveal, path),
 		quickLook: (path) => ipcRenderer.invoke(FS_CHANNELS.quickLook, path),
+		open: (path) => ipcRenderer.invoke(FS_CHANNELS.open, path),
 		clipboardSet: (clipboard) => ipcRenderer.invoke(FS_CHANNELS.clipboardSet, clipboard),
 		clipboardGet: () => ipcRenderer.invoke(FS_CHANNELS.clipboardGet),
 		copyPathsToClipboard: (paths) => ipcRenderer.invoke(FS_CHANNELS.copyPathsToClipboard, paths),

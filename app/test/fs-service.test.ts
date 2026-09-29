@@ -9,6 +9,7 @@ interface StubbedDeps {
 	readonly trashed: string[];
 	readonly revealed: string[];
 	readonly quickLooked: string[];
+	readonly opened: string[];
 	readonly clipboardText: string[];
 }
 
@@ -16,6 +17,7 @@ function makeDeps(homeDir: string): StubbedDeps {
 	const trashed: string[] = [];
 	const revealed: string[] = [];
 	const quickLooked: string[] = [];
+	const opened: string[] = [];
 	const clipboardText: string[] = [];
 	return {
 		deps: {
@@ -25,6 +27,10 @@ function makeDeps(homeDir: string): StubbedDeps {
 				},
 				showItemInFolder: (path: string) => {
 					revealed.push(path);
+				},
+				openPath: async (path: string) => {
+					opened.push(path);
+					return "";
 				},
 			},
 			clipboard: {
@@ -40,6 +46,7 @@ function makeDeps(homeDir: string): StubbedDeps {
 		trashed,
 		revealed,
 		quickLooked,
+		opened,
 		clipboardText,
 	};
 }
@@ -51,6 +58,7 @@ function makeFailingTrashDeps(homeDir: string, message: string): FsServiceDeps {
 				throw new Error(message);
 			},
 			showItemInFolder: () => { },
+			openPath: async () => "",
 		},
 		clipboard: { writeText: () => { } },
 		homeDir,
@@ -428,6 +436,37 @@ describe("shell and clipboard side effects", () => {
 
 		// Then the spawner received the path
 		expect(stubs.quickLooked).toEqual([filePath]);
+	});
+
+	it("open forwards the path to shell.openPath, the OS default application", async () => {
+		// Given a stubbed shell
+		const stubs = makeDeps(root);
+		const filePath = join(root, "deck.key");
+		await writeFile(filePath, "x");
+
+		// When opening the file like a double-click
+		await createFsService(stubs.deps).open(filePath);
+
+		// Then the shell was asked to open it with the OS default app
+		expect(stubs.opened).toEqual([filePath]);
+	});
+
+	it("open rejects with the verbatim shell error message", async () => {
+		// Given a shell that failed to open the path
+		const deps: FsServiceDeps = {
+			shell: {
+				trashItem: async () => { },
+				showItemInFolder: () => { },
+				openPath: async () => "The file “deck.key” does not exist.",
+			},
+			clipboard: { writeText: () => { } },
+			homeDir: root,
+		};
+
+		// When opening the file, the real message surfaces verbatim
+		await expect(createFsService(deps).open(join(root, "deck.key"))).rejects.toThrow(
+			"The file “deck.key” does not exist.",
+		);
 	});
 
 	it("copyPathsToClipboard writes newline-joined paths to the OS clipboard", async () => {

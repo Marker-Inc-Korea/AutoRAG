@@ -26,6 +26,8 @@ import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, reso
 export interface FsShell {
 	trashItem(path: string): Promise<void>;
 	showItemInFolder(fullPath: string): void;
+	/** Electron shell.openPath: resolves with "" on success or a verbatim error message. */
+	openPath(path: string): Promise<string>;
 }
 
 /** Subset of Electron's clipboard used by the service (injected for testability). */
@@ -387,6 +389,13 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		},
 		quickLook: async (path) => {
 			spawnQuickLook(path);
+		},
+		open: async (path) => {
+			const message = await deps.shell.openPath(path);
+			// Failures surface verbatim — the operator sees the real message.
+			if (message !== "") {
+				throw new Error(message);
+			}
 		},
 		clipboardSet: async (clipboard) => {
 			inAppClipboard = { op: clipboard.op, paths: [...clipboard.paths] };
