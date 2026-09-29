@@ -48,6 +48,12 @@
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	appearance: none;
 	font-weight: var(--weight-medium);
 	text-align: left;
 }
