@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { connect as connectTcp } from "node:net";
 
 /**
  * Thin adapter over the simplex-chat CLI (AGPLv3), spawned as a subprocess
@@ -57,15 +58,6 @@ export interface StartSimplexOptions {
 interface WsRequest {
 	readonly corrId: string;
 	readonly cmd: string;
-}
-
-interface WsResponse {
-	readonly corrId: string;
-	readonly resp: unknown;
-}
-
-interface WsEvent {
-	readonly resp: unknown;
 }
 
 class SimplexError extends Error {
@@ -165,7 +157,7 @@ async function waitForPort(port: number, proc: ChildProcess, timeoutMs: number):
 class SimplexClient implements SimplexTransport {
 	readonly dbPrefix: string;
 	readonly displayName: string;
-	private readonly proc: ChildProcess;
+	private readonly proc: ChildProcess | undefined;
 	private readonly ws: WebSocket;
 	private nextCorrId = 1;
 	private readonly pending = new Map<string, { resolve: (resp: unknown) => void; reject: (error: Error) => void }>();
@@ -173,7 +165,7 @@ class SimplexClient implements SimplexTransport {
 	private closed = false;
 	private userId: number | undefined;
 
-	constructor(dbPrefix: string, displayName: string, proc: ChildProcess, ws: WebSocket) {
+	constructor(dbPrefix: string, displayName: string, proc: ChildProcess | undefined, ws: WebSocket) {
 		this.dbPrefix = dbPrefix;
 		this.displayName = displayName;
 		this.proc = proc;
@@ -393,13 +385,15 @@ class SimplexClient implements SimplexTransport {
 		} catch {
 			/* already closed */
 		}
-		this.proc.kill("SIGTERM");
+		if (this.proc === undefined) return;
+		const proc = this.proc;
+		proc.kill("SIGTERM");
 		await new Promise<void>((resolve) => {
 			const timer = setTimeout(() => {
-				this.proc.kill("SIGKILL");
+				proc.kill("SIGKILL");
 				resolve();
 			}, 3000);
-			this.proc.once("exit", () => {
+			proc.once("exit", () => {
 				clearTimeout(timer);
 				resolve();
 			});
@@ -428,4 +422,55 @@ export async function startSimplexChat(options: StartSimplexOptions): Promise<Si
 	const client = new SimplexClient(options.dbPrefix, options.displayName, proc, ws);
 	await client.getUserId();
 	return client;
+}
+
+export interface OpenPeerQueryTransportOptions extends StartSimplexOptions {
+	readonly portOpen?: (port: number) => Promise<boolean>;
+	readonly start?: (options: StartSimplexOptions) => Promise<SimplexTransport>;
+	readonly attach?: (options: StartSimplexOptions) => Promise<SimplexTransport>;
+}
+
+function defaultPortOpen(port: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = connectTcp({ host: "127.0.0.1", port });
+		let settled = false;
+		const finish = (open: boolean): void => {
+			if (settled) return;
+			settled = true;
+			socket.destroy();
+			resolve(open);
+		};
+		socket.once("connect", () => finish(true));
+		socket.once("error", () => finish(false));
+		socket.setTimeout(200, () => finish(false));
+	});
+}
+
+export async function attachSimplexChat(options: StartSimplexOptions): Promise<SimplexTransport> {
+	const port = options.port ?? 5225;
+	const ws = await new Promise<WebSocket>((resolve, reject) => {
+		const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+		const timer = setTimeout(() => {
+			socket.close();
+			reject(new SimplexError(`WebSocket connect timed out on port ${port}`));
+		}, options.connectTimeoutMs ?? 15_000);
+		socket.addEventListener("open", () => {
+			clearTimeout(timer);
+			resolve(socket);
+		});
+		socket.addEventListener("error", () => {
+			clearTimeout(timer);
+			reject(new SimplexError(`WebSocket connect failed on port ${port}`));
+		});
+	});
+	const client = new SimplexClient(options.dbPrefix, options.displayName, undefined, ws);
+	await client.getUserId();
+	return client;
+}
+
+export async function openPeerQueryTransport(options: OpenPeerQueryTransportOptions): Promise<SimplexTransport> {
+	const port = options.port ?? 5225;
+	const listening = await (options.portOpen ?? defaultPortOpen)(port);
+	if (listening) return (options.attach ?? attachSimplexChat)({ ...options, port });
+	return (options.start ?? startSimplexChat)({ ...options, port });
 }

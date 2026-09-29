@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Static, Type } from "typebox";
@@ -8,6 +7,7 @@ import type { RetrievalOptions } from "../retrieval/types.ts";
 import {
 	ApprovalAbortedError,
 	ApprovalTimeoutError,
+	PEER_REQUEST_TTL_MS,
 	savePendingPeerRequest,
 	waitForPeerRequestDecision,
 } from "./approval-store.ts";
@@ -16,6 +16,12 @@ import { classifyInjection, type InjectionClassifierModel } from "./injection-cl
 import { screenInboundQuery } from "./injection-gate.ts";
 import { type PolicyQuotas, type PolicyResolution, PolicyStore } from "./policy.ts";
 import type { PolicyResolver } from "./policy-filter.ts";
+import {
+	createSimplexQueryClient,
+	DEFAULT_SIMPLEX_QUERY_FAST_TIMEOUT_MS,
+	type SimplexQueryResult,
+	type SimplexQueryState,
+} from "./simplex-query-store.ts";
 import {
 	parseSimplexProfile,
 	type SimplexContact,
@@ -38,7 +44,6 @@ import {
 
 const DEFAULT_QUEUE_DEPTH = 8;
 const DEFAULT_SEARCH_TIMEOUT_MS = 120_000;
-const DEFAULT_QUERY_TIMEOUT_MS = 120_000;
 /**
  * SimpleX message bodies have no documented byte cap, but the wire envelope
  * stays bounded so a malformed or hostile payload cannot exhaust the peer.
@@ -508,7 +513,7 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 			});
 			try {
 				const decision = await waitForPeerRequestDecision(options.workspacePath, envelope.id, {
-					timeoutMs: options.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+					timeoutMs: PEER_REQUEST_TTL_MS,
 					abort: abort.signal,
 				});
 				if (decision.decision === "approve") {
@@ -556,7 +561,11 @@ function log(logger: (entry: SimplexPeerLog) => void, entry: SimplexPeerLog): vo
 }
 
 export interface QuerySimplexPeerOptions {
-	readonly timeoutMs?: number;
+	readonly workspacePath: string;
+	readonly fastTimeoutMs?: number;
+	readonly sessionId?: string;
+	readonly onResponse?: (state: SimplexQueryState, response: PeerQueryResponse) => void;
+	readonly onExpired?: (state: SimplexQueryState) => void;
 }
 
 /**
@@ -567,39 +576,16 @@ export async function querySimplexPeer(
 	transport: SimplexTransport,
 	contactId: number,
 	request: PeerQueryRequest,
-	options: QuerySimplexPeerOptions = {},
-): Promise<PeerQueryResponse> {
-	const id = randomUUID();
-	const timeoutMs = options.timeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS;
-	return new Promise<PeerQueryResponse>((resolve, reject) => {
-		const handler = (incoming: SimplexIncomingMessage): void => {
-			let envelope: SimplexWireEnvelope | undefined;
-			try {
-				const parsed = JSON.parse(incoming.text) as unknown;
-				if (Value.Check(SimplexWireEnvelopeSchema, parsed)) envelope = parsed;
-			} catch {
-				return;
-			}
-			if (envelope === undefined || envelope.kind !== "response" || envelope.id !== id) return;
-			clearTimeout(timer);
-			unsubscribe();
-			if (Value.Check(PeerQueryResponseSchema, envelope.payload)) {
-				resolve(envelope.payload as PeerQueryResponse);
-			} else {
-				reject(new Error("SimpleX peer response failed wire validation."));
-			}
-		};
-		const unsubscribe = transport.onMessage(handler);
-		const timer = setTimeout(() => {
-			unsubscribe();
-			reject(new Error(`SimpleX peer query timed out after ${timeoutMs}ms.`));
-		}, timeoutMs);
-		void transport
-			.sendMessage(contactId, JSON.stringify({ v: 1, kind: "query", id, payload: request }))
-			.catch((error: unknown) => {
-				clearTimeout(timer);
-				unsubscribe();
-				reject(error instanceof Error ? error : new Error(String(error)));
-			});
+	options: QuerySimplexPeerOptions,
+): Promise<SimplexQueryResult> {
+	const client = createSimplexQueryClient(transport, options.workspacePath, {
+		fastTimeoutMs: options.fastTimeoutMs ?? DEFAULT_SIMPLEX_QUERY_FAST_TIMEOUT_MS,
+		onResponse: options.onResponse,
+		onExpired: options.onExpired,
 	});
+	const result = await client.send(contactId, request, options.sessionId);
+	if (result.status !== "pending" || (options.onResponse === undefined && options.onExpired === undefined)) {
+		client.close();
+	}
+	return result;
 }

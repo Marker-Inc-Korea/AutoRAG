@@ -1004,6 +1004,14 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		}
 	}
 	if (config.datasourceAccess !== undefined) opts.datasourceAccess = config.datasourceAccess;
+	if (config.p2p?.enabled === true) {
+		opts.peerQuery = {
+			...(config.p2p.port !== undefined ? { port: config.p2p.port } : {}),
+			...(config.p2p.simplexDbPrefix !== undefined ? { simplexDbPrefix: config.p2p.simplexDbPrefix } : {}),
+		};
+	} else {
+		opts.peerQuery = false;
+	}
 	return opts as Omit<AutoRAGAgentOptions, "model">;
 }
 
