@@ -618,20 +618,6 @@
 	appearance: none;
 }
 
-.settings-keycaps {
-	display: flex;
-	gap: var(--space-4);
-}
-
-.settings-keycaps kbd {
-	padding: 2px 8px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-5);
-	background: var(--bg-chrome);
-	color: var(--text-primary);
-	font-size: var(--font-size-meta);
-}
-
 /* shadcn/ui Switch (new-york-v4 registry item, verbatim geometry/motion);
  * only the color values move to brand tokens (#FF6363 checked / #CFCFD9 off). */
 .settings-switch {

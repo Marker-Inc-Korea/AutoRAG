@@ -194,10 +194,6 @@ export function SettingsPanel({
 										<option value="ko">한국어</option><option value="en">English</option><option value="ja">日本語</option><option value="zh">简体中文</option>
 									</select></div>
 								</SettingRow>
-								{/* WIP: the global shortcut is shown but main-process registration is not implemented. */}
-								<SettingRow label="Global shortcut" description="어디서든 AutoRAG Agent 열기">
-									<div className="settings-keycaps"><kbd>⌥</kbd><kbd>Space</kbd></div>
-								</SettingRow>
 								{/* WIP: launch-at-login persists but the app does not call app.setLoginItemSettings yet. */}
 								<SettingRow label="Launch at login" description="Mac 로그인 시 자동 실행">
 									<Switch checked={settings.launchAtLogin} onChange={() => void toggleSetting("launchAtLogin")} />
