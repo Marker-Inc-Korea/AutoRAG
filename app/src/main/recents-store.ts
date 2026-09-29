@@ -23,7 +23,7 @@ export interface RecentsStoreDeps {
 }
 
 export const RECENTS_FILENAME = "recents.json";
-export const RECENTS_LIMIT = 50;
+export const RECENTS_LIMIT = 100;
 
 /** JSON persistence for the Recents list. Writes are serialized and atomic. */
 export function createRecentsStore(deps: RecentsStoreDeps): RecentsStore {

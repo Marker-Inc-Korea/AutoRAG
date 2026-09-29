@@ -12,7 +12,7 @@ import {
 } from "../state/context-menu";
 import { emptyStateText, indexToast, searchSummaryText, statusBarText, trashToast } from "../state/format";
 import { type FocusZone, resolveKeyAction } from "../state/keymap";
-import { activeNavPath, basename, breadcrumbTrail, type Crumb } from "../state/paths";
+import { activeNavPath, basename, breadcrumbTrail, dirname, type Crumb } from "../state/paths";
 import {
 	applyRowClick,
 	EMPTY_SELECTION,
@@ -41,6 +41,7 @@ import {
 	goForward,
 	navigateTab,
 	openTab,
+	openTabAt,
 	patchActiveTab,
 	selectTab,
 	tabTitle,
@@ -440,6 +441,19 @@ export function useFinderController(
 				case "open":
 					navigate(entry.path);
 					return;
+				case "showInEnclosingFolder": {
+					// A new tab opens on the folder that holds the file, with the row revealed.
+					setTabsState((state) =>
+						patchActiveTab(openTabAt(state, dirname(entry.path)), (tab) => ({
+							...tab,
+							selection: { keys: [entry.path], anchor: entry.path, focus: entry.path },
+						})),
+					);
+					setQueryValue("");
+					setFlashPath(entry.path);
+					scrollTarget.current = entry.path;
+					return;
+				}
 				case "toggleIndex":
 					toggleIndex(entry);
 					return;
@@ -644,8 +658,9 @@ export function useFinderController(
 			selectionCount: menuTargets(entry).length,
 			indexIncluded: effectiveIndexOverrides[entry.path] ?? true,
 			clipboardCount,
+			inRecents: path === RECENTS_PATH,
 		});
-	}, [contextMenu, menuTargets, effectiveIndexOverrides, clipboardCount]);
+	}, [contextMenu, menuTargets, effectiveIndexOverrides, clipboardCount, path]);
 
 	const navTargets = useMemo(
 		() => (locations.length > 0 ? locations : [{ name: basename(path), path }]),

@@ -256,7 +256,36 @@ try {
 }
 closeHandlerDocuments();
 
-// 6. Restart → the history is still there (persisted, not in-memory). Step 5 re-opened
+// 6. Right-click a Recents row → "Show in Enclosing Folder" opens a new tab on that folder.
+await clickNav(page, "Recents");
+const menuRow = page.locator('[role="row"]', { hasText: `${RUN_ID}-opened.txt` });
+await menuRow.click({ button: "right" });
+const enclosingItem = page.locator('[role="menuitem"]', { hasText: "Show in Enclosing Folder" });
+let enclosingLabel = "";
+try {
+	enclosingLabel = await enclosingItem.innerText({ timeout: 5000 });
+} catch {
+	enclosingLabel = "";
+}
+check(
+	"the Recents row menu offers Show in Enclosing Folder",
+	enclosingLabel.includes("Show in Enclosing Folder"),
+	enclosingLabel || "menu item not found",
+);
+await page.screenshot({ path: join(EVIDENCE, "recents-context-menu.png") });
+await enclosingItem.click();
+await sleep(1500);
+const tabCount = await page.locator(".tab").count();
+const enclosingTab = await page.locator(".tab--active .tab__title").innerText();
+check("Show in Enclosing Folder opened a new tab", tabCount === 2, String(tabCount));
+check("the new tab shows the enclosing folder", enclosingTab === "Documents", enclosingTab);
+const revealedSelection = await page
+	.locator('[role="row"]', { hasText: `${RUN_ID}-opened.txt` })
+	.getAttribute("aria-selected");
+check("the file is revealed as selected in that folder", revealedSelection === "true", String(revealedSelection));
+await page.screenshot({ path: join(EVIDENCE, "enclosing-folder-tab.png") });
+
+// 7. Restart → the history is still there (persisted, not in-memory). Step 5 re-opened
 //    the "opened" fixture, so that entry now leads the list.
 await app.close();
 ({ app, page } = await openApp());
@@ -269,7 +298,7 @@ check(
 );
 await page.screenshot({ path: join(EVIDENCE, "recents-after-restart.png") });
 
-// 7. Cleanup — only what this script created.
+// 8. Cleanup — only what this script created.
 await app.close();
 sweepLeftovers();
 console.log(`cleanup: qlmanage alive = ${sh(`pgrep -fl 'qlmanage -p ${FIXTURE_PREVIEW}'`) || "none"}`);

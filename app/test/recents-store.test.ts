@@ -145,4 +145,21 @@ describe("recents store", () => {
 		// Then the file landed in the created directory
 		expect(await createRecentsStore({ directory: nested }).list()).toEqual([join(root, "deep.pdf")]);
 	});
+
+	it("caps the default history at 100 entries, dropping the oldest", async () => {
+		// Given a store left at its default limit and 101 opened files
+		const store = createRecentsStore({ directory: root });
+		for (let index = 0; index < 101; index += 1) {
+			await store.record(join(root, `file-${String(index).padStart(3, "0")}.txt`));
+		}
+
+		// When listing
+		const listed = await store.list();
+
+		// Then the newest 100 survive, newest first, and the first one is gone
+		expect(listed).toHaveLength(100);
+		expect(listed[0]).toBe(join(root, "file-100.txt"));
+		expect(listed.at(-1)).toBe(join(root, "file-001.txt"));
+		expect(listed).not.toContain(join(root, "file-000.txt"));
+	});
 });
