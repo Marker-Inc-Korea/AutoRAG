@@ -71,7 +71,7 @@ jobs:
               # ~3 minutes, so bound the step itself and let a stall fail loudly.
               timeout-minutes: 20
               run: |
-                  uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
+                  uv run python -m pytest -o faulthandler_timeout=300 -o log_cli=true --log-cli-level=INFO -n auto tests
             - name: Check clean legacy ty scope
               run: |
                   # Tests are intentionally excluded; pytest and ruff validate tests.

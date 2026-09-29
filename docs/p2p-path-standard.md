@@ -84,3 +84,38 @@ The egress gate maps that diagnostic to a wire response with a
 `no-verified-results` diagnostic code, so the requesting peer can distinguish
 "nothing found" from `policy-denied`, `internal-error`, and timeouts. Local
 sessions keep throwing `completed without emitting structured results`.
+
+## Where P2P contact data lives
+
+SimpleX owns contact identity; AutoRAG stores only what it needs to route and to
+gate access.
+
+| Layer | Location | Owner |
+|-------|----------|-------|
+| Chat and agent databases | `<dbPrefix>_chat.db`, `<dbPrefix>_agent.db` | simplex-chat |
+| Trusted peer registry | `<workspace>/.autorag/p2p/simplex-peers.json` (0600) | AutoRAG |
+| Peer-query approvals | `<workspace>/.autorag/p2p/requests/`, `decisions/` | AutoRAG |
+
+`autorag serve` uses `<workspace>/.autorag/p2p/simplex` as the simplex-chat
+database prefix (`p2p.simplexDbPrefix` overrides it). AutoRAG never reads the
+SimpleX databases directly; it speaks the simplex-chat WebSocket bot API and
+leaves contact, index, and secret state with SimpleX.
+
+A registry entry is keyed by the name you call the contact locally and holds:
+
+- `contactId` — the SimpleX contact id, the identity SimpleX owns.
+- `profile` — the profile that peer shared: `displayName`, `fullName`,
+  `shortDescr`, `description`, `image`.
+- `profileSyncedAt` — when `profile` was last read from simplex-chat.
+- `description` — your own note about the contact.
+
+L1 and L2 are therefore not separate stores: the SimpleX profile is the source of
+truth for who a contact is, and the registry adds only your local name (the
+record key) and note.
+
+`autorag serve` reads `/_contacts` at startup and merges each shared profile
+into the records you already trusted. A SimpleX contact with no trusted record is
+reported on stderr and never added: the registry stays the allowlist for inbound
+peer queries. The retired persona fields (`displayName`, `role`, `org`,
+`accessHint`) are gone; `autorag p2p peers --rank` matches on your local name
+and note plus the profile the peer shared.

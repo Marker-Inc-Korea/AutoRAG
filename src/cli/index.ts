@@ -58,11 +58,7 @@ const VALUE_FLAGS = new Set([
 	"edit",
 	"show",
 	"rank",
-	"display-name",
 	"description",
-	"role",
-	"org",
-	"access-hint",
 	"input",
 	"profile",
 	"format",
@@ -130,8 +126,7 @@ Commands:
                        (--port N  --force)
   p2p                  SimpleX peer trust management
                        (peers [--add <alias> --contact-id <n>] [--edit <alias>]
-                        [--display-name <name>] [--description <text>]
-                        [--role <role>] [--org <org>] [--access-hint <csv>]
+                        [--description <text>]
                         [--show <alias>] [--rank <query>] [--remove <alias>])
                        (requests [approve|deny <id>])
   p2p policy list      Show effective merged sharing policy (virtual-path keys)

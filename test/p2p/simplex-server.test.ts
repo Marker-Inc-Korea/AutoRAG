@@ -1,15 +1,18 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { listPendingPeerRequests, writePeerRequestDecision } from "../../src/p2p/approval-store.ts";
 import {
+	loadSimplexPeerRegistry,
 	querySimplexPeer,
 	rankSimplexPeerTargets,
 	type SimplexPeerRegistry,
 	type SimplexPeerServer,
+	saveSimplexPeerRegistry,
 	startSimplexPeerServer,
+	syncSimplexPeers,
 } from "../../src/p2p/simplex-server.ts";
 import type { SimplexIncomingMessage, SimplexTransport } from "../../src/p2p/simplex-transport.ts";
 import { type PeerQueryResponse, resetWireMapping } from "../../src/p2p/wire.ts";
@@ -143,28 +146,145 @@ function peers(): SimplexPeerRegistry {
 	return { "client-agent": { contactId: PEER_CONTACT_ID, addedAt: new Date().toISOString() } };
 }
 
-describe("local peer persona target ranking", () => {
-	it("ranks by explainable keyword overlap and ignores peers with no match", () => {
-		const matches = rankSimplexPeerTargets("finance budget", {
+describe("local peer contact ranking", () => {
+	it("ranks by keyword overlap across the received SimpleX profile and your local note", () => {
+		const matches = rankSimplexPeerTargets("finance budget dividend", {
 			alice: {
 				contactId: 42,
 				addedAt: "2026-01-01T00:00:00.000Z",
-				displayName: "Alice",
-				org: "Finance",
-				accessHint: ["budget", "tax"],
+				description: "dividend records",
+				profile: {
+					displayName: "Alice",
+					fullName: "Alice Kim",
+					shortDescr: "Finance lead",
+					description: "budget and tax",
+				},
 			},
-			bob: {
-				contactId: 43,
-				addedAt: "2026-01-01T00:00:00.000Z",
-				description: "Design documents",
-			},
+			bob: { contactId: 43, addedAt: "2026-01-01T00:00:00.000Z", profile: { displayName: "Bob" } },
 		});
 
-		expect(matches).toEqual([{ alias: "alice", score: 2, matchedTerms: ["budget", "finance"] }]);
+		expect(matches).toEqual([{ alias: "alice", score: 3, matchedTerms: ["budget", "dividend", "finance"] }]);
+	});
+
+	it("ranks by your local contact name when the peer shared no profile", () => {
+		const matches = rankSimplexPeerTargets("finance lead", {
+			"finance-lead": { contactId: 43, addedAt: "2026-01-01T00:00:00.000Z" },
+		});
+
+		expect(matches).toEqual([{ alias: "finance-lead", score: 2, matchedTerms: ["finance", "lead"] }]);
 	});
 
 	it("returns no candidates for an empty query", () => {
 		expect(rankSimplexPeerTargets("!!!", peers())).toEqual([]);
+	});
+});
+
+describe("simplex peer registry from SimpleX profiles", () => {
+	it("loads a profile-based record and ignores retired persona fields", () => {
+		const root = workspace();
+		mkdirSync(join(root, ".autorag", "p2p"), { recursive: true });
+		writeFileSync(
+			join(root, ".autorag", "p2p", "simplex-peers.json"),
+			JSON.stringify({
+				alice: {
+					contactId: 42,
+					addedAt: "2026-01-01T00:00:00.000Z",
+					displayName: "Alice",
+					role: "Manager",
+					org: "Finance",
+					accessHint: ["budget"],
+					description: "재무 담당자",
+					profile: {
+						displayName: "김철수",
+						fullName: "Kim Cheolsu",
+						shortDescr: "재무팀장",
+						description: "Finance owner",
+						image: "data:image/png;base64,AA",
+					},
+					profileSyncedAt: "2026-02-02T00:00:00.000Z",
+				},
+			}),
+		);
+
+		expect(loadSimplexPeerRegistry(root).alice).toEqual({
+			contactId: 42,
+			addedAt: "2026-01-01T00:00:00.000Z",
+			description: "재무 담당자",
+			profile: {
+				displayName: "김철수",
+				fullName: "Kim Cheolsu",
+				shortDescr: "재무팀장",
+				description: "Finance owner",
+				image: "data:image/png;base64,AA",
+			},
+			profileSyncedAt: "2026-02-02T00:00:00.000Z",
+		});
+	});
+
+	it("stores the received SimpleX profile on the trusted contact and keeps your local note", () => {
+		const root = workspace();
+		saveSimplexPeerRegistry(root, {
+			alice: { contactId: 42, addedAt: "2026-01-01T00:00:00.000Z", description: "재무 담당자" },
+		});
+
+		const result = syncSimplexPeers(
+			root,
+			[
+				{
+					contactId: 42,
+					localDisplayName: "peer",
+					profile: {
+						displayName: "김철수",
+						fullName: "Kim Cheolsu",
+						shortDescr: "재무팀장",
+						description: "Finance owner",
+					},
+				},
+			],
+			"2026-02-02T00:00:00.000Z",
+		);
+
+		expect(result).toEqual({ updated: ["alice"], untrusted: [] });
+		expect(loadSimplexPeerRegistry(root).alice).toEqual({
+			contactId: 42,
+			addedAt: "2026-01-01T00:00:00.000Z",
+			description: "재무 담당자",
+			profile: {
+				displayName: "김철수",
+				fullName: "Kim Cheolsu",
+				shortDescr: "재무팀장",
+				description: "Finance owner",
+			},
+			profileSyncedAt: "2026-02-02T00:00:00.000Z",
+		});
+	});
+
+	it("never auto-trusts a SimpleX contact that is not in the registry", () => {
+		const root = workspace();
+		saveSimplexPeerRegistry(root, { alice: { contactId: 42, addedAt: "2026-01-01T00:00:00.000Z" } });
+
+		const result = syncSimplexPeers(
+			root,
+			[
+				{ contactId: 42, localDisplayName: "peer", profile: { displayName: "김철수" } },
+				{ contactId: 99, localDisplayName: "stranger", profile: { displayName: "Stranger" } },
+			],
+			"2026-02-02T00:00:00.000Z",
+		);
+
+		expect(result.updated).toEqual(["alice"]);
+		expect(result.untrusted.map((contact) => contact.contactId)).toEqual([99]);
+		expect(Object.keys(loadSimplexPeerRegistry(root))).toEqual(["alice"]);
+	});
+
+	it("leaves a record untouched when the peer shared no profile", () => {
+		const root = workspace();
+		saveSimplexPeerRegistry(root, { alice: { contactId: 42, addedAt: "2026-01-01T00:00:00.000Z" } });
+
+		expect(syncSimplexPeers(root, [{ contactId: 42, localDisplayName: "peer" }], "2026-02-02T00:00:00.000Z")).toEqual(
+			{ updated: [], untrusted: [] },
+		);
+		expect(loadSimplexPeerRegistry(root).alice).toEqual({ contactId: 42, addedAt: "2026-01-01T00:00:00.000Z" });
 	});
 });
 
@@ -180,7 +300,9 @@ async function lastResponse(transport: FakeTransport, minCount = 1): Promise<Pee
 			})
 			.filter((envelope) => envelope.kind === "response")
 			.map((envelope) => envelope.payload);
-	await expect.poll(() => responsesOf().length, { timeout: 2000, interval: 10 }).toBeGreaterThanOrEqual(minCount);
+	// Bounded wait for the peer's reply; the bound only tolerates a loaded
+	// machine (a full parallel suite run), not a fixed delay.
+	await expect.poll(() => responsesOf().length, { timeout: 10_000, interval: 10 }).toBeGreaterThanOrEqual(minCount);
 	return responsesOf()[responsesOf().length - 1]!;
 }
 

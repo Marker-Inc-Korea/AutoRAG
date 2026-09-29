@@ -138,7 +138,7 @@ Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
 `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
 each exact canonical-text hash, and excludes older copies from the mirror.
 Install dupey during setup when it is missing (`command -v dupey || cargo
-install dupey`) and tell the user the feature is available; when installation
+install dupey --locked`) and tell the user the feature is available; when installation
 is impossible, refresh continues without this optimization and the user is
 told duplicate exclusion is off. Set `"excludeExactDuplicates": false` to
 index every copy.

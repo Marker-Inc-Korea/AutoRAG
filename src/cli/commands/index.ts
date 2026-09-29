@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { AutoRAGAgent, type AutoRAGRefreshResult, type RefreshMethod } from "../../agent/agent.ts";
+import { removeRefreshProgress } from "../../agent/refresh-progress.ts";
 import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../../mirror/paths.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
@@ -85,8 +86,9 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	for (const target of targets) {
 		rmSync(target, { recursive: true, force: true });
 	}
-	if (sub === "reset" || targetSubdirs.includes(PARSED_MIRROR_SUBDIR)) {
+	if (sub === "reset" || targetSubdirs.includes(PARSED_MIRROR_SUBDIR) || targetSubdirs.includes(MINSYNC_SUBDIR)) {
 		rmSync(refreshReadinessPath(config.workspacePath), { force: true });
+		removeRefreshProgress(config.workspacePath);
 	}
 
 	if (sub === "reset") {

@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
+import { validateReport } from "../../src/cli/commands/report.ts";
 import { normalizeIndexingConfig } from "../../src/cli/config.ts";
 import { renderSearch } from "../../src/cli/output.ts";
 import { BUILTIN_DATASOURCE_SKILL_NAMES } from "../../src/datasource/skills/factory.ts";
@@ -74,6 +75,21 @@ function autoragInvocations(markdown: string): { command: string; flags: string[
 function section(markdown: string, heading: string): string {
 	const pattern = new RegExp(`^## ${heading}\\s*$([\\s\\S]*?)(?=^## |\\Z)`, "m");
 	return pattern.exec(markdown)?.[1] ?? "";
+}
+
+/**
+ * Extract one `### <heading>` subsection body from a markdown document. Only
+ * `##`/`###` headings end it, so a `# comment` inside a bash fence is kept.
+ */
+function subsection(markdown: string, heading: string): string {
+	return new RegExp(`\\n### ${heading}\\s*\\n([\\s\\S]*?)(?=\\n#{2,3} |$)`).exec(markdown)?.[1] ?? "";
+}
+
+/** Every fenced ```json block inside one `## <heading>` section, parsed. */
+function jsonFences(markdown: string, heading: string): unknown[] {
+	return [...section(markdown, heading).matchAll(/```json\n([\s\S]*?)```/g)].map(
+		(match) => JSON.parse(match[1]) as unknown,
+	);
 }
 
 /** Every string literal used as a diagnostic/warning code anywhere in the shipped source. */
@@ -162,6 +178,19 @@ describe("parent-agent skill docs", () => {
 		}
 	});
 
+	it("keeps the README skill-install snippet pointing at skills that exist", () => {
+		const readme = readFileSync(join(repoRoot, "README.md"), "utf8").replace(/\r\n?/g, "\n");
+		const install = subsection(readme, "Install the skills into your coding agent");
+		expect(install.length, "README needs a skill-install subsection").toBeGreaterThan(0);
+		expect(install, "the install subsection must name Claude Code's skill directory").toContain(".claude/skills");
+		const copied = [...install.matchAll(/skills\/(autorag[a-z0-9-]*)/g)].map((match) => match[1]);
+		expect(copied.length, "the install snippet must name the skill folders it copies").toBeGreaterThan(0);
+		for (const name of new Set(copied)) {
+			expect(skillFolders(), `README install snippet copies unknown skill "${name}"`).toContain(name);
+			expect(existsSync(join(repoRoot, "skills", name, "SKILL.md")), `${name}: missing SKILL.md`).toBe(true);
+		}
+	});
+
 	it("ships every skill folder in the npm package", () => {
 		const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
 			files: string[];
@@ -180,6 +209,21 @@ describe("parent-agent skill docs", () => {
 		expect(search).toContain("sessionId");
 		expect(search).toContain("autorag evidence");
 		expect(search).toContain("autorag feedback");
+	});
+
+	it("ships a lite report input example the real validator accepts", () => {
+		const fences = jsonFences(readSkill("autorag-lite-search"), "Persisting a curated report");
+		const inputs = fences.filter(
+			(fence): fence is Record<string, unknown> =>
+				typeof fence === "object" && fence !== null && "results" in fence && "mapping" in fence,
+		);
+		expect(inputs.length, "lite-search skill must show a complete report input example").toBeGreaterThan(0);
+		for (const input of inputs) {
+			const details = validateReport(input);
+			expect(details.results.length).toBeGreaterThan(0);
+			expect(details.results.every((result) => result.evidence.length > 0)).toBe(true);
+			expect(details.mapping.every((entry) => entry.content.length > 0)).toBe(true);
+		}
 	});
 
 	it("documents the lite refresh method values and force flags", () => {

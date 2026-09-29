@@ -319,6 +319,32 @@ describe("runReport", () => {
 		expect(getMemoryByteLength()).toBe(memoryBytesBefore);
 	});
 
+	it("names the offending field paths when required report fields are missing", async () => {
+		writeConfig();
+		const reportPath = join(root, "missing-required-fields.json");
+		// A report built from an incomplete schema description: `results[].evidence`
+		// and `mapping[].content` are required but easy to omit.
+		writeFileSync(
+			reportPath,
+			JSON.stringify({
+				answer: "[1] test answer",
+				results: [{ number: 1, title: "Result one", summary: "Summary one", confidence: 0.8 }],
+				mapping: [{ number: 1, source: "file:///do-not-read", method: "grep" }],
+			}),
+		);
+
+		const { ctx, stderr } = makeCtx(["test query"], { input: reportPath });
+		const code = await runReport(ctx);
+		expect(code).toBe(2);
+		const envelope = JSON.parse(stderr.join("\n")) as { ok: boolean; error: string };
+		expect(envelope.ok).toBe(false);
+		expect(envelope.error).toContain("/results/0");
+		expect(envelope.error).toContain("evidence");
+		expect(envelope.error).toContain("/mapping/0");
+		expect(envelope.error).toContain("content");
+		expect(existsSync(memoryPath)).toBe(false);
+	});
+
 	it("rejects malformed JSON (non-report) with exit 2", async () => {
 		writeConfig();
 		const reportPath = join(root, "bad-json.json");

@@ -16,7 +16,13 @@ import { classifyInjection, type InjectionClassifierModel } from "./injection-cl
 import { screenInboundQuery } from "./injection-gate.ts";
 import { type PolicyQuotas, type PolicyResolution, PolicyStore } from "./policy.ts";
 import type { PolicyResolver } from "./policy-filter.ts";
-import type { SimplexIncomingMessage, SimplexTransport } from "./simplex-transport.ts";
+import {
+	parseSimplexProfile,
+	type SimplexContact,
+	type SimplexIncomingMessage,
+	type SimplexPeerProfile,
+	type SimplexTransport,
+} from "./simplex-transport.ts";
 import {
 	type PeerQueryRequest,
 	PeerQueryRequestSchema,
@@ -67,11 +73,15 @@ export interface SimplexPeerRecord {
 	/** SimpleX contact id of the peer (stable per profile). */
 	readonly contactId: number;
 	readonly addedAt: string;
-	readonly displayName?: string;
+	/**
+	 * The profile this peer shared over SimpleX. It is the source of truth for
+	 * who the contact is; only `description` below is added locally.
+	 */
+	readonly profile?: SimplexPeerProfile;
+	/** When `profile` was last read from simplex-chat. */
+	readonly profileSyncedAt?: string;
+	/** Your own note about this contact. */
 	readonly description?: string;
-	readonly role?: string;
-	readonly org?: string;
-	readonly accessHint?: readonly string[];
 }
 
 export type SimplexPeerRegistry = Record<string, SimplexPeerRecord>;
@@ -88,6 +98,23 @@ function targetTokens(value: string): Set<string> {
 	return new Set((value.toLocaleLowerCase().match(TARGET_TOKEN_PATTERN) ?? []).filter((token) => token.length > 1));
 }
 
+/**
+ * Everything this contact tells us about itself: the name you call it locally,
+ * your note, and the metadata the peer shared over SimpleX.
+ */
+function contactText(alias: string, peer: SimplexPeerRecord): string {
+	return [
+		alias,
+		peer.description,
+		peer.profile?.displayName,
+		peer.profile?.fullName,
+		peer.profile?.shortDescr,
+		peer.profile?.description,
+	]
+		.filter((value): value is string => value !== undefined)
+		.join(" ");
+}
+
 /** Rank local peer records by explainable keyword overlap; never sends a request. */
 export function rankSimplexPeerTargets(query: string, registry: SimplexPeerRegistry): readonly PeerTargetMatch[] {
 	const queryTerms = targetTokens(query);
@@ -95,11 +122,7 @@ export function rankSimplexPeerTargets(query: string, registry: SimplexPeerRegis
 
 	return Object.entries(registry)
 		.map(([alias, peer]) => {
-			const peerTerms = targetTokens(
-				[alias, peer.displayName, peer.description, peer.role, peer.org, ...(peer.accessHint ?? [])]
-					.filter((value): value is string => value !== undefined)
-					.join(" "),
-			);
+			const peerTerms = targetTokens(contactText(alias, peer));
 			const matchedTerms = [...queryTerms].filter((term) => peerTerms.has(term)).sort();
 			return { alias, score: matchedTerms.length, matchedTerms };
 		})
@@ -126,17 +149,13 @@ export function loadSimplexPeerRegistry(workspacePath: string): SimplexPeerRegis
 				typeof (record as Record<string, unknown>).addedAt === "string"
 			) {
 				const raw = record as Record<string, unknown>;
-				const accessHint = Array.isArray(raw.accessHint)
-					? raw.accessHint.filter((value): value is string => typeof value === "string")
-					: undefined;
+				const profile = parseSimplexProfile(raw.profile);
 				registry[alias] = {
 					contactId: raw.contactId as number,
 					addedAt: raw.addedAt as string,
-					...(typeof raw.displayName === "string" ? { displayName: raw.displayName } : {}),
+					...(profile !== undefined ? { profile } : {}),
+					...(typeof raw.profileSyncedAt === "string" ? { profileSyncedAt: raw.profileSyncedAt } : {}),
 					...(typeof raw.description === "string" ? { description: raw.description } : {}),
-					...(typeof raw.role === "string" ? { role: raw.role } : {}),
-					...(typeof raw.org === "string" ? { org: raw.org } : {}),
-					...(accessHint !== undefined ? { accessHint } : {}),
 				};
 			}
 		}
@@ -151,6 +170,43 @@ export function saveSimplexPeerRegistry(workspacePath: string, registry: Simplex
 	const dir = join(workspacePath, PEERS_DIR);
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, PEERS_FILENAME), JSON.stringify(registry, null, 2), { mode: 0o600 });
+}
+
+export interface SimplexPeerSyncResult {
+	/** Registry keys whose stored SimpleX profile was refreshed. */
+	readonly updated: readonly string[];
+	/** SimpleX contacts with no trusted record. Reported, never added automatically. */
+	readonly untrusted: readonly SimplexContact[];
+}
+
+/**
+ * Merge the profiles SimpleX delivered into the records you already trusted.
+ * Contacts that are not in the registry are reported, never trusted: the
+ * registry stays the allowlist for inbound peer queries.
+ */
+export function syncSimplexPeers(
+	workspacePath: string,
+	contacts: readonly SimplexContact[],
+	syncedAt: string = new Date().toISOString(),
+): SimplexPeerSyncResult {
+	const registry = loadSimplexPeerRegistry(workspacePath);
+	const updated: string[] = [];
+	const untrusted: SimplexContact[] = [];
+
+	for (const contact of contacts) {
+		const entry = Object.entries(registry).find(([, peer]) => peer.contactId === contact.contactId);
+		if (entry === undefined) {
+			untrusted.push(contact);
+			continue;
+		}
+		if (contact.profile === undefined) continue;
+		const [alias, peer] = entry;
+		registry[alias] = { ...peer, profile: contact.profile, profileSyncedAt: syncedAt };
+		updated.push(alias);
+	}
+
+	if (updated.length > 0) saveSimplexPeerRegistry(workspacePath, registry);
+	return { updated, untrusted };
 }
 
 // ---------------------------------------------------------------------------
