@@ -215,4 +215,61 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(events[0]).toMatchObject({ type: "progress", text: "Reviewing the query." });
 		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "[1] 확인된 답변" } });
 	});
+
+	it("streams the curated answer body as token deltas before completion", async () => {
+		const longAnswer =
+			"Refund exceptions require director approval before payout, and the finance team acknowledged the updated policy during the July review, so every exception request must be escalated with the original approval chain attached.";
+		const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "streaming-agent" }] });
+		registration.setResponses([
+			fauxAssistantMessage([{ type: "text", text: "증거를 확인했습니다. 최종 답변을 정리합니다." }], {
+				stopReason: "stop",
+			}),
+			fauxAssistantMessage(
+				[
+					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+						answer: longAnswer,
+						results: [
+							{
+								number: 1,
+								title: "환불 예외 승인 규칙",
+								summary: "환불 예외는 지급 전 임원 승인이 필요하다.",
+								evidence: [{ excerpt: "Refund exceptions require director approval" }],
+								confidence: 0.95,
+							},
+						],
+						mapping: [{ number: 1, source: "/docs/a.txt", method: "bash", content: longAnswer }],
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+		]);
+		registrations.push(registration);
+		const agent = new AutoRAGAgent({
+			model: registration.getModel(),
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			jikji: false,
+		});
+
+		const events = [];
+		for await (const event of agent.searchDocumentsStream("환불 예외 승인 규칙은?")) events.push(event);
+
+		const deltas = events.filter((event) => event.type === "answer_delta");
+		expect(deltas.length).toBeGreaterThan(1);
+		for (const delta of deltas) {
+			expect(delta).toMatchObject({ type: "answer_delta", phase: "final" });
+		}
+		const streamed = deltas.map((delta) => delta.text).join("");
+		expect(longAnswer.startsWith(streamed)).toBe(true);
+		expect(streamed.length).toBeGreaterThan(0);
+		const completeIndex = events.findIndex((event) => event.type === "complete");
+		let lastDeltaIndex = -1;
+		for (let index = 0; index < events.length; index += 1) {
+			if (events[index]?.type === "answer_delta") lastDeltaIndex = index;
+		}
+		expect(lastDeltaIndex).toBeGreaterThan(-1);
+		expect(lastDeltaIndex).toBeLessThan(completeIndex);
+		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: longAnswer } });
+	});
 });

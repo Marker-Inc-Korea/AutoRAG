@@ -126,6 +126,20 @@ export type SearchDocumentsStreamEvent =
 	  }
 	| {
 			/**
+			 * Token-level answer text decoded from the streaming
+			 * emit_fast_answer / emit_autorag_results tool-call arguments.
+			 * `phase` "preliminary" streams the fast answer, "final" the verified
+			 * one; the following preliminary/complete event carries the
+			 * authoritative full answer and supersedes the accumulated deltas.
+			 */
+			readonly type: "answer_delta";
+			readonly phase: "preliminary" | "final";
+			readonly sessionId: string;
+			readonly query: string;
+			readonly text: string;
+	  }
+	| {
+			/**
 			 * Immediate first answer from the thinking-off fast phase. Always
 			 * yielded before `complete` when the two-phase flow produced one; the
 			 * `complete` event's response remains the verified final answer.

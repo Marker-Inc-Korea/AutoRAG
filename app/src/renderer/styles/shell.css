@@ -176,6 +176,17 @@
 	min-height: 82px;
 }
 
+.ai__answer--streaming .ai__answer-content p::after {
+	content: "▍";
+	margin-left: 2px;
+	color: var(--accent);
+	animation: ai-caret 1s steps(2, start) infinite;
+}
+
+@keyframes ai-caret {
+	to { visibility: hidden; }
+}
+
 .ai__skeleton {
 	display: flex;
 	flex-direction: column;
