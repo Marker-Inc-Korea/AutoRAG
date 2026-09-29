@@ -21,6 +21,7 @@ export function registerFsIpcHandlers(service: FsBridge): void {
 	ipcMain.handle(FS_CHANNELS.copyPathsToClipboard, (_event, paths: readonly string[]) =>
 		service.copyPathsToClipboard(paths),
 	);
+	ipcMain.handle(FS_CHANNELS.versionFamilies, () => service.versionFamilies());
 }
 
 export function registerSearchIpcHandlers(service: SearchBridge): void {

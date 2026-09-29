@@ -18,5 +18,6 @@ export function createFsBridge(ipcRenderer: IpcRenderer): FsBridge {
 		clipboardSet: (clipboard) => ipcRenderer.invoke(FS_CHANNELS.clipboardSet, clipboard),
 		clipboardGet: () => ipcRenderer.invoke(FS_CHANNELS.clipboardGet),
 		copyPathsToClipboard: (paths) => ipcRenderer.invoke(FS_CHANNELS.copyPathsToClipboard, paths),
+		versionFamilies: () => ipcRenderer.invoke(FS_CHANNELS.versionFamilies),
 	};
 }

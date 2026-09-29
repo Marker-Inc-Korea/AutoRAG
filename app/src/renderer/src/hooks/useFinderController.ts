@@ -21,6 +21,15 @@ import {
 } from "../state/selection";
 import { type SortKey, type SortState, cycleSort, sortEntries } from "../state/sort";
 import {
+	applyVersionStacks,
+	buildVersionFamilies,
+	defaultIndexIncluded,
+	EMPTY_VERSION_FAMILIES,
+	type StackRow,
+	type VersionFamilies,
+	type VersionFamilyError,
+} from "../state/version-family";
+import {
 	activeTab,
 	canCloseTab,
 	closeTab,
@@ -66,6 +75,7 @@ export interface FinderController {
 	readonly searchSummary: string;
 	readonly emptyText: string;
 	readonly rows: readonly FinderEntry[];
+	readonly stackRows: readonly StackRow[];
 	readonly sort: SortState | null;
 	readonly zone: FocusZone;
 	readonly selection: SelectionState;
@@ -75,6 +85,8 @@ export interface FinderController {
 	readonly renamePath: string | null;
 	readonly renameDraft: string;
 	readonly indexOverrides: Readonly<Record<string, boolean>>;
+	/** Non-null when dupey is missing or a version-family scan failed. */
+	readonly versionFamilyError: VersionFamilyError | null;
 	readonly activeNavLabel: string | null;
 	readonly pendingRequests: number;
 	readonly contextMenu: { readonly cursor: { readonly x: number; readonly y: number } } | null;
@@ -99,6 +111,8 @@ export interface FinderController {
 	closeContextMenu(): void;
 	runMenuAction(action: FinderMenuAction): void;
 	toggleIndex(entry: FinderEntry): void;
+	toggleStack(entry: FinderEntry): void;
+	retryVersionFamilies(): void;
 	setRenameDraft(value: string): void;
 	commitRename(): void;
 	cancelRename(): void;
@@ -120,6 +134,9 @@ export function useFinderController(source: FinderSource): FinderController {
 	const [flashPath, setFlashPath] = useState<string | null>(null);
 	const [searchFocused, setSearchFocused] = useState(false);
 	const [revision, setRevision] = useState(0);
+	const [families, setFamilies] = useState<VersionFamilies>(EMPTY_VERSION_FAMILIES);
+	const [versionFamilyError, setVersionFamilyError] = useState<VersionFamilyError | null>(null);
+	const [stackPinned, setStackPinned] = useState<ReadonlySet<string>>(new Set());
 
 	const listRef = useRef<HTMLDivElement | null>(null);
 	const searchRef = useRef<HTMLInputElement | null>(null);
@@ -222,6 +239,37 @@ export function useFinderController(source: FinderSource): FinderController {
 	}, [toast]);
 
 	useEffect(() => {
+		let live = true;
+		source
+			.versionFamilies()
+			.then((result) => {
+				if (!live) return;
+				setFamilies(buildVersionFamilies(result.families));
+				setVersionFamilyError(result.error);
+				if (result.error !== null) {
+					console.error(
+						result.error.installCommand === null
+							? result.error.message
+							: `${result.error.message}\nInstall it with: ${result.error.installCommand}`,
+					);
+				}
+			})
+			.catch((error: unknown) => {
+				console.error("version families request failed", error);
+				if (!live) return;
+				setFamilies(EMPTY_VERSION_FAMILIES);
+				setVersionFamilyError({
+					code: "scan-failed",
+					message: error instanceof Error ? error.message : String(error),
+					installCommand: null,
+				});
+			});
+		return () => {
+			live = false;
+		};
+	}, [source, revision]);
+
+	useEffect(() => {
 		if (flashPath === null) {
 			return;
 		}
@@ -229,7 +277,16 @@ export function useFinderController(source: FinderSource): FinderController {
 		return () => clearTimeout(timer);
 	}, [flashPath]);
 
-	const rows = useMemo(() => sortEntries(searching ? hits : listing, sort), [searching, hits, listing, sort]);
+	const stackRows = useMemo(
+		() =>
+			applyVersionStacks(sortEntries(searching ? hits : listing, sort), {
+				families,
+				manualOpen: stackPinned,
+				selectedKeys: selection.keys,
+			}),
+		[searching, hits, listing, sort, families, stackPinned, selection.keys],
+	);
+	const rows = useMemo(() => stackRows.map((row) => row.entry), [stackRows]);
 	const orderedKeys = useMemo(() => rows.map((entry) => entry.path), [rows]);
 
 	/** Keyboard movement keeps the focused row in view (row height 32, lead 80). */
@@ -317,12 +374,33 @@ export function useFinderController(source: FinderSource): FinderController {
 
 	const toggleIndex = useCallback(
 		(entry: FinderEntry) => {
-			const included = indexOverrides[entry.path] ?? true;
+			const included = indexOverrides[entry.path] ?? defaultIndexIncluded(entry.path, families);
 			setIndexOverrides((current) => ({ ...current, [entry.path]: !included }));
 			showToast(indexToast(entry.name, !included));
 		},
-		[indexOverrides, showToast],
+		[indexOverrides, families, showToast],
 	);
+
+	const toggleStack = useCallback((entry: FinderEntry) => {
+		setStackPinned((current) => {
+			const next = new Set(current);
+			if (next.has(entry.path)) {
+				next.delete(entry.path);
+			} else {
+				next.add(entry.path);
+			}
+			return next;
+		});
+	}, []);
+
+	/** Stack members default to index-excluded; explicit toggles win. */
+	const effectiveIndexOverrides = useMemo(() => {
+		const defaults: Record<string, boolean> = {};
+		for (const path of families.memberOf.keys()) {
+			defaults[path] = false;
+		}
+		return { ...defaults, ...indexOverrides };
+	}, [families, indexOverrides]);
 
 	const quickLookSelection = useCallback(() => {
 		const entry = focusedEntry;
@@ -556,10 +634,10 @@ export function useFinderController(source: FinderSource): FinderController {
 		return buildContextMenu({
 			target: { name: entry.name, kind: entry.kind },
 			selectionCount: menuTargets(entry).length,
-			indexIncluded: indexOverrides[entry.path] ?? true,
+			indexIncluded: effectiveIndexOverrides[entry.path] ?? true,
 			clipboardCount,
 		});
-	}, [contextMenu, menuTargets, indexOverrides, clipboardCount]);
+	}, [contextMenu, menuTargets, effectiveIndexOverrides, clipboardCount]);
 
 	const navTargets = useMemo(
 		() => (locations.length > 0 ? locations : [{ name: basename(path), path }]),
@@ -583,6 +661,7 @@ export function useFinderController(source: FinderSource): FinderController {
 		searchSummary: searchSummaryText(rows.length),
 		emptyText: emptyStateText(query),
 		rows,
+		stackRows,
 		sort,
 		zone,
 		selection,
@@ -591,7 +670,8 @@ export function useFinderController(source: FinderSource): FinderController {
 		flashPath,
 		renamePath: rename?.path ?? null,
 		renameDraft: rename?.draft ?? "",
-		indexOverrides,
+		indexOverrides: effectiveIndexOverrides,
+		versionFamilyError,
 		activeNavLabel,
 		pendingRequests: source.pendingRequests,
 		contextMenu: contextMenu === null ? null : { cursor: contextMenu.cursor },
@@ -635,6 +715,8 @@ export function useFinderController(source: FinderSource): FinderController {
 		closeContextMenu: () => setContextMenu(null),
 		runMenuAction,
 		toggleIndex,
+		toggleStack,
+		retryVersionFamilies: refresh,
 		setRenameDraft: (value) => setRename((current) => (current === null ? null : { ...current, draft: value })),
 		commitRename,
 		cancelRename: () => setRename(null),

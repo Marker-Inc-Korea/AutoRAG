@@ -164,5 +164,38 @@ export const FIXTURE_ROOTS: readonly string[] = [
 /** Pending requests in the reference's `REQ0` fixture — the sidebar bell badge. */
 export const FIXTURE_PENDING_REQUESTS = 3;
 
+/** Version-family fixture, the reference's `FAMS` shape. */
+export interface FixtureFamily {
+	readonly head: string;
+	readonly members: readonly (readonly [
+		where: string,
+		name: string,
+		relation: "exact" | "near" | "contains",
+	])[];
+}
+
+/** The reference's `FAMS` (proto:765-772), verbatim. */
+export const FIXTURE_FAMILIES: readonly FixtureFamily[] = [
+	{
+		head: "Documents/Finance/2026 Q3/Q3_마케팅예산_v3.xlsx",
+		members: [
+			["Documents/Finance/2026 Q3", "Q3_마케팅예산_v2.xlsx", "near"],
+			["Documents/Finance/2026 Q3", "Q3_마케팅예산_v1.xlsx", "near"],
+			["Downloads", "Q3_마케팅예산_v3 (1).xlsx", "exact"],
+		],
+	},
+	{
+		head: "Documents/Finance/2026 Q3/벤더 견적/Blue_Agency_견적서_v2.pdf",
+		members: [["Downloads", "Blue_Agency_견적서_v2.pdf", "exact"]],
+	},
+	{
+		head: "Google Drive/Marketing/Q3_캠페인_브리프.docx",
+		members: [
+			["Downloads", "Q3_캠페인_브리프 (1).docx", "exact"],
+			["Desktop", "Q3_캠페인_브리프_초안.docx", "near"],
+		],
+	},
+];
+
 /** The tab the fixture session opens on — the reference's active tab. */
 export const FIXTURE_INITIAL_PATH = "Documents/Finance/2026 Q3";
