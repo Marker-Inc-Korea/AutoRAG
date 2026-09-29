@@ -1,7 +1,11 @@
 /**
- * Manual QA — a sidebar item with no backing location (e.g. Recents) must not
- * crash the fs ipc handler. It shows a toast instead and the current folder
- * view stays.
+ * Manual QA — sidebar items must never crash fs:listDir.
+ *
+ * After the base landed a real Recents location, this script proves:
+ *   1. "Recents" now navigates to the virtual Recents listing (no handler error,
+ *      no "not linked" toast, rows render).
+ *   2. A nav item with no backing location ("Slack") shows the not-linked toast
+ *      instead of crashing (the Crash-to-toast regression guard from #1735).
  *
  * Run from the repo root: `bun scripts/manual-qa/run-qa-finder-nav-guard.mjs`
  */
@@ -27,14 +31,21 @@ try {
 	});
 	await page.waitForSelector('[role="row"]', { timeout: 30000 });
 
+	// 1. Recents is now a real location: it must navigate cleanly, with no toast.
 	await page.getByLabel("Places").getByRole("button", { name: "Recents", exact: true }).click();
-	await page.waitForSelector("text=아직 연결되지 않았습니다", { timeout: 10000 });
+	await page.waitForTimeout(800);
+	const recentsToasts = await page.locator("text=아직 연결되지 않았습니다").count();
+	check("Recents navigates without a not-linked toast", recentsToasts === 0);
+	check("no fs:listDir handler error after the Recents click", handlerErrors.length === 0);
 
-	check("Recents click shows the not-linked toast", true);
-	check("no fs:listDir handler error after the click", handlerErrors.length === 0);
+	// 2. An item with no backing location toasts instead of crashing.
+	await page.getByLabel("Places").getByRole("button", { name: "Slack", exact: true }).click();
+	await page.waitForSelector("text=아직 연결되지 않았습니다", { timeout: 10000 });
+	check("Slack click shows the not-linked toast", true);
+	check("no fs:listDir handler error after the Slack click", handlerErrors.length === 0);
 	const rows = await page.locator('[role="row"]').count();
-	check(`current folder view still renders (${rows} rows)`, rows > 0);
-	await page.screenshot({ path: `${EVIDENCE}/after-recents-click.png` });
+	check(`view still renders rows (${rows})`, rows > 0);
+	await page.screenshot({ path: `${EVIDENCE}/after-nav-clicks.png` });
 	await Bun.write(`${EVIDENCE}/result.json`, JSON.stringify({ results, handlerErrors }, null, 2));
 } catch (error) {
 	results.push({ label: `script error: ${error instanceof Error ? error.message : String(error)}`, pass: false });

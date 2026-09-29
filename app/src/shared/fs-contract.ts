@@ -25,6 +25,8 @@ export const FS_CHANNELS = {
 	clipboardGet: "fs:clipboardGet",
 	copyPathsToClipboard: "fs:copyPathsToClipboard",
 	versionFamilies: "fs:versionFamilies",
+	versionFamiliesRefresh: "fs:versionFamiliesRefresh",
+	versionFamiliesUpdated: "fs:versionFamiliesUpdated",
 } as const;
 
 export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];
@@ -59,6 +61,13 @@ export interface DirListing {
 	readonly path: string;
 	readonly entries: readonly FsEntry[];
 }
+
+/**
+ * The virtual sidebar location listing recently opened or previewed files.
+ * It is not a directory on disk: the main process answers `listDir` for it from
+ * the app-owned recents store, and search / version-family scans skip it.
+ */
+export const RECENTS_PATH = "Recents";
 
 /** A browsable top-level location shown in the sidebar. */
 export interface FsLocation {
@@ -95,7 +104,7 @@ export interface FsSearchResult {
 	readonly location: string;
 }
 
-export interface FsBridge {
+export interface FsCoreBridge {
 	listDir(path: string): Promise<DirListing>;
 	stat(path: string): Promise<FsEntry>;
 	search(query: string): Promise<readonly FsSearchResult[]>;
@@ -129,12 +138,32 @@ export interface FsBridge {
 	/** Write the absolute paths as text to the OS clipboard ("Copy Path"). */
 	copyPathsToClipboard(paths: readonly string[]): Promise<void>;
 	/**
-	 * Version families from the dupey duplicate detector: one entry per family
-	 * (head path, members with relations, entries for rendering), plus an
-	 * explicit error when dupey is missing or a scan failed.
+	 * Version families from the persisted dupey snapshot (SSOT): one entry per
+	 * family (head path, members with relations, entries for rendering), plus an
+	 * explicit error when dupey is missing or the last scan failed. Reads the
+	 * snapshot; it never runs a scan itself.
+	 */
+}
+
+/**
+ * Version-family members of the fs bridge. The main process composes them from
+ * the persisted-snapshot service, not from the filesystem service.
+ */
+export interface FsVersionFamilyBridge {
+	/**
+	 * Version families from the persisted dupey snapshot (SSOT): one entry per
+	 * family (head path, members with relations, entries for rendering), plus an
+	 * explicit error when dupey is missing or the last scan failed. Reads the
+	 * snapshot; it never runs a scan itself.
 	 */
 	versionFamilies(): Promise<FsVersionFamiliesResult>;
+	/** Forces a dupey scan now, persists it, and returns the fresh snapshot. */
+	refreshVersionFamilies(): Promise<FsVersionFamiliesResult>;
+	/** Adopts snapshots produced by the startup scan and the repeating interval. */
+	onVersionFamiliesUpdated?(listener: (result: FsVersionFamiliesResult) => void): () => void;
 }
+
+export interface FsBridge extends FsCoreBridge, FsVersionFamilyBridge {}
 
 export type FsVersionRelation = "exact" | "near" | "contains";
 
@@ -158,9 +187,11 @@ export interface FsVersionFamilyError {
 
 /**
  * Version families never degrade silently: the renderer renders `error` when
- * the dupey CLI is missing or a scan fails.
+ * the dupey CLI is missing or a scan fails. `scannedAt` is the persisted
+ * snapshot's timestamp, so the UI can tell how old the families are.
  */
 export interface FsVersionFamiliesResult {
 	readonly families: readonly FsVersionFamily[];
+	readonly scannedAt: string | null;
 	readonly error: FsVersionFamilyError | null;
 }

@@ -3,26 +3,21 @@ import type { Dirent } from "node:fs";
 import { cp, lstat, readdir, rename as fsRename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { scanWithDupey, type DupeyScanResult } from "@autorag/librarian";
-import type {
-	DirListing,
-	FsBatchResult,
-	FsBridge,
-	FsClipboard,
-	FsEntry,
-	FsLocation,
-	FsOpError,
-	FsSearchResult,
-	FsVersionFamiliesResult,
-	FsVersionFamily,
-	FsVersionFamilyError,
-	FsVersionMember,
-	FsVersionRelation,
+import {
+	RECENTS_PATH,
+	type DirListing,
+	type FsBatchResult,
+	type FsCoreBridge,
+	type FsClipboard,
+	type FsEntry,
+	type FsLocation,
+	type FsOpError,
+	type FsSearchResult,
 } from "../shared/fs-contract";
-import { createDupeyProbe, DUPEY_INSTALL_COMMAND, type DupeyProbe } from "./dupey";
 import { createIconProvider, type IconProvider } from "./file-icon";
 import { createOsKindResolver } from "./file-kind";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
+import { createRecentsStore, type RecentsStore } from "./recents-store";
 
 /** Subset of Electron's shell used by the service (injected for testability). */
 export interface FsShell {
@@ -49,16 +44,12 @@ export interface FsServiceDeps {
 	readonly homeDir?: string;
 	/** Defaults to spawning `/usr/bin/qlmanage -p <path>` detached. */
 	readonly spawnQuickLook?: QuickLookSpawner;
+	/** Recently opened/previewed files. Defaults to `<homeDir>/recents`; production injects the userData store. */
+	readonly recents?: RecentsStore;
 	/** Defaults to the platform resolver (mdls on macOS, the registry on Windows). */
 	readonly osKind?: OsKindLookup;
 	/** Defaults to the platform icon provider (qlmanage thumbnails on macOS). */
 	readonly icons?: IconProvider;
-	/** Defaults to the dupey CLI; tests inject fixture scans. */
-	readonly scanDuplicates?: (dir: string) => Promise<DupeyScanResult>;
-	/** Defaults to probing the dupey CLI; tests inject a fixed status. */
-	readonly dupey?: DupeyProbe;
-	/** Clock for the family cache TTL; tests inject a fixed one. */
-	readonly now?: () => number;
 }
 
 export type FsRenameErrorCode = "invalid-name" | "name-collision";
@@ -104,6 +95,37 @@ function compareEntries(a: FsEntry, b: FsEntry): number {
 	return a.name.localeCompare(b.name);
 }
 
+/** Attach the OS-reported kind to one entry; a failed lookup keeps the letter/fallback kind. */
+async function applyOsKind(entry: FsEntry, lookup: OsKindLookup): Promise<FsEntry> {
+	if (entry.kind !== "file") return entry;
+	try {
+		return { ...entry, osKind: await lookup(entry.path, entry.ext) };
+	} catch (error) {
+		console.warn(`fs:osKind failed for ${entry.path}: ${errorMessage(error)}`);
+		return entry;
+	}
+}
+
+/** Attach OS kinds to a batch; the resolver dedupes one query per extension. */
+function enrichOsKinds(entries: readonly FsEntry[], lookup: OsKindLookup): Promise<FsEntry[]> {
+	return Promise.all(entries.map((entry) => applyOsKind(entry, lookup)));
+}
+
+/** OS tile icons for a batch's files; the provider batches one call per listing. */
+async function resolveIcons(entries: readonly FsEntry[], provider: IconProvider): Promise<ReadonlyMap<string, string>> {
+	const targets = entries
+		.filter((entry) => entry.kind === "file")
+		.map((entry) => ({ path: entry.path, modifiedAt: entry.modifiedAt }));
+	if (targets.length === 0) return new Map();
+	return provider.icons(targets);
+}
+
+/** A file the OS produced no icon for keeps its letter tile. */
+function withIcon(entry: FsEntry, icons: ReadonlyMap<string, string>): FsEntry {
+	const url = icons.get(entry.path);
+	return url === undefined ? entry : { ...entry, iconDataUrl: url };
+}
+
 async function runBatch(paths: readonly string[], operation: (path: string) => Promise<void>): Promise<FsBatchResult> {
 	const ok: string[] = [];
 	const failed: FsOpError[] = [];
@@ -147,101 +169,24 @@ async function walkForSearch(dir: string, depth: number, context: SearchContext)
 	}
 }
 
-const VERSION_FAMILY_TTL_MS = 5 * 60 * 1000;
-
-/** Attach the OS-reported kind to one entry; a failed lookup keeps the fallback. */
-async function applyOsKind(entry: FsEntry, lookup: OsKindLookup): Promise<FsEntry> {
-	if (entry.kind !== "file") return entry;
-	try {
-		return { ...entry, osKind: await lookup(entry.path, entry.ext) };
-	} catch (error) {
-		console.warn(`fs:osKind failed for ${entry.path}: ${errorMessage(error)}`);
-		return entry;
-	}
-}
-
-/** Attach OS kinds to a batch; the resolver dedupes one query per extension. */
-function enrichOsKinds(entries: readonly FsEntry[], lookup: OsKindLookup): Promise<FsEntry[]> {
-	return Promise.all(entries.map((entry) => applyOsKind(entry, lookup)));
-}
-
-/** OS tile icons for a batch's files; the provider batches one call per listing. */
-async function resolveIcons(
-	entries: readonly FsEntry[],
-	provider: IconProvider,
-): Promise<ReadonlyMap<string, string>> {
-	const targets = entries
-		.filter((entry) => entry.kind === "file")
-		.map((entry) => ({ path: entry.path, modifiedAt: entry.modifiedAt }));
-	if (targets.length === 0) return new Map();
-	return provider.icons(targets);
-}
-
-/** A file the OS produced no icon for keeps its letter tile. */
-function withIcon(entry: FsEntry, icons: ReadonlyMap<string, string>): FsEntry {
-	const url = icons.get(entry.path);
-	return url === undefined ? entry : { ...entry, iconDataUrl: url };
-}
-
-interface DupeyMemberInfo {
-	readonly path?: string;
-	readonly relation?: string;
-	readonly exact_hash?: string;
-	readonly joined_with?: string;
-}
-
-function clampRelation(value: string | undefined): FsVersionRelation {
-	return value === "exact" || value === "contains" ? value : "near";
-}
-
-/** dupey family (pick-keeper head + per-member relations) to the app contract. */
-export function mapDupeyFamily(
-	family: DupeyScanResult["families"][number],
-): { readonly head: string; readonly members: readonly FsVersionMember[] } | null {
-	const head =
-		(family.pick as { readonly ranked?: readonly { readonly path?: string }[] } | undefined)?.ranked?.[0]
-			?.path ?? family.files[0];
-	if (typeof head !== "string" || head.length === 0) return null;
-	const memberInfos = new Map<string, DupeyMemberInfo>();
-	for (const member of family.members as readonly DupeyMemberInfo[]) {
-		if (typeof member?.path === "string") memberInfos.set(member.path, member);
-	}
-	const headHash = memberInfos.get(head)?.exact_hash;
-	const members: FsVersionMember[] = [];
-	for (const path of family.files) {
-		if (path === head) continue;
-		const info = memberInfos.get(path);
-		const relation =
-			info?.exact_hash !== undefined && headHash !== undefined && info.exact_hash === headHash
-				? "exact"
-				: clampRelation(info?.relation);
-		members.push({ path, relation });
-	}
-	return { head, members };
-}
-
-export function createFsService(deps: FsServiceDeps): FsBridge {
+export function createFsService(deps: FsServiceDeps): FsCoreBridge {
 	const home = deps.homeDir ?? homedir();
 	const spawnQuickLook = deps.spawnQuickLook ?? defaultQuickLook;
-	const scanDuplicates = deps.scanDuplicates ?? ((dir: string) => scanWithDupey(dir));
-	const dupey = deps.dupey ?? createDupeyProbe();
+	const recents = deps.recents ?? createRecentsStore({ directory: join(home, "recents") });
 	const osKind: OsKindLookup = deps.osKind ?? createOsKindResolver().kindFor;
 	const iconProvider: IconProvider = deps.icons ?? createIconProvider();
-	const now = deps.now ?? (() => Date.now());
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
-	const familyCache = new Map<string, { readonly at: number; readonly families: readonly FsVersionFamily[] }>();
-
-	async function mutatingBatch(
-		paths: readonly string[],
-		operation: (path: string) => Promise<void>,
-	): Promise<FsBatchResult> {
-		const result = await runBatch(paths, operation);
-		if (result.ok.length > 0) familyCache.clear();
-		return result;
+	/** One enrichment pass per listing: OS kind + OS tile icon. */
+	async function annotateListing(entries: readonly FsEntry[]): Promise<FsEntry[]> {
+		const [icons, enriched] = await Promise.all([resolveIcons(entries, iconProvider), enrichOsKinds(entries, osKind)]);
+		return enriched.map((entry) => withIcon(entry, icons));
 	}
 
 	async function listDir(path: string): Promise<DirListing> {
+		if (path === RECENTS_PATH) {
+			return { path, entries: await annotateListing(await recentEntries()) };
+		}
 		const dirents = await readdir(path, { withFileTypes: true });
 		const entries: FsEntry[] = [];
 		for (const dirent of dirents) {
@@ -253,13 +198,34 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 				console.warn(`fs:listDir skipping ${fullPath}: ${errorMessage(error)}`);
 			}
 		}
-		const [icons, enriched] = await Promise.all([resolveIcons(entries, iconProvider), enrichOsKinds(entries, osKind)]);
-		const rows = enriched.map((entry) => withIcon(entry, icons));
+		const rows = await annotateListing(entries);
 		rows.sort(compareEntries);
 		return { path, entries: rows };
 	}
 
+	/**
+	 * The virtual Recents listing: recorded paths that still exist, most recent
+	 * first. A file that moved or was deleted simply drops out of the view; any
+	 * other failure keeps its verbatim reason visible.
+	 */
+	async function recentEntries(): Promise<FsEntry[]> {
+		const entries: FsEntry[] = [];
+		for (const stored of await recents.list()) {
+			try {
+				entries.push(await buildFsEntry(stored));
+			} catch (error) {
+				if (!hasErrorCode(error, "ENOENT") && !hasErrorCode(error, "ENOTDIR")) {
+					console.warn(`fs:listDir ${RECENTS_PATH} skipping ${stored}: ${errorMessage(error)}`);
+				}
+			}
+		}
+		return entries;
+	}
+
 	async function locations(): Promise<readonly FsLocation[]> {
+		const result: FsLocation[] = [
+			{ name: RECENTS_PATH, path: RECENTS_PATH, section: "favorites", available: true },
+		];
 		const fixed: readonly { readonly name: string; readonly path: string; readonly section: "favorites" | "cloud" }[] =
 			[
 				{ name: "Desktop", path: join(home, "Desktop"), section: "favorites" },
@@ -267,7 +233,6 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 				{ name: "Documents", path: join(home, "Documents"), section: "favorites" },
 				{ name: "iCloud Drive", path: join(home, "Library", "Mobile Documents", "com~apple~CloudDocs"), section: "cloud" },
 			];
-		const result: FsLocation[] = [];
 		for (const spec of fixed) {
 			result.push({ name: spec.name, path: spec.path, section: spec.section, available: await isAvailable(spec.path) });
 		}
@@ -301,7 +266,8 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		if (needle.length === 0) return [];
 		const results: FsSearchResult[] = [];
 		for (const location of await locations()) {
-			if (!location.available) continue;
+			// The virtual Recents location has no path on disk to walk.
+			if (!location.available || location.path === RECENTS_PATH) continue;
 			await walkForSearch(location.path, 0, { needle, location: location.name, results, lookup: osKind });
 			if (results.length >= SEARCH_MAX_RESULTS) break;
 		}
@@ -309,73 +275,8 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		return results.map((result) => ({ location: result.location, entry: withIcon(result.entry, icons) }));
 	}
 
-	async function versionFamilies(): Promise<FsVersionFamiliesResult> {
-		const status = await dupey.status();
-		if (!status.available) {
-			return {
-				families: [],
-				error: {
-					code: "dupey-missing",
-					message: `dupey CLI is required for version stacks: ${status.error ?? "not found on PATH"}`,
-					installCommand: DUPEY_INSTALL_COMMAND,
-				},
-			};
-		}
-		const result: FsVersionFamily[] = [];
-		const scanErrors: string[] = [];
-		for (const location of await locations()) {
-			if (!location.available) continue;
-			const cached = familyCache.get(location.path);
-			if (cached !== undefined && now() - cached.at < VERSION_FAMILY_TTL_MS) {
-				result.push(...cached.families);
-				continue;
-			}
-			let families: readonly FsVersionFamily[] = [];
-			try {
-				const scan = await scanDuplicates(location.path);
-				const resolved = await Promise.all(
-					scan.families.map(async (family): Promise<FsVersionFamily | null> => {
-						const mapped = mapDupeyFamily(family);
-						if (mapped === null || mapped.members.length === 0) return null;
-						const entries: FsEntry[] = [];
-						try {
-							entries.push(await buildFsEntry(mapped.head));
-						} catch {
-							return null;
-						}
-						for (const member of mapped.members) {
-							try {
-								entries.push(await buildFsEntry(member.path));
-							} catch {
-								continue;
-							}
-						}
-						const built = await enrichOsKinds(entries, osKind);
-						const members = mapped.members.filter((member) =>
-							built.some((entry) => entry.path === member.path),
-						);
-						if (members.length === 0) return null;
-						return { head: mapped.head, members, entries: built };
-					}),
-				);
-				families = resolved.filter((family): family is FsVersionFamily => family !== null);
-			} catch (error) {
-				const message = `fs:versionFamilies failed for ${location.path}: ${errorMessage(error)}`;
-				console.error(message);
-				scanErrors.push(message);
-			}
-			familyCache.set(location.path, { at: now(), families });
-			result.push(...families);
-		}
-		const error: FsVersionFamilyError | null =
-			scanErrors.length === 0
-				? null
-				: { code: "scan-failed", message: scanErrors.join("\n"), installCommand: null };
-		return { families: result, error };
-	}
-
 	async function copy(paths: readonly string[], destDir: string): Promise<FsBatchResult> {
-		return mutatingBatch(paths, async (source) => {
+		return runBatch(paths, async (source) => {
 			const sourceStat = await lstat(source);
 			const targetName = await resolveCopyName(destDir, basename(source), sourceStat.isDirectory());
 			await cp(source, join(destDir, targetName), { recursive: true });
@@ -383,7 +284,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	}
 
 	async function move(paths: readonly string[], destDir: string): Promise<FsBatchResult> {
-		return mutatingBatch(paths, async (source) => {
+		return runBatch(paths, async (source) => {
 			const sourceStat = await lstat(source);
 			const target = join(destDir, await resolveCopyName(destDir, basename(source), sourceStat.isDirectory()));
 			try {
@@ -398,7 +299,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	}
 
 	async function duplicate(paths: readonly string[]): Promise<FsBatchResult> {
-		return mutatingBatch(paths, async (source) => {
+		return runBatch(paths, async (source) => {
 			const sourceStat = await lstat(source);
 			const dir = dirname(source);
 			const targetName = await resolveCopyName(dir, basename(source), sourceStat.isDirectory());
@@ -423,7 +324,6 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 			throw new FsRenameError("name-collision", `A file or folder named "${newName}" already exists`);
 		}
 		await fsRename(path, target);
-		familyCache.clear();
 		return applyOsKind(await buildFsEntry(target), osKind);
 	}
 
@@ -436,11 +336,12 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		move,
 		duplicate,
 		rename,
-		trash: (paths) => mutatingBatch(paths, (path) => deps.shell.trashItem(path)),
+		trash: (paths) => runBatch(paths, (path) => deps.shell.trashItem(path)),
 		reveal: async (path) => {
 			deps.shell.showItemInFolder(path);
 		},
 		quickLook: async (path) => {
+			await recents.record(path);
 			spawnQuickLook(path);
 		},
 		open: async (path) => {
@@ -449,6 +350,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 			if (message !== "") {
 				throw new Error(message);
 			}
+			await recents.record(path);
 		},
 		clipboardSet: async (clipboard) => {
 			inAppClipboard = { op: clipboard.op, paths: [...clipboard.paths] };
@@ -457,6 +359,5 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		copyPathsToClipboard: async (paths) => {
 			deps.clipboard.writeText(paths.join("\n"));
 		},
-		versionFamilies,
 	};
 }

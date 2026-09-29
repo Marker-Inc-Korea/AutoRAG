@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { AnswerPhase, ChatAttachment, ChatSummary, SearchStreamEvent } from "../../../shared/search-contract";
 import type { SearchBridge } from "../../../shared/search-contract";
+import { groupChatHistory, historyEmptyText } from "../state/history";
 import { CloseIcon, HistoryIcon, PlusIcon, SearchIcon, SendIcon } from "./icons";
 
 const autorag = (window as unknown as { readonly autorag: { readonly search: SearchBridge } }).autorag;
@@ -18,10 +19,13 @@ export function AiSearchPanel(): ReactElement {
 	const [error, setError] = useState<string | null>(null);
 	const [stopped, setStopped] = useState(false);
 	const [submittedQuery, setSubmittedQuery] = useState<string | null>(null);
+	const [chatId, setChatId] = useState<string | null>(null);
 	const [historyOpen, setHistoryOpen] = useState(false);
+	const [historyQuery, setHistoryQuery] = useState("");
 	const [history, setHistory] = useState<readonly ChatSummary[]>([]);
 	const [attachments, setAttachments] = useState<readonly ChatAttachment[]>([]);
 	const queryRef = useRef(query);
+	const historySeq = useRef(0);
 
 	useEffect(() => {
 		queryRef.current = query;
@@ -69,10 +73,31 @@ export function AiSearchPanel(): ReactElement {
 
 	const evidence = useMemo(() => deep?.evidence ?? quick?.evidence ?? [], [deep, quick]);
 
+	const historyGroups = useMemo(() => groupChatHistory(history, new Date()), [history]);
+
+	useEffect(() => {
+		const onKeyDown = (event: globalThis.KeyboardEvent): void => {
+			const meta = event.metaKey || event.ctrlKey;
+			if (meta && event.shiftKey && event.key.toLowerCase() === "h") {
+				event.preventDefault();
+				toggleHistory();
+				return;
+			}
+			if (historyOpen) return;
+			if (meta && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "n") {
+				event.preventDefault();
+				newChat();
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	});
+
 	async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
 		event.preventDefault();
 		const text = query.trim();
 		if (text.length === 0 || searchId !== null) return;
+		const nextChatId = crypto.randomUUID();
 		const nextSearchId = crypto.randomUUID();
 		setSearchId(nextSearchId);
 		setQuick(null);
@@ -85,13 +110,57 @@ export function AiSearchPanel(): ReactElement {
 		setStopped(false);
 		setSubmittedQuery(text);
 		setProgress("Reviewing the query.");
-		await autorag.search.start(nextSearchId, crypto.randomUUID(), text, attachments);
+		setChatId(nextChatId);
+		await autorag.search.start(nextSearchId, nextChatId, text, attachments);
 		setAttachments([]);
 	}
 
-	async function toggleHistory(): Promise<void> {
-		if (!historyOpen) setHistory(await autorag.search.historyList());
-		setHistoryOpen((open) => !open);
+	async function openHistory(): Promise<void> {
+		historySeq.current += 1;
+		const seq = historySeq.current;
+		const items = await autorag.search.historyList();
+		if (seq !== historySeq.current) return;
+		setHistory(items);
+		setHistoryQuery("");
+		setHistoryOpen(true);
+	}
+
+	function closeHistory(): void {
+		setHistoryOpen(false);
+	}
+
+	function toggleHistory(): void {
+		if (historyOpen) {
+			closeHistory();
+			return;
+		}
+		void openHistory();
+	}
+
+	/** The store owns the matching (title + first Quick answer); a stale reply never lands after a newer keystroke. */
+	async function searchHistory(value: string): Promise<void> {
+		setHistoryQuery(value);
+		historySeq.current += 1;
+		const seq = historySeq.current;
+		const items = await autorag.search.historySearch(value);
+		if (seq !== historySeq.current) return;
+		setHistory(items);
+	}
+
+	function newChat(): void {
+		setQuick(null);
+		setDeep(null);
+		setQuickDraft("");
+		setDeepDraft("");
+		setError(null);
+		setStopped(false);
+		setProgress("");
+		setQuery("");
+		setSubmittedQuery(null);
+		setSelectedEvidence(null);
+		setAttachments([]);
+		setChatId(null);
+		setHistoryOpen(false);
 	}
 
 	async function loadHistory(id: string): Promise<void> {
@@ -108,6 +177,7 @@ export function AiSearchPanel(): ReactElement {
 		setStopped(assistant.stopped);
 		setError(null);
 		setProgress("");
+		setChatId(id);
 		setHistoryOpen(false);
 	}
 
@@ -130,22 +200,66 @@ export function AiSearchPanel(): ReactElement {
 				<span className="ai__title">AI Search</span>
 				<div className="ai__header-actions">
 					<button type="button" className={`icon-button${historyOpen ? " icon-button--active" : ""}`} title="Chat history ⌘⇧H" aria-label="Chat history" onClick={() => void toggleHistory()}><HistoryIcon /></button>
-					<button type="button" className="icon-button" title="New chat ⌘N" aria-label="New chat" onClick={() => { setQuick(null); setDeep(null); setQuickDraft(""); setDeepDraft(""); setError(null); setStopped(false); setProgress(""); setQuery(""); setSubmittedQuery(null); setHistoryOpen(false); }}><PlusIcon /></button>
+					<button type="button" className="icon-button" title="New chat ⌘N" aria-label="New chat" onClick={newChat}><PlusIcon /></button>
 				</div>
 			</div>
-			<div className="ai__body">
-				{historyOpen ? (
+			{historyOpen ? (
+				<>
+					<div className="ai__history-scrim" aria-hidden="true" onClick={closeHistory} />
 					<div className="ai__history-popover" aria-label="Chat history">
-						<div className="ai__history-header"><SearchIcon /><input autoFocus placeholder="대화 기록 검색" aria-label="대화 기록 검색" /><button type="button" className="icon-button" aria-label="Close history" onClick={() => setHistoryOpen(false)}><CloseIcon /></button></div>
+						<div className="ai__history-header">
+							<SearchIcon className="ai__history-search-icon" />
+							<input
+								autoFocus
+								value={historyQuery}
+								onChange={(event) => void searchHistory(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key === "Escape") {
+										event.preventDefault();
+										event.stopPropagation();
+										closeHistory();
+										return;
+									}
+									if (event.key !== "Enter") return;
+									event.preventDefault();
+									const first = history[0];
+									if (first !== undefined) void loadHistory(first.id);
+								}}
+								placeholder="대화 기록 검색"
+								aria-label="대화 기록 검색"
+							/>
+							<button type="button" className="icon-button" aria-label="Close history" onClick={closeHistory}><CloseIcon size={12} /></button>
+						</div>
 						<div className="ai__history-list">
-							{history.length === 0 ? <span className="ai__history-empty">저장된 대화가 없습니다.</span> : history.map((item) => (
-								<button type="button" key={item.id} onClick={() => void loadHistory(item.id)}>
-									<strong>{item.title}</strong><small>{item.snippet}</small>
-								</button>
-							))}
+							{historyGroups.length === 0 ? (
+								<span className="ai__history-empty">{historyEmptyText(historyQuery)}</span>
+							) : (
+								historyGroups.map((group) => (
+									<div key={group.label}>
+										<div className="ai__history-group">{group.label}</div>
+										{group.items.map((item) => (
+											<button
+												type="button"
+												key={item.id}
+												className={`ai__history-item${item.id === chatId ? " ai__history-item--current" : ""}`}
+												onClick={() => void loadHistory(item.id)}
+											>
+												<span className="ai__history-dot" />
+												<span className="ai__history-text">
+													<strong>{item.title}</strong>
+													<small>{item.snippet}</small>
+												</span>
+												<span className="ai__history-time">{item.time}</span>
+											</button>
+										))}
+									</div>
+								))
+							)}
 						</div>
 					</div>
-				) : null}
+				</>
+			) : null}
+			<div className="ai__body">
 				<div className="ai__messages">
 					{quick === null && deep === null && error === null && submittedQuery === null ? (
 						<div className="ai__empty">

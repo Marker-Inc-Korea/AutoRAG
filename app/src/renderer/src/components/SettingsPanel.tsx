@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "
 import type { AppSettings, AssistantEvent, Contact, DataSourceRow } from "../../../shared/settings-contract";
 import type { SettingsBridge, AssistantSurface } from "../../../shared/settings-contract";
 import { ArrowUpIcon, CloseIcon, SparklesIcon } from "./icons";
+import { Switch } from "./primitives/Switch";
 
 const autorag = (window as unknown as { readonly autorag: { readonly settings: SettingsBridge } }).autorag;
 
@@ -193,10 +194,6 @@ export function SettingsPanel({
 										<option value="ko">한국어</option><option value="en">English</option><option value="ja">日本語</option><option value="zh">简体中文</option>
 									</select></div>
 								</SettingRow>
-								{/* WIP: the global shortcut is shown but main-process registration is not implemented. */}
-								<SettingRow label="Global shortcut" description="어디서든 AutoRAG Agent 열기">
-									<div className="settings-keycaps"><kbd>⌥</kbd><kbd>Space</kbd></div>
-								</SettingRow>
 								{/* WIP: launch-at-login persists but the app does not call app.setLoginItemSettings yet. */}
 								<SettingRow label="Launch at login" description="Mac 로그인 시 자동 실행">
 									<Switch checked={settings.launchAtLogin} onChange={() => void toggleSetting("launchAtLogin")} />
@@ -207,6 +204,11 @@ export function SettingsPanel({
 								</SettingRow>
 								<SettingRow label="Show hidden files" description="점(.)으로 시작하는 숨김 파일·폴더를 목록에 흐리게 표시">
 									<Switch checked={settings.showHiddenFiles} onChange={() => void toggleSetting("showHiddenFiles")} />
+								</SettingRow>
+								<SettingRow label="중복 문서 스캔 주기" description="dupey가 중복·유사 문서 묶음을 다시 계산하는 간격 (앱 시작 시 항상 1회 실행)">
+									<div className="settings-select"><select value={String(settings.dupeyScanIntervalMinutes)} onChange={(event) => void autorag.settings.set({ dupeyScanIntervalMinutes: Number(event.target.value) }).then(setSettings)}>
+										<option value="15">15분</option><option value="30">30분</option><option value="60">1시간</option><option value="180">3시간</option><option value="360">6시간</option><option value="720">12시간</option><option value="1440">24시간</option>
+									</select></div>
 								</SettingRow>
 							</SettingsSection>
 							{/* WIP: there is no real updater; the check below is simulated UI only. */}
@@ -422,8 +424,4 @@ function SettingRow({ label, description, children }: { readonly label: string; 
 			<div className="settings-row__control">{children}</div>
 		</div>
 	);
-}
-
-function Switch({ checked, onChange }: { readonly checked: boolean; readonly onChange: () => void }): ReactElement {
-	return <button type="button" role="switch" aria-checked={checked} className={`settings-switch${checked ? " is-on" : ""}`} onClick={onChange}><span /></button>;
 }

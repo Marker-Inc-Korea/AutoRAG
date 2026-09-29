@@ -8,6 +8,7 @@ import {
 	goForward,
 	navigateTab,
 	openTab,
+	openTabAt,
 	selectTab,
 	tabTitle,
 } from "../src/renderer/src/state/tabs";
@@ -25,6 +26,14 @@ describe("tab model", () => {
 		expect(state.tabs).toHaveLength(2);
 		expect(activeTab(state).path).toBe("Documents");
 		expect(activeTab(state).id).not.toBe(state.tabs[0]?.id);
+	});
+
+	it("opens a new tab on an explicit path and activates it, leaving the old tab alone", () => {
+		const state = openTabAt(createTabsState("Recents"), "Documents/Finance");
+		expect(state.tabs).toHaveLength(2);
+		expect(activeTab(state).path).toBe("Documents/Finance");
+		expect(activeTab(state).back).toEqual([]);
+		expect(state.tabs[0]?.path).toBe("Recents");
 	});
 
 	it("blocks closing the last tab", () => {

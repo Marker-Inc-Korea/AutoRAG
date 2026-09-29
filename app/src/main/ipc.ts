@@ -1,10 +1,20 @@
 import { ipcMain } from "electron";
-import { FS_CHANNELS, type FsBridge, type FsClipboard } from "../shared/fs-contract";
+import { FS_CHANNELS, type FsClipboard, type FsCoreBridge } from "../shared/fs-contract";
 import { SEARCH_CHANNELS, type SearchBridge } from "../shared/search-contract";
 import { SETTINGS_CHANNELS, type SettingsBridge } from "../shared/settings-contract";
+import type { VersionFamilyService } from "./version-family-service";
+
+/** Extra work a channel runs after the filesystem operation itself succeeded. */
+export interface FsIpcHooks {
+	/**
+	 * Paths that actually reached the Trash. A deleted duplicate must leave the
+	 * version-family snapshot at once, so the user can see it is gone.
+	 */
+	readonly onTrashed?: (paths: readonly string[]) => void | Promise<void>;
+}
 
 /** Register one ipcMain.handle per FS_CHANNELS channel, in contract order. */
-export function registerFsIpcHandlers(service: FsBridge): void {
+export function registerFsIpcHandlers(service: FsCoreBridge, hooks: FsIpcHooks = {}): void {
 	ipcMain.handle(FS_CHANNELS.listDir, (_event, path: string) => service.listDir(path));
 	ipcMain.handle(FS_CHANNELS.stat, (_event, path: string) => service.stat(path));
 	ipcMain.handle(FS_CHANNELS.search, (_event, query: string) => service.search(query));
@@ -13,7 +23,19 @@ export function registerFsIpcHandlers(service: FsBridge): void {
 	ipcMain.handle(FS_CHANNELS.move, (_event, paths: readonly string[], destDir: string) => service.move(paths, destDir));
 	ipcMain.handle(FS_CHANNELS.duplicate, (_event, paths: readonly string[]) => service.duplicate(paths));
 	ipcMain.handle(FS_CHANNELS.rename, (_event, path: string, newName: string) => service.rename(path, newName));
-	ipcMain.handle(FS_CHANNELS.trash, (_event, paths: readonly string[]) => service.trash(paths));
+	ipcMain.handle(FS_CHANNELS.trash, async (_event, paths: readonly string[]) => {
+		const result = await service.trash(paths);
+		if (result.ok.length > 0) {
+			try {
+				await hooks.onTrashed?.(result.ok);
+			} catch (error) {
+				// The move to the Trash already happened; a stale snapshot must not
+				// turn into a failed delete for the caller.
+				console.error("trash follow-up failed", error);
+			}
+		}
+		return result;
+	});
 	ipcMain.handle(FS_CHANNELS.reveal, (_event, path: string) => service.reveal(path));
 	ipcMain.handle(FS_CHANNELS.quickLook, (_event, path: string) => service.quickLook(path));
 	ipcMain.handle(FS_CHANNELS.open, (_event, path: string) => service.open(path));
@@ -22,7 +44,12 @@ export function registerFsIpcHandlers(service: FsBridge): void {
 	ipcMain.handle(FS_CHANNELS.copyPathsToClipboard, (_event, paths: readonly string[]) =>
 		service.copyPathsToClipboard(paths),
 	);
-	ipcMain.handle(FS_CHANNELS.versionFamilies, () => service.versionFamilies());
+}
+
+/** The persisted-snapshot version-family service owns its own two channels. */
+export function registerVersionFamilyIpcHandlers(service: VersionFamilyService): void {
+	ipcMain.handle(FS_CHANNELS.versionFamilies, () => service.result());
+	ipcMain.handle(FS_CHANNELS.versionFamiliesRefresh, () => service.refresh());
 }
 
 export function registerSearchIpcHandlers(service: SearchBridge): void {

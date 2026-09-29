@@ -7,10 +7,15 @@
  * preload lands. Components never touch `window` directly.
  */
 
-import type { FsBridge, FsClipboard } from "../../../shared/fs-contract";
+import { RECENTS_PATH, type FsBridge, type FsClipboard } from "../../../shared/fs-contract";
 import { copyName } from "../state/collision";
 import { basename, dirname, joinPath } from "../state/paths";
-import type { VersionFamiliesResult, VersionFamilyData, VersionRelation } from "../state/version-family";
+import {
+	EMPTY_VERSION_FAMILIES_RESULT,
+	type VersionFamiliesResult,
+	type VersionFamilyData,
+	type VersionRelation,
+} from "../state/version-family";
 import { type FinderEntry, entryFromFixture, entryFromFs, entryFromSearchHit } from "./entries";
 import { FIXTURE_FAMILIES, FIXTURE_INITIAL_PATH, FIXTURE_PENDING_REQUESTS, FIXTURE_ROOTS, FIXTURE_TREE } from "./fixtures";
 import type { FixtureItem } from "./entries";
@@ -47,8 +52,12 @@ export interface FinderSource {
 	copyPaths(paths: readonly string[]): Promise<void>;
 	clipboardSet(clipboard: FsClipboard): Promise<void>;
 	clipboardGet(): Promise<FsClipboard | null>;
-	/** Version families from the duplicate detector, with an explicit error when dupey is missing. */
+	/** Version families from the persisted snapshot (SSOT); never triggers a scan. */
 	versionFamilies(): Promise<VersionFamiliesResult>;
+	/** Forces a dupey scan now and returns the fresh snapshot. */
+	refreshVersionFamilies(): Promise<VersionFamiliesResult>;
+	/** Adopts snapshots from the startup scan and the repeating interval. */
+	onVersionFamiliesUpdated(listener: (result: VersionFamiliesResult) => void): () => void;
 }
 
 /* -------------------------------------------------------------- real bridge */
@@ -60,7 +69,8 @@ export function createBridgeSource(fs: FsBridge, initialPath: string): FinderSou
 		pendingRequests: 0,
 		async list(path) {
 			const listing = await fs.listDir(path);
-			return listing.entries.map((entry) => entryFromFs(entry, path));
+			// Recents is virtual: a row's location is the real folder that holds the file.
+			return listing.entries.map((entry) => entryFromFs(entry, path === RECENTS_PATH ? undefined : path));
 		},
 		async search(query) {
 			const hits = await fs.search(query);
@@ -106,9 +116,35 @@ export function createBridgeSource(fs: FsBridge, initialPath: string): FinderSou
 						family.entries.map((entry) => [entry.path, entryFromFs(entry)]),
 					),
 				})),
+				scannedAt: result.scannedAt,
 				error: result.error,
 			};
 		},
+		async refreshVersionFamilies() {
+			const result = await fs.refreshVersionFamilies();
+			return {
+				families: result.families.map((family) => ({
+					head: family.head,
+					members: family.members,
+					entriesByPath: Object.fromEntries(
+						family.entries.map((entry) => [entry.path, entryFromFs(entry)]),
+					),
+				})),
+				scannedAt: result.scannedAt,
+				error: result.error,
+			};
+		},
+		onVersionFamiliesUpdated: (listener) => fs.onVersionFamiliesUpdated?.((result) => listener({
+			families: result.families.map((family) => ({
+				head: family.head,
+				members: family.members,
+				entriesByPath: Object.fromEntries(
+					family.entries.map((entry) => [entry.path, entryFromFs(entry)]),
+				),
+			})),
+			scannedAt: result.scannedAt,
+			error: result.error,
+		})) ?? (() => {}),
 	};
 }
 
@@ -177,7 +213,7 @@ export function createFixtureSource(): FinderSource {
 			}
 			const hits: FinderEntry[] = [];
 			for (const [path, items] of state.tree) {
-				if (path === "Recents") {
+				if (path === RECENTS_PATH) {
 					continue;
 				}
 				for (const item of items) {
@@ -193,7 +229,7 @@ export function createFixtureSource(): FinderSource {
 				FIXTURE_ROOTS.map((name) => ({
 					name,
 					path: name,
-					section: name === "Recents" || name === "Desktop" || name === "Downloads" || name === "Documents"
+					section: name === RECENTS_PATH || name === "Desktop" || name === "Downloads" || name === "Documents"
 						? ("favorites" as const)
 						: ("cloud" as const),
 					available: state.tree.has(name),
@@ -256,6 +292,7 @@ export function createFixtureSource(): FinderSource {
 		clipboardGet: () => Promise.resolve(state.clipboard),
 		versionFamilies: () =>
 			Promise.resolve({
+				scannedAt: null,
 				families: FIXTURE_FAMILIES.flatMap((family) => {
 					const headItem = findItem(state, family.head);
 					if (headItem === null) {
@@ -277,6 +314,8 @@ export function createFixtureSource(): FinderSource {
 				}),
 				error: null,
 			}),
+		refreshVersionFamilies: () => Promise.resolve(EMPTY_VERSION_FAMILIES_RESULT),
+		onVersionFamiliesUpdated: () => () => {},
 	};
 }
 

@@ -90,6 +90,32 @@ describe("buildContextMenu", () => {
 	});
 });
 
+describe("buildContextMenu in the Recents view", () => {
+	const recentFile = { ...file, inRecents: true };
+
+	it("offers Show in Enclosing Folder for a recent file", () => {
+		const entry = items(buildContextMenu(recentFile)).find((i) => i.action === "showInEnclosingFolder");
+		expect(entry?.label).toBe("Show in Enclosing Folder");
+		expect(entry?.keycap).toBeNull();
+		expect(entry?.tone).toBe("default");
+		expect(entry?.disabled).toBe(false);
+	});
+
+	it("keeps the item out of ordinary folder listings", () => {
+		expect(items(buildContextMenu(file)).map((i) => i.action)).not.toContain("showInEnclosingFolder");
+	});
+
+	it("places it in its own group right after the Quick Look item", () => {
+		const entries = buildContextMenu(recentFile);
+		expect(entries.slice(0, 4).map((e) => e.kind)).toEqual(["item", "separator", "item", "separator"]);
+		expect(items(entries)[1]?.action).toBe("showInEnclosingFolder");
+	});
+
+	it("adds exactly one item and one separator to the height estimate", () => {
+		expect(estimateMenuHeight(buildContextMenu(recentFile))).toBe(estimateMenuHeight(buildContextMenu(file)) + 28 + 9);
+	});
+});
+
 describe("menuPlacement", () => {
 	const size = { width: 220, height: 300 };
 	const viewport = { width: 1440, height: 900 };
