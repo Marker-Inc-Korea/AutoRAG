@@ -59,8 +59,18 @@ interface SearchContext {
 	readonly results: FsSearchResult[];
 }
 
+export function previewCommandForPlatform(
+	platform: NodeJS.Platform,
+	path: string,
+): { readonly command: string; readonly args: readonly string[] } {
+	if (platform === "darwin") return { command: "/usr/bin/qlmanage", args: ["-p", path] };
+	if (platform === "win32") return { command: "explorer.exe", args: [path] };
+	return { command: "xdg-open", args: [path] };
+}
+
 function defaultQuickLook(path: string): void {
-	const child = spawn("/usr/bin/qlmanage", ["-p", path], { detached: true, stdio: "ignore" });
+	const preview = previewCommandForPlatform(process.platform, path);
+	const child = spawn(preview.command, preview.args, { detached: true, stdio: "ignore" });
 	child.unref();
 }
 

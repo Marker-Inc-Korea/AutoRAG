@@ -95,4 +95,5 @@ export interface SearchBridge {
 	historyGet(chatId: string): Promise<ChatRecord | null>;
 	historySearch(query: string): Promise<readonly ChatSummary[]>;
 	historyClear(): Promise<void>;
+	readonly onEvent?: (listener: (event: SearchStreamEvent) => void) => () => void;
 }

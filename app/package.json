@@ -6,9 +6,13 @@
 	"main": "out/main/index.js",
 	"scripts": {
 		"dev": "electron-vite dev",
+		"prebuild": "cd .. && bun run build",
 		"build": "electron-vite build",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+	},
+	"dependencies": {
+		"@autorag/librarian": "file:.."
 	},
 	"devDependencies": {
 		"@types/node": "^26.4.1",

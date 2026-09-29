@@ -1,0 +1,217 @@
+/* ============================================================================
+ * Primitives — Keycap, StatusDot, FileTile, PillBadge, TrafficLights, Toast,
+ * ContextMenu (DESIGN.md §5).
+ * ========================================================================== */
+
+.keycap {
+	flex: none;
+	padding: var(--space-1) var(--space-5);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-5);
+	background: var(--bg-hover-row);
+	color: var(--text-muted);
+	font-size: var(--font-size-badge);
+	white-space: nowrap;
+}
+
+/* Status-bar variant sits on white and uses the flatter padding (proto:179). */
+.keycap--surface {
+	padding: 0 var(--space-5);
+	background: var(--bg-window);
+}
+
+.dot {
+	flex: none;
+	width: var(--size-dot);
+	height: var(--size-dot);
+	border-radius: var(--radius-full);
+}
+
+.dot--hollow {
+	background: transparent;
+	box-shadow: var(--index-dot-excluded-ring);
+}
+
+.traffic {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+}
+
+.traffic__light {
+	width: var(--size-traffic);
+	height: var(--size-traffic);
+	border-radius: var(--radius-full);
+}
+
+.tile {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-on-tile);
+	font-weight: var(--weight-bold);
+}
+
+.tile--16 {
+	width: 16px;
+	height: 16px;
+	border-radius: var(--radius-4);
+	font-size: var(--font-size-tile);
+}
+
+.tile--18 {
+	width: 18px;
+	height: 18px;
+	border-radius: var(--radius-5);
+	font-size: var(--font-size-tile);
+}
+
+.tile--folder {
+	color: var(--folder);
+}
+
+.pill {
+	display: flex;
+	align-items: center;
+	gap: var(--space-5);
+	height: var(--size-pill);
+	padding: 0 var(--space-8);
+	border: 1px solid transparent;
+	border-radius: var(--radius-11);
+	background: transparent;
+	font-size: var(--font-size-badge);
+	font-weight: var(--weight-semibold);
+	white-space: nowrap;
+	transition: border-color var(--dur-color);
+}
+
+.pill:hover {
+	border-color: var(--border-strong);
+}
+
+.pill--included {
+	border-color: var(--border);
+	color: var(--text-body);
+}
+
+.pill--excluded {
+	background: var(--bg-input);
+	color: var(--text-muted);
+}
+
+.pill--failed {
+	background: var(--error-orange-bg);
+	color: var(--error-orange-text);
+}
+
+.pill--ask {
+	background: var(--warn-bg);
+	color: var(--warn-text);
+}
+
+.pill--allow {
+	background: var(--info-bg);
+	color: var(--info-text);
+}
+
+.pill--deny {
+	background: var(--danger-bg);
+	color: var(--danger-text);
+}
+
+.pill--inherited {
+	border-color: var(--border);
+	color: var(--text-muted);
+}
+
+.pill--mixed {
+	background: var(--bg-input);
+	color: var(--text-muted);
+}
+
+.pill__spinner {
+	flex: none;
+	animation: spin var(--dur-spin) linear infinite;
+}
+
+.toast {
+	position: absolute;
+	left: 50%;
+	bottom: var(--space-24);
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	gap: var(--space-10);
+	height: var(--size-tab);
+	padding: 0 var(--space-14);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-10);
+	background: var(--bg-input);
+	box-shadow: var(--shadow-raised);
+	color: var(--text-primary);
+	font-size: var(--font-size-meta);
+	transform: translateX(-50%);
+	animation: rise var(--dur-modal) var(--ease-out);
+}
+
+.menu {
+	position: fixed;
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	width: var(--w-context-menu);
+	padding: var(--space-5);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-10);
+	background: var(--bg-window);
+	box-shadow: var(--shadow-window);
+	animation: rise var(--dur-menu) var(--ease-out);
+}
+
+.menu__item {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	height: var(--size-icon-sm);
+	padding: 0 var(--space-8);
+	border: none;
+	border-radius: var(--radius-6);
+	background: transparent;
+	color: var(--text-primary);
+	font-size: var(--font-size-sm);
+	text-align: left;
+	transition: background var(--dur-color);
+}
+
+.menu__item:hover:not(:disabled) {
+	background: var(--bg-hover-row);
+}
+
+.menu__item:disabled {
+	color: var(--text-faint);
+	cursor: default;
+}
+
+.menu__item--danger {
+	color: var(--accent-text);
+}
+
+.menu__item--warning {
+	color: var(--error-orange-text);
+}
+
+.menu__label {
+	flex: 1;
+}
+
+.menu__key {
+	color: var(--text-muted);
+	font-size: var(--font-size-badge);
+}
+
+.menu__separator {
+	height: 1px;
+	margin: var(--space-4) var(--space-6);
+	background: var(--border-divider);
+}

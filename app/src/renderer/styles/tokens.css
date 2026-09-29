@@ -46,6 +46,10 @@
   --text-faint: #A0A0B0;
   --text-on-accent: #1A1A2E;
   --text-on-tile: #FFFFFF;
+  /* Added by the renderer lane: the Requests count badge is white 11/700 on
+   * --accent-text (DESIGN.md §5 StatusDot note, handoff README §1 Footer).
+   * The reference names the value but no token carried it. */
+  --text-on-badge: #FFFFFF;
 
   /* ------------------------------------------------------------------ §2.5 Accent */
   --accent: #FF6363;
@@ -131,6 +135,7 @@
   --font-size-body: 14px;
   --font-size-sm: 13px;
   --font-size-meta: 12px;
+  --font-size-caption: 12px;
   --font-size-badge: 11px;
   --font-size-tile: 10px;
   --font-size-tile-xs: 9px;

@@ -1,0 +1,130 @@
+/* ============================================================================
+ * Sidebar — nav groups and footer (native window chrome is outside renderer).
+ * ========================================================================== */
+
+.sidebar {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--bg-chrome);
+	border-right: 1px solid var(--border);
+}
+
+.sidebar__scroll {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: var(--space-14);
+	padding: var(--space-4) var(--space-10) var(--space-12);
+	overflow: auto;
+}
+
+.sidebar__group {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+
+.sidebar__label {
+	padding: var(--space-4) var(--space-8) var(--space-6);
+	color: var(--text-muted);
+	font-size: var(--font-size-badge);
+	font-weight: var(--weight-semibold);
+	letter-spacing: var(--tracking-label);
+}
+
+.sidebar__item {
+	display: flex;
+	align-items: center;
+	gap: var(--space-10);
+	height: var(--size-row);
+	padding: 0 var(--space-8);
+	border: none;
+	border-radius: var(--radius-6);
+	background: transparent;
+	color: var(--text-body);
+	font-size: var(--font-size-body);
+	text-align: left;
+	transition: background var(--dur-color);
+}
+
+.sidebar__item:hover {
+	background: var(--bg-hover);
+}
+
+.sidebar__item--active {
+	background: var(--bg-selected-nav);
+	color: var(--text-primary);
+}
+
+.sidebar__item-icon {
+	flex: none;
+	color: var(--text-muted);
+}
+
+.sidebar__item--active .sidebar__item-icon {
+	color: var(--accent);
+}
+
+.sidebar__item-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.sidebar__footer {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	gap: var(--space-8);
+	padding: var(--space-10);
+	border-top: 1px solid var(--border);
+}
+
+.sidebar__indexing {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-6);
+	padding: var(--space-4) var(--space-6);
+}
+
+.sidebar__indexing-row {
+	display: flex;
+	justify-content: space-between;
+	color: var(--text-muted);
+	font-size: var(--font-size-meta);
+}
+
+.sidebar__indexing-value {
+	color: var(--text-body);
+}
+
+.sidebar__progress {
+	height: var(--space-4);
+	border-radius: var(--radius-4);
+	background: var(--bg-input);
+	overflow: hidden;
+}
+
+.sidebar__progress-fill {
+	height: 100%;
+	border-radius: var(--radius-4);
+	background: var(--warn-dot);
+}
+
+.sidebar__count {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 var(--space-5);
+	border-radius: var(--radius-9);
+	background: var(--accent-text);
+	color: var(--text-on-badge);
+	font-size: var(--font-size-badge);
+	font-weight: var(--weight-bold);
+}

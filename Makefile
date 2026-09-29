@@ -7,8 +7,9 @@ SHELL := /bin/bash
 # documented outside-repo default. Targets NEVER create or bootstrap this
 # root implicitly — run the explicit bootstrap command first.
 E2E_ROOT ?= $(if $(AUTORAG_LIVE_E2E_ROOT),$(AUTORAG_LIVE_E2E_ROOT),$(CURDIR))
+PORT ?=
 
-.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain e2e-live e2e-live-cold
+.PHONY: help install lint format typecheck build electron test test-all test-macos test-windows test-linux ci supply-chain e2e-live e2e-live-cold
 
 help:
 	@printf '%s\n' \
@@ -17,6 +18,7 @@ help:
 		'make format        Apply Biome formatting and safe fixes' \
 		'make typecheck     Run TypeScript type checking' \
 		'make build         Build library, CLI, and declarations' \
+		'make electron      Launch the Electron app for local GUI testing' \
 		'make test          Run the complete AutoRAG 2.0 test suite' \
 		'make test-all      Alias for the complete test suite' \
 		'make test-macos    Run the complete suite on a macOS host' \
@@ -30,6 +32,8 @@ help:
 		'  E2E_ROOT=<root>  Shared corpus root (default: current repo path;' \
 		'                   honors AUTORAG_LIVE_E2E_ROOT if set)' \
 		'  E2E_ARGS=<args>  Extra arguments forwarded to the runner' \
+		'  PORT=<port>        Vite port for the Electron app (example: make electron PORT=9234)' \
+		'  ELECTRON_ARGS=<args> Extra arguments forwarded to Electron dev' \
 		'  E2E_DATASOURCES  Lane selection (default: local,configured = every lane;' \
 		'                   native lanes without a store report SKIP)' \
 		'  bootstrap first: node scripts/live-e2e/runner.mjs bootstrap --root "$$AUTORAG_LIVE_E2E_ROOT"'
@@ -48,6 +52,9 @@ typecheck:
 
 build:
 	bun run build
+
+electron:
+	cd app && PORT="$(PORT)" bun run dev -- $(ELECTRON_ARGS)
 
 test:
 	bun run test

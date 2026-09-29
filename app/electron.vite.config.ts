@@ -7,5 +7,8 @@ export default defineConfig({
 		esbuild: {
 			jsx: "automatic",
 		},
+		server: {
+			port: Number(process.env.PORT) || 5173,
+		},
 	},
 });

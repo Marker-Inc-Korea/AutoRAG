@@ -125,4 +125,5 @@ export interface SettingsBridge {
 
 	/** Send one message to the settings assistant; events stream via assistantEvent. */
 	assistantSend(surface: AssistantSurface, text: string): Promise<void>;
+	readonly onEvent?: (listener: (event: AssistantEvent) => void) => () => void;
 }
