@@ -10,7 +10,7 @@ export interface ParseOutput {
 	readonly diagnostics?: readonly ParseDiagnostic[];
 }
 
-export type ParseDiagnosticCode = "pdf-extract-thin" | "pdf-hybrid-unavailable";
+export type ParseDiagnosticCode = "pdf-extract-thin" | "parser-warning";
 
 export interface ParseDiagnostic {
 	readonly code: ParseDiagnosticCode;

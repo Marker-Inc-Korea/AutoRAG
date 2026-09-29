@@ -25,6 +25,7 @@ const BOOLEAN_FLAGS = new Set([
 const VALUE_FLAGS = new Set([
 	"config",
 	"search-paths",
+	"languages",
 	"workspace",
 	"memory-path",
 	"model-provider",
@@ -147,6 +148,7 @@ Global flags:
   --debug              Reveal opaque internal diagnostics (never filesystem paths)
   --config <path>      Use a specific config file
   --search-paths <csv> Folders to index/search (also AUTORAG_SEARCH_PATHS)
+  --languages <csv>    OCR/parser languages (also AUTORAG_LANGUAGES)
   --model-provider <name>  Override the model provider
   --model-id <id>          Override the model
   --once               For watch: run one refresh tick and exit (for cron)

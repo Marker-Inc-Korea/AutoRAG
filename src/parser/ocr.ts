@@ -11,10 +11,11 @@ export interface OcrEngineInput {
 }
 
 export type OcrEngine = (input: OcrEngineInput) => Promise<string>;
-type OcrEngineWithCleanup = (input: OcrEngineInput) => {
+export type OcrOperation = {
 	readonly result: Promise<string>;
 	readonly cleanup: Promise<void>;
 };
+type OcrEngineWithCleanup = (input: OcrEngineInput) => OcrOperation;
 
 export interface OcrParserOptions {
 	readonly enabled: boolean;
@@ -29,7 +30,7 @@ const DEFAULT_OCR_LANGUAGES = ["eng"] as const;
 
 export class ImageOcrParser extends Parser {
 	readonly name = "image-ocr";
-	readonly extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff"] as const;
+	readonly extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"] as const;
 	private readonly languages: readonly string[];
 	private readonly timeoutMs: number;
 	private readonly maxBytes: number | undefined;
@@ -73,6 +74,10 @@ function engineWithNoopCleanup(engine: OcrEngine): OcrEngineWithCleanup {
 }
 
 function tesseractOcr(input: OcrEngineInput): ReturnType<OcrEngineWithCleanup> {
+	return createTesseractOcrOperation(input);
+}
+
+export function createTesseractOcrOperation(input: OcrEngineInput): OcrOperation {
 	let cleanupResolve: () => void = () => undefined;
 	let cleanupReject: (reason: unknown) => void = () => undefined;
 	const cleanup = new Promise<void>((resolve, reject) => {
@@ -112,11 +117,7 @@ async function runTesseractOcr(
 	}
 }
 
-function withTimeout(
-	operation: ReturnType<OcrEngineWithCleanup>,
-	timeoutMs: number,
-	onTimeout: () => void,
-): Promise<string> {
+export function withTimeout(operation: OcrOperation, timeoutMs: number, onTimeout: () => void): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			onTimeout();

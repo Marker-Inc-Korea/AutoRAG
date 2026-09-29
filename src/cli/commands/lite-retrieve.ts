@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
+import { normalizeLanguages } from "../../language.ts";
 import { detectMirrorStaleness } from "../../mirror/index.ts";
 import { refreshReadinessPath } from "../../mirror/paths.ts";
+import { resolveParserOptions } from "../../parser/index.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -364,7 +366,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const staleDiagnostics = await detectMirrorStaleness({
 		root: workspacePath,
 		searchPaths: lite.config.searchPaths,
-		parserOptions: lite.config.parserOptions,
+		parserOptions: resolveParserOptions(lite.config.parserOptions, normalizeLanguages(lite.config.languages)),
 	});
 	if (staleDiagnostics.length > 0 && ctx.flags.strict === true) {
 		const envelope: IndexNotReadyEnvelope = {

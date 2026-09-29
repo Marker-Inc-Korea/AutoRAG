@@ -12,6 +12,7 @@ import {
 	resolveConfig,
 	writeDefaultConfig,
 } from "../../src/cli/config.ts";
+import { DEFAULT_LANGUAGES } from "../../src/language.ts";
 
 let root: string;
 
@@ -42,6 +43,75 @@ describe("single-model CLI config", () => {
 		expect(config.minSync?.autoInstall).toBe(true);
 		expect(config.jikji).toEqual({});
 		expect(config.excludeExactDuplicates).toBe(true);
+	});
+
+	it("reads and normalizes languages from config.json", () => {
+		const path = join(root, "config.json");
+		writeFileSync(path, JSON.stringify({ languages: [" KO ", "en", "ko"] }), "utf8");
+
+		const config = resolveConfig({
+			flags: { config: path },
+			env: { HOME: root },
+			cwd: root,
+		});
+
+		expect(config.languages).toEqual(["ko", "en"]);
+	});
+
+	it("resolves languages in flag, env, config, default precedence order", () => {
+		const path = join(root, "config.json");
+		writeFileSync(path, JSON.stringify({ languages: ["de", "fr"] }), "utf8");
+
+		expect(
+			resolveConfig({
+				flags: { config: path },
+				env: { HOME: root },
+				cwd: root,
+			}).languages,
+		).toEqual(["de", "fr"]);
+		expect(
+			resolveConfig({
+				flags: { config: path },
+				env: { HOME: root, AUTORAG_LANGUAGES: "en,vi" },
+				cwd: root,
+			}).languages,
+		).toEqual(["en", "vi"]);
+		expect(
+			resolveConfig({
+				flags: { config: path, languages: "ja,ko" },
+				env: { HOME: root, AUTORAG_LANGUAGES: "en,vi" },
+				cwd: root,
+			}).languages,
+		).toEqual(["ja", "ko"]);
+		const noLanguagesPath = join(root, "default-config.json");
+		writeFileSync(noLanguagesPath, JSON.stringify({}), "utf8");
+		expect(
+			resolveConfig({
+				flags: { config: noLanguagesPath },
+				env: { HOME: root },
+				cwd: root,
+			}).languages,
+		).toEqual(DEFAULT_LANGUAGES);
+	});
+
+	it("rejects an unsupported config language as ConfigError", () => {
+		const path = join(root, "config.json");
+		writeFileSync(path, JSON.stringify({ languages: ["ko", "kr"] }), "utf8");
+
+		expect(() =>
+			resolveConfig({
+				flags: { config: path },
+				env: { HOME: root },
+				cwd: root,
+			}),
+		).toThrow(ConfigError);
+		expect(() =>
+			resolveConfig({
+				flags: { config: path },
+				env: { HOME: root },
+				cwd: root,
+			}),
+		).toThrow(/Unsupported language/);
 	});
 
 	it("preserves explicit Jikji opt-out in resolved agent options", () => {
@@ -95,6 +165,17 @@ describe("single-model CLI config", () => {
 		expect(opts.parserOptions).toEqual({ pdf: true });
 		expect(opts.dupey).toBe(false);
 		expect(opts.excludeExactDuplicates).toBe(false);
+	});
+
+	it("includes resolved languages in agent options", () => {
+		const opts = buildAgentOptions({
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			languages: ["ja", "en"],
+		});
+
+		expect(opts.languages).toEqual(["ja", "en"]);
 	});
 
 	it("resolves a configured catalog model without local runtime config", () => {

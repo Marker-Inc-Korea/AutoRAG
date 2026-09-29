@@ -7,7 +7,7 @@ import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "
 import { ParseError } from "../parser/errors.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
-import type { ParseOutput, Parser } from "../parser/types.ts";
+import type { ParseOutput } from "../parser/types.ts";
 import {
 	loadMirrorIndex,
 	type ParsedMirrorEntry,
@@ -70,12 +70,11 @@ export type ParsedMirrorDiagnosticCode =
 	| "unsupported-file"
 	| "parser-skipped"
 	| "parser-failed"
-	| "pdf-java-version"
 	| "duplicate-excluded"
 	| "deleted-mirror"
 	| "stale-index"
 	| "pdf-extract-thin"
-	| "pdf-hybrid-unavailable";
+	| "parser-warning";
 
 /** Path-opaque refresh diagnostic. `source` is an opaque virtual path, never a real fs path. */
 export interface ParsedMirrorDiagnostic {
@@ -102,18 +101,7 @@ interface CurrentEntry {
 	readonly mtimeNs: number;
 }
 
-function parserFailureCode(parser: Parser, error: ParseError): ParsedMirrorDiagnosticCode {
-	return parser.name === "opendataloader-pdf" && /UnsupportedClassVersionError/.test(error.message)
-		? "pdf-java-version"
-		: "parser-failed";
-}
-
-function parserFailureMessage(parser: Parser, error: ParseError): string {
-	if (parserFailureCode(parser, error) === "pdf-java-version") {
-		return "PDF parsing requires Java 11 or newer; the Java runtime selected from PATH is too old.";
-	}
-	return "The registered parser failed on this file; it was skipped during indexing.";
-}
+const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
@@ -221,9 +209,9 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				skipped += 1;
 				recordSkip(entry, "parser-failed");
 				diagnostics.push({
-					code: parserFailureCode(parser, error),
+					code: "parser-failed",
 					severity: "warning",
-					message: parserFailureMessage(parser, error),
+					message: PARSER_FAILURE_MESSAGE,
 					source: entry.virtualPath,
 				});
 				sinceCheckpoint += 1;

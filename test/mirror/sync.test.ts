@@ -21,7 +21,7 @@ import {
 	saveMirrorIndex,
 	syncParsedMirrors,
 } from "../../src/mirror/index.ts";
-import { createDefaultParserRegistry, ParseError, Parser, ParserRegistry } from "../../src/parser/index.ts";
+import { createDefaultParserRegistry } from "../../src/parser/index.ts";
 import { createXlsFixture } from "../fixtures/document-formats.ts";
 
 let root: string;
@@ -76,7 +76,9 @@ describe("syncParsedMirrors", () => {
 
 		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0 });
 		expect(markdown).toContain("편집 탭 – 표");
-		expect(markdown).toContain("Row 1: 제목 | 담당자 | 세부 내용");
+		// kordoc writes real table markup instead of the retired "Row 1: a | b" flattening.
+		expect(markdown).toContain("<td>셀 편집</td>");
+		expect(markdown).toContain("| 제목 | 담당자 | 세부 내용 |");
 	});
 
 	it("creates real markdown files and an index for supported virtual files", async () => {
@@ -255,38 +257,6 @@ describe("syncParsedMirrors", () => {
 		expect(result.scanned).toBe(1);
 		expect(result.written).toBe(1);
 		expect(diag).toBeUndefined();
-		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
-	});
-
-	class FailingPdfParser extends Parser {
-		readonly name = "opendataloader-pdf";
-		readonly extensions = [".pdf"];
-
-		async parse(input: { readonly virtualPath: string }): Promise<never> {
-			throw new ParseError(
-				this.name,
-				input.virtualPath,
-				new Error("UnsupportedClassVersionError: class file version 55.0"),
-			);
-		}
-	}
-
-	it("reports the Java runtime requirement when PDF parsing uses an old Java", async () => {
-		writeFileSync(join(source, "legacy.pdf"), Buffer.from("pdf"));
-
-		const result = await syncParsedMirrors({
-			root,
-			searchPaths: [source],
-			registry: new ParserRegistry([new FailingPdfParser()]),
-		});
-		const diag = result.diagnostics.find((d) => d.source === "/docs/legacy.pdf");
-
-		expect(diag).toEqual({
-			code: "pdf-java-version",
-			severity: "warning",
-			message: "PDF parsing requires Java 11 or newer; the Java runtime selected from PATH is too old.",
-			source: "/docs/legacy.pdf",
-		});
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
 	});
 
