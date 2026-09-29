@@ -1,8 +1,10 @@
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFsService, FsRenameError, type FsServiceDeps } from "../src/main/fs-service";
+import { createRecentsStore, type RecentsStore } from "../src/main/recents-store";
+import { RECENTS_PATH } from "../src/shared/fs-contract";
 
 interface StubbedDeps {
 	readonly deps: FsServiceDeps;
@@ -11,6 +13,7 @@ interface StubbedDeps {
 	readonly quickLooked: string[];
 	readonly opened: string[];
 	readonly clipboardText: string[];
+	readonly recents: RecentsStore;
 }
 
 function makeDeps(homeDir: string): StubbedDeps {
@@ -42,12 +45,14 @@ function makeDeps(homeDir: string): StubbedDeps {
 			spawnQuickLook: (path: string) => {
 				quickLooked.push(path);
 			},
+			recents: createRecentsStore({ directory: join(homeDir, "recents-store") }),
 		},
 		trashed,
 		revealed,
 		quickLooked,
 		opened,
 		clipboardText,
+		recents: createRecentsStore({ directory: join(homeDir, "recents-store") }),
 	};
 }
 
@@ -478,5 +483,134 @@ describe("shell and clipboard side effects", () => {
 
 		// Then the clipboard received them joined by newlines
 		expect(stubs.clipboardText).toEqual(["/a/one.txt\n/b/two.txt"]);
+	});
+});
+
+describe("recents", () => {
+	it("lists the virtual Recents location first and always available", async () => {
+		// Given a home with only Documents
+		const home = join(root, "home-recents-location");
+		await mkdir(join(home, "Documents"), { recursive: true });
+
+		// When listing locations
+		const locations = await createFsService(makeDeps(home).deps).locations();
+
+		// Then Recents leads the favorites and is offered even before anything was opened
+		expect(locations[0]).toEqual({ name: RECENTS_PATH, path: RECENTS_PATH, section: "favorites", available: true });
+	});
+
+	it("lists recorded files most-recent first and drops the ones that no longer exist", async () => {
+		// Given two recorded files, the older of which has since been deleted
+		const older = join(root, "recents-older.pdf");
+		const newer = join(root, "recents-newer.xlsx");
+		await writeFile(older, "old");
+		await writeFile(newer, "new");
+		const stubs = makeDeps(root);
+		const service = createFsService(stubs.deps);
+		await stubs.recents.record(older);
+		await stubs.recents.record(newer);
+		await rm(older);
+
+		// When listing the virtual location
+		const listing = await service.listDir(RECENTS_PATH);
+
+		// Then the surviving file is listed in recency order with the contract shape
+		expect(listing.path).toBe(RECENTS_PATH);
+		expect(listing.entries.map((entry) => entry.path)).toEqual([newer]);
+		expect(listing.entries[0]).toMatchObject({ name: "recents-newer.xlsx", kind: "file", ext: "xlsx" });
+	});
+
+	it("lists nothing before anything was opened", async () => {
+		// Given a fresh service with no history
+		// When listing the virtual location
+		const listing = await createFsService(makeDeps(root).deps).listDir(RECENTS_PATH);
+
+		// Then it is empty rather than an error
+		expect(listing).toEqual({ path: RECENTS_PATH, entries: [] });
+	});
+
+	it("records a file opened with the OS default application", async () => {
+		// Given a file
+		const filePath = join(root, "opened.pdf");
+		await writeFile(filePath, "x");
+		const stubs = makeDeps(root);
+
+		// When opening it like a double-click
+		await createFsService(stubs.deps).open(filePath);
+
+		// Then it joins the recent files
+		expect(await stubs.recents.list()).toEqual([filePath]);
+	});
+
+	it("does not record a file whose open failed", async () => {
+		// Given a shell that reports the file is gone
+		const filePath = join(root, "gone.key");
+		const stubs = makeDeps(root);
+		const service = createFsService({
+			...stubs.deps,
+			shell: { ...stubs.deps.shell, openPath: async () => "The file “gone.key” does not exist." },
+		});
+
+		// When opening it
+		await expect(service.open(filePath)).rejects.toThrow("The file “gone.key” does not exist.");
+
+		// Then nothing was recorded
+		expect(await stubs.recents.list()).toEqual([]);
+	});
+
+	it("records a file previewed with Quick Look", async () => {
+		// Given a file
+		const filePath = join(root, "previewed.md");
+		await writeFile(filePath, "x");
+		const stubs = makeDeps(root);
+
+		// When previewing it
+		await createFsService(stubs.deps).quickLook(filePath);
+
+		// Then it joins the recent files and the preview still spawned
+		expect(await stubs.recents.list()).toEqual([filePath]);
+		expect(stubs.quickLooked).toEqual([filePath]);
+	});
+
+	it("does not walk the virtual location while searching", async () => {
+		// Given a home with a matching file and a watch on the diagnostics
+		const home = join(root, "home-recents-search");
+		await mkdir(join(home, "Documents"), { recursive: true });
+		await writeFile(join(home, "Documents", "recents-probe.txt"), "x");
+		const warnings: string[] = [];
+		const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+			warnings.push(args.join(" "));
+		});
+
+		// When searching
+		const results = await createFsService(makeDeps(home).deps)
+			.search("recents-probe")
+			.finally(() => spy.mockRestore());
+
+		// Then only the real location was walked
+		expect(results.map((hit) => hit.location)).toEqual(["Documents"]);
+		expect(warnings.filter((line) => line.includes(RECENTS_PATH))).toEqual([]);
+	});
+
+	it("does not run the duplicate scan over the virtual location", async () => {
+		// Given a home with one real location and an injected scanner
+		const home = join(root, "home-recents-families");
+		await mkdir(join(home, "Desktop"), { recursive: true });
+		const scanned: string[] = [];
+		const stubs = makeDeps(home);
+		const service = createFsService({
+			...stubs.deps,
+			dupey: { status: async () => ({ available: true, version: "dupey 0.1.2", error: null }) },
+			scanDuplicates: async (dir: string) => {
+				scanned.push(dir);
+				return { dir, files: [], families: [], errors: [] };
+			},
+		});
+
+		// When scanning version families
+		await service.versionFamilies();
+
+		// Then only the real location was scanned
+		expect(scanned).toEqual([join(home, "Desktop")]);
 	});
 });

@@ -4,12 +4,15 @@
  * The first two groups and the trash item are the reference's (handoff README
  * §2 "Context menu"). The middle group is the standard Finder file-operation
  * set the product requires on top of the design: copy / paste / cut /
- * duplicate / rename / copy path.
+ * duplicate / rename / copy path. "Show in Enclosing Folder" is a product
+ * addition too, and only the virtual Recents view offers it — elsewhere the
+ * row already lives in the folder it would open.
  */
 
 export type FinderMenuAction =
 	| "quickLook"
 	| "open"
+	| "showInEnclosingFolder"
 	| "toggleIndex"
 	| "retryIndex"
 	| "copy"
@@ -44,6 +47,8 @@ export interface ContextMenuInput {
 	readonly indexFailed?: boolean;
 	/** Items held by the in-app file clipboard; 0 disables 붙여넣기. */
 	readonly clipboardCount: number;
+	/** True while the listing is the virtual Recents location. */
+	readonly inRecents?: boolean;
 }
 
 function item(
@@ -69,6 +74,10 @@ export function buildContextMenu(input: ContextMenuInput): FinderMenuEntry[] {
 	const entries: FinderMenuEntry[] = [
 		isFolder ? item("open", "열기", { keycap: "↩" }) : item("quickLook", "Quick Look", { keycap: "space" }),
 	];
+
+	if (input.inRecents === true) {
+		entries.push(SEPARATOR, item("showInEnclosingFolder", "Show in Enclosing Folder"));
+	}
 
 	if (!isFolder) {
 		entries.push(SEPARATOR);

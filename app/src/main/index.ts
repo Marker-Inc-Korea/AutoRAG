@@ -8,6 +8,7 @@ import { APP_NAME, APP_VERSION, formatWindowTitle, type DevLabel } from "../shar
 import { createChatStore } from "./chat-store";
 import { readDevLabel, resolveClonePath } from "./dev-label";
 import { createFsService } from "./fs-service";
+import { createRecentsStore } from "./recents-store";
 import { createDefaultAgentFactory, createSearchService } from "./search-service";
 import { createSettingsService } from "./settings-service";
 import { registerFsIpcHandlers, registerSearchIpcHandlers, registerSettingsIpcHandlers } from "./ipc";
@@ -127,9 +128,15 @@ function createMainWindow(devLabel: DevLabel | null): BrowserWindow {
 
 app.whenReady().then(() => {
 	ensureAutoRAGConfig();
+	registerFsIpcHandlers(
+		createFsService({
+			shell,
+			clipboard,
+			recents: createRecentsStore({ directory: join(app.getPath("userData"), "recents") }),
+		}),
+	);
 	const devLabel = resolveDevLabel();
 	console.log(`[autorag] ${formatWindowTitle(APP_NAME, APP_VERSION, devLabel)}`);
-	registerFsIpcHandlers(createFsService({ shell, clipboard }));
 	const searchService = createSearchService({
 		agentFactory: createDefaultAgentFactory(),
 		chatStore: createChatStore({ directory: join(app.getPath("userData"), "chat-history") }),

@@ -6,6 +6,7 @@
  * "4.8 MB" — KB is whole, MB and above carry one decimal below 10.
  */
 
+import { RECENTS_PATH } from "../../../shared/fs-contract";
 import { basename } from "./paths";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -84,7 +85,10 @@ export function indexToast(name: string, included: boolean): string {
 	return included ? `${name} — 인덱싱에 포함했습니다` : `${name} — 인덱싱에서 제외했습니다`;
 }
 
-export function emptyStateText(query: string): string {
+export function emptyStateText(query: string, path = ""): string {
 	const trimmed = query.trim();
-	return trimmed === "" ? "빈 폴더" : `"${trimmed}"와 일치하는 파일이 없습니다`;
+	if (trimmed !== "") {
+		return `"${trimmed}"와 일치하는 파일이 없습니다`;
+	}
+	return path === RECENTS_PATH ? "최근에 연 파일이 없습니다" : "빈 폴더";
 }

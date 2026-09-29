@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, RefObject } from "react";
+import { RECENTS_PATH } from "../../../shared/fs-contract";
 import type { FinderEntry } from "../data/entries";
 import type { NavItem } from "../data/places";
 import { type FinderLocation, type FinderSource, pickInitialPath } from "../data/source";
@@ -11,7 +12,7 @@ import {
 } from "../state/context-menu";
 import { emptyStateText, indexToast, searchSummaryText, statusBarText, trashToast } from "../state/format";
 import { type FocusZone, resolveKeyAction } from "../state/keymap";
-import { activeNavPath, basename, breadcrumbTrail, type Crumb } from "../state/paths";
+import { activeNavPath, basename, breadcrumbTrail, dirname, type Crumb } from "../state/paths";
 import {
 	applyRowClick,
 	EMPTY_SELECTION,
@@ -40,6 +41,7 @@ import {
 	goForward,
 	navigateTab,
 	openTab,
+	openTabAt,
 	patchActiveTab,
 	selectTab,
 	tabTitle,
@@ -351,7 +353,8 @@ export function useFinderController(
 				navigate(entry.path);
 				return;
 			}
-			if (searching || entry.location !== path) {
+			// A Recents row always opens: the view is a history, not a folder to reveal into.
+			if (searching || (entry.location !== path && path !== RECENTS_PATH)) {
 				revealEntry(entry);
 				return;
 			}
@@ -438,6 +441,19 @@ export function useFinderController(
 				case "open":
 					navigate(entry.path);
 					return;
+				case "showInEnclosingFolder": {
+					// A new tab opens on the folder that holds the file, with the row revealed.
+					setTabsState((state) =>
+						patchActiveTab(openTabAt(state, dirname(entry.path)), (tab) => ({
+							...tab,
+							selection: { keys: [entry.path], anchor: entry.path, focus: entry.path },
+						})),
+					);
+					setQueryValue("");
+					setFlashPath(entry.path);
+					scrollTarget.current = entry.path;
+					return;
+				}
 				case "toggleIndex":
 					toggleIndex(entry);
 					return;
@@ -642,8 +658,9 @@ export function useFinderController(
 			selectionCount: menuTargets(entry).length,
 			indexIncluded: effectiveIndexOverrides[entry.path] ?? true,
 			clipboardCount,
+			inRecents: path === RECENTS_PATH,
 		});
-	}, [contextMenu, menuTargets, effectiveIndexOverrides, clipboardCount]);
+	}, [contextMenu, menuTargets, effectiveIndexOverrides, clipboardCount, path]);
 
 	const navTargets = useMemo(
 		() => (locations.length > 0 ? locations : [{ name: basename(path), path }]),
@@ -665,7 +682,7 @@ export function useFinderController(
 		searchFocused,
 		searching,
 		searchSummary: searchSummaryText(rows.length),
-		emptyText: emptyStateText(query),
+		emptyText: emptyStateText(query, path),
 		rows,
 		stackRows,
 		sort,
