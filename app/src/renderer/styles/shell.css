@@ -632,8 +632,8 @@
 	font-size: var(--font-size-meta);
 }
 
-/* shadcn/ui Switch (new-york-v4, default size) on Radix primitives —
- * colors follow the v6 handoff tokens (#FF6363 checked / #CFCFD9 off). */
+/* shadcn/ui Switch (new-york-v4 registry item, verbatim geometry/motion);
+ * only the color values move to brand tokens (#FF6363 checked / #CFCFD9 off). */
 .settings-switch {
 	display: inline-flex;
 	flex-shrink: 0;
@@ -641,16 +641,20 @@
 	width: 32px;
 	height: 18.4px;
 	padding: 0;
-	border: 1px solid transparent;
-	border-radius: var(--radius-full);
+	border-width: 1px;
+	border-style: solid;
+	border-color: transparent;
+	border-radius: 9999px;
 	outline: none;
-	background: var(--switch-off);
-	box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
-	transition: all var(--dur-color);
+	background-color: var(--switch-off);
+	box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-xs */
+	transition-property: all;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 150ms;
 }
 
 .settings-switch[data-state="checked"] {
-	background: var(--accent);
+	background-color: var(--accent);
 }
 
 .settings-switch:focus-visible {
@@ -665,12 +669,15 @@
 
 .settings-switch__thumb {
 	display: block;
-	width: var(--size-knob);
-	height: var(--size-knob);
-	border-radius: 50%;
-	background: var(--bg-window);
+	width: 16px; /* size-4 */
+	height: 16px;
+	border-radius: 9999px;
+	background-color: var(--bg-window); /* shadcn bg-background (#fff) */
 	pointer-events: none;
-	transition: transform var(--dur-color);
+	box-shadow: none; /* ring-0 */
+	transition-property: transform;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 150ms;
 }
 
 .settings-switch__thumb[data-state="unchecked"] {

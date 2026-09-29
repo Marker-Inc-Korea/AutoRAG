@@ -24,6 +24,18 @@ map, the run commands, and the manual-QA recipe.
   UI logic lives in pure functions under `renderer/src/state/`, so hook
   behavior is proven by manual QA, not unit tests.
 
+## UI library direction
+
+For app UI work, actively use **shadcn/ui**: pull the component source from
+the shadcn registry (e.g. `https://ui.shadcn.com/r/styles/new-york-v4/<name>.json`),
+keep the official Tailwind classes where possible, and when wiring plain CSS,
+translate them 1:1. Brand/experience colors come from our design tokens
+(`styles/tokens.css`) — map only colors to tokens, never hand-tune shadcn
+geometry, spacing, or motion. When a component looks off to a human eye,
+revert to the literal registry incarnation first, confirm it visually, and
+then re-apply the token colors. Tailwind CSS is approval-cleared for the app;
+if/when it lands, prefer classNames over bespoke CSS.
+
 ## Commands
 
 Run from the repo root unless noted. Required before any commit:
