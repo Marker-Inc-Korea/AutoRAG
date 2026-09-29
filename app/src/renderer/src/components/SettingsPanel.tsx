@@ -10,9 +10,11 @@ type SettingsTab = "general" | "models" | "sources" | "contacts";
 export function SettingsPanel({
 	initialTab = "general",
 	onClose,
+	onSettingsChanged,
 }: {
 	readonly initialTab?: SettingsTab;
 	readonly onClose: () => void;
+	readonly onSettingsChanged?: (settings: AppSettings) => void;
 }): ReactElement {
 	const [tab, setTab] = useState<SettingsTab>(initialTab);
 	const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -52,6 +54,7 @@ export function SettingsPanel({
 		if (settings === null || typeof settings[key] !== "boolean") return;
 		const next = await autorag.settings.set({ [key]: !settings[key] });
 		setSettings(next);
+		onSettingsChanged?.(next);
 	}
 
 	async function addContact(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -105,6 +108,9 @@ export function SettingsPanel({
 								</SettingRow>
 								<SettingRow label="Show in menu bar" description="메뉴 막대에 AutoRAG 표시">
 									<Switch checked={settings.showInMenuBar} onChange={() => void toggleSetting("showInMenuBar")} />
+								</SettingRow>
+								<SettingRow label="Show hidden files" description="점(.)으로 시작하는 숨김 파일·폴더를 목록에 흐리게 표시">
+									<Switch checked={settings.showHiddenFiles} onChange={() => void toggleSetting("showHiddenFiles")} />
 								</SettingRow>
 							</SettingsSection>
 							<SettingsSection title="Software Updates">

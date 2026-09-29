@@ -23,12 +23,17 @@ const SHOW_HOTKEYS = true;
 
 export function App(): ReactElement {
 	const source = useFinderSource();
-	const finder = useFinderController(source);
+	const [showHiddenFiles, setShowHiddenFiles] = useState(false);
+	const finder = useFinderController(source, { showHiddenFiles });
 	const [settingsTab, setSettingsTab] = useState<"general" | "contacts" | null>(null);
 	const [requestsOpen, setRequestsOpen] = useState(false);
 	const [pendingRequests, setPendingRequests] = useState(finder.pendingRequests);
 	const [permissions, setPermissions] = useState<Readonly<Record<string, Permission>>>({});
 	const [permissionTarget, setPermissionTarget] = useState<{ path: string; name: string } | null>(null);
+
+	useEffect(() => {
+		void autorag.settings.get().then((settings) => setShowHiddenFiles(settings.showHiddenFiles));
+	}, []);
 
 	useEffect(() => {
 		const settingsBridge = autorag.settings;
@@ -128,6 +133,7 @@ export function App(): ReactElement {
 				<SettingsPanel
 					initialTab={settingsTab}
 					onClose={() => setSettingsTab(null)}
+					onSettingsChanged={(settings) => setShowHiddenFiles(settings.showHiddenFiles)}
 				/>
 			)}
 			{requestsOpen ? <RequestsPopover onClose={() => setRequestsOpen(false)} onChanged={() => void autorag.settings.requestsList("pending").then((requests) => setPendingRequests(requests.length))} /> : null}

@@ -69,6 +69,8 @@ export interface AppSettings {
 	readonly autoInstallUpdates: boolean;
 	readonly betaUpdates: boolean;
 	readonly telemetry: boolean;
+	/** Off: dot-prefixed files never appear. On: they appear, rendered dimmed. */
+	readonly showHiddenFiles: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -79,6 +81,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	autoInstallUpdates: true,
 	betaUpdates: false,
 	telemetry: false,
+	showHiddenFiles: false,
 };
 
 export interface DataSourceRow {

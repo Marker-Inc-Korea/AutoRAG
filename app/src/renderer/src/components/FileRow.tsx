@@ -3,6 +3,7 @@ import { accessBadge, indexBadge } from "../state/badges";
 import type { Permission } from "../../../shared/settings-contract";
 import type { FinderEntry } from "../data/entries";
 import { whereSegments } from "../state/paths";
+import { isHiddenName } from "../state/visibility";
 import { FileTile } from "./primitives/FileTile";
 import { PillBadge } from "./primitives/PillBadge";
 
@@ -44,6 +45,9 @@ export function FileRow({
 	readonly callbacks: RowCallbacks;
 }): ReactElement {
 	const classes = ["row"];
+	if (isHiddenName(entry.name)) {
+		classes.push("row--hidden");
+	}
 	if (selected) {
 		classes.push(zoneFocused ? "row--selected-focused" : "row--selected");
 	}

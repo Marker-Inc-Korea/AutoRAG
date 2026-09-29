@@ -20,6 +20,7 @@ import {
 	scrollTopForIndex,
 } from "../state/selection";
 import { type SortKey, type SortState, cycleSort, sortEntries } from "../state/sort";
+import { visibleEntries } from "../state/visibility";
 import {
 	activeTab,
 	canCloseTab,
@@ -104,7 +105,11 @@ export interface FinderController {
 	cancelRename(): void;
 }
 
-export function useFinderController(source: FinderSource): FinderController {
+export function useFinderController(
+	source: FinderSource,
+	options: { readonly showHiddenFiles?: boolean } = {},
+): FinderController {
+	const showHiddenFiles = options.showHiddenFiles ?? false;
 	const [tabsState, setTabsState] = useState<TabsState>(() => createTabsState(source.initialPath));
 	const [query, setQueryValue] = useState("");
 	const [sort, setSort] = useState<SortState | null>(null);
@@ -229,7 +234,10 @@ export function useFinderController(source: FinderSource): FinderController {
 		return () => clearTimeout(timer);
 	}, [flashPath]);
 
-	const rows = useMemo(() => sortEntries(searching ? hits : listing, sort), [searching, hits, listing, sort]);
+	const rows = useMemo(
+		() => sortEntries(visibleEntries(searching ? hits : listing, showHiddenFiles), sort),
+		[searching, hits, listing, sort, showHiddenFiles],
+	);
 	const orderedKeys = useMemo(() => rows.map((entry) => entry.path), [rows]);
 
 	/** Keyboard movement keeps the focused row in view (row height 32, lead 80). */
