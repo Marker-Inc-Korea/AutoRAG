@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import { cp, lstat, readdir, rename as fsRename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { scanWithDupey, type DupeyScanResult } from "@autorag/librarian";
 import type {
 	DirListing,
 	FsBatchResult,
@@ -12,6 +13,9 @@ import type {
 	FsLocation,
 	FsOpError,
 	FsSearchResult,
+	FsVersionFamily,
+	FsVersionMember,
+	FsVersionRelation,
 } from "../shared/fs-contract";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
 
@@ -35,6 +39,10 @@ export interface FsServiceDeps {
 	readonly homeDir?: string;
 	/** Defaults to spawning `/usr/bin/qlmanage -p <path>` detached. */
 	readonly spawnQuickLook?: QuickLookSpawner;
+	/** Defaults to the dupey CLI; tests inject fixture scans. */
+	readonly scanDuplicates?: (dir: string) => Promise<DupeyScanResult>;
+	/** Clock for the family cache TTL; tests inject a fixed one. */
+	readonly now?: () => number;
 }
 
 export type FsRenameErrorCode = "invalid-name" | "name-collision";
@@ -119,11 +127,62 @@ async function walkForSearch(dir: string, depth: number, context: SearchContext)
 	}
 }
 
+const VERSION_FAMILY_TTL_MS = 5 * 60 * 1000;
+
+interface DupeyMemberInfo {
+	readonly path?: string;
+	readonly relation?: string;
+	readonly exact_hash?: string;
+	readonly joined_with?: string;
+}
+
+function clampRelation(value: string | undefined): FsVersionRelation {
+	return value === "exact" || value === "contains" ? value : "near";
+}
+
+/** dupey family (pick-keeper head + per-member relations) to the app contract. */
+export function mapDupeyFamily(
+	family: DupeyScanResult["families"][number],
+): { readonly head: string; readonly members: readonly FsVersionMember[] } | null {
+	const head =
+		(family.pick as { readonly ranked?: readonly { readonly path?: string }[] } | undefined)?.ranked?.[0]
+			?.path ?? family.files[0];
+	if (typeof head !== "string" || head.length === 0) return null;
+	const memberInfos = new Map<string, DupeyMemberInfo>();
+	for (const member of family.members as readonly DupeyMemberInfo[]) {
+		if (typeof member?.path === "string") memberInfos.set(member.path, member);
+	}
+	const headHash = memberInfos.get(head)?.exact_hash;
+	const members: FsVersionMember[] = [];
+	for (const path of family.files) {
+		if (path === head) continue;
+		const info = memberInfos.get(path);
+		const relation =
+			info?.exact_hash !== undefined && headHash !== undefined && info.exact_hash === headHash
+				? "exact"
+				: clampRelation(info?.relation);
+		members.push({ path, relation });
+	}
+	return { head, members };
+}
+
 export function createFsService(deps: FsServiceDeps): FsBridge {
 	const home = deps.homeDir ?? homedir();
 	const spawnQuickLook = deps.spawnQuickLook ?? defaultQuickLook;
+	const scanDuplicates = deps.scanDuplicates ?? ((dir: string) => scanWithDupey(dir));
+	const now = deps.now ?? (() => Date.now());
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
+	const familyCache = new Map<string, { readonly at: number; readonly families: readonly FsVersionFamily[] }>();
+
+	async function mutatingBatch(
+		paths: readonly string[],
+		operation: (path: string) => Promise<void>,
+	): Promise<FsBatchResult> {
+		const result = await runBatch(paths, operation);
+		if (result.ok.length > 0) familyCache.clear();
+		return result;
+	}
 
 	async function listDir(path: string): Promise<DirListing> {
 		const dirents = await readdir(path, { withFileTypes: true });
@@ -190,8 +249,55 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		return results;
 	}
 
+	async function versionFamilies(): Promise<readonly FsVersionFamily[]> {
+		const result: FsVersionFamily[] = [];
+		for (const location of await locations()) {
+			if (!location.available) continue;
+			const cached = familyCache.get(location.path);
+			if (cached !== undefined && now() - cached.at < VERSION_FAMILY_TTL_MS) {
+				result.push(...cached.families);
+				continue;
+			}
+			let families: readonly FsVersionFamily[] = [];
+			try {
+				const scan = await scanDuplicates(location.path);
+				const resolved = await Promise.all(
+					scan.families.map(async (family): Promise<FsVersionFamily | null> => {
+						const mapped = mapDupeyFamily(family);
+						if (mapped === null || mapped.members.length === 0) return null;
+						const entries: FsEntry[] = [];
+						try {
+							entries.push(await buildFsEntry(mapped.head));
+						} catch {
+							return null;
+						}
+						for (const member of mapped.members) {
+							try {
+								entries.push(await buildFsEntry(member.path));
+							} catch {
+								continue;
+							}
+						}
+						const members = mapped.members.filter((member) =>
+							entries.some((entry) => entry.path === member.path),
+						);
+						if (members.length === 0) return null;
+						return { head: mapped.head, members, entries };
+					}),
+				);
+				families = resolved.filter((family): family is FsVersionFamily => family !== null);
+			} catch (error) {
+				// dupey unavailable or failed: this root simply has no families.
+				console.warn(`fs:versionFamilies skipping ${location.path}: ${errorMessage(error)}`);
+			}
+			familyCache.set(location.path, { at: now(), families });
+			result.push(...families);
+		}
+		return result;
+	}
+
 	async function copy(paths: readonly string[], destDir: string): Promise<FsBatchResult> {
-		return runBatch(paths, async (source) => {
+		return mutatingBatch(paths, async (source) => {
 			const sourceStat = await lstat(source);
 			const targetName = await resolveCopyName(destDir, basename(source), sourceStat.isDirectory());
 			await cp(source, join(destDir, targetName), { recursive: true });
@@ -199,7 +305,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	}
 
 	async function move(paths: readonly string[], destDir: string): Promise<FsBatchResult> {
-		return runBatch(paths, async (source) => {
+		return mutatingBatch(paths, async (source) => {
 			const sourceStat = await lstat(source);
 			const target = join(destDir, await resolveCopyName(destDir, basename(source), sourceStat.isDirectory()));
 			try {
@@ -214,7 +320,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	}
 
 	async function duplicate(paths: readonly string[]): Promise<FsBatchResult> {
-		return runBatch(paths, async (source) => {
+		return mutatingBatch(paths, async (source) => {
 			const sourceStat = await lstat(source);
 			const dir = dirname(source);
 			const targetName = await resolveCopyName(dir, basename(source), sourceStat.isDirectory());
@@ -239,6 +345,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 			throw new FsRenameError("name-collision", `A file or folder named "${newName}" already exists`);
 		}
 		await fsRename(path, target);
+		familyCache.clear();
 		return buildFsEntry(target);
 	}
 
@@ -251,7 +358,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		move,
 		duplicate,
 		rename,
-		trash: (paths) => runBatch(paths, (path) => deps.shell.trashItem(path)),
+		trash: (paths) => mutatingBatch(paths, (path) => deps.shell.trashItem(path)),
 		reveal: async (path) => {
 			deps.shell.showItemInFolder(path);
 		},
@@ -265,5 +372,6 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		copyPathsToClipboard: async (paths) => {
 			deps.clipboard.writeText(paths.join("\n"));
 		},
+		versionFamilies,
 	};
 }

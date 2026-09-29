@@ -53,6 +53,7 @@ export function App(): ReactElement {
 		onOpen: finder.openEntry,
 		onContextMenu: finder.openContextMenu,
 		onToggleIndex: finder.toggleIndex,
+		onToggleStack: finder.toggleStack,
 		onChangeAccess: (entry) => setPermissionTarget({ path: entry.path, name: entry.name }),
 		onRenameChange: finder.setRenameDraft,
 		onRenameCommit: finder.commitRename,
@@ -97,7 +98,8 @@ export function App(): ReactElement {
 					/>
 					<ColumnHeader sort={finder.sort} searching={finder.searching} onSort={finder.sortBy} />
 					<FileList
-						rows={finder.rows}
+						rows={finder.stackRows}
+						listPath={finder.path}
 						listRef={finder.listRef}
 						searching={finder.searching}
 						summary={finder.searchSummary}

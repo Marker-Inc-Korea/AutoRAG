@@ -9,9 +9,10 @@
 
 import type { FsBridge, FsClipboard } from "../../../shared/fs-contract";
 import { copyName } from "../state/collision";
-import { basename, dirname } from "../state/paths";
+import { basename, dirname, joinPath } from "../state/paths";
+import type { VersionFamilyData, VersionRelation } from "../state/version-family";
 import { type FinderEntry, entryFromFixture, entryFromFs, entryFromSearchHit } from "./entries";
-import { FIXTURE_INITIAL_PATH, FIXTURE_PENDING_REQUESTS, FIXTURE_ROOTS, FIXTURE_TREE } from "./fixtures";
+import { FIXTURE_FAMILIES, FIXTURE_INITIAL_PATH, FIXTURE_PENDING_REQUESTS, FIXTURE_ROOTS, FIXTURE_TREE } from "./fixtures";
 import type { FixtureItem } from "./entries";
 
 export interface FinderLocation {
@@ -44,6 +45,8 @@ export interface FinderSource {
 	copyPaths(paths: readonly string[]): Promise<void>;
 	clipboardSet(clipboard: FsClipboard): Promise<void>;
 	clipboardGet(): Promise<FsClipboard | null>;
+	/** Version families from the duplicate detector; empty when unavailable. */
+	versionFamilies(): Promise<readonly VersionFamilyData[]>;
 }
 
 /* -------------------------------------------------------------- real bridge */
@@ -90,6 +93,16 @@ export function createBridgeSource(fs: FsBridge, initialPath: string): FinderSou
 		copyPaths: (paths) => fs.copyPathsToClipboard(paths),
 		clipboardSet: (clipboard) => fs.clipboardSet(clipboard),
 		clipboardGet: () => fs.clipboardGet(),
+		versionFamilies: async () => {
+			const families = await fs.versionFamilies();
+			return families.map((family) => ({
+				head: family.head,
+				members: family.members,
+				entriesByPath: Object.fromEntries(
+					family.entries.map((entry) => [entry.path, entryFromFs(entry)]),
+			),
+			}));
+		},
 	};
 }
 
@@ -234,6 +247,28 @@ export function createFixtureSource(): FinderSource {
 			return resolve();
 		},
 		clipboardGet: () => Promise.resolve(state.clipboard),
+		versionFamilies: () =>
+			Promise.resolve(
+				FIXTURE_FAMILIES.flatMap((family) => {
+					const headItem = findItem(state, family.head);
+					if (headItem === null) {
+						return [];
+					}
+					const entriesByPath: Record<string, FinderEntry> = {
+						[family.head]: entryFromFixture(headItem, dirname(family.head)),
+					};
+					const members = family.members.flatMap(([where, name, relation]) => {
+						const item = (state.tree.get(where) ?? []).find((candidate) => candidate.name === name);
+						if (item === undefined) {
+							return [];
+						}
+						const path = joinPath(where, name);
+						entriesByPath[path] = entryFromFixture(item, where);
+						return [{ path, relation: relation as VersionRelation }];
+					});
+					return [{ head: family.head, members, entriesByPath }];
+				}),
+			),
 	};
 }
 

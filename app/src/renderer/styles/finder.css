@@ -340,6 +340,52 @@
 	font-size: var(--font-size-body);
 }
 
+.row--child {
+	padding-left: calc(var(--space-12) + 18px);
+}
+
+.row--child .row__label {
+	color: var(--text-body);
+}
+
+.row__connector {
+	flex: none;
+	width: 18px;
+	height: 14px;
+	border-left: 1px solid var(--border-strong);
+	border-bottom: 1px solid var(--border-strong);
+	border-bottom-left-radius: 4px;
+}
+
+.row__stackbadge {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	flex: none;
+	height: 18px;
+	padding: 0 var(--space-5);
+	border: none;
+	border-radius: 9px;
+	background: var(--bg-input);
+	color: var(--text-body);
+	font-size: var(--font-size-badge);
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.row__stackbadge svg {
+	transition: transform 150ms;
+}
+
+.row__stackbadge:hover,
+.row__stackbadge--open {
+	background: var(--border);
+}
+
+.row__stackbadge--open svg {
+	transform: rotate(90deg);
+}
+
 .row__meta {
 	color: var(--text-muted);
 	font-size: var(--font-size-meta);

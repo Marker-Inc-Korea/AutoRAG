@@ -23,6 +23,7 @@ export const FS_CHANNELS = {
 	clipboardSet: "fs:clipboardSet",
 	clipboardGet: "fs:clipboardGet",
 	copyPathsToClipboard: "fs:copyPathsToClipboard",
+	versionFamilies: "fs:versionFamilies",
 } as const;
 
 export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];
@@ -109,4 +110,23 @@ export interface FsBridge {
 	clipboardGet(): Promise<FsClipboard | null>;
 	/** Write the absolute paths as text to the OS clipboard ("Copy Path"). */
 	copyPathsToClipboard(paths: readonly string[]): Promise<void>;
+	/**
+	 * Version families from the dupey duplicate detector: one entry per family
+	 * (head path, members with relations, entries for rendering). Empty when
+	 * dupey is unavailable or finds nothing.
+	 */
+	versionFamilies(): Promise<readonly FsVersionFamily[]>;
+}
+
+export type FsVersionRelation = "exact" | "near" | "contains";
+
+export interface FsVersionMember {
+	readonly path: string;
+	readonly relation: FsVersionRelation;
+}
+
+export interface FsVersionFamily {
+	readonly head: string;
+	readonly members: readonly FsVersionMember[];
+	readonly entries: readonly FsEntry[];
 }
