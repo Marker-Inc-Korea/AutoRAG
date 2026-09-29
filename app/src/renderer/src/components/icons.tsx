@@ -97,6 +97,44 @@ export function ChevronUpIcon({ size = 10, className }: GlyphProps): ReactElemen
 	);
 }
 
+export function ChevronsUpIcon({ size = 16, className }: GlyphProps): ReactElement {
+	return (
+		<Stroke size={size} width={2.2} className={className}>
+			<path d="M6 7l6 6 6-6M6 13l6 6 6-6" />
+		</Stroke>
+	);
+}
+
+export function EyeIcon({ size = 14, className }: GlyphProps): ReactElement {
+	return (
+		<Stroke size={size} width={2} className={className}>
+			<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+			<circle cx="12" cy="12" r="3" />
+		</Stroke>
+	);
+}
+
+const THUMB_PATH =
+	"M7 10v12M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z";
+
+export function ThumbsUpIcon({ size = 14, className }: GlyphProps): ReactElement {
+	return (
+		<Stroke size={size} width={2} className={className}>
+			<path d={THUMB_PATH} />
+		</Stroke>
+	);
+}
+
+export function ThumbsDownIcon({ size = 14, className }: GlyphProps): ReactElement {
+	return (
+		<Stroke size={size} width={2} className={className}>
+			<g style={{ transform: "scale(1,-1)", transformOrigin: "12px 12px" }}>
+				<path d={THUMB_PATH} />
+			</g>
+		</Stroke>
+	);
+}
+
 export function CloseIcon({ size = 10, className }: GlyphProps): ReactElement {
 	return (
 		<Stroke size={size} width={3} className={className}>

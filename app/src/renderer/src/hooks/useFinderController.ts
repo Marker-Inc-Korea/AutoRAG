@@ -108,6 +108,11 @@ export interface FinderController {
 	setSearchFocused(value: boolean): void;
 	onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void;
 	sortBy(key: SortKey): void;
+	showToast(message: string): void;
+	/** Native Quick Look for an arbitrary path (evidence source). Errors toast verbatim. */
+	quickLookPath(path: string): void;
+	/** Open the path's enclosing folder in a NEW tab, revealing the row. */
+	revealEvidence(path: string): void;
 	focusFinder(): void;
 	clickRow(entry: FinderEntry, event: ReactMouseEvent<HTMLDivElement>): void;
 	openEntry(entry: FinderEntry): void;
@@ -440,6 +445,35 @@ export function useFinderController(
 		source.quickLook(entry.path).catch(reportError);
 	}, [focusedEntry, source, reportError]);
 
+	const quickLookPath = useCallback(
+		(target: string) => {
+			source.quickLook(target).catch(reportError);
+		},
+		[source, reportError],
+	);
+
+	// An evidence crumb opens the enclosing folder in a NEW tab, with the source row revealed.
+	const revealEvidence = useCallback(
+		(target: string) => {
+			const folder = dirname(target);
+			source
+				.list(folder)
+				.then(() => {
+					setTabsState((state) =>
+						patchActiveTab(openTabAt(state, folder), (tab) => ({
+							...tab,
+							selection: { keys: [target], anchor: target, focus: target },
+						})),
+					);
+					setQueryValue("");
+					setFlashPath(target);
+					scrollTarget.current = target;
+				})
+				.catch(reportError);
+		},
+		[source, reportError],
+	);
+
 	const menuTargets = useCallback(
 		(entry: FinderEntry): readonly string[] =>
 			selection.keys.includes(entry.path) && selection.keys.length > 1 ? selection.keys : [entry.path],
@@ -744,6 +778,9 @@ export function useFinderController(
 			}
 		},
 		sortBy: (key) => setSort((current) => cycleSort(current, key)),
+		showToast,
+		quickLookPath,
+		revealEvidence,
 		focusFinder: () => setZone("finder"),
 		clickRow: (entry, event) => {
 			setZone("finder");

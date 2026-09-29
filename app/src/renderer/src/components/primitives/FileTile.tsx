@@ -11,7 +11,7 @@ export function FileTile({
 	size = 18,
 }: {
 	readonly kind: FileKind;
-	readonly size?: 16 | 18;
+	readonly size?: 16 | 18 | 22;
 }): ReactElement {
 	if (kind === "folder") {
 		return <FolderGlyph size={size} />;
