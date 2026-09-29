@@ -28,6 +28,7 @@ interface TestResponse {
 
 type TestStreamEvent =
 	| { readonly type: "progress"; readonly sessionId: string; readonly query: string; readonly text: string }
+	| { readonly type: "answer_delta"; readonly phase: "preliminary" | "final"; readonly sessionId: string; readonly query: string; readonly text: string }
 	| { readonly type: "preliminary"; readonly response: TestResponse }
 	| { readonly type: "complete"; readonly response: TestResponse };
 
@@ -134,6 +135,31 @@ describe("createSearchService", () => {
 				confidence: 0.92,
 				feedbackId: "session-quick:1",
 			},
+		]);
+	});
+
+	it("forwards answer deltas as quick-delta and deep-delta events", async () => {
+		const agent = createFakeAgent(async function*() {
+			yield { type: "answer_delta", phase: "preliminary", sessionId: "session-1", query: "refund approval", text: "Quick " };
+			yield { type: "answer_delta", phase: "preliminary", sessionId: "session-1", query: "refund approval", text: "answer" };
+			yield { type: "answer_delta", phase: "final", sessionId: "session-1", query: "refund approval", text: "Deep answer" };
+			yield { type: "complete", response: createResponse("session-1", "Deep answer", 1) };
+		});
+		const { events, send } = collectEvents();
+		const service = createSearchService({
+			agentFactory: () => agent,
+			chatStore: await createStore(),
+			send,
+			now,
+		});
+
+		await service.start("search-delta", "chat-delta", "refund approval", []);
+
+		expect(events).toEqual([
+			{ type: "quick-delta", searchId: "search-delta", text: "Quick " },
+			{ type: "quick-delta", searchId: "search-delta", text: "answer" },
+			{ type: "deep-delta", searchId: "search-delta", text: "Deep answer" },
+			{ type: "deep", searchId: "search-delta", sessionId: "session-1", phase: expect.anything() },
 		]);
 	});
 

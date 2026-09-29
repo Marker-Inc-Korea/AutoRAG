@@ -9,6 +9,8 @@ export function AiSearchPanel(): ReactElement {
 	const [query, setQuery] = useState("");
 	const [quick, setQuick] = useState<AnswerPhase | null>(null);
 	const [deep, setDeep] = useState<AnswerPhase | null>(null);
+	const [quickDraft, setQuickDraft] = useState("");
+	const [deepDraft, setDeepDraft] = useState("");
 	const [progress, setProgress] = useState("");
 	const [searchId, setSearchId] = useState<string | null>(null);
 	const [sessionId, setSessionId] = useState<string | null>(null);
@@ -32,14 +34,22 @@ export function AiSearchPanel(): ReactElement {
 				case "progress":
 					setProgress(event.text);
 					break;
+				case "quick-delta":
+					setQuickDraft((current) => current + event.text);
+					break;
+				case "deep-delta":
+					setDeepDraft((current) => current + event.text);
+					break;
 				case "quick":
 					setSessionId(event.sessionId);
 					setQuick(event.phase);
+					setQuickDraft(event.phase.answer);
 					setProgress("");
 					break;
 				case "deep":
 					setSessionId(event.sessionId);
 					setDeep(event.phase);
+					setDeepDraft(event.phase.answer);
 					setProgress("");
 					break;
 				case "error":
@@ -67,6 +77,8 @@ export function AiSearchPanel(): ReactElement {
 		setSearchId(nextSearchId);
 		setQuick(null);
 		setDeep(null);
+		setQuickDraft("");
+		setDeepDraft("");
 		setSessionId(null);
 		setSelectedEvidence(null);
 		setError(null);
@@ -89,6 +101,8 @@ export function AiSearchPanel(): ReactElement {
 		const user = record?.messages.findLast((message) => message.role === "user");
 		setQuick(assistant.quick);
 		setDeep(assistant.deep);
+		setQuickDraft(assistant.quick?.answer ?? "");
+		setDeepDraft(assistant.deep?.answer ?? "");
 		setSessionId(assistant.sessionId);
 		setSubmittedQuery(user?.role === "user" ? user.text : null);
 		setStopped(assistant.stopped);
@@ -116,7 +130,7 @@ export function AiSearchPanel(): ReactElement {
 				<span className="ai__title">AI Search</span>
 				<div className="ai__header-actions">
 					<button type="button" className={`icon-button${historyOpen ? " icon-button--active" : ""}`} title="Chat history ⌘⇧H" aria-label="Chat history" onClick={() => void toggleHistory()}><HistoryIcon /></button>
-					<button type="button" className="icon-button" title="New chat ⌘N" aria-label="New chat" onClick={() => { setQuick(null); setDeep(null); setError(null); setStopped(false); setProgress(""); setQuery(""); setSubmittedQuery(null); setHistoryOpen(false); }}><PlusIcon /></button>
+					<button type="button" className="icon-button" title="New chat ⌘N" aria-label="New chat" onClick={() => { setQuick(null); setDeep(null); setQuickDraft(""); setDeepDraft(""); setError(null); setStopped(false); setProgress(""); setQuery(""); setSubmittedQuery(null); setHistoryOpen(false); }}><PlusIcon /></button>
 				</div>
 			</div>
 			<div className="ai__body">
@@ -144,8 +158,8 @@ export function AiSearchPanel(): ReactElement {
 					{submittedQuery === null ? null : <div className="ai__user-message"><span>You</span><p>{submittedQuery}</p></div>}
 					{submittedQuery === null ? null : <div className="ai__assistant-label">Assistant</div>}
 					{error === null ? null : <div className="ai__error">{error}</div>}
-					{submittedQuery === null ? null : <AnswerCard label="Quick" phase={quick} pending={searchId !== null && quick === null} onCitation={setSelectedEvidence} />}
-					{submittedQuery === null ? null : <AnswerCard label="Deep" phase={deep} pending={searchId !== null && deep === null} onCitation={setSelectedEvidence} />}
+					{submittedQuery === null ? null : <AnswerCard label="Quick" phase={quick} draft={quickDraft} pending={searchId !== null && quick === null} onCitation={setSelectedEvidence} />}
+					{submittedQuery === null ? null : <AnswerCard label="Deep" phase={deep} draft={deepDraft} pending={searchId !== null && deep === null} onCitation={setSelectedEvidence} />}
 					{progress === "" ? null : <div className="ai__progress">{progress}</div>}
 					{stopped ? <div className="ai__stopped">응답 생성을 중단했습니다.</div> : null}
 					{selectedEvidence === null ? null : (
@@ -195,15 +209,18 @@ export function AiSearchPanel(): ReactElement {
 function AnswerCard({
 	label,
 	phase,
+	draft,
 	pending,
 	onCitation,
 }: {
 	readonly label: string;
 	readonly phase: AnswerPhase | null;
+	readonly draft: string;
 	readonly pending: boolean;
 	readonly onCitation: (number: number) => void;
 }): ReactElement {
-	if (phase === null) {
+	const answerText = phase !== null ? phase.answer : draft;
+	if (answerText === "") {
 		return (
 			<article className={`ai__answer ai__answer--${label.toLowerCase()} ai__answer--pending`}>
 				<div className="ai__answer-heading"><span className="ai__answer-label"><i />{label}</span><span>{pending ? "Searching…" : "Stopped"}</span></div>
@@ -211,12 +228,13 @@ function AnswerCard({
 			</article>
 		);
 	}
-	const answer = phase.answer.replace(/\[(\d+)\]/gu, (_match, number: string) => ` [${number}] `);
+	const streaming = phase === null;
+	const answer = answerText.replace(/\[(\d+)\]/gu, (_match, number: string) => ` [${number}] `);
 	return (
-		<article className={`ai__answer ai__answer--${label.toLowerCase()}`}>
+		<article className={`ai__answer ai__answer--${label.toLowerCase()}${streaming ? " ai__answer--streaming" : ""}`}>
 			<div className="ai__answer-heading">
 				<span className="ai__answer-label"><i />{label}</span>
-				<span>{phase.meta}</span>
+				<span>{phase !== null ? phase.meta : "Streaming…"}</span>
 			</div>
 			<div className="ai__answer-content">
 				<p>

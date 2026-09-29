@@ -5,6 +5,7 @@ import {
 	type AutoRAGAgentOptions,
 	type SearchDocumentsResponse,
 } from "@autorag/librarian";
+import { resolveAgentModel } from "@autorag/librarian/core";
 import type {
 	AnswerPhase,
 	ChatMessageAssistant,
@@ -95,6 +96,13 @@ export function createSearchService(deps: SearchServiceDeps): SearchBridge {
 				switch (event.type) {
 					case "progress":
 						emit({ type: "progress", searchId: run.searchId, text: event.text });
+						break;
+					case "answer_delta":
+						emit({
+							type: event.phase === "preliminary" ? "quick-delta" : "deep-delta",
+							searchId: run.searchId,
+							text: event.text,
+						});
 						break;
 					case "preliminary": {
 						run.sessionId = event.response.sessionId;
@@ -196,7 +204,13 @@ export function createSearchService(deps: SearchServiceDeps): SearchBridge {
 export function createDefaultAgentFactory(): () => SearchAgent {
 	return () => {
 		const config = resolveConfigReadOnly({ flags: {}, env: process.env, cwd: process.cwd() });
-		const options: Omit<AutoRAGAgentOptions, "model"> = buildAgentOptions(config);
+		const resolved = resolveAgentModel(config);
+		const options: AutoRAGAgentOptions = {
+			...buildAgentOptions(config),
+			model: resolved.model,
+			...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+			...(resolved.providerApiKeys !== undefined ? { providerApiKeys: resolved.providerApiKeys } : {}),
+		};
 		return new AutoRAGAgent(options) as SearchAgent;
 	};
 }
