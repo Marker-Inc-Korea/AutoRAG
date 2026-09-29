@@ -4,11 +4,20 @@ import { isAbsolute, join, resolve } from "node:path";
 import { app, BrowserWindow, clipboard, shell } from "electron";
 import { BUILTIN_DATASOURCE_SKILL_NAMES, writeConfigObject, writeDefaultConfig } from "@autorag/librarian";
 import type { DataSourceRow } from "../shared/settings-contract";
+import { FS_CHANNELS } from "../shared/fs-contract";
 import { createChatStore } from "./chat-store";
+import { buildFsEntry } from "./fs-entry";
 import { createFsService } from "./fs-service";
 import { createDefaultAgentFactory, createSearchService } from "./search-service";
 import { createSettingsService } from "./settings-service";
-import { registerFsIpcHandlers, registerSearchIpcHandlers, registerSettingsIpcHandlers } from "./ipc";
+import {
+	registerFsIpcHandlers,
+	registerSearchIpcHandlers,
+	registerSettingsIpcHandlers,
+	registerVersionFamilyIpcHandlers,
+} from "./ipc";
+import { createVersionFamilyService, DEFAULT_SCAN_INTERVAL_MINUTES, type VersionFamilyService } from "./version-family-service";
+import { createFileVersionFamilyStore } from "./version-family-store";
 
 function autoragConfigPath(): string {
 	const explicit = process.env.AUTORAG_CONFIG?.trim();
@@ -109,9 +118,24 @@ function createMainWindow(): BrowserWindow {
 	return window;
 }
 
+let versionFamilyService: VersionFamilyService | null = null;
+
 app.whenReady().then(() => {
 	ensureAutoRAGConfig();
-	registerFsIpcHandlers(createFsService({ shell, clipboard }));
+	const fsService = createFsService({ shell, clipboard });
+	registerFsIpcHandlers(fsService);
+	let scanIntervalMinutes = DEFAULT_SCAN_INTERVAL_MINUTES;
+	const sendToWindow = (channel: string, payload: unknown): void => {
+		BrowserWindow.getAllWindows()[0]?.webContents.send(channel, payload);
+	};
+	versionFamilyService = createVersionFamilyService({
+		locations: () => fsService.locations(),
+		store: createFileVersionFamilyStore(join(app.getPath("userData"), "dupey-cache")),
+		buildEntry: buildFsEntry,
+		intervalMinutes: () => scanIntervalMinutes,
+		onUpdate: (result) => sendToWindow(FS_CHANNELS.versionFamiliesUpdated, result),
+	});
+	registerVersionFamilyIpcHandlers(versionFamilyService);
 	const searchService = createSearchService({
 		agentFactory: createDefaultAgentFactory(),
 		chatStore: createChatStore({ directory: join(app.getPath("userData"), "chat-history") }),
@@ -119,23 +143,31 @@ app.whenReady().then(() => {
 	});
 	registerSearchIpcHandlers(searchService);
 	const agentFactory = createDefaultAgentFactory();
-	registerSettingsIpcHandlers(
-		createSettingsService({
-			directory: join(app.getPath("userData"), "settings"),
-			initialSources: configuredDataSources(),
-			setSourceEnabled: setConfiguredDatasourceEnabled,
-			createChatSession: (surface) => {
-				const agent = agentFactory();
-				if (agent.createChatSession === undefined) {
-					throw new Error("AutoRAG chat sessions are unavailable");
-				}
-				return agent.createChatSession({
-					systemPrompt: `You are AutoRAG Settings Assistant for the ${surface} surface. Explain and configure the existing AutoRAG application using its actual settings and data sources. Never invent unavailable state.`,
-				});
-			},
-			send: (channel, payload) => BrowserWindow.getAllWindows()[0]?.webContents.send(channel, payload),
-		}),
-	);
+	const settingsService = createSettingsService({
+		directory: join(app.getPath("userData"), "settings"),
+		initialSources: configuredDataSources(),
+		setSourceEnabled: setConfiguredDatasourceEnabled,
+		createChatSession: (surface) => {
+			const agent = agentFactory();
+			if (agent.createChatSession === undefined) {
+				throw new Error("AutoRAG chat sessions are unavailable");
+			}
+			return agent.createChatSession({
+				systemPrompt: `You are AutoRAG Settings Assistant for the ${surface} surface. Explain and configure the existing AutoRAG application using its actual settings and data sources. Never invent unavailable state.`,
+			});
+		},
+		onSettingsChanged: (settings) => {
+			scanIntervalMinutes = settings.dupeyScanIntervalMinutes;
+			versionFamilyService?.reschedule();
+		},
+		send: (channel, payload) => BrowserWindow.getAllWindows()[0]?.webContents.send(channel, payload),
+	});
+	registerSettingsIpcHandlers(settingsService);
+	void settingsService.get().then((settings) => {
+		scanIntervalMinutes = settings.dupeyScanIntervalMinutes;
+		versionFamilyService?.reschedule();
+	});
+	void versionFamilyService.start();
 	createMainWindow();
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
@@ -148,4 +180,8 @@ app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") {
 		app.quit();
 	}
+});
+
+app.on("will-quit", () => {
+	versionFamilyService?.stop();
 });

@@ -47,6 +47,7 @@ export interface VersionFamilyError {
 
 export interface VersionFamiliesResult {
 	readonly families: readonly VersionFamilyData[];
+	readonly scannedAt: string | null;
 	readonly error: VersionFamilyError | null;
 }
 
@@ -57,6 +58,7 @@ export const EMPTY_VERSION_FAMILIES: VersionFamilies = {
 
 export const EMPTY_VERSION_FAMILIES_RESULT: VersionFamiliesResult = {
 	families: [],
+	scannedAt: null,
 	error: null,
 };
 

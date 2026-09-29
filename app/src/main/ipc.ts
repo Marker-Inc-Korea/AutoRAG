@@ -1,10 +1,11 @@
 import { ipcMain } from "electron";
-import { FS_CHANNELS, type FsBridge, type FsClipboard } from "../shared/fs-contract";
+import { FS_CHANNELS, type FsClipboard, type FsCoreBridge } from "../shared/fs-contract";
 import { SEARCH_CHANNELS, type SearchBridge } from "../shared/search-contract";
 import { SETTINGS_CHANNELS, type SettingsBridge } from "../shared/settings-contract";
+import type { VersionFamilyService } from "./version-family-service";
 
 /** Register one ipcMain.handle per FS_CHANNELS channel, in contract order. */
-export function registerFsIpcHandlers(service: FsBridge): void {
+export function registerFsIpcHandlers(service: FsCoreBridge): void {
 	ipcMain.handle(FS_CHANNELS.listDir, (_event, path: string) => service.listDir(path));
 	ipcMain.handle(FS_CHANNELS.stat, (_event, path: string) => service.stat(path));
 	ipcMain.handle(FS_CHANNELS.search, (_event, query: string) => service.search(query));
@@ -22,7 +23,12 @@ export function registerFsIpcHandlers(service: FsBridge): void {
 	ipcMain.handle(FS_CHANNELS.copyPathsToClipboard, (_event, paths: readonly string[]) =>
 		service.copyPathsToClipboard(paths),
 	);
-	ipcMain.handle(FS_CHANNELS.versionFamilies, () => service.versionFamilies());
+}
+
+/** The persisted-snapshot version-family service owns its own two channels. */
+export function registerVersionFamilyIpcHandlers(service: VersionFamilyService): void {
+	ipcMain.handle(FS_CHANNELS.versionFamilies, () => service.result());
+	ipcMain.handle(FS_CHANNELS.versionFamiliesRefresh, () => service.refresh());
 }
 
 export function registerSearchIpcHandlers(service: SearchBridge): void {
