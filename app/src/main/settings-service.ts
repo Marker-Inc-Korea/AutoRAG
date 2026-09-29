@@ -37,6 +37,8 @@ export interface SettingsServiceDeps {
 	readonly initialSources?: readonly DataSourceRow[];
 	/** Persists a source toggle back into AutoRAG's trusted config. */
 	readonly setSourceEnabled?: (id: string, enabled: boolean) => Promise<void>;
+	/** Fired after every successful set() so live services can adopt the change. */
+	readonly onSettingsChanged?: (settings: AppSettings) => void;
 	readonly now?: () => Date;
 }
 
@@ -115,6 +117,7 @@ export function createSettingsService(deps: SettingsServiceDeps): SettingsBridge
 			const state = await mutate((current) => {
 				current.settings = { ...current.settings, ...patch };
 			});
+			deps.onSettingsChanged?.(state.settings);
 			return state.settings;
 		},
 		clearHistory: async () => undefined,

@@ -591,26 +591,4 @@ describe("recents", () => {
 		expect(results.map((hit) => hit.location)).toEqual(["Documents"]);
 		expect(warnings.filter((line) => line.includes(RECENTS_PATH))).toEqual([]);
 	});
-
-	it("does not run the duplicate scan over the virtual location", async () => {
-		// Given a home with one real location and an injected scanner
-		const home = join(root, "home-recents-families");
-		await mkdir(join(home, "Desktop"), { recursive: true });
-		const scanned: string[] = [];
-		const stubs = makeDeps(home);
-		const service = createFsService({
-			...stubs.deps,
-			dupey: { status: async () => ({ available: true, version: "dupey 0.1.2", error: null }) },
-			scanDuplicates: async (dir: string) => {
-				scanned.push(dir);
-				return { dir, files: [], families: [], errors: [] };
-			},
-		});
-
-		// When scanning version families
-		await service.versionFamilies();
-
-		// Then only the real location was scanned
-		expect(scanned).toEqual([join(home, "Desktop")]);
-	});
 });

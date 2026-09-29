@@ -29,6 +29,7 @@ import {
 	EMPTY_VERSION_FAMILIES,
 	type StackRow,
 	type VersionFamilies,
+	type VersionFamiliesResult,
 	type VersionFamilyError,
 } from "../state/version-family";
 import {
@@ -247,20 +248,22 @@ export function useFinderController(
 
 	useEffect(() => {
 		let live = true;
+		const adopt = (result: VersionFamiliesResult): void => {
+			if (!live) return;
+			setFamilies(buildVersionFamilies(result.families));
+			setVersionFamilyError(result.error);
+			if (result.error !== null) {
+				console.error(
+					result.error.installCommand === null
+						? result.error.message
+						: `${result.error.message}\nInstall it with: ${result.error.installCommand}`,
+				);
+			}
+		};
+		const unsubscribe = source.onVersionFamiliesUpdated(adopt);
 		source
 			.versionFamilies()
-			.then((result) => {
-				if (!live) return;
-				setFamilies(buildVersionFamilies(result.families));
-				setVersionFamilyError(result.error);
-				if (result.error !== null) {
-					console.error(
-						result.error.installCommand === null
-							? result.error.message
-							: `${result.error.message}\nInstall it with: ${result.error.installCommand}`,
-					);
-				}
-			})
+			.then(adopt)
 			.catch((error: unknown) => {
 				console.error("version families request failed", error);
 				if (!live) return;
@@ -273,8 +276,9 @@ export function useFinderController(
 			});
 		return () => {
 			live = false;
+			unsubscribe();
 		};
-	}, [source, revision]);
+	}, [source]);
 
 	useEffect(() => {
 		if (flashPath === null) {
@@ -401,6 +405,23 @@ export function useFinderController(
 			return next;
 		});
 	}, []);
+
+	const retryVersionFamilies = useCallback(() => {
+		source
+			.refreshVersionFamilies()
+			.then((result) => {
+				setFamilies(buildVersionFamilies(result.families));
+				setVersionFamilyError(result.error);
+			})
+			.catch((error: unknown) => {
+				console.error("version family refresh failed", error);
+				setVersionFamilyError({
+					code: "scan-failed",
+					message: error instanceof Error ? error.message : String(error),
+					installCommand: null,
+				});
+			});
+	}, [source]);
 
 	/** Stack members default to index-excluded; explicit toggles win. */
 	const effectiveIndexOverrides = useMemo(() => {
@@ -739,7 +760,7 @@ export function useFinderController(
 		runMenuAction,
 		toggleIndex,
 		toggleStack,
-		retryVersionFamilies: refresh,
+		retryVersionFamilies,
 		setRenameDraft: (value) => setRename((current) => (current === null ? null : { ...current, draft: value })),
 		commitRename,
 		cancelRename: () => setRename(null),

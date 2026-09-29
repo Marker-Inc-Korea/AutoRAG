@@ -69,6 +69,8 @@ export interface AppSettings {
 	readonly telemetry: boolean;
 	/** Off: dot-prefixed files never appear. On: they appear, rendered dimmed. */
 	readonly showHiddenFiles: boolean;
+	/** How often the app re-runs the dupey version-family scan, in minutes. */
+	readonly dupeyScanIntervalMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	autoInstallUpdates: true,
 	telemetry: false,
 	showHiddenFiles: false,
+	dupeyScanIntervalMinutes: 60,
 };
 
 export interface DataSourceRow {

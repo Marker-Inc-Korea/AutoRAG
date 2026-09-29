@@ -208,6 +208,11 @@ export function SettingsPanel({
 								<SettingRow label="Show hidden files" description="점(.)으로 시작하는 숨김 파일·폴더를 목록에 흐리게 표시">
 									<Switch checked={settings.showHiddenFiles} onChange={() => void toggleSetting("showHiddenFiles")} />
 								</SettingRow>
+								<SettingRow label="중복 문서 스캔 주기" description="dupey가 중복·유사 문서 묶음을 다시 계산하는 간격 (앱 시작 시 항상 1회 실행)">
+									<div className="settings-select"><select value={String(settings.dupeyScanIntervalMinutes)} onChange={(event) => void autorag.settings.set({ dupeyScanIntervalMinutes: Number(event.target.value) }).then(setSettings)}>
+										<option value="15">15분</option><option value="30">30분</option><option value="60">1시간</option><option value="180">3시간</option><option value="360">6시간</option><option value="720">12시간</option><option value="1440">24시간</option>
+									</select></div>
+								</SettingRow>
 							</SettingsSection>
 							{/* WIP: there is no real updater; the check below is simulated UI only. */}
 							<SettingsSection title="소프트웨어 업데이트">

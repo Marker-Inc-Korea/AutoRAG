@@ -101,6 +101,29 @@ describe("createSettingsService", () => {
 		expect((await reloaded.get()).showHiddenFiles).toBe(true);
 	});
 
+	it("defaults the dupey scan interval to 60 minutes and notifies listeners on change", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "autorag-settings-dupey-"));
+		directories.push(directory);
+		const seen: number[] = [];
+		const service = createSettingsService({
+			directory,
+			createChatSession: () => createFakeSession("models", []),
+			send: () => undefined,
+			onSettingsChanged: (settings) => seen.push(settings.dupeyScanIntervalMinutes),
+		});
+
+		expect((await service.get()).dupeyScanIntervalMinutes).toBe(60);
+
+		await service.set({ dupeyScanIntervalMinutes: 15 });
+		expect(seen).toEqual([15]);
+		const reloaded = createSettingsService({
+			directory,
+			createChatSession: () => createFakeSession("models", []),
+			send: () => undefined,
+		});
+		expect((await reloaded.get()).dupeyScanIntervalMinutes).toBe(15);
+	});
+
 	it("hydrates configured datasource rows and persists toggles through AutoRAG config", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "autorag-settings-sources-"));
 		directories.push(directory);
