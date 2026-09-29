@@ -20,6 +20,7 @@ import {
 	scrollTopForIndex,
 } from "../state/selection";
 import { type SortKey, type SortState, cycleSort, sortEntries } from "../state/sort";
+import { visibleEntries } from "../state/visibility";
 import {
 	applyVersionStacks,
 	buildVersionFamilies,
@@ -118,7 +119,11 @@ export interface FinderController {
 	cancelRename(): void;
 }
 
-export function useFinderController(source: FinderSource): FinderController {
+export function useFinderController(
+	source: FinderSource,
+	options: { readonly showHiddenFiles?: boolean } = {},
+): FinderController {
+	const showHiddenFiles = options.showHiddenFiles ?? false;
 	const [tabsState, setTabsState] = useState<TabsState>(() => createTabsState(source.initialPath));
 	const [query, setQueryValue] = useState("");
 	const [sort, setSort] = useState<SortState | null>(null);
@@ -279,12 +284,12 @@ export function useFinderController(source: FinderSource): FinderController {
 
 	const stackRows = useMemo(
 		() =>
-			applyVersionStacks(sortEntries(searching ? hits : listing, sort), {
+			applyVersionStacks(sortEntries(visibleEntries(searching ? hits : listing, showHiddenFiles), sort), {
 				families,
 				manualOpen: stackPinned,
 				selectedKeys: selection.keys,
 			}),
-		[searching, hits, listing, sort, families, stackPinned, selection.keys],
+		[searching, hits, listing, sort, showHiddenFiles, families, stackPinned, selection.keys],
 	);
 	const rows = useMemo(() => stackRows.map((row) => row.entry), [stackRows]);
 	const orderedKeys = useMemo(() => rows.map((entry) => entry.path), [rows]);

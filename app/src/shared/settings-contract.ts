@@ -65,20 +65,19 @@ export interface AppSettings {
 	readonly language: "ko" | "en" | "ja" | "zh";
 	readonly launchAtLogin: boolean;
 	readonly showInMenuBar: boolean;
-	readonly theme: "light" | "dark" | "system";
 	readonly autoInstallUpdates: boolean;
-	readonly betaUpdates: boolean;
 	readonly telemetry: boolean;
+	/** Off: dot-prefixed files never appear. On: they appear, rendered dimmed. */
+	readonly showHiddenFiles: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
 	language: "ko",
 	launchAtLogin: false,
 	showInMenuBar: true,
-	theme: "system",
 	autoInstallUpdates: true,
-	betaUpdates: false,
 	telemetry: false,
+	showHiddenFiles: false,
 };
 
 export interface DataSourceRow {

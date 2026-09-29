@@ -81,6 +81,26 @@ describe("createSettingsService", () => {
 		]);
 	});
 
+	it("defaults showHiddenFiles off and persists the toggle", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "autorag-settings-hidden-"));
+		directories.push(directory);
+		const service = createSettingsService({
+			directory,
+			createChatSession: () => createFakeSession("models", []),
+			send: () => undefined,
+		});
+
+		expect((await service.get()).showHiddenFiles).toBe(false);
+
+		await service.set({ showHiddenFiles: true });
+		const reloaded = createSettingsService({
+			directory,
+			createChatSession: () => createFakeSession("models", []),
+			send: () => undefined,
+		});
+		expect((await reloaded.get()).showHiddenFiles).toBe(true);
+	});
+
 	it("hydrates configured datasource rows and persists toggles through AutoRAG config", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "autorag-settings-sources-"));
 		directories.push(directory);

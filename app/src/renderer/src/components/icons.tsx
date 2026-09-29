@@ -122,6 +122,22 @@ export function SendIcon({ size = 16, className }: GlyphProps): ReactElement {
 	);
 }
 
+export function SparklesIcon({ size = 14, className }: GlyphProps): ReactElement {
+	return (
+		<Stroke size={size} width={2} className={className}>
+			<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+		</Stroke>
+	);
+}
+
+export function ArrowUpIcon({ size = 16, className }: GlyphProps): ReactElement {
+	return (
+		<Stroke size={size} width={2.6} className={className}>
+			<path d="M12 19V5M6 11l6-6 6 6" />
+		</Stroke>
+	);
+}
+
 export function RotateIcon({ size = 10, className }: GlyphProps): ReactElement {
 	return (
 		<Stroke size={size} width={2.8} className={className}>

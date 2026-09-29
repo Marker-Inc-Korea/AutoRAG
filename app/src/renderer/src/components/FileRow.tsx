@@ -4,6 +4,7 @@ import type { Permission } from "../../../shared/settings-contract";
 import type { FinderEntry } from "../data/entries";
 import { whereSegments } from "../state/paths";
 import { relationLabel, type VersionRelation } from "../state/version-family";
+import { isHiddenName } from "../state/visibility";
 import { ChevronRightIcon } from "./icons";
 import { FileTile } from "./primitives/FileTile";
 import { PillBadge } from "./primitives/PillBadge";
@@ -57,6 +58,9 @@ export function FileRow({
 	readonly callbacks: RowCallbacks;
 }): ReactElement {
 	const classes = ["row"];
+	if (isHiddenName(entry.name)) {
+		classes.push("row--hidden");
+	}
 	if (selected) {
 		classes.push(zoneFocused ? "row--selected-focused" : "row--selected");
 	}

@@ -358,6 +358,10 @@
 	box-shadow: inset 0 0 0 1px var(--accent-flash-ring);
 }
 
+.row--hidden {
+	opacity: 0.45;
+}
+
 .row__name {
 	display: flex;
 	align-items: center;
