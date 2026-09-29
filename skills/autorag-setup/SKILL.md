@@ -134,6 +134,13 @@ true). Set `"autoInstall": false` only when managing the binary yourself. Jikji
 auto-installs `jikji-cli` through cargo when enabled (`jikji.autoInstall`
 defaults to true; requires the Rust toolchain).
 
+Jikji stores its prepared corpus metadata in a hidden `.jikji` directory
+inside each indexed source root — that is Jikji's native index layout and
+intended behavior, not a misplaced artifact. Tell the user before the first
+`refresh` that `<root>/.jikji` will be created inside every approved document
+root (one per root, alongside the documents), and never delete or edit its
+contents; removing it only forces a full Jikji re-prepare on the next refresh.
+
 Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
 `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
 each exact canonical-text hash, and excludes older copies from the mirror.

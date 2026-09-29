@@ -146,11 +146,22 @@ def run_prompt_maker_node(
 		for result in results:
 			all_prompts.extend(result["prompts"].tolist())
 
+		# Each module must be scored on its own generations. `list * k`
+		# repeats references to the same MetricInput objects, so writing one
+		# module's generated_texts would overwrite every other module's inputs
+		# (every prompt maker ends up scored on the last module's generations).
+		# Deep-copy one fresh MetricInput set per module instead.
+		metric_inputs_all = [
+			deepcopy(metric_input)
+			for _ in range(len(results))
+			for metric_input in metric_inputs
+		]
+
 		evaluation_result_all = evaluate_one_prompt_maker_node(
 			all_prompts,
 			generator_callables,
 			generator_params,
-			metric_inputs * len(results),
+			metric_inputs_all,
 			general_strategy["metrics"],
 			project_dir,
 			strategy_name=strategies.get("strategy", "mean"),
