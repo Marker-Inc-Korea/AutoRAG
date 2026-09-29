@@ -37,6 +37,7 @@ export type SearchDocumentDiagnosticCode =
 	| "jikji-prepare-failed"
 	| "jikji-find-failed"
 	| "refresh-failed"
+	| "refresh-interrupted"
 	| "watch-failed"
 	| "watch-limited"
 	| "unknown-datasource-skill"

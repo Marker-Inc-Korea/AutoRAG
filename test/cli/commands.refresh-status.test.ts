@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -195,6 +195,85 @@ describe("runRefresh + runStatus (cli)", () => {
 		expect(status.state).toBe("idle");
 		expect(status.stale).toBe(true);
 		expect(status.counts).toBeUndefined();
+	});
+
+	it("reports active MinSync progress from a separate status invocation", async () => {
+		if (process.platform === "win32") return;
+
+		const fakeBinDir = join(root, "fake-bin");
+		mkdirSync(fakeBinDir, { recursive: true });
+		const fakeBinary = join(fakeBinDir, "minsync");
+		writeFileSync(
+			fakeBinary,
+			`#!/usr/bin/env node
+const { existsSync, mkdirSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
+const args = process.argv.slice(2);
+const config = join(process.cwd(), ".minsync", "config.toml");
+if (args[0] === "init") {
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
+  console.log(JSON.stringify({ initialized: true }));
+  process.exit(0);
+}
+if (args[0] === "check") {
+  writeFileSync(join(process.cwd(), ".minsync", "sync-started"), "1");
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+  process.exit(0);
+}
+if (args[0] === "sync") {
+  mkdirSync(dirname(join(process.cwd(), ".minsync", "cursor.json")), { recursive: true });
+  writeFileSync(join(process.cwd(), ".minsync", "sync-started"), "1");
+  const timer = setInterval(() => {
+    if (existsSync(join(process.cwd(), ".minsync", "release"))) {
+      writeFileSync(join(process.cwd(), ".minsync", "cursor.json"), "{}");
+      clearInterval(timer);
+      process.exit(0);
+    }
+  }, 5);
+}
+`,
+		);
+		chmodSync(fakeBinary, 0o755);
+		process.env.PATH = `${fakeBinDir}${delimiter}${pathWithoutMinsync(previousPath)}`;
+		writeConfig({
+			workspacePath: join(root, ".autorag", "minsync"),
+			autoInstall: false,
+		});
+		const minsyncStateDir = join(root, ".autorag", "minsync", ".minsync");
+		mkdirSync(minsyncStateDir, { recursive: true });
+		let resolveStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			resolveStarted = resolve;
+		});
+		const stateWatcher = watch(minsyncStateDir, (_event, filename) => {
+			if (filename === "sync-started") resolveStarted();
+		});
+
+		const refreshOut: string[] = [];
+		const refresh = runRefresh(makeCtx({ flags: { method: "minsync" }, stdout: (line) => refreshOut.push(line) }));
+		await started;
+		stateWatcher.close();
+
+		const statusOut: string[] = [];
+		const statusCode = await runStatus(makeCtx({ stdout: (line) => statusOut.push(line) }));
+		expect(statusCode).toBe(0);
+		const status = JSON.parse(statusOut[0]);
+		expect(status.state).toBe("indexing");
+		expect(status.progress).toMatchObject({
+			phase: "minsync",
+			sourceFiles: { total: 1 },
+		});
+		expect(status.progress.minsync?.synced).toBeUndefined();
+		const humanOut: string[] = [];
+		const humanCode = await runStatus(makeCtx({ json: false, stdout: (line) => humanOut.push(line) }));
+		expect(humanCode).toBe(0);
+		expect(humanOut[0]).toContain("progress: phase=minsync");
+		expect(humanOut[0]).toContain("sourceFiles: total=1");
+
+		writeFileSync(join(root, ".autorag", "minsync", ".minsync", "release"), "1");
+		expect(await refresh).toBe(0);
+		expect(refreshOut).toHaveLength(1);
 	});
 });
 
