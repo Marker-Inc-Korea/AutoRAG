@@ -185,6 +185,74 @@ def test_run_prompt_maker_node(node_line_dir):
     assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "1.parquet"))
 
 
+def test_run_prompt_maker_node_metric_inputs_not_aliased(node_line_dir):
+    """Regression test for the MetricInput aliasing bug (#1707).
+
+    `metric_inputs * len(results)` used to repeat references to the same N
+    objects, so `evaluate_generation` overwrote every module's
+    `generated_texts` with the last module's generations. Each module's block
+    passed to `evaluate_one_prompt_maker_node` must now be distinct objects
+    carrying the same ground truth.
+    """
+    generator_models["mock"] = MockLLM
+    modules = [Fstring, ChatFstring]
+    params = [
+        {
+            "prompt": "Tell me something about the question: {query} \n\n {retrieved_contents}"
+        },
+        {
+            "prompt": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {
+                    "role": "user",
+                    "content": "Question: {query} \n Something to read: {retrieved_contents} \n What's your answer?",
+                },
+            ]
+        },
+    ]
+    strategies = {
+        "metrics": metrics,
+        "generator_modules": [
+            {
+                "module_type": "llama_index_llm",
+                "llm": "mock",
+                "model": "gpt-3.5-turbo",
+            }
+        ],
+    }
+    with patch(
+        "autorag.nodes.promptmaker.run.evaluate_one_prompt_maker_node"
+    ) as mock_evaluate:
+        mock_evaluate.return_value = pd.DataFrame(
+            {
+                "generated_texts": [
+                    "answer one",
+                    "answer two",
+                    "answer three",
+                    "answer four",
+                ],
+                "bleu": [0.1, 0.2, 0.3, 0.4],
+                "rouge": [0.4, 0.3, 0.2, 0.1],
+            }
+        )
+        run_prompt_maker_node(
+            modules, params, previous_result, node_line_dir, strategies
+        )
+
+    passed_metric_inputs = mock_evaluate.call_args[0][3]
+    half = len(passed_metric_inputs) // 2
+    assert len(passed_metric_inputs) == 2 * len(previous_result)
+    assert all(
+        passed_metric_inputs[i] is not passed_metric_inputs[i + half]
+        for i in range(half)
+    )
+    assert all(isinstance(mi, MetricInput) for mi in passed_metric_inputs)
+    assert (
+        passed_metric_inputs[0].generation_gt
+        == passed_metric_inputs[half].generation_gt
+    )
+
+
 async def acomplete_qa_creation(*args, **kwargs):
     return CompletionResponse(text="This is the test answer.")
 
