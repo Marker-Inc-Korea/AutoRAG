@@ -208,6 +208,7 @@ async function serviceWith(scanResult: DupeyScanResult, home: string) {
 		shell: {
 			trashItem: async () => {},
 			showItemInFolder: () => {},
+			openPath: async () => "",
 		},
 		clipboard: { writeText: () => {} },
 		homeDir: home,
@@ -276,7 +277,7 @@ describe("fs service versionFamilies", () => {
 		]);
 		let scans = 0;
 		const deps: FsServiceDeps = {
-			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
+			shell: { trashItem: async () => {}, showItemInFolder: () => {}, openPath: async () => "" },
 			clipboard: { writeText: () => {} },
 			homeDir: home,
 			dupey: dupeyAvailable,
@@ -304,7 +305,7 @@ describe("fs service versionFamilies", () => {
 		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
 		let scans = 0;
 		const service = createFsService({
-			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
+			shell: { trashItem: async () => {}, showItemInFolder: () => {}, openPath: async () => "" },
 			clipboard: { writeText: () => {} },
 			homeDir: home,
 			dupey: { status: async () => ({ available: false, version: null, error: "spawn dupey ENOENT" }) },
@@ -325,7 +326,7 @@ describe("fs service versionFamilies", () => {
 		const home = await mkdtemp(join(tmpdir(), "vf-home-"));
 		await mkdir(join(home, "Desktop"), { recursive: true });
 		const service = createFsService({
-			shell: { trashItem: async () => {}, showItemInFolder: () => {} },
+			shell: { trashItem: async () => {}, showItemInFolder: () => {}, openPath: async () => "" },
 			clipboard: { writeText: () => {} },
 			homeDir: home,
 			dupey: dupeyAvailable,

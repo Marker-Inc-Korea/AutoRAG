@@ -4,7 +4,9 @@ import { isAbsolute, join, resolve } from "node:path";
 import { app, BrowserWindow, clipboard, shell } from "electron";
 import { BUILTIN_DATASOURCE_SKILL_NAMES, writeConfigObject, writeDefaultConfig } from "@autorag/librarian";
 import type { DataSourceRow } from "../shared/settings-contract";
+import { APP_NAME, APP_VERSION, formatWindowTitle, type DevLabel } from "../shared/app-info";
 import { createChatStore } from "./chat-store";
+import { readDevLabel, resolveClonePath } from "./dev-label";
 import { createFsService } from "./fs-service";
 import { createDefaultAgentFactory, createSearchService } from "./search-service";
 import { createSettingsService } from "./settings-service";
@@ -86,18 +88,32 @@ async function setConfiguredDatasourceEnabled(id: string, enabled: boolean): Pro
 	writeConfigObject(configPath, raw);
 }
 
-function createMainWindow(): BrowserWindow {
+/** Unpackaged runs (and AUTORAG_DEV_LABEL=1) carry the clone label. */
+function resolveDevLabel(): DevLabel | null {
+	if (app.isPackaged && process.env.AUTORAG_DEV_LABEL !== "1") return null;
+	return readDevLabel(resolveClonePath(app.getAppPath()));
+}
+
+function createMainWindow(devLabel: DevLabel | null): BrowserWindow {
 	const window = new BrowserWindow({
 		width: 1440,
 		height: 900,
 		minWidth: 1360,
 		minHeight: 820,
+		title: formatWindowTitle(APP_NAME, APP_VERSION, devLabel),
 		webPreferences: {
 			preload: join(import.meta.dirname, "../preload/index.mjs"),
 			contextIsolation: true,
 			nodeIntegration: false,
 			sandbox: false,
+			additionalArguments: devLabel === null ? [] : [`--autorag-dev-label=${JSON.stringify(devLabel)}`],
 		},
+	});
+
+	// The renderer's static <title> would otherwise replace the window title.
+	window.webContents.on("page-title-updated", (event) => {
+		event.preventDefault();
+		window.setTitle(formatWindowTitle(APP_NAME, APP_VERSION, devLabel));
 	});
 
 	const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -111,6 +127,8 @@ function createMainWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
 	ensureAutoRAGConfig();
+	const devLabel = resolveDevLabel();
+	console.log(`[autorag] ${formatWindowTitle(APP_NAME, APP_VERSION, devLabel)}`);
 	registerFsIpcHandlers(createFsService({ shell, clipboard }));
 	const searchService = createSearchService({
 		agentFactory: createDefaultAgentFactory(),
@@ -136,10 +154,10 @@ app.whenReady().then(() => {
 			send: (channel, payload) => BrowserWindow.getAllWindows()[0]?.webContents.send(channel, payload),
 		}),
 	);
-	createMainWindow();
+	createMainWindow(devLabel);
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
-			createMainWindow();
+			createMainWindow(devLabel);
 		}
 	});
 });
