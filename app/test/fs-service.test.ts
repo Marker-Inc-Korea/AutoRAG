@@ -42,6 +42,7 @@ function makeDeps(homeDir: string): StubbedDeps {
 			spawnQuickLook: (path: string) => {
 				quickLooked.push(path);
 			},
+			osKind: async () => null,
 		},
 		trashed,
 		revealed,
@@ -478,5 +479,60 @@ describe("shell and clipboard side effects", () => {
 
 		// Then the clipboard received them joined by newlines
 		expect(stubs.clipboardText).toEqual(["/a/one.txt\n/b/two.txt"]);
+	});
+});
+
+describe("osKind", () => {
+	it("annotates each file with the OS-detected kind", async () => {
+		// Given a folder with a video and a markdown file
+		const dir = await mkdtemp(join(tmpdir(), "fs-oskind-"));
+		await writeFile(join(dir, "clip.mp4"), "x");
+		await writeFile(join(dir, "note.md"), "x");
+		const deps: FsServiceDeps = {
+			...makeDeps(dir).deps,
+			osKind: async (_path, ext) => (ext === "mp4" ? "MPEG-4 movie" : ext === "md" ? "Markdown Document" : null),
+		};
+
+		// When listing the folder
+		const listing = await createFsService(deps).listDir(dir);
+
+		// Then each file carries its OS kind
+		expect(listing.entries.find((entry) => entry.name === "clip.mp4")?.osKind).toBe("MPEG-4 movie");
+		expect(listing.entries.find((entry) => entry.name === "note.md")?.osKind).toBe("Markdown Document");
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	it("leaves folders without an OS kind", async () => {
+		// Given a folder holding a subfolder
+		const dir = await mkdtemp(join(tmpdir(), "fs-oskind-folder-"));
+		await mkdir(join(dir, "sub"));
+
+		// When listing it
+		const listing = await createFsService(makeDeps(dir).deps).listDir(dir);
+
+		// Then the subfolder has no OS kind
+		expect(listing.entries.find((entry) => entry.name === "sub")?.osKind).toBeNull();
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	it("degrades to null when the OS lookup fails, keeping the entry", async () => {
+		// Given a folder whose OS lookup throws
+		const dir = await mkdtemp(join(tmpdir(), "fs-oskind-fail-"));
+		await writeFile(join(dir, "clip.mp4"), "x");
+		const deps: FsServiceDeps = {
+			...makeDeps(dir).deps,
+			osKind: async () => {
+				throw new Error("mdls: boom");
+			},
+		};
+
+		// When listing it
+		const listing = await createFsService(deps).listDir(dir);
+
+		// Then the entry survives with no OS kind
+		const entry = listing.entries.find((candidate) => candidate.name === "clip.mp4");
+		expect(entry?.osKind).toBeNull();
+		expect(entry?.ext).toBe("mp4");
+		await rm(dir, { recursive: true, force: true });
 	});
 });

@@ -29,7 +29,8 @@ export function entryFromFs(entry: FsEntry, location?: string): FinderEntry {
 		fileKind,
 		dateLabel: formatModified(entry.modifiedAt),
 		sizeLabel: formatSize(entry.kind === "folder" ? null : entry.size),
-		kindLabel: kindMeta(fileKind).label,
+		// The OS-reported kind wins; the extension map is the fallback.
+		kindLabel: entry.osKind ?? kindMeta(fileKind).label,
 		location: location ?? dirname(entry.path),
 		modifiedValue: Date.parse(entry.modifiedAt) || 0,
 		sizeValue: entry.size ?? 0,

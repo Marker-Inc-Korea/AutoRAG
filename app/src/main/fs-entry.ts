@@ -91,5 +91,7 @@ export async function buildFsEntry(path: string): Promise<FsEntry> {
 		size: isFolder ? null : effective.size,
 		modifiedAt: effective.mtime.toISOString(),
 		isSymlink,
+		// The OS metadata lookup lands in fs-service, which owns process spawning.
+		osKind: null,
 	};
 }

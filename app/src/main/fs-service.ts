@@ -20,6 +20,7 @@ import type {
 	FsVersionRelation,
 } from "../shared/fs-contract";
 import { createDupeyProbe, DUPEY_INSTALL_COMMAND, type DupeyProbe } from "./dupey";
+import { createOsKindResolver } from "./file-kind";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
 
 /** Subset of Electron's shell used by the service (injected for testability). */
@@ -37,6 +38,9 @@ export interface FsOsClipboard {
 
 export type QuickLookSpawner = (path: string) => void;
 
+/** OS-native file-kind lookup: Finder's kind on macOS, Explorer's type on Windows. */
+export type OsKindLookup = (path: string, ext: string) => Promise<string | null>;
+
 export interface FsServiceDeps {
 	readonly shell: FsShell;
 	readonly clipboard: FsOsClipboard;
@@ -44,6 +48,8 @@ export interface FsServiceDeps {
 	readonly homeDir?: string;
 	/** Defaults to spawning `/usr/bin/qlmanage -p <path>` detached. */
 	readonly spawnQuickLook?: QuickLookSpawner;
+	/** Defaults to the platform resolver (mdls on macOS, the registry on Windows). */
+	readonly osKind?: OsKindLookup;
 	/** Defaults to the dupey CLI; tests inject fixture scans. */
 	readonly scanDuplicates?: (dir: string) => Promise<DupeyScanResult>;
 	/** Defaults to probing the dupey CLI; tests inject a fixed status. */
@@ -72,6 +78,7 @@ interface SearchContext {
 	readonly needle: string;
 	readonly location: string;
 	readonly results: FsSearchResult[];
+	readonly lookup: OsKindLookup;
 }
 
 export function previewCommandForPlatform(
@@ -123,7 +130,10 @@ async function walkForSearch(dir: string, depth: number, context: SearchContext)
 		const fullPath = join(dir, dirent.name);
 		if (dirent.name.toLowerCase().includes(context.needle)) {
 			try {
-				context.results.push({ entry: await buildFsEntry(fullPath), location: context.location });
+				context.results.push({
+					entry: await applyOsKind(await buildFsEntry(fullPath), context.lookup),
+					location: context.location,
+				});
 			} catch (error) {
 				console.warn(`fs:search skipping ${fullPath}: ${errorMessage(error)}`);
 			}
@@ -135,6 +145,22 @@ async function walkForSearch(dir: string, depth: number, context: SearchContext)
 }
 
 const VERSION_FAMILY_TTL_MS = 5 * 60 * 1000;
+
+/** Attach the OS-reported kind to one entry; a failed lookup keeps the fallback. */
+async function applyOsKind(entry: FsEntry, lookup: OsKindLookup): Promise<FsEntry> {
+	if (entry.kind !== "file") return entry;
+	try {
+		return { ...entry, osKind: await lookup(entry.path, entry.ext) };
+	} catch (error) {
+		console.warn(`fs:osKind failed for ${entry.path}: ${errorMessage(error)}`);
+		return entry;
+	}
+}
+
+/** Attach OS kinds to a batch; the resolver dedupes one query per extension. */
+function enrichOsKinds(entries: readonly FsEntry[], lookup: OsKindLookup): Promise<FsEntry[]> {
+	return Promise.all(entries.map((entry) => applyOsKind(entry, lookup)));
+}
 
 interface DupeyMemberInfo {
 	readonly path?: string;
@@ -178,6 +204,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 	const spawnQuickLook = deps.spawnQuickLook ?? defaultQuickLook;
 	const scanDuplicates = deps.scanDuplicates ?? ((dir: string) => scanWithDupey(dir));
 	const dupey = deps.dupey ?? createDupeyProbe();
+	const osKind: OsKindLookup = deps.osKind ?? createOsKindResolver().kindFor;
 	const now = deps.now ?? (() => Date.now());
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
@@ -204,8 +231,9 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 				console.warn(`fs:listDir skipping ${fullPath}: ${errorMessage(error)}`);
 			}
 		}
-		entries.sort(compareEntries);
-		return { path, entries };
+		const enriched = await enrichOsKinds(entries, osKind);
+		enriched.sort(compareEntries);
+		return { path, entries: enriched };
 	}
 
 	async function locations(): Promise<readonly FsLocation[]> {
@@ -251,7 +279,7 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		const results: FsSearchResult[] = [];
 		for (const location of await locations()) {
 			if (!location.available) continue;
-			await walkForSearch(location.path, 0, { needle, location: location.name, results });
+			await walkForSearch(location.path, 0, { needle, location: location.name, results, lookup: osKind });
 			if (results.length >= SEARCH_MAX_RESULTS) break;
 		}
 		return results;
@@ -298,11 +326,12 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 								continue;
 							}
 						}
+						const built = await enrichOsKinds(entries, osKind);
 						const members = mapped.members.filter((member) =>
-							entries.some((entry) => entry.path === member.path),
+							built.some((entry) => entry.path === member.path),
 						);
 						if (members.length === 0) return null;
-						return { head: mapped.head, members, entries };
+						return { head: mapped.head, members, entries: built };
 					}),
 				);
 				families = resolved.filter((family): family is FsVersionFamily => family !== null);
@@ -371,12 +400,12 @@ export function createFsService(deps: FsServiceDeps): FsBridge {
 		}
 		await fsRename(path, target);
 		familyCache.clear();
-		return buildFsEntry(target);
+		return applyOsKind(await buildFsEntry(target), osKind);
 	}
 
 	return {
 		listDir,
-		stat: buildFsEntry,
+		stat: async (path) => applyOsKind(await buildFsEntry(path), osKind),
 		search,
 		locations,
 		copy,
