@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "
 import type { AppSettings, AssistantEvent, Contact, DataSourceRow } from "../../../shared/settings-contract";
 import type { SettingsBridge, AssistantSurface } from "../../../shared/settings-contract";
 import { ArrowUpIcon, CloseIcon, SparklesIcon } from "./icons";
+import { Switch } from "./primitives/Switch";
 
 const autorag = (window as unknown as { readonly autorag: { readonly settings: SettingsBridge } }).autorag;
 
@@ -422,8 +423,4 @@ function SettingRow({ label, description, children }: { readonly label: string; 
 			<div className="settings-row__control">{children}</div>
 		</div>
 	);
-}
-
-function Switch({ checked, onChange }: { readonly checked: boolean; readonly onChange: () => void }): ReactElement {
-	return <button type="button" role="switch" aria-checked={checked} className={`settings-switch${checked ? " is-on" : ""}`} onClick={onChange}><span /></button>;
 }

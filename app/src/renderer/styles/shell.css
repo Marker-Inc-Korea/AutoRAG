@@ -572,7 +572,7 @@
 	gap: var(--space-8);
 }
 
-.settings-row button {
+.settings-row button:not(.settings-switch) {
 	height: 32px;
 	flex: none;
 	padding: 0 12px;
@@ -585,7 +585,7 @@
 	white-space: nowrap;
 }
 
-.settings-row button:hover {
+.settings-row button:not(.settings-switch):hover {
 	background: var(--bg-chrome);
 }
 
@@ -632,48 +632,53 @@
 	font-size: var(--font-size-meta);
 }
 
-/* shadcn/ui Switch geometry (base/react): 32 × 18.4 track, 16px thumb, 2px
- * margins, subtle thumb shadow — colors stay on our tokens (#FF6363/#CFCFD9). */
+/* shadcn/ui Switch (new-york-v4, default size) on Radix primitives —
+ * colors follow the v6 handoff tokens (#FF6363 checked / #CFCFD9 off). */
 .settings-switch {
-	position: relative;
-	width: 32px !important;
-	height: 18.4px !important;
-	padding: 0 !important;
-	border: 1px solid transparent !important;
-	border-radius: var(--radius-full) !important;
-	background: var(--switch-off) !important;
-	transition: background var(--dur-color);
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	width: 32px;
+	height: 18.4px;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: var(--radius-full);
+	outline: none;
+	background: var(--switch-off);
+	box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+	transition: all var(--dur-color);
 }
 
-.settings-switch span {
-	position: absolute;
-	top: 50%;
-	left: 2px;
-	width: 16px;
-	height: 16px;
-	border-radius: 50%;
-	background: var(--bg-window);
-	box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
-	transform: translateY(-50%);
-	transition: transform var(--dur-color);
+.settings-switch[data-state="checked"] {
+	background: var(--accent);
 }
 
 .settings-switch:focus-visible {
-	outline: 3px solid var(--accent-soft);
-	outline-offset: 2px;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-flash-ring);
 }
 
-.settings-switch.is-on {
-	background: var(--accent) !important;
-}
-
-.settings-switch.is-on span {
-	transform: translate(12px, -50%);
-}
-
-.settings-switch[disabled] {
+.settings-switch:disabled {
 	opacity: 0.5;
-	cursor: default;
+	cursor: not-allowed;
+}
+
+.settings-switch__thumb {
+	display: block;
+	width: var(--size-knob);
+	height: var(--size-knob);
+	border-radius: 50%;
+	background: var(--bg-window);
+	pointer-events: none;
+	transition: transform var(--dur-color);
+}
+
+.settings-switch__thumb[data-state="unchecked"] {
+	transform: translateX(0);
+}
+
+.settings-switch__thumb[data-state="checked"] {
+	transform: translateX(calc(100% - 2px));
 }
 
 .settings-danger-button {
