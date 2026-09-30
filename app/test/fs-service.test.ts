@@ -46,6 +46,8 @@ function makeDeps(homeDir: string): StubbedDeps {
 				quickLooked.push(path);
 			},
 			recents: createRecentsStore({ directory: join(homeDir, "recents-store") }),
+			osKind: async () => null,
+			icons: { icons: async () => new Map() },
 		},
 		trashed,
 		revealed,
@@ -590,5 +592,86 @@ describe("recents", () => {
 		// Then only the real location was walked
 		expect(results.map((hit) => hit.location)).toEqual(["Documents"]);
 		expect(warnings.filter((line) => line.includes(RECENTS_PATH))).toEqual([]);
+	});
+});
+
+describe("osKind", () => {
+	it("annotates each file with the OS-detected kind", async () => {
+		// Given a folder with a video and a markdown file
+		const dir = await mkdtemp(join(tmpdir(), "fs-oskind-"));
+		await writeFile(join(dir, "clip.mp4"), "x");
+		await writeFile(join(dir, "note.md"), "x");
+		const deps: FsServiceDeps = {
+			...makeDeps(dir).deps,
+			osKind: async (_path, ext) => (ext === "mp4" ? "MPEG-4 movie" : ext === "md" ? "Markdown Document" : null),
+		};
+
+		// When listing the folder
+		const listing = await createFsService(deps).listDir(dir);
+
+		// Then each file carries its OS kind
+		expect(listing.entries.find((entry) => entry.name === "clip.mp4")?.osKind).toBe("MPEG-4 movie");
+		expect(listing.entries.find((entry) => entry.name === "note.md")?.osKind).toBe("Markdown Document");
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	it("leaves folders without an OS kind", async () => {
+		// Given a folder holding a subfolder
+		const dir = await mkdtemp(join(tmpdir(), "fs-oskind-folder-"));
+		await mkdir(join(dir, "sub"));
+
+		// When listing it
+		const listing = await createFsService(makeDeps(dir).deps).listDir(dir);
+
+		// Then the subfolder has no OS kind
+		expect(listing.entries.find((entry) => entry.name === "sub")?.osKind).toBeNull();
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	it("degrades to null when the OS lookup fails, keeping the entry", async () => {
+		// Given a folder whose OS lookup throws
+		const dir = await mkdtemp(join(tmpdir(), "fs-oskind-fail-"));
+		await writeFile(join(dir, "clip.mp4"), "x");
+		const deps: FsServiceDeps = {
+			...makeDeps(dir).deps,
+			osKind: async () => {
+				throw new Error("mdls: boom");
+			},
+		};
+
+		// When listing it
+		const listing = await createFsService(deps).listDir(dir);
+
+		// Then the entry survives with no OS kind
+		const entry = listing.entries.find((candidate) => candidate.name === "clip.mp4");
+		expect(entry?.osKind).toBeNull();
+		expect(entry?.ext).toBe("mp4");
+		await rm(dir, { recursive: true, force: true });
+	});
+});
+
+describe("icons", () => {
+	it("annotates each file with the OS tile icon", async () => {
+		// Given a folder whose provider produced an icon for the video only
+		const dir = await mkdtemp(join(tmpdir(), "fs-icons-"));
+		await writeFile(join(dir, "clip.mp4"), "x");
+		await writeFile(join(dir, "note.txt"), "x");
+		const deps: FsServiceDeps = {
+			...makeDeps(dir).deps,
+			icons: {
+				icons: async (targets) =>
+					new Map(
+						targets.filter((target) => target.path.endsWith(".mp4")).map((target) => [target.path, "data:image/png;base64,AAAA"]),
+					),
+			},
+		};
+
+		// When listing the folder
+		const listing = await createFsService(deps).listDir(dir);
+
+		// Then the video carries the icon and the other file keeps the letter tile
+		expect(listing.entries.find((entry) => entry.name === "clip.mp4")?.iconDataUrl).toBe("data:image/png;base64,AAAA");
+		expect(listing.entries.find((entry) => entry.name === "note.txt")?.iconDataUrl).toBeNull();
+		await rm(dir, { recursive: true, force: true });
 	});
 });

@@ -26,6 +26,8 @@ function fsEntry(path: string): FsEntry {
 		size: 4,
 		modifiedAt: "2026-09-29T00:00:00.000Z",
 		isSymlink: false,
+		osKind: null,
+		iconDataUrl: null,
 	};
 }
 
@@ -89,7 +91,7 @@ function harness(
 			timers.push({ ms, fire: handler });
 			return timers.length;
 		},
-		clearTimer: () => {},
+		clearTimer: () => { },
 		...overrides,
 	};
 	return {
@@ -175,7 +177,7 @@ describe("version-family service — SSOT", () => {
 					locations: ["/home/Desktop"],
 					families: [{ head: "/home/Desktop/a.txt", members: [{ path: "/home/Desktop/b.txt", relation: "exact" as const }], entries: [] }],
 				}),
-				write: async () => {},
+				write: async () => { },
 			},
 		});
 		const service = createVersionFamilyService(h.deps);

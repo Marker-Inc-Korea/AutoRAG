@@ -339,9 +339,13 @@ export function useFinderController(
 	const navigateNav = useCallback(
 		(item: NavItem) => {
 			const match = locations.find((location) => location.name === item.label);
-			navigate(match?.path ?? item.label);
+			if (match === undefined) {
+				showToast(`"${item.label}" 위치는 아직 연결되지 않았습니다.`);
+				return;
+			}
+			navigate(match.path);
 		},
-		[locations, navigate],
+		[locations, navigate, showToast],
 	);
 
 	const revealEntry = useCallback((entry: FinderEntry) => {

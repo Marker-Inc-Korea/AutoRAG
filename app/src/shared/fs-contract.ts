@@ -44,6 +44,17 @@ export interface FsEntry {
 	/** ISO 8601 modification time. */
 	readonly modifiedAt: string;
 	readonly isSymlink: boolean;
+	/**
+	 * The kind the OS itself reports — Finder's Kind / Explorer's Type, e.g.
+	 * "MPEG-4 movie". Null for folders and whenever the OS answers nothing; the
+	 * renderer then falls back to the extension map.
+	 */
+	readonly osKind: string | null;
+	/**
+	 * OS-provided tile icon — a Finder thumbnail on macOS — as a PNG data URL.
+	 * Null when the OS produced none; the tile then renders its letter instead.
+	 */
+	readonly iconDataUrl: string | null;
 }
 
 export interface DirListing {

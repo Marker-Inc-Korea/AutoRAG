@@ -14,6 +14,8 @@ import {
 	type FsOpError,
 	type FsSearchResult,
 } from "../shared/fs-contract";
+import { createIconProvider, type IconProvider } from "./file-icon";
+import { createOsKindResolver } from "./file-kind";
 import { buildFsEntry, errorMessage, hasErrorCode, isAvailable, pathExists, resolveCopyName } from "./fs-entry";
 import { createRecentsStore, type RecentsStore } from "./recents-store";
 
@@ -32,6 +34,9 @@ export interface FsOsClipboard {
 
 export type QuickLookSpawner = (path: string) => void;
 
+/** OS-native file-kind lookup: Finder's kind on macOS, Explorer's type on Windows. */
+export type OsKindLookup = (path: string, ext: string) => Promise<string | null>;
+
 export interface FsServiceDeps {
 	readonly shell: FsShell;
 	readonly clipboard: FsOsClipboard;
@@ -41,6 +46,10 @@ export interface FsServiceDeps {
 	readonly spawnQuickLook?: QuickLookSpawner;
 	/** Recently opened/previewed files. Defaults to `<homeDir>/recents`; production injects the userData store. */
 	readonly recents?: RecentsStore;
+	/** Defaults to the platform resolver (mdls on macOS, the registry on Windows). */
+	readonly osKind?: OsKindLookup;
+	/** Defaults to the platform icon provider (qlmanage thumbnails on macOS). */
+	readonly icons?: IconProvider;
 }
 
 export type FsRenameErrorCode = "invalid-name" | "name-collision";
@@ -63,6 +72,7 @@ interface SearchContext {
 	readonly needle: string;
 	readonly location: string;
 	readonly results: FsSearchResult[];
+	readonly lookup: OsKindLookup;
 }
 
 export function previewCommandForPlatform(
@@ -83,6 +93,37 @@ function defaultQuickLook(path: string): void {
 function compareEntries(a: FsEntry, b: FsEntry): number {
 	if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
 	return a.name.localeCompare(b.name);
+}
+
+/** Attach the OS-reported kind to one entry; a failed lookup keeps the letter/fallback kind. */
+async function applyOsKind(entry: FsEntry, lookup: OsKindLookup): Promise<FsEntry> {
+	if (entry.kind !== "file") return entry;
+	try {
+		return { ...entry, osKind: await lookup(entry.path, entry.ext) };
+	} catch (error) {
+		console.warn(`fs:osKind failed for ${entry.path}: ${errorMessage(error)}`);
+		return entry;
+	}
+}
+
+/** Attach OS kinds to a batch; the resolver dedupes one query per extension. */
+function enrichOsKinds(entries: readonly FsEntry[], lookup: OsKindLookup): Promise<FsEntry[]> {
+	return Promise.all(entries.map((entry) => applyOsKind(entry, lookup)));
+}
+
+/** OS tile icons for a batch's files; the provider batches one call per listing. */
+async function resolveIcons(entries: readonly FsEntry[], provider: IconProvider): Promise<ReadonlyMap<string, string>> {
+	const targets = entries
+		.filter((entry) => entry.kind === "file")
+		.map((entry) => ({ path: entry.path, modifiedAt: entry.modifiedAt }));
+	if (targets.length === 0) return new Map();
+	return provider.icons(targets);
+}
+
+/** A file the OS produced no icon for keeps its letter tile. */
+function withIcon(entry: FsEntry, icons: ReadonlyMap<string, string>): FsEntry {
+	const url = icons.get(entry.path);
+	return url === undefined ? entry : { ...entry, iconDataUrl: url };
 }
 
 async function runBatch(paths: readonly string[], operation: (path: string) => Promise<void>): Promise<FsBatchResult> {
@@ -114,7 +155,10 @@ async function walkForSearch(dir: string, depth: number, context: SearchContext)
 		const fullPath = join(dir, dirent.name);
 		if (dirent.name.toLowerCase().includes(context.needle)) {
 			try {
-				context.results.push({ entry: await buildFsEntry(fullPath), location: context.location });
+				context.results.push({
+					entry: await applyOsKind(await buildFsEntry(fullPath), context.lookup),
+					location: context.location,
+				});
 			} catch (error) {
 				console.warn(`fs:search skipping ${fullPath}: ${errorMessage(error)}`);
 			}
@@ -129,11 +173,19 @@ export function createFsService(deps: FsServiceDeps): FsCoreBridge {
 	const home = deps.homeDir ?? homedir();
 	const spawnQuickLook = deps.spawnQuickLook ?? defaultQuickLook;
 	const recents = deps.recents ?? createRecentsStore({ directory: join(home, "recents") });
+	const osKind: OsKindLookup = deps.osKind ?? createOsKindResolver().kindFor;
+	const iconProvider: IconProvider = deps.icons ?? createIconProvider();
 	// In-app clipboard lives in main-process memory only.
 	let inAppClipboard: FsClipboard | null = null;
+	/** One enrichment pass per listing: OS kind + OS tile icon. */
+	async function annotateListing(entries: readonly FsEntry[]): Promise<FsEntry[]> {
+		const [icons, enriched] = await Promise.all([resolveIcons(entries, iconProvider), enrichOsKinds(entries, osKind)]);
+		return enriched.map((entry) => withIcon(entry, icons));
+	}
+
 	async function listDir(path: string): Promise<DirListing> {
 		if (path === RECENTS_PATH) {
-			return { path, entries: await recentEntries() };
+			return { path, entries: await annotateListing(await recentEntries()) };
 		}
 		const dirents = await readdir(path, { withFileTypes: true });
 		const entries: FsEntry[] = [];
@@ -146,8 +198,9 @@ export function createFsService(deps: FsServiceDeps): FsCoreBridge {
 				console.warn(`fs:listDir skipping ${fullPath}: ${errorMessage(error)}`);
 			}
 		}
-		entries.sort(compareEntries);
-		return { path, entries };
+		const rows = await annotateListing(entries);
+		rows.sort(compareEntries);
+		return { path, entries: rows };
 	}
 
 	/**
@@ -215,10 +268,11 @@ export function createFsService(deps: FsServiceDeps): FsCoreBridge {
 		for (const location of await locations()) {
 			// The virtual Recents location has no path on disk to walk.
 			if (!location.available || location.path === RECENTS_PATH) continue;
-			await walkForSearch(location.path, 0, { needle, location: location.name, results });
+			await walkForSearch(location.path, 0, { needle, location: location.name, results, lookup: osKind });
 			if (results.length >= SEARCH_MAX_RESULTS) break;
 		}
-		return results;
+		const icons = await resolveIcons(results.map((result) => result.entry), iconProvider);
+		return results.map((result) => ({ location: result.location, entry: withIcon(result.entry, icons) }));
 	}
 
 	async function copy(paths: readonly string[], destDir: string): Promise<FsBatchResult> {
@@ -270,12 +324,12 @@ export function createFsService(deps: FsServiceDeps): FsCoreBridge {
 			throw new FsRenameError("name-collision", `A file or folder named "${newName}" already exists`);
 		}
 		await fsRename(path, target);
-		return buildFsEntry(target);
+		return applyOsKind(await buildFsEntry(target), osKind);
 	}
 
 	return {
 		listDir,
-		stat: buildFsEntry,
+		stat: async (path) => applyOsKind(await buildFsEntry(path), osKind),
 		search,
 		locations,
 		copy,

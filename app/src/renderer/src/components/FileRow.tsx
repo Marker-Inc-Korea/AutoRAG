@@ -81,7 +81,7 @@ export function FileRow({
 			onContextMenu={(event) => callbacks.onContextMenu(entry, event)}
 		>
 			<div className="row__name" role="gridcell">
-				{child ? <span className="row__connector" aria-hidden="true" /> : <FileTile kind={entry.fileKind} />}
+				{child ? <span className="row__connector" aria-hidden="true" /> : <FileTile kind={entry.fileKind} iconDataUrl={entry.iconDataUrl} />}
 				{renameDraft === null ? (
 					<span className="row__label">{entry.name}</span>
 				) : (
