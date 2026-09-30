@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
-import type { AnswerPhase, ChatAttachment, ChatSummary, SearchStreamEvent } from "../../../shared/search-contract";
+import type { AnswerPhase, ChatAttachment, ChatSummary, CitationEvidence, SearchStreamEvent } from "../../../shared/search-contract";
 import type { SearchBridge } from "../../../shared/search-contract";
+import { parseAnswerBlocks, parseInline, type AnswerBlock } from "../state/answer-markdown";
 import { groupChatHistory, historyEmptyText } from "../state/history";
 import { CloseIcon, HistoryIcon, PlusIcon, SearchIcon, SendIcon } from "./icons";
 
 const autorag = (window as unknown as { readonly autorag: { readonly search: SearchBridge } }).autorag;
 
-export function AiSearchPanel(): ReactElement {
+export function AiSearchPanel({
+	selectedEvidence,
+	onSelectEvidence,
+	onPublish,
+}: {
+	readonly selectedEvidence: number | null;
+	readonly onSelectEvidence: (selected: number) => void;
+	readonly onPublish: (evidence: readonly CitationEvidence[], sessionId: string | null) => void;
+}): ReactElement {
 	const [query, setQuery] = useState("");
 	const [quick, setQuick] = useState<AnswerPhase | null>(null);
 	const [deep, setDeep] = useState<AnswerPhase | null>(null);
@@ -15,7 +24,6 @@ export function AiSearchPanel(): ReactElement {
 	const [progress, setProgress] = useState("");
 	const [searchId, setSearchId] = useState<string | null>(null);
 	const [sessionId, setSessionId] = useState<string | null>(null);
-	const [selectedEvidence, setSelectedEvidence] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [stopped, setStopped] = useState(false);
 	const [submittedQuery, setSubmittedQuery] = useState<string | null>(null);
@@ -73,6 +81,10 @@ export function AiSearchPanel(): ReactElement {
 
 	const evidence = useMemo(() => deep?.evidence ?? quick?.evidence ?? [], [deep, quick]);
 
+	useEffect(() => {
+		onPublish(evidence, sessionId);
+	}, [evidence, sessionId, onPublish]);
+
 	const historyGroups = useMemo(() => groupChatHistory(history, new Date()), [history]);
 
 	useEffect(() => {
@@ -105,7 +117,6 @@ export function AiSearchPanel(): ReactElement {
 		setQuickDraft("");
 		setDeepDraft("");
 		setSessionId(null);
-		setSelectedEvidence(null);
 		setError(null);
 		setStopped(false);
 		setSubmittedQuery(text);
@@ -157,7 +168,6 @@ export function AiSearchPanel(): ReactElement {
 		setProgress("");
 		setQuery("");
 		setSubmittedQuery(null);
-		setSelectedEvidence(null);
 		setAttachments([]);
 		setChatId(null);
 		setHistoryOpen(false);
@@ -187,11 +197,6 @@ export function AiSearchPanel(): ReactElement {
 		setSearchId(null);
 		setProgress("");
 		setStopped(true);
-	}
-
-	async function sendFeedback(number: number, useful: boolean): Promise<void> {
-		if (sessionId === null) return;
-		await autorag.search.feedback(sessionId, useful ? [number] : [], useful ? [] : [number]);
 	}
 
 	return (
@@ -272,28 +277,10 @@ export function AiSearchPanel(): ReactElement {
 					{submittedQuery === null ? null : <div className="ai__user-message"><span>You</span><p>{submittedQuery}</p></div>}
 					{submittedQuery === null ? null : <div className="ai__assistant-label">Assistant</div>}
 					{error === null ? null : <div className="ai__error">{error}</div>}
-					{submittedQuery === null ? null : <AnswerCard label="Quick" phase={quick} draft={quickDraft} pending={searchId !== null && quick === null} onCitation={setSelectedEvidence} />}
-					{submittedQuery === null ? null : <AnswerCard label="Deep" phase={deep} draft={deepDraft} pending={searchId !== null && deep === null} onCitation={setSelectedEvidence} />}
+					{submittedQuery === null ? null : <AnswerCard label="Quick" phase={quick} draft={quickDraft} pending={searchId !== null && quick === null} selectedEvidence={selectedEvidence} onCitation={onSelectEvidence} />}
+					{submittedQuery === null ? null : <AnswerCard label="Deep" phase={deep} draft={deepDraft} pending={searchId !== null && deep === null} selectedEvidence={selectedEvidence} onCitation={onSelectEvidence} />}
 					{progress === "" ? null : <div className="ai__progress">{progress}</div>}
 					{stopped ? <div className="ai__stopped">응답 생성을 중단했습니다.</div> : null}
-					{selectedEvidence === null ? null : (
-						<aside className="ai__evidence" aria-label="Evidence">
-							<div className="ai__evidence-heading">Evidence [{selectedEvidence}]</div>
-							{evidence
-								.filter((item) => item.number === selectedEvidence)
-								.map((item) => (
-									<div className="ai__evidence-card" key={item.feedbackId}>
-										<strong>{item.title}</strong>
-										<p>{item.summary}</p>
-										{item.excerpts.map((excerpt) => <blockquote key={excerpt}>{excerpt}</blockquote>)}
-										<div className="ai__feedback">
-											<button type="button" onClick={() => void sendFeedback(item.number, true)}>Useful</button>
-											<button type="button" onClick={() => void sendFeedback(item.number, false)}>Not useful</button>
-										</div>
-									</div>
-								))}
-						</aside>
-					)}
 				</div>
 				<form
 					className="ai__composer"
@@ -325,13 +312,15 @@ function AnswerCard({
 	phase,
 	draft,
 	pending,
+	selectedEvidence,
 	onCitation,
 }: {
 	readonly label: string;
 	readonly phase: AnswerPhase | null;
 	readonly draft: string;
 	readonly pending: boolean;
-	readonly onCitation: (number: number) => void;
+	readonly selectedEvidence: number | null;
+	readonly onCitation: (selected: number) => void;
 }): ReactElement {
 	const answerText = phase !== null ? phase.answer : draft;
 	if (answerText === "") {
@@ -343,7 +332,6 @@ function AnswerCard({
 		);
 	}
 	const streaming = phase === null;
-	const answer = answerText.replace(/\[(\d+)\]/gu, (_match, number: string) => ` [${number}] `);
 	return (
 		<article className={`ai__answer ai__answer--${label.toLowerCase()}${streaming ? " ai__answer--streaming" : ""}`}>
 			<div className="ai__answer-heading">
@@ -351,18 +339,59 @@ function AnswerCard({
 				<span>{phase !== null ? phase.meta : "Streaming…"}</span>
 			</div>
 			<div className="ai__answer-content">
-				<p>
-					{answer.split(/(\[\d+\])/gu).map((part, index) =>
-						/^\[\d+\]$/u.test(part) ? (
-							<button type="button" className="ai__citation" key={`${part}-${index}`} onClick={() => onCitation(Number(part.slice(1, -1)))}>
-								{part}
-							</button>
-						) : (
-							part
-						),
-					)}
-				</p>
+				{parseAnswerBlocks(answerText).map((block, index) => (
+					<AnswerBlockView key={`${index}`} block={block} selected={selectedEvidence} onCitation={onCitation} />
+				))}
 			</div>
 		</article>
 	);
+}
+
+function AnswerBlockView({
+	block,
+	selected,
+	onCitation,
+}: {
+	readonly block: AnswerBlock;
+	readonly selected: number | null;
+	readonly onCitation: (selected: number) => void;
+}): ReactElement {
+	const segments = parseInline(block.text).map((segment, index) => {
+		switch (segment.kind) {
+			case "bold":
+				return <strong key={`${index}`}>{segment.text}</strong>;
+			case "code":
+				return <code key={`${index}`} className="ai__inline-code">{segment.text}</code>;
+			case "citation":
+				return (
+					<button
+						type="button"
+						key={`${index}`}
+						className={`ai__citation${segment.number === selected ? " ai__citation--active" : ""}`}
+						onClick={() => onCitation(segment.number)}
+					>
+						{segment.number}
+					</button>
+				);
+			default:
+				return <span key={`${index}`}>{segment.text}</span>;
+		}
+	});
+	switch (block.kind) {
+		case "heading":
+			return <><div className="ai__block ai__block--heading">{segments}</div></>;
+		case "list":
+			return (
+				<div className="ai__block ai__block--list">
+					<span className="ai__block-marker">–</span>
+					<span>{segments}</span>
+				</div>
+			);
+		case "quote":
+			return <div className="ai__block ai__block--quote">{segments}</div>;
+		case "code":
+			return <pre className="ai__block ai__block--code">{block.text}</pre>;
+		default:
+			return <p className="ai__block ai__block--paragraph">{segments}</p>;
+	}
 }
