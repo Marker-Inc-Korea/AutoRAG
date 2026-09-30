@@ -1,9 +1,11 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { Permission } from "../../shared/settings-contract";
 import type { SettingsBridge } from "../../shared/settings-contract";
+import type { CitationEvidence } from "../../shared/search-contract";
 
 const autorag = (window as unknown as { readonly autorag: { readonly settings: SettingsBridge } }).autorag;
 import { AiSearchPanel } from "./components/AiSearchPanel";
+import { EvidencePanel } from "./components/EvidencePanel";
 import { ColumnHeader } from "./components/ColumnHeader";
 import { FileList } from "./components/FileList";
 import type { RowCallbacks } from "./components/FileRow";
@@ -37,6 +39,31 @@ export function App(): ReactElement {
 	const [pendingRequests, setPendingRequests] = useState(finder.pendingRequests);
 	const [permissions, setPermissions] = useState<Readonly<Record<string, Permission>>>({});
 	const [permissionTarget, setPermissionTarget] = useState<{ path: string; name: string } | null>(null);
+	const [evidence, setEvidence] = useState<readonly CitationEvidence[]>([]);
+	const [evidenceSession, setEvidenceSession] = useState<string | null>(null);
+	const [selectedEvidence, setSelectedEvidence] = useState<number | null>(null);
+	const [evidenceOpen, setEvidenceOpen] = useState(true);
+
+	const publishEvidence = useCallback((items: readonly CitationEvidence[], sessionId: string | null) => {
+		setEvidence(items);
+		setEvidenceSession(sessionId);
+		setSelectedEvidence((current) => (current !== null && items.some((item) => item.number === current) ? current : null));
+	}, []);
+
+	useEffect(() => {
+		const onKeyDown = (event: globalThis.KeyboardEvent): void => {
+			const target = event.target;
+			if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+			if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "e") {
+				event.preventDefault();
+				setEvidenceOpen((open) => !open);
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, []);
+
+	const evidenceSelectedNumber = evidence.find((item) => item.number === selectedEvidence)?.number ?? evidence[0]?.number ?? 1;
 
 	useEffect(() => {
 		void autorag.settings.get().then((settings) => setShowHiddenFiles(settings.showHiddenFiles));
@@ -128,8 +155,24 @@ export function App(): ReactElement {
 						callbacks={rowCallbacks}
 					/>
 					<StatusBar text={finder.statusText} showHotkeys={SHOW_HOTKEYS} devLabel={DEV_LABEL} />
+					{evidence.length === 0 ? null : (
+						<EvidencePanel
+							evidence={evidence}
+							sessionId={evidenceSession}
+							selected={evidenceSelectedNumber}
+							open={evidenceOpen}
+							onToggleOpen={() => setEvidenceOpen((open) => !open)}
+							onSelect={(number) => {
+								setSelectedEvidence(number);
+								setEvidenceOpen(true);
+							}}
+							onQuickLook={finder.quickLookPath}
+							onReveal={finder.revealEvidence}
+							onToast={finder.showToast}
+						/>
+					)}
 				</section>
-				<AiSearchPanel />
+				<AiSearchPanel selectedEvidence={evidence.length === 0 ? null : evidenceSelectedNumber} onSelectEvidence={(number) => { setSelectedEvidence(number); setEvidenceOpen(true); }} onPublish={publishEvidence} />
 				{finder.toast === null ? null : <Toast message={finder.toast} />}
 			</div>
 			{finder.contextMenu === null ? null : (
