@@ -1,4 +1,4 @@
-export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
+export type { AutoRAGAgentOptions, AutoRefreshOptions, PeerQueryOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
 	buildDatasourceSkillsPrompt,
@@ -35,6 +35,13 @@ export {
 	type JikjiFindProviderResult,
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
+export {
+	createQueryPeerAgentTool,
+	QUERY_PEER_AGENT_TOOL_NAME,
+	type QueryPeerAgentDetails,
+	type QueryPeerAgentResult,
+	type QueryPeerAgentToolOptions,
+} from "./query-peer-tool.ts";
 export {
 	createSearchAllDocumentsTool,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,

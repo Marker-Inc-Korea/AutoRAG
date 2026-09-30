@@ -5,6 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { listPendingPeerRequests, writePeerRequestDecision } from "../../src/p2p/approval-store.ts";
 import {
+	createSimplexQueryClient,
+	DEFAULT_SIMPLEX_QUERY_FAST_TIMEOUT_MS,
+	loadSimplexQueryState,
+	SIMPLEX_QUERY_TTL_MS,
+} from "../../src/p2p/simplex-query-store.ts";
+import {
 	loadSimplexPeerRegistry,
 	querySimplexPeer,
 	rankSimplexPeerTargets,
@@ -338,12 +344,19 @@ describe("startSimplexPeerServer", () => {
 			resolvePolicy: openResolver,
 		});
 		servers.push(handle);
-		const pending = querySimplexPeer(client, server.contactId, { v: 1, query: "refund policy" }, { timeoutMs: 5000 });
+		const pending = querySimplexPeer(
+			client,
+			server.contactId,
+			{ v: 1, query: "refund policy" },
+			{ workspacePath: root, fastTimeoutMs: 5000 },
+		);
 		await expect.poll(() => listPendingPeerRequests(root).length, { timeout: 2000, interval: 10 }).toBe(1);
 		expect(client.received).toHaveLength(0);
 		writePeerRequestDecision(root, listPendingPeerRequests(root)[0]!.id, "approve");
 		const response = await pending;
-		expect(response.status).toBe("ok");
+		expect(response.status).toBe("completed");
+		if (response.status !== "completed") throw new Error("Expected a completed peer response.");
+		expect(response.response.status).toBe("ok");
 		expect(agent.calls).toHaveLength(1);
 		expect(agent.calls[0]!.query).toBe("refund policy");
 	});
@@ -505,21 +518,52 @@ describe("startSimplexPeerServer", () => {
 	it("returns policy-denied when no retrieval sources were observed", async () => {
 		const { client, server } = transportPair();
 		const agent = stubAgent();
+		const root = workspace();
 		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
-			workspacePath: workspace(),
+			workspacePath: root,
 			injectionClassifier: false,
 		});
 		servers.push(handle);
-		const response = await querySimplexPeer(client, server.contactId, { v: 1, query: "anything" });
-		expect(response.status).toBe("rejected");
-		expect(response.diagnostics.some((d) => d.code === "policy-denied")).toBe(true);
+		const response = await querySimplexPeer(
+			client,
+			server.contactId,
+			{ v: 1, query: "anything" },
+			{ workspacePath: root },
+		);
+		expect(response.status).toBe("completed");
+		if (response.status !== "completed") throw new Error("Expected a completed peer response.");
+		expect(response.response.status).toBe("rejected");
+		expect(response.response.diagnostics.some((d) => d.code === "policy-denied")).toBe(true);
 	});
 });
 
 describe("querySimplexPeer", () => {
+	it("persists a pending outbound request instead of losing it after the fast phase", async () => {
+		const root = workspace();
+		const client = new FakeTransport(9, "lonely");
+		const query = createSimplexQueryClient(client, root, {
+			fastTimeoutMs: 1,
+			now: () => new Date("2026-09-29T00:00:00.000Z"),
+		});
+
+		const result = await query.send(42, { v: 1, query: "hello" });
+
+		expect(DEFAULT_SIMPLEX_QUERY_FAST_TIMEOUT_MS).toBe(60_000);
+		expect(SIMPLEX_QUERY_TTL_MS).toBe(21 * 24 * 60 * 60 * 1000);
+		expect(result.status).toBe("pending");
+		expect(loadSimplexQueryState(root, result.id)).toMatchObject({
+			id: result.id,
+			status: "pending",
+			contactId: 42,
+			request: { v: 1, query: "hello" },
+			createdAt: "2026-09-29T00:00:00.000Z",
+			expiresAt: "2026-10-20T00:00:00.000Z",
+		});
+	});
+
 	it("correlates responses by id and ignores unrelated messages", async () => {
 		const { client, server } = transportPair();
 		const agent = observingAgent();
@@ -533,7 +577,12 @@ describe("querySimplexPeer", () => {
 			resolvePolicy: openResolver,
 		});
 		servers.push(handle);
-		const pending = querySimplexPeer(client, server.contactId, { v: 1, query: "correlation" });
+		const pending = querySimplexPeer(
+			client,
+			server.contactId,
+			{ v: 1, query: "correlation" },
+			{ workspacePath: root },
+		);
 		client.emit({
 			contactId: server.contactId,
 			contactName: "server-agent",
@@ -543,13 +592,107 @@ describe("querySimplexPeer", () => {
 		await expect.poll(() => listPendingPeerRequests(root).length, { timeout: 2000, interval: 10 }).toBe(1);
 		writePeerRequestDecision(root, listPendingPeerRequests(root)[0]!.id, "approve");
 		const response = await pending;
-		expect(response.status).toBe("ok");
+		expect(response.status).toBe("completed");
+		if (response.status !== "completed") throw new Error("Expected a completed peer response.");
+		expect(response.response.status).toBe("ok");
 	});
 
-	it("times out when the peer never responds", async () => {
+	it("returns pending when the peer does not respond during the fast phase", async () => {
 		const client = new FakeTransport(9, "lonely");
-		await expect(querySimplexPeer(client, 42, { v: 1, query: "hello" }, { timeoutMs: 100 })).rejects.toThrow(
-			/timed out/,
+		const root = workspace();
+		const result = await querySimplexPeer(
+			client,
+			42,
+			{ v: 1, query: "hello" },
+			{ workspacePath: root, fastTimeoutMs: 1 },
 		);
+		expect(result.status).toBe("pending");
+		expect(loadSimplexQueryState(root, result.id)?.status).toBe("pending");
+	});
+
+	it("resumes a persisted request after transport recreation exactly once", async () => {
+		const root = workspace();
+		const firstTransport = new FakeTransport(9, "first");
+		const firstClient = createSimplexQueryClient(firstTransport, root, { fastTimeoutMs: 1 });
+		const initial = await firstClient.send(42, { v: 1, query: "restart-safe" }, "session-1");
+		expect(initial.status).toBe("pending");
+		firstClient.close();
+
+		const resumed: { id: string; answer: string }[] = [];
+		const secondTransport = new FakeTransport(9, "second");
+		const secondClient = createSimplexQueryClient(secondTransport, root, {
+			onResponse: (state, response) => resumed.push({ id: state.id, answer: response.answer }),
+		});
+		const response: PeerQueryResponse = {
+			v: 1,
+			status: "ok",
+			answer: "late answer",
+			results: [],
+			files: [],
+			diagnostics: [],
+		};
+		if (initial.status !== "pending") throw new Error("Expected a pending request.");
+		secondTransport.emit({
+			contactId: 42,
+			contactName: "peer",
+			chatItemId: 1,
+			text: JSON.stringify({ v: 1, kind: "response", id: initial.id, payload: response }),
+		});
+		secondTransport.emit({
+			contactId: 42,
+			contactName: "peer",
+			chatItemId: 2,
+			text: JSON.stringify({ v: 1, kind: "response", id: initial.id, payload: response }),
+		});
+
+		expect(resumed).toEqual([{ id: initial.id, answer: "late answer" }]);
+		expect(loadSimplexQueryState(root, initial.id)).toMatchObject({
+			status: "completed",
+			response,
+			sessionId: "session-1",
+		});
+		secondClient.close();
+	});
+
+	it("expires a persisted request at the 21-day boundary with a diagnostic", async () => {
+		const root = workspace();
+		const createdAt = new Date("2026-09-01T00:00:00.000Z");
+		const transport = new FakeTransport(9, "lonely");
+		const firstClient = createSimplexQueryClient(transport, root, {
+			fastTimeoutMs: 1,
+			now: () => createdAt,
+		});
+		const initial = await firstClient.send(42, { v: 1, query: "expire-me" });
+		firstClient.close();
+		if (initial.status !== "pending") throw new Error("Expected a pending request.");
+
+		const expired: string[] = [];
+		const secondClient = createSimplexQueryClient(transport, root, {
+			now: () => new Date(createdAt.getTime() + SIMPLEX_QUERY_TTL_MS),
+			onExpired: (state) => expired.push(state.id),
+		});
+
+		expect(expired).toEqual([initial.id]);
+		expect(loadSimplexQueryState(root, initial.id)).toMatchObject({
+			status: "expired",
+			diagnostic: `SimpleX peer query expired after ${SIMPLEX_QUERY_TTL_MS}ms.`,
+		});
+		secondClient.close();
+	});
+
+	it("ignores malformed responses without changing persisted state", async () => {
+		const root = workspace();
+		const transport = new FakeTransport(9, "lonely");
+		const client = createSimplexQueryClient(transport, root, { fastTimeoutMs: 1 });
+		const initial = await client.send(42, { v: 1, query: "malformed" });
+		if (initial.status !== "pending") throw new Error("Expected a pending request.");
+		transport.emit({
+			contactId: 42,
+			contactName: "peer",
+			chatItemId: 1,
+			text: JSON.stringify({ v: 1, kind: "response", id: initial.id, payload: { status: "not-valid" } }),
+		});
+		expect(loadSimplexQueryState(root, initial.id)?.status).toBe("pending");
+		client.close();
 	});
 });

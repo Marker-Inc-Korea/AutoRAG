@@ -43,6 +43,7 @@ export class ApprovalAbortedError extends Error {
 }
 
 const P2P_DIR = join(".autorag", "p2p");
+export const PEER_REQUEST_TTL_MS = 21 * 24 * 60 * 60 * 1000;
 
 function requestsDir(workspacePath: string): string {
 	return join(workspacePath, P2P_DIR, "requests");
@@ -150,7 +151,7 @@ export function waitForPeerRequestDecision(
 	id: string,
 	options: { readonly timeoutMs?: number; readonly abort?: AbortSignal } = {},
 ): Promise<PeerRequestDecision> {
-	const timeoutMs = options.timeoutMs ?? 120_000;
+	const timeoutMs = options.timeoutMs ?? PEER_REQUEST_TTL_MS;
 	const existing = loadPeerRequestDecision(workspacePath, id);
 	if (existing !== undefined) return Promise.resolve(existing);
 	mkdirSync(decisionsDir(workspacePath), { recursive: true });

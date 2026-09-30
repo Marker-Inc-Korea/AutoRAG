@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
@@ -49,6 +49,9 @@ import {
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
 import type { PolicyResolver } from "../p2p/policy-filter.ts";
+import type { SimplexQueryState } from "../p2p/simplex-query-store.ts";
+import { openPeerQueryTransport, type SimplexTransport } from "../p2p/simplex-transport.ts";
+import type { PeerQueryResponse } from "../p2p/wire.ts";
 import { type DefaultParserRegistryOptions, resolveParserOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -91,6 +94,7 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
+import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
 import {
 	isRefreshOwnerAlive,
 	type PersistedRefreshProgress,
@@ -277,6 +281,13 @@ export interface AutoRAGThinkingOptions {
 	readonly final?: AutoRAGThinkingLevel;
 }
 
+export interface PeerQueryOptions {
+	readonly port?: number;
+	readonly simplexDbPrefix?: string;
+	readonly openTransport?: () => Promise<SimplexTransport>;
+	readonly onResponse?: (state: SimplexQueryState, response: PeerQueryResponse) => void;
+}
+
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
 	apiKey?: string;
@@ -314,6 +325,11 @@ export interface AutoRAGAgentOptions {
 	searchTimeoutMs?: number;
 	/** Maximum number of retrieval/tool executions allowed in one search. */
 	maxSearchToolCalls?: number;
+	/**
+	 * Outbound SimpleX queries to trusted peer AutoRAG agents. Remote sessions
+	 * never receive this tool.
+	 */
+	peerQuery?: PeerQueryOptions | false;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
@@ -498,6 +514,25 @@ export class AutoRAGAgent {
 			cwd: this.workspaceProjectRoot,
 		});
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
+		const peerQuery = options.peerQuery;
+		const queryPeerTool =
+			this.remoteSession || peerQuery === undefined || peerQuery === false
+				? undefined
+				: createQueryPeerAgentTool({
+						workspacePath: this.workspaceProjectRoot,
+						onResponse: peerQuery?.onResponse,
+						openTransport:
+							peerQuery?.openTransport ??
+							(() =>
+								openPeerQueryTransport({
+									dbPrefix:
+										peerQuery?.simplexDbPrefix ??
+										join(this.workspaceProjectRoot, ".autorag", "p2p", "simplex"),
+									displayName: `autorag-${basename(this.workspaceProjectRoot) || "node"}`,
+								})),
+						autoStart: true,
+						sessionId: () => this.lastSessionId,
+					});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
@@ -525,6 +560,7 @@ export class AutoRAGAgent {
 			JIKJI_FIND_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
+			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
 		]);
@@ -554,6 +590,7 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
+			...(queryPeerTool !== undefined ? [queryPeerTool as AgentTool] : []),
 		];
 		const seenToolNames = new Set<string>();
 		const tools = orderedTools.filter((tool) => {
