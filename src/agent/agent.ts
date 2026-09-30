@@ -618,8 +618,7 @@ export class AutoRAGAgent {
 				tools,
 			},
 			streamFn: streamSimple,
-			convertToLlm: (messages) =>
-				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
+			convertToLlm: toLlmTranscriptMessages,
 			transformContext: async (messages) => this.withMemoryContext(messages),
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
@@ -712,10 +711,7 @@ export class AutoRAGAgent {
 			getApiKey: (provider) =>
 				resolved.providerApiKeys?.[provider] ??
 				(provider === resolved.model.provider ? resolved.apiKey : undefined),
-			convertToLlm: (messages) =>
-				messages.filter(
-					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
-				),
+			convertToLlm: toLlmTranscriptMessages,
 			transformContext: async (messages) => this.withMemoryContext(messages),
 		});
 		return {
@@ -2307,6 +2303,24 @@ function buildMissingFinalEmitAnswer(
 			: "No retrieval candidates were gathered before the run ended.",
 	];
 	return lines.join("\n\n");
+}
+
+/**
+ * The transcript the model may see.
+ *
+ * pi-agent-core carries the system prompt AND the tool declarations on a single
+ * `system` message, so filtering `system` out hides both from the provider: the
+ * agent would then run with no tools at all and could never call
+ * `emit_autorag_results`.
+ */
+export function toLlmTranscriptMessages(messages: AgentMessage[]) {
+	return messages.filter(
+		(message) =>
+			message.role === "user" ||
+			message.role === "assistant" ||
+			message.role === "toolResult" ||
+			message.role === "system",
+	);
 }
 
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
