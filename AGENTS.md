@@ -54,6 +54,32 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
 
+## Manual QA on a shared machine (binding)
+
+The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, the embedding-model cache, TUI sessions, P2P policy). The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
+
+That home belongs to the maintainer, not to your task. Every write your QA makes there silently changes every other clone, every app checkout, and the real setup. This already happened more than once: an ad-hoc QA step ran `autorag init --workspace "$TMP" --search-paths "$TMP/docs" --force` with no `--config` and no `AUTORAG_HOME`. `--workspace` does not move the config, so `--force` replaced the real `~/.autorag/config.json`. It dropped every configured datasource and pointed search at a temp directory that was deleted minutes later. From then on, every search on the machine, the desktop app included, failed with `AutoRAG search root does not exist: /var/folders/.../tmp.XXXX/docs` (#1743).
+
+Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
+
+1. **Never touch the real `~/.autorag`.** Do not write, move, delete, or `--force` anything under it, and do not "fix" or "clean up" it. Reading is allowed only when the task needs it. If you think it is wrong, report it; never repair it.
+2. **Isolate before the first command.** Create one temp root and point *both* AutoRAG variables at it. Export them in the same shell that runs every `autorag` / `node dist/cli/index.js` / `bun run src/cli/index.ts` command and every script that constructs `AutoRAGAgent`:
+
+   ```bash
+   QA_ROOT="$(mktemp -d)"
+   export AUTORAG_HOME="$QA_ROOT/.autorag-home"
+   export AUTORAG_CONFIG="$AUTORAG_HOME/config.json"
+   mkdir -p "$QA_ROOT/docs" "$AUTORAG_HOME"
+   ```
+
+   A tool that starts a fresh shell per call (an agent `bash` tool, `tool.bash`, `Bun.$`, `spawn`) does not inherit a previous call's `export`. Repeat the exports in each call, or pass them through `env`.
+3. **`--workspace` is not isolation.** It moves the workspace only. The config path comes from `--config`, then `AUTORAG_CONFIG`, then `$AUTORAG_HOME/config.json`, then `~/.autorag/config.json`. Never run `autorag init --force` (or anything else that writes config) unless `AUTORAG_CONFIG` or `--config` points inside your temp root.
+4. **Check before you write.** Right before the first command that writes config, confirm the target is yours: `echo "$AUTORAG_CONFIG"` must print a path under `$QA_ROOT`. If it is empty or under `$HOME/.autorag`, stop.
+5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' gateways and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
+6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
+
+The fixed live-E2E runner below is already isolated (clone-local `.autorag-e2e`), and `make test-linux` runs inside Docker. Prefer those over ad-hoc host runs. Moving live E2E and manual QA fully into Docker is tracked in #1743.
+
 ## Releases
 
 Publishing the GitHub Release is not the announcement. People watching Discussions do not see the release feed. Every release also gets one Discussion in the **Announcements** category, with the same user-facing notes.
@@ -175,11 +201,13 @@ The default product path uses the AutoRAG-owned `autorag-gateway` with the
 The gateway is started on demand by the semantic MinSync path and stays
 loopback-only.
 
-Run the isolated experiment:
+Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag` (see the manual-QA rules above):
 
 ```bash
 WORKSPACE="$(mktemp -d)"
-mkdir -p "$WORKSPACE/docs"
+export AUTORAG_HOME="$WORKSPACE/.autorag-home"
+export AUTORAG_CONFIG="$AUTORAG_HOME/config.json"
+mkdir -p "$WORKSPACE/docs" "$AUTORAG_HOME"
 printf '%s\n' \
   'Refund exceptions require director approval before payout.' \
   'Finance acknowledged the policy in the July review.' \
@@ -187,8 +215,7 @@ printf '%s\n' \
 
 cd "$WORKSPACE"
 # Pin the model to the local cache (no Ollama, no adapter)
-AUTORAG_HOME="$WORKSPACE/.autorag-home" \
-  autorag models prefetch --profile qwen3-embedding-0.6b
+autorag models prefetch --profile qwen3-embedding-0.6b
 
 # Init with the default gateway profile
 autorag init \
@@ -224,7 +251,7 @@ OLLAMA_EMBEDDINGS_URL=http://127.0.0.1:11434/api/embeddings \
   python3 scripts/manual-qa/ollama-tei-adapter.py
 ```
 
-Then initialize the workspace explicitly with the TEI endpoint:
+Then initialize the workspace explicitly with the TEI endpoint, in the same shell that exported `AUTORAG_HOME` and `AUTORAG_CONFIG` above:
 
 ```bash
 cd "$WORKSPACE"
