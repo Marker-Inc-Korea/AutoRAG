@@ -303,6 +303,24 @@ describe("syncParsedMirrors", () => {
 		expect(index.entries["/docs/huge.txt"]).toBeUndefined();
 		expect(result.diagnostics.some((d) => d.code === "parser-skipped")).toBe(true);
 	});
+
+	it("removes a user-excluded source and records the exclusion reason", async () => {
+		const file = join(source, "private.txt");
+		writeFileSync(file, "Private\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([file]),
+		});
+		const index = loadMirrorIndex(root);
+
+		expect(result.skipped).toBe(1);
+		expect(index.entries["/docs/private.txt"]).toBeUndefined();
+		expect(index.skipped?.["/docs/private.txt"]?.reason).toBe("user-excluded");
+	});
 });
 
 /**

@@ -317,6 +317,7 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	excludeExactDuplicates?: boolean;
+	excludePaths?: readonly string[];
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
@@ -416,6 +417,7 @@ export class AutoRAGAgent {
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	private readonly excludeExactDuplicates: boolean;
+	private readonly excludePaths: readonly string[];
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
@@ -463,6 +465,7 @@ export class AutoRAGAgent {
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages);
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
+		this.excludePaths = (options.excludePaths ?? []).map((path) => resolve(path));
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -1777,6 +1780,7 @@ export class AutoRAGAgent {
 			force,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
+			userExcludedSourcePaths: new Set(this.excludePaths),
 		});
 	}
 
@@ -1793,6 +1797,7 @@ export class AutoRAGAgent {
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
+			userExcludedSourcePaths: new Set(this.excludePaths),
 		});
 		return {
 			scanned: 0,
