@@ -120,6 +120,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			memoryPath: join(root, "memory.json"),
 			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
 			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
+			everything: false,
 		});
 		await agent.refresh(true);
 		const response = await agent.searchDocuments("refund director approval");
@@ -137,6 +138,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			memoryPath: join(root, "memory.json"),
 			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
 			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
+			everything: false,
 		});
 
 		const prepare = agent.scheduleMinSyncPrepareForTest();
@@ -189,6 +191,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			memoryPath: join(root, "memory.json"),
 			minSync: false,
 			jikji: { binaryPath: join(root, "missing-jikji") },
+			everything: false,
 		});
 		(agent as unknown as { findJikji: () => Promise<never> }).findJikji = async () => {
 			throw new Error("jikji prefetch boom");
