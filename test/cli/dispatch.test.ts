@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutoRAGRefreshOptions, AutoRAGRefreshResult } from "../../src/agent/agent.ts";
 import { runLiteRefresh } from "../../src/cli/commands/lite-refresh.ts";
+import { parseMethodFlag } from "../../src/cli/commands/refresh.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { main, parseArgs } from "../../src/cli/index.ts";
 import { AutoRAGLite } from "../../src/core.ts";
@@ -114,6 +115,14 @@ describe("parseArgs", () => {
 		expect("error" in report).toBe(false);
 		if ("error" in report) return;
 		expect(report.flags.input).toBe("/tmp/report.json");
+	});
+});
+
+describe("parseMethodFlag", () => {
+	it("accepts everything and includes it in all", () => {
+		expect(parseMethodFlag("everything,parsed")).toEqual(["parsed", "everything"]);
+		expect(parseMethodFlag("all")).toEqual(["parsed", "minsync", "datasources", "jikji", "everything"]);
+		expect(() => parseMethodFlag("evrything")).toThrow(/everything/);
 	});
 });
 

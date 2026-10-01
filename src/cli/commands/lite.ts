@@ -15,7 +15,7 @@ Subcommands:
                        Write the configured model-free lifecycle config
                        (--search-paths PATHS  --workspace DIR  --memory-path FILE  --force)
   autorag lite refresh Run an incremental index refresh (no model required)
-                       (--full  --force  --method minsync,parsed,datasources,jikji,all)
+                       (--full  --force  --method minsync,parsed,datasources,jikji,everything,all)
   autorag lite watch  Watch configured roots (or --once for one refresh tick)
                        (--once  --immediate  --debounce-ms N  --force)
   autorag lite status  Show path-opaque corpus freshness and index health

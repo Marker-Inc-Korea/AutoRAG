@@ -110,8 +110,9 @@ autorag lite refresh --force --json
   incremental refresh is not enough, such as after config changes to roots or
   index settings.
 - `--method <csv>` deliberately narrows the refresh. Valid values are
-  `parsed`, `minsync`, `datasources`, `jikji`, and `all`. Omit the flag to run
-  all methods. Unknown values are rejected.
+  `parsed`, `minsync`, `datasources`, `jikji`, `everything` (Windows only;
+  a no-op elsewhere), and `all`. Omit the flag to run all methods. Unknown
+  values are rejected.
 - MinSync and Jikji auto-install on first use by default. If they are missing
   or broken, run a full refresh or return to setup rather than silently
   degrading to lexical-only search.

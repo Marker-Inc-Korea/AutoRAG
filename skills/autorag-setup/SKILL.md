@@ -269,9 +269,9 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   performs one live completion probe.
 - `health --skip-probes` is only for intentionally offline validation and does
   not prove live provider access.
-- `refresh` syncs parsed mirrors, MinSync, Jikji, and authorized
-  datasources. `--method <csv>` may deliberately narrow it
-  (`parsed,minsync,datasources,jikji,all`).
+- `refresh` syncs parsed mirrors, MinSync, Jikji, authorized datasources, and
+  on Windows the bundled Everything file-name index. `--method <csv>` may
+  deliberately narrow it (`parsed,minsync,datasources,jikji,everything,all`).
 - Use `refresh --force` for a full resync only when incremental refresh is not
   enough. Keep destructive reset/rebuild operations scoped to workspace
   `.autorag` indexes, never source documents.

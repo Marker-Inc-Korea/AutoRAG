@@ -6,7 +6,7 @@ import type { CommandContext } from "./types.ts";
 
 /**
  * `autorag refresh` — parse configured search paths and resync every active
- * index (parsed mirror, MinSync, datasources, jikji). Model-free: no LLM
+ * index (parsed mirror, MinSync, datasources, jikji, and Everything on Windows). Model-free: no LLM
  * is constructed. Output is rendered through the path-opaque refresh renderer;
  * the raw result (which carries absolute `indexPath`) is never printed.
  *
@@ -30,7 +30,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 }
 
 /** All method names accepted by `--method`. */
-const ALL_METHOD_NAMES = ["all", "minsync", "parsed", "datasources", "jikji"] as const;
+const ALL_METHOD_NAMES = ["all", "minsync", "parsed", "datasources", "jikji", "everything"] as const;
 
 /**
  * Parse a `--method` CSV flag into a sorted set of `RefreshMethod` values.
@@ -52,10 +52,10 @@ export function parseMethodFlag(flag: string | boolean | undefined): readonly Re
 		}
 	}
 	if (entries.includes("all")) {
-		return ["parsed", "minsync", "datasources", "jikji"] as const;
+		return ["parsed", "minsync", "datasources", "jikji", "everything"] as const;
 	}
 	// Preserve canonical order, deduplicate.
-	const order: readonly RefreshMethod[] = ["parsed", "minsync", "datasources", "jikji"];
+	const order: readonly RefreshMethod[] = ["parsed", "minsync", "datasources", "jikji", "everything"];
 	const seen = new Set<RefreshMethod>();
 	for (const m of order) {
 		if (entries.includes(m)) seen.add(m);
