@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Dir, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { dirname, extname, resolve } from "node:path";
+import { dirname, extname, resolve, sep } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "../parser/defaults.ts";
 import { ParseError } from "../parser/errors.ts";
@@ -298,19 +298,27 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 	const previous = loadMirrorIndex(options.root);
 	const diagnostics: ParsedMirrorDiagnostic[] = [];
 	for (const entry of current) {
-		if (options.excludeSourcePaths?.has(entry.sourcePath) || isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths)) continue;
+		if (
+			options.excludeSourcePaths?.has(entry.sourcePath) ||
+			isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths)
+		)
+			continue;
 		if (!registry.getForVirtualPath(entry.virtualPath)) continue;
 		const prev = previous.entries[entry.virtualPath];
 		if (prev !== undefined && prev.sourceMtimeNs === entry.mtimeNs && prev.sourceSizeBytes === entry.sizeBytes)
 			continue;
 		const prevSkip = previous.skipped?.[entry.virtualPath];
+		// A "user-excluded" skip only suppresses staleness while the path stays excluded;
+		// reaching here means it was re-included, so the mirror must be rebuilt and the
+		// source counts as newly added (no mirror entry exists for it).
+		const honoredSkip = prevSkip?.reason === "user-excluded" ? undefined : prevSkip;
 		if (
-			prevSkip !== undefined &&
-			prevSkip.sourceMtimeNs === entry.mtimeNs &&
-			prevSkip.sourceSizeBytes === entry.sizeBytes
+			honoredSkip !== undefined &&
+			honoredSkip.sourceMtimeNs === entry.mtimeNs &&
+			honoredSkip.sourceSizeBytes === entry.sizeBytes
 		)
 			continue;
-		const known = prev ?? prevSkip;
+		const known = prev ?? honoredSkip;
 		const reason =
 			known === undefined
 				? "source-added"
@@ -345,10 +353,10 @@ function normalizeExtension(extension: string): string {
 	return lower.startsWith(".") ? lower : `.${lower}`;
 }
 
-function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string> | undefined): boolean {
+export function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string> | undefined): boolean {
 	if (excluded === undefined) return false;
 	for (const excludedPath of excluded) {
-		if (sourcePath === excludedPath || sourcePath.startsWith(`${excludedPath}/`)) return true;
+		if (sourcePath === excludedPath || sourcePath.startsWith(`${excludedPath}${sep}`)) return true;
 	}
 	return false;
 }

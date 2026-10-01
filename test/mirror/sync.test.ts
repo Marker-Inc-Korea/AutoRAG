@@ -321,6 +321,29 @@ describe("syncParsedMirrors", () => {
 		expect(index.entries["/docs/private.txt"]).toBeUndefined();
 		expect(index.skipped?.["/docs/private.txt"]?.reason).toBe("user-excluded");
 	});
+
+	it("excludes every source under an excluded directory", async () => {
+		const dir = join(source, "private");
+		mkdirSync(dir);
+		writeFileSync(join(dir, "a.txt"), "A\n");
+		writeFileSync(join(dir, "b.txt"), "B\n");
+		writeFileSync(join(source, "keep.txt"), "Keep\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([dir]),
+		});
+		const index = loadMirrorIndex(root);
+
+		expect(result.skipped).toBe(2);
+		expect(index.entries["/docs/private/a.txt"]).toBeUndefined();
+		expect(index.entries["/docs/private/b.txt"]).toBeUndefined();
+		expect(index.skipped?.["/docs/private/a.txt"]?.reason).toBe("user-excluded");
+		expect(index.entries["/docs/keep.txt"]).toBeDefined();
+	});
 });
 
 /**
@@ -438,5 +461,54 @@ describe("mirror staleness decisions", () => {
 
 		expect(persistedSkipReasons()["/docs/big.txt"]).toBeUndefined();
 		expect(loadMirrorIndex(root).entries["/docs/big.txt"]).toBeDefined();
+	});
+
+	it("ignores changes to a still-excluded source", async () => {
+		const file = join(source, "private.txt");
+		writeFileSync(file, "Private\n");
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([file]),
+		});
+		expect(persistedSkipReasons()["/docs/private.txt"]).toBe("user-excluded");
+
+		writeFileSync(file, "Private v2 — longer content\n");
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([file]),
+		});
+
+		expect(diagnostics).toEqual([]);
+	});
+
+	it("reports a re-included source as newly added even when its skip record still matches", async () => {
+		const file = join(source, "private.txt");
+		writeFileSync(file, "Private\n");
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([file]),
+		});
+		expect(persistedSkipReasons()["/docs/private.txt"]).toBe("user-excluded");
+
+		// Exclusion removed, file untouched: the old skip record matches mtime/size
+		// but must not mask the source — nothing indexes it until a refresh runs.
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0]).toMatchObject({
+			code: "stale-index",
+			source: "/docs/private.txt",
+			reason: "source-added",
+		});
 	});
 });

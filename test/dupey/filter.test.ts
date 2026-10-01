@@ -32,4 +32,38 @@ describe("exact duplicate filter", () => {
 		expect(result.keepers).toEqual(new Set([newPath]));
 		expect(result.excluded).toEqual(new Set([oldPath]));
 	});
+
+	it("skips unavailable copies when choosing the keeper", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dupey-filter-"));
+		roots.push(root);
+		mkdirSync(join(root, "docs"));
+		mkdirSync(join(root, "private"));
+		const publicCopy = join(root, "docs", "report.txt");
+		const privateCopy = join(root, "private", "report.txt");
+		writeFileSync(publicCopy, "same");
+		writeFileSync(privateCopy, "same");
+		utimesSync(publicCopy, 1, 1);
+		utimesSync(privateCopy, 2, 2);
+		const unavailable = new Set([join(root, "private")]);
+		const result = await selectExactDuplicateExclusions(
+			root,
+			{
+				dir: root,
+				files: [
+					{ path: "docs/report.txt", content_hash: "same-hash" },
+					{ path: "private/report.txt", content_hash: "same-hash" },
+				],
+				families: [],
+				errors: [],
+			},
+			(path) => {
+				for (const excluded of unavailable) {
+					if (path === excluded || path.startsWith(`${excluded}/`)) return true;
+				}
+				return false;
+			},
+		);
+		expect(result.keepers).toEqual(new Set([publicCopy]));
+		expect(result.excluded).toEqual(new Set());
+	});
 });
