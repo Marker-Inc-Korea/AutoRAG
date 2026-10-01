@@ -205,8 +205,20 @@ describe("buildEverythingSearchArgs", () => {
 				"10",
 			]),
 		);
-		expect(args.indexOf("-regex")).toBe(args.length - 2);
-		expect(args.at(-1)).toBe("^refund.*\\.pdf$");
+		expect(args.slice(-3)).toEqual(["-regex", "--", "^refund.*\\.pdf$"]);
+	});
+
+	it("waits for the instance with -timeout when a timeout is given", () => {
+		const args = buildEverythingSearchArgs("i", { query: "a" }, 30_000);
+		expect(args).toContain("-timeout");
+		expect(args[args.indexOf("-timeout") + 1]).toBe("30000");
+		expect(args.slice(-2)).toEqual(["--", "a"]);
+		expect(buildEverythingSearchArgs("i", { query: "a" })).not.toContain("-timeout");
+	});
+
+	it("keeps a regex pattern starting with a dash behind the -- terminator", () => {
+		const args = buildEverythingSearchArgs("i", { query: "-[a-z]+\\.tmp$", regex: true });
+		expect(args.slice(-3)).toEqual(["-regex", "--", "-[a-z]+\\.tmp$"]);
 	});
 });
 
@@ -281,6 +293,9 @@ describe("EverythingClient", () => {
 		const ini = readFileSync(join(root, ".autorag", "everything", "Everything.ini"), "utf8");
 		expect(ini).toContain("run_as_admin=0");
 		expect(calls.at(-1)!.args).toEqual(expect.arrayContaining(["-instance", client.instanceName, "-json"]));
+		// ES must wait for a cold instance instead of returning zero results.
+		const searchArgs = calls.at(-1)!.args;
+		expect(searchArgs[searchArgs.indexOf("-timeout") + 1]).toBe("30000");
 	});
 
 	it("surfaces ES exit status and stderr verbatim when a search fails", async () => {

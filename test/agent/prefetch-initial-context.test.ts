@@ -156,6 +156,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			memoryPath: join(root, "memory.json"),
 			minSync: false,
 			jikji: false,
+			everything: false,
 		});
 		const duplicated = [
 			{ id: "1", source: "/docs/a.md", content: "shared boilerplate header", score: 0.9, metadata: {} },

@@ -171,7 +171,11 @@ export function buildEverythingIni(input: {
  * query's own double quotes survive as Everything phrase quotes. The query is
  * placed after `--` so a leading dash is never parsed as an ES switch.
  */
-export function buildEverythingSearchArgs(instance: string, request: EverythingSearchRequest): string[] {
+export function buildEverythingSearchArgs(
+	instance: string,
+	request: EverythingSearchRequest,
+	timeoutMs?: number,
+): string[] {
 	const args = [
 		"-argv",
 		"-instance",
@@ -185,6 +189,9 @@ export function buildEverythingSearchArgs(instance: string, request: EverythingS
 		"-date-format",
 		"1",
 	];
+	// Without -timeout, ES returns zero results when the instance is still
+	// starting or rebuilding its index instead of waiting for a real answer.
+	if (timeoutMs !== undefined) args.push("-timeout", String(timeoutMs));
 	if (request.matchCase) args.push("-case");
 	if (request.matchPath) args.push("-match-path");
 	if (request.wholeWord) args.push("-whole-word");
@@ -194,7 +201,9 @@ export function buildEverythingSearchArgs(instance: string, request: EverythingS
 	if (request.sort !== undefined) args.push("-sort", request.sort);
 	if (request.offset !== undefined && request.offset > 0) args.push("-offset", String(request.offset));
 	args.push("-n", String(request.maxResults ?? DEFAULT_MAX_RESULTS));
-	if (request.regex) args.push("-regex", request.query);
+	// -regex is a mode switch; the query still goes after -- so a pattern
+	// starting with a dash is never parsed as another ES switch.
+	if (request.regex) args.push("-regex", "--", request.query);
 	else args.push("--", request.query);
 	return args;
 }
@@ -254,8 +263,10 @@ export class EverythingClient {
 		return this.serialize(async () => {
 			const es = await this.ensureRunning(false);
 			if (!es.ok) return es;
-			const args = buildEverythingSearchArgs(this.instanceName, request);
-			const result = await this.run(es.esPath, args, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+			const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+			const args = buildEverythingSearchArgs(this.instanceName, request, timeoutMs);
+			// ES needs a moment beyond its own -timeout to print the error.
+			const result = await this.run(es.esPath, args, timeoutMs + 5_000);
 			if (result.code !== 0) return this.failure("search-failed", es.esPath, args, result);
 			try {
 				return { ok: true, results: parseEverythingJson(result.stdout) };

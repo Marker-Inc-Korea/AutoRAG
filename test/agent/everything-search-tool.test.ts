@@ -198,6 +198,35 @@ describe("AutoRAGAgent Everything wiring", () => {
 		expect(agent.refreshComponentStatus().everything).toBe("ready");
 	});
 
+	it("exits the workspace Everything instance via stopEverything", async () => {
+		const calls: string[][] = [];
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			workspacePath: tmpDir,
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: false,
+			jikji: false,
+			webSearch: false,
+			everything: {
+				platform: "win32",
+				resolveBinaries: async () => ({
+					ok: true,
+					everythingPath: "C:\\c\\everything.exe",
+					esPath: "C:\\c\\es.exe",
+					source: "cached",
+				}),
+				run: async (_command, args) => {
+					calls.push([...args]);
+					return { code: 0, stdout: "1.4.1.1032\r\n", stderr: "" };
+				},
+				launch: () => {},
+			},
+		});
+		await agent.stopEverything();
+		expect(calls).toHaveLength(1);
+		expect(calls[0]).toEqual(["-instance", expect.stringMatching(/^autorag-[0-9a-f]{12}$/), "-exit"]);
+	});
+
 	it("surfaces an Everything indexing failure as a refresh error diagnostic", async () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

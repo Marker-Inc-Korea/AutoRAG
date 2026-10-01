@@ -1913,6 +1913,15 @@ export class AutoRAGAgent {
 		return this.everythingClient.search(request);
 	}
 
+	/**
+	 * Exit this workspace's Everything instance. The instance otherwise stays
+	 * running on purpose (live folder monitoring between CLI invocations), so
+	 * call this only when the workspace is being torn down. No-op off Windows.
+	 */
+	async stopEverything(): Promise<void> {
+		await this.everythingClient?.stop();
+	}
+
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
 		const results = await this.executeJikjiPrepare();
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
