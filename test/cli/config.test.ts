@@ -191,6 +191,76 @@ describe("single-model CLI config", () => {
 		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-4o" });
 	});
 
+	describe("catalog model with a configured endpoint (#1757)", () => {
+		const base = () => ({ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") });
+		const catalogRef = { provider: "openrouter", id: "deepseek/deepseek-v4.1-flash" };
+		const resolveWith = (model: CliConfig["model"], env: NodeJS.ProcessEnv = {}) =>
+			resolveAgentModel({ ...base(), model }, { configPath: join(root, "missing.toml"), env });
+
+		it("keeps catalog reasoning, compat, and limits when baseUrl/api restate the catalog endpoint", () => {
+			const catalogOnly = resolveWith(catalogRef).model;
+			const withEndpoint = resolveWith({
+				...catalogRef,
+				baseUrl: "https://openrouter.ai/api/v1",
+				api: "openai-completions",
+				apiKeyEnv: "OPENROUTER_API_KEY",
+			}).model;
+			expect(catalogOnly.reasoning).toBe(true);
+			expect(catalogOnly.compat).toBeDefined();
+			expect(withEndpoint).toEqual(catalogOnly);
+		});
+
+		it("overrides only the explicitly configured fields on top of the catalog entry", () => {
+			const catalogOnly = resolveWith(catalogRef).model;
+			const overridden = resolveWith({
+				...catalogRef,
+				name: "Proxy Flash",
+				baseUrl: "https://proxy.example.test/v1",
+				api: "openai-responses",
+				reasoning: false,
+				input: ["text"],
+				contextWindow: 64_000,
+				maxTokens: 8_000,
+			}).model;
+			expect(overridden).toEqual({
+				...catalogOnly,
+				name: "Proxy Flash",
+				baseUrl: "https://proxy.example.test/v1",
+				api: "openai-responses",
+				reasoning: false,
+				input: ["text"],
+				contextWindow: 64_000,
+				maxTokens: 8_000,
+			});
+		});
+
+		it("still passes the configured apiKeyEnv secret for a catalog model with baseUrl", () => {
+			const resolved = resolveWith(
+				{ ...catalogRef, baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "MY_ROUTER_KEY" },
+				{ MY_ROUTER_KEY: "sk-test" },
+			);
+			expect(resolved.apiKey).toBe("sk-test");
+			expect(resolved.providerApiKeys).toEqual({ openrouter: "sk-test" });
+		});
+
+		it("builds a generic model when the catalog has no entry for the configured endpoint", () => {
+			const model = resolveWith({
+				provider: "openrouter",
+				id: "private/not-in-catalog",
+				baseUrl: "https://openrouter.ai/api/v1",
+			}).model;
+			expect(model).toMatchObject({
+				id: "private/not-in-catalog",
+				api: "openai-completions",
+				reasoning: false,
+				input: ["text"],
+				contextWindow: 128_000,
+				maxTokens: 16_384,
+			});
+			expect(model.compat).toBeUndefined();
+		});
+	});
+
 	it("validates MinSync embedder boundaries", () => {
 		expect(normalizeEmbedder({ id: "embed", dimension: 3 }, "minSync.embedder")).toEqual({
 			id: "embed",
