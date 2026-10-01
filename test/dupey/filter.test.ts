@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { selectExactDuplicateExclusions } from "../../src/dupey/index.ts";
+import { isPathExcluded } from "../../src/mirror/index.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -56,12 +57,7 @@ describe("exact duplicate filter", () => {
 				families: [],
 				errors: [],
 			},
-			(path) => {
-				for (const excluded of unavailable) {
-					if (path === excluded || path.startsWith(`${excluded}/`)) return true;
-				}
-				return false;
-			},
+			(path) => isPathExcluded(path, unavailable),
 		);
 		expect(result.keepers).toEqual(new Set([publicCopy]));
 		expect(result.excluded).toEqual(new Set());
