@@ -41,7 +41,8 @@ export type SearchDocumentDiagnosticCode =
 	| "watch-failed"
 	| "watch-limited"
 	| "unknown-datasource-skill"
-	| "missing-final-emit";
+	| "missing-final-emit"
+	| "model-request-failed";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

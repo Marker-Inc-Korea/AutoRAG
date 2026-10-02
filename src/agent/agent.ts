@@ -1040,11 +1040,12 @@ export class AutoRAGAgent {
 					// Local sessions resolve with a degraded response that carries the
 					// run's retrieval trace instead of throwing away the whole run.
 					const reason = lastAssistantText(session?.agent.state.messages ?? []);
+					const modelError = lastModelRequestError(session?.agent.state.messages ?? []);
 					const response: SearchDocumentsResponse = {
 						sessionId,
 						query: trimmedQuery,
 						results: [],
-						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace),
+						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace, modelError),
 						searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
 						warnings: [],
 						diagnostics: [
@@ -1055,6 +1056,15 @@ export class AutoRAGAgent {
 								message:
 									"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
 							},
+							...(modelError === undefined
+								? []
+								: [
+										{
+											code: "model-request-failed" as const,
+											severity: "error" as const,
+											message: `The model request failed: ${modelError}`,
+										},
+									]),
 						],
 						retrievalTrace: this.retrievalTrace,
 					};
@@ -2400,18 +2410,40 @@ function buildMissingFinalEmitAnswer(
 	query: string,
 	reason: string | undefined,
 	trace: readonly SearchDocumentRetrievalTraceEntry[],
+	modelError?: string,
 ): string {
 	const lines = [
 		`The search run for "${query}" ended without finalized results: the agent ended its run without calling emit_autorag_results, so no curated answer is available within the configured search range.`,
-		reason === undefined
-			? "The agent did not record why it stopped."
-			: `The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`,
-		"Next steps: broaden the configured searchPaths, connect additional datasources via the datasources configuration, or retry with a narrower or different query.",
+		...(modelError === undefined ? [] : [`The model request failed: ${modelError}`]),
+		...(reason === undefined
+			? modelError === undefined
+				? ["The agent did not record why it stopped."]
+				: []
+			: [`The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`]),
+		modelError === undefined
+			? "Next steps: broaden the configured searchPaths, connect additional datasources via the datasources configuration, or retry with a narrower or different query."
+			: "Next steps: fix the model provider error above (rate limit, quota, credentials, or model id) and retry the same query.",
 		trace.length > 0
 			? "Retrieval candidates gathered before the run ended are attached under `retrievalTrace` for inspection."
 			: "No retrieval candidates were gathered before the run ended.",
 	];
 	return lines.join("\n\n");
+}
+
+/**
+ * The provider error that ended the run, if the last assistant turn failed.
+ * pi-agent-core records a failed request (HTTP 429, auth, unknown model) as an
+ * assistant message with stopReason "error" and no text, so without this the
+ * degraded answer only says the agent "did not record why it stopped".
+ */
+function lastModelRequestError(messages: readonly AgentMessage[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason !== "error") return undefined;
+		return message.errorMessage?.trim() || "the provider returned an error without a message";
+	}
+	return undefined;
 }
 
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
