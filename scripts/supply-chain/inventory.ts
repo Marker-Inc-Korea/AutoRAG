@@ -54,6 +54,15 @@ export function generateNotice(input: {
 		"licenses/gemma-terms-of-use.html",
 		"licenses/embedding-assets.json",
 		"",
+		"Bundled Windows binaries (vendor/everything, extracted only on Windows):",
+		"Everything 1.4.1.1032 portable (voidtools, David Carpenter)",
+		"License: MIT (closed source); includes PCRE (BSD-3-Clause)",
+		"licenses/everything-MIT-and-PCRE-BSD.txt",
+		"",
+		"ES 1.1.0.38 command-line interface (voidtools)",
+		"License: MIT",
+		"licenses/es-MIT.txt",
+		"",
 	].join("\n");
 }
 

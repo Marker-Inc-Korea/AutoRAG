@@ -28,7 +28,8 @@
     "skills",
     "README.md",
     "NOTICE",
-    "licenses"
+    "licenses",
+    "vendor"
   ],
   "publishConfig": {
     "access": "public"

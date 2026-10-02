@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
@@ -10,6 +10,12 @@ import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
+import {
+	EverythingClient,
+	type EverythingClientOptions,
+	type EverythingSearchRequest,
+	type EverythingSearchResult,
+} from "../everything/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -81,6 +87,7 @@ import {
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
+import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import {
 	type AutoRAGFastAnswerDetails,
 	createEmitFastAnswerTool,
@@ -139,7 +146,23 @@ const SEARCH_TOOLS = [
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
+	EVERYTHING_SEARCH_TOOL_NAME,
 ] as const;
+
+/**
+ * Messages the model sees. pi-agent-core declares the callable tools through
+ * `system` transcript messages (`toolsAdded`/`toolsRemoved`), so they must pass
+ * through; dropping them sends every request without tools.
+ */
+function keepLlmMessages(messages: AgentMessage[]): Message[] {
+	return messages.filter(
+		(message): message is Message =>
+			message.role === "system" ||
+			message.role === "user" ||
+			message.role === "assistant" ||
+			message.role === "toolResult",
+	);
+}
 
 /**
  * Safety ceiling on merged evidence when the caller names no `topK`.
@@ -160,7 +183,7 @@ export interface AutoRefreshOptions {
 }
 
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
-export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji";
+export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything";
 
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
@@ -180,12 +203,21 @@ export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diag
 	readonly diagnostics: readonly SearchDocumentDiagnostic[];
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
+	/** Windows-only Everything file-name index outcome; absent on other platforms or when not selected. */
+	readonly everything?: AutoRAGEverythingRefreshResult;
+}
+
+export interface AutoRAGEverythingRefreshResult {
+	readonly ok: boolean;
+	readonly indexedItems?: number;
+	readonly reason?: string;
 }
 
 export interface AutoRAGRefreshComponentStatus {
 	readonly minsync?: string;
 	readonly jikji?: string;
 	readonly datasources?: string;
+	readonly everything?: string;
 }
 
 /** Path-opaque snapshot of corpus freshness and the last refresh outcome. */
@@ -234,6 +266,7 @@ interface RefreshState {
 	jikjiDiagnostics: readonly JikjiDiagnostic[];
 	minsync?: MinSyncSyncResult;
 	datasources: readonly DatasourceIndexResult[];
+	everything?: AutoRAGEverythingRefreshResult;
 	lastError?: string;
 	watchLimited: boolean;
 	watchFailed: boolean;
@@ -301,6 +334,13 @@ export interface AutoRAGAgentOptions {
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
 	jikji?: JikjiOptions | false;
+	/**
+	 * Windows-only instant file/folder name search through the bundled
+	 * voidtools Everything (portable, user-level, folder-only index over
+	 * `searchPaths`). Enabled by default on Windows; ignored elsewhere.
+	 * `false` disables it. The remaining fields are test seams.
+	 */
+	everything?: Omit<EverythingClientOptions, "root" | "folders"> | false;
 	/**
 	 * Internet web tools (`web_search` + `web_fetch`), ported from oh-my-pi's
 	 * provider-chain web module. Default enabled and credential-free: the
@@ -411,6 +451,7 @@ export class AutoRAGAgent {
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
+	private readonly everythingClient: EverythingClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
@@ -488,6 +529,14 @@ export class AutoRAGAgent {
 			});
 			this.jikjiReady = this.searchPaths.every((searchPath) => this.jikjiClient?.isPrepared(searchPath) === true);
 		}
+		if (options.everything !== false) {
+			const everythingClient = new EverythingClient({
+				...(options.everything ?? {}),
+				root: this.workspaceProjectRoot,
+				folders: this.searchPaths,
+			});
+			if (everythingClient.isSupported()) this.everythingClient = everythingClient;
+		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
 		this.memory = new RetrievalMemory({ storagePath: memPath });
@@ -539,6 +588,9 @@ export class AutoRAGAgent {
 					});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
+		// Remote peers never enumerate local file names.
+		const everythingSearchTool =
+			this.everythingClient !== undefined && !this.remoteSession ? createEverythingSearchTool(this) : undefined;
 
 		const webSearchOption = options.webSearch;
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
@@ -562,6 +614,7 @@ export class AutoRAGAgent {
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
+			EVERYTHING_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
@@ -593,6 +646,7 @@ export class AutoRAGAgent {
 			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
+			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 			...(queryPeerTool !== undefined ? [queryPeerTool as AgentTool] : []),
 		];
@@ -622,8 +676,7 @@ export class AutoRAGAgent {
 				tools,
 			},
 			streamFn: streamSimple,
-			convertToLlm: (messages) =>
-				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
+			convertToLlm: keepLlmMessages,
 			transformContext: async (messages) => this.withMemoryContext(messages),
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
@@ -716,10 +769,7 @@ export class AutoRAGAgent {
 			getApiKey: (provider) =>
 				resolved.providerApiKeys?.[provider] ??
 				(provider === resolved.model.provider ? resolved.apiKey : undefined),
-			convertToLlm: (messages) =>
-				messages.filter(
-					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
-				),
+			convertToLlm: keepLlmMessages,
 			transformContext: async (messages) => this.withMemoryContext(messages),
 		});
 		return {
@@ -1407,6 +1457,14 @@ export class AutoRAGAgent {
 		);
 	}
 
+	/** Discovery-tool hint naming only the registered discovery tools; empty when none. */
+	private discoveryHint(sentence: (tools: string) => string): string {
+		const names = this.tools
+			.map((tool) => tool.name)
+			.filter((name) => name === JIKJI_FIND_TOOL_NAME || name === EVERYTHING_SEARCH_TOOL_NAME);
+		return names.length === 0 ? "" : sentence(names.join(" and "));
+	}
+
 	/**
 	 * Verification-phase prompt for two-phase searches. The user already saw
 	 * the fast answer; the model now verifies it against sources with thinking
@@ -1418,7 +1476,7 @@ export class AutoRAGAgent {
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`The user already received this immediate first answer:\n${fastAnswer ?? "(the fast phase produced no answer)"}\n\n` +
-			`Now verify it rigorously. Actively use jikji_find when discovering or exploring local files and folders. Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ` +
+			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ` +
 			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`Formatting and content rules for the final answer:\n` +
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
@@ -1451,7 +1509,7 @@ export class AutoRAGAgent {
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations. If there are partial clues or leads, mention them concisely.\n\n` +
-			`When exploring local files and folders, actively use jikji_find rather than exploratory bash commands. If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
+			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
@@ -1521,6 +1579,17 @@ export class AutoRAGAgent {
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
 			const jikji = allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare() : undefined;
+			// On Windows, the bundled Everything instance indexes the same local
+			// roots by name so the agent can locate files instantly.
+			let everything: AutoRAGEverythingRefreshResult | undefined;
+			if (this.everythingClient !== undefined && (allMethods || wants("everything") || needsParsed)) {
+				progress = updateRefreshProgress(progress, { phase: "everything" });
+				writeRefreshProgress(this.workspaceProjectRoot, progress);
+				const indexed = await this.everythingClient.index();
+				everything = indexed.ok
+					? { ok: true, indexedItems: indexed.indexedItems }
+					: { ok: false, reason: indexed.message };
+			}
 			progress = updateRefreshProgress(progress, { phase: "finalizing" });
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -1544,6 +1613,7 @@ export class AutoRAGAgent {
 				jikjiDiagnostics,
 				minsync,
 				datasources,
+				everything,
 				lastError: undefined,
 			};
 			if (needsParsed) {
@@ -1570,6 +1640,7 @@ export class AutoRAGAgent {
 							: {}),
 					}
 				: undefined;
+			const everythingDiagnostics = everythingRefreshDiagnostics(everything);
 			return {
 				...summary,
 				diagnostics: [
@@ -1577,9 +1648,11 @@ export class AutoRAGAgent {
 					...summary.diagnostics,
 					...minsyncDiagnostics,
 					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
+					...everythingDiagnostics,
 				],
 				minsync: publicMinsync,
 				datasources,
+				...(everything !== undefined ? { everything } : {}),
 			};
 		} catch (error) {
 			this.refreshState = {
@@ -1639,6 +1712,7 @@ export class AutoRAGAgent {
 				diagnostics.push(diag);
 			}
 		}
+		diagnostics.push(...everythingRefreshDiagnostics(this.refreshState.everything));
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
 				code: "watch-limited",
@@ -1707,12 +1781,12 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Synchronous per-component readiness snapshot (minsync/jikji/datasources).
+	 * Synchronous per-component readiness snapshot (minsync/jikji/datasources/everything).
 	 * `minsync` is "ready" only after a successful sync wrote its cursor;
 	 * "configured" means the binary resolved but no index exists yet.
 	 */
 	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
-		const status: { minsync?: string; jikji?: string; datasources?: string } = {};
+		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string } = {};
 		if (this.minSyncMethod !== undefined) {
 			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
 				? "unavailable"
@@ -1727,6 +1801,10 @@ export class AutoRAGAgent {
 		}
 		if (this.datasourceSkills.length > 0) {
 			status.datasources = this.refreshState.datasources.some((result) => !result.ok) ? "degraded" : "configured";
+		}
+		if (this.everythingClient !== undefined) {
+			const everything = this.refreshState.everything;
+			status.everything = everything === undefined ? "configured" : everything.ok ? "ready" : "degraded";
 		}
 		return status;
 	}
@@ -1835,6 +1913,23 @@ export class AutoRAGAgent {
 		this.minSyncReady = result?.ok === true;
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
+	}
+
+	/** Provider for the Windows-only everything_search tool. */
+	async searchEverything(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
+		if (this.everythingClient === undefined) {
+			return { ok: false, reason: "unsupported-platform", message: "Everything is not enabled on this host." };
+		}
+		return this.everythingClient.search(request);
+	}
+
+	/**
+	 * Exit this workspace's Everything instance. The instance otherwise stays
+	 * running on purpose (live folder monitoring between CLI invocations), so
+	 * call this only when the workspace is being torn down. No-op off Windows.
+	 */
+	async stopEverything(): Promise<void> {
+		await this.everythingClient?.stop();
 	}
 
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
@@ -2361,6 +2456,21 @@ function sanitizeDiagnosticMessage(raw: string): string {
 	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
 	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
 	return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/** A failed Everything index surfaces its underlying message verbatim as a refresh error. */
+function everythingRefreshDiagnostics(
+	everything: AutoRAGEverythingRefreshResult | undefined,
+): SearchDocumentDiagnostic[] {
+	if (everything === undefined || everything.ok) return [];
+	return [
+		{
+			code: "everything-index-failed",
+			severity: "error",
+			message: `Everything file-name indexing failed: ${everything.reason ?? "unknown error"}`,
+			source: "everything",
+		},
+	];
 }
 
 /**

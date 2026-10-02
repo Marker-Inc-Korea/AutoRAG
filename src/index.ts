@@ -37,6 +37,7 @@ export {
 } from "./core.ts";
 export * from "./datasource/index.ts";
 export * from "./dupey/index.ts";
+export * from "./everything/index.ts";
 export * from "./jikji/index.ts";
 export * from "./manifest/index.ts";
 export * from "./memory/index.ts";

@@ -58,6 +58,7 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 |---|---|---|
 | MinSync (local docs) | `minsync status`, `minsync check`, `minsync verify` | `autorag refresh --method minsync` |
 | Jikji (discovery) | `jikji doctor` | `autorag refresh --method jikji` |
+| Everything (Windows file names) | `autorag status --json` → `components.everything` | `autorag refresh --method everything --json` |
 | KakaoTalk | `lazykatok doctor` | `lazykatok sync && lazykatok index` |
 | Discord | `discrawl --json metadata` | `discrawl sync` |
 | Slack | `slacrawl --json doctor` | `slacrawl sync` |
@@ -207,6 +208,7 @@ timer, or Task Scheduler).
 | `index-not-ready` | Index missing or never built | `autorag refresh --json` |
 | `minsync-unavailable` | MinSync binary missing or install failed | Check cargo, retry refresh |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check cargo, retry refresh |
+| `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
 | `embedder-unavailable` | Embedding gateway or runtime down | `autorag gateway status --format json` |
 | `lock-conflict` | Another runtime holds the lock | `autorag gateway stop` |

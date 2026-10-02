@@ -134,6 +134,8 @@ export interface CliConfig {
 	model?: AgentModelConfig;
 	minSync?: MinSyncMethodConfig;
 	jikji?: Record<string, unknown> | false;
+	/** Windows-only bundled Everything file-name search. Default enabled on Windows; `false` disables. */
+	everything?: { enabled?: boolean; timeoutMs?: number; startupTimeoutMs?: number; indexTimeoutMs?: number } | false;
 	webSearch?: WebSearchCliConfig;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
@@ -894,6 +896,15 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	});
 	config.minSync = normalized.minSync;
 	config.jikji = file.jikji === false ? false : (file.jikji ?? {});
+	if (file.everything !== undefined) {
+		if (
+			file.everything !== false &&
+			(typeof file.everything !== "object" || file.everything === null || Array.isArray(file.everything))
+		) {
+			throw new ConfigError("Config field 'everything' must be false or an object");
+		}
+		config.everything = file.everything as CliConfig["everything"];
+	}
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1012,6 +1023,12 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.minSync = false;
 	}
 	opts.jikji = config.jikji === false ? false : (config.jikji ?? {});
+	if (config.everything === false || config.everything?.enabled === false) {
+		opts.everything = false;
+	} else if (config.everything !== undefined) {
+		const { enabled: _omitEverythingEnabled, ...everythingFields } = config.everything;
+		opts.everything = everythingFields;
+	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {

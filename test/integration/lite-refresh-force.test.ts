@@ -43,6 +43,7 @@ describe("model-free full refresh", () => {
 			memoryPath: join(root, "memory.json"),
 			minSync: { binaryPath: binary, workspacePath: join(root, ".autorag", "minsync"), autoInstall: false },
 			jikji: false,
+			everything: false,
 			dupey: false,
 			excludeExactDuplicates: false,
 		});

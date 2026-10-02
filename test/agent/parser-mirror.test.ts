@@ -36,6 +36,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 		});
 
@@ -63,6 +64,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
 			minSync: false,
 			dupey: {
 				run: async () =>
@@ -94,6 +96,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
 			minSync: false,
 			excludeExactDuplicates: false,
 		});
@@ -114,6 +117,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 		});
 
@@ -142,6 +146,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 		});
 
@@ -175,6 +180,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 		});
 

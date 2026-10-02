@@ -124,9 +124,10 @@ autorag serve --force
 autorag p2p policy list --json
 ```
 
-Prefer a full refresh so parsed mirrors, MinSync, Jikji, and configured
-datasources stay aligned. `--method` accepts
-`parsed,minsync,datasources,jikji,all`. BM25 is a MinSync retrieval mode, not
+Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
+datasources, and (on Windows) the bundled Everything file-name index stay
+aligned. `--method` accepts
+`parsed,minsync,datasources,jikji,everything,all`. BM25 is a MinSync retrieval mode, not
 a `--method` name. Use `--method` only for deliberate narrowing. Scheduled
 maintenance should use non-daemon `autorag watch --once`, typically every
 1 hour, with the same config used by search and no overlapping runs.

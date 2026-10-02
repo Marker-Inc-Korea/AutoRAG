@@ -39,8 +39,9 @@ function diagnosticProjection(d: {
 function refreshOk(result: AutoRAGRefreshResult): boolean {
 	const minsyncOk = result.minsync === undefined || result.minsync.ok;
 	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
+	const everythingOk = result.everything === undefined || result.everything.ok;
 	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
-	return minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+	return minsyncOk && datasourcesOk && everythingOk && !hasErrorDiagnostics;
 }
 
 function refreshEnvelope(result: AutoRAGRefreshResult) {
@@ -81,6 +82,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 			diagnostics: (ds.diagnostics ?? []).map(diagnosticProjection),
 		}));
 	}
+	if (result.everything !== undefined) envelope.everything = result.everything;
 	return envelope;
 }
 
@@ -105,6 +107,12 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 				`  datasource: ok=${ds.ok} skill=${ds.skill} instanceId=${ds.instanceId} indexedAt=${ds.indexedAt}`,
 			);
 		}
+	}
+	if (result.everything !== undefined) {
+		const parts = [`ok=${result.everything.ok}`];
+		if (result.everything.indexedItems !== undefined) parts.push(`indexedItems=${result.everything.indexedItems}`);
+		if (result.everything.reason !== undefined) parts.push(`reason=${result.everything.reason}`);
+		lines.push(`  everything: ${parts.join(" ")}`);
 	}
 	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
 		for (const d of result.diagnostics) {
@@ -147,6 +155,7 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 	if (comps.minsync) compParts.push(`minsync=${comps.minsync}`);
 	if (comps.jikji) compParts.push(`jikji=${comps.jikji}`);
 	if (comps.datasources) compParts.push(`datasources=${comps.datasources}`);
+	if (comps.everything) compParts.push(`everything=${comps.everything}`);
 	if (compParts.length > 0) lines.push(`  components: ${compParts.join(" ")}`);
 	if (status.lastError) lines.push(`  lastError: ${status.lastError}`);
 	if (debug || status.diagnostics.length > 0) {
