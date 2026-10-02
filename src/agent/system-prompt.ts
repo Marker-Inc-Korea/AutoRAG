@@ -36,6 +36,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"everything_search",
 			"instant Windows file/folder name search (voidtools Everything) across the configured search folders",
 		),
+		toolLine(
+			config,
+			"fsearch_search",
+			"instant macOS/Linux file/folder name search (fsearch-cli/FSearch) across the configured search folders, with a slow filesystem-walk fallback",
+		),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
 		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
@@ -67,6 +72,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"bash",
 						"jikji_find",
 						"everything_search",
+						"fsearch_search",
 						"search_all_documents",
 						"semantic_search_local_docs",
 						"load_datasource_skill",
@@ -94,7 +100,9 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			? "\nNo search tools were provided. Report a blocked/degraded state and do not claim a completed search.\n"
 			: "";
 	// File discovery guidance names only the discovery tools actually registered.
-	const discoveryTools = ["jikji_find", "everything_search"].filter((name) => toolAvailable(config, name));
+	const discoveryTools = ["jikji_find", "everything_search", "fsearch_search"].filter((name) =>
+		toolAvailable(config, name),
+	);
 	const discovery = discoveryTools.map((name) => `\`${name}\``).join(" and ");
 	const jikji = config.jikjiIndexingEnabled
 		? `## Jikji Local Discovery
@@ -122,6 +130,14 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 This host runs Windows with a bundled voidtools Everything instance that indexes the names, sizes, and modified dates of every file and folder under the configured search folders and keeps that index live. \`everything_search\` answers name/path questions instantly, so use it freely and repeatedly instead of \`bash\` \`find\`/\`ls\`/\`dir\` scans whenever you need to locate files or folders by name, extension, location, size, or date. It searches names and paths only, not file contents: read the returned absolute paths with \`bash\`, and use the retrieval tools for content questions.
 
 Query syntax: space = AND, \`|\` = OR, \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`, \`report??\`), \`ext:pdf;docx;hwp\`, \`dm:today\` / \`dm:thisweek\` / \`dm:2026-09\`, \`size:>10mb\`, \`parent:<folder>\` (direct children), and \`\\folder\\\` path fragments with \`matchPath\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`wholeWord\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or dm:.
+`
+		: "";
+	const fsearch = toolAvailable(config, "fsearch_search")
+		? `## FSearch File-Name Search (macOS/Linux)
+
+This host runs macOS or Linux with fsearch-cli (FSearch): an Everything-style indexer whose per-workspace database holds the names, sizes, and modified dates of every file and folder under the configured search folders, kept live by a background \`fsearch-cli watch\` daemon (FSEvents on macOS, inotify/fanotify on Linux). \`fsearch_search\` answers name/path questions in well under a second, so use it freely and repeatedly instead of \`bash\` \`find\`/\`ls\` scans whenever you need to locate files or folders by name, extension, location, size, or date. It searches names and paths only, not file contents: read the returned absolute paths with \`bash\`, and use the retrieval tools for content questions.
+
+Query syntax: space = AND, OR, \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`), \`ext:pdf;docx;hwp\`, \`size:>10mb\`, \`path:<fragment>\`, \`case:\`, \`regex:\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or size:. When fsearch-cli is not installed the tool still answers through a slow bounded filesystem walk (substring/regex name matching only) and says so in its output — prefer narrow queries there, and never replace the tool with your own recursive \`find\`.
 `
 		: "";
 
@@ -180,6 +196,7 @@ ${config.memorySignalCount ?? 0} retrieval feedback signal(s) are available. Tre
 
 ${jikji}
 ${everything}
+${fsearch}
 ${manifests}
 ## Output Format
 

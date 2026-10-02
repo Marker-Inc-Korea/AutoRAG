@@ -136,6 +136,17 @@ export interface CliConfig {
 	jikji?: Record<string, unknown> | false;
 	/** Windows-only bundled Everything file-name search. Default enabled on Windows; `false` disables. */
 	everything?: { enabled?: boolean; timeoutMs?: number; startupTimeoutMs?: number; indexTimeoutMs?: number } | false;
+	/** macOS/Linux fsearch-cli file-name search. Default enabled on macOS/Linux; `false` disables. */
+	fsearch?:
+		| {
+				enabled?: boolean;
+				binaryPath?: string;
+				timeoutMs?: number;
+				startupTimeoutMs?: number;
+				indexTimeoutMs?: number;
+				watch?: boolean;
+		  }
+		| false;
 	webSearch?: WebSearchCliConfig;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
@@ -905,6 +916,15 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.everything = file.everything as CliConfig["everything"];
 	}
+	if (file.fsearch !== undefined) {
+		if (
+			file.fsearch !== false &&
+			(typeof file.fsearch !== "object" || file.fsearch === null || Array.isArray(file.fsearch))
+		) {
+			throw new ConfigError("Config field 'fsearch' must be false or an object");
+		}
+		config.fsearch = file.fsearch as CliConfig["fsearch"];
+	}
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1028,6 +1048,12 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	} else if (config.everything !== undefined) {
 		const { enabled: _omitEverythingEnabled, ...everythingFields } = config.everything;
 		opts.everything = everythingFields;
+	}
+	if (config.fsearch === false || config.fsearch?.enabled === false) {
+		opts.fsearch = false;
+	} else if (config.fsearch !== undefined) {
+		const { enabled: _omitFSearchEnabled, ...fsearchFields } = config.fsearch;
+		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;

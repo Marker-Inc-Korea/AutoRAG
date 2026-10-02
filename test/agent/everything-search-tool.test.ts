@@ -116,6 +116,7 @@ describe("system prompt Everything guidance", () => {
 			minSync: false,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 		});
 		expect(agent.getSystemPrompt()).not.toContain("jikji_find");
 		expect(agent.buildSearchPrompt("q", {})).not.toContain("jikji_find");
@@ -176,6 +177,7 @@ describe("AutoRAGAgent Everything wiring", () => {
 			minSync: false,
 			jikji: false,
 			everything: { platform: "darwin" },
+			fsearch: false,
 		});
 		expect(toolNames(mac)).not.toContain(EVERYTHING_SEARCH_TOOL_NAME);
 		expect(mac.getSystemPrompt()).not.toContain("Everything");
@@ -187,6 +189,7 @@ describe("AutoRAGAgent Everything wiring", () => {
 			minSync: false,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 		});
 		expect(toolNames(disabled)).not.toContain(EVERYTHING_SEARCH_TOOL_NAME);
 	});
