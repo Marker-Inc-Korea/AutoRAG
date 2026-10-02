@@ -54,6 +54,32 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
 
+## Manual QA on a shared machine (binding)
+
+The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, the embedding-model cache, TUI sessions, P2P policy). The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
+
+That home belongs to the maintainer, not to your task. Every write your QA makes there silently changes every other clone, every app checkout, and the real setup. This already happened more than once: an ad-hoc QA step ran `autorag init --workspace "$TMP" --search-paths "$TMP/docs" --force` with no `--config` and no `AUTORAG_HOME`. `--workspace` does not move the config, so `--force` replaced the real `~/.autorag/config.json`. It dropped every configured datasource and pointed search at a temp directory that was deleted minutes later. From then on, every search on the machine, the desktop app included, failed with `AutoRAG search root does not exist: /var/folders/.../tmp.XXXX/docs` (#1743).
+
+Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
+
+1. **Never touch the real `~/.autorag`.** Do not write, move, delete, or `--force` anything under it, and do not "fix" or "clean up" it. Reading is allowed only when the task needs it. If you think it is wrong, report it; never repair it.
+2. **Isolate before the first command.** Create one temp root and point *both* AutoRAG variables at it. Export them in the same shell that runs every `autorag` / `node dist/cli/index.js` / `bun run src/cli/index.ts` command and every script that constructs `AutoRAGAgent`:
+
+   ```bash
+   QA_ROOT="$(mktemp -d)"
+   export AUTORAG_HOME="$QA_ROOT/.autorag-home"
+   export AUTORAG_CONFIG="$AUTORAG_HOME/config.json"
+   mkdir -p "$QA_ROOT/docs" "$AUTORAG_HOME"
+   ```
+
+   A tool that starts a fresh shell per call (an agent `bash` tool, `tool.bash`, `Bun.$`, `spawn`) does not inherit a previous call's `export`. Repeat the exports in each call, or pass them through `env`.
+3. **`--workspace` is not isolation.** It moves the workspace only. The config path comes from `--config`, then `AUTORAG_CONFIG`, then `$AUTORAG_HOME/config.json`, then `~/.autorag/config.json`. Never run `autorag init --force` (or anything else that writes config) unless `AUTORAG_CONFIG` or `--config` points inside your temp root.
+4. **Check before you write.** Right before the first command that writes config, confirm the target is yours: `echo "$AUTORAG_CONFIG"` must print a path under `$QA_ROOT`. If it is empty or under `$HOME/.autorag`, stop.
+5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' gateways and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
+6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
+
+The fixed live-E2E runner below is already isolated (clone-local `.autorag-e2e`), and `make test-linux` runs inside Docker. Prefer those over ad-hoc host runs. Moving live E2E and manual QA fully into Docker is tracked in #1743.
+
 ## Releases
 
 Publishing the GitHub Release is not the announcement. People watching Discussions do not see the release feed. Every release also gets one Discussion in the **Announcements** category, with the same user-facing notes.
@@ -175,11 +201,13 @@ The default product path uses the AutoRAG-owned `autorag-gateway` with the
 The gateway is started on demand by the semantic MinSync path and stays
 loopback-only.
 
-Run the isolated experiment:
+Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag` (see the manual-QA rules above):
 
 ```bash
 WORKSPACE="$(mktemp -d)"
-mkdir -p "$WORKSPACE/docs"
+export AUTORAG_HOME="$WORKSPACE/.autorag-home"
+export AUTORAG_CONFIG="$AUTORAG_HOME/config.json"
+mkdir -p "$WORKSPACE/docs" "$AUTORAG_HOME"
 printf '%s\n' \
   'Refund exceptions require director approval before payout.' \
   'Finance acknowledged the policy in the July review.' \
@@ -187,8 +215,7 @@ printf '%s\n' \
 
 cd "$WORKSPACE"
 # Pin the model to the local cache (no Ollama, no adapter)
-AUTORAG_HOME="$WORKSPACE/.autorag-home" \
-  autorag models prefetch --profile qwen3-embedding-0.6b
+autorag models prefetch --profile qwen3-embedding-0.6b
 
 # Init with the default gateway profile
 autorag init \
@@ -224,7 +251,7 @@ OLLAMA_EMBEDDINGS_URL=http://127.0.0.1:11434/api/embeddings \
   python3 scripts/manual-qa/ollama-tei-adapter.py
 ```
 
-Then initialize the workspace explicitly with the TEI endpoint:
+Then initialize the workspace explicitly with the TEI endpoint, in the same shell that exported `AUTORAG_HOME` and `AUTORAG_CONFIG` above:
 
 ```bash
 cd "$WORKSPACE"
@@ -359,6 +386,7 @@ The librarian agent owns the full workflow:
 |------|-------------|-------------|
 | `bash` | Filesystem discovery and document reading with real paths (`ls`, `find`, `grep`, `cat`, etc.) | Direct source verification |
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
+| `everything_search` | Windows only: instant file/folder name, extension, path, size, and date search over the configured search roots through the bundled voidtools Everything + ES | Locating files by name before reading them |
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_<name>` | Search one datasource connection only; one tool is generated per authorized connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
@@ -418,12 +446,13 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per authorized datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows, local sessions), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per authorized datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Document parsing** — `kordoc` is the default parser for `.hwp`, `.hwpx`, `.hml`, `.hwpml`, `.pdf`, `.docx`, `.xlsx` and `.xls`; it runs in-process (no Java, no subprocess) and keeps nested tables and per-sheet workbook structure. `.pptx`, `.eml` and plain text keep their own parsers. kordoc failures surface as `ParseError` with kordoc's own code and message verbatim, and kordoc warnings become `parser-warning` diagnostics.
 - **Global language setting** — one `languages` list (config `languages`, `--languages`, or `AUTORAG_LANGUAGES`; default `["ko", "en"]`) describes the corpus. Accepted tags are curated in `src/language.ts` because every tag must map to an OCR engine configuration. Format parsing is language-agnostic; `languages` only selects OCR recognition languages (`ja` → `jpn`, `zh-hans` → `chi_sim`, …) for standalone images and scanned PDF pages. OCR stays opt-in, so a default refresh downloads no recognition model.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
+- **Everything (Windows)** — the npm package bundles the unmodified voidtools portable Everything 1.4.1.1032 and ES 1.1.0.38 ZIPs (x64/ARM64) in `vendor/everything`, pinned by SHA-256 in `vendor/everything/manifest.json`, with their MIT (and PCRE BSD) texts in `licenses/` and NOTICE. On Windows only, AutoRAG extracts and verifies them into `<workspace>/.autorag/everything/<version>/<arch>/` and starts a named, user-level instance (`autorag-<hash>`) with its own `Everything.ini`/`Everything.db` that indexes only the configured search roots as folder indexes. It never requests elevation, installs the Everything service, indexes whole NTFS/ReFS volumes, or enables the HTTP/ETP servers, and it does not touch a user's own Everything. `refresh` (all methods, any parsed refresh, or `--method everything`) rewrites the config, restarts the instance, and waits for the index; failures surface as `everything-index-failed` with ES's exit code and stderr verbatim. `everything: false` disables it; on macOS/Linux it is absent. Remote P2P sessions never receive `everything_search`.
 - **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by trusted datasource access, and indexed during `refresh()`.
 
 ## Usage
@@ -475,6 +504,8 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
+| `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
+| `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |
 | `src/agent/search-all-tool.ts` | `search_all_documents` multi-method fan-out |
 | `src/agent/search-minsync-tool.ts` | `semantic_search_local_docs` MinSync vector tool |
 | `src/agent/web-search-tool.ts` | `web_search` internet search tool over the `src/web/search` provider chain |

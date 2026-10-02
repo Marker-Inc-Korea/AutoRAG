@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { dirname } from "node:path";
 import { refreshProgressPath } from "../mirror/paths.ts";
 
-export type RefreshProgressPhase = "parsed" | "minsync" | "datasources" | "jikji" | "finalizing";
+export type RefreshProgressPhase = "parsed" | "minsync" | "datasources" | "jikji" | "everything" | "finalizing";
 
 export interface RefreshProgressCounts {
 	readonly scanned: number;
@@ -106,6 +106,7 @@ function isRefreshProgressPhase(value: unknown): value is RefreshProgressPhase {
 		value === "minsync" ||
 		value === "datasources" ||
 		value === "jikji" ||
+		value === "everything" ||
 		value === "finalizing"
 	);
 }

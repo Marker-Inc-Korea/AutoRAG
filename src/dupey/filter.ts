@@ -12,6 +12,7 @@ export interface ExactDuplicateFilterResult {
 export async function selectExactDuplicateExclusions(
 	root: string,
 	scan: DupeyScanResult,
+	isUnavailable?: (path: string) => boolean,
 ): Promise<ExactDuplicateFilterResult> {
 	const byHash = new Map<string, string[]>();
 	for (const file of scan.files) {
@@ -38,10 +39,13 @@ export async function selectExactDuplicateExclusions(
 			}),
 		);
 		ranked.sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
-		const keeper = ranked[0]?.path;
+		// User-excluded copies are handled by the caller's own exclusion pass; they
+		// must not win keeper selection and drag the remaining copies out of the index.
+		const candidates = isUnavailable === undefined ? ranked : ranked.filter(({ path }) => !isUnavailable(path));
+		const keeper = candidates[0]?.path;
 		if (!keeper) continue;
 		keepers.add(keeper);
-		for (const candidate of ranked.slice(1)) excluded.add(candidate.path);
+		for (const candidate of candidates.slice(1)) excluded.add(candidate.path);
 	}
 	return { excluded, keepers, errors };
 }

@@ -14,7 +14,7 @@ export interface ParsedMirrorEntry {
 }
 
 /** Why refresh deliberately left a source out of the parsed mirror. */
-export type ParsedMirrorSkipReason = "duplicate-excluded" | "parser-skipped" | "parser-failed";
+export type ParsedMirrorSkipReason = "duplicate-excluded" | "user-excluded" | "parser-skipped" | "parser-failed";
 
 /**
  * A source the last refresh decided not to mirror, pinned to the exact version it
@@ -82,7 +82,12 @@ function isParsedMirrorSkipEntry(value: unknown): value is ParsedMirrorSkipEntry
 }
 
 function isParsedMirrorSkipReason(value: unknown): value is ParsedMirrorSkipReason {
-	return value === "duplicate-excluded" || value === "parser-skipped" || value === "parser-failed";
+	return (
+		value === "duplicate-excluded" ||
+		value === "user-excluded" ||
+		value === "parser-skipped" ||
+		value === "parser-failed"
+	);
 }
 
 function isParsedMirrorEntry(value: unknown): value is ParsedMirrorEntry {

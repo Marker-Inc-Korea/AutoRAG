@@ -41,6 +41,14 @@ near/contains families require human review. Exact duplicate exclusion during
 refresh is enabled by default and can be disabled with
 `"excludeExactDuplicates": false` in `config.json`.
 
+### Excluding local files from the index
+
+`"excludePaths"` in `config.json` lists files or folders (absolute, or relative
+to `workspacePath`) that refresh keeps out of the parsed mirror and MinSync.
+A folder entry excludes everything under it. Removing an entry and running
+`autorag refresh --method minsync` indexes the file again. Excluded sources are
+recorded as `user-excluded` skips, so they are not reported as stale.
+
 `status` is model-free and path-opaque. `health` resolves the single model,
 checks credential presence, and normally probes one live completion. If the
 model, authentication, configuration, or indexes are unhealthy, use
@@ -116,9 +124,10 @@ autorag serve --force
 autorag p2p policy list --json
 ```
 
-Prefer a full refresh so parsed mirrors, MinSync, Jikji, and configured
-datasources stay aligned. `--method` accepts
-`parsed,minsync,datasources,jikji,all`. BM25 is a MinSync retrieval mode, not
+Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
+datasources, and (on Windows) the bundled Everything file-name index stay
+aligned. `--method` accepts
+`parsed,minsync,datasources,jikji,everything,all`. BM25 is a MinSync retrieval mode, not
 a `--method` name. Use `--method` only for deliberate narrowing. Scheduled
 maintenance should use non-daemon `autorag watch --once`, typically every
 1 hour, with the same config used by search and no overlapping runs.

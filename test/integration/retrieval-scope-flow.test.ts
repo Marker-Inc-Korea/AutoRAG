@@ -36,6 +36,7 @@ describe("AutoRAG retrieval scope flow", () => {
 			searchPaths: [link],
 			workspacePath: workspace,
 			jikji: false,
+			everything: false,
 			minSync: { binaryPath: fake, autoInstall: false },
 		});
 		await agent.refresh();
@@ -63,6 +64,7 @@ describe("AutoRAG retrieval scope flow", () => {
 			searchPaths: [prepared],
 			workspacePath: prepared,
 			jikji: false,
+			everything: false,
 			minSync: { binaryPath: fake, autoInstall: false },
 		});
 		await preparingAgent.refresh();
@@ -74,6 +76,7 @@ describe("AutoRAG retrieval scope flow", () => {
 			searchPaths: [relocated],
 			workspacePath: relocated,
 			jikji: false,
+			everything: false,
 			minSync: { binaryPath: relocatedFake, autoInstall: false },
 		});
 		const results = await relocatedAgent.retrieve("retention policy", { scope: relocated });
@@ -98,6 +101,7 @@ describe("AutoRAG retrieval scope flow", () => {
 			searchPaths: [source],
 			workspacePath: workspace,
 			jikji: false,
+			everything: false,
 			minSync: { binaryPath: fake, autoInstall: false },
 		});
 		await agent.refresh();

@@ -1,0 +1,30 @@
+{
+  "everythingVersion": "1.4.1.1032",
+  "esVersion": "1.1.0.38",
+  "licenseFiles": [
+    "licenses/everything-MIT-and-PCRE-BSD.txt",
+    "licenses/es-MIT.txt"
+  ],
+  "architectures": {
+    "x64": {
+      "everythingArchive": "Everything-1.4.1.1032.x64.en-US.zip",
+      "everythingArchiveSha256": "705e0b46c6cbf74bd6082a6ebf77afac526868db9d7578f5dc1447f459484611",
+      "everythingMember": "everything.exe",
+      "everythingSha256": "f191f756996a14a11e5445fa7103d302efd510cf2fbf920e6c0c8ed51d512e36",
+      "esArchive": "ES-1.1.0.38.x64.zip",
+      "esArchiveSha256": "5e0c70cbf4f694080c34aa7c6c745e606c16fe76a4b5423b93ebf9dc34274c99",
+      "esMember": "es.exe",
+      "esSha256": "f7378761cf6e01f51c4123a485e628d70e3fea147d341f473ce2820844e5cee5"
+    },
+    "arm64": {
+      "everythingArchive": "Everything-1.4.1.1032.ARM64.en-US.zip",
+      "everythingArchiveSha256": "5a7b0cd0372f5e076738e88db20da219fb784c832e61256b3d63f95cd9caeba1",
+      "everythingMember": "EverythingARM64.exe",
+      "everythingSha256": "462caf17906e56be11ce3d701a6ea51bb1733afae8a4610880f3a6985ee9ca5e",
+      "esArchive": "ES-1.1.0.38.ARM64.zip",
+      "esArchiveSha256": "86eddd4ae8925833e33be1d09e7faa2442110d00daf0e48a8e963cdeb7a141fe",
+      "esMember": "es.exe",
+      "esSha256": "7fc406610559f686a95a9bfc4472acffdebcc143b485ae9371b5ef4590e7ec31"
+    }
+  }
+}

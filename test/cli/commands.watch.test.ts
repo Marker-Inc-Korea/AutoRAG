@@ -45,6 +45,7 @@ function writeConfig(): void {
 		bm25: { enabled: true },
 		minSync: false,
 		jikji: false,
+		everything: false,
 	};
 	const configDir = join(process.env.HOME as string, ".autorag");
 	mkdirSync(configDir, { recursive: true });
