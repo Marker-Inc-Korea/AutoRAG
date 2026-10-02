@@ -30,7 +30,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 }
 
 /** All method names accepted by `--method`. */
-const ALL_METHOD_NAMES = ["all", "minsync", "parsed", "datasources", "jikji", "everything"] as const;
+const ALL_METHOD_NAMES = ["all", "minsync", "parsed", "datasources", "jikji", "everything", "fsearch"] as const;
 
 /**
  * Parse a `--method` CSV flag into a sorted set of `RefreshMethod` values.
@@ -52,10 +52,10 @@ export function parseMethodFlag(flag: string | boolean | undefined): readonly Re
 		}
 	}
 	if (entries.includes("all")) {
-		return ["parsed", "minsync", "datasources", "jikji", "everything"] as const;
+		return ["parsed", "minsync", "datasources", "jikji", "everything", "fsearch"] as const;
 	}
 	// Preserve canonical order, deduplicate.
-	const order: readonly RefreshMethod[] = ["parsed", "minsync", "datasources", "jikji", "everything"];
+	const order: readonly RefreshMethod[] = ["parsed", "minsync", "datasources", "jikji", "everything", "fsearch"];
 	const seen = new Set<RefreshMethod>();
 	for (const m of order) {
 		if (entries.includes(m)) seen.add(m);

@@ -16,6 +16,13 @@ import {
 	type EverythingSearchRequest,
 	type EverythingSearchResult,
 } from "../everything/index.ts";
+import {
+	FSearchClient,
+	type FSearchClientOptions,
+	type FSearchFailureReason,
+	type FSearchSearchRequest,
+	type FSearchSearchResult,
+} from "../fsearch/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -93,6 +100,7 @@ import {
 	createEmitFastAnswerTool,
 	EMIT_FAST_ANSWER_TOOL_NAME,
 } from "./fast-answer-tool.ts";
+import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -147,6 +155,7 @@ const SEARCH_TOOLS = [
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
 	EVERYTHING_SEARCH_TOOL_NAME,
+	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
 
 /**
@@ -183,7 +192,7 @@ export interface AutoRefreshOptions {
 }
 
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
-export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything";
+export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything" | "fsearch";
 
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
@@ -205,6 +214,8 @@ export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diag
 	readonly datasources?: readonly DatasourceIndexResult[];
 	/** Windows-only Everything file-name index outcome; absent on other platforms or when not selected. */
 	readonly everything?: AutoRAGEverythingRefreshResult;
+	/** macOS/Linux-only FSearch file-name index outcome; absent on other platforms or when not selected. */
+	readonly fsearch?: AutoRAGFSearchRefreshResult;
 }
 
 export interface AutoRAGEverythingRefreshResult {
@@ -213,11 +224,21 @@ export interface AutoRAGEverythingRefreshResult {
 	readonly reason?: string;
 }
 
+export interface AutoRAGFSearchRefreshResult {
+	readonly ok: boolean;
+	readonly indexedItems?: number;
+	/** Stable failure kind (e.g. "binary-missing") when ok is false. */
+	readonly reason?: FSearchFailureReason;
+	/** Verbatim underlying failure text when ok is false. */
+	readonly message?: string;
+}
+
 export interface AutoRAGRefreshComponentStatus {
 	readonly minsync?: string;
 	readonly jikji?: string;
 	readonly datasources?: string;
 	readonly everything?: string;
+	readonly fsearch?: string;
 }
 
 /** Path-opaque snapshot of corpus freshness and the last refresh outcome. */
@@ -267,6 +288,7 @@ interface RefreshState {
 	minsync?: MinSyncSyncResult;
 	datasources: readonly DatasourceIndexResult[];
 	everything?: AutoRAGEverythingRefreshResult;
+	fsearch?: AutoRAGFSearchRefreshResult;
 	lastError?: string;
 	watchLimited: boolean;
 	watchFailed: boolean;
@@ -341,6 +363,16 @@ export interface AutoRAGAgentOptions {
 	 * `false` disables it. The remaining fields are test seams.
 	 */
 	everything?: Omit<EverythingClientOptions, "root" | "folders"> | false;
+	/**
+	 * macOS/Linux-only instant file/folder name search through the user's
+	 * fsearch-cli (FSearch, GPL — spawned as a separate process, never
+	 * bundled). Indexes only `searchPaths` into `<workspace>/.autorag/fsearch/`
+	 * and keeps a per-workspace `fsearch-cli watch` daemon live; searches fall
+	 * back to a bounded slow filesystem walk when fsearch-cli is not
+	 * installed. Enabled by default on macOS/Linux; ignored elsewhere.
+	 * `false` disables it. The remaining fields are test seams.
+	 */
+	fsearch?: Omit<FSearchClientOptions, "root" | "folders"> | false;
 	/**
 	 * Internet web tools (`web_search` + `web_fetch`), ported from oh-my-pi's
 	 * provider-chain web module. Default enabled and credential-free: the
@@ -452,6 +484,7 @@ export class AutoRAGAgent {
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
+	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
@@ -537,6 +570,14 @@ export class AutoRAGAgent {
 			});
 			if (everythingClient.isSupported()) this.everythingClient = everythingClient;
 		}
+		if (options.fsearch !== false) {
+			const fsearchClient = new FSearchClient({
+				...(options.fsearch ?? {}),
+				root: this.workspaceProjectRoot,
+				folders: this.searchPaths,
+			});
+			if (fsearchClient.isSupported()) this.fsearchClient = fsearchClient;
+		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
 		this.memory = new RetrievalMemory({ storagePath: memPath });
@@ -591,6 +632,8 @@ export class AutoRAGAgent {
 		// Remote peers never enumerate local file names.
 		const everythingSearchTool =
 			this.everythingClient !== undefined && !this.remoteSession ? createEverythingSearchTool(this) : undefined;
+		const fsearchSearchTool =
+			this.fsearchClient !== undefined && !this.remoteSession ? createFSearchSearchTool(this) : undefined;
 
 		const webSearchOption = options.webSearch;
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
@@ -615,6 +658,7 @@ export class AutoRAGAgent {
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
 			EVERYTHING_SEARCH_TOOL_NAME,
+			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
@@ -647,6 +691,7 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
+			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 			...(queryPeerTool !== undefined ? [queryPeerTool as AgentTool] : []),
 		];
@@ -1590,6 +1635,17 @@ export class AutoRAGAgent {
 					? { ok: true, indexedItems: indexed.indexedItems }
 					: { ok: false, reason: indexed.message };
 			}
+			// On macOS/Linux, fsearch-cli indexes the same local roots by name
+			// and keeps a per-workspace watch daemon serving live searches.
+			let fsearch: AutoRAGFSearchRefreshResult | undefined;
+			if (this.fsearchClient !== undefined && (allMethods || wants("fsearch") || needsParsed)) {
+				progress = updateRefreshProgress(progress, { phase: "fsearch" });
+				writeRefreshProgress(this.workspaceProjectRoot, progress);
+				const indexed = await this.fsearchClient.index();
+				fsearch = indexed.ok
+					? { ok: true, indexedItems: indexed.indexedItems }
+					: { ok: false, reason: indexed.reason, message: indexed.message };
+			}
 			progress = updateRefreshProgress(progress, { phase: "finalizing" });
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -1614,6 +1670,7 @@ export class AutoRAGAgent {
 				minsync,
 				datasources,
 				everything,
+				fsearch,
 				lastError: undefined,
 			};
 			if (needsParsed) {
@@ -1641,6 +1698,7 @@ export class AutoRAGAgent {
 					}
 				: undefined;
 			const everythingDiagnostics = everythingRefreshDiagnostics(everything);
+			const fsearchDiagnostics = fsearchRefreshDiagnostics(fsearch);
 			return {
 				...summary,
 				diagnostics: [
@@ -1649,10 +1707,12 @@ export class AutoRAGAgent {
 					...minsyncDiagnostics,
 					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
 					...everythingDiagnostics,
+					...fsearchDiagnostics,
 				],
 				minsync: publicMinsync,
 				datasources,
 				...(everything !== undefined ? { everything } : {}),
+				...(fsearch !== undefined ? { fsearch } : {}),
 			};
 		} catch (error) {
 			this.refreshState = {
@@ -1713,6 +1773,7 @@ export class AutoRAGAgent {
 			}
 		}
 		diagnostics.push(...everythingRefreshDiagnostics(this.refreshState.everything));
+		diagnostics.push(...fsearchRefreshDiagnostics(this.refreshState.fsearch));
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
 				code: "watch-limited",
@@ -1786,7 +1847,8 @@ export class AutoRAGAgent {
 	 * "configured" means the binary resolved but no index exists yet.
 	 */
 	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
-		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string } = {};
+		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string; fsearch?: string } =
+			{};
 		if (this.minSyncMethod !== undefined) {
 			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
 				? "unavailable"
@@ -1805,6 +1867,17 @@ export class AutoRAGAgent {
 		if (this.everythingClient !== undefined) {
 			const everything = this.refreshState.everything;
 			status.everything = everything === undefined ? "configured" : everything.ok ? "ready" : "degraded";
+		}
+		if (this.fsearchClient !== undefined) {
+			const fsearch = this.refreshState.fsearch;
+			status.fsearch =
+				fsearch === undefined
+					? "configured"
+					: fsearch.ok
+						? "ready"
+						: fsearch.reason === "binary-missing"
+							? "unavailable"
+							: "degraded";
 		}
 		return status;
 	}
@@ -1930,6 +2003,24 @@ export class AutoRAGAgent {
 	 */
 	async stopEverything(): Promise<void> {
 		await this.everythingClient?.stop();
+	}
+
+	/** Provider for the macOS/Linux-only fsearch_search tool. */
+	async searchFsearch(request: FSearchSearchRequest): Promise<FSearchSearchResult> {
+		if (this.fsearchClient === undefined) {
+			return { ok: false, reason: "unsupported-platform", message: "FSearch is not enabled on this host." };
+		}
+		return this.fsearchClient.search(request);
+	}
+
+	/**
+	 * Terminate this workspace's fsearch-cli watch daemon. The daemon otherwise
+	 * stays running on purpose (live index updates between CLI invocations), so
+	 * call this only when the workspace is being torn down. No-op off
+	 * macOS/Linux.
+	 */
+	async stopFsearch(): Promise<void> {
+		await this.fsearchClient?.stop();
 	}
 
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
@@ -2469,6 +2560,33 @@ function everythingRefreshDiagnostics(
 			severity: "error",
 			message: `Everything file-name indexing failed: ${everything.reason ?? "unknown error"}`,
 			source: "everything",
+		},
+	];
+}
+
+/**
+ * A failed FSearch index surfaces its underlying message verbatim. A missing
+ * fsearch-cli is a warning, not an error: FSearch is an optional user install
+ * and searches degrade to the slow filesystem walk by design (#1763).
+ */
+function fsearchRefreshDiagnostics(fsearch: AutoRAGFSearchRefreshResult | undefined): SearchDocumentDiagnostic[] {
+	if (fsearch === undefined || fsearch.ok) return [];
+	if (fsearch.reason === "binary-missing") {
+		return [
+			{
+				code: "fsearch-binary-missing",
+				severity: "warning",
+				message: `fsearch-cli is not installed; file-name search uses a slow filesystem walk: ${fsearch.message ?? "unknown error"}`,
+				source: "fsearch",
+			},
+		];
+	}
+	return [
+		{
+			code: "fsearch-index-failed",
+			severity: "error",
+			message: `FSearch file-name indexing failed: ${fsearch.message ?? fsearch.reason ?? "unknown error"}`,
+			source: "fsearch",
 		},
 	];
 }

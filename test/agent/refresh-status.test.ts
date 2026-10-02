@@ -26,6 +26,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
 		workspacePath: root,
 		jikji: false,
 		everything: false,
+		fsearch: false,
 		minSync: { autoInstall: false },
 		...overrides,
 	});

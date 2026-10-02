@@ -220,7 +220,7 @@ describe("runIndex", () => {
 		mkdirSync(join(tmpDir, "home", ".autorag"), { recursive: true });
 		writeFileSync(
 			join(tmpDir, "home", ".autorag", "config.json"),
-			JSON.stringify({ jikji: false, everything: false, minSync: { autoInstall: false } }),
+			JSON.stringify({ jikji: false, everything: false, fsearch: false, minSync: { autoInstall: false } }),
 		);
 		// Provide a parseable source file so refresh rebuilds the parsed mirror.
 		const docs = join(fx.workspace, "docs");

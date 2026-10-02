@@ -132,6 +132,7 @@ function createAgent(): AutoRAGAgent {
 		workspacePath: root,
 		jikji: false,
 		everything: false,
+		fsearch: false,
 		minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
 	});
 }
