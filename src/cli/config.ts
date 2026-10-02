@@ -142,6 +142,8 @@ export interface CliConfig {
 		timeoutMs?: number;
 	};
 	excludeExactDuplicates?: boolean;
+	/** Absolute or workspace-relative files/directories omitted from local indexing. */
+	excludePaths?: string[];
 	/** Trusted datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
@@ -843,6 +845,16 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const fileSearchPaths = file.searchPaths
 		? resolveSearchPaths(file.searchPaths, fileWorkspacePath ?? configOrigin)
 		: undefined;
+	if (
+		file.excludePaths !== undefined &&
+		(!Array.isArray(file.excludePaths) ||
+			file.excludePaths.some((path) => typeof path !== "string" || path.length === 0))
+	) {
+		throw new ConfigError("Config field 'excludePaths' must be a non-empty string array");
+	}
+	const fileExcludePaths = file.excludePaths
+		? resolveSearchPaths(file.excludePaths, fileWorkspacePath ?? configOrigin)
+		: undefined;
 	const searchPaths = flagSearchPaths ?? envSearchPaths ?? fileSearchPaths ?? defaultSearchPaths;
 
 	const flagWorkspacePath = flagString(flags, "workspace");
@@ -876,6 +888,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		languages,
 	};
 	if (model) config.model = model;
+	if (fileExcludePaths !== undefined) config.excludePaths = fileExcludePaths;
 	const normalized = normalizeIndexingConfig({
 		minSync: file.minSync as MinSyncMethodConfig | false | undefined,
 	});
@@ -1010,6 +1023,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		};
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
+	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
@@ -1390,6 +1404,7 @@ export function writeDefaultConfig(
 	full.jikji = partial.jikji ?? {};
 	full.dupey = partial.dupey ?? { enabled: true };
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
+	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };

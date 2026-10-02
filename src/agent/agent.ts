@@ -42,6 +42,7 @@ import {
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
+	isPathExcluded,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
@@ -317,6 +318,7 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	excludeExactDuplicates?: boolean;
+	excludePaths?: readonly string[];
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
@@ -416,6 +418,7 @@ export class AutoRAGAgent {
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	private readonly excludeExactDuplicates: boolean;
+	private readonly excludePaths: readonly string[];
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
@@ -463,6 +466,7 @@ export class AutoRAGAgent {
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages);
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
+		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -1614,6 +1618,7 @@ export class AutoRAGAgent {
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,
+			userExcludedSourcePaths: new Set(this.excludePaths),
 		});
 		const diagnostics: SearchDocumentDiagnostic[] = [
 			...this.startupDiagnostics,
@@ -1777,6 +1782,7 @@ export class AutoRAGAgent {
 			force,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
+			userExcludedSourcePaths: new Set(this.excludePaths),
 		});
 	}
 
@@ -1793,6 +1799,7 @@ export class AutoRAGAgent {
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
+			userExcludedSourcePaths: new Set(this.excludePaths),
 		});
 		return {
 			scanned: 0,
@@ -1807,10 +1814,13 @@ export class AutoRAGAgent {
 	private async exactDuplicateExclusions(): Promise<{ readonly excluded: ReadonlySet<string> }> {
 		if (!this.excludeExactDuplicates || this.dupeyOptions === false) return { excluded: new Set() };
 		const excluded = new Set<string>();
+		const userExcluded = new Set(this.excludePaths);
 		for (const searchPath of this.searchPaths) {
 			try {
 				const scan = await scanWithDupey(searchPath, this.dupeyOptions || {});
-				const selected = await selectExactDuplicateExclusions(searchPath, scan);
+				const selected = await selectExactDuplicateExclusions(searchPath, scan, (path) =>
+					isPathExcluded(path, userExcluded),
+				);
 				for (const path of selected.excluded) excluded.add(path);
 			} catch (error) {
 				if (!(error instanceof DupeyCliError)) throw error;
@@ -2390,6 +2400,22 @@ function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
 				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
 		source: "minsync",
 	};
+}
+
+/**
+ * Canonicalize a user exclusion the same way collectFiles builds sourcePath:
+ * realpath the parent chain (like pinSearchRoot does for roots) but keep the
+ * final component literal, so excluding a symlinked file still matches.
+ * Missing paths keep their resolved form — exclusion of a not-yet-existing
+ * path is legitimate.
+ */
+function pinExcludedPath(path: string): string {
+	const resolvedPath = resolve(path);
+	try {
+		return join(realpathSync(dirname(resolvedPath)), basename(resolvedPath));
+	} catch {
+		return resolvedPath;
+	}
 }
 
 function pinSearchRoot(searchPath: string): string {
