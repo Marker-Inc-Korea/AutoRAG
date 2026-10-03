@@ -41,6 +41,27 @@ describe("renderRefresh", () => {
 		};
 		expect(envelope.minsync?.stagingExcludedCount).toBe(1);
 	});
+
+	it("fails the refresh envelope when Windows Everything indexing failed and shows why", () => {
+		const result: AutoRAGRefreshResult = {
+			indexPath: "C:\\w\\.autorag\\parsed\\index.json",
+			scanned: 1,
+			written: 1,
+			deleted: 0,
+			skipped: 0,
+			diagnostics: [],
+			everything: { ok: false, reason: "es.exe exit 8: Error 8: Everything IPC not found." },
+		};
+		const envelope = JSON.parse(renderRefresh(result, { json: true, debug: false })) as {
+			ok: boolean;
+			everything?: { ok: boolean; reason?: string };
+		};
+		expect(envelope.ok).toBe(false);
+		expect(envelope.everything?.reason).toContain("Error 8");
+		expect(renderRefresh(result, { json: false })).toContain(
+			"everything: ok=false reason=es.exe exit 8: Error 8: Everything IPC not found.",
+		);
+	});
 });
 
 describe("renderHealth", () => {

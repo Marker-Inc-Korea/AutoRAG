@@ -31,6 +31,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"read and inspect configured document collections with ls, find, grep, cat, and similar tools",
 		),
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
+		toolLine(
+			config,
+			"everything_search",
+			"instant Windows file/folder name search (voidtools Everything) across the configured search folders",
+		),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
 		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
@@ -61,6 +66,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 					![
 						"bash",
 						"jikji_find",
+						"everything_search",
 						"search_all_documents",
 						"semantic_search_local_docs",
 						"load_datasource_skill",
@@ -87,6 +93,9 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLines.length === 0
 			? "\nNo search tools were provided. Report a blocked/degraded state and do not claim a completed search.\n"
 			: "";
+	// File discovery guidance names only the discovery tools actually registered.
+	const discoveryTools = ["jikji_find", "everything_search"].filter((name) => toolAvailable(config, name));
+	const discovery = discoveryTools.map((name) => `\`${name}\``).join(" and ");
 	const jikji = config.jikjiIndexingEnabled
 		? `## Jikji Local Discovery
 
@@ -107,6 +116,14 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 \`web_search\` searches the public internet for current information beyond the local corpus and the model's knowledge cutoff; prefer primary sources (official docs, papers) and corroborate key claims with multiple sources. \`web_fetch\` reads a specific http(s) URL as markdown/text — pages found via web_search, official docs, papers. web_fetch only accepts http(s) URLs: never local file paths (use bash) or datasource virtual ids such as /kakao/... (use that connection's dedicated search_datasource_<id> tool). Keep result URLs for traceability. Web queries leave the machine: never include private corpus content or secrets in web_search queries or fetched URLs.
 `
 			: "";
+	const everything = toolAvailable(config, "everything_search")
+		? `## Windows Everything File-Name Search
+
+This host runs Windows with a bundled voidtools Everything instance that indexes the names, sizes, and modified dates of every file and folder under the configured search folders and keeps that index live. \`everything_search\` answers name/path questions instantly, so use it freely and repeatedly instead of \`bash\` \`find\`/\`ls\`/\`dir\` scans whenever you need to locate files or folders by name, extension, location, size, or date. It searches names and paths only, not file contents: read the returned absolute paths with \`bash\`, and use the retrieval tools for content questions.
+
+Query syntax: space = AND, \`|\` = OR, \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`, \`report??\`), \`ext:pdf;docx;hwp\`, \`dm:today\` / \`dm:thisweek\` / \`dm:2026-09\`, \`size:>10mb\`, \`parent:<folder>\` (direct children), and \`\\folder\\\` path fragments with \`matchPath\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`wholeWord\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or dm:.
+`
+		: "";
 
 	return `You are AutoRAG, a ${modelId} librarian agent for document collections, cloud drives, images, and messenger history.
 
@@ -116,7 +133,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 
 Searches follow a progressive, two-phase loop:
 1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided, produce and emit a complete, self-contained immediate first answer via \`emit_fast_answer\` right away from that evidence without calling tools or waiting.
-2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: use \`jikji_find\` actively to locate relevant files and folders, and fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
+2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
 3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed; rely on Jikji and retrieval rather than blind directory browsing.
 4. **JUDGE & RESOLVE** — Evaluate relevance, sufficiency, conflicts, and temporal context. When search results or evidence contain conflicting information, treat the freshest (most recent) information as authoritative and correct.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
@@ -135,7 +152,7 @@ ${noSearchTools}
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
 - Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every authorized connection has its own tool, and \`search_all_documents\` still spans all of them at once.
-- When exploring local files and folders, actively use \`jikji_find\` as your primary discovery tool. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed).
+${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed).` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed)."}
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
 - Cross-check important claims against the original source and preserve real source paths.
 - When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
@@ -162,16 +179,18 @@ ${datasourceSkills}
 ${config.memorySignalCount ?? 0} retrieval feedback signal(s) are available. Treat memory as advisory and never let it override current evidence.
 
 ${jikji}
+${everything}
 ${manifests}
 ## Output Format
 
 Call \`emit_autorag_results\` exactly once with:
-- \`answer\`: the final curated answer for the caller following the Answer Guidelines below. Reference results by bracketed numbers such as [1] and [2].
+- \`answer\`: the curated answer for the caller following the Answer Guidelines below. When a first answer was already delivered to the caller during this run, include only corrections and newly verified findings — never restate the first answer; otherwise give the complete answer. Reference results by bracketed numbers such as [1] and [2].
 - \`results\`: curated units with number, title, summary, evidence, and confidence.
 - \`mapping\`: exactly one matching entry per result number with source, method, content, and evidence references.
 
 ## Answer Guidelines
 
+- **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
 - **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
 - **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in \`answer\` (keep paths and source metadata in \`results\` and \`mapping\`).
 - **Citation style**: Cite supporting evidence chunks using bracketed numbers only (e.g. [1], [2]). Do not quote raw chunk text or mention source paths directly in \`answer\`.

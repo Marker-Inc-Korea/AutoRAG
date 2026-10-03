@@ -184,6 +184,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [
 				makeSkill([result("a", "/kakao/personal/chunks/a"), result("b", "/kakao/personal/chunks/b")]),
@@ -202,6 +203,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			workspacePath: tmpDir,
 			minSync: false,
 			jikji: false,
+			everything: false,
 			datasourceSkills: [
 				makeScopedSkill([
 					result("allowed", "/slack/allowed/channel/message"),
@@ -224,6 +226,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill([result("a", "/kakao/acct-1/chunks/a")])],
 		});
@@ -238,6 +241,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [
 				makeScopedSkill([
@@ -265,6 +269,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill([])],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -311,6 +316,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [failingSkill],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -331,6 +337,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill([])],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -350,6 +357,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill([])],
 		});
@@ -361,6 +369,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill([])],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -376,6 +385,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill(rows)],
 		});
@@ -387,6 +397,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
+			everything: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [makeSkill(rows)],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
