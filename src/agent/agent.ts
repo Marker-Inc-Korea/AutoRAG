@@ -176,6 +176,10 @@ function keepLlmMessages(messages: AgentMessage[]): Message[] {
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+/** Connected-datasource hits added to the baseline evidence, per search. */
+const PREFETCH_DATASOURCE_TOP_K = 20;
+/** How long the baseline waits for one datasource before naming it as not searched. */
+const PREFETCH_DATASOURCE_TIMEOUT_MS = 15_000;
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
@@ -1375,11 +1379,12 @@ export class AutoRAGAgent {
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
 		const retrieveOptions = { topK: 100, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
-		const [jikji, vector] = await Promise.all([
+		const [jikji, vector, datasources] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
 				: this.findJikji(query, { topK: 30 }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
+			this.prefetchDatasourceCandidates(query, options),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
@@ -1413,9 +1418,82 @@ export class AutoRAGAgent {
 			);
 		};
 		formatResults("MinSync semantic", vector);
+		formatResults("Connected datasource", datasources.results);
+		if (datasources.notSearched.length > 0) {
+			sections.push(
+				`Connected datasources not searched within ${PREFETCH_DATASOURCE_TIMEOUT_MS}ms: ${datasources.notSearched.join(", ")}. Search them with the datasource tools before concluding.`,
+			);
+		}
+		for (const diagnostic of datasources.diagnostics) {
+			sections.push(`Datasource diagnostic (${diagnostic.source ?? "datasource"}): ${diagnostic.message}`);
+		}
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
+	}
+
+	/**
+	 * Baseline candidates from connected datasources (KakaoTalk, mail, Slack, ...).
+	 *
+	 * The fast phase answers from the baseline alone, so a baseline built only
+	 * from local files lets an older planning document win over a newer chat or
+	 * mail message the agent never looked at. Access goes through the same
+	 * trusted context as `search_all_documents`, so the model sees nothing that
+	 * tool would not return. Each datasource gets its own deadline: a slow CLI
+	 * is named as not searched instead of delaying the first answer, and the
+	 * datasources that did answer are kept.
+	 */
+	private async prefetchDatasourceCandidates(
+		query: string,
+		options: RetrievalOptions,
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; notSearched: string[] }> {
+		const effective = this.normalizeRetrievalOptions(
+			this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options,
+		);
+		const ctx = this.datasourceAccessContext(effective);
+		const methods = this.methodRegistry.list().filter((method) => {
+			const descriptor = method.describe();
+			return descriptor.datasourceId !== undefined && ctx.isAccessible(descriptor);
+		});
+		if (methods.length === 0) return { results: [], diagnostics: [], notSearched: [] };
+		const byMethod = new Map<string, RetrievalResult[]>();
+		const diagnostics: RetrievalDiagnostic[] = [];
+		const notSearched = new Set<string>();
+		await Promise.all(
+			methods.map(async (method) => {
+				const descriptor = method.describe();
+				const controller = new AbortController();
+				let timer: NodeJS.Timeout | undefined;
+				const deadline = new Promise<undefined>((resolve) => {
+					timer = setTimeout(() => resolve(undefined), PREFETCH_DATASOURCE_TIMEOUT_MS);
+				});
+				try {
+					const outcome = await Promise.race([
+						this.retriever.retrieveWithDiagnostics([method], query, {
+							...effective,
+							topK: PREFETCH_DATASOURCE_TOP_K,
+							signal: controller.signal,
+						}),
+						deadline,
+					]);
+					if (outcome === undefined) {
+						controller.abort();
+						notSearched.add(descriptor.datasourceId ?? descriptor.name);
+						return;
+					}
+					for (const [name, results] of outcome.results) byMethod.set(name, results);
+					diagnostics.push(...outcome.diagnostics);
+				} finally {
+					if (timer !== undefined) clearTimeout(timer);
+				}
+			}),
+		);
+		const filtered = this.datasourceFilter.filter(byMethod, methods, ctx, effective.scope);
+		return {
+			results: this.merger.merge(filtered, { topK: PREFETCH_DATASOURCE_TOP_K, dedup: true }),
+			diagnostics,
+			notSearched: [...notSearched],
+		};
 	}
 
 	/**
