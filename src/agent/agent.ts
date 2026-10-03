@@ -1057,7 +1057,13 @@ export class AutoRAGAgent {
 						if (captured === undefined && this.finalThinkingLevel !== undefined) {
 							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
 							session.agent.state.tools = [...this.tools];
-							await session.prompt(this.buildRefinementPrompt(trimmedQuery, options, preliminary?.answer));
+							// Only a preliminary a consumer actually received may turn the
+							// final answer into a delta; otherwise the caller needs the
+							// complete answer.
+							const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+							await session.prompt(
+								this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
+							);
 						}
 					})(),
 					new Promise<never>((_, reject) => {
@@ -1087,11 +1093,12 @@ export class AutoRAGAgent {
 					// Local sessions resolve with a degraded response that carries the
 					// run's retrieval trace instead of throwing away the whole run.
 					const reason = lastAssistantText(session?.agent.state.messages ?? []);
+					const modelError = lastModelRequestError(session?.agent.state.messages ?? []);
 					const response: SearchDocumentsResponse = {
 						sessionId,
 						query: trimmedQuery,
 						results: [],
-						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace),
+						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace, modelError),
 						searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
 						warnings: [],
 						diagnostics: [
@@ -1102,6 +1109,15 @@ export class AutoRAGAgent {
 								message:
 									"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
 							},
+							...(modelError === undefined
+								? []
+								: [
+										{
+											code: "model-request-failed" as const,
+											severity: "error" as const,
+											message: `The model request failed: ${modelError}`,
+										},
+									]),
 						],
 						retrievalTrace: this.retrievalTrace,
 					};
@@ -1513,24 +1529,41 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Verification-phase prompt for two-phase searches. The user already saw
-	 * the fast answer; the model now verifies it against sources with thinking
-	 * on and finalizes with emit_autorag_results exactly once.
+	 * Verification-phase prompt for two-phase searches. The fast answer, when a
+	 * consumer already received it, is embedded verbatim so the model can diff
+	 * against it; the model then verifies with thinking on and finalizes with
+	 * emit_autorag_results exactly once, returning only the delta.
 	 */
-	buildRefinementPrompt(query: string, options: RetrievalOptions, fastAnswer: string | undefined): string {
+	buildRefinementPrompt(
+		query: string,
+		options: RetrievalOptions,
+		fastAnswer: AutoRAGFastAnswerDetails | undefined,
+		fastAnswerDelivered: boolean,
+	): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
+		const answerRules = fastAnswerDelivered
+			? `Formatting and content rules for the final \`answer\` (DELTA ONLY):\n` +
+				`- The user already has the first answer above. \`answer\` MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer.\n` +
+				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list.\n` +
+				`- Mark each item clearly as a correction or as a new finding.\n` +
+				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
+				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
+			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
+				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
-			`The user already received this immediate first answer:\n${fastAnswer ?? "(the fast phase produced no answer)"}\n\n` +
+			`${firstAnswer}\n\n` +
 			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ` +
 			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
-			`Formatting and content rules for the final answer:\n` +
-			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
-			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n\n` +
+			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
@@ -2439,6 +2472,34 @@ export class AutoRAGAgent {
 }
 
 /**
+ * Render the fast-phase first answer for the verification prompt. When a
+ * consumer already received it, the model must diff against it and return only
+ * the delta; otherwise the draft is internal context only and the final answer
+ * must stay complete.
+ */
+function formatFirstAnswerContext(fastAnswer: AutoRAGFastAnswerDetails | undefined, delivered: boolean): string {
+	if (fastAnswer === undefined) {
+		return "(the fast phase produced no answer — write the complete answer)";
+	}
+	const header = delivered
+		? "The user has ALREADY received this immediate first answer:"
+		: "An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:";
+	const units =
+		fastAnswer.results.length === 0
+			? ""
+			: `\n\nNumbered units of that first answer:\n${fastAnswer.results
+					.map((result) => `[${result.number}] ${result.title} — ${result.summary}`)
+					.join("\n")}`;
+	const sources =
+		fastAnswer.sources.length === 0
+			? ""
+			: `\n\nSources of that first answer:\n${fastAnswer.sources
+					.map((entry) => `[${entry.number}] -> ${entry.source}`)
+					.join("\n")}`;
+	return `${header}\n${fastAnswer.answer}${units}${sources}`;
+}
+
+/**
  * Degraded fallback answer for a run that ended without emit_autorag_results:
  * states the search-range failure, carries the agent's own last note as the
  * reason, suggests next steps, and points at the attached retrieval trace.
@@ -2447,18 +2508,40 @@ function buildMissingFinalEmitAnswer(
 	query: string,
 	reason: string | undefined,
 	trace: readonly SearchDocumentRetrievalTraceEntry[],
+	modelError?: string,
 ): string {
 	const lines = [
 		`The search run for "${query}" ended without finalized results: the agent ended its run without calling emit_autorag_results, so no curated answer is available within the configured search range.`,
-		reason === undefined
-			? "The agent did not record why it stopped."
-			: `The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`,
-		"Next steps: broaden the configured searchPaths, connect additional datasources via the datasources configuration, or retry with a narrower or different query.",
+		...(modelError === undefined ? [] : [`The model request failed: ${modelError}`]),
+		...(reason === undefined
+			? modelError === undefined
+				? ["The agent did not record why it stopped."]
+				: []
+			: [`The agent's last note before stopping: "${reason.length > 500 ? `${reason.slice(0, 500)}…` : reason}"`]),
+		modelError === undefined
+			? "Next steps: broaden the configured searchPaths, connect additional datasources via the datasources configuration, or retry with a narrower or different query."
+			: "Next steps: fix the model provider error above (rate limit, quota, credentials, or model id) and retry the same query.",
 		trace.length > 0
 			? "Retrieval candidates gathered before the run ended are attached under `retrievalTrace` for inspection."
 			: "No retrieval candidates were gathered before the run ended.",
 	];
 	return lines.join("\n\n");
+}
+
+/**
+ * The provider error that ended the run, if the last assistant turn failed.
+ * pi-agent-core records a failed request (HTTP 429, auth, unknown model) as an
+ * assistant message with stopReason "error" and no text, so without this the
+ * degraded answer only says the agent "did not record why it stopped".
+ */
+function lastModelRequestError(messages: readonly AgentMessage[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason !== "error") return undefined;
+		return message.errorMessage?.trim() || "the provider returned an error without a message";
+	}
+	return undefined;
 }
 
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
