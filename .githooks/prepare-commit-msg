@@ -1,0 +1,25 @@
+#!/bin/sh
+# DCO: default every commit to a Signed-off-by trailer.
+#
+# See AGENTS.md -> "Git Workflow (binding)" and CONTRIBUTING.md ->
+# "Licensing and the DCO". The trailer email must match the commit's author or
+# committer email, which is what `git config user.name`/`user.email` supply.
+#
+# Enable once per clone: git config core.hooksPath .githooks
+# Exit non-zero would abort the commit, so every path here stays silent and safe.
+set -e
+
+msg_file=$1
+source=$2
+
+# Merge commits are exempt from the DCO gate; leave their message untouched.
+[ "$source" = "merge" ] && exit 0
+
+name=$(git config user.name)
+email=$(git config user.email)
+[ -n "$name" ] && [ -n "$email" ] || exit 0
+
+# doNothing keeps an existing trailer (any Signed-off-by line) from being
+# duplicated when a commit is amended or replayed.
+git interpret-trailers --in-place --if-exists doNothing \
+	--trailer "Signed-off-by: $name <$email>" "$msg_file"
