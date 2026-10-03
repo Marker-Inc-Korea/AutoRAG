@@ -111,8 +111,10 @@ export interface AgentModelConfig {
 	 */
 	api?: Api;
 	/**
-	 * Endpoint base URL. When set, AutoRAG builds a Model from this config
-	 * instead of requiring a pi-ai catalog entry. Omit for catalog/local models.
+	 * Endpoint base URL. For a pi-ai catalog `provider/id`, it overrides only the
+	 * catalog endpoint and keeps the catalog's reasoning, compat, and limits. For an
+	 * id outside the catalog, AutoRAG builds a generic Model from this config.
+	 * Omit for catalog/local models that use the catalog endpoint.
 	 */
 	baseUrl?: string;
 	/**
@@ -1100,33 +1102,41 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 
 function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefined {
 	if (!(getProviders() as readonly string[]).includes(reference.provider)) return undefined;
-	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
+	const catalog = getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
+	if (catalog === undefined) return undefined;
+	// The catalog entry is the base; only fields the config declares override it, so a
+	// configured endpoint keeps the catalog's reasoning, compat, thinking map, and limits.
+	return {
+		...catalog,
+		...(reference.name !== undefined ? { name: reference.name } : {}),
+		...(reference.api !== undefined ? { api: reference.api } : {}),
+		...(isConfiguredEndpoint(reference) ? { baseUrl: reference.baseUrl } : {}),
+		...(reference.reasoning !== undefined ? { reasoning: reference.reasoning } : {}),
+		...(reference.input !== undefined ? { input: reference.input } : {}),
+		...(reference.contextWindow !== undefined ? { contextWindow: reference.contextWindow } : {}),
+		...(reference.maxTokens !== undefined ? { maxTokens: reference.maxTokens } : {}),
+	};
 }
 
+const UNKNOWN_MODEL_HINT =
+	"Add baseUrl (and optional api/apiKeyEnv) for an OpenAI-compatible endpoint outside the pi-ai catalog, or use a pi-ai catalog model id.";
+
 function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
-	if (isConfiguredEndpoint(reference)) {
-		return buildModelFromConfiguredEndpoint(reference);
-	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
-	const hint =
-		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
-	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
+	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
+	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 }
 
 function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
 	if (reference === undefined) return undefined;
-	if (isConfiguredEndpoint(reference)) {
-		return buildModelFromConfiguredEndpoint(reference);
-	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
+	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
 	if ((getProviders() as readonly string[]).includes(reference.provider)) {
-		const hint =
-			"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
-		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
+		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 	}
 	return undefined;
 }
