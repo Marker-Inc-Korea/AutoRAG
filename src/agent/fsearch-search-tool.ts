@@ -22,7 +22,7 @@ export interface FSearchSearchDetails {
 const fsearchSearchSchema = Type.Object({
 	query: Type.String({
 		description:
-			'FSearch query syntax over file and folder names: space = AND, OR, ! = NOT, "quoted phrase", wildcards (*.pdf), ext:pdf;docx, size:>10mb, path:<fragment>, case:, regex:. When the slow-walk fallback answers (fsearch-cli not installed), only substring/regex name matching applies.',
+			'FSearch query syntax over file and folder names: space = AND, OR keyword = OR (never the pipe |), ! = NOT, "quoted phrase", wildcards (*.pdf), ext:pdf;docx, size:>10mb, path:<fragment>, case:, regex:. When the slow-walk fallback answers (fsearch-cli not installed), only substring/regex name matching applies.',
 	}),
 	regex: Type.Optional(Type.Boolean({ description: "Treat query as a regular expression." })),
 	matchCase: Type.Optional(Type.Boolean()),
