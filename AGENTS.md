@@ -397,7 +397,7 @@ The librarian agent owns the full workflow:
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
 | `recommend_peer_targets` | Rank local SimpleX peer contacts (the profile a peer shared plus your local name and note) by keyword overlap | P2P routing; never contacts peers |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
-| `emit_autorag_results` | Terminating tool that returns curated results | Final action |
+| `emit_autorag_results` | Terminating tool that returns curated results; `answer` is the complete answer, or only the delta (corrections + newly verified findings) when a fast answer already reached the caller | Final action |
 
 There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
 

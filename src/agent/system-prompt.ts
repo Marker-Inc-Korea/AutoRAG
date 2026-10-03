@@ -184,12 +184,13 @@ ${manifests}
 ## Output Format
 
 Call \`emit_autorag_results\` exactly once with:
-- \`answer\`: the final curated answer for the caller following the Answer Guidelines below. Reference results by bracketed numbers such as [1] and [2].
+- \`answer\`: the curated answer for the caller following the Answer Guidelines below. When a first answer was already delivered to the caller during this run, include only corrections and newly verified findings — never restate the first answer; otherwise give the complete answer. Reference results by bracketed numbers such as [1] and [2].
 - \`results\`: curated units with number, title, summary, evidence, and confidence.
 - \`mapping\`: exactly one matching entry per result number with source, method, content, and evidence references.
 
 ## Answer Guidelines
 
+- **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
 - **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
 - **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in \`answer\` (keep paths and source metadata in \`results\` and \`mapping\`).
 - **Citation style**: Cite supporting evidence chunks using bracketed numbers only (e.g. [1], [2]). Do not quote raw chunk text or mention source paths directly in \`answer\`.
