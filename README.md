@@ -128,6 +128,16 @@ Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent sho
 
 ---
 
+## AutoRAG Lite: Model-Free MCP Server
+
+AutoRAG Lite는 MCP server로도 사용할 수 있습니다. 모델 없이 `status`, `search`, `refresh`, `report`, `evidence`, `feedback`, `duplicates` tool을 제공합니다.
+
+```bash
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
+```
+
+읽기 전용 서버가 필요하면 `AUTORAG_MCP_READ_ONLY=true`를 사용합니다. 자세한 MCP client 설정과 tool call 예시는 [`docs/autorag-lite-mcp.md`](docs/autorag-lite-mcp.md)를 참고하십시오.
+
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
 Need blazing fast local search without configuring an LLM or paying for API tokens? Use **AutoRAG Lite**.
@@ -135,7 +145,7 @@ Need blazing fast local search without configuring an LLM or paying for API toke
 AutoRAG Lite provides the exact same high-performance indexing, BM25 ranking, and local MinSync vector/hybrid retrieval engine as the full librarian, but **runs 100% model-free**:
 
 - **Zero LLM Token Usage:** Run purely local BM25 and vector search offline.
-- **Agent Integration Ready:** Use `autorag lite retrieve` inside your own agentic workflows to supply raw context chunks to an external model.
+- **Agent Integration Ready:** Use `autorag lite retrieve` or the MCP server to supply raw context chunks to an external model.
 - **Fast Local CLI:** Instant responses directly from your terminal.
 
 ```bash

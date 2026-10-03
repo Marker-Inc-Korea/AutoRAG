@@ -1,9 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { normalizeLanguages } from "../../language.ts";
 import { detectMirrorStaleness } from "../../mirror/index.ts";
-import { refreshReadinessPath } from "../../mirror/paths.ts";
+import { isParsedRefreshComplete } from "../../mirror/paths.ts";
 import { resolveParserOptions } from "../../parser/index.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
@@ -228,27 +227,6 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	}
 	return lines.join("\n");
 }
-
-function hasCompletedParsedRefresh(workspacePath: string): boolean {
-	const markerPath = refreshReadinessPath(workspacePath);
-	if (!existsSync(markerPath)) return false;
-	try {
-		const marker: unknown = JSON.parse(readFileSync(markerPath, "utf8"));
-		return (
-			typeof marker === "object" &&
-			marker !== null &&
-			"version" in marker &&
-			marker.version === 1 &&
-			"completed" in marker &&
-			marker.completed === true &&
-			"parsed" in marker &&
-			marker.parsed === true
-		);
-	} catch {
-		return false;
-	}
-}
-
 /**
  * Turn refresh's stale-source diagnostics into the retrieve envelope's shape.
  * `severity` stays a warning: stale sources are reported, not blocked.
@@ -332,7 +310,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	// mirror index file is created by `lite refresh` / `autorag refresh` and
 	// persists across CLI process boundaries.
 	const workspacePath = lite.config.workspacePath;
-	const parsedReady = hasCompletedParsedRefresh(workspacePath);
+	const parsedReady = isParsedRefreshComplete(workspacePath);
 	if (!parsedReady) {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,

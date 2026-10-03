@@ -151,6 +151,23 @@ export class AutoRAGLite {
 		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
 	}
 
+	/** Record feedback directly against the persisted report registry. */
+	recordPersistedFeedbackByNumbers(
+		sessionId: string,
+		usefulNumbers: readonly number[],
+		notUsefulNumbers: readonly number[] = [],
+	): boolean {
+		const memory = new RetrievalMemory({ storagePath: this.config.memoryPath });
+		memory.load();
+		const feedback = [
+			...usefulNumbers.map((number) => ({ number, useful: true })),
+			...notUsefulNumbers.map((number) => ({ number, useful: false })),
+		];
+		const applied = memory.recordNumberedFeedback({ sessionId, query: "", feedback });
+		if (applied) memory.save();
+		return applied;
+	}
+
 	/** Return a detached snapshot of persisted evidence and feedback state. */
 	getMemorySchema(): MemorySchemaV4 {
 		return structuredClone(this.memory.getSchema());
