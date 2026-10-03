@@ -54,6 +54,16 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
 
+### DCO sign-off (binding)
+
+Every non-merge commit in a pull request must carry a `Signed-off-by:` trailer whose email matches the commit's author or committer email; the DCO check (`.github/workflows/dco.yml`, `scripts/ci/check-dco.mjs`) fails the PR otherwise. Sign-off is the default here:
+
+1. Enable the hook once per clone: `git config core.hooksPath .githooks`. The committed `.githooks/prepare-commit-msg` then adds the trailer to every commit automatically; this clone is already configured.
+2. If the hook is unavailable, sign explicitly: `git commit -s`, `git commit --amend -s`, or `git rebase --signoff <base>`.
+3. Never finish a PR with an unsigned commit. To check before pushing: `DCO_BASE_SHA=origin/main DCO_HEAD_SHA=HEAD node scripts/ci/check-dco.mjs`.
+
+Squash merges to `main` are still required, and force-pushing your own feature branch to fix sign-off is allowed (see CONTRIBUTING.md).
+
 ## Manual QA on a shared machine (binding)
 
 The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, the embedding-model cache, TUI sessions, P2P policy). The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
@@ -397,7 +407,7 @@ The librarian agent owns the full workflow:
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
 | `recommend_peer_targets` | Rank local SimpleX peer contacts (the profile a peer shared plus your local name and note) by keyword overlap | P2P routing; never contacts peers |
 | `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
-| `emit_autorag_results` | Terminating tool that returns curated results | Final action |
+| `emit_autorag_results` | Terminating tool that returns curated results; `answer` is the complete answer, or only the delta (corrections + newly verified findings) when a fast answer already reached the caller | Final action |
 
 There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
 

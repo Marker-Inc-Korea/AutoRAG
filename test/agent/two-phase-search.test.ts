@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
+	type AssistantMessage,
 	type FauxProviderRegistration,
 	type FauxResponseStep,
 	fauxAssistantMessage,
@@ -64,7 +65,22 @@ function fauxModel(reasoning: boolean, ...responses: FauxResponseStep[]) {
 function recordStep(step: FauxResponseStep, log: (string | undefined)[]): FauxResponseStep {
 	return (_context, options) => {
 		log.push(options?.reasoning);
-		return step as ReturnType<typeof fauxAssistantMessage>;
+		return step as AssistantMessage;
+	};
+}
+
+/** Records the latest user prompt the agent sent, then returns the scripted step. */
+function capturePromptStep(step: FauxResponseStep, prompts: string[]): FauxResponseStep {
+	return (context) => {
+		const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
+		const text =
+			lastUser === undefined
+				? ""
+				: typeof lastUser.content === "string"
+					? lastUser.content
+					: lastUser.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+		prompts.push(text);
+		return step as AssistantMessage;
 	};
 }
 
@@ -421,5 +437,74 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const preliminary = events.find((event) => event.type === "preliminary");
 		expect(preliminary?.type === "preliminary" && preliminary.response.answer).toContain("Quick take");
 		expect(preliminary?.type === "preliminary" && preliminary.response.results).toEqual([]);
+	});
+
+	it("asks for a delta-only final answer when the fast answer was already delivered", () => {
+		const model = fauxModel(true, fauxAssistantMessage("noop", { stopReason: "stop" }));
+		const agent = new AutoRAGAgent(agentOptions(model));
+
+		const delta = agent.buildRefinementPrompt(
+			"what approval do refund exceptions need?",
+			{},
+			{
+				answer: "Fast: refund exceptions need director approval before payout.",
+				results: [
+					{
+						number: 1,
+						title: "Refund approval rule",
+						summary: "Refund exceptions need director approval before payout.",
+						evidence: [{ excerpt: "Refund exceptions require director approval before payout.", lineNumber: 1 }],
+					},
+				],
+				sources: [{ number: 1, source: join(docs, "refund-policy.txt") }],
+			},
+			true,
+		);
+		// The model must be able to see the exact first answer it is diffing against.
+		expect(delta).toContain("Fast: refund exceptions need director approval before payout.");
+		expect(delta).toContain("Refund exceptions need director approval before payout.");
+		expect(delta).toContain(join(docs, "refund-policy.txt"));
+		expect(delta).toMatch(/MUST contain only/i);
+		expect(delta).toMatch(/never restate/i);
+
+		const complete = agent.buildRefinementPrompt("what approval do refund exceptions need?", {}, undefined, false);
+		expect(complete).toContain("the fast phase produced no answer");
+		expect(complete).not.toMatch(/MUST contain only/i);
+	});
+
+	it("walks the verification phase through the already-delivered fast answer as a delta task", async () => {
+		const prompts: string[] = [];
+		const model = fauxModel(
+			true,
+			capturePromptStep(fastAnswerCall(), prompts),
+			capturePromptStep(fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), prompts),
+			capturePromptStep(finalEmitCall("Correction: exceptions also need finance sign-off."), prompts),
+		);
+		const agent = new AutoRAGAgent(agentOptions(model));
+
+		const events = await collectEvents(agent, "what approval do refund exceptions need?");
+
+		const finalPrompt = prompts.at(-1) ?? "";
+		expect(finalPrompt).toContain("Fast answer: refund exceptions require director approval before payout.");
+		expect(finalPrompt).toMatch(/MUST contain only/i);
+		const complete = events.find((event) => event.type === "complete");
+		expect(complete?.type === "complete" && complete.response.answer).toContain("Correction:");
+	});
+
+	it("keeps a complete-answer instruction when no preliminary reaches a caller", async () => {
+		const prompts: string[] = [];
+		const model = fauxModel(
+			true,
+			capturePromptStep(fastAnswerCall(), prompts),
+			capturePromptStep(fauxAssistantMessage("Fast answer drafted.", { stopReason: "stop" }), prompts),
+			capturePromptStep(finalEmitCall("Complete verified answer."), prompts),
+		);
+		const agent = new AutoRAGAgent(agentOptions(model));
+
+		const response = await agent.searchDocuments("what approval do refund exceptions need?");
+
+		const finalPrompt = prompts.at(-1) ?? "";
+		expect(finalPrompt).not.toMatch(/MUST contain only/i);
+		expect(response.answer).toContain("Complete verified answer");
 	});
 });
