@@ -285,6 +285,7 @@ describe("autorag lite retrieve", () => {
 				minSync: false,
 				jikji: false,
 				everything: false,
+				fsearch: false,
 			}),
 		);
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -330,6 +331,7 @@ describe("autorag lite retrieve", () => {
 				minSync: false,
 				jikji: false,
 				everything: false,
+				fsearch: false,
 			}),
 		);
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);

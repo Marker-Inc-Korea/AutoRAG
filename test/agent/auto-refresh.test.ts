@@ -26,6 +26,7 @@ beforeEach(() => {
 		memoryPath: join(tmpDir, "memory.json"),
 		workspacePath: tmpDir,
 		everything: false,
+		fsearch: false,
 	});
 });
 
@@ -129,6 +130,7 @@ describe("AutoRAGAgent auto-refresh scheduler", () => {
 			workspacePath: tmpDir,
 			autoRefresh: { intervalMs: 5000, immediate: true },
 			everything: false,
+			fsearch: false,
 		});
 
 		expect(start).toHaveBeenCalledWith(5000, { immediate: true });

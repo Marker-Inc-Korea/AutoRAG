@@ -154,7 +154,7 @@ Global flags:
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
-  --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,everything,all
+  --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,everything,fsearch,all
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --version, -V        Print the package version
