@@ -146,6 +146,26 @@ describe("search_all_documents tool", () => {
 		expect(text).toContain("No results.");
 		expect(text).toContain("minsync:minsync-unavailable");
 	});
+
+	it("renders the full chunk content without a fixed character cut", async () => {
+		const longContent = `merged ${"detail ".repeat(120)}`.trim();
+		expect(longContent.length).toBeGreaterThan(500);
+		const provider: SearchAllDocumentsProvider = {
+			async searchAllDocuments() {
+				return {
+					results: [
+						{ id: "long", source: "/docs/long", content: longContent, score: 0.9, metadata: { method: "all" } },
+					],
+					diagnostics: [],
+				};
+			},
+		};
+		const tool = createSearchAllDocumentsTool(provider);
+
+		const out = await tool.execute("call-long", { query: "refund", topK: 1 });
+
+		expect(textOf(out)).toContain(longContent);
+	});
 });
 
 function textOf(result: { content: ReadonlyArray<{ type: string; text?: string }> }): string {

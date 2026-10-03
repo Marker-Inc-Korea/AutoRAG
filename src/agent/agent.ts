@@ -1399,10 +1399,7 @@ export class AutoRAGAgent {
 						return true;
 					})
 					.slice(0, 100)
-					.map(
-						(result, index) =>
-							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
-					)
+					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		};

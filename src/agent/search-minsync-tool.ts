@@ -94,7 +94,7 @@ function unavailableResult(message: string): AgentToolResult<SearchMinSyncDocume
 function formatResults(results: readonly RetrievalResult[]): string {
 	if (results.length === 0) return "No MinSync results.";
 	const rows = results.map((result, index) => {
-		const line = result.content.replace(/\s+/gu, " ").slice(0, 500);
+		const line = result.content.replace(/\s+/gu, " ");
 		return `[${index + 1}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
 	});
 	return `MinSync results:\n\n${rows.join("\n\n")}`;

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	createSingleDatasourceSearchTools,
+	formatDatasourceResults,
 	type SingleDatasourceSearchProvider,
 	singleDatasourceToolName,
 } from "../../src/agent/search-single-datasource-tool.ts";
@@ -274,5 +275,19 @@ describe("every authorized datasource connection stays individually callable", (
 				datasourceSearchToolName(datasourceId!),
 			);
 		}
+	});
+});
+
+describe("formatDatasourceResults", () => {
+	it("renders the full chunk content without a fixed character cut", () => {
+		const longContent = `datasource ${"detail ".repeat(120)}`.trim();
+		expect(longContent.length).toBeGreaterThan(500);
+
+		const text = formatDatasourceResults(
+			[{ id: "long", source: "/kakao/acct-1/chunks/1", content: longContent, score: 0.9, metadata: {} }],
+			[],
+		);
+
+		expect(text).toContain(longContent);
 	});
 });
