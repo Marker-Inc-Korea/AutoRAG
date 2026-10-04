@@ -95,8 +95,8 @@ The zero-configuration boundary is narrow:
 Embedding requests contain text and selected model/profile data only. AutoRAG
 does not send archive IDs, source paths, credentials, or native store paths to
 the gateway. If the runtime is unavailable, a datasource keeps its native
-lexical/FTS lane where supported and reports a diagnostic; it does not silently
-switch to a remote embedding service.
+lexical/FTS lane where supported and reports a diagnostic; a remote embedding
+service is used only when the operator explicitly configures one.
 ## Contract
 
 A datasource skill is both:

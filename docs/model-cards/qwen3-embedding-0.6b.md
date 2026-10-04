@@ -4,7 +4,7 @@ This card covers the `qwen3-embedding-0.6b` embedding profile, the default embed
 
 ## Intended use
 
-Local, loopback-only embedding for AutoRAG's MinSync and native-datasource semantic retrieval. The librarian agent embeds document chunks and queries on the operator's own machine. Corpus text must not be sent to a remote embedding endpoint, and AutoRAG's default configuration never does.
+Local, loopback-only embedding for AutoRAG's MinSync and native-datasource semantic retrieval. The librarian agent embeds document chunks and queries on the operator's own machine. Corpus text stays local by default; a remote embedding endpoint is an explicit operator opt-in.
 
 ## Unsuitable use
 
