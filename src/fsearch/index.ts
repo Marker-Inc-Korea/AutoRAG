@@ -1,0 +1,22 @@
+export {
+	buildFSearchIndexArgs,
+	buildFSearchSearchArgs,
+	type FSearchBackend,
+	FSearchClient,
+	type FSearchClientOptions,
+	type FSearchEntry,
+	type FSearchFailure,
+	type FSearchFailureReason,
+	type FSearchIndexResult,
+	type FSearchLauncher,
+	type FSearchOptions,
+	type FSearchRunner,
+	type FSearchRunResult,
+	type FSearchSearchRequest,
+	type FSearchSearchResult,
+	type FSearchSort,
+	fsearchSocketPath,
+	parseFSearchJsonLines,
+	parseFSearchStats,
+} from "./client.ts";
+export { type FSearchWalkOptions, type FSearchWalkResult, walkFileSearch } from "./walk.ts";

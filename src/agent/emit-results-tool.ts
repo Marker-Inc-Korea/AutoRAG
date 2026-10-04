@@ -29,7 +29,7 @@ const evidenceRefSchema = Type.Object({
 export const emitResultsSchema = Type.Object({
 	answer: Type.String({
 		description:
-			"Final curated answer for the caller in at most 5 bullet points (plus optional explanation). Reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text.",
+			"Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text.",
 	}),
 	results: Type.Array(
 		Type.Object({

@@ -83,7 +83,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"datasources, and Jikji. Model-free: no LLM is constructed.",
 		"",
 		"Flags:",
-		"  --method <csv>  Restrict the run: minsync,parsed,datasources,jikji,everything,all",
+		"  --method <csv>  Restrict the run: minsync,parsed,datasources,jikji,everything,fsearch,all",
 		"  --force         Re-index even when the mirror looks unchanged",
 	]),
 	status: usage([

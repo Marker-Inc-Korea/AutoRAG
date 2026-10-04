@@ -121,6 +121,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
 			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
 			everything: false,
+			fsearch: false,
 		});
 		await agent.refresh(true);
 		const response = await agent.searchDocuments("refund director approval");
@@ -139,6 +140,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
 			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
 			everything: false,
+			fsearch: false,
 		});
 
 		const prepare = agent.scheduleMinSyncPrepareForTest();
@@ -159,6 +161,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			minSync: false,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 		});
 		const duplicated = [
 			{ id: "1", source: "/docs/a.md", content: "shared boilerplate header", score: 0.9, metadata: {} },
@@ -219,6 +222,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			minSync: false,
 			jikji: { binaryPath: join(root, "missing-jikji") },
 			everything: false,
+			fsearch: false,
 		});
 		(agent as unknown as { findJikji: () => Promise<never> }).findJikji = async () => {
 			throw new Error("jikji prefetch boom");

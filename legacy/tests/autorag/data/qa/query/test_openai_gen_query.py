@@ -14,7 +14,7 @@ from autorag.data.qa.query.openai_gen_query import (
 from autorag.data.qa.schema import QA
 from tests.autorag.data.qa.query.base_test_query_gen import qa_df, multi_hop_qa_df
 
-client = AsyncOpenAI()
+client = AsyncOpenAI(api_key="mock_openai_api_key")
 
 
 async def mock_gen_gt_response(*args, **kwargs):
