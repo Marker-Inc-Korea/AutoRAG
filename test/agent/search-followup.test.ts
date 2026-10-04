@@ -384,10 +384,12 @@ describe.each(["afterToolCall", "recordSearchToolEvent"] as const)("multi-root J
 	it.each(["spawn-error", "nonzero-exit", "aborted", "success"] as const)(
 		"preserves healthy evidence with second root outcome %s",
 		async (outcome) => {
-			const healthyRoot = join(root, "healthy");
-			const otherRoot = join(root, "other");
-			mkdirSync(healthyRoot);
-			mkdirSync(otherRoot);
+			const healthyRootPath = join(root, "healthy");
+			const otherRootPath = join(root, "other");
+			mkdirSync(healthyRootPath);
+			mkdirSync(otherRootPath);
+			const healthyRoot = realpathSync(healthyRootPath);
+			const otherRoot = realpathSync(otherRootPath);
 			writeFileSync(join(healthyRoot, "refund.txt"), hit.content);
 			const { agent, internal, registration, tool } = setup(createJikjiFindTool, 64, [healthyRoot, otherRoot]);
 			const pack: JikjiAnswerPack = {
