@@ -16,7 +16,12 @@ import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/ski
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
-import { DEFAULT_RERANK_API_KEY_ENV, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_PROVIDER } from "../retrieval/rerank.ts";
+import {
+	DEFAULT_RERANK_API_KEY_ENV,
+	DEFAULT_RERANK_MODEL,
+	DEFAULT_RERANK_PROVIDER,
+	SUPPORTED_RERANK_PROVIDERS,
+} from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
@@ -1160,6 +1165,9 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 			throw new ConfigError(`${path}.provider must be a non-empty string`);
 		}
 		out.provider = record.provider.trim();
+	}
+	if (!SUPPORTED_RERANK_PROVIDERS.includes(out.provider ?? "")) {
+		throw new ConfigError(`${path}.provider must be one of: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`);
 	}
 	if (record.model !== undefined) {
 		if (typeof record.model !== "string" || record.model.trim() === "") {

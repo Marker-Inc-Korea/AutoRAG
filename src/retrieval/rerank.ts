@@ -21,6 +21,8 @@ export const DEFAULT_RERANK_MODEL = "voyageai/rerank-3-lite";
 export const DEFAULT_RERANK_PROVIDER = "openrouter";
 /** Default environment variable holding the OpenRouter API key. */
 export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
+/** Rerank providers {@link createReranker} can build. */
+export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER];
 
 /** Static description of a reranker, used for diagnostics and inspection. */
 export interface RerankerDescriptor {
@@ -57,14 +59,17 @@ export interface Reranker {
 
 /** Minimal rerank client shape, so tests can inject a fake without the SDK. */
 export interface RerankClient {
-	rerank(request: {
-		requestBody: {
-			model: string;
-			query: string;
-			documents: string[];
-			topN?: number;
-		};
-	}): Promise<RerankResponse>;
+	rerank(
+		request: {
+			requestBody: {
+				model: string;
+				query: string;
+				documents: string[];
+				topN?: number;
+			};
+		},
+		options?: { signal?: AbortSignal },
+	): Promise<RerankResponse>;
 }
 
 /** Response body returned by OpenRouter's rerank router. */
@@ -103,14 +108,17 @@ export interface CreateRerankerOptions extends OpenRouterRerankerOptions {
 
 /**
  * Build the configured reranker. Returns `undefined` when reranking is disabled
- * or absent, or when the provider is unsupported. Provider-agnostic by design:
- * a local reranker implements {@link Reranker} and plugs in here without
- * touching the retrieval pipeline.
+ * or absent. Throws for a provider AutoRAG cannot build (an unsupported
+ * `provider` id is a configuration error, not a silent no-op).
  */
 export function createReranker(config: CreateRerankerOptions | false | undefined): Reranker | undefined {
 	if (config === false || config === undefined) return undefined;
 	const provider = config.provider ?? DEFAULT_RERANK_PROVIDER;
-	if (provider !== DEFAULT_RERANK_PROVIDER) return undefined;
+	if (!SUPPORTED_RERANK_PROVIDERS.includes(provider)) {
+		throw new Error(
+			`Unsupported rerank provider "${provider}"; supported providers: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`,
+		);
+	}
 	return new OpenRouterReranker(config);
 }
 
@@ -144,8 +152,8 @@ export class OpenRouterReranker implements Reranker {
 		if (options.timeoutMs !== undefined) sdkOptions.timeoutMs = options.timeoutMs;
 		const sdk = new OpenRouter(sdkOptions);
 		this.client = {
-			rerank: async (request) => {
-				const response = await sdk.rerank.rerank(request);
+			rerank: async (request, requestOptions) => {
+				const response = await sdk.rerank.rerank(request, requestOptions);
 				if (typeof response === "string") throw new Error(response);
 				return response;
 			},
@@ -184,7 +192,7 @@ export class OpenRouterReranker implements Reranker {
 		};
 		if (options.topN !== undefined) requestBody.topN = options.topN;
 
-		const response = await this.client.rerank({ requestBody });
+		const response = await this.client.rerank({ requestBody }, { signal: options.signal });
 		const ordered = Array.isArray(response?.results) ? response.results : [];
 		const seen = new Set<number>();
 		const reranked: RetrievalResult[] = [];
