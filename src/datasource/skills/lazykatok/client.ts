@@ -25,6 +25,7 @@ import type {
 } from "./types.ts";
 import {
 	DEFAULT_LAZYKATOK_BINARY,
+	DEFAULT_LAZYKATOK_INDEX_TIMEOUT_MS,
 	DEFAULT_LAZYKATOK_MAX_BUFFER_BYTES,
 	DEFAULT_LAZYKATOK_SOURCE,
 	DEFAULT_LAZYKATOK_TIMEOUT_MS,
@@ -57,6 +58,7 @@ type SpawnRequest = {
 	readonly options: LazykatokOptions;
 	readonly args: readonly string[];
 	readonly env: NodeJS.ProcessEnv;
+	readonly timeoutMs: number;
 	readonly signal?: AbortSignal;
 	readonly cwd?: string;
 };
@@ -85,7 +87,7 @@ export class LazykatokClient {
 	}
 
 	async sync(signal?: AbortSignal): Promise<LazykatokSyncResult> {
-		const result = await this.run(syncArgs(this.options, process.platform), signal);
+		const result = await this.run(syncArgs(this.options, process.platform), signal, this.syncTimeoutMs());
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -94,7 +96,7 @@ export class LazykatokClient {
 	}
 
 	async index(signal?: AbortSignal): Promise<LazykatokIndexResult> {
-		const result = await this.run(["index", "--json"], signal);
+		const result = await this.run(["index", "--json"], signal, this.syncTimeoutMs());
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -144,8 +146,13 @@ export class LazykatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
+	/** `sync`/`index` are non-interactive and share the long budget; reads keep `timeoutMs`. */
+	private syncTimeoutMs(): number {
+		return this.options.indexTimeoutMs ?? this.options.timeoutMs ?? DEFAULT_LAZYKATOK_INDEX_TIMEOUT_MS;
+	}
+
 	/** Single retrieval pipeline: build env, spawn, parse-free raw result. */
-	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
+	private async run(args: readonly string[], signal?: AbortSignal, timeoutMs?: number): Promise<ProcessResult> {
 		const env = controlledEnv(this.options.env);
 		// lazykatok's CLI (clap) only accepts `--data-dir`/`--config` as global
 		// options BEFORE the subcommand; appending them after `sync --json`-style
@@ -154,6 +161,7 @@ export class LazykatokClient {
 			options: this.options,
 			args: [...commonArgs(this.options), ...args],
 			env,
+			timeoutMs: timeoutMs ?? this.options.timeoutMs ?? DEFAULT_LAZYKATOK_TIMEOUT_MS,
 			signal,
 		});
 	}
@@ -200,7 +208,7 @@ function spawnLazykatok(request: SpawnRequest): Promise<ProcessResult> {
 		const timeout = setTimeout(() => {
 			finalReason = "timeout";
 			terminateProcessTree(child, "SIGKILL");
-		}, options.timeoutMs ?? DEFAULT_LAZYKATOK_TIMEOUT_MS);
+		}, request.timeoutMs);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
 			terminateProcessTree(child, "SIGKILL");
