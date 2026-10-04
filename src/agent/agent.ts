@@ -2428,6 +2428,7 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				datasourceAccess: this.datasourceAccessOptions,
+				defaultTopK: this.limits.mergedEvidenceCeiling,
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 			});

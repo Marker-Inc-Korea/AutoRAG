@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildAgentOptions, ConfigError, resolveConfig } from "../../src/cli/config.ts";
+import { buildAgentOptions, ConfigError, resolveConfig, writeDefaultConfig } from "../../src/cli/config.ts";
 
 let root: string;
 
@@ -79,5 +79,21 @@ describe("limits config normalization", () => {
 		const config = resolveFrom({ limits: { prefetch: { sectionLimit: 30 } } });
 
 		expect(buildAgentOptions(config).limits).toEqual({ prefetch: { sectionLimit: 30 } });
+	});
+
+	it("persists limits through writeDefaultConfig and reads them back", () => {
+		const path = join(root, "written.json");
+		writeDefaultConfig(
+			path,
+			{
+				workspacePath: root,
+				limits: { mergedEvidenceCeiling: 1000, prefetch: { sectionLimit: 30 } },
+			},
+			{ cwd: root, env: {} },
+		);
+
+		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
+
+		expect(config.limits).toEqual({ mergedEvidenceCeiling: 1000, prefetch: { sectionLimit: 30 } });
 	});
 });
