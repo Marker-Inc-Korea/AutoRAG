@@ -231,6 +231,115 @@ function keepLlmMessages(messages: AgentMessage[]): Message[] {
  */
 const MERGED_EVIDENCE_CEILING = 500;
 
+/**
+ * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
+ * the model. Every field is optional: an omitted field keeps the shipped
+ * default below, so this only exists to let an operator tighten or widen a
+ * specific cap without rebuilding. Values must be positive integers.
+ */
+export interface AutoRAGRetrievalLimits {
+	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
+	readonly mergedEvidenceCeiling?: number;
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	readonly singleDatasourceTopK?: number;
+	/** MinSync semantic retrieval default `topK`. Default 50. */
+	readonly minSyncTopK?: number;
+	/** MinSync fetch cap when a scope narrows the query. Default 100. */
+	readonly minSyncScopedQueryTopK?: number;
+	/** Instance scopes listed in one datasource tool description. Default 8. */
+	readonly toolDescriptionInstanceScopes?: number;
+	/** Baseline evidence prefetched for the fast answer. */
+	readonly prefetch?: {
+		/** Jikji find candidate count. Default 30. */
+		readonly jikjiTopK?: number;
+		/** MinSync retrieve candidate count. Default 100. */
+		readonly minSyncTopK?: number;
+		/** Max Jikji answer paths rendered into the baseline. Default 100. */
+		readonly jikjiPathLimit?: number;
+		/** Max results rendered per baseline section. Default 100. */
+		readonly sectionLimit?: number;
+	};
+}
+
+/** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
+const DEFAULT_RETRIEVAL_LIMITS = {
+	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
+	singleDatasourceTopK: 50,
+	minSyncTopK: 50,
+	minSyncScopedQueryTopK: 100,
+	toolDescriptionInstanceScopes: 8,
+	prefetch: { jikjiTopK: 30, minSyncTopK: 100, jikjiPathLimit: 100, sectionLimit: 100 },
+} as const;
+
+type ResolvedRetrievalLimits = {
+	readonly mergedEvidenceCeiling: number;
+	readonly singleDatasourceTopK: number;
+	readonly minSyncTopK: number;
+	readonly minSyncScopedQueryTopK: number;
+	readonly toolDescriptionInstanceScopes: number;
+	readonly prefetch: {
+		readonly jikjiTopK: number;
+		readonly minSyncTopK: number;
+		readonly jikjiPathLimit: number;
+		readonly sectionLimit: number;
+	};
+};
+
+function positiveLimit(value: number | undefined, fallback: number, path: string): number {
+	if (value === undefined) return fallback;
+	if (!Number.isInteger(value) || value <= 0) throw new Error(`${path} must be a positive integer`);
+	return value;
+}
+
+function resolveRetrievalLimits(limits: AutoRAGRetrievalLimits | undefined): ResolvedRetrievalLimits {
+	const prefetch = limits?.prefetch;
+	return {
+		mergedEvidenceCeiling: positiveLimit(
+			limits?.mergedEvidenceCeiling,
+			DEFAULT_RETRIEVAL_LIMITS.mergedEvidenceCeiling,
+			"limits.mergedEvidenceCeiling",
+		),
+		singleDatasourceTopK: positiveLimit(
+			limits?.singleDatasourceTopK,
+			DEFAULT_RETRIEVAL_LIMITS.singleDatasourceTopK,
+			"limits.singleDatasourceTopK",
+		),
+		minSyncTopK: positiveLimit(limits?.minSyncTopK, DEFAULT_RETRIEVAL_LIMITS.minSyncTopK, "limits.minSyncTopK"),
+		minSyncScopedQueryTopK: positiveLimit(
+			limits?.minSyncScopedQueryTopK,
+			DEFAULT_RETRIEVAL_LIMITS.minSyncScopedQueryTopK,
+			"limits.minSyncScopedQueryTopK",
+		),
+		toolDescriptionInstanceScopes: positiveLimit(
+			limits?.toolDescriptionInstanceScopes,
+			DEFAULT_RETRIEVAL_LIMITS.toolDescriptionInstanceScopes,
+			"limits.toolDescriptionInstanceScopes",
+		),
+		prefetch: {
+			jikjiTopK: positiveLimit(
+				prefetch?.jikjiTopK,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiTopK,
+				"limits.prefetch.jikjiTopK",
+			),
+			minSyncTopK: positiveLimit(
+				prefetch?.minSyncTopK,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.minSyncTopK,
+				"limits.prefetch.minSyncTopK",
+			),
+			jikjiPathLimit: positiveLimit(
+				prefetch?.jikjiPathLimit,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiPathLimit,
+				"limits.prefetch.jikjiPathLimit",
+			),
+			sectionLimit: positiveLimit(
+				prefetch?.sectionLimit,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.sectionLimit,
+				"limits.prefetch.sectionLimit",
+			),
+		},
+	};
+}
+
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
 	readonly immediate?: boolean;
@@ -443,6 +552,12 @@ export interface AutoRAGAgentOptions {
 	dupey?: DupeyCliOptions | false;
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
+	/**
+	 * Hard caps on retrieval, baseline prefetch, and model-facing candidate
+	 * lists. Omitted fields keep their shipped defaults — see
+	 * {@link AutoRAGRetrievalLimits}. Values must be positive integers.
+	 */
+	limits?: AutoRAGRetrievalLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
@@ -573,6 +688,7 @@ export class AutoRAGAgent {
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
+	private readonly limits: ResolvedRetrievalLimits;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -613,18 +729,22 @@ export class AutoRAGAgent {
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
+		this.limits = resolveRetrievalLimits(options.limits);
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
 		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
-			this.minSyncMethod = new MinSyncVectorMethod({
+			const minSyncDefaults = {
 				...minSyncOpts,
 				root: this.workspaceProjectRoot,
-			});
+				defaultTopK: this.limits.minSyncTopK,
+				scopedTopK: this.limits.minSyncScopedQueryTopK,
+			};
+			this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
 			this.minSyncReady = this.minSyncMethod.isReady();
 			this.methodRegistry.register(this.minSyncMethod);
-			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
+			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
 		for (const skill of this.datasourceSkills) {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
@@ -1419,7 +1539,7 @@ export class AutoRAGAgent {
 				.describeSources()
 				.map((source) => source.source)
 				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
-				.slice(0, 8);
+				.slice(0, this.limits.toolDescriptionInstanceScopes);
 			specs.push({
 				datasourceId: descriptor.datasourceId,
 				description: descriptor.description,
@@ -1495,19 +1615,19 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 100, scope: options.scope };
+		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
 		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 30 }).catch(() => undefined),
+				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 100)
+					.slice(0, this.limits.prefetch.jikjiPathLimit)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
@@ -1526,11 +1646,8 @@ export class AutoRAGAgent {
 						seen.add(key);
 						return true;
 					})
-					.slice(0, 100)
-					.map(
-						(result, index) =>
-							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
-					)
+					.slice(0, this.limits.prefetch.sectionLimit)
+					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		};
@@ -2422,7 +2539,10 @@ export class AutoRAGAgent {
 		}
 		const merged = this.rerankWithMemory(
 			query,
-			this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
+			this.merger.merge(filteredByMethod, {
+				topK: options.topK ?? this.limits.mergedEvidenceCeiling,
+				dedup: true,
+			}),
 		);
 		const results = await this.applyRerank(query, merged, diagnostics);
 		return { results, diagnostics };
@@ -2473,7 +2593,10 @@ export class AutoRAGAgent {
 		}
 		const merged = this.rerankWithMemory(
 			query,
-			this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
+			this.merger.merge(filteredByMethod, {
+				topK: options.topK ?? this.limits.singleDatasourceTopK,
+				dedup: true,
+			}),
 		);
 		const results = await this.applyRerank(query, merged, diagnostics);
 		return { results, diagnostics };
@@ -2494,6 +2617,7 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				datasourceAccess: this.datasourceAccessOptions,
+				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,

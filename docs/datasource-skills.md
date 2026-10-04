@@ -470,8 +470,11 @@ added/changed indexable files into `mirror/`. Deleted and renamed virtual paths
 are removed from the completed snapshot. A no-op refresh downloads zero bodies
 and does not rewrite `chunks.json`. A failed copy leaves the previous manifest
 and mirror available for query-time search. `include`, `exclude`,
-`maxBytesPerFile`, `concurrency`, `bandwidthLimit`, and `dryRun` are trusted
-server configuration; model/tool arguments cannot change them.
+`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
+`bandwidthLimit`, and `dryRun` are trusted server configuration; model/tool
+arguments cannot change them. The RSS connector takes the same trusted
+`maxDocuments`/`maxItemsPerFeed`/`maxContentChars` caps, and Spotlight takes
+`maxDocuments`/`maxContentChars`/`maxResultsPerQuery`/`maxBytesPerFile`.
 
 Before searching, the agent loads the datasource skill with
 `load_datasource_skill`, then calls the connection's dedicated
