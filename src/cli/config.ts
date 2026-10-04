@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { findEnvKeys, getEnvApiKey, getModel, getProviders } from "@earendil-works/pi-ai/compat";
-import type { AutoRAGAgentOptions } from "../agent/agent.ts";
+import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
+import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -16,6 +17,12 @@ import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/ski
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import {
+	DEFAULT_RERANK_API_KEY_ENV,
+	DEFAULT_RERANK_MODEL,
+	DEFAULT_RERANK_PROVIDER,
+	SUPPORTED_RERANK_PROVIDERS,
+} from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
@@ -79,6 +86,29 @@ export interface WebSearchCliConfig {
 		| false;
 }
 
+/**
+ * Post-merge reranking config. Routes merged evidence through a dedicated
+ * rerank model. `provider` is `openrouter` today; `model` is the OpenRouter
+ * wire id (default `voyageai/rerank-3-lite`). Secrets never appear here — only
+ * the environment-variable name that holds the provider API key.
+ */
+export interface RerankConfig {
+	/** `false` disables reranking. Missing means enabled when the block is present. */
+	enabled?: boolean;
+	/** Provider id. @default "openrouter" */
+	provider?: string;
+	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	model?: string;
+	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" */
+	apiKeyEnv?: string;
+	/** Override the provider base URL (e.g. a gateway). */
+	baseUrl?: string;
+	/** Return only the top N merged results. Omitted ⇒ all distinct results are reordered. */
+	topN?: number;
+	/** Per-request timeout in milliseconds. */
+	timeoutMs?: number;
+}
+
 export interface P2pConfig {
 	enabled?: boolean;
 	port?: number;
@@ -111,8 +141,10 @@ export interface AgentModelConfig {
 	 */
 	api?: Api;
 	/**
-	 * Endpoint base URL. When set, AutoRAG builds a Model from this config
-	 * instead of requiring a pi-ai catalog entry. Omit for catalog/local models.
+	 * Endpoint base URL. For a pi-ai catalog `provider/id`, it overrides only the
+	 * catalog endpoint and keeps the catalog's reasoning, compat, and limits. For an
+	 * id outside the catalog, AutoRAG builds a generic Model from this config.
+	 * Omit for catalog/local models that use the catalog endpoint.
 	 */
 	baseUrl?: string;
 	/**
@@ -148,6 +180,8 @@ export interface CliConfig {
 		  }
 		| false;
 	webSearch?: WebSearchCliConfig;
+	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
+	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -157,6 +191,8 @@ export interface CliConfig {
 	excludeExactDuplicates?: boolean;
 	/** Absolute or workspace-relative files/directories omitted from local indexing. */
 	excludePaths?: string[];
+	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
+	limits?: AutoRAGRetrievalLimits;
 	/** Trusted datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
@@ -833,6 +869,78 @@ export function normalizeIndexingConfig(raw: RawIndexingMethods): NormalizedInde
 	};
 }
 
+const LIMITS_ALLOWLIST: Record<string, true> = {
+	mergedEvidenceCeiling: true,
+	singleDatasourceTopK: true,
+	minSyncTopK: true,
+	minSyncScopedQueryTopK: true,
+	toolDescriptionInstanceScopes: true,
+	prefetch: true,
+};
+
+const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
+	jikjiTopK: true,
+	minSyncTopK: true,
+	jikjiPathLimit: true,
+	sectionLimit: true,
+};
+
+function positiveLimitField(record: Record<string, unknown>, key: string, path: string): number | undefined {
+	const value = record[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new ConfigError(`${path}.${key} must be a positive integer`);
+	}
+	return value;
+}
+
+/** Validate the `limits` section and map it onto the agent option. */
+export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'limits' must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(LIMITS_ALLOWLIST, key)) throw new ConfigError(`limits.${key} is not a recognized field`);
+	}
+	const mergedEvidenceCeiling = positiveLimitField(record, "mergedEvidenceCeiling", "limits");
+	const singleDatasourceTopK = positiveLimitField(record, "singleDatasourceTopK", "limits");
+	const minSyncTopK = positiveLimitField(record, "minSyncTopK", "limits");
+	const minSyncScopedQueryTopK = positiveLimitField(record, "minSyncScopedQueryTopK", "limits");
+	const toolDescriptionInstanceScopes = positiveLimitField(record, "toolDescriptionInstanceScopes", "limits");
+	let prefetch: AutoRAGRetrievalLimits["prefetch"];
+	const rawPrefetch = record.prefetch;
+	if (rawPrefetch !== undefined) {
+		if (typeof rawPrefetch !== "object" || rawPrefetch === null || Array.isArray(rawPrefetch)) {
+			throw new ConfigError("limits.prefetch must be an object");
+		}
+		const prefetchRecord = rawPrefetch as Record<string, unknown>;
+		for (const key of Object.keys(prefetchRecord)) {
+			if (!Object.hasOwn(LIMITS_PREFETCH_ALLOWLIST, key)) {
+				throw new ConfigError(`limits.prefetch.${key} is not a recognized field`);
+			}
+		}
+		const jikjiTopK = positiveLimitField(prefetchRecord, "jikjiTopK", "limits.prefetch");
+		const prefetchMinSyncTopK = positiveLimitField(prefetchRecord, "minSyncTopK", "limits.prefetch");
+		const jikjiPathLimit = positiveLimitField(prefetchRecord, "jikjiPathLimit", "limits.prefetch");
+		const sectionLimit = positiveLimitField(prefetchRecord, "sectionLimit", "limits.prefetch");
+		prefetch = {
+			...(jikjiTopK !== undefined ? { jikjiTopK } : {}),
+			...(prefetchMinSyncTopK !== undefined ? { minSyncTopK: prefetchMinSyncTopK } : {}),
+			...(jikjiPathLimit !== undefined ? { jikjiPathLimit } : {}),
+			...(sectionLimit !== undefined ? { sectionLimit } : {}),
+		};
+	}
+	return {
+		...(mergedEvidenceCeiling !== undefined ? { mergedEvidenceCeiling } : {}),
+		...(singleDatasourceTopK !== undefined ? { singleDatasourceTopK } : {}),
+		...(minSyncTopK !== undefined ? { minSyncTopK } : {}),
+		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
+		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
+		...(prefetch !== undefined ? { prefetch } : {}),
+	};
+}
+
 export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const flags = input.flags;
 	const env = input.env ?? process.env;
@@ -902,6 +1010,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	};
 	if (model) config.model = model;
 	if (fileExcludePaths !== undefined) config.excludePaths = fileExcludePaths;
+	if (file.limits !== undefined) config.limits = normalizeLimitsConfig(file.limits);
 	const normalized = normalizeIndexingConfig({
 		minSync: file.minSync as MinSyncMethodConfig | false | undefined,
 	});
@@ -953,6 +1062,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
 	}
 	config.p2p = normalizeP2pConfig(file.p2p);
+	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
 	return config;
 }
 
@@ -1029,6 +1139,66 @@ function buildWebSearchAgentOption(
 	return out as AutoRAGAgentOptions["webSearch"] & object;
 }
 
+const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKeyEnv", "baseUrl", "topN", "timeoutMs"]);
+
+/** Normalize and validate the `rerank` config section, filling in defaults. */
+export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig | false {
+	if (raw === false) return false;
+	const out: RerankConfig = {
+		provider: DEFAULT_RERANK_PROVIDER,
+		model: DEFAULT_RERANK_MODEL,
+		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+	};
+	if (raw === undefined || raw === null) return out;
+	if (typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ConfigError(`${path} must be an object or false`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
+	}
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError(`${path}.enabled must be a boolean`);
+		out.enabled = record.enabled;
+	}
+	if (record.provider !== undefined) {
+		if (typeof record.provider !== "string" || record.provider.trim() === "") {
+			throw new ConfigError(`${path}.provider must be a non-empty string`);
+		}
+		out.provider = record.provider.trim();
+	}
+	if (!SUPPORTED_RERANK_PROVIDERS.includes(out.provider ?? "")) {
+		throw new ConfigError(`${path}.provider must be one of: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`);
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || record.model.trim() === "") {
+			throw new ConfigError(`${path}.model must be a non-empty string`);
+		}
+		out.model = record.model.trim();
+	}
+	if (record.apiKeyEnv !== undefined) {
+		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
+			throw new ConfigError(`${path}.apiKeyEnv must match ${API_KEY_ENV_PATTERN}`);
+		}
+		out.apiKeyEnv = record.apiKeyEnv;
+	}
+	if (record.baseUrl !== undefined) {
+		if (typeof record.baseUrl !== "string" || record.baseUrl.trim() === "") {
+			throw new ConfigError(`${path}.baseUrl must be a non-empty string`);
+		}
+		out.baseUrl = record.baseUrl.trim();
+	}
+	for (const field of ["topN", "timeoutMs"] as const) {
+		const value = record[field];
+		if (value === undefined) continue;
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			throw new ConfigError(`${path}.${field} must be a positive integer`);
+		}
+		out[field] = value;
+	}
+	return out;
+}
+
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -1056,6 +1226,19 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	if (config.rerank !== undefined) {
+		opts.rerank =
+			config.rerank === false || config.rerank.enabled === false
+				? false
+				: {
+						...(config.rerank.provider !== undefined ? { provider: config.rerank.provider } : {}),
+						...(config.rerank.model !== undefined ? { model: config.rerank.model } : {}),
+						...(config.rerank.apiKeyEnv !== undefined ? { apiKeyEnv: config.rerank.apiKeyEnv } : {}),
+						...(config.rerank.baseUrl !== undefined ? { baseUrl: config.rerank.baseUrl } : {}),
+						...(config.rerank.topN !== undefined ? { topN: config.rerank.topN } : {}),
+						...(config.rerank.timeoutMs !== undefined ? { timeoutMs: config.rerank.timeoutMs } : {}),
+					};
+	}
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
@@ -1067,6 +1250,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
+	if (config.limits !== undefined) opts.limits = config.limits;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
@@ -1124,46 +1308,103 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 	};
 }
 
-function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefined {
-	if (!(getProviders() as readonly string[]).includes(reference.provider)) return undefined;
-	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
+/**
+ * Merge a config model reference over the pi runtime catalog entry (built-in
+ * provider catalog plus `models.json`, custom, and extension providers). The
+ * catalog entry is the base; only fields the config declares override it, so a
+ * configured endpoint keeps the catalog's reasoning, compat, thinking map, and
+ * limits.
+ */
+function mergeCatalogModel(catalog: Model<Api>, reference: AgentModelConfig): Model<Api> {
+	return {
+		...catalog,
+		...(reference.name !== undefined ? { name: reference.name } : {}),
+		...(reference.api !== undefined ? { api: reference.api } : {}),
+		...(isConfiguredEndpoint(reference) ? { baseUrl: reference.baseUrl } : {}),
+		...(reference.reasoning !== undefined ? { reasoning: reference.reasoning } : {}),
+		...(reference.input !== undefined ? { input: reference.input } : {}),
+		...(reference.contextWindow !== undefined ? { contextWindow: reference.contextWindow } : {}),
+		...(reference.maxTokens !== undefined ? { maxTokens: reference.maxTokens } : {}),
+	};
 }
 
-function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
-	if (isConfiguredEndpoint(reference)) {
-		return buildModelFromConfiguredEndpoint(reference);
-	}
-	const catalog = resolveCatalogModel(reference);
+/** Resolve a config model reference against the pi runtime catalog. */
+function resolveRuntimeCatalogModel(runtime: ModelRuntime, reference: AgentModelConfig): Model<Api> | undefined {
+	const catalog = runtime.getModel(reference.provider, reference.id) as Model<Api> | undefined;
+	if (catalog === undefined) return undefined;
+	return mergeCatalogModel(catalog, reference);
+}
+
+const UNKNOWN_MODEL_HINT =
+	"Add baseUrl (and optional api/apiKeyEnv) for an OpenAI-compatible endpoint outside the pi-ai catalog, or use a pi-ai catalog model id.";
+
+function resolveRegisteredModel(runtime: ModelRuntime, reference: AgentModelConfig): Model<Api> {
+	const catalog = resolveRuntimeCatalogModel(runtime, reference);
 	if (catalog !== undefined) return catalog;
-	const hint =
-		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
-	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
+	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
+	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 }
 
-function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
+function resolveBuiltInModel(runtime: ModelRuntime, reference: AgentModelConfig | undefined): Model<Api> | undefined {
 	if (reference === undefined) return undefined;
-	if (isConfiguredEndpoint(reference)) {
-		return buildModelFromConfiguredEndpoint(reference);
-	}
-	const catalog = resolveCatalogModel(reference);
+	const catalog = resolveRuntimeCatalogModel(runtime, reference);
 	if (catalog !== undefined) return catalog;
+	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
-	if ((getProviders() as readonly string[]).includes(reference.provider)) {
-		const hint =
-			"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
-		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
+	if (runtime.getProvider(reference.provider) !== undefined) {
+		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 	}
 	return undefined;
 }
 
-export function resolveModel(config: CliConfig): Model<Api> {
+/**
+ * Extra resolution inputs beyond the local codex-runtime options. `agentDir`
+ * points at the pi agent home (`~/.pi/agent` by default) that owns
+ * `auth.json`, `models.json`, and `settings.json`.
+ */
+export interface ResolveAgentModelOptions extends LoadLocalAutoRAGModelOptions {
+	readonly agentDir?: string;
+	readonly cwd?: string;
+	/** Pre-built pi model runtime, for callers that already own one (and tests). */
+	readonly runtime?: ModelRuntime;
+}
+
+const modelRuntimeCache = new Map<string, Promise<ModelRuntime>>();
+
+function resolveAgentDir(options: ResolveAgentModelOptions): string {
+	return options.agentDir ?? getAgentDir();
+}
+
+/**
+ * Load the pi model runtime for an agent home. The runtime composes the
+ * built-in catalog with `models.json`, custom, and extension providers and
+ * reads stored credentials (`auth.json`, including OAuth). Network catalog
+ * refresh is disabled so model resolution stays fast and offline-safe.
+ */
+function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
+	const cached = modelRuntimeCache.get(agentDir);
+	if (cached !== undefined) return cached;
+	const created = ModelRuntime.create({
+		authPath: join(agentDir, "auth.json"),
+		modelsPath: join(agentDir, "models.json"),
+		allowModelNetwork: false,
+	});
+	modelRuntimeCache.set(agentDir, created);
+	created.catch(() => {
+		modelRuntimeCache.delete(agentDir);
+	});
+	return created;
+}
+
+export async function resolveModel(config: CliConfig, options: ResolveAgentModelOptions = {}): Promise<Model<Api>> {
 	if (!config.model) {
 		throw new ConfigError(
 			'No model configured. Provide --model-provider and --model-id on the command line, or set the "model" key (with provider and id) in the config file.',
 		);
 	}
-	return resolveRegisteredModel(config.model);
+	const runtime = options.runtime ?? (await getModelRuntime(resolveAgentDir(options)));
+	return resolveRegisteredModel(runtime, config.model);
 }
 
 export interface ResolvedAgentModel {
@@ -1183,7 +1424,7 @@ export type AgentModelResolutionSource =
 
 export interface AgentModelAuth {
 	readonly present: boolean;
-	readonly source: "env" | "local_runtime" | "catalog" | "none" | "unknown";
+	readonly source: "env" | "local_runtime" | "pi_auth" | "catalog" | "none" | "unknown";
 	readonly envName?: string;
 }
 
@@ -1207,119 +1448,116 @@ export interface ResolvedAgentModelDetailed {
 	readonly role: ResolvedAgentModelRole;
 }
 
-interface AgentModelCore {
-	readonly model: Model<Api>;
+interface ResolvedModelAuth {
 	readonly apiKey?: string;
 	readonly providerApiKeys?: Readonly<Record<string, string>>;
+	readonly present: boolean;
+	readonly source: AgentModelAuth["source"];
+	readonly envName?: string;
+}
+
+interface AgentModelCore {
+	readonly model: Model<Api>;
 	readonly modelRef: AgentModelConfig | undefined;
 	readonly fromLocal: boolean;
 	readonly configuredEndpoint: boolean;
 	readonly catalog: boolean;
 	readonly local: LocalAutoRAGModel | undefined;
-	readonly usesConfiguredEndpoint: boolean;
 	readonly env: NodeJS.ProcessEnv;
+	readonly auth: ResolvedModelAuth;
 }
 
-function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAGModelOptions = {}): AgentModelCore {
-	const modelRef = config.model;
-	const registered = resolveBuiltInModel(modelRef);
-	const needsLocal = modelRef === undefined || registered === undefined;
-	const localModelOptions = { ...localOptions, modelId: modelRef?.id };
-	const local = needsLocal ? loadLocalAutoRAGModel(localModelOptions) : undefined;
-	const model =
-		registered ??
-		(modelRef === undefined || modelRef.provider === local?.provider
-			? (local?.model as Model<Api>)
-			: resolveRegisteredModel(modelRef));
-
-	const configuredEndpoint = isConfiguredEndpoint(modelRef);
-	const usesConfiguredEndpoint = configuredEndpoint;
-
-	const env = localOptions.env ?? process.env;
-	const fromLocal = registered === undefined && (modelRef === undefined || modelRef.provider === local?.provider);
-	const catalog = registered !== undefined && !configuredEndpoint;
-
-	if (local === undefined && !usesConfiguredEndpoint) {
-		return {
-			model,
-			modelRef,
-			fromLocal,
-			configuredEndpoint,
-			catalog,
-			local,
-			usesConfiguredEndpoint,
-			env,
-		};
-	}
-
-	const providerApiKeys: Record<string, string> = {};
-	if (local !== undefined) providerApiKeys[local.provider] = local.apiKey;
-	for (const ref of [modelRef]) {
-		if (!isConfiguredEndpoint(ref)) continue;
-		const envName = configuredApiKeyEnv(ref);
-		const value = env[envName];
-		if (typeof value === "string" && value.length > 0) {
-			providerApiKeys[ref.provider] = value;
-		}
-	}
-	const apiKey =
-		local !== undefined && (modelRef === undefined || modelRef.provider === local.provider)
-			? local.apiKey
-			: providerApiKeys[model.provider] !== undefined && usesConfiguredEndpoint
-				? providerApiKeys[model.provider]
-				: undefined;
+function localFallbackOptions(
+	options: ResolveAgentModelOptions,
+	modelId: string | undefined,
+): LoadLocalAutoRAGModelOptions {
 	return {
-		model,
-		...(apiKey !== undefined ? { apiKey } : {}),
-		...(Object.keys(providerApiKeys).length > 0 ? { providerApiKeys } : {}),
-		modelRef,
-		fromLocal,
-		configuredEndpoint,
-		catalog,
-		local,
-		usesConfiguredEndpoint,
-		env,
+		...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
+		...(options.env !== undefined ? { env: options.env } : {}),
+		...(modelId !== undefined ? { modelId } : {}),
 	};
 }
 
-export function resolveAgentModel(
-	config: CliConfig,
-	localOptions: LoadLocalAutoRAGModelOptions = {},
-): ResolvedAgentModel {
-	const core = resolveAgentModelCore(config, localOptions);
+function localRuntimeAuth(local: LocalAutoRAGModel): ResolvedModelAuth {
 	return {
-		model: core.model,
-		...(core.apiKey !== undefined ? { apiKey: core.apiKey } : {}),
-		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
+		apiKey: local.apiKey,
+		providerApiKeys: { [local.provider]: local.apiKey },
+		present: true,
+		source: "local_runtime",
 	};
 }
 
-function providerApiKeyEnvName(provider: string): string {
-	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
+/**
+ * Resolve the model selected through pi settings (`defaultProvider`/
+ * `defaultModel`) when AutoRAG has no explicit model. Returns undefined when
+ * settings name no model, the runtime does not know it, or the provider has no
+ * configured credential — callers then fall back to the local codex runtime.
+ */
+async function resolvePiDefaultModel(
+	runtime: ModelRuntime,
+	options: ResolveAgentModelOptions,
+): Promise<Model<Api> | undefined> {
+	let provider: string | undefined;
+	let id: string | undefined;
+	try {
+		const settings = SettingsManager.create(options.cwd ?? process.cwd(), resolveAgentDir(options));
+		provider = settings.getDefaultProvider();
+		id = settings.getDefaultModel();
+	} catch {
+		return undefined;
+	}
+	if (provider === undefined || id === undefined) return undefined;
+	const model = runtime.getModel(provider, id) as Model<Api> | undefined;
+	if (model === undefined) return undefined;
+	try {
+		if ((await runtime.checkAuth(provider)) === undefined) return undefined;
+	} catch {
+		return undefined;
+	}
+	return model;
 }
 
-function resolveRoleAuth(
+function resolveConfiguredEndpointAuth(
+	reference: AgentModelConfig & { baseUrl: string },
 	model: Model<Api>,
-	fromLocal: boolean,
-	local: LocalAutoRAGModel | undefined,
-	providerApiKeys: Readonly<Record<string, string>> | undefined,
-	configuredEndpoint: boolean,
-	apiKeyEnv: string | undefined,
 	env: NodeJS.ProcessEnv,
-): AgentModelAuth {
-	if (fromLocal && local !== undefined && model.provider === local.provider) {
-		return { present: true, source: "local_runtime" };
-	}
-	if (configuredEndpoint) {
-		const envName = apiKeyEnv ?? providerApiKeyEnvName(model.provider);
-		if (providerApiKeys?.[model.provider] !== undefined) {
-			return { present: true, source: "env", envName };
+): ResolvedModelAuth {
+	const envName = configuredApiKeyEnv(reference);
+	const value = env[envName];
+	const providerApiKeys = typeof value === "string" && value.length > 0 ? { [model.provider]: value } : undefined;
+	const fromProcessEnv = process.env[envName];
+	const present = providerApiKeys !== undefined || (typeof fromProcessEnv === "string" && fromProcessEnv.length > 0);
+	return {
+		...(providerApiKeys !== undefined ? { apiKey: providerApiKeys[model.provider], providerApiKeys } : {}),
+		present,
+		source: present ? "env" : "none",
+		envName,
+	};
+}
+
+/**
+ * Resolve credentials for a catalog/custom model through the pi runtime: the
+ * stored `auth.json` credential (including refreshed OAuth) wins, then the
+ * provider's environment variables, then an explicit none.
+ */
+async function resolveCatalogAuth(
+	runtime: ModelRuntime,
+	model: Model<Api>,
+	env: NodeJS.ProcessEnv,
+): Promise<ResolvedModelAuth> {
+	try {
+		const result = await runtime.getAuth(model);
+		if (result !== undefined) {
+			const apiKey = result.auth.apiKey;
+			if (typeof apiKey === "string" && apiKey.length > 0) {
+				return { apiKey, providerApiKeys: { [model.provider]: apiKey }, present: true, source: "pi_auth" };
+			}
+			// Headers-only auth (for example OAuth): pi resolves it inside the session.
+			return { present: true, source: "pi_auth" };
 		}
-		const fromEnv = env[envName] ?? process.env[envName];
-		if (typeof fromEnv === "string" && fromEnv.length > 0) {
-			return { present: true, source: "env", envName };
-		}
-		return { present: false, source: "none", envName };
+	} catch {
+		// Fall through to environment-based reporting; a broken stored credential
+		// must not make model resolution itself fail.
 	}
 	const envKeys = findEnvKeys(model.provider);
 	if (envKeys !== undefined && envKeys.length > 0) {
@@ -1335,11 +1573,109 @@ function resolveRoleAuth(
 		}
 		return { present: false, source: "none", envName: envKeys[0] };
 	}
-	const catalogKey = getEnvApiKey(model.provider);
-	if (catalogKey !== undefined) {
+	if (getEnvApiKey(model.provider) !== undefined) {
 		return { present: true, source: "catalog" };
 	}
 	return { present: false, source: "none", envName: providerApiKeyEnvName(model.provider) };
+}
+
+async function resolveAgentModelCore(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<AgentModelCore> {
+	const env = options.env ?? process.env;
+	const runtime = options.runtime ?? (await getModelRuntime(resolveAgentDir(options)));
+	const modelRef = config.model;
+
+	// 1. Explicit OpenAI-compatible endpoint in config wins over pi credentials.
+	if (modelRef !== undefined && isConfiguredEndpoint(modelRef)) {
+		const catalogModel = resolveRuntimeCatalogModel(runtime, modelRef);
+		const model = catalogModel ?? buildModelFromConfiguredEndpoint(modelRef);
+		return {
+			model,
+			modelRef,
+			fromLocal: false,
+			configuredEndpoint: true,
+			catalog: catalogModel !== undefined,
+			local: undefined,
+			env,
+			auth: resolveConfiguredEndpointAuth(modelRef, model, env),
+		};
+	}
+
+	// 2. Config model id resolves against the pi runtime catalog.
+	const registered = resolveBuiltInModel(runtime, modelRef);
+	if (registered !== undefined) {
+		return {
+			model: registered,
+			modelRef,
+			fromLocal: false,
+			configuredEndpoint: false,
+			catalog: true,
+			local: undefined,
+			env,
+			auth: await resolveCatalogAuth(runtime, registered, env),
+		};
+	}
+
+	// 3. No model configured: prefer a pi-selected usable model, then the local default runtime.
+	if (modelRef === undefined) {
+		const piDefault = await resolvePiDefaultModel(runtime, options);
+		if (piDefault !== undefined) {
+			return {
+				model: piDefault,
+				modelRef,
+				fromLocal: false,
+				configuredEndpoint: false,
+				catalog: true,
+				local: undefined,
+				env,
+				auth: await resolveCatalogAuth(runtime, piDefault, env),
+			};
+		}
+		const local = loadLocalAutoRAGModel(localFallbackOptions(options, undefined));
+		return {
+			model: local.model as Model<Api>,
+			modelRef,
+			fromLocal: true,
+			configuredEndpoint: false,
+			catalog: false,
+			local,
+			env,
+			auth: localRuntimeAuth(local),
+		};
+	}
+
+	// 4. Config names a provider outside the catalog: a local runtime may supply it.
+	const local = loadLocalAutoRAGModel(localFallbackOptions(options, modelRef.id));
+	const fromLocal = modelRef.provider === local.provider;
+	const model = fromLocal ? (local.model as Model<Api>) : resolveRegisteredModel(runtime, modelRef);
+	return {
+		model,
+		modelRef,
+		fromLocal,
+		configuredEndpoint: false,
+		catalog: !fromLocal,
+		local: fromLocal ? local : undefined,
+		env,
+		auth: fromLocal ? localRuntimeAuth(local) : await resolveCatalogAuth(runtime, model, env),
+	};
+}
+
+export async function resolveAgentModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<ResolvedAgentModel> {
+	const core = await resolveAgentModelCore(config, options);
+	return {
+		model: core.model,
+		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
+		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
+	};
+}
+
+function providerApiKeyEnvName(provider: string): string {
+	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }
 
 function resolveRoleSource(
@@ -1348,10 +1684,10 @@ function resolveRoleSource(
 	configuredEndpoint: boolean,
 	catalog: boolean,
 ): AgentModelResolutionSource {
-	if (ref === undefined) return "local_runtime";
 	if (configuredEndpoint) return "config";
 	if (fromLocal) return "mixed";
 	if (catalog) return "catalog";
+	if (ref === undefined) return "local_runtime";
 	return "config";
 }
 
@@ -1374,25 +1710,21 @@ function buildResolvedRole(
 	};
 }
 
-export function resolveAgentModelDetailed(
+export async function resolveAgentModelDetailed(
 	config: CliConfig,
-	localOptions: LoadLocalAutoRAGModelOptions = {},
-): ResolvedAgentModelDetailed {
-	const core = resolveAgentModelCore(config, localOptions);
-	const auth = resolveRoleAuth(
-		core.model,
-		core.fromLocal,
-		core.local,
-		core.providerApiKeys,
-		core.configuredEndpoint,
-		core.modelRef !== undefined ? configuredApiKeyEnv(core.modelRef) : undefined,
-		core.env,
-	);
+	options: ResolveAgentModelOptions = {},
+): Promise<ResolvedAgentModelDetailed> {
+	const core = await resolveAgentModelCore(config, options);
+	const auth: AgentModelAuth = {
+		present: core.auth.present,
+		source: core.auth.source,
+		...(core.auth.envName !== undefined ? { envName: core.auth.envName } : {}),
+	};
 	const source = resolveRoleSource(core.modelRef, core.fromLocal, core.configuredEndpoint, core.catalog);
 	return {
 		model: core.model,
-		...(core.apiKey !== undefined ? { apiKey: core.apiKey } : {}),
-		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
+		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
+		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
 		role: buildResolvedRole(core.model, auth, source),
 	};
 }
@@ -1448,7 +1780,13 @@ export function writeDefaultConfig(
 	full.dupey = partial.dupey ?? { enabled: true };
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
+	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
+	full.rerank = partial.rerank ?? {
+		provider: DEFAULT_RERANK_PROVIDER,
+		model: DEFAULT_RERANK_MODEL,
+		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
 	mkdirSync(dirname(path), { recursive: true });

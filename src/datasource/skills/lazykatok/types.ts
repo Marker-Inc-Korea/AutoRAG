@@ -1,4 +1,5 @@
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
+import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
 
 /**
  * Search modes accepted by the external `lazykatok search` subcommand.
@@ -17,8 +18,18 @@ export type LazykatokSearchMode = "semantic" | "keyword" | "hybrid";
 export interface LazykatokOptions {
 	/** Explicit path to the `lazykatok` binary. Defaults to a bare `lazykatok` PATH lookup. */
 	readonly binaryPath?: string;
-	/** Spawn timeout in milliseconds. Default 60_000 (sync/index over large archives can be slow). */
+	/**
+	 * Spawn timeout for interactive invocations (`doctor`, `search`, chunk lookups)
+	 * in milliseconds. Default 60_000. `sync`/`index` are non-interactive and use
+	 * {@link indexTimeoutMs} instead.
+	 */
 	readonly timeoutMs?: number;
+	/**
+	 * Spawn timeout for `sync`/`index` in milliseconds. Default 1_800_000 (30 min):
+	 * the first semantic index over a large archive was measured at ~11 minutes, and
+	 * a timed-out build restarts from scratch on the next refresh.
+	 */
+	readonly indexTimeoutMs?: number;
 	/** Max stdout/stderr bytes retained. Default 16 MiB (an `index --json` report alone is multiple MB on a real archive). */
 	readonly maxBufferBytes?: number;
 	/** Explicit native lazykatok data directory, passed as `--data-dir`. */
@@ -39,6 +50,12 @@ export interface LazykatokOptions {
 
 export const DEFAULT_LAZYKATOK_BINARY = "lazykatok";
 export const DEFAULT_LAZYKATOK_TIMEOUT_MS = 60_000;
+/**
+ * `sync`/`index` default budget. They are non-interactive, so they must not share
+ * the 60-second interactive default: a first semantic index over a large archive
+ * was measured at ~11 minutes.
+ */
+export const DEFAULT_LAZYKATOK_INDEX_TIMEOUT_MS = DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS;
 /** The live macOS adapter `sync` names by default on darwin. */
 export const DEFAULT_LAZYKATOK_SOURCE = "macos";
 // `lazykatok index --json` reports every written document (chunk id + path), so

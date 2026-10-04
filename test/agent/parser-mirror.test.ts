@@ -88,6 +88,71 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 		expect(index.entries["/docs/old.txt"]).toBeUndefined();
 	});
 
+	it("keeps the copy dupey ranks newest when internal timestamps disagree with filesystem mtime", async () => {
+		const docs = join(root, "docs");
+		mkdirSync(docs, { recursive: true });
+		const internalNewest = join(docs, "internal-newest.docx");
+		const fsNewest = join(docs, "fs-newest.docx");
+		const buffer = await createDocxFixture("Overlapping refund policy text\n");
+		writeFileSync(internalNewest, buffer);
+		writeFileSync(fsNewest, buffer);
+		// Filesystem mtime says `fsNewest` is newer; dupey's internal-modified
+		// ranking says `internalNewest` is newer. AutoRAG must follow dupey.
+		utimesSync(internalNewest, new Date(1_000), new Date(1_000));
+		utimesSync(fsNewest, new Date(2_000), new Date(2_000));
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			everything: false,
+			fsearch: false,
+			minSync: false,
+			dupey: {
+				run: async (args) => {
+					// Real dupey emits absolute paths under the directory it scanned, which
+					// may be the realpath of `docs`; derive picks the same way.
+					const scannedDir = args[1] ?? docs;
+					const internalPick = join(scannedDir, "internal-newest.docx");
+					const fsPick = join(scannedDir, "fs-newest.docx");
+					return JSON.stringify({
+						dir: scannedDir,
+						files: [
+							{ path: "internal-newest.docx", content_hash: "same-content" },
+							{ path: "fs-newest.docx", content_hash: "same-content" },
+						],
+						families: [
+							{
+								id: 0,
+								relation: "exact",
+								files: [internalPick, fsPick],
+								members: [],
+								edges: [],
+								pick: {
+									ranked: [
+										{
+											path: internalPick,
+											rank: 1,
+											score: 1,
+											reasons: [{ name: "internal_modified", detail: "newest" }],
+										},
+										{ path: fsPick, rank: 2, score: 0, reasons: [] },
+									],
+								},
+							},
+						],
+						errors: [],
+					});
+				},
+			},
+		});
+
+		await agent.refresh(true);
+		const index = loadMirrorIndex(root);
+		expect(index.entries["/docs/internal-newest.docx"]).toBeDefined();
+		expect(index.entries["/docs/fs-newest.docx"]).toBeUndefined();
+	});
+
 	it("can disable exact duplicate exclusion", async () => {
 		const docs = join(root, "docs");
 		mkdirSync(docs, { recursive: true });

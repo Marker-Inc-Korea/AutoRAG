@@ -51,7 +51,7 @@ Three principles drive every design decision in AutoRAG Agent:
 
 1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
-2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding API keys. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) out of the box with zero external telemetry.
+2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (OpenRouter, `voyageai/rerank-3-lite` by default) is an opt-in extra.
 
 3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (BM25, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
 
@@ -73,6 +73,13 @@ AutoRAG Agent orchestrates five integrated subsystems:
 3. **Result Merger & Scoped Access Gate:** Cross-method deduplication, score normalization, and default-deny permission checks.
 4. **Direct Evidence Reading (`bash`):** The agent directly opens and inspects promising files with `cat`, `grep`, or `find` to verify facts against ground truth.
 5. **Curation & Active Feedback:** Structured findings are returned via `emit_autorag_results`. When callers provide feedback on which items were useful, AutoRAG records this to optimize future queries.
+
+### Pi host boundary
+
+AutoRAG uses `@earendil-works/pi-coding-agent` as the runtime host for model sessions. Pi owns provider credentials and OAuth storage, model-runtime dispatch, session JSONL persistence/resume, extension loading, lifecycle events, and the built-in `read`/`bash`/`edit`/`write`/`grep`/`find`/`ls` tools. AutoRAG registers only its domain tools and keeps orchestration outside the host: datasource authorization, MinSync/Jikji preparation, memory hints, fast-to-verification two-phase search, structured result emission, and remote-session filtering.
+
+The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG librarian: there is no separate AutoRAG renderer. Pi owns the terminal UI and its native in-session commands — `/login`/`/logout`, `/model`, `/resume`, `/new`, `/tree`, `/compact`, and `/settings` — so provider sign-in and model selection work on first launch even when no AutoRAG model is configured. AutoRAG registers its retrieval tools and streams progress, preliminary answers, and final results into the same Pi session, so resume and two-phase search keep working together.
+
 
 ---
 
@@ -177,7 +184,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
 | **macOS Spotlight** | `spotlight` | Native `mdfind` CLI | macOS system metadata and content index | System Native |
 
-For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md).
+For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md). Non-interactive `sync`/`index` steps get a 30-minute per-connector budget (`connector.indexTimeoutMs`) because first-run imports routinely take minutes; interactive search keeps its 60-second default.
 
 ---
 
@@ -249,7 +256,7 @@ PDF pages.
 # Perform a curated search (uses your configured reasoning model)
 autorag search "What are our primary Q3 deliverables?"
 
-# Launch the interactive Terminal UI (beta)
+# Launch the interactive Terminal UI (Pi host: /login, /model, /resume, …)
 autorag tui
 ```
 
@@ -287,7 +294,8 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 | `autorag search "<query>"` | Run the librarian agent to curate structured answers |
 | `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
-| `autorag tui` | Open the interactive librarian terminal UI |
+| `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
+| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | Model-free indexing, retrieval, report generation, and status |
 | `autorag feedback <session>` | Record useful / not-useful feedback by item number |
