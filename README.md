@@ -177,7 +177,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
 | **macOS Spotlight** | `spotlight` | Native `mdfind` CLI | macOS system metadata and content index | System Native |
 
-For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md).
+For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md). Non-interactive `sync`/`index` steps get a 30-minute per-connector budget (`connector.indexTimeoutMs`) because first-run imports routinely take minutes; interactive search keeps its 60-second default.
 
 ---
 
