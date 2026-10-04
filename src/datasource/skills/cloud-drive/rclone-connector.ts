@@ -39,6 +39,8 @@ export interface RcloneConnectorOptions {
 	readonly exportFormats?: string;
 	readonly maxDocuments?: number;
 	readonly maxBytesPerFile?: number;
+	/** Characters kept per document body. Default 100000. */
+	readonly maxContentChars?: number;
 	readonly concurrency?: number;
 	readonly bandwidthLimit?: string;
 	readonly dryRun?: boolean;
@@ -169,6 +171,7 @@ export class RcloneConnector implements DatasourceConnector {
 					instanceId,
 					remote,
 					this.options.parserOptions,
+					this.options.maxContentChars,
 				)),
 				warnings: [`dry-run: ${changedEntries.length} download(s), ${deletedEntries.length} deletion(s) planned`],
 			};
@@ -226,6 +229,7 @@ export class RcloneConnector implements DatasourceConnector {
 			instanceId,
 			remote,
 			this.options.parserOptions,
+			this.options.maxContentChars,
 		);
 		const warnings = [
 			...(skipped > 0 ? [`${skipped} file(s) skipped (filtered, non-text, or oversized)`] : []),
@@ -266,7 +270,7 @@ export class RcloneConnector implements DatasourceConnector {
 				failures += 1;
 				continue;
 			}
-			const content = result.stdout.trim().slice(0, MAX_CONTENT_CHARS);
+			const content = result.stdout.trim().slice(0, this.options.maxContentChars ?? MAX_CONTENT_CHARS);
 			if (content.length > 0) {
 				documents.push(
 					documentFromEntry(
@@ -394,6 +398,7 @@ async function loadMirroredDocuments(
 	instanceId: string,
 	remote: string,
 	parserOptions?: DefaultParserRegistryOptions,
+	maxContentChars: number = MAX_CONTENT_CHARS,
 ): Promise<{ readonly documents: readonly ConnectorDocument[]; readonly warnings?: readonly string[] }> {
 	const documents: ConnectorDocument[] = [];
 	const warnings: string[] = [];
@@ -409,7 +414,7 @@ async function loadMirroredDocuments(
 			for (const diagnostic of parsed.diagnostics ?? []) {
 				warnings.push(`${diagnostic.code}: ${diagnostic.message}`);
 			}
-			const content = parsed.markdown.trim().slice(0, MAX_CONTENT_CHARS);
+			const content = parsed.markdown.trim().slice(0, maxContentChars);
 			if (content.length > 0) documents.push(documentFromEntry(entry, content, skillName, instanceId, remote));
 		} catch {
 			failures += 1;

@@ -21,6 +21,7 @@ const BOOLEAN_FLAGS = new Set([
 	"single-phase",
 	"strict",
 	"refresh",
+	"available",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -63,6 +64,7 @@ const VALUE_FLAGS = new Set([
 	"input",
 	"profile",
 	"format",
+	"provider",
 	"fast-thinking",
 	"final-thinking",
 ]);
@@ -133,6 +135,7 @@ Commands:
   p2p policy list      Show effective merged sharing policy (virtual-path keys)
   p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
   p2p policy unset     Remove a sharing rule by key
+  models list          List chat models from the pi runtime (--provider ID --available)
   models prefetch|import|verify
                        Manage verified embedding model cache (--profile ID)
   gateway status|stop  Inspect or stop the on-demand embedding gateway (--format json)
@@ -154,7 +157,7 @@ Global flags:
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
-  --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,everything,all
+  --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,everything,fsearch,all
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --version, -V        Print the package version

@@ -211,6 +211,7 @@ export type {
 	MinSyncMethodConfig,
 	NormalizedIndexingConfig,
 	RawIndexingMethods,
+	ResolveAgentModelOptions,
 	ResolveConfigInput,
 	ResolvedAgentModel,
 	ResolvedAgentModelDetailed,

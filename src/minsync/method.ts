@@ -26,6 +26,10 @@ export interface MinSyncVectorMethodOptions {
 	readonly maxChunkSize?: number;
 	readonly mode?: MinSyncQueryMode;
 	readonly runtime?: MinSyncRuntime;
+	/** Default `topK` used when the caller omits one. Default 50. */
+	readonly defaultTopK?: number;
+	/** Fetch cap applied when a scope narrows the query. Default 100. */
+	readonly scopedTopK?: number;
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
@@ -84,6 +88,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly maxChunkSize: number | undefined;
 	private readonly mode: MinSyncQueryMode;
 	private readonly runtime: MinSyncRuntime | undefined;
+	private readonly defaultTopK: number;
+	private readonly scopedTopK: number;
 	private installFailed = false;
 
 	constructor(options: MinSyncVectorMethodOptions) {
@@ -94,6 +100,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
+		this.defaultTopK = options.defaultTopK ?? 50;
+		this.scopedTopK = options.scopedTopK ?? 100;
 		this.mode = options.mode ?? "vector";
 		this.runtime =
 			options.runtime ??
@@ -172,8 +180,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		const topK = options.topK ?? 50;
-		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;
+		const topK = options.topK ?? this.defaultTopK;
+		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		const binaryResult = await this.resolveBinary();
 		if (binaryResult === undefined || typeof binaryResult !== "string") return [];

@@ -17,7 +17,7 @@ async def mock_gen_gt_response(*args, **kwargs):
 	return SimpleNamespace(output_parsed=Response(evolved_query="mock answer"))
 
 
-client = AsyncOpenAI()
+client = AsyncOpenAI(api_key="mock_openai_api_key")
 
 
 @patch.object(

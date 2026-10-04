@@ -54,7 +54,17 @@ export interface CrawlerCliOptions {
 	readonly sourcePath?: string;
 	readonly configPath?: string;
 	readonly syncSource?: string;
+	/**
+	 * Spawn timeout for interactive search in milliseconds. Default 60_000.
+	 * `sync` is non-interactive and uses {@link indexTimeoutMs} instead.
+	 */
 	readonly timeoutMs?: number;
+	/**
+	 * Spawn timeout for `sync` in milliseconds. Default 1_800_000 (30 min): a first
+	 * full import over a real archive can take many minutes, and a timed-out sync
+	 * restarts from scratch on the next refresh.
+	 */
+	readonly indexTimeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	/** Working directory for the native CLI process, when explicitly needed. */

@@ -10,6 +10,7 @@
         "@earendil-works/pi-coding-agent": "0.86.1",
         "@earendil-works/pi-tui": "0.86.1",
         "@modelcontextprotocol/server": "^2.3.0",
+        "@openrouter/sdk": "^1.4.21",
         "chardet": "^2.2.0",
         "fast-xml-parser": "^5.11.1",
         "iconv-lite": "^0.7.3",
@@ -35,6 +36,9 @@
         "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
       },
     },
+  },
+  "overrides": {
+    "zod": "3.25.76",
   },
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.124.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-cN5O8i9UVxHeOQAzj/XjshWXG8KiibJDw9OGpH2Z/eR3n/RBxdoLxDJOcfqAJWvjaMDFfHTBADU04hWRJVkDyA=="],
@@ -276,6 +280,8 @@
     "@napi-rs/canvas-win32-x64-msvc": ["@napi-rs/canvas-win32-x64-msvc@1.0.9", "", { "os": "win32", "cpu": "x64" }, "sha512-QlSYQdMQslB81nlABo9wNfQ6npFhE7/O+saCZdqVGueGanyRk4jCogD5EwQenfP3kIq9e+mm6GreQBjX5MrA8g=="],
 
     "@nodable/entities": ["@nodable/entities@3.0.0", "", {}, "sha512-8L9xFeTYKhm49xfIypoe2W5wV1m/3Z58kT+7kR9A8OyFxcPduI4VmxaUMQyKYrRjUoLLSXv6EKKID5Tvj9cUVw=="],
+
+    "@openrouter/sdk": ["@openrouter/sdk@1.4.21", "", { "dependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-fWaxZ6NV7/qfocMfZfwb0cAjMLTh69B7S/H2b+Mb2dJzS2eZTTGTCb4egHEpB60SRcovUMv/ZqKW2DFU8tpExw=="],
 
     "@pdf-lib/standard-fonts": ["@pdf-lib/standard-fonts@1.0.0", "", { "dependencies": { "pako": "^1.0.6" } }, "sha512-hU30BK9IUN/su0Mn9VdlVKsWBS6GyhVfqjwl1FjZN4TxP6cCw0jP2w7V3Hf5uX7M0AZJ16vey9yE0ny7Sa59ZA=="],
 

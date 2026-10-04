@@ -68,6 +68,7 @@ describe("public AutoRAG-lite core facade", () => {
 				memoryPath: join(root, "memory.json"),
 				minSync: false,
 				jikji: false,
+				fsearch: false,
 			}),
 		);
 
@@ -88,7 +89,13 @@ describe("public AutoRAG-lite core facade", () => {
 		const configPath = join(root, "config.json");
 		writeFileSync(
 			configPath,
-			JSON.stringify({ searchPaths: [fileSearch], workspacePath: fileWorkspace, minSync: false, jikji: false }),
+			JSON.stringify({
+				searchPaths: [fileSearch],
+				workspacePath: fileWorkspace,
+				minSync: false,
+				jikji: false,
+				fsearch: false,
+			}),
 		);
 
 		const fromEnvironment = createAutoRAGLite({
@@ -131,6 +138,7 @@ describe("public AutoRAG-lite core facade", () => {
 				memoryPath: join(root, "memory.json"),
 				minSync: false,
 				jikji: false,
+				fsearch: false,
 			}),
 		);
 		const lite = createAutoRAGLite({ flags: { config: configPath }, cwd: root });
@@ -189,6 +197,7 @@ describe("public AutoRAG-lite core facade", () => {
 				memoryPath: join(root, "memory.json"),
 				minSync: false,
 				jikji: false,
+				fsearch: false,
 			}),
 		);
 		const lite = createAutoRAGLite({ flags: { config: configPath }, cwd: root });
@@ -236,6 +245,7 @@ describe("public AutoRAG-lite core facade", () => {
 			model: { provider: "fixture", id: "model", baseUrl: "https://model.invalid", apiKeyEnv: "FIXTURE_SECRET" },
 			minSync: false,
 			jikji: false,
+			fsearch: false,
 		});
 		writeFileSync(configPath, original);
 

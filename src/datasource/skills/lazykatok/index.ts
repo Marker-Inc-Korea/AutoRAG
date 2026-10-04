@@ -26,4 +26,4 @@ export type {
 	LazykatokSearchResult,
 	LazykatokSyncResult,
 } from "./types.ts";
-export { DEFAULT_LAZYKATOK_OPTIONS } from "./types.ts";
+export { DEFAULT_LAZYKATOK_INDEX_TIMEOUT_MS, DEFAULT_LAZYKATOK_OPTIONS } from "./types.ts";

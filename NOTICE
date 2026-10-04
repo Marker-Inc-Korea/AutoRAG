@@ -21,6 +21,9 @@ License: MIT
 @modelcontextprotocol/server@2.3.0
 License: Apache-2.0
 
+@openrouter/sdk@1.4.21
+License: Apache-2.0
+
 chardet@2.2.0
 License: MIT
 

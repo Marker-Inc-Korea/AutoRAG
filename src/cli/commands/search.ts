@@ -4,6 +4,7 @@ import {
 	buildAgentOptions,
 	type CliConfig,
 	ConfigError,
+	type ResolveAgentModelOptions,
 	type ResolvedAgentModel,
 	resolveAgentModel,
 	resolveConfig,
@@ -106,7 +107,10 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
  */
 export interface SearchDeps {
 	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocumentsStream">;
-	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
+	modelResolver?: (
+		config: CliConfig,
+		options?: ResolveAgentModelOptions,
+	) => ResolvedAgentModel | Promise<ResolvedAgentModel>;
 	/**
 	 * Stops the on-demand embedding gateway so the process can exit. Without
 	 * this the semantic MinSync path's loopback gateway keeps the event loop
@@ -215,7 +219,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	} else {
 		let resolvedModel: ResolvedAgentModel;
 		try {
-			resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
+			resolvedModel = await (deps.modelResolver ?? resolveAgentModel)(config);
 		} catch (error) {
 			const hint = classifySearchHealthHint(error);
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));

@@ -29,6 +29,7 @@ describe("AutoRAGAgent watch refresh", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { autoInstall: false },
 		});
 		await agent.refresh(true);

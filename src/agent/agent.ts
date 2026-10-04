@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
-import type { Api, Message, Model } from "@earendil-works/pi-ai";
-import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
+import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -16,6 +16,13 @@ import {
 	type EverythingSearchRequest,
 	type EverythingSearchResult,
 } from "../everything/index.ts";
+import {
+	FSearchClient,
+	type FSearchClientOptions,
+	type FSearchFailureReason,
+	type FSearchSearchRequest,
+	type FSearchSearchResult,
+} from "../fsearch/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -63,6 +70,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
+import { createReranker, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
@@ -72,7 +80,6 @@ import {
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -94,6 +101,7 @@ import {
 	createEmitFastAnswerTool,
 	EMIT_FAST_ANSWER_TOOL_NAME,
 } from "./fast-answer-tool.ts";
+import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -103,6 +111,14 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
+import {
+	type AutoRAGPiInteractiveRuntime,
+	type AutoRAGPiInteractiveRuntimeOptions,
+	type AutoRAGPiSession,
+	createAutoRAGPiInteractiveRuntime,
+	createAutoRAGPiSession,
+	PI_BUILTIN_TOOL_NAMES,
+} from "./pi-session.ts";
 import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
 import {
 	isRefreshOwnerAlive,
@@ -148,20 +164,50 @@ const SEARCH_TOOLS = [
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
 	EVERYTHING_SEARCH_TOOL_NAME,
+	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
 
-/**
- * Messages the model sees. pi-agent-core declares the callable tools through
- * `system` transcript messages (`toolsAdded`/`toolsRemoved`), so they must pass
- * through; dropping them sends every request without tools.
- */
-function keepLlmMessages(messages: AgentMessage[]): Message[] {
-	return messages.filter(
-		(message): message is Message =>
-			message.role === "system" ||
-			message.role === "user" ||
-			message.role === "assistant" ||
-			message.role === "toolResult",
+/** Only completed searches that returned evidence earn implicit positive feedback. */
+function hasSearchEvidence(toolName: string, details: unknown, isError: boolean): boolean {
+	if (isError || details === null || typeof details !== "object") return false;
+	const outcome = details as Record<string, unknown>;
+	if (outcome.available === false) return false;
+	if (
+		Array.isArray(outcome.diagnostics) &&
+		outcome.diagnostics.some(
+			(diagnostic) =>
+				diagnostic !== null &&
+				typeof diagnostic === "object" &&
+				(diagnostic.severity === "error" ||
+					diagnostic.code === "retrieval-method-failed" ||
+					diagnostic.code === "minsync-unavailable" ||
+					diagnostic.code === "jikji-find-failed" ||
+					diagnostic.code === "jikji-unavailable"),
+		)
+	) {
+		// Pipeline failures are warnings even when healthy methods return hits.
+		// Without per-method attribution, the incomplete aggregate earns no credit.
+		return false;
+	}
+	// Jikji reports answer paths, while the other search tools report resultCount.
+	const countKey = toolName === JIKJI_FIND_TOOL_NAME ? "answerCount" : "resultCount";
+	if (countKey in outcome) {
+		const count = outcome[countKey];
+		return typeof count === "number" && Number.isFinite(count) && count > 0;
+	}
+	// Legacy producers may omit counts. Never override an explicit zero/invalid
+	// count, and require an actual source identity rather than an arbitrary item.
+	return (
+		(Array.isArray(outcome.sources) &&
+			outcome.sources.some((source) => typeof source === "string" && source.trim().length > 0)) ||
+		(Array.isArray(outcome.results) &&
+			outcome.results.some(
+				(result) =>
+					result !== null &&
+					typeof result === "object" &&
+					typeof result.source === "string" &&
+					result.source.trim().length > 0,
+			))
 	);
 }
 
@@ -178,13 +224,122 @@ function keepLlmMessages(messages: AgentMessage[]): Message[] {
  */
 const MERGED_EVIDENCE_CEILING = 500;
 
+/**
+ * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
+ * the model. Every field is optional: an omitted field keeps the shipped
+ * default below, so this only exists to let an operator tighten or widen a
+ * specific cap without rebuilding. Values must be positive integers.
+ */
+export interface AutoRAGRetrievalLimits {
+	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
+	readonly mergedEvidenceCeiling?: number;
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	readonly singleDatasourceTopK?: number;
+	/** MinSync semantic retrieval default `topK`. Default 50. */
+	readonly minSyncTopK?: number;
+	/** MinSync fetch cap when a scope narrows the query. Default 100. */
+	readonly minSyncScopedQueryTopK?: number;
+	/** Instance scopes listed in one datasource tool description. Default 8. */
+	readonly toolDescriptionInstanceScopes?: number;
+	/** Baseline evidence prefetched for the fast answer. */
+	readonly prefetch?: {
+		/** Jikji find candidate count. Default 30. */
+		readonly jikjiTopK?: number;
+		/** MinSync retrieve candidate count. Default 100. */
+		readonly minSyncTopK?: number;
+		/** Max Jikji answer paths rendered into the baseline. Default 100. */
+		readonly jikjiPathLimit?: number;
+		/** Max results rendered per baseline section. Default 100. */
+		readonly sectionLimit?: number;
+	};
+}
+
+/** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
+const DEFAULT_RETRIEVAL_LIMITS = {
+	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
+	singleDatasourceTopK: 50,
+	minSyncTopK: 50,
+	minSyncScopedQueryTopK: 100,
+	toolDescriptionInstanceScopes: 8,
+	prefetch: { jikjiTopK: 30, minSyncTopK: 100, jikjiPathLimit: 100, sectionLimit: 100 },
+} as const;
+
+type ResolvedRetrievalLimits = {
+	readonly mergedEvidenceCeiling: number;
+	readonly singleDatasourceTopK: number;
+	readonly minSyncTopK: number;
+	readonly minSyncScopedQueryTopK: number;
+	readonly toolDescriptionInstanceScopes: number;
+	readonly prefetch: {
+		readonly jikjiTopK: number;
+		readonly minSyncTopK: number;
+		readonly jikjiPathLimit: number;
+		readonly sectionLimit: number;
+	};
+};
+
+function positiveLimit(value: number | undefined, fallback: number, path: string): number {
+	if (value === undefined) return fallback;
+	if (!Number.isInteger(value) || value <= 0) throw new Error(`${path} must be a positive integer`);
+	return value;
+}
+
+function resolveRetrievalLimits(limits: AutoRAGRetrievalLimits | undefined): ResolvedRetrievalLimits {
+	const prefetch = limits?.prefetch;
+	return {
+		mergedEvidenceCeiling: positiveLimit(
+			limits?.mergedEvidenceCeiling,
+			DEFAULT_RETRIEVAL_LIMITS.mergedEvidenceCeiling,
+			"limits.mergedEvidenceCeiling",
+		),
+		singleDatasourceTopK: positiveLimit(
+			limits?.singleDatasourceTopK,
+			DEFAULT_RETRIEVAL_LIMITS.singleDatasourceTopK,
+			"limits.singleDatasourceTopK",
+		),
+		minSyncTopK: positiveLimit(limits?.minSyncTopK, DEFAULT_RETRIEVAL_LIMITS.minSyncTopK, "limits.minSyncTopK"),
+		minSyncScopedQueryTopK: positiveLimit(
+			limits?.minSyncScopedQueryTopK,
+			DEFAULT_RETRIEVAL_LIMITS.minSyncScopedQueryTopK,
+			"limits.minSyncScopedQueryTopK",
+		),
+		toolDescriptionInstanceScopes: positiveLimit(
+			limits?.toolDescriptionInstanceScopes,
+			DEFAULT_RETRIEVAL_LIMITS.toolDescriptionInstanceScopes,
+			"limits.toolDescriptionInstanceScopes",
+		),
+		prefetch: {
+			jikjiTopK: positiveLimit(
+				prefetch?.jikjiTopK,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiTopK,
+				"limits.prefetch.jikjiTopK",
+			),
+			minSyncTopK: positiveLimit(
+				prefetch?.minSyncTopK,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.minSyncTopK,
+				"limits.prefetch.minSyncTopK",
+			),
+			jikjiPathLimit: positiveLimit(
+				prefetch?.jikjiPathLimit,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiPathLimit,
+				"limits.prefetch.jikjiPathLimit",
+			),
+			sectionLimit: positiveLimit(
+				prefetch?.sectionLimit,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.sectionLimit,
+				"limits.prefetch.sectionLimit",
+			),
+		},
+	};
+}
+
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
 	readonly immediate?: boolean;
 }
 
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
-export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything";
+export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything" | "fsearch";
 
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
@@ -206,6 +361,8 @@ export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diag
 	readonly datasources?: readonly DatasourceIndexResult[];
 	/** Windows-only Everything file-name index outcome; absent on other platforms or when not selected. */
 	readonly everything?: AutoRAGEverythingRefreshResult;
+	/** macOS/Linux-only FSearch file-name index outcome; absent on other platforms or when not selected. */
+	readonly fsearch?: AutoRAGFSearchRefreshResult;
 }
 
 export interface AutoRAGEverythingRefreshResult {
@@ -214,11 +371,21 @@ export interface AutoRAGEverythingRefreshResult {
 	readonly reason?: string;
 }
 
+export interface AutoRAGFSearchRefreshResult {
+	readonly ok: boolean;
+	readonly indexedItems?: number;
+	/** Stable failure kind (e.g. "binary-missing") when ok is false. */
+	readonly reason?: FSearchFailureReason;
+	/** Verbatim underlying failure text when ok is false. */
+	readonly message?: string;
+}
+
 export interface AutoRAGRefreshComponentStatus {
 	readonly minsync?: string;
 	readonly jikji?: string;
 	readonly datasources?: string;
 	readonly everything?: string;
+	readonly fsearch?: string;
 }
 
 /** Path-opaque snapshot of corpus freshness and the last refresh outcome. */
@@ -268,6 +435,7 @@ interface RefreshState {
 	minsync?: MinSyncSyncResult;
 	datasources: readonly DatasourceIndexResult[];
 	everything?: AutoRAGEverythingRefreshResult;
+	fsearch?: AutoRAGFSearchRefreshResult;
 	lastError?: string;
 	watchLimited: boolean;
 	watchFailed: boolean;
@@ -343,6 +511,16 @@ export interface AutoRAGAgentOptions {
 	 */
 	everything?: Omit<EverythingClientOptions, "root" | "folders"> | false;
 	/**
+	 * macOS/Linux-only instant file/folder name search through the user's
+	 * fsearch-cli (FSearch, GPL — spawned as a separate process, never
+	 * bundled). Indexes only `searchPaths` into `<workspace>/.autorag/fsearch/`
+	 * and keeps a per-workspace `fsearch-cli watch` daemon live; searches fall
+	 * back to a bounded slow filesystem walk when fsearch-cli is not
+	 * installed. Enabled by default on macOS/Linux; ignored elsewhere.
+	 * `false` disables it. The remaining fields are test seams.
+	 */
+	fsearch?: Omit<FSearchClientOptions, "root" | "folders"> | false;
+	/**
 	 * Internet web tools (`web_search` + `web_fetch`), ported from oh-my-pi's
 	 * provider-chain web module. Default enabled and credential-free: the
 	 * chain leads with providers that need no user-issued key — model-native
@@ -355,11 +533,24 @@ export interface AutoRAGAgentOptions {
 	 * Web tools are always omitted for remote P2P sessions.
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
+	/**
+	 * Post-merge reranking. When set (and not `false`), merged retrieval evidence
+	 * is reordered by a dedicated rerank model — OpenRouter by default. A
+	 * configured-but-unavailable reranker is reported as a diagnostic and the
+	 * merged order is preserved. `false` disables reranking.
+	 */
+	rerank?: RerankAgentOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
+	/**
+	 * Hard caps on retrieval, baseline prefetch, and model-facing candidate
+	 * lists. Omitted fields keep their shipped defaults — see
+	 * {@link AutoRAGRetrievalLimits}. Values must be positive integers.
+	 */
+	limits?: AutoRAGRetrievalLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
@@ -377,10 +568,35 @@ export interface AutoRAGAgentOptions {
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
 	thinking?: AutoRAGThinkingOptions | false;
+	/** pi agent directory for auth/models/extensions. Defaults to ~/.pi/agent. */
+	piAgentDir?: string;
+	/** Optional persistent pi session directory. */
+	piSessionDir?: string;
+	/** Persist one pi session transcript per AutoRAG search. Defaults true. */
+	persistPiSessions?: boolean;
+}
+
+/** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
+export interface RerankAgentOptions {
+	/** Provider id. @default "openrouter" */
+	provider?: string;
+	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	model?: string;
+	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. */
+	apiKey?: string;
+	/** Environment variable holding the provider API key. */
+	apiKeyEnv?: string;
+	/** Override the provider base URL. */
+	baseUrl?: string;
+	/** Return only the top N merged results. */
+	topN?: number;
+	/** Per-request timeout in milliseconds. */
+	timeoutMs?: number;
 }
 
 export interface AutoRAGSearchSession {
 	readonly agent: Agent;
+	readonly piSession?: AutoRAGPiSession["session"];
 	prompt(text: string): Promise<void>;
 	abort(): Promise<void> | void;
 	dispose(): void;
@@ -400,7 +616,14 @@ export type AutoRAGJikjiPrepareResult =
 	  };
 
 export class AutoRAGAgent {
-	private readonly innerAgent: Agent;
+	private readonly innerAgent: {
+		readonly state: {
+			systemPrompt: string;
+			tools: readonly { name: string }[];
+			messages: AgentMessage[];
+		};
+		readonly transformContext: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
+	};
 	private readonly tools: readonly AgentTool[];
 	/** Static SEARCH_TOOLS plus the generated per-datasource tool names. */
 	private readonly searchToolNames: ReadonlySet<string>;
@@ -416,7 +639,7 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
-	/** This agent's model credential for model-native web search (per instance, never shared). */
+	private interactiveFastAnswerCallback: ((details: AutoRAGFastAnswerDetails) => void) | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
@@ -448,11 +671,14 @@ export class AutoRAGAgent {
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
+	private readonly reranker: Reranker | undefined;
+	private readonly rerankTopN: number | undefined;
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
+	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
@@ -465,10 +691,15 @@ export class AutoRAGAgent {
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
+	private readonly piAgentDir: string | undefined;
+	private readonly piSessionDir: string | undefined;
+	private readonly persistPiSessions: boolean;
+	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
+	private readonly limits: ResolvedRetrievalLimits;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -487,6 +718,9 @@ export class AutoRAGAgent {
 		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
+		this.piAgentDir = options.piAgentDir;
+		this.piSessionDir = options.piSessionDir;
+		this.persistPiSessions = options.persistPiSessions ?? true;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -509,16 +743,22 @@ export class AutoRAGAgent {
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
+		this.limits = resolveRetrievalLimits(options.limits);
+		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
+		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
-			this.minSyncMethod = new MinSyncVectorMethod({
+			const minSyncDefaults = {
 				...minSyncOpts,
 				root: this.workspaceProjectRoot,
-			});
+				defaultTopK: this.limits.minSyncTopK,
+				scopedTopK: this.limits.minSyncScopedQueryTopK,
+			};
+			this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
 			this.minSyncReady = this.minSyncMethod.isReady();
 			this.methodRegistry.register(this.minSyncMethod);
-			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
+			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
@@ -543,6 +783,14 @@ export class AutoRAGAgent {
 				folders: this.searchPaths,
 			});
 			if (everythingClient.isSupported()) this.everythingClient = everythingClient;
+		}
+		if (options.fsearch !== false) {
+			const fsearchClient = new FSearchClient({
+				...(options.fsearch ?? {}),
+				root: this.workspaceProjectRoot,
+				folders: this.searchPaths,
+			});
+			if (fsearchClient.isSupported()) this.fsearchClient = fsearchClient;
 		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
@@ -570,9 +818,6 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
-		const bashTool = createBashTool({
-			cwd: this.workspaceProjectRoot,
-		});
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 		const peerQuery = options.peerQuery;
 		const queryPeerTool =
@@ -598,6 +843,8 @@ export class AutoRAGAgent {
 		// Remote peers never enumerate local file names.
 		const everythingSearchTool =
 			this.everythingClient !== undefined && !this.remoteSession ? createEverythingSearchTool(this) : undefined;
+		const fsearchSearchTool =
+			this.fsearchClient !== undefined && !this.remoteSession ? createFSearchSearchTool(this) : undefined;
 
 		const webSearchOption = options.webSearch;
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
@@ -612,7 +859,7 @@ export class AutoRAGAgent {
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
 		const reservedNames = new Set<string>([
-			BASH_TOOL_NAME,
+			...PI_BUILTIN_TOOL_NAMES,
 			"check_memory",
 			...singleDatasourceTools.map((tool) => tool.name),
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -622,6 +869,7 @@ export class AutoRAGAgent {
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
 			EVERYTHING_SEARCH_TOOL_NAME,
+			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
@@ -638,10 +886,8 @@ export class AutoRAGAgent {
 		});
 		this.droppedCallerToolNames = [...new Set(droppedCallerToolNames)];
 
-		// Deterministic, duplicate-free ordering: bash first, then surviving
-		// caller tools, then AutoRAG-internal tools.
+		// pi owns the built-in tools; AutoRAG contributes caller and domain tools.
 		const orderedTools: AgentTool[] = [
-			...(bashTool !== undefined ? [bashTool] : []),
 			...callerTools,
 			checkMemoryTool,
 			searchMinSyncTool,
@@ -654,6 +900,7 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
+			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
 			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 			...(queryPeerTool !== undefined ? [queryPeerTool as AgentTool] : []),
 		];
@@ -664,7 +911,7 @@ export class AutoRAGAgent {
 			return true;
 		});
 		this.tools = tools;
-		const toolNames = tools.map((tool) => tool.name);
+		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name)];
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
@@ -676,28 +923,14 @@ export class AutoRAGAgent {
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
-		this.innerAgent = new Agent({
-			initialState: {
+		this.innerAgent = {
+			state: {
 				systemPrompt,
-				model: options.model as Model<Api>,
-				tools,
+				tools: [...PI_BUILTIN_TOOL_NAMES.map((name) => ({ name })), ...tools],
+				messages: [],
 			},
-			streamFn: streamSimple,
-			convertToLlm: keepLlmMessages,
-			transformContext: async (messages) => this.withMemoryContext(messages),
-			afterToolCall: async (context) => {
-				const toolName = context.toolCall.name;
-				if (!this.lastQuery || !this.searchToolNames.has(toolName)) return undefined;
-
-				const details = context.result.details as
-					| { resultCount?: number; sources?: string[]; method?: string }
-					| undefined;
-				const method = details?.method ?? toolName;
-				this.memory.recordWeakSignal(this.lastQuery, method, "followup");
-				this.memory.save();
-				return undefined;
-			},
-		});
+			transformContext: (messages) => this.withMemoryContext(messages),
+		};
 
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
@@ -742,11 +975,20 @@ export class AutoRAGAgent {
 		];
 	}
 
-	private resolveSessionModel(): {
+	private async resolveSessionModel(): Promise<{
 		readonly model: Model<Api>;
 		readonly apiKey?: string;
 		readonly providerApiKeys?: Readonly<Record<string, string>>;
-	} {
+	}> {
+		const boundModel = this.boundPiRuntime?.session.model as Model<Api> | undefined;
+		if (boundModel !== undefined) {
+			const auth = await this.boundPiRuntime?.session.modelRuntime.getAuth(boundModel);
+			const apiKey = auth?.auth.apiKey;
+			return {
+				model: boundModel,
+				...(apiKey !== undefined ? { apiKey, providerApiKeys: { [boundModel.provider]: apiKey } } : {}),
+			};
+		}
 		if (this.configuredModel !== undefined) {
 			return {
 				model: this.configuredModel,
@@ -762,28 +1004,50 @@ export class AutoRAGAgent {
 		};
 	}
 
-	private createSearchSession(
+	private async createSearchSession(
 		resolved: {
 			readonly model: Model<Api>;
 			readonly apiKey?: string;
 			readonly providerApiKeys?: Readonly<Record<string, string>>;
 		},
 		systemPrompt: string,
-	): AutoRAGSearchSession {
-		const agent = new Agent({
-			initialState: { systemPrompt, model: resolved.model, tools: [...this.tools] },
-			streamFn: streamSimple,
-			getApiKey: (provider) =>
-				resolved.providerApiKeys?.[provider] ??
-				(provider === resolved.model.provider ? resolved.apiKey : undefined),
-			convertToLlm: keepLlmMessages,
-			transformContext: async (messages) => this.withMemoryContext(messages),
+		extraTools: readonly AgentTool[] = [],
+	): Promise<AutoRAGSearchSession> {
+		if (this.boundPiRuntime !== undefined) {
+			const session = this.boundPiRuntime.session;
+			return {
+				agent: session.agent,
+				piSession: session,
+				prompt: async (prompt) => session.prompt(prompt, { source: "extension" }),
+				abort: async () => session.abort(),
+				dispose: () => {},
+			};
+		}
+		const piSession = await createAutoRAGPiSession({
+			cwd: this.workspaceProjectRoot,
+			agentDir: this.piAgentDir,
+			sessionDir: this.piSessionDir,
+			persistSession: this.persistPiSessions,
+			model: resolved.model,
+			apiKey: resolved.apiKey,
+			providerApiKeys: resolved.providerApiKeys,
+			getSystemPrompt: () => systemPrompt,
+			customTools: [
+				...this.tools.filter(
+					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
+				),
+				...extraTools,
+			],
+			remoteSession: this.remoteSession,
+			contextTransform: (messages) => this.withMemoryContext(messages),
 		});
+		const agent = piSession.session.agent;
 		return {
 			agent,
-			prompt: async (prompt) => agent.prompt(prompt),
-			abort: async () => agent.abort(),
-			dispose: () => {},
+			piSession: piSession.session,
+			prompt: async (prompt) => piSession.session.prompt(prompt, { source: "extension" }),
+			abort: async () => piSession.session.abort(),
+			dispose: () => piSession.session.dispose(),
 		};
 	}
 
@@ -825,8 +1089,10 @@ export class AutoRAGAgent {
 				results: details?.results ?? [],
 			});
 		}
-		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
-		this.memory.save();
+		if (hasSearchEvidence(event.toolName, details, event.isError)) {
+			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
+			this.memory.save();
+		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
@@ -844,10 +1110,73 @@ export class AutoRAGAgent {
 		};
 	}
 
+	async createPiInteractiveRuntime(): Promise<AutoRAGPiInteractiveRuntime> {
+		const resolved = this.configuredModel === undefined ? undefined : await this.resolveSessionModel();
+		const runtime = await createAutoRAGPiInteractiveRuntime({
+			cwd: this.workspaceProjectRoot,
+			agentDir: this.piAgentDir,
+			sessionDir: this.piSessionDir,
+			persistSession: this.persistPiSessions,
+			...(resolved === undefined
+				? {}
+				: {
+						model: resolved.model,
+						...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+						...(resolved.providerApiKeys !== undefined ? { providerApiKeys: resolved.providerApiKeys } : {}),
+					}),
+			getSystemPrompt: () =>
+				buildSystemPrompt(
+					this.currentSystemPromptConfig({
+						modelId: this.boundPiRuntime?.session.model?.id ?? resolved?.model.id,
+					}),
+				),
+			contextTransform: (messages) => this.withMemoryContext(messages),
+			customTools: [
+				...this.tools.filter(
+					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
+				),
+				...(this.fastThinkingLevel === undefined
+					? []
+					: [createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details))]),
+			],
+			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
+			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+		});
+		this.boundPiRuntime = runtime.runtime;
+		if (this.fastThinkingLevel !== undefined) {
+			runtime.runtime.session.setActiveToolsByName(
+				runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+			);
+		}
+		const dispose = runtime.dispose;
+		return {
+			...runtime,
+			dispose: async () => {
+				if (this.boundPiRuntime === runtime.runtime) this.boundPiRuntime = undefined;
+				await dispose();
+			},
+		};
+	}
+
+	private async runInteractivePiQuery(
+		query: string,
+		pi: Parameters<NonNullable<AutoRAGPiInteractiveRuntimeOptions["onQuery"]>>[1],
+	): Promise<void> {
+		pi.setSessionName(query.slice(0, 80));
+		for await (const event of this.searchDocumentsStream(query)) {
+			const text = event.type === "progress" ? event.text : event.response.answer;
+			pi.sendMessage({
+				customType: `autorag.${event.type}`,
+				content: [{ type: "text", text }],
+				display: true,
+				details: event,
+			});
+		}
+	}
+
 	abort(): void {
 		void this.activeSession?.abort();
 	}
-
 	/**
 	 * Periodically re-runs the incremental {@link refresh} so parsed mirrors and
 	 * indexes stay current. Re-parsing is incremental (mtime/size) via the
@@ -939,14 +1268,27 @@ export class AutoRAGAgent {
 		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
+		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (fastCaptured !== undefined) return;
+			fastCaptured = details;
+			this.preliminaryCallback?.(
+				createPreliminarySearchDocumentsResponse(
+					sessionId,
+					trimmedQuery,
+					details,
+					this.collectComponentDiagnostics(),
+				),
+			);
+		};
 		let session: AutoRAGSearchSession | undefined;
+		this.interactiveFastAnswerCallback = emitPreliminary;
 		let unsubscribers: readonly (() => void)[] = [];
 		this.resultCapture = (details) => {
 			captured = details;
 		};
 		let searchStarted = false;
 		try {
-			const resolved = this.resolveSessionModel();
+			const resolved = await this.resolveSessionModel();
 			// Model-native web search rides on the same model credential the
 			// agent loop uses — no separate search key (see web/search/model-auth).
 			// It lives on the instance, never in module state, so a second agent
@@ -965,9 +1307,10 @@ export class AutoRAGAgent {
 				model: resolved.model.id,
 			});
 			searchStarted = true;
-			session = this.createSearchSession(
+			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
+				this.fastThinkingLevel === undefined ? [] : [createEmitFastAnswerTool(emitPreliminary)],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
@@ -991,35 +1334,36 @@ export class AutoRAGAgent {
 						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-							if (fastCaptured !== undefined) return;
-							fastCaptured = details;
-							this.preliminaryCallback?.(
-								createPreliminarySearchDocumentsResponse(
-									sessionId,
-									trimmedQuery,
-									details,
-									this.collectComponentDiagnostics(),
-								),
-							);
-						};
-						const fastTool = createEmitFastAnswerTool(emitPreliminary);
 						const baseline = await retrievalPromise;
-						session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
-						session.agent.state.tools = [...this.tools, fastTool];
+						const sessionAgent = session.piSession;
+						if (sessionAgent !== undefined) {
+							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
+							sessionAgent.setActiveToolsByName([
+								...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+								EMIT_FAST_ANSWER_TOOL_NAME,
+							]);
+						} else {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
+							session.agent.state.tools = [...this.tools, { name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool];
+						}
 						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
 						let preliminary = fastCaptured;
 						if (preliminary === undefined) {
-							const text = lastAssistantText(session.agent.state.messages);
+							const text = lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
 						if (preliminary !== undefined) emitPreliminary(preliminary);
 						if (captured === undefined && this.finalThinkingLevel !== undefined) {
-							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
-							session.agent.state.tools = [...this.tools];
-							// Only a preliminary a consumer actually received may turn the
-							// final answer into a delta; otherwise the caller needs the
-							// complete answer.
+							if (sessionAgent !== undefined) {
+								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+								sessionAgent.setActiveToolsByName(
+									sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+								);
+							} else {
+								session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+								session.agent.state.tools = [...this.tools];
+							}
+							// Only a preliminary consumer actually received may turn the final answer into a delta.
 							const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
 							await session.prompt(
 								this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
@@ -1171,6 +1515,7 @@ export class AutoRAGAgent {
 			this.resultCapture = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
+			if (this.interactiveFastAnswerCallback === emitPreliminary) this.interactiveFastAnswerCallback = undefined;
 			this.activeRun = false;
 		}
 	}
@@ -1304,7 +1649,7 @@ export class AutoRAGAgent {
 				.describeSources()
 				.map((source) => source.source)
 				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
-				.slice(0, 8);
+				.slice(0, this.limits.toolDescriptionInstanceScopes);
 			specs.push({
 				datasourceId: descriptor.datasourceId,
 				description: descriptor.description,
@@ -1432,19 +1777,19 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 100, scope: options.scope };
+		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
 		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 30 }).catch(() => undefined),
+				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 100)
+					.slice(0, this.limits.prefetch.jikjiPathLimit)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
@@ -1463,11 +1808,8 @@ export class AutoRAGAgent {
 						seen.add(key);
 						return true;
 					})
-					.slice(0, 100)
-					.map(
-						(result, index) =>
-							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
-					)
+					.slice(0, this.limits.prefetch.sectionLimit)
+					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		};
@@ -1682,6 +2024,17 @@ export class AutoRAGAgent {
 					? { ok: true, indexedItems: indexed.indexedItems }
 					: { ok: false, reason: indexed.message };
 			}
+			// On macOS/Linux, fsearch-cli indexes the same local roots by name
+			// and keeps a per-workspace watch daemon serving live searches.
+			let fsearch: AutoRAGFSearchRefreshResult | undefined;
+			if (this.fsearchClient !== undefined && (allMethods || wants("fsearch") || needsParsed)) {
+				progress = updateRefreshProgress(progress, { phase: "fsearch" });
+				writeRefreshProgress(this.workspaceProjectRoot, progress);
+				const indexed = await this.fsearchClient.index();
+				fsearch = indexed.ok
+					? { ok: true, indexedItems: indexed.indexedItems }
+					: { ok: false, reason: indexed.reason, message: indexed.message };
+			}
 			progress = updateRefreshProgress(progress, { phase: "finalizing" });
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -1706,6 +2059,7 @@ export class AutoRAGAgent {
 				minsync,
 				datasources,
 				everything,
+				fsearch,
 				lastError: undefined,
 			};
 			if (needsParsed) {
@@ -1733,6 +2087,7 @@ export class AutoRAGAgent {
 					}
 				: undefined;
 			const everythingDiagnostics = everythingRefreshDiagnostics(everything);
+			const fsearchDiagnostics = fsearchRefreshDiagnostics(fsearch);
 			return {
 				...summary,
 				diagnostics: [
@@ -1741,10 +2096,12 @@ export class AutoRAGAgent {
 					...minsyncDiagnostics,
 					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
 					...everythingDiagnostics,
+					...fsearchDiagnostics,
 				],
 				minsync: publicMinsync,
 				datasources,
 				...(everything !== undefined ? { everything } : {}),
+				...(fsearch !== undefined ? { fsearch } : {}),
 			};
 		} catch (error) {
 			this.refreshState = {
@@ -1805,6 +2162,7 @@ export class AutoRAGAgent {
 			}
 		}
 		diagnostics.push(...everythingRefreshDiagnostics(this.refreshState.everything));
+		diagnostics.push(...fsearchRefreshDiagnostics(this.refreshState.fsearch));
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
 				code: "watch-limited",
@@ -1878,7 +2236,8 @@ export class AutoRAGAgent {
 	 * "configured" means the binary resolved but no index exists yet.
 	 */
 	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
-		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string } = {};
+		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string; fsearch?: string } =
+			{};
 		if (this.minSyncMethod !== undefined) {
 			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
 				? "unavailable"
@@ -1897,6 +2256,17 @@ export class AutoRAGAgent {
 		if (this.everythingClient !== undefined) {
 			const everything = this.refreshState.everything;
 			status.everything = everything === undefined ? "configured" : everything.ok ? "ready" : "degraded";
+		}
+		if (this.fsearchClient !== undefined) {
+			const fsearch = this.refreshState.fsearch;
+			status.fsearch =
+				fsearch === undefined
+					? "configured"
+					: fsearch.ok
+						? "ready"
+						: fsearch.reason === "binary-missing"
+							? "unavailable"
+							: "degraded";
 		}
 		return status;
 	}
@@ -2022,6 +2392,24 @@ export class AutoRAGAgent {
 	 */
 	async stopEverything(): Promise<void> {
 		await this.everythingClient?.stop();
+	}
+
+	/** Provider for the macOS/Linux-only fsearch_search tool. */
+	async searchFsearch(request: FSearchSearchRequest): Promise<FSearchSearchResult> {
+		if (this.fsearchClient === undefined) {
+			return { ok: false, reason: "unsupported-platform", message: "FSearch is not enabled on this host." };
+		}
+		return this.fsearchClient.search(request);
+	}
+
+	/**
+	 * Terminate this workspace's fsearch-cli watch daemon. The daemon otherwise
+	 * stays running on purpose (live index updates between CLI invocations), so
+	 * call this only when the workspace is being torn down. No-op off
+	 * macOS/Linux.
+	 */
+	async stopFsearch(): Promise<void> {
+		await this.fsearchClient?.stop();
 	}
 
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
@@ -2311,13 +2699,15 @@ export class AutoRAGAgent {
 				source: "minsync",
 			});
 		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
-			),
-			diagnostics,
-		};
+		const merged = this.rerankWithMemory(
+			query,
+			this.merger.merge(filteredByMethod, {
+				topK: options.topK ?? this.limits.mergedEvidenceCeiling,
+				dedup: true,
+			}),
+		);
+		const results = await this.applyRerank(query, merged, diagnostics);
+		return { results, diagnostics };
 	}
 
 	async searchAllDocuments(
@@ -2363,13 +2753,15 @@ export class AutoRAGAgent {
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
-			),
-			diagnostics,
-		};
+		const merged = this.rerankWithMemory(
+			query,
+			this.merger.merge(filteredByMethod, {
+				topK: options.topK ?? this.limits.singleDatasourceTopK,
+				dedup: true,
+			}),
+		);
+		const results = await this.applyRerank(query, merged, diagnostics);
+		return { results, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2387,6 +2779,8 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				datasourceAccess: this.datasourceAccessOptions,
+				defaultTopK: this.limits.mergedEvidenceCeiling,
+				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 				authorizedDatasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
@@ -2400,6 +2794,43 @@ export class AutoRAGAgent {
 
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
+	}
+
+	/**
+	 * Reorder merged evidence with the configured reranker. A configured-but-
+	 * unavailable reranker, or a rerank failure, is reported as a diagnostic and
+	 * the merged order is preserved — a reranker outage never hides evidence.
+	 */
+	private async applyRerank(
+		query: string,
+		results: RetrievalResult[],
+		diagnostics: RetrievalDiagnostic[],
+	): Promise<RetrievalResult[]> {
+		if (this.reranker === undefined || results.length === 0) return results;
+		const descriptor = this.reranker.describe();
+		if (!descriptor.available) {
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" is configured but unavailable; merged order preserved: ${descriptor.reason ?? "unknown reason"}`,
+				source: descriptor.name,
+				...(descriptor.reason !== undefined ? { reason: descriptor.reason } : {}),
+			});
+			return results;
+		}
+		try {
+			return await this.reranker.rerank(query, results, { topN: this.rerankTopN });
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" failed; merged order preserved: ${reason}`,
+				source: descriptor.name,
+				reason,
+			});
+			return results;
+		}
 	}
 
 	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {
@@ -2615,6 +3046,33 @@ function everythingRefreshDiagnostics(
 			severity: "error",
 			message: `Everything file-name indexing failed: ${everything.reason ?? "unknown error"}`,
 			source: "everything",
+		},
+	];
+}
+
+/**
+ * A failed FSearch index surfaces its underlying message verbatim. A missing
+ * fsearch-cli is a warning, not an error: FSearch is an optional user install
+ * and searches degrade to the slow filesystem walk by design (#1763).
+ */
+function fsearchRefreshDiagnostics(fsearch: AutoRAGFSearchRefreshResult | undefined): SearchDocumentDiagnostic[] {
+	if (fsearch === undefined || fsearch.ok) return [];
+	if (fsearch.reason === "binary-missing") {
+		return [
+			{
+				code: "fsearch-binary-missing",
+				severity: "warning",
+				message: `fsearch-cli is not installed; file-name search uses a slow filesystem walk: ${fsearch.message ?? "unknown error"}`,
+				source: "fsearch",
+			},
+		];
+	}
+	return [
+		{
+			code: "fsearch-index-failed",
+			severity: "error",
+			message: `FSearch file-name indexing failed: ${fsearch.message ?? fsearch.reason ?? "unknown error"}`,
+			source: "fsearch",
 		},
 	];
 }

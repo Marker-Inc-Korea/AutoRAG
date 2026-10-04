@@ -15,7 +15,7 @@ from tests.autorag.data.qa.generation_gt.base_test_generation_gt import (
 	check_generation_gt,
 )
 
-client = AsyncOpenAI()
+client = AsyncOpenAI(api_key="mock_openai_api_key")
 
 
 async def mock_gen_gt_response(*args, **kwargs):

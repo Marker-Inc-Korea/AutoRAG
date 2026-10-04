@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "./connector-timeouts.ts";
 import type {
 	CrawlerCliOptions,
 	CrawlerFailure,
@@ -10,7 +11,7 @@ import type {
 	CrawlerSyncResult,
 } from "./crawler-types.ts";
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 const SAFE_ENV_KEYS = new Set([
 	"HOME",
@@ -55,7 +56,11 @@ export class CrawlerCliClient {
 	}
 
 	async sync(signal?: AbortSignal): Promise<CrawlerSyncResult> {
-		const result = await this.run(this.profile.syncArgs(this.options), signal);
+		const result = await this.run(
+			this.profile.syncArgs(this.options),
+			signal,
+			this.options.indexTimeoutMs ?? this.options.timeoutMs ?? DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS,
+		);
 		if (!result.ok) return toFailure(result);
 		const count = this.profile.parseSyncCount(result.stdout);
 		if (count === undefined) return toFailure(result, "invalid-output");
@@ -64,14 +69,22 @@ export class CrawlerCliClient {
 
 	async search(query: string, options: CrawlerSearchOptions = {}): Promise<CrawlerSearchResult> {
 		const topK = options.topK ?? 20;
-		const result = await this.run(this.profile.searchArgs(this.options, query, topK), options.signal);
+		const result = await this.run(
+			this.profile.searchArgs(this.options, query, topK),
+			options.signal,
+			this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+		);
 		if (!result.ok) return toFailure(result);
 		const hits = this.profile.parseHits(result.stdout);
 		if (hits === undefined) return toFailure(result, "invalid-output");
 		return { ok: true, hits, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 	}
 
-	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
+	private async run(
+		args: readonly string[],
+		signal: AbortSignal | undefined,
+		timeoutMs: number,
+	): Promise<ProcessResult> {
 		const env = controlledEnv(this.profile.allowedEnvPrefixes, this.options.env);
 		env.CRAWLKIT_NO_UPDATE_CHECK = "1";
 		return spawnCrawler(
@@ -80,6 +93,7 @@ export class CrawlerCliClient {
 			env,
 			signal,
 			this.options,
+			timeoutMs,
 			this.options.workspacePath,
 		);
 	}
@@ -91,6 +105,7 @@ function spawnCrawler(
 	env: NodeJS.ProcessEnv,
 	signal: AbortSignal | undefined,
 	options: CrawlerCliOptions,
+	timeoutMs: number,
 	cwd?: string,
 ): Promise<ProcessResult> {
 	return new Promise((resolve) => {
@@ -108,7 +123,7 @@ function spawnCrawler(
 		const timeout = setTimeout(() => {
 			finalReason = "timeout";
 			terminate(child);
-		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+		}, timeoutMs);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
 			terminate(child);

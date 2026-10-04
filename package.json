@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.6.2",
+  "version": "2.6.3",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "MIT",
   "repository": {
@@ -58,6 +58,7 @@
     "@earendil-works/pi-coding-agent": "0.86.1",
     "@earendil-works/pi-tui": "0.86.1",
     "@modelcontextprotocol/server": "^2.3.0",
+    "@openrouter/sdk": "^1.4.21",
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
     "iconv-lite": "^0.7.3",
@@ -81,5 +82,8 @@
     "typescript": "^7.0.2",
     "vitest": "^5.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "overrides": {
+    "zod": "3.25.76"
   }
 }

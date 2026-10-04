@@ -111,7 +111,7 @@ def test_dontknow_filter_rule_based():
 	mock_openai_response,
 )
 def test_dontknow_filter_openai():
-	client = AsyncOpenAI()
+	client = AsyncOpenAI(api_key="mock_openai_api_key")
 	en_qa = QA(en_qa_df)
 	result_en_qa = en_qa.batch_filter(
 		dontknow_filter_openai, client=client, lang="en"
