@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -155,7 +153,7 @@ function runShell() {
 function hostGitIdentity() {
 	// A linked-worktree checkout keeps its git metadata outside the mounted
 	// tree, so git cannot run inside the container. Resolve the identity on
-	// the host — where git works — and hand it to the runner through env; a
+	// the host (where git works) and hand it to the runner through env; a
 	// regular clone still falls back to in-container git.
 	const shaRun = spawnSync("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" });
 	if (shaRun.error !== undefined || shaRun.status !== 0) return undefined;
