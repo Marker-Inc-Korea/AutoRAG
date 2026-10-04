@@ -2,7 +2,7 @@
 
 AutoRAG Lite는 모델 없이 문서를 검색하고 인덱스를 관리하는 MCP 서버를 제공합니다.
 MCP client는 `autorag-mcp`를 stdio 서버로 실행한 뒤 아래 tool을 호출합니다.
-서버는 읽기 전용 검색, catalog 조회, 중복 문서 스캔, 그리고 명시적인 refresh만 제공합니다.
+서버 구조를 한눈에 보려면 [MCP 계약 시각화 문서](autorag-lite-mcp-contract.html) 또는 [계약 상세 Markdown](autorag-lite-mcp-contract.md)을 확인하십시오.
 
 ## 설치 및 실행
 
@@ -200,7 +200,7 @@ STDIO 서버의 stdout은 MCP protocol 전용입니다. 디버그 로그는 stde
 - 결과는 `roots`, `exactGroups`(`{ hash, files }` — canonical extracted text hash가 같은 파일 묶음), `families`(near/contains 포함), `extractionErrors`, 그리고 항상 `action: "review"`를 담습니다.
 - **read-only입니다.** 원본 파일을 이동·삭제하지 않으며, exact group도 자동 정리 대상이 아닙니다. `families` 중 near/contains는 삭제 근거가 아니므로 반드시 검토하세요.
 - Dupey 실행이 실패하면(미설치, timeout, 잘못된 출력) `duplicates-failed` 오류를 `retryable: true`로 반환합니다.
-- Dupey 실행 설정은 config의 `dupey` 항목(`binaryPath`, `cwd`, `timeoutMs`)으로 지정할 수 있습니다.
+- Dupey 실행 설정은 config의 `dupey` 항목(`binaryPath`, `timeoutMs`, `enabled`)으로 지정할 수 있습니다.
 
 ## 동적 datasource 검색 tool
 

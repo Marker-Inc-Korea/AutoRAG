@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoRAG Lite MCP Contract</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#131b31; --panel2:#18233e; --text:#e8edf8; --muted:#aab6d0; --cyan:#62d8ff; --green:#6ee7a4; --amber:#ffd166; --red:#ff7c91; --line:#344466; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at 10% 0%,#1d2d52 0,#0b1020 42%); color:var(--text); font:15px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1320px; margin:0 auto; padding:40px 24px 72px; }
+    h1 { margin:0 0 8px; font-size:clamp(30px,5vw,54px); letter-spacing:-.04em; }
+    h2 { margin:0 0 18px; font-size:22px; letter-spacing:-.02em; }
+    h3 { margin:0 0 8px; font-size:16px; }
+    p { margin:6px 0; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    code { color:#bdeeff; }
+    .eyebrow { color:var(--cyan); text-transform:uppercase; letter-spacing:.16em; font-size:12px; font-weight:700; }
+    .hero { display:flex; gap:28px; align-items:end; justify-content:space-between; margin-bottom:28px; }
+    .hero-copy { max-width:760px; }
+    .badge { border:1px solid #426085; background:#15243e; border-radius:999px; padding:8px 14px; color:#cfe5ff; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:16px; }
+    .panel { grid-column:span 12; background:linear-gradient(145deg,rgba(24,35,62,.96),rgba(13,19,38,.96)); border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 14px 50px #02040c55; }
+    .half { grid-column:span 6; }
+    .third { grid-column:span 4; }
+    @media(max-width:900px){ .half,.third{grid-column:span 12}.hero{display:block}.badge{display:inline-block;margin-top:16px} }
+    .flow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:12px 0 0; }
+    .node { padding:13px 16px; border:1px solid #426085; border-radius:12px; background:#162541; min-width:145px; text-align:center; }
+    .node strong { display:block; color:#fff; }
+    .node small { display:block; color:var(--muted); margin-top:3px; }
+    .arrow { color:var(--cyan); font-size:24px; }
+    .tool-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; }
+    .tool { border:1px solid var(--line); background:rgba(10,16,33,.62); border-radius:12px; padding:13px; min-height:108px; }
+    .tool .name { color:var(--cyan); font-weight:750; font-size:14px; }
+    .tool .kind { float:right; color:var(--green); font-size:11px; border:1px solid #387b5b; border-radius:999px; padding:2px 7px; }
+    .tool.write .kind { color:var(--amber); border-color:#806b2d; }
+    .tool p { font-size:13px; margin-top:10px; }
+    table { border-collapse:collapse; width:100%; font-size:14px; }
+    th,td { border-bottom:1px solid var(--line); padding:10px 8px; text-align:left; vertical-align:top; }
+    th { color:#d6e5ff; background:#172541; position:sticky; top:0; }
+    td:first-child { color:var(--cyan); white-space:nowrap; }
+    .rule { display:grid; grid-template-columns:180px 1fr; gap:14px; padding:11px 0; border-bottom:1px solid var(--line); }
+    .rule:last-child { border-bottom:0; }
+    .rule b { color:var(--amber); }
+    .pill { display:inline-block; padding:4px 9px; margin:3px 3px 0 0; border:1px solid #426085; border-radius:999px; color:#cfe5ff; background:#14213a; font-size:12px; }
+    pre { margin:12px 0 0; padding:15px; overflow:auto; border:1px solid var(--line); border-radius:12px; background:#080d1c; color:#d8e9ff; }
+    .error { border-left:3px solid var(--red); padding:8px 12px; margin:7px 0; background:#291827; }
+    .ok { border-left:3px solid var(--green); padding:8px 12px; margin:7px 0; background:#10271f; }
+    .foot { color:#8190ae; font-size:13px; margin-top:24px; }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">AutoRAG Lite · MCP Contract</div>
+      <h1>검색 가능한 MCP 서버 지도</h1>
+      <p>실제 <code>src/mcp/server.ts</code> 계약을 기준으로 만든 시각 문서입니다. 정적 tool, datasource별 동적 tool, 권한 경계, 오류 흐름을 한 화면에서 확인합니다.</p>
+    </div>
+    <div class="badge">stdio · model-free · default-deny</div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>1. Client → MCP Server → AutoRAGLite</h2>
+      <div class="flow">
+        <div class="node"><strong>MCP Client</strong><small>Claude · Cursor · VS Code</small></div><div class="arrow">→</div>
+        <div class="node"><strong>stdio JSON-RPC</strong><small>StdioServerTransport</small></div><div class="arrow">→</div>
+        <div class="node"><strong>autorag-lite</strong><small>tools/list · tools/call</small></div><div class="arrow">→</div>
+        <div class="node"><strong>AutoRAGLite</strong><small>model-free facade</small></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2. tools/list에 노출되는 tool</h2>
+      <div class="tool-grid">
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.status</div><p>Index freshness, stale, component health를 조회합니다.</p></article>
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.search</div><p>method/datasource/local을 선택해 검색합니다. 선택은 backend 실행 전 적용됩니다.</p></article>
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.search.files</div><p>설정된 root 안에서 파일·폴더 이름만 찾습니다. 파일 내용은 읽지 않습니다.</p></article>
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.search.everything</div><p>Windows Everything provider를 호출합니다.</p></article>
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.datasources.list/get</div><p>authorized datasource의 description, capability, scope를 노출합니다.</p></article>
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.duplicates</div><p>Dupey로 exact/near/contains family를 검토용 스캔합니다.</p></article>
+        <article class="tool write"><span class="kind">WRITE</span><div class="name">autorag.refresh</div><p>parsed mirror와 configured index를 갱신합니다. read-only mode에서는 숨겨집니다.</p></article>
+        <article class="tool"><span class="kind">DYNAMIC</span><div class="name">autorag.search_datasource_&lt;id&gt;</div><p>권한 있고 retrieval method가 등록된 datasource마다 생성됩니다.</p></article>
+      </div>
+    </section>
+
+    <section class="panel half">
+      <h2>3. 동적 datasource tool 생성 조건</h2>
+      <div class="flow">
+        <div class="node"><strong>Catalog entry</strong><small>Slack / Notion</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Authorized?</strong><small>trusted tags/scopes</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Method registered?</strong><small>retrieval registry</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Dynamic tool</strong><small>search_datasource_&lt;id&gt;</small></div>
+      </div>
+      <p class="foot">catalog에만 있고 retrieval method가 없으면 전용 tool을 만들지 않습니다. 설정 변경은 서버 재시작 후 반영됩니다.</p>
+    </section>
+
+    <section class="panel half">
+      <h2>4. 동적 tool 호출 계약</h2>
+      <pre>{
+  "name": "autorag.search_datasource_slack",
+  "arguments": {
+    "query": "incident response",
+    "topK": 5,
+    "scope": "/slack/workspace"
+  }
+}</pre>
+      <div class="ok"><code>datasourceIds: ["slack"]</code>와 <code>local: false</code>는 서버가 고정합니다.</div>
+    </section>
+
+    <section class="panel">
+      <h2>5. 일반 검색 선택 규칙</h2>
+      <table>
+        <thead><tr><th>입력</th><th>실행 대상</th><th>보안 의미</th></tr></thead>
+        <tbody>
+          <tr><td>datasourceIds 생략</td><td>authorized datasource methods + local methods</td><td>denied datasource는 자동 제거</td></tr>
+          <tr><td>datasourceIds: ["slack"]</td><td>Slack methods only</td><td>다른 backend는 실행하지 않음</td></tr>
+          <tr><td>local: true</td><td>선택 datasource + local methods</td><td>local 추가는 명시적일 때만</td></tr>
+          <tr><td>local: false</td><td>local methods 제외</td><td>local 검색 경로 차단</td></tr>
+          <tr><td>methods 지정</td><td>eligible set과 교집합</td><td>unknown/unauthorized는 실행 전 거부</td></tr>
+          <tr><td>tags / scope</td><td>trusted 범위 안에서 결과 축소</td><td>tool argument로 권한 확대 불가</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel half">
+      <h2>6. 검색 호출 흐름</h2>
+      <div class="flow">
+        <div class="node"><strong>tools/call</strong><small>query + selection</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Readiness</strong><small>ready / stale</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Selection gate</strong><small>authorize + narrow</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Backends</strong><small>eligible only</small></div>
+      </div>
+      <p class="foot">결과에는 <code>results</code>, <code>diagnostics</code>, <code>unsearched</code>가 포함됩니다.</p>
+    </section>
+
+    <section class="panel half">
+      <h2>7. Dupey 흐름</h2>
+      <div class="flow">
+        <div class="node"><strong>searchPaths</strong><small>configured roots</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Dupey</strong><small>scan root --json</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Review</strong><small>exact / near / contains</small></div>
+      </div>
+      <p class="foot">자동 이동·삭제는 하지 않습니다. <code>action: "review"</code>은 검토가 필요하다는 뜻입니다.</p>
+    </section>
+
+    <section class="panel">
+      <h2>8. 오류 contract</h2>
+      <div class="error"><code>index-not-ready</code> → <code>autorag.refresh</code> 호출 필요</div>
+      <div class="error"><code>stale-index</code> → strict 검색이 stale index를 거부함</div>
+      <div class="error"><code>invalid-selection</code> → unknown/unauthorized method 또는 datasource</div>
+      <div class="error"><code>duplicates-failed</code> → Dupey 실행, timeout, JSON parsing 실패</div>
+      <div class="error"><code>datasource-not-found</code> → authorized catalog에 없음</div>
+      <pre>{
+  "isError": true,
+  "structuredContent": {
+    "ok": false,
+    "errorCode": "index-not-ready",
+    "action": "autorag.refresh",
+    "retryable": false
+  }
+}</pre>
+    </section>
+
+    <section class="panel">
+      <h2>9. 운영자가 기억할 호출 순서</h2>
+      <span class="pill">1 · autorag.status</span>
+      <span class="pill">2 · autorag.refresh</span>
+      <span class="pill">3 · autorag.datasources.list</span>
+      <span class="pill">4 · autorag.search_datasource_slack</span>
+      <span class="pill">5 · autorag.duplicates</span>
+      <p class="foot">정적 계약 상세 문서: <code>docs/autorag-lite-mcp-contract.md</code></p>
+    </section>
+  </div>
+</main>
+</body>
+</html>

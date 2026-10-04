@@ -28,6 +28,8 @@
     "dist",
     "skills",
     "README.md",
+    "docs/autorag-lite-mcp-contract.md",
+    "docs/autorag-lite-mcp-contract.html",
     "NOTICE",
     "licenses",
     "vendor"

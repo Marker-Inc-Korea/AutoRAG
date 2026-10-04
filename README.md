@@ -136,7 +136,7 @@ AutoRAG Lite는 MCP server로도 사용할 수 있습니다. 모델 없이 `stat
 AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
 ```
 
-읽기 전용 서버가 필요하면 `AUTORAG_MCP_READ_ONLY=true`를 사용합니다. 자세한 MCP client 설정과 tool call 예시는 [`docs/autorag-lite-mcp.md`](docs/autorag-lite-mcp.md)를 참고하십시오.
+시각화된 MCP 계약은 [`docs/autorag-lite-mcp-contract.html`](docs/autorag-lite-mcp-contract.html), 텍스트 계약은 [`docs/autorag-lite-mcp-contract.md`](docs/autorag-lite-mcp-contract.md)에서 확인할 수 있습니다.
 
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
