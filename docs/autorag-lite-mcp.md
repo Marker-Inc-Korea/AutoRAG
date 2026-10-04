@@ -2,6 +2,7 @@
 
 AutoRAG Lite는 모델 없이 문서를 검색하고 인덱스를 관리하는 MCP 서버를 제공합니다.
 MCP client는 `autorag-mcp`를 stdio 서버로 실행한 뒤 아래 tool을 호출합니다.
+서버는 읽기 전용 검색과 catalog 조회, 그리고 명시적인 refresh만 제공합니다.
 
 ## 설치 및 실행
 
@@ -53,30 +54,27 @@ STDIO 서버의 stdout은 MCP protocol 전용입니다. 디버그 로그는 stde
 
 ## Tool 목록
 
-| Tool | 설명 | 기본 상태 |
+| Tool | 설명 | read-only |
 |---|---|---|
-| `autorag.status` | 인덱스 상태와 freshness 조회 | 활성 |
-| `autorag.search` | 설정된 corpus 검색 | 활성 |
-| `autorag.refresh` | 인덱스 incremental refresh | 활성 |
-| `autorag.report` | curated report 저장 | 활성 |
-| `autorag.evidence` | report session의 저장된 근거 조회 | 활성 |
-| `autorag.feedback` | 결과 번호별 useful/not-useful 기록 | 활성 |
-| `autorag.duplicates` | 중복 문서 family read-only 스캔 | 활성 |
+| `autorag.status` | 인덱스 상태와 freshness 조회 | 예 |
+| `autorag.search` | 설정된 corpus를 선택적으로 검색 | 예 |
+| `autorag.search.files` | 설정된 root에서 파일/폴더 이름 검색 (내용 미열람) | 예 |
+| `autorag.search.everything` | Windows voidtools Everything 인덱스 검색 | 예 |
+| `autorag.datasources.list` | 권한이 부여된 datasource catalog 조회 | 예 |
+| `autorag.datasources.get` | datasource 하나의 catalog 항목 조회 | 예 |
+| `autorag.refresh` | 인덱스 incremental refresh | 아니오 |
 
 ## 일반 workflow
 
 1. `autorag.status`로 인덱스 상태 확인
 2. 인덱스가 준비되지 않았으면 `autorag.refresh` 호출
-3. `autorag.search` 호출
+3. `autorag.search`로 corpus 검색 (또는 파일 이름만 필요하면 `autorag.search.files`)
 4. 결과의 `stale`, `diagnostics`, `unsearched`를 확인
 5. 결과를 인용해 답변 작성
-6. 장기적으로 보존할 답변이면 `autorag.report` 호출
-7. 필요하면 `autorag.evidence`로 근거 확인
-8. 사용자 평가를 받으면 `autorag.feedback` 호출
 
-`autorag.search`는 기본적으로 자동 refresh하지 않습니다. stale index 결과도 반환하지만 `stale: true`와 diagnostics를 포함합니다. 최신 결과가 필수인 경우 먼저 `autorag.refresh`를 호출하거나 `strict: true`로 검색합니다.
+`autorag.search`는 기본적으로 자동 refresh하지 않습니다. parsed mirror refresh가 아직 완료되지 않았으면 `index-not-ready` 오류를 돌려주므로 `autorag.refresh`를 먼저 호출합니다. stale index 결과도 반환하지만 `stale: true`와 diagnostics를 포함합니다. 최신 결과가 필수인 경우 먼저 `autorag.refresh`를 호출하거나 `strict: true`로 검색합니다.
 
-## 검색 예시
+## autorag.search — 선택 검색
 
 ```json
 {
@@ -84,80 +82,110 @@ STDIO 서버의 stdout은 MCP protocol 전용입니다. 디버그 로그는 stde
   "arguments": {
     "query": "refund exception approval policy",
     "topK": 5,
-    "strict": false
+    "scope": "/kakao/default",
+    "tags": ["kakao"],
+    "strict": false,
+    "datasourceIds": ["kakao"],
+    "methods": ["kakao.keyword"],
+    "local": false
   }
 }
 ```
 
+입력 필드:
+
+- `query` (필수): 검색 문자열
+- `topK`: 반환할 최대 결과 수
+- `scope`: 이미 권한이 부여된 scope 안에서만 좁히는 선택적 범위
+- `tags`: datasource 접근을 좁히는 태그
+- `strict`: `true`이면 stale index 결과를 거부
+- `datasourceIds`: 실행할 datasource id 목록
+- `methods`: 실행할 retrieval method 이름 목록
+- `local`: local (non-datasource) method 실행 여부
+
+선택 semantics (권한을 넓힐 수 없음):
+
+- `datasourceIds`를 생략하면 권한이 부여된 모든 datasource method가 대상입니다.
+- `datasourceIds`를 지정하면 그 datasource의 method만 대상이며, `local === true`일 때만 local method가 추가됩니다.
+- `local === false`이면 local method는 절대 실행되지 않습니다.
+- `methods`를 지정하면 선택된 집합과 교집합되며, 각 method는 존재하고 (datasource method라면) 권한이 있어야 합니다.
+- 알 수 없거나 권한이 없는 datasource/method를 지정하면 selection 오류로 거부됩니다.
+- 선택은 backend 실행 **이전**에 적용되므로, 선택되지 않았거나 권한이 없는 datasource의 backend는 실행되지 않습니다.
+
 결과에는 다음 필드가 포함됩니다.
 
 - `results`: 번호, source, retrieval method, score, metadata, content
+- `selection`: 실제 적용된 datasource/method/local 선택
 - `stale`: 마지막 refresh가 현재 source 변경사항을 포함하는지 여부
 - `unsearched`: 실행되지 않은 retrieval surface와 원래 오류
 - `diagnostics`: degraded retrieval, stale index, component failure 정보
 
 `unsearched` 또는 error diagnostic이 있으면 결과가 corpus 전체를 대표한다고 가정하지 마십시오.
 
-## Report·evidence·feedback
-
-`autorag.report`의 `mapping[].source`, `mapping[].method`, `mapping[].content`는 검색 결과에서 받은 값을 그대로 전달해야 합니다.
-서버는 source 값을 다시 filesystem path로 해석하지 않고 memory에 저장합니다.
+## autorag.search.files — 파일 이름 검색
 
 ```json
 {
-  "name": "autorag.report",
+  "name": "autorag.search.files",
   "arguments": {
-    "query": "refund exception approval policy",
-    "report": {
-      "answer": "[1] Director approval is required before payout.",
-      "results": [
-        {
-          "number": 1,
-          "title": "Refund exception approval",
-          "summary": "Director approval is required before payout.",
-          "evidence": [
-            { "excerpt": "Refund exceptions require director approval before payout." }
-          ],
-          "confidence": 0.9
-        }
-      ],
-      "mapping": [
-        {
-          "number": 1,
-          "source": "/workspace/docs/refund-policy.md",
-          "method": "minsync",
-          "content": "Refund exceptions require director approval before payout."
-        }
-      ]
-    }
+    "query": "refund",
+    "root": "docs",
+    "matchPath": false,
+    "matchCase": false,
+    "kind": "files",
+    "maxResults": 50,
+    "offset": 0
   }
 }
 ```
 
-성공하면 `sessionId`가 반환됩니다.
+- config에 설정된 검색 root만 대상으로 하며, parsed mirror refresh가 없어도 동작합니다.
+- `query`는 정규식이 아니라 literal substring으로 취급됩니다.
+- `root`는 설정된 root 또는 그 안의 실제 하위 디렉터리만 선택할 수 있습니다. realpath 기반으로 포함 여부를 검증하므로 root 밖의 경로로 범위를 넓힐 수 없습니다.
+- `matchPath`가 `true`이면 파일 이름 대신 검색 root 기준 상대 경로에 대해 일치시킵니다.
+- `kind`는 `"files"` 또는 `"folders"`로 결과를 좁힙니다.
+- 결과는 `{ path, type }` 항목과 `truncated`, `diagnostics`를 포함합니다.
+- 이 tool은 **파일 내용을 읽지 않습니다.** 디렉터리 목록만 순회합니다.
+- root가 없거나 범위를 벗어나면 빈 결과와 warning diagnostic을 반환하며, 임의의 전역 `/` 스캔으로 대체하지 않습니다.
+
+## autorag.search.everything — Windows Everything 검색
 
 ```json
 {
-  "name": "autorag.evidence",
+  "name": "autorag.search.everything",
   "arguments": {
-    "sessionId": "<sessionId>",
-    "resultNumber": 1
+    "query": "ext:txt refund",
+    "regex": false,
+    "matchCase": false,
+    "matchPath": false,
+    "wholeWord": false,
+    "kind": "files",
+    "path": "C:\\docs",
+    "sort": "date-modified-descending",
+    "offset": 0,
+    "maxResults": 50
   }
 }
 ```
 
+- Windows에서 voidtools Everything index를 통해 검색합니다. 그 외 platform에서는 `unsupported-platform` 실패를 반환합니다.
+- 입력은 Everything 검색 필드를 그대로 반영합니다: `query`, `regex`, `matchCase`, `matchPath`, `wholeWord`, `kind`, `path`, `sort`, `offset`, `maxResults`.
+- `query`는 Everything 검색 syntax(wildcards, `ext:`, `dm:`, `size:`, `|`, `!`, quotes)를 사용합니다.
+- Everything은 workspace별로 격리된 사용자 수준 instance를 사용하며, 관리자 권한이나 서비스 설치를 요구하지 않습니다.
+
+## Datasource 목록 조회
+
+`autorag.datasources.list`와 `autorag.datasources.get`은 read-only이며 datasource를 실행하거나 corpus를 수정하지 않습니다.
+
 ```json
-{
-  "name": "autorag.feedback",
-  "arguments": {
-    "sessionId": "<sessionId>",
-    "usefulNumbers": [1],
-    "notUsefulNumbers": []
-  }
-}
+{ "name": "autorag.datasources.list", "arguments": {} }
 ```
 
-feedback는 persisted memory를 사용하므로 MCP process를 재시작한 뒤에도 동작합니다.
+```json
+{ "name": "autorag.datasources.get", "arguments": { "datasourceId": "kakao" } }
+```
+
+각 항목은 identity, capability tags, 권한이 부여된 source scope 문자열만 담습니다. credential, config 경로, raw instance metadata는 포함되지 않습니다. 존재하지 않거나 권한이 없는 id는 `datasource-not-found` 오류로 반환됩니다.
 
 ## Read-only mode와 tool allowlist
 
@@ -167,30 +195,32 @@ feedback는 persisted memory를 사용하므로 MCP process를 재시작한 뒤�
 AUTORAG_MCP_READ_ONLY=true autorag-mcp
 ```
 
-read-only mode에서는 다음 tool만 노출됩니다.
+read-only mode에서는 `autorag.refresh`가 노출되지 않습니다. 나머지 검색·조회 tool은 모두 read-only입니다.
 
 ```text
 autorag.status
 autorag.search
-autorag.evidence
-autorag.duplicates
+autorag.search.files
+autorag.search.everything
+autorag.datasources.list
+autorag.datasources.get
 ```
 
 개별 tool allowlist:
 
 ```bash
-AUTORAG_MCP_TOOLS=autorag.status,autorag.search,autorag.evidence autorag-mcp
+AUTORAG_MCP_TOOLS=autorag.status,autorag.search,autorag.datasources.list autorag-mcp
 ```
 
 `AUTORAG_MCP_TOOLS`를 지정하면 목록에 있는 tool만 `tools/list`에 표시됩니다.
 
 ## 쓰기 범위와 보안
 
-- 원본 source document는 수정·이동·삭제하지 않습니다.
-- refresh가 쓰는 위치는 기존 AutoRAG Lite 계약에 따른 index/cache/memory 영역입니다.
+- 원본 source document는 수정·이동·삭제하지 않습니다. 파일 이름 검색과 Everything 검색은 내용을 읽지 않습니다.
+- refresh가 쓰는 위치는 기존 AutoRAG Lite 계약에 따른 index/cache 영역입니다.
 - config는 `AUTORAG_CONFIG` 또는 기존 AutoRAG config 탐색 규칙으로 결정됩니다.
-- MCP tool argument로 arbitrary workspace나 arbitrary file path를 받지 않습니다.
-- datasource의 접근 범위는 config의 default-deny 정책을 따릅니다.
+- MCP tool argument로 arbitrary workspace나 arbitrary file path를 받지 않습니다. 파일 검색의 `root`는 설정된 root 안으로만 한정됩니다.
+- datasource의 접근 범위는 config의 default-deny 정책을 따르며, tool argument는 이를 넓힐 수 없습니다.
 - API key와 credential은 tool 결과나 로그에 포함하지 않습니다.
 
 현재 entrypoint는 local stdio용입니다. 원격 HTTP deployment에는 인증, Origin 검증, HTTPS, workspace별 authorization, rate limiting을 추가한 별도 transport 구성이 필요합니다.
@@ -213,7 +243,7 @@ AUTORAG_MCP_TOOLS=autorag.status,autorag.search,autorag.evidence autorag-mcp
 }
 ```
 
-protocol 오류와 tool 실행 오류를 구분해 처리하십시오. `index-not-ready`, `stale-index`, `refresh-failed`, `session-not-found`는 모델이 다음 tool call을 결정할 수 있도록 반환됩니다.
+protocol 오류와 tool 실행 오류를 구분해 처리하십시오. `index-not-ready`, `stale-index`, `search-failed`, `refresh-failed`, `datasource-not-found`는 모델이 다음 tool call을 결정할 수 있도록 반환됩니다. `autorag.search.everything`은 platform/검색 실패를 구조화된 `{ ok: false, reason, message }`로 반환합니다.
 
 ## 검증
 
@@ -223,4 +253,4 @@ bun run build
 bunx vitest run test/mcp/server.test.ts test/mcp/stdio.test.ts
 ```
 
-`test/mcp/stdio.test.ts`는 실제 stdio MCP client로 refresh, search, report, evidence, process restart 후 feedback을 확인합니다.
+`test/mcp/stdio.test.ts`는 실제 stdio MCP client로 refresh, search, 파일 이름 검색, datasource list/get을 확인합니다.

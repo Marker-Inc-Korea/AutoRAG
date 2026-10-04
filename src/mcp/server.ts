@@ -1,30 +1,70 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { RefreshMethod } from "../agent/agent.ts";
-import type { AutoRAGResultsDetails } from "../agent/emit-results-tool.ts";
-import { validateReport } from "../cli/commands/report.ts";
 import type { AutoRAGLite } from "../core.ts";
-import { type DupeyScanResult, scanWithDupey } from "../dupey/index.ts";
+import type { EverythingSearchRequest } from "../everything/index.ts";
+import { searchFileNames } from "../filesystem/name-search.ts";
 import { isParsedRefreshComplete } from "../mirror/paths.ts";
+import { RetrievalSelectionError } from "../retrieval/index.ts";
 
 const emptyInput = z.strictObject({});
 const objectOutput = z.looseObject({});
 
 const searchInput = z
-	.object({
+	.strictObject({
 		query: z.string().trim().min(1),
 		topK: z.number().int().positive().max(100).optional(),
 		scope: z.string().trim().min(1).optional(),
 		tags: z.array(z.string().trim().min(1)).optional(),
 		strict: z.boolean().optional(),
+		datasourceIds: z.array(z.string().trim().min(1)).optional(),
+		methods: z.array(z.string().trim().min(1)).optional(),
+		local: z.boolean().optional(),
+	})
+	.strict();
+
+const fileSearchInput = z
+	.strictObject({
+		query: z.string(),
+		root: z.string().trim().min(1).optional(),
+		matchPath: z.boolean().optional(),
+		matchCase: z.boolean().optional(),
+		kind: z.enum(["files", "folders"]).optional(),
+		maxResults: z.number().int().positive().max(1000).optional(),
+		offset: z.number().int().nonnegative().optional(),
+	})
+	.strict();
+
+const everythingSearchInput = z
+	.strictObject({
+		query: z.string().trim().min(1),
+		regex: z.boolean().optional(),
+		matchCase: z.boolean().optional(),
+		matchPath: z.boolean().optional(),
+		wholeWord: z.boolean().optional(),
+		kind: z.enum(["files", "folders"]).optional(),
+		path: z.string().trim().min(1).optional(),
+		sort: z
+			.enum([
+				"name-ascending",
+				"name-descending",
+				"path-ascending",
+				"path-descending",
+				"size-ascending",
+				"size-descending",
+				"date-modified-ascending",
+				"date-modified-descending",
+			])
+			.optional(),
+		offset: z.number().int().nonnegative().optional(),
+		maxResults: z.number().int().positive().max(1000).optional(),
 	})
 	.strict();
 
 const refreshInput = z
-	.object({
+	.strictObject({
 		force: z.boolean().optional(),
 		methods: z
 			.array(z.enum(["parsed", "minsync", "datasources", "jikji", "everything"]))
@@ -33,37 +73,7 @@ const refreshInput = z
 	})
 	.strict();
 
-const reportInput = z
-	.strictObject({
-		query: z.string().trim().min(1),
-		report: z
-			.looseObject({
-				answer: z.string(),
-				results: z.array(z.record(z.string(), z.unknown())),
-				mapping: z.array(z.record(z.string(), z.unknown())),
-				warnings: z.array(z.string()).optional(),
-			})
-			.passthrough(),
-	})
-	.strict();
-
-const evidenceInput = z
-	.object({
-		sessionId: z.string().trim().min(1),
-		resultNumber: z.number().int().positive().optional(),
-	})
-	.strict();
-
-const feedbackInput = z
-	.object({
-		sessionId: z.string().trim().min(1),
-		usefulNumbers: z.array(z.number().int().positive()).default([]),
-		notUsefulNumbers: z.array(z.number().int().positive()).default([]),
-	})
-	.strict()
-	.refine((value) => value.usefulNumbers.length > 0 || value.notUsefulNumbers.length > 0, {
-		message: "At least one usefulNumbers or notUsefulNumbers item is required",
-	});
+const datasourceGetInput = z.strictObject({ datasourceId: z.string().trim().min(1) });
 
 export interface AutoRAGMcpServerOptions {
 	readonly readOnly?: boolean;
@@ -79,63 +89,13 @@ function jsonResult<T extends object>(value: T, isError = false) {
 }
 
 function toolError(code: string, message: string, extra: Record<string, unknown> = {}) {
-	return jsonResult(
-		{
-			ok: false,
-			errorCode: code,
-			message,
-			...extra,
-		},
-		true,
-	);
+	return jsonResult({ ok: false, errorCode: code, message, ...extra }, true);
 }
 
 function isToolEnabled(name: string, options: AutoRAGMcpServerOptions): boolean {
 	return options.tools === undefined || options.tools.includes(name);
 }
 
-function evidenceFor(
-	schema: ReturnType<AutoRAGLite["getMemorySchema"]>,
-	sessionId: string,
-	resultNumber?: number,
-): Record<string, unknown> {
-	const results = schema.curatedResults
-		.filter((result) => result.sessionId === sessionId)
-		.filter((result) => resultNumber === undefined || result.number === resultNumber)
-		.sort((a, b) => a.number - b.number)
-		.map((result) => ({
-			number: result.number,
-			query: result.query,
-			confidence: result.confidence,
-			chunks: result.evidenceIds
-				.map((id) => schema.evidenceChunks.find((chunk) => chunk.stableEvidenceId === id))
-				.filter((chunk) => chunk !== undefined),
-		}));
-	return { sessionId, results };
-}
-
-interface ExactGroup {
-	readonly hash: string;
-	readonly files: readonly string[];
-}
-
-function exactGroupsFromScan(scan: DupeyScanResult): ExactGroup[] {
-	const groups = new Map<string, string[]>();
-	for (const file of scan.files) {
-		if (typeof file.content_hash !== "string" || file.content_hash.length === 0) continue;
-		const files = groups.get(file.content_hash) ?? [];
-		files.push(file.path);
-		groups.set(file.content_hash, files);
-	}
-	return [...groups.entries()]
-		.filter(([, files]) => files.length > 1)
-		.map(([hash, files]) => ({ hash, files: [...files].sort() }));
-}
-/**
- * The installed package version. Mirrors the CLI entrypoint's resolution:
- * `src/mcp/server.ts` and the published `dist/mcp/server.js` both resolve
- * `../../package.json` to the package root.
- */
 function readPackageVersion(): string {
 	try {
 		const manifest = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"));
@@ -148,7 +108,7 @@ function readPackageVersion(): string {
 			return manifest.version;
 		}
 	} catch {
-		// Fall through to the dev fallback below.
+		// Development fallback when the package manifest is unavailable.
 	}
 	return "0.0.0-dev";
 }
@@ -177,12 +137,12 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 			{
 				title: "Search AutoRAG Lite Corpus",
 				description:
-					"Search the configured AutoRAG Lite corpus without refreshing or modifying indexes. Check stale, diagnostics, and unsearched before trusting the result set.",
+					"Search selected configured retrieval methods and datasources. Selection narrows execution before any backend is invoked.",
 				inputSchema: searchInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
-			async ({ query, topK, scope, tags, strict }) => {
+			async ({ query, topK, scope, tags, strict, datasourceIds, methods, local }) => {
 				const status = await lite.getRefreshStatus();
 				if (!isParsedRefreshComplete(lite.config.workspacePath)) {
 					return toolError(
@@ -205,15 +165,16 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 					);
 				}
 				try {
-					const retrieved = await lite.retrieve(query, {
-						topK,
-						scope,
-						allowedTags: tags,
-					});
+					const retrieved = await lite.searchSelected(
+						query,
+						{ datasourceIds, methods, local },
+						{ topK, scope, allowedTags: tags },
+					);
 					return jsonResult({
 						ok: true,
 						query,
 						stale: status.stale,
+						selection: { datasourceIds, methods, local },
 						results: retrieved.results.map((result, index) => ({
 							number: index + 1,
 							source: result.source,
@@ -226,10 +187,83 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 						diagnostics: [...status.diagnostics, ...retrieved.diagnostics],
 					});
 				} catch (error) {
-					return toolError("search-failed", error instanceof Error ? error.message : String(error), {
-						retryable: true,
-					});
+					return toolError(
+						error instanceof RetrievalSelectionError ? "invalid-selection" : "search-failed",
+						error instanceof Error ? error.message : String(error),
+						{ retryable: !(error instanceof RetrievalSelectionError) },
+					);
 				}
+			},
+		);
+	}
+
+	if (isToolEnabled("autorag.search.files", options)) {
+		server.registerTool(
+			"autorag.search.files",
+			{
+				title: "Search Configured File Names",
+				description:
+					"Search file and folder names under configured search roots without reading file contents. The optional root must remain inside a configured root.",
+				inputSchema: fileSearchInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async ({ query, root, matchPath, matchCase, kind, maxResults, offset }) => {
+				const result = await searchFileNames(
+					lite.config.searchPaths,
+					{ query, root, matchPath, matchCase, kind, maxResults, offset },
+					lite.config.excludePaths ?? [],
+				);
+				return jsonResult(result, false);
+			},
+		);
+	}
+
+	if (isToolEnabled("autorag.search.everything", options)) {
+		server.registerTool(
+			"autorag.search.everything",
+			{
+				title: "Search Everything File Index",
+				description:
+					"Search the Windows-only user-level Everything index. Returns an unsupported-platform result elsewhere.",
+				inputSchema: everythingSearchInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async (request) => jsonResult(await lite.searchEverything(request as EverythingSearchRequest)),
+		);
+	}
+
+	if (isToolEnabled("autorag.datasources.list", options)) {
+		server.registerTool(
+			"autorag.datasources.list",
+			{
+				title: "List Authorized Datasources",
+				description: "List configured datasources visible under the server's default-deny authorization policy.",
+				inputSchema: emptyInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async () => jsonResult({ ok: true, datasources: lite.listDatasources() }),
+		);
+	}
+
+	if (isToolEnabled("autorag.datasources.get", options)) {
+		server.registerTool(
+			"autorag.datasources.get",
+			{
+				title: "Get Authorized Datasource",
+				description:
+					"Return one authorized datasource descriptor without credentials or private configuration metadata.",
+				inputSchema: datasourceGetInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async ({ datasourceId }) => {
+				const datasource = lite.listDatasources().find((entry) => entry.datasourceId === datasourceId);
+				return datasource === undefined
+					? toolError("datasource-not-found", `No authorized datasource named ${datasourceId}.`, { datasourceId })
+					: jsonResult({ ok: true, datasource });
 			},
 		);
 	}
@@ -255,111 +289,6 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 					return toolError("refresh-failed", error instanceof Error ? error.message : String(error), {
 						retryable: true,
 					});
-				}
-			},
-		);
-	}
-
-	if (!readOnly && isToolEnabled("autorag.report", options)) {
-		server.registerTool(
-			"autorag.report",
-			{
-				title: "Persist AutoRAG Curated Report",
-				description:
-					"Persist an externally curated report with exact source and retrieval-method mappings for later evidence and feedback.",
-				inputSchema: reportInput,
-				outputSchema: objectOutput,
-				annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
-			},
-			async ({ query, report }) => {
-				try {
-					const details = validateReport(report) as AutoRAGResultsDetails;
-					const response = lite.recordReport(query, details);
-					return jsonResult({
-						ok: true,
-						sessionId: response.sessionId,
-						query: response.query,
-						answer: response.answer,
-						resultCount: response.results.length,
-					});
-				} catch (error) {
-					return toolError("invalid-report", error instanceof Error ? error.message : String(error));
-				}
-			},
-		);
-	}
-
-	if (isToolEnabled("autorag.evidence", options)) {
-		server.registerTool(
-			"autorag.evidence",
-			{
-				title: "Read AutoRAG Evidence",
-				description:
-					"Read persisted evidence attached to a report session. This does not read arbitrary filesystem paths.",
-				inputSchema: evidenceInput,
-				outputSchema: objectOutput,
-				annotations: { readOnlyHint: true, openWorldHint: false },
-			},
-			async ({ sessionId, resultNumber }) => {
-				const view = evidenceFor(lite.getMemorySchema(), sessionId, resultNumber);
-				if ((view.results as unknown[]).length === 0) {
-					return toolError("session-not-found", `No evidence found for session ${sessionId}.`, { sessionId });
-				}
-				return jsonResult(view);
-			},
-		);
-	}
-
-	if (!readOnly && isToolEnabled("autorag.feedback", options)) {
-		server.registerTool(
-			"autorag.feedback",
-			{
-				title: "Record AutoRAG Feedback",
-				description:
-					"Record useful or not-useful signals for numbered results in a persisted AutoRAG report session.",
-				inputSchema: feedbackInput,
-				outputSchema: objectOutput,
-				annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
-			},
-			async ({ sessionId, usefulNumbers, notUsefulNumbers }) => {
-				if (usefulNumbers.some((number) => notUsefulNumbers.includes(number))) {
-					return toolError("invalid-feedback", "A result number cannot be both useful and not useful.");
-				}
-				const applied = lite.recordPersistedFeedbackByNumbers(sessionId, usefulNumbers, notUsefulNumbers);
-				return applied
-					? jsonResult({ ok: true, applied: true, sessionId, usefulNumbers, notUsefulNumbers })
-					: toolError("session-not-found", `No matching report results found for session ${sessionId}.`, {
-							sessionId,
-						});
-			},
-		);
-	}
-
-	if (isToolEnabled("autorag.duplicates", options)) {
-		server.registerTool(
-			"autorag.duplicates",
-			{
-				title: "Scan AutoRAG Duplicate Documents",
-				description:
-					"Scan configured search roots for duplicate document families. This tool never moves, renames, or deletes source files.",
-				inputSchema: emptyInput,
-				outputSchema: objectOutput,
-				annotations: { readOnlyHint: true, openWorldHint: false },
-			},
-			async () => {
-				try {
-					const roots = lite.config.searchPaths.map((path) => resolve(path));
-					const scans = await Promise.all(roots.map((root) => scanWithDupey(root)));
-					return jsonResult({
-						ok: true,
-						roots,
-						exactGroups: scans.flatMap(exactGroupsFromScan),
-						families: scans.flatMap((scan) => scan.families),
-						extractionErrors: scans.flatMap((scan) => scan.errors),
-						action: "review",
-					});
-				} catch (error) {
-					return toolError("duplicates-failed", error instanceof Error ? error.message : String(error));
 				}
 			},
 		);

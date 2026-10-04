@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
@@ -36,7 +36,7 @@ function makeFixture() {
 			fsearch: false,
 		}),
 	);
-	return { root, config, binDir };
+	return { root, docs, config, binDir };
 }
 
 async function connect(config: string, binDir: string) {
@@ -59,13 +59,38 @@ async function connect(config: string, binDir: string) {
 	return { client, transport };
 }
 
+function field(value: unknown, key: string): unknown {
+	if (typeof value !== "object" || value === null) return undefined;
+	return Reflect.get(value, key);
+}
+
+/** Recursively search a structured result for a `key === expected` pair, body-shape agnostic. */
+function hasFieldValue(value: unknown, key: string, expected: unknown, seen = new Set<unknown>()): boolean {
+	if (typeof value !== "object" || value === null) return false;
+	if (seen.has(value)) return false;
+	seen.add(value);
+	if (field(value, key) === expected) return true;
+	return Object.values(value).some((item) => hasFieldValue(item, key, expected, seen));
+}
+
 describe("AutoRAG Lite MCP stdio", () => {
-	it("runs refresh, search, report, evidence, and feedback across a restart", async () => {
-		const { root, config, binDir } = makeFixture();
+	it("runs refresh, search, file-name search, and datasource list/get across a restart", async () => {
+		const { root, docs, config, binDir } = makeFixture();
 		try {
 			const first = await connect(config, binDir);
 			const listed = await first.client.listTools();
-			expect(listed.tools.map((tool) => tool.name)).toContain("autorag.search");
+			const names = listed.tools.map((tool) => tool.name);
+			for (const tool of [
+				"autorag.status",
+				"autorag.search",
+				"autorag.search.files",
+				"autorag.search.everything",
+				"autorag.datasources.list",
+				"autorag.datasources.get",
+				"autorag.refresh",
+			]) {
+				expect(names).toContain(tool);
+			}
 
 			const refresh = await first.client.callTool({ name: "autorag.refresh", arguments: {} });
 			expect(refresh.isError).not.toBe(true);
@@ -86,65 +111,24 @@ describe("AutoRAG Lite MCP stdio", () => {
 			}
 			expect(searchOutput.results.length).toBeGreaterThan(0);
 
-			const report = await first.client.callTool({
-				name: "autorag.report",
-				arguments: {
-					query: "Who approves refund exceptions?",
-					report: {
-						answer: "[1] Director approval is required before payout.",
-						results: [
-							{
-								number: 1,
-								title: "Refund exception approval",
-								summary: "Director approval is required before payout.",
-								evidence: [{ excerpt: "Refund exceptions require director approval before payout." }],
-								confidence: 0.9,
-							},
-						],
-						mapping: [
-							{
-								number: 1,
-								source: join(root, "docs", "refund.md"),
-								method: "manual-qa",
-								content: "Refund exceptions require director approval before payout.",
-							},
-						],
-					},
-				},
+			const files = await first.client.callTool({
+				name: "autorag.search.files",
+				arguments: { query: "refund" },
 			});
-			expect(report.isError).not.toBe(true);
-			const reportContent = report.structuredContent;
-			if (
-				reportContent === null ||
-				typeof reportContent !== "object" ||
-				!("sessionId" in reportContent) ||
-				typeof reportContent.sessionId !== "string"
-			) {
-				throw new Error("MCP report did not return a sessionId");
-			}
-			const sessionId = reportContent.sessionId;
+			expect(files.isError).not.toBe(true);
+			expect(hasFieldValue(files.structuredContent, "path", realpathSync(join(docs, "refund.md")))).toBe(true);
 			await first.client.close();
 
 			const second = await connect(config, binDir);
-			const evidence = await second.client.callTool({
-				name: "autorag.evidence",
-				arguments: { sessionId },
-			});
-			expect(evidence.isError).not.toBe(true);
-			expect(evidence.structuredContent).toMatchObject({ sessionId });
+			const list = await second.client.callTool({ name: "autorag.datasources.list", arguments: {} });
+			expect(list.isError).not.toBe(true);
 
-			const feedback = await second.client.callTool({
-				name: "autorag.feedback",
-				arguments: { sessionId, usefulNumbers: [1] },
+			const missing = await second.client.callTool({
+				name: "autorag.datasources.get",
+				arguments: { datasourceId: "missing" },
 			});
-			expect(feedback.isError).not.toBe(true);
-			expect(feedback.structuredContent).toMatchObject({ applied: true, sessionId });
+			expect(missing.isError === true || field(missing.structuredContent, "ok") === false).toBe(true);
 			await second.client.close();
-
-			const memory = JSON.parse(readFileSync(join(root, "memory.json"), "utf8")) as {
-				feedbackSignals: unknown[];
-			};
-			expect(memory.feedbackSignals.length).toBeGreaterThan(0);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

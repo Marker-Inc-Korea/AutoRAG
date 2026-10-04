@@ -130,7 +130,7 @@ Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent sho
 
 ## AutoRAG Lite: Model-Free MCP Server
 
-AutoRAG Lite는 MCP server로도 사용할 수 있습니다. 모델 없이 `status`, `search`, `refresh`, `report`, `evidence`, `feedback`, `duplicates` tool을 제공합니다.
+AutoRAG Lite는 MCP server로도 사용할 수 있습니다. 모델 없이 `status`, `search`, `search.files`, `search.everything`, `datasources.list`, `datasources.get`, `refresh` tool을 제공합니다. 검색 tool은 답변·근거·feedback을 저장하지 않고 외부 모델에 검색 결과만 전달합니다.
 
 ```bash
 AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp

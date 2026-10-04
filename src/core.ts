@@ -16,11 +16,13 @@ import {
 	type SearchDocumentsResponse,
 } from "./agent/search-documents.ts";
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
+import type { EverythingSearchRequest, EverythingSearchResult } from "./everything/index.ts";
 import type { MemorySchemaV4 } from "./memory/memory.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import type { MinSyncSyncResult } from "./minsync/types.ts";
 import type { ParsedMirrorSyncResult } from "./mirror/sync.ts";
 import type { RetrievalEngine } from "./retrieval/engine.ts";
+import type { DatasourceCatalogEntry, RetrievalSelection } from "./retrieval/selection.ts";
 import type {
 	CuratedResult,
 	RetrievalDiagnostic,
@@ -99,6 +101,41 @@ export class AutoRAGLite {
 		return this.retrievalEngine;
 	}
 
+	/**
+	 * List the authorized configured datasources for this runtime: identity,
+	 * capability tags, and authorized source scope strings only — no
+	 * credentials or config metadata.
+	 */
+	listDatasources(): DatasourceCatalogEntry[] {
+		return this.agent.listDatasources();
+	}
+
+	/**
+	 * Search only the selected datasources/methods/local surfaces. Selection is
+	 * applied before any backend is invoked, so an unselected or unauthorized
+	 * datasource never runs. Unknown or unauthorized selections throw
+	 * {@link RetrievalSelectionError}.
+	 */
+	searchSelected(
+		query: string,
+		selection: RetrievalSelection = {},
+		options?: RetrievalOptions,
+	): Promise<{
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
+		return this.retrievalEngine.retrieveSelected(query, selection, options);
+	}
+
+	/**
+	 * Search the Windows-only Everything index through the model-free provider,
+	 * delegating to the existing agent backend (unsupported off Windows).
+	 */
+	searchEverything(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
+		return this.agent.searchEverything(request);
+	}
+
 	/** Retrieve merged results without entering the model-backed agent loop. */
 	retrieve(
 		query: string,
@@ -149,23 +186,6 @@ export class AutoRAGLite {
 		notUsefulNumbers: readonly number[] = [],
 	): void {
 		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
-	}
-
-	/** Record feedback directly against the persisted report registry. */
-	recordPersistedFeedbackByNumbers(
-		sessionId: string,
-		usefulNumbers: readonly number[],
-		notUsefulNumbers: readonly number[] = [],
-	): boolean {
-		const memory = new RetrievalMemory({ storagePath: this.config.memoryPath });
-		memory.load();
-		const feedback = [
-			...usefulNumbers.map((number) => ({ number, useful: true })),
-			...notUsefulNumbers.map((number) => ({ number, useful: false })),
-		];
-		const applied = memory.recordNumberedFeedback({ sessionId, query: "", feedback });
-		if (applied) memory.save();
-		return applied;
 	}
 
 	/** Return a detached snapshot of persisted evidence and feedback state. */
