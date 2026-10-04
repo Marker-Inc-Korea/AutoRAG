@@ -9,6 +9,7 @@
         "@earendil-works/pi-ai": "^0.86.1",
         "@earendil-works/pi-coding-agent": "0.86.1",
         "@earendil-works/pi-tui": "0.86.1",
+        "@geminixiang/jev": "^0.3.1",
         "chardet": "^2.2.0",
         "fast-xml-parser": "^5.11.1",
         "iconv-lite": "^0.7.3",
@@ -168,6 +169,8 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.8", "", { "dependencies": { "@floating-ui/dom": "^1.7.6" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-cC52bHwM/n/CxS87FH0yWdngEZrjdtLW/qVruo68qg+prK7ZQ4YGdut2GyDVpoGeAYe/h899rVeOVm6Oi40k2A=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
+
+    "@geminixiang/jev": ["@geminixiang/jev@0.3.1", "", { "peerDependencies": { "@earendil-works/pi-ai": ">=0.85.0" } }, "sha512-zJ2BdxUwLaWWvq1d//o3rw4nAC5Gt0ViZ4rPaT8XgYXcTxAcPv9J/8tFlvcD9LKbU5pYBOhTi9RL5fTiMvz5lw=="],
 
     "@google/genai": ["@google/genai@2.21.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q=="],
 

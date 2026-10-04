@@ -51,6 +51,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"search the public internet for current information beyond the local corpus and knowledge cutoff",
 		),
 		toolLine(config, "web_fetch", "read a public web page (http/https URL) as markdown/text"),
+		toolLine(
+			config,
+			"jev",
+			"ask the Jev judgment model for calibrated probabilities — classification, triage, comparison, ranking",
+		),
 		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
 		toolLine(
 			config,
@@ -79,6 +84,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"scan_duplicate_documents",
 						"web_search",
 						"web_fetch",
+						"jev",
 						"check_memory",
 						"recommend_peer_targets",
 						"query_peer_agent",

@@ -23,6 +23,7 @@ import {
 	type FSearchSearchRequest,
 	type FSearchSearchResult,
 } from "../fsearch/index.ts";
+import { createJevEvaluator, createJevTool, JEV_TOOL_NAME, type JevToolOptions } from "../jev/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -389,6 +390,15 @@ export interface AutoRAGAgentOptions {
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
+	/**
+	 * Optional Jev decision tool (`jev`). Jev is TypeSafe's judgment model:
+	 * typed questions in, calibrated probabilities out — no generated text.
+	 * Disabled by default because it calls a paid external API; enable it with
+	 * a `jev` config section or this option. Backends: TypeSafe, OpenRouter
+	 * (`OPENROUTER_API_KEY`), Vercel AI Gateway, Cloudflare Workers AI.
+	 * Always omitted for remote P2P sessions.
+	 */
+	jev?: JevToolOptions | false;
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
 	datasourceSkills?: readonly DatasourceSkill[];
@@ -603,6 +613,10 @@ export class AutoRAGAgent {
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		const jevTool =
+			options.jev === undefined || options.jev === false || this.remoteSession
+				? undefined
+				: createJevTool(createJevEvaluator(options.jev));
 
 		const bashTool = createBashTool({
 			cwd: this.workspaceProjectRoot,
@@ -660,6 +674,7 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			JEV_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -689,6 +704,7 @@ export class AutoRAGAgent {
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
+			...(jevTool !== undefined ? [jevTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),

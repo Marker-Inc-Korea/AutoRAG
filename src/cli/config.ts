@@ -14,6 +14,7 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { JEV_BACKENDS, type JevBackend } from "../jev/index.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -77,6 +78,25 @@ export interface WebSearchCliConfig {
 				timeoutSeconds?: number;
 		  }
 		| false;
+}
+
+/**
+ * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
+ * it explicitly. Secrets never appear here: `apiKeyEnv` names the environment
+ * variable holding the backend API key.
+ */
+export interface JevCliConfig {
+	enabled?: boolean;
+	/** Jev backend. Omit to let the first authenticated backend win. */
+	backend?: JevBackend;
+	/** Provider-neutral model id, e.g. `jev-latest` or `jev-1.13`. */
+	model?: string;
+	/** Environment variable holding the backend API key (never the key itself). */
+	apiKeyEnv?: string;
+	/** Per-request timeout in milliseconds (1000-120000). */
+	timeoutMs?: number;
+	/** Retries for transient failures (0-5). */
+	maxRetries?: number;
 }
 
 export interface P2pConfig {
@@ -150,6 +170,12 @@ export interface CliConfig {
 		  }
 		| false;
 	webSearch?: WebSearchCliConfig;
+	/**
+	 * Optional Jev decision tool. Absent disables the tool; `enabled: false`
+	 * disables it explicitly. Secrets never appear here — `apiKeyEnv` names the
+	 * environment variable holding the backend API key.
+	 */
+	jev?: JevCliConfig | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -927,6 +953,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
+	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -965,6 +992,89 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
  */
 export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 	return resolveConfig({ ...input, readOnly: true });
+}
+
+const JEV_CONFIG_FIELDS: Record<string, true> = {
+	enabled: true,
+	backend: true,
+	model: true,
+	apiKeyEnv: true,
+	timeoutMs: true,
+	maxRetries: true,
+};
+
+/** Validate and normalize the `jev` config section. */
+export function normalizeJevConfig(raw: unknown): JevCliConfig {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'jev' must be an object or false");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (JEV_CONFIG_FIELDS[key] !== true) {
+			throw new ConfigError(`jev.${key} is not a recognized field`);
+		}
+	}
+	const out: JevCliConfig = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError("jev.enabled must be a boolean");
+		out.enabled = record.enabled;
+	}
+	if (record.backend !== undefined) {
+		const backend = record.backend;
+		if (typeof backend !== "string" || !JEV_BACKENDS.some((known) => known === backend)) {
+			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKENDS.join(", ")}`);
+		}
+		// Narrowed by the membership check above.
+		out.backend = backend as JevBackend;
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || record.model.trim().length === 0) {
+			throw new ConfigError("jev.model must be a non-empty string");
+		}
+		out.model = record.model.trim();
+	}
+	if (record.apiKeyEnv !== undefined) {
+		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
+			throw new ConfigError("jev.apiKeyEnv must be an environment variable name");
+		}
+		out.apiKeyEnv = record.apiKeyEnv;
+	}
+	if (record.timeoutMs !== undefined) {
+		if (
+			typeof record.timeoutMs !== "number" ||
+			!Number.isInteger(record.timeoutMs) ||
+			record.timeoutMs < 1000 ||
+			record.timeoutMs > 120000
+		) {
+			throw new ConfigError("jev.timeoutMs must be an integer between 1000 and 120000");
+		}
+		out.timeoutMs = record.timeoutMs;
+	}
+	if (record.maxRetries !== undefined) {
+		if (
+			typeof record.maxRetries !== "number" ||
+			!Number.isInteger(record.maxRetries) ||
+			record.maxRetries < 0 ||
+			record.maxRetries > 5
+		) {
+			throw new ConfigError("jev.maxRetries must be an integer between 0 and 5");
+		}
+		out.maxRetries = record.maxRetries;
+	}
+	return out;
+}
+
+/**
+ * Map the validated `jev` config section onto the agent option. Absent stays
+ * absent (tool disabled); `false` and `enabled: false` are the agent opt-out.
+ */
+function buildJevAgentOption(raw: JevCliConfig | false | undefined): AutoRAGAgentOptions["jev"] {
+	if (raw === undefined) return undefined;
+	if (raw === false) return false;
+	const normalized = normalizeJevConfig(raw);
+	if (normalized.enabled === false) return false;
+	const { enabled: _omitJevEnabled, ...fields } = normalized;
+	return fields;
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1058,6 +1168,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	opts.jev = buildJevAgentOption(config.jev);
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
