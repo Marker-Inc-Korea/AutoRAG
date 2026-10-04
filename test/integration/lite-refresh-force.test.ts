@@ -44,6 +44,7 @@ describe("model-free full refresh", () => {
 			minSync: { binaryPath: binary, workspacePath: join(root, ".autorag", "minsync"), autoInstall: false },
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			dupey: false,
 			excludeExactDuplicates: false,
 		});

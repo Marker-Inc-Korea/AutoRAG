@@ -141,6 +141,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: {
 				binaryPath: minsyncBinary,
 				workspacePath: minsyncWorkspace,
@@ -171,6 +172,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: {
 				binaryPath: minsyncBinary,
 				workspacePath: minsyncWorkspace,
@@ -193,6 +195,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { binaryPath: missingBinary, workspacePath: minsyncWorkspace },
 		});
 

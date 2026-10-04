@@ -119,9 +119,10 @@ describe("parseArgs", () => {
 });
 
 describe("parseMethodFlag", () => {
-	it("accepts everything and includes it in all", () => {
+	it("accepts everything and fsearch and includes them in all", () => {
 		expect(parseMethodFlag("everything,parsed")).toEqual(["parsed", "everything"]);
-		expect(parseMethodFlag("all")).toEqual(["parsed", "minsync", "datasources", "jikji", "everything"]);
+		expect(parseMethodFlag("fsearch")).toEqual(["fsearch"]);
+		expect(parseMethodFlag("all")).toEqual(["parsed", "minsync", "datasources", "jikji", "everything", "fsearch"]);
 		expect(() => parseMethodFlag("evrything")).toThrow(/everything/);
 	});
 });
