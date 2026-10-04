@@ -57,6 +57,25 @@ interface EverythingRequest {
 	readonly maxResults?: number;
 }
 
+interface FSearchRequest {
+	readonly query: string;
+	readonly path?: string;
+	readonly matchPath?: boolean;
+	readonly matchCase?: boolean;
+	readonly kind?: "files" | "folders";
+	readonly offset?: number;
+	readonly maxResults?: number;
+}
+
+interface FSearchEntry {
+	readonly path: string;
+	readonly type: "file" | "folder";
+}
+
+interface FSearchCall {
+	readonly request: FSearchRequest;
+}
+
 interface EverythingEntry {
 	readonly path: string;
 	readonly type: "file" | "folder";
@@ -74,6 +93,8 @@ interface FakeOptions {
 	readonly everything?: unknown;
 	/** Dynamic Everything provider seam; wins over `everything` when both are set. */
 	readonly everythingProvider?: (request: EverythingRequest) => unknown | Promise<unknown>;
+	/** Dynamic FSearch provider seam; wins over the default result. */
+	readonly fsearchProvider?: (request: FSearchRequest) => unknown | Promise<unknown>;
 	/** Injected Dupey scanner seam; the server forwards `config.dupey` verbatim. */
 	readonly dupey?: unknown;
 	readonly datasources?: readonly unknown[];
@@ -85,9 +106,11 @@ function fakeLite(options: FakeOptions): {
 	lite: AutoRAGLite;
 	searchCalls: SearchCall[];
 	everythingCalls: EverythingCall[];
+	fsearchCalls: FSearchCall[];
 } {
 	const searchCalls: SearchCall[] = [];
 	const everythingCalls: EverythingCall[] = [];
+	const fsearchCalls: FSearchCall[] = [];
 	// Unchecked cast: the fake implements only the methods the MCP surface calls.
 	const lite = {
 		config: {
@@ -144,9 +167,15 @@ function fakeLite(options: FakeOptions): {
 			if (options.everythingProvider !== undefined) return await options.everythingProvider(typed);
 			return options.everything ?? { ok: true, results: [] };
 		},
+		searchFsearch: async (request: unknown) => {
+			const typed = request as FSearchRequest;
+			fsearchCalls.push({ request: typed });
+			if (options.fsearchProvider !== undefined) return await options.fsearchProvider(typed);
+			return { ok: true, backend: "fsearch-cli", results: [] };
+		},
 		refresh: async () => ({ ok: true }),
 	} as unknown as AutoRAGLite;
-	return { lite, searchCalls, everythingCalls };
+	return { lite, searchCalls, everythingCalls, fsearchCalls };
 }
 
 /**
@@ -159,6 +188,19 @@ function pagingEverything(universe: readonly EverythingEntry[]) {
 		const offset = request.offset ?? 0;
 		const max = request.maxResults ?? universe.length;
 		return { ok: true, results: universe.slice(offset, offset + max) };
+	};
+}
+
+function pagingFsearch(universe: readonly FSearchEntry[]) {
+	return (request: FSearchRequest) => {
+		const offset = request.offset ?? 0;
+		const max = request.maxResults ?? universe.length;
+		return {
+			ok: true,
+			backend: "fsearch-cli",
+			total: universe.length,
+			results: universe.slice(offset, offset + max),
+		};
 	};
 }
 
@@ -298,18 +340,28 @@ describe("AutoRAG Lite MCP server", () => {
 		await server.close();
 	});
 
-	it("searches configured file roots on non-Windows platforms via the filesystem walker", async () => {
-		const docs = mkdtempSync(join(tmpdir(), "autorag-mcp-docs-"));
+	it("routes macOS file search through FSearch", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-docs-")));
 		roots.push(docs);
-		writeFileSync(join(docs, "refund-policy.md"), "Director approval is required.\n");
-		const { lite, everythingCalls } = fakeLite({ workspacePath: workspace(true), searchPaths: [docs] });
-		// Pin the non-Windows backend so the walker is exercised on every CI OS.
+		const refund = join(docs, "refund-policy.md");
+		writeFileSync(refund, "Director approval is required.\n");
+		const { lite, fsearchCalls } = fakeLite({
+			workspacePath: workspace(true),
+			searchPaths: [docs],
+			fsearchProvider: async () => ({
+				ok: true,
+				backend: "fsearch-cli",
+				results: [{ path: refund, type: "file" }],
+				total: 1,
+			}),
+		});
 		const { client, server } = await connectedServer(lite, { platform: "darwin" });
 		const result = await client.callTool({ name: "autorag.search.files", arguments: { query: "refund" } });
 		expect(result.isError).not.toBe(true);
-		expect(result.structuredContent).toMatchObject({ ok: true, backend: "filesystem" });
-		expect(hasFieldValue(result.structuredContent, "path", realpathSync(join(docs, "refund-policy.md")))).toBe(true);
-		expect(everythingCalls).toHaveLength(0);
+		expect(result.structuredContent).toMatchObject({ ok: true, backend: "fsearch-cli" });
+		expect(hasFieldValue(result.structuredContent, "path", refund)).toBe(true);
+		expect(fsearchCalls).toHaveLength(1);
+		expect(fsearchCalls[0]?.request).toMatchObject({ query: "refund" });
 		await client.close();
 		await server.close();
 	});
@@ -419,13 +471,20 @@ describe("AutoRAG Lite MCP server", () => {
 		await server.close();
 	});
 
-	it("paginates filesystem results with a lookahead slot", async () => {
+	it("paginates FSearch results with a lookahead slot", async () => {
 		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-page-")));
 		roots.push(docs);
-		for (const name of ["report-1.txt", "report-2.txt", "report-3.txt"]) {
-			writeFileSync(join(docs, name), "x\n");
-		}
-		const { lite } = fakeLite({ workspacePath: workspace(true), searchPaths: [docs] });
+		for (const name of ["report-1.txt", "report-2.txt", "report-3.txt"]) writeFileSync(join(docs, name), "x\n");
+		const { lite } = fakeLite({
+			workspacePath: workspace(true),
+			searchPaths: [docs],
+			fsearchProvider: pagingFsearch(
+				["report-1.txt", "report-2.txt", "report-3.txt"].map((name) => ({
+					path: join(docs, name),
+					type: "file" as const,
+				})),
+			),
+		});
 		const { client, server } = await connectedServer(lite, { platform: "darwin" });
 
 		const first = await client.callTool({
@@ -455,7 +514,7 @@ describe("AutoRAG Lite MCP server", () => {
 		await server.close();
 	});
 
-	it("excludes configured paths, internal directories, and symlinks from filesystem results", async () => {
+	it("excludes configured paths, internal directories, and symlinks from FSearch results", async () => {
 		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-excl-")));
 		roots.push(docs);
 		const keep = join(docs, "report-keep.txt");
@@ -477,6 +536,16 @@ describe("AutoRAG Lite MCP server", () => {
 			workspacePath: workspace(true),
 			searchPaths: [docs],
 			excludePaths: [privateDir],
+			fsearchProvider: async () => ({
+				ok: true,
+				backend: "fsearch-cli",
+				results: [
+					{ path: keep, type: "file" },
+					{ path: join(privateDir, "report-secret.txt"), type: "file" },
+					{ path: join(gitDir, "report-git.txt"), type: "file" },
+					...(symlinked ? [{ path: join(docs, "report-link.txt"), type: "file" as const }] : []),
+				],
+			}),
 		});
 		const { client, server } = await connectedServer(lite, { platform: "darwin" });
 		const result = await client.callTool({ name: "autorag.search.files", arguments: { query: "report" } });

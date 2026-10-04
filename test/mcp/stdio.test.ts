@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, it } from "vitest";
 import { writeFakeDupeyExecutable } from "../helpers/fake-dupey.ts";
+import { writeFakeFSearchExecutable } from "../helpers/fake-fsearch.ts";
 import { writeFakeMinSyncExecutable } from "../helpers/fake-minsync.ts";
 
 function makeFixture() {
@@ -20,6 +21,7 @@ function makeFixture() {
 	// resolver's platform name to make the e2e independent of an installed minsync.
 	const binDir = join(root, "bin");
 	mkdirSync(binDir, { recursive: true });
+	writeFakeFSearchExecutable(binDir, join(docs, "refund.md"));
 	writeFakeMinSyncExecutable(binDir);
 	writeFakeDupeyExecutable(binDir);
 	const config = join(root, "config.json");
@@ -35,7 +37,7 @@ function makeFixture() {
 			},
 			jikji: false,
 			everything: false,
-			fsearch: false,
+			fsearch: { binaryPath: join(binDir, process.platform === "win32" ? "fsearch-cli.exe" : "fsearch-cli") },
 			// Spotlight needs no external install, so a configured skill yields a
 			// dynamic datasource tool without touching the network or a binary.
 			datasources: { spotlight: { enabled: true } },

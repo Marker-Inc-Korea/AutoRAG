@@ -58,7 +58,7 @@ STDIO 서버의 stdout은 MCP protocol 전용입니다. 디버그 로그는 stde
 |---|---|---|
 | `autorag.status` | 인덱스 상태와 freshness 조회 | 예 |
 | `autorag.search` | 설정된 corpus를 선택적으로 검색 | 예 |
-| `autorag.search.files` | OS에 맞는 파일/폴더 이름 검색: Windows는 bundled Everything, macOS/Linux는 configured-root filesystem walker (내용 미열람, literal substring) | 예 |
+| `autorag.search.files` | OS에 맞는 파일/폴더 이름 검색: Windows는 bundled Everything, macOS/Linux는 `fsearch-cli`/FSearch index (binary 부재 시 bounded walk fallback) (내용 미열람, literal substring) | 예 |
 | `autorag.datasources.list` | 권한이 부여된 datasource catalog 조회 | 예 |
 | `autorag.datasources.get` | datasource 하나의 catalog 항목 조회 | 예 |
 | `autorag.duplicates` | 설정된 검색 root의 exact/near 중복 문서 family를 Dupey로 스캔 | 예 |
@@ -141,18 +141,18 @@ STDIO 서버의 stdout은 MCP protocol 전용입니다. 디버그 로그는 stde
 }
 ```
 
-- 하나의 portable tool입니다. 서버가 실행 OS를 감지해 backend를 자동 선택합니다: Windows에서는 workspace별로 격리된 bundled voidtools Everything index를, macOS/Linux에서는 설정된 root를 직접 순회하는 filesystem walker를 사용합니다(외부 `fsearch` 같은 별도 binary가 아닙니다).
-- `query`는 정규식이 아니라 literal substring으로 취급됩니다. Windows에서는 이 literal을 escape해 Everything regex(`regex: true`)로 변환하므로, 어느 OS에서도 동일하게 substring 일치합니다. wildcards/`ext:`/`dm:` 같은 Everything 전용 문법은 tool 입력으로 노출되지 않습니다.
-- `root`는 config의 searchPath 또는 그 안의 실제 하위 디렉터리만 선택할 수 있습니다. realpath 기반 containment로 검증하므로 root 밖으로 범위를 넓힐 수 없고, `excludePaths`와 내부 디렉터리(symlink escape, `.git`, `.autorag` 등)는 결과에서 제외됩니다.
-- `matchPath`가 `true`이면 파일 이름 대신 검색 root 기준 상대 경로에 대해 일치시킵니다.
-- `kind`는 `"files"` 또는 `"folders"`로 결과를 좁힙니다.
-- `maxResults`/`offset`은 권한 필터링 이후 페이지에 적용되며, lookahead 한 칸으로 `truncated`를 판정합니다.
-- 이 tool은 **파일 내용을 읽지 않습니다.** 디렉터리 목록과 이름만 조회합니다.
-- parsed mirror refresh가 없어도 동작합니다. 이름 검색은 index readiness에 의존하지 않습니다.
-- 결과 형식은 `{ ok, backend, results, truncated, diagnostics }`입니다. `backend` discriminator는 `"filesystem"` 또는 `"everything"`이며, `results`의 각 항목은 `{ path, type }`입니다.
-- Windows에서 Everything provider가 비활성/실패하면 filesystem walker로 **조용히 대체하지 않고** `{ ok: false, backend: "everything", reason, message }`를 `isError: true`로 반환합니다. platform이 Windows가 아니면(예: 테스트 override) filesystem backend가 선택됩니다.
-- root가 없거나 범위를 벗어나면 빈 결과와 warning diagnostic을 반환하며, 임의의 전역 `/` 스캔으로 대체하지 않습니다.
-- Everything은 관리자 권한이나 서비스 설치를 요구하지 않는 사용자 수준 instance입니다.
+	- 하나의 portable tool입니다. 서버가 실행 OS를 감지해 backend를 자동 선택합니다: Windows에서는 workspace별로 격리된 bundled voidtools Everything index를, macOS/Linux에서는 기존 `FSearchClient`를 통해 `fsearch-cli`/FSearch per-workspace index를 사용합니다. `fsearch-cli`가 없을 때만 클라이언트 내부의 bounded filesystem walk로 degrade합니다.
+	- `query`는 MCP 표면에서 literal substring으로 취급됩니다. macOS/Linux에서는 literal을 escaped regex로 `fsearch-cli`에 전달하고, Windows에서도 같은 literal semantics를 유지합니다. FSearch 자체 query language를 MCP 입력으로 노출하지 않습니다.
+	- `root`는 config의 searchPath 또는 그 안의 실제 하위 디렉터리만 선택할 수 있습니다. realpath 기반 containment로 검증하므로 root 밖으로 범위를 넓힐 수 없고, `excludePaths`와 내부 디렉터리(symlink escape, `.git`, `.autorag` 등)는 결과에서 제외됩니다.
+	- `matchPath`가 `true`이면 파일 이름 대신 검색 root 기준 상대 경로에 대해 일치시킵니다.
+	- `kind`는 `"files"` 또는 `"folders"`로 결과를 좁힙니다.
+	- `maxResults`/`offset`은 provider 결과를 scope/exclusion filtering한 뒤 페이지에 적용되며 lookahead 한 칸으로 `truncated`를 판정합니다.
+	- 이 tool은 파일 내용을 읽지 않습니다. 디렉터리 목록과 이름/metadata만 조회합니다.
+	- parsed mirror refresh가 없어도 동작하지만, FSearch index가 아직 없으면 FSearch client가 refresh/index 경로를 통해 생성하거나 binary 부재 시 bounded walk로 degrade합니다.
+	- 결과 형식은 `{ ok, backend, results, truncated, diagnostics }`입니다. `backend` discriminator는 `"fsearch-cli"`, `"walk"`, 또는 `"everything"`입니다.
+	- Windows에서 Everything provider가 실패하면 filesystem/FSearch로 조용히 대체하지 않고 `{ ok: false, backend: "everything", reason, message }`를 `isError: true`로 반환합니다.
+	- root가 없거나 범위를 벗어나면 빈 결과와 warning diagnostic을 반환하며, 임의의 전역 `/` 스캔으로 대체하지 않습니다.
+	- Everything은 관리자 권한이나 서비스 설치를 요구하지 않는 사용자 수준 instance입니다. FSearch는 기존 라이선스 정책에 따라 별도 설치된 `fsearch-cli`를 별도 process로 실행합니다.
 
 ## Datasource 목록 조회
 
@@ -226,7 +226,7 @@ AUTORAG_MCP_TOOLS=autorag.status,autorag.search,autorag.datasources.list autorag
 
 ## 쓰기 범위와 보안
 
-- 원본 source document는 수정·이동·삭제하지 않습니다. `autorag.search.files`(Windows에서는 read-only Everything index, 그 외에는 filesystem walker)와 `autorag.duplicates`는 파일 내용을 읽지 않거나 이름/메타데이터만 read-only로 조회합니다.
+- 원본 source document는 수정·이동·삭제하지 않습니다. `autorag.search.files`는 Windows의 Everything 또는 macOS/Linux의 FSearch를 read-only로 사용하며, FSearch binary가 없는 경우에만 bounded walker로 degrade합니다. `autorag.duplicates`는 파일 내용을 read-only로 스캔합니다.
 - refresh가 쓰는 위치는 기존 AutoRAG Lite 계약에 따른 index/cache 영역입니다.
 - config는 `AUTORAG_CONFIG` 또는 기존 AutoRAG config 탐색 규칙으로 결정됩니다.
 - MCP tool argument로 arbitrary workspace나 arbitrary file path를 받지 않습니다. 파일 검색의 `root`는 설정된 root 안으로만 한정됩니다.
@@ -253,7 +253,7 @@ AUTORAG_MCP_TOOLS=autorag.status,autorag.search,autorag.datasources.list autorag
 }
 ```
 
-protocol 오류와 tool 실행 오류를 구분해 처리하십시오. `index-not-ready`, `stale-index`, `invalid-selection`, `search-failed`, `refresh-failed`, `datasource-not-found`, `duplicates-failed`는 모델이 다음 tool call을 결정할 수 있도록 반환됩니다. `autorag.search.files`의 Everything backend는 platform/검색 실패를 구조화된 `{ ok: false, backend: "everything", reason, message }`로 반환하며, 이때에도 filesystem backend로 자동 대체하지 않습니다.
+protocol 오류와 tool 실행 오류를 구분해 처리하십시오. `index-not-ready`, `stale-index`, `invalid-selection`, `search-failed`, `refresh-failed`, `datasource-not-found`, `duplicates-failed`는 모델이 다음 tool call을 결정할 수 있도록 반환됩니다. `autorag.search.files`는 OS별 backend 실패를 구조화된 `{ ok: false, backend, reason, message }`로 반환하며, Windows Everything 실패를 FSearch/walker로 자동 대체하지 않습니다.
 
 ## 검증
 

@@ -789,6 +789,7 @@ export class AutoRAGAgent {
 				...(options.fsearch ?? {}),
 				root: this.workspaceProjectRoot,
 				folders: this.searchPaths,
+				excludeFolders: this.excludePaths,
 			});
 			if (fsearchClient.isSupported()) this.fsearchClient = fsearchClient;
 		}

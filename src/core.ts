@@ -17,6 +17,7 @@ import {
 } from "./agent/search-documents.ts";
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
 import type { EverythingSearchRequest, EverythingSearchResult } from "./everything/index.ts";
+import type { FSearchSearchRequest, FSearchSearchResult } from "./fsearch/index.ts";
 import type { MemorySchemaV4 } from "./memory/memory.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import type { MinSyncSyncResult } from "./minsync/types.ts";
@@ -134,6 +135,11 @@ export class AutoRAGLite {
 	 */
 	searchEverything(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
 		return this.agent.searchEverything(request);
+	}
+
+	/** Search the existing macOS/Linux FSearch client through the model-free provider. */
+	searchFsearch(request: FSearchSearchRequest): Promise<FSearchSearchResult> {
+		return this.agent.searchFsearch(request);
 	}
 
 	/** Retrieve merged results without entering the model-backed agent loop. */

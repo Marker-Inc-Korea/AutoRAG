@@ -53,7 +53,7 @@ const refreshInput = z
 	.strictObject({
 		force: z.boolean().optional(),
 		methods: z
-			.array(z.enum(["parsed", "minsync", "datasources", "jikji", "everything"]))
+			.array(z.enum(["parsed", "minsync", "datasources", "jikji", "everything", "fsearch"]))
 			.min(1)
 			.optional(),
 	})
@@ -141,7 +141,6 @@ async function searchConfiguredFileNames(
 	},
 	platform: NodeJS.Platform,
 ): Promise<object> {
-	if (platform !== "win32") return searchFileNames(lite.config.searchPaths, request, lite.config.excludePaths ?? []);
 	const scopedRoot =
 		request.root === undefined
 			? undefined
@@ -149,7 +148,7 @@ async function searchConfiguredFileNames(
 	if (request.root !== undefined && scopedRoot === undefined) {
 		return {
 			ok: true,
-			backend: "everything",
+			backend: platform === "win32" ? "everything" : "fsearch-cli",
 			results: [],
 			truncated: false,
 			diagnostics: [
@@ -162,6 +161,51 @@ async function searchConfiguredFileNames(
 			],
 		};
 	}
+	if (platform === "darwin" || platform === "linux") {
+		const maxResults = Math.min(request.maxResults ?? 100, 1000);
+		const requestedEnd = (request.offset ?? 0) + maxResults + 1;
+		const filtered: { path: string; type: "file" | "folder" }[] = [];
+		let providerOffset = 0;
+		let providerHasMore = true;
+		let backend: "fsearch-cli" | "walk" = "fsearch-cli";
+		let note: string | undefined;
+		while (providerHasMore && filtered.length < requestedEnd) {
+			const result = await lite.searchFsearch({
+				...request,
+				query: escapeEverythingRegexLiteral(request.query),
+				regex: true,
+				path: scopedRoot,
+				offset: providerOffset,
+				maxResults: maxResults + 1,
+			});
+			if (!result.ok) return { ...result, backend: "fsearch-cli" };
+			backend = result.backend;
+			note = result.note;
+			const batch = result.results.map(({ path, type }) => ({ path, type }));
+			const allowed = await filterFileNameSearchMatches(
+				scopedRoot === undefined ? lite.config.searchPaths : [scopedRoot],
+				batch,
+				lite.config.excludePaths ?? [],
+			);
+			filtered.push(...allowed);
+			providerOffset += batch.length;
+			providerHasMore = batch.length === Math.min(maxResults + 1, 1000);
+			if (batch.length === 0) break;
+		}
+		const offset = request.offset ?? 0;
+		return {
+			ok: true,
+			backend,
+			results: filtered.slice(offset, offset + maxResults),
+			truncated: filtered.length > offset + maxResults || providerHasMore,
+			diagnostics:
+				note === undefined
+					? []
+					: [{ code: "fsearch-degraded", severity: "warning", source: "fsearch", message: note }],
+		};
+	}
+
+	if (platform !== "win32") return searchFileNames(lite.config.searchPaths, request, lite.config.excludePaths ?? []);
 	const maxResults = Math.min(request.maxResults ?? 100, 1000);
 	const requestedEnd = (request.offset ?? 0) + maxResults + 1;
 	const filtered: { path: string; type: "file" | "folder" }[] = [];
@@ -386,8 +430,8 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 									...(configuredDupey.timeoutMs !== undefined ? { timeoutMs: configuredDupey.timeoutMs } : {}),
 									...(configuredDupey.run !== undefined ? { run: configuredDupey.run } : {}),
 								};
-					const roots = lite.config.searchPaths.map((path) => resolve(path));
-					const scans = await Promise.all(roots.map((root) => scanWithDupey(root, dupeyOptions)));
+					const roots = lite.config.searchPaths.map((path: string) => resolve(path));
+					const scans = await Promise.all(roots.map((root: string) => scanWithDupey(root, dupeyOptions)));
 					return jsonResult({
 						ok: true,
 						roots,
@@ -411,7 +455,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 			{
 				title: "Search Configured File Names",
 				description:
-					"Search file and folder names under configured roots. Uses Windows Everything on Windows and the configured-root filesystem walker elsewhere; never reads file contents.",
+					"Search file and folder names under configured roots. Uses Windows Everything on Windows and the existing fsearch-cli/FSearch index on macOS/Linux; only FSearch binary absence degrades to a bounded filesystem walk. Never reads file contents.",
 				inputSchema: fileSearchInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
