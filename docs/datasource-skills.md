@@ -95,8 +95,8 @@ The zero-configuration boundary is narrow:
 Embedding requests contain text and selected model/profile data only. AutoRAG
 does not send archive IDs, source paths, credentials, or native store paths to
 the gateway. If the runtime is unavailable, a datasource keeps its native
-lexical/FTS lane where supported and reports a diagnostic; it does not silently
-switch to a remote embedding service.
+lexical/FTS lane where supported and reports a diagnostic; a remote embedding
+service is used only when the operator explicitly configures one.
 ## Contract
 
 A datasource skill is both:
@@ -115,6 +115,53 @@ RetrievalMethodRegistry
 ```
 
 A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
+
+Search-tool calls earn a weak positive `followup` memory signal only when they
+complete without a tool error and return nonempty evidence. Empty, unavailable,
+failed, or aborted searches earn no signal and no negative penalty. Partial
+multi-source searches retain their results and diagnostics but earn no aggregate
+credit: `retrieval-method-failed`, `minsync-unavailable`, `jikji-find-failed`,
+and `jikji-unavailable` diagnostics indicate failure even at warning severity.
+Error-severity diagnostics also withhold credit; other informational or warning
+diagnostics do not. There is no reliable per-method attribution for crediting
+healthy members of an incomplete aggregate.
+
+Current tools require a finite positive result count (Jikji uses its answer-path
+count). For compatibility, legacy details without that count may qualify through
+a nonempty source identity in `sources` or `results`. This fallback never overrides
+an explicit zero or invalid count. Calls still count toward the search budget and
+retain their retrieval trace, and explicit user feedback is unchanged.
+
+## Connector sync/index timeouts
+
+Connector `sync`/`index` steps are not interactive, so AutoRAG gives them a
+30-minute budget (`connector.indexTimeoutMs`) instead of the 60-second
+interactive default (`connector.timeoutMs`) used by `search`, `doctor`, and chunk
+reads. Measured first-run costs on a real archive:
+
+| Connector | First-run workload | Measured |
+|---|---|---|
+| `mailcrawl` | Gmail INBOX full sync (~2,300 messages) + native index | ~12 min |
+| `kakao` (lazykatok) | Semantic index over a ~50k-message archive (9,373 units) | ~11 min |
+
+A step killed by its timeout does not commit its cursor, so the next refresh
+restarts from scratch instead of resuming — the failure loops rather than makes
+progress. Raise the budget per connection:
+
+```json
+{
+  "datasources": {
+    "family-kakao": {
+      "type": "kakao",
+      "connector": { "binaryPath": "lazykatok", "indexTimeoutMs": 3600000 }
+    }
+  }
+}
+```
+
+`indexTimeoutMs` takes precedence, then `timeoutMs`, then the 30-minute default.
+A `sync`/`index` diagnostic ending in `timeout` carries a hint naming
+`connector.indexTimeoutMs` and the restart behaviour.
 
 ## mailcrawl
 
@@ -302,7 +349,9 @@ required. `slacrawl`'s `search` and `messages` read paths return nothing unless
 a workspace is named explicitly, even when the archive and its FTS index hold
 matching rows — an unscoped search looks exactly like an empty archive, with no
 diagnostic. `syncSource` is likewise required: `slacrawl sync` without
-`--source` fails and surfaces as `datasource-index-failed`.
+`--source` fails and surfaces as `datasource-index-failed`. `timeoutMs` bounds
+the FTS search; the first `sync` (a wiretap import of the whole cache) uses
+`indexTimeoutMs`, default 30 minutes, so it is not cut off at 60 seconds.
 
 Initialize and refresh the local mirror with:
 
@@ -480,6 +529,11 @@ Rules:
   falls back to the CLI's config file, whose default adapter is `fixture` and fails without a
   JSONL path; set `connector.source` to use another adapter.
 - Remote embedding egress configuration is rejected before spawning `lazykatok`.
+- `connector.indexTimeoutMs` (default 30 min) bounds `sync`/`index`;
+  `connector.timeoutMs` (default 60 s) bounds interactive reads
+  (`doctor`, `search`, chunk lookups). A first semantic index over a large
+  archive was measured at ~11 minutes, so a timed-out `index` would otherwise
+  restart from scratch on every refresh.
 - Lazykatok stdout/stderr and thrown error text surface as datasource diagnostics.
 
 Example:

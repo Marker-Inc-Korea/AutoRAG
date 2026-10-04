@@ -17,6 +17,7 @@ import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/ski
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import { DEFAULT_RERANK_API_KEY_ENV, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_PROVIDER } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
@@ -78,6 +79,29 @@ export interface WebSearchCliConfig {
 				timeoutSeconds?: number;
 		  }
 		| false;
+}
+
+/**
+ * Post-merge reranking config. Routes merged evidence through a dedicated
+ * rerank model. `provider` is `openrouter` today; `model` is the OpenRouter
+ * wire id (default `voyageai/rerank-3-lite`). Secrets never appear here — only
+ * the environment-variable name that holds the provider API key.
+ */
+export interface RerankConfig {
+	/** `false` disables reranking. Missing means enabled when the block is present. */
+	enabled?: boolean;
+	/** Provider id. @default "openrouter" */
+	provider?: string;
+	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	model?: string;
+	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" */
+	apiKeyEnv?: string;
+	/** Override the provider base URL (e.g. a gateway). */
+	baseUrl?: string;
+	/** Return only the top N merged results. Omitted ⇒ all distinct results are reordered. */
+	topN?: number;
+	/** Per-request timeout in milliseconds. */
+	timeoutMs?: number;
 }
 
 export interface P2pConfig {
@@ -151,6 +175,8 @@ export interface CliConfig {
 		  }
 		| false;
 	webSearch?: WebSearchCliConfig;
+	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
+	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -956,6 +982,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
 	}
 	config.p2p = normalizeP2pConfig(file.p2p);
+	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
 	return config;
 }
 
@@ -1032,6 +1059,63 @@ function buildWebSearchAgentOption(
 	return out as AutoRAGAgentOptions["webSearch"] & object;
 }
 
+const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKeyEnv", "baseUrl", "topN", "timeoutMs"]);
+
+/** Normalize and validate the `rerank` config section, filling in defaults. */
+export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig | false {
+	if (raw === false) return false;
+	const out: RerankConfig = {
+		provider: DEFAULT_RERANK_PROVIDER,
+		model: DEFAULT_RERANK_MODEL,
+		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+	};
+	if (raw === undefined || raw === null) return out;
+	if (typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ConfigError(`${path} must be an object or false`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
+	}
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError(`${path}.enabled must be a boolean`);
+		out.enabled = record.enabled;
+	}
+	if (record.provider !== undefined) {
+		if (typeof record.provider !== "string" || record.provider.trim() === "") {
+			throw new ConfigError(`${path}.provider must be a non-empty string`);
+		}
+		out.provider = record.provider.trim();
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || record.model.trim() === "") {
+			throw new ConfigError(`${path}.model must be a non-empty string`);
+		}
+		out.model = record.model.trim();
+	}
+	if (record.apiKeyEnv !== undefined) {
+		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
+			throw new ConfigError(`${path}.apiKeyEnv must match ${API_KEY_ENV_PATTERN}`);
+		}
+		out.apiKeyEnv = record.apiKeyEnv;
+	}
+	if (record.baseUrl !== undefined) {
+		if (typeof record.baseUrl !== "string" || record.baseUrl.trim() === "") {
+			throw new ConfigError(`${path}.baseUrl must be a non-empty string`);
+		}
+		out.baseUrl = record.baseUrl.trim();
+	}
+	for (const field of ["topN", "timeoutMs"] as const) {
+		const value = record[field];
+		if (value === undefined) continue;
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			throw new ConfigError(`${path}.${field} must be a positive integer`);
+		}
+		out[field] = value;
+	}
+	return out;
+}
+
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -1059,6 +1143,19 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	if (config.rerank !== undefined) {
+		opts.rerank =
+			config.rerank === false || config.rerank.enabled === false
+				? false
+				: {
+						...(config.rerank.provider !== undefined ? { provider: config.rerank.provider } : {}),
+						...(config.rerank.model !== undefined ? { model: config.rerank.model } : {}),
+						...(config.rerank.apiKeyEnv !== undefined ? { apiKeyEnv: config.rerank.apiKeyEnv } : {}),
+						...(config.rerank.baseUrl !== undefined ? { baseUrl: config.rerank.baseUrl } : {}),
+						...(config.rerank.topN !== undefined ? { topN: config.rerank.topN } : {}),
+						...(config.rerank.timeoutMs !== undefined ? { timeoutMs: config.rerank.timeoutMs } : {}),
+					};
+	}
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
@@ -1600,6 +1697,11 @@ export function writeDefaultConfig(
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
+	full.rerank = partial.rerank ?? {
+		provider: DEFAULT_RERANK_PROVIDER,
+		model: DEFAULT_RERANK_MODEL,
+		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
 	mkdirSync(dirname(path), { recursive: true });
