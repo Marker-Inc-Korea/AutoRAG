@@ -16,7 +16,8 @@ import type { CommandContext } from "./types.ts";
  * Model flags are folded into the generated config. A legacy
  * `autorag.config.json` in the current working directory may be migrated
  * non-destructively. An existing home config is not overwritten without
- * `--force`.
+ * `--force`, and `--force` only replaces an existing config when the caller
+ * selected the path explicitly (`--config` or `AUTORAG_CONFIG`).
  */
 export async function runInit(ctx: CommandContext): Promise<number> {
 	const flags = ctx.flags;
@@ -124,6 +125,7 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			force: flags.force === true,
 			atomicCreate: migratingLegacy,
 			cwd: ctx.cwd,
+			explicit: resolvedPath.explicit,
 		});
 	} catch (error) {
 		if (error instanceof ConfigError) {

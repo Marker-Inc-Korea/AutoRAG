@@ -88,8 +88,39 @@ Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
 5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' gateways and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
 6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
 
-The fixed live-E2E runner below is already isolated (clone-local `.autorag-e2e`), and `make test-linux` runs inside Docker. Prefer those over ad-hoc host runs. Moving live E2E and manual QA fully into Docker is tracked in #1743.
+The fixed live-E2E runner below is clone-local, but host execution still exposes the
+host process and filesystem to ad-hoc mistakes. Use the Docker entry points for the
+supported manual-QA boundary:
 
+```bash
+# Interactive manual-QA shell. Only the repository is mounted; host HOME is not.
+make qa-shell
+
+# Bootstrap the fixture root once, then run the live workflow in Docker.
+export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"
+node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"
+make e2e-live-docker E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT" E2E_DATASOURCES=local
+```
+
+The container sets an ephemeral `HOME`, `AUTORAG_HOME`, and `AUTORAG_CONFIG`,
+bind-mounts this clone at `/workspace`, and does not mount the host `~/.autorag`
+or native datasource stores. Only the model credential allowlist in `QA_MODEL_ENV`
+is forwarded. Live E2E defaults to the local native MinSync embedder; set
+`E2E_EMBEDDER=gateway` only when the Docker image has a compatible gateway
+runtime. Use `QA_PLATFORM` and `QA_MODEL_ENV` to select a supported architecture
+or credential allowlist.
+The live target keeps runner state inside the clone's `.autorag-e2e` directory;
+evidence remains in the mounted clone under `.omo/evidence`.
+
+`autorag init --force` also refuses to replace an existing implicit home config.
+Use `--config <path>` or `AUTORAG_CONFIG=<path>` when replacement is intentional.
+First-time implicit initialization remains allowed.
+
+The QA image is based on Ubuntu 24.04 so current Linux MinSync release assets
+run against the image's glibc; `make test-linux` continues to use the existing
+Java 17 CI image. Native-store lanes are expected to skip inside the isolated
+container unless their stores are deliberately provisioned inside it; never
+mount a real host home to make a lane pass.
 ## Releases
 
 Publishing the GitHub Release is not the announcement. People watching Discussions do not see the release feed. Every release also gets one Discussion in the **Announcements** category, with the same user-facing notes.

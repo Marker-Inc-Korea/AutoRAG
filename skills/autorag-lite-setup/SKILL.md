@@ -46,7 +46,9 @@ autorag lite init \
 ```
 
 `lite init` writes the configured model-free lifecycle config. Use `--force`
-only when intentionally replacing an existing config. Explicit user paths win;
+only when intentionally replacing an existing config, and target it with an
+explicit path (`--config` or `AUTORAG_CONFIG`); `--force` refuses to replace the
+implicit `~/.autorag/config.json`. Explicit user paths win;
 otherwise propose one to three document-dense roots and get approval before
 indexing. Supported parsed formats are `md`, `markdown`, `txt`, `text`, `pdf`,
 `docx`, `pptx`, `xlsx`, `xls`, `hwp`, `hwpx`, and `eml`. Legacy `.doc` is not

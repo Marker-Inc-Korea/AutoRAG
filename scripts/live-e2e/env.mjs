@@ -128,9 +128,15 @@ export function buildEnv(root) {
 		corpusDigest: computeCorpusDigest(rootReal),
 		gitCommitSha,
 		gitDirty,
-		embeddingModel: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+		embeddingModel:
+			process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native"
+				? "Qwen/Qwen3-Embedding-0.6B"
+				: "Qwen3-Embedding-0.6B-Q8_0.gguf",
 		embeddingDimension: 1024,
-		embeddingService: "autorag-gateway:qwen3-embedding-0.6b",
+		embeddingService:
+			process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native"
+				? "minsync-native:qwen3-embedding-0.6b"
+				: "autorag-gateway:qwen3-embedding-0.6b",
 		parserConfig: "default",
 		minSyncConfig: "default",
 	};
