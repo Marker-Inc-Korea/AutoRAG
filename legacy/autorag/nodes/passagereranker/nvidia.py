@@ -29,21 +29,36 @@ class NvidiaReranker(BasePassageReranker):
 				"or directly set it on the config YAML file."
 			)
 		self.invoke_url = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
-		self.session = aiohttp.ClientSession(loop=get_event_loop())
-		self.session.headers.update(
-			{"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
-		)
+		# Open the session lazily on the loop that runs the requests. aiohttp's loop=
+		# kwarg is a deprecated no-op, so a session created here would bind to whatever
+		# loop happens to exist at construction time instead of the request loop.
+		self._headers = {
+			"Authorization": f"Bearer {self.api_key}",
+			"Accept": "application/json",
+		}
+		self.session = None
+
+	def _ensure_session(self) -> aiohttp.ClientSession:
+		if self.session is None or self.session.closed:
+			self.session = aiohttp.ClientSession(headers=self._headers)
+		return self.session
 
 	def __del__(self):
-		if hasattr(self, "session"):
-			if not self.session.closed:
+		# Best-effort safety net. _pure closes the session on the request loop; scheduling
+		# a fire-and-forget close here is dropped during interpreter shutdown and aiohttp
+		# then warns about an unclosed session.
+		try:
+			session = getattr(self, "session", None)
+			if session is not None and not session.closed:
 				loop = get_event_loop()
-				if loop.is_running():
-					loop.create_task(self.session.close())
-				else:
-					loop.run_until_complete(self.session.close())
-			del self.session
-		super().__del__()
+				if not loop.is_running() and not loop.is_closed():
+					loop.run_until_complete(session.close())
+		except Exception:
+			pass
+		try:
+			super().__del__()
+		except Exception:
+			pass
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
@@ -88,21 +103,32 @@ class NvidiaReranker(BasePassageReranker):
 		if not queries:
 			return [], [], []
 
-		tasks = [
-			nvidia_rerank_pure(
-				self.session,
-				self.invoke_url,
-				model,
-				query,
-				document,
-				ids,
-				top_k,
-				truncate=truncate,
-			)
-			for query, document, ids in zip(queries, contents_list, ids_list)
-		]
 		loop = get_event_loop()
-		results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+
+		async def _run_batch():
+			# Create the session here, on the loop that runs the requests. aiohttp 3.13
+			# resolves the session loop from the running loop and rejects loop=.
+			session = self._ensure_session()
+			tasks = [
+				nvidia_rerank_pure(
+					session,
+					self.invoke_url,
+					model,
+					query,
+					document,
+					ids,
+					top_k,
+					truncate=truncate,
+				)
+				for query, document, ids in zip(queries, contents_list, ids_list)
+			]
+			try:
+				return await process_batch(tasks, batch_size=batch)
+			finally:
+				if not session.closed:
+					await session.close()
+
+		results = loop.run_until_complete(_run_batch())
 		if len(results) != len(queries):
 			raise AssertionError(
 				"NVIDIA rerank returned unexpected number of results. "
