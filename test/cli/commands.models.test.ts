@@ -49,4 +49,23 @@ describe("models commands", () => {
 		).toBe(1);
 		expect(stderr.join("\n")).toContain("hash mismatch");
 	});
+
+	it("lists chat models through the injected pi runtime lister as JSON", async () => {
+		const listModels = vi.fn(async () => [
+			{ provider: "openai", id: "gpt-4o", name: "GPT-4o", api: "openai-responses", available: true },
+		]);
+		const { ctx, stdout } = context(["list"], { json: true });
+		expect(await runModels(ctx, { listModels })).toBe(0);
+		expect(listModels).toHaveBeenCalledWith({});
+		const parsed = JSON.parse(stdout[0]) as { ok: boolean; action: string; count: number; models: unknown[] };
+		expect(parsed).toMatchObject({ ok: true, action: "list", count: 1 });
+		expect(parsed.models).toHaveLength(1);
+	});
+
+	it("forwards --provider and --available to the model lister", async () => {
+		const listModels = vi.fn(async () => []);
+		const { ctx } = context(["list"], { provider: "openai", available: true });
+		expect(await runModels(ctx, { listModels })).toBe(0);
+		expect(listModels).toHaveBeenCalledWith({ provider: "openai", available: true });
+	});
 });

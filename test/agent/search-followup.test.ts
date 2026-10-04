@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Agent, AgentEvent, AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentTool } from "@earendil-works/pi-agent-core";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,9 +79,8 @@ const skill: DatasourceSkill = {
 };
 
 interface Internals {
-	innerAgent: Agent;
+	innerAgent: { state: { tools: { name: string }[] } };
 	tools: AgentTool[];
-	lastQuery: string;
 	memory: RetrievalMemory;
 	searchToolCallCount: number;
 	retrievalTrace: SearchDocumentRetrievalTraceEntry[];
@@ -114,7 +113,7 @@ function setup(
 	const tool = typeof toolOrFactory === "function" ? toolOrFactory(agent) : toolOrFactory;
 	const internal = agent as unknown as Internals;
 	// Use the production tool wrappers with local provider fakes on every OS.
-	// Both Agent instances execute them normally, including error handling.
+	// The production session executes them normally, including error handling.
 	const index = internal.tools.findIndex((entry) => entry.name === tool.name);
 	if (index >= 0) internal.tools[index] = tool;
 	else internal.tools.push(tool);
@@ -250,7 +249,7 @@ const cases: { name: string; tool: () => AgentTool; positive: boolean; blank?: b
 	},
 ];
 
-// Exercise compatibility boundaries through both real Agent execution paths.
+// Exercise compatibility boundaries through the real session execution path.
 for (const resultCount of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, "1", null, undefined]) {
 	cases.push({
 		name: `explicit invalid/empty count ${String(resultCount)} cannot use legacy evidence`,
@@ -290,7 +289,7 @@ cases.push(
 	},
 );
 
-describe.each(["afterToolCall", "recordSearchToolEvent"] as const)("search followup via %s", (path) => {
+describe("search followup via recordSearchToolEvent", () => {
 	it.each(cases)("$name", async ({ name, tool: makeTool, positive, blank, error }) => {
 		const tool = makeTool();
 		const { agent, internal, registration } = setup(tool);
@@ -303,19 +302,11 @@ describe.each(["afterToolCall", "recordSearchToolEvent"] as const)("search follo
 			fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 		]);
 		const events: AgentEvent[] = [];
-		if (path === "afterToolCall") {
-			internal.lastQuery = query;
-			internal.innerAgent.subscribe((event) => {
-				events.push(event);
-			});
-			await internal.innerAgent.prompt(query);
-		} else {
-			agent.subscribe((event) => {
-				events.push(event);
-			});
-			await agent.searchDocuments(query);
-			expect(internal.searchToolCallCount).toBe(1);
-		}
+		agent.subscribe((event) => {
+			events.push(event);
+		});
+		await agent.searchDocuments(query);
+		expect(internal.searchToolCallCount).toBe(1);
 		const ends = events.filter(
 			(event): event is Extract<AgentEvent, { type: "tool_execution_end" }> =>
 				event.type === "tool_execution_end" && event.toolName === tool.name,
@@ -340,19 +331,17 @@ describe.each(["afterToolCall", "recordSearchToolEvent"] as const)("search follo
 		const persisted = new RetrievalMemory({ storagePath: join(root, "memory.json") });
 		persisted.load();
 		expect(persisted.getSchema().feedbackSignals).toEqual(signals);
-		if (path === "recordSearchToolEvent") {
-			const details = ends[0]?.result.details as
-				| { resultCount?: number; results?: SearchDocumentRetrievalTraceEntry["results"] }
-				| undefined;
-			if (Array.isArray(details?.results)) {
-				expect(internal.retrievalTrace).toEqual([
-					expect.objectContaining({
-						tool: tool.name,
-						resultCount: typeof details.resultCount === "number" ? details.resultCount : details.results.length,
-						results: details.results,
-					}),
-				]);
-			}
+		const details = ends[0]?.result.details as
+			| { resultCount?: number; results?: SearchDocumentRetrievalTraceEntry["results"] }
+			| undefined;
+		if (Array.isArray(details?.results)) {
+			expect(internal.retrievalTrace).toEqual([
+				expect.objectContaining({
+					tool: tool.name,
+					resultCount: typeof details.resultCount === "number" ? details.resultCount : details.results.length,
+					results: details.results,
+				}),
+			]);
 		}
 	});
 });
@@ -380,7 +369,7 @@ it("preserves Jikji provider diagnostics for empty packs and unavailable provide
 
 // Keep aggregation and the production wrapper in the path: a synthetic details
 // object alone cannot catch a wrapper that discards failed-root diagnostics.
-describe.each(["afterToolCall", "recordSearchToolEvent"] as const)("multi-root Jikji followup via %s", (path) => {
+describe("multi-root Jikji followup via recordSearchToolEvent", () => {
 	it.each(["spawn-error", "nonzero-exit", "aborted", "success"] as const)(
 		"preserves healthy evidence with second root outcome %s",
 		async (outcome) => {
@@ -423,15 +412,9 @@ describe.each(["afterToolCall", "recordSearchToolEvent"] as const)("multi-root J
 			const collect = (event: AgentEvent) => {
 				if (event.type === "tool_execution_end" && event.toolName === tool.name) ends.push(event);
 			};
-			if (path === "afterToolCall") {
-				internal.lastQuery = query;
-				internal.innerAgent.subscribe(collect);
-				await internal.innerAgent.prompt(query);
-			} else {
-				agent.subscribe(collect);
-				await agent.searchDocuments(query);
-				expect(internal.searchToolCallCount).toBe(1);
-			}
+			agent.subscribe(collect);
+			await agent.searchDocuments(query);
+			expect(internal.searchToolCallCount).toBe(1);
 			expect(ends).toHaveLength(1);
 			expect(ends[0]?.isError).toBe(false);
 			const details = ends[0]?.result.details as JikjiFindDetails;

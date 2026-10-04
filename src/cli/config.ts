@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { findEnvKeys, getEnvApiKey, getModel, getProviders } from "@earendil-works/pi-ai/compat";
+import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
+import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
@@ -1307,12 +1308,14 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 	};
 }
 
-function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefined {
-	if (!(getProviders() as readonly string[]).includes(reference.provider)) return undefined;
-	const catalog = getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
-	if (catalog === undefined) return undefined;
-	// The catalog entry is the base; only fields the config declares override it, so a
-	// configured endpoint keeps the catalog's reasoning, compat, thinking map, and limits.
+/**
+ * Merge a config model reference over the pi runtime catalog entry (built-in
+ * provider catalog plus `models.json`, custom, and extension providers). The
+ * catalog entry is the base; only fields the config declares override it, so a
+ * configured endpoint keeps the catalog's reasoning, compat, thinking map, and
+ * limits.
+ */
+function mergeCatalogModel(catalog: Model<Api>, reference: AgentModelConfig): Model<Api> {
 	return {
 		...catalog,
 		...(reference.name !== undefined ? { name: reference.name } : {}),
@@ -1325,36 +1328,83 @@ function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefine
 	};
 }
 
+/** Resolve a config model reference against the pi runtime catalog. */
+function resolveRuntimeCatalogModel(runtime: ModelRuntime, reference: AgentModelConfig): Model<Api> | undefined {
+	const catalog = runtime.getModel(reference.provider, reference.id) as Model<Api> | undefined;
+	if (catalog === undefined) return undefined;
+	return mergeCatalogModel(catalog, reference);
+}
+
 const UNKNOWN_MODEL_HINT =
 	"Add baseUrl (and optional api/apiKeyEnv) for an OpenAI-compatible endpoint outside the pi-ai catalog, or use a pi-ai catalog model id.";
 
-function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
-	const catalog = resolveCatalogModel(reference);
+function resolveRegisteredModel(runtime: ModelRuntime, reference: AgentModelConfig): Model<Api> {
+	const catalog = resolveRuntimeCatalogModel(runtime, reference);
 	if (catalog !== undefined) return catalog;
 	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
 	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 }
 
-function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
+function resolveBuiltInModel(runtime: ModelRuntime, reference: AgentModelConfig | undefined): Model<Api> | undefined {
 	if (reference === undefined) return undefined;
-	const catalog = resolveCatalogModel(reference);
+	const catalog = resolveRuntimeCatalogModel(runtime, reference);
 	if (catalog !== undefined) return catalog;
 	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
-	if ((getProviders() as readonly string[]).includes(reference.provider)) {
+	if (runtime.getProvider(reference.provider) !== undefined) {
 		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 	}
 	return undefined;
 }
 
-export function resolveModel(config: CliConfig): Model<Api> {
+/**
+ * Extra resolution inputs beyond the local codex-runtime options. `agentDir`
+ * points at the pi agent home (`~/.pi/agent` by default) that owns
+ * `auth.json`, `models.json`, and `settings.json`.
+ */
+export interface ResolveAgentModelOptions extends LoadLocalAutoRAGModelOptions {
+	readonly agentDir?: string;
+	readonly cwd?: string;
+	/** Pre-built pi model runtime, for callers that already own one (and tests). */
+	readonly runtime?: ModelRuntime;
+}
+
+const modelRuntimeCache = new Map<string, Promise<ModelRuntime>>();
+
+function resolveAgentDir(options: ResolveAgentModelOptions): string {
+	return options.agentDir ?? getAgentDir();
+}
+
+/**
+ * Load the pi model runtime for an agent home. The runtime composes the
+ * built-in catalog with `models.json`, custom, and extension providers and
+ * reads stored credentials (`auth.json`, including OAuth). Network catalog
+ * refresh is disabled so model resolution stays fast and offline-safe.
+ */
+function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
+	const cached = modelRuntimeCache.get(agentDir);
+	if (cached !== undefined) return cached;
+	const created = ModelRuntime.create({
+		authPath: join(agentDir, "auth.json"),
+		modelsPath: join(agentDir, "models.json"),
+		allowModelNetwork: false,
+	});
+	modelRuntimeCache.set(agentDir, created);
+	created.catch(() => {
+		modelRuntimeCache.delete(agentDir);
+	});
+	return created;
+}
+
+export async function resolveModel(config: CliConfig, options: ResolveAgentModelOptions = {}): Promise<Model<Api>> {
 	if (!config.model) {
 		throw new ConfigError(
 			'No model configured. Provide --model-provider and --model-id on the command line, or set the "model" key (with provider and id) in the config file.',
 		);
 	}
-	return resolveRegisteredModel(config.model);
+	const runtime = options.runtime ?? (await getModelRuntime(resolveAgentDir(options)));
+	return resolveRegisteredModel(runtime, config.model);
 }
 
 export interface ResolvedAgentModel {
@@ -1374,7 +1424,7 @@ export type AgentModelResolutionSource =
 
 export interface AgentModelAuth {
 	readonly present: boolean;
-	readonly source: "env" | "local_runtime" | "catalog" | "none" | "unknown";
+	readonly source: "env" | "local_runtime" | "pi_auth" | "catalog" | "none" | "unknown";
 	readonly envName?: string;
 }
 
@@ -1398,119 +1448,116 @@ export interface ResolvedAgentModelDetailed {
 	readonly role: ResolvedAgentModelRole;
 }
 
-interface AgentModelCore {
-	readonly model: Model<Api>;
+interface ResolvedModelAuth {
 	readonly apiKey?: string;
 	readonly providerApiKeys?: Readonly<Record<string, string>>;
+	readonly present: boolean;
+	readonly source: AgentModelAuth["source"];
+	readonly envName?: string;
+}
+
+interface AgentModelCore {
+	readonly model: Model<Api>;
 	readonly modelRef: AgentModelConfig | undefined;
 	readonly fromLocal: boolean;
 	readonly configuredEndpoint: boolean;
 	readonly catalog: boolean;
 	readonly local: LocalAutoRAGModel | undefined;
-	readonly usesConfiguredEndpoint: boolean;
 	readonly env: NodeJS.ProcessEnv;
+	readonly auth: ResolvedModelAuth;
 }
 
-function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAGModelOptions = {}): AgentModelCore {
-	const modelRef = config.model;
-	const registered = resolveBuiltInModel(modelRef);
-	const needsLocal = modelRef === undefined || registered === undefined;
-	const localModelOptions = { ...localOptions, modelId: modelRef?.id };
-	const local = needsLocal ? loadLocalAutoRAGModel(localModelOptions) : undefined;
-	const model =
-		registered ??
-		(modelRef === undefined || modelRef.provider === local?.provider
-			? (local?.model as Model<Api>)
-			: resolveRegisteredModel(modelRef));
-
-	const configuredEndpoint = isConfiguredEndpoint(modelRef);
-	const usesConfiguredEndpoint = configuredEndpoint;
-
-	const env = localOptions.env ?? process.env;
-	const fromLocal = registered === undefined && (modelRef === undefined || modelRef.provider === local?.provider);
-	const catalog = registered !== undefined && !configuredEndpoint;
-
-	if (local === undefined && !usesConfiguredEndpoint) {
-		return {
-			model,
-			modelRef,
-			fromLocal,
-			configuredEndpoint,
-			catalog,
-			local,
-			usesConfiguredEndpoint,
-			env,
-		};
-	}
-
-	const providerApiKeys: Record<string, string> = {};
-	if (local !== undefined) providerApiKeys[local.provider] = local.apiKey;
-	for (const ref of [modelRef]) {
-		if (!isConfiguredEndpoint(ref)) continue;
-		const envName = configuredApiKeyEnv(ref);
-		const value = env[envName];
-		if (typeof value === "string" && value.length > 0) {
-			providerApiKeys[ref.provider] = value;
-		}
-	}
-	const apiKey =
-		local !== undefined && (modelRef === undefined || modelRef.provider === local.provider)
-			? local.apiKey
-			: providerApiKeys[model.provider] !== undefined && usesConfiguredEndpoint
-				? providerApiKeys[model.provider]
-				: undefined;
+function localFallbackOptions(
+	options: ResolveAgentModelOptions,
+	modelId: string | undefined,
+): LoadLocalAutoRAGModelOptions {
 	return {
-		model,
-		...(apiKey !== undefined ? { apiKey } : {}),
-		...(Object.keys(providerApiKeys).length > 0 ? { providerApiKeys } : {}),
-		modelRef,
-		fromLocal,
-		configuredEndpoint,
-		catalog,
-		local,
-		usesConfiguredEndpoint,
-		env,
+		...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
+		...(options.env !== undefined ? { env: options.env } : {}),
+		...(modelId !== undefined ? { modelId } : {}),
 	};
 }
 
-export function resolveAgentModel(
-	config: CliConfig,
-	localOptions: LoadLocalAutoRAGModelOptions = {},
-): ResolvedAgentModel {
-	const core = resolveAgentModelCore(config, localOptions);
+function localRuntimeAuth(local: LocalAutoRAGModel): ResolvedModelAuth {
 	return {
-		model: core.model,
-		...(core.apiKey !== undefined ? { apiKey: core.apiKey } : {}),
-		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
+		apiKey: local.apiKey,
+		providerApiKeys: { [local.provider]: local.apiKey },
+		present: true,
+		source: "local_runtime",
 	};
 }
 
-function providerApiKeyEnvName(provider: string): string {
-	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
+/**
+ * Resolve the model selected through pi settings (`defaultProvider`/
+ * `defaultModel`) when AutoRAG has no explicit model. Returns undefined when
+ * settings name no model, the runtime does not know it, or the provider has no
+ * configured credential — callers then fall back to the local codex runtime.
+ */
+async function resolvePiDefaultModel(
+	runtime: ModelRuntime,
+	options: ResolveAgentModelOptions,
+): Promise<Model<Api> | undefined> {
+	let provider: string | undefined;
+	let id: string | undefined;
+	try {
+		const settings = SettingsManager.create(options.cwd ?? process.cwd(), resolveAgentDir(options));
+		provider = settings.getDefaultProvider();
+		id = settings.getDefaultModel();
+	} catch {
+		return undefined;
+	}
+	if (provider === undefined || id === undefined) return undefined;
+	const model = runtime.getModel(provider, id) as Model<Api> | undefined;
+	if (model === undefined) return undefined;
+	try {
+		if ((await runtime.checkAuth(provider)) === undefined) return undefined;
+	} catch {
+		return undefined;
+	}
+	return model;
 }
 
-function resolveRoleAuth(
+function resolveConfiguredEndpointAuth(
+	reference: AgentModelConfig & { baseUrl: string },
 	model: Model<Api>,
-	fromLocal: boolean,
-	local: LocalAutoRAGModel | undefined,
-	providerApiKeys: Readonly<Record<string, string>> | undefined,
-	configuredEndpoint: boolean,
-	apiKeyEnv: string | undefined,
 	env: NodeJS.ProcessEnv,
-): AgentModelAuth {
-	if (fromLocal && local !== undefined && model.provider === local.provider) {
-		return { present: true, source: "local_runtime" };
-	}
-	if (configuredEndpoint) {
-		const envName = apiKeyEnv ?? providerApiKeyEnvName(model.provider);
-		if (providerApiKeys?.[model.provider] !== undefined) {
-			return { present: true, source: "env", envName };
+): ResolvedModelAuth {
+	const envName = configuredApiKeyEnv(reference);
+	const value = env[envName];
+	const providerApiKeys = typeof value === "string" && value.length > 0 ? { [model.provider]: value } : undefined;
+	const fromProcessEnv = process.env[envName];
+	const present = providerApiKeys !== undefined || (typeof fromProcessEnv === "string" && fromProcessEnv.length > 0);
+	return {
+		...(providerApiKeys !== undefined ? { apiKey: providerApiKeys[model.provider], providerApiKeys } : {}),
+		present,
+		source: present ? "env" : "none",
+		envName,
+	};
+}
+
+/**
+ * Resolve credentials for a catalog/custom model through the pi runtime: the
+ * stored `auth.json` credential (including refreshed OAuth) wins, then the
+ * provider's environment variables, then an explicit none.
+ */
+async function resolveCatalogAuth(
+	runtime: ModelRuntime,
+	model: Model<Api>,
+	env: NodeJS.ProcessEnv,
+): Promise<ResolvedModelAuth> {
+	try {
+		const result = await runtime.getAuth(model);
+		if (result !== undefined) {
+			const apiKey = result.auth.apiKey;
+			if (typeof apiKey === "string" && apiKey.length > 0) {
+				return { apiKey, providerApiKeys: { [model.provider]: apiKey }, present: true, source: "pi_auth" };
+			}
+			// Headers-only auth (for example OAuth): pi resolves it inside the session.
+			return { present: true, source: "pi_auth" };
 		}
-		const fromEnv = env[envName] ?? process.env[envName];
-		if (typeof fromEnv === "string" && fromEnv.length > 0) {
-			return { present: true, source: "env", envName };
-		}
-		return { present: false, source: "none", envName };
+	} catch {
+		// Fall through to environment-based reporting; a broken stored credential
+		// must not make model resolution itself fail.
 	}
 	const envKeys = findEnvKeys(model.provider);
 	if (envKeys !== undefined && envKeys.length > 0) {
@@ -1526,11 +1573,109 @@ function resolveRoleAuth(
 		}
 		return { present: false, source: "none", envName: envKeys[0] };
 	}
-	const catalogKey = getEnvApiKey(model.provider);
-	if (catalogKey !== undefined) {
+	if (getEnvApiKey(model.provider) !== undefined) {
 		return { present: true, source: "catalog" };
 	}
 	return { present: false, source: "none", envName: providerApiKeyEnvName(model.provider) };
+}
+
+async function resolveAgentModelCore(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<AgentModelCore> {
+	const env = options.env ?? process.env;
+	const runtime = options.runtime ?? (await getModelRuntime(resolveAgentDir(options)));
+	const modelRef = config.model;
+
+	// 1. Explicit OpenAI-compatible endpoint in config wins over pi credentials.
+	if (modelRef !== undefined && isConfiguredEndpoint(modelRef)) {
+		const catalogModel = resolveRuntimeCatalogModel(runtime, modelRef);
+		const model = catalogModel ?? buildModelFromConfiguredEndpoint(modelRef);
+		return {
+			model,
+			modelRef,
+			fromLocal: false,
+			configuredEndpoint: true,
+			catalog: catalogModel !== undefined,
+			local: undefined,
+			env,
+			auth: resolveConfiguredEndpointAuth(modelRef, model, env),
+		};
+	}
+
+	// 2. Config model id resolves against the pi runtime catalog.
+	const registered = resolveBuiltInModel(runtime, modelRef);
+	if (registered !== undefined) {
+		return {
+			model: registered,
+			modelRef,
+			fromLocal: false,
+			configuredEndpoint: false,
+			catalog: true,
+			local: undefined,
+			env,
+			auth: await resolveCatalogAuth(runtime, registered, env),
+		};
+	}
+
+	// 3. No model configured: prefer a pi-selected usable model, then the local default runtime.
+	if (modelRef === undefined) {
+		const piDefault = await resolvePiDefaultModel(runtime, options);
+		if (piDefault !== undefined) {
+			return {
+				model: piDefault,
+				modelRef,
+				fromLocal: false,
+				configuredEndpoint: false,
+				catalog: true,
+				local: undefined,
+				env,
+				auth: await resolveCatalogAuth(runtime, piDefault, env),
+			};
+		}
+		const local = loadLocalAutoRAGModel(localFallbackOptions(options, undefined));
+		return {
+			model: local.model as Model<Api>,
+			modelRef,
+			fromLocal: true,
+			configuredEndpoint: false,
+			catalog: false,
+			local,
+			env,
+			auth: localRuntimeAuth(local),
+		};
+	}
+
+	// 4. Config names a provider outside the catalog: a local runtime may supply it.
+	const local = loadLocalAutoRAGModel(localFallbackOptions(options, modelRef.id));
+	const fromLocal = modelRef.provider === local.provider;
+	const model = fromLocal ? (local.model as Model<Api>) : resolveRegisteredModel(runtime, modelRef);
+	return {
+		model,
+		modelRef,
+		fromLocal,
+		configuredEndpoint: false,
+		catalog: !fromLocal,
+		local: fromLocal ? local : undefined,
+		env,
+		auth: fromLocal ? localRuntimeAuth(local) : await resolveCatalogAuth(runtime, model, env),
+	};
+}
+
+export async function resolveAgentModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<ResolvedAgentModel> {
+	const core = await resolveAgentModelCore(config, options);
+	return {
+		model: core.model,
+		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
+		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
+	};
+}
+
+function providerApiKeyEnvName(provider: string): string {
+	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }
 
 function resolveRoleSource(
@@ -1539,10 +1684,10 @@ function resolveRoleSource(
 	configuredEndpoint: boolean,
 	catalog: boolean,
 ): AgentModelResolutionSource {
-	if (ref === undefined) return "local_runtime";
 	if (configuredEndpoint) return "config";
 	if (fromLocal) return "mixed";
 	if (catalog) return "catalog";
+	if (ref === undefined) return "local_runtime";
 	return "config";
 }
 
@@ -1565,25 +1710,21 @@ function buildResolvedRole(
 	};
 }
 
-export function resolveAgentModelDetailed(
+export async function resolveAgentModelDetailed(
 	config: CliConfig,
-	localOptions: LoadLocalAutoRAGModelOptions = {},
-): ResolvedAgentModelDetailed {
-	const core = resolveAgentModelCore(config, localOptions);
-	const auth = resolveRoleAuth(
-		core.model,
-		core.fromLocal,
-		core.local,
-		core.providerApiKeys,
-		core.configuredEndpoint,
-		core.modelRef !== undefined ? configuredApiKeyEnv(core.modelRef) : undefined,
-		core.env,
-	);
+	options: ResolveAgentModelOptions = {},
+): Promise<ResolvedAgentModelDetailed> {
+	const core = await resolveAgentModelCore(config, options);
+	const auth: AgentModelAuth = {
+		present: core.auth.present,
+		source: core.auth.source,
+		...(core.auth.envName !== undefined ? { envName: core.auth.envName } : {}),
+	};
 	const source = resolveRoleSource(core.modelRef, core.fromLocal, core.configuredEndpoint, core.catalog);
 	return {
 		model: core.model,
-		...(core.apiKey !== undefined ? { apiKey: core.apiKey } : {}),
-		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
+		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
+		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
 		role: buildResolvedRole(core.model, auth, source),
 	};
 }
