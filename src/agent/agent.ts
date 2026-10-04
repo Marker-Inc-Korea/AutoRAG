@@ -159,6 +159,50 @@ const SEARCH_TOOLS = [
 	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
 
+/** Only completed searches that returned evidence earn implicit positive feedback. */
+function hasSearchEvidence(toolName: string, details: unknown, isError: boolean): boolean {
+	if (isError || details === null || typeof details !== "object") return false;
+	const outcome = details as Record<string, unknown>;
+	if (outcome.available === false) return false;
+	if (
+		Array.isArray(outcome.diagnostics) &&
+		outcome.diagnostics.some(
+			(diagnostic) =>
+				diagnostic !== null &&
+				typeof diagnostic === "object" &&
+				(diagnostic.severity === "error" ||
+					diagnostic.code === "retrieval-method-failed" ||
+					diagnostic.code === "minsync-unavailable" ||
+					diagnostic.code === "jikji-find-failed" ||
+					diagnostic.code === "jikji-unavailable"),
+		)
+	) {
+		// Pipeline failures are warnings even when healthy methods return hits.
+		// Without per-method attribution, the incomplete aggregate earns no credit.
+		return false;
+	}
+	// Jikji reports answer paths, while the other search tools report resultCount.
+	const countKey = toolName === JIKJI_FIND_TOOL_NAME ? "answerCount" : "resultCount";
+	if (countKey in outcome) {
+		const count = outcome[countKey];
+		return typeof count === "number" && Number.isFinite(count) && count > 0;
+	}
+	// Legacy producers may omit counts. Never override an explicit zero/invalid
+	// count, and require an actual source identity rather than an arbitrary item.
+	return (
+		(Array.isArray(outcome.sources) &&
+			outcome.sources.some((source) => typeof source === "string" && source.trim().length > 0)) ||
+		(Array.isArray(outcome.results) &&
+			outcome.results.some(
+				(result) =>
+					result !== null &&
+					typeof result === "object" &&
+					typeof result.source === "string" &&
+					result.source.trim().length > 0,
+			))
+	);
+}
+
 /**
  * Messages the model sees. pi-agent-core declares the callable tools through
  * `system` transcript messages (`toolsAdded`/`toolsRemoved`), so they must pass
@@ -756,6 +800,7 @@ export class AutoRAGAgent {
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
 				if (!this.lastQuery || !this.searchToolNames.has(toolName)) return undefined;
+				if (!hasSearchEvidence(toolName, context.result.details, context.isError)) return undefined;
 
 				const details = context.result.details as
 					| { resultCount?: number; sources?: string[]; method?: string }
@@ -893,8 +938,10 @@ export class AutoRAGAgent {
 				results: details?.results ?? [],
 			});
 		}
-		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
-		this.memory.save();
+		if (hasSearchEvidence(event.toolName, details, event.isError)) {
+			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
+			this.memory.save();
+		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
