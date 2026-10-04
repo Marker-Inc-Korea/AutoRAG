@@ -57,6 +57,8 @@ function writeConfig(minSync: unknown = { autoInstall: false }): void {
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		jikji: false,
+		everything: false,
+		fsearch: false,
 	};
 	if (minSync !== undefined) config.minSync = minSync;
 	const configDir = join(process.env.HOME as string, ".autorag");
@@ -156,6 +158,8 @@ describe("runRefresh + runStatus (cli)", () => {
 					memoryPath: join(root, "memory.json"),
 					bm25: { forceEngine: "typescript-fallback" },
 					minSync: false,
+					everything: false,
+					fsearch: false,
 					datasources: {
 						"discord-nomadamas": {},
 						"slack-local": {},

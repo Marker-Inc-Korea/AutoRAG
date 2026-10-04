@@ -284,6 +284,8 @@ describe("autorag lite retrieve", () => {
 				memoryPath: join(root, "memory.json"),
 				minSync: false,
 				jikji: false,
+				everything: false,
+				fsearch: false,
 			}),
 		);
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -328,6 +330,8 @@ describe("autorag lite retrieve", () => {
 				memoryPath: join(root, "memory.json"),
 				minSync: false,
 				jikji: false,
+				everything: false,
+				fsearch: false,
 			}),
 		);
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);

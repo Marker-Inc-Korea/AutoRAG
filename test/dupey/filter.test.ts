@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { selectExactDuplicateExclusions } from "../../src/dupey/index.ts";
+import { isPathExcluded } from "../../src/mirror/index.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -31,5 +32,34 @@ describe("exact duplicate filter", () => {
 		});
 		expect(result.keepers).toEqual(new Set([newPath]));
 		expect(result.excluded).toEqual(new Set([oldPath]));
+	});
+
+	it("skips unavailable copies when choosing the keeper", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dupey-filter-"));
+		roots.push(root);
+		mkdirSync(join(root, "docs"));
+		mkdirSync(join(root, "private"));
+		const publicCopy = join(root, "docs", "report.txt");
+		const privateCopy = join(root, "private", "report.txt");
+		writeFileSync(publicCopy, "same");
+		writeFileSync(privateCopy, "same");
+		utimesSync(publicCopy, 1, 1);
+		utimesSync(privateCopy, 2, 2);
+		const unavailable = new Set([join(root, "private")]);
+		const result = await selectExactDuplicateExclusions(
+			root,
+			{
+				dir: root,
+				files: [
+					{ path: "docs/report.txt", content_hash: "same-hash" },
+					{ path: "private/report.txt", content_hash: "same-hash" },
+				],
+				families: [],
+				errors: [],
+			},
+			(path) => isPathExcluded(path, unavailable),
+		);
+		expect(result.keepers).toEqual(new Set([publicCopy]));
+		expect(result.excluded).toEqual(new Set());
 	});
 });

@@ -35,12 +35,16 @@ export type SearchDocumentDiagnosticCode =
 	| "jikji-unavailable"
 	| "jikji-prepare-failed"
 	| "jikji-find-failed"
+	| "everything-index-failed"
+	| "fsearch-index-failed"
+	| "fsearch-binary-missing"
 	| "refresh-failed"
 	| "refresh-interrupted"
 	| "watch-failed"
 	| "watch-limited"
 	| "unknown-datasource-skill"
-	| "missing-final-emit";
+	| "missing-final-emit"
+	| "model-request-failed";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

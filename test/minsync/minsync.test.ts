@@ -477,6 +477,8 @@ describe("MinSyncVectorMethod", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
+			fsearch: false,
 			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
 		});
 

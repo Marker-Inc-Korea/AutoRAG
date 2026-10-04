@@ -39,8 +39,10 @@ function diagnosticProjection(d: {
 function refreshOk(result: AutoRAGRefreshResult): boolean {
 	const minsyncOk = result.minsync === undefined || result.minsync.ok;
 	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
+	const everythingOk = result.everything === undefined || result.everything.ok;
+	const fsearchOk = result.fsearch === undefined || result.fsearch.ok;
 	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
-	return minsyncOk && datasourcesOk && !hasErrorDiagnostics;
+	return minsyncOk && datasourcesOk && everythingOk && fsearchOk && !hasErrorDiagnostics;
 }
 
 function refreshEnvelope(result: AutoRAGRefreshResult) {
@@ -81,6 +83,8 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 			diagnostics: (ds.diagnostics ?? []).map(diagnosticProjection),
 		}));
 	}
+	if (result.everything !== undefined) envelope.everything = result.everything;
+	if (result.fsearch !== undefined) envelope.fsearch = result.fsearch;
 	return envelope;
 }
 
@@ -105,6 +109,19 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 				`  datasource: ok=${ds.ok} skill=${ds.skill} instanceId=${ds.instanceId} indexedAt=${ds.indexedAt}`,
 			);
 		}
+	}
+	if (result.everything !== undefined) {
+		const parts = [`ok=${result.everything.ok}`];
+		if (result.everything.indexedItems !== undefined) parts.push(`indexedItems=${result.everything.indexedItems}`);
+		if (result.everything.reason !== undefined) parts.push(`reason=${result.everything.reason}`);
+		lines.push(`  everything: ${parts.join(" ")}`);
+	}
+	if (result.fsearch !== undefined) {
+		const parts = [`ok=${result.fsearch.ok}`];
+		if (result.fsearch.indexedItems !== undefined) parts.push(`indexedItems=${result.fsearch.indexedItems}`);
+		if (result.fsearch.reason !== undefined) parts.push(`reason=${result.fsearch.reason}`);
+		if (result.fsearch.message !== undefined) parts.push(`message=${result.fsearch.message}`);
+		lines.push(`  fsearch: ${parts.join(" ")}`);
 	}
 	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
 		for (const d of result.diagnostics) {
@@ -147,6 +164,8 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 	if (comps.minsync) compParts.push(`minsync=${comps.minsync}`);
 	if (comps.jikji) compParts.push(`jikji=${comps.jikji}`);
 	if (comps.datasources) compParts.push(`datasources=${comps.datasources}`);
+	if (comps.everything) compParts.push(`everything=${comps.everything}`);
+	if (comps.fsearch) compParts.push(`fsearch=${comps.fsearch}`);
 	if (compParts.length > 0) lines.push(`  components: ${compParts.join(" ")}`);
 	if (status.lastError) lines.push(`  lastError: ${status.lastError}`);
 	if (debug || status.diagnostics.length > 0) {

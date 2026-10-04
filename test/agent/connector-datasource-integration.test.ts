@@ -93,6 +93,8 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			minSync: false,
+			everything: false,
+			fsearch: false,
 			datasourceSkills: [slackSkill(), githubSkill()],
 			datasourceAccess: {
 				allowedTags: ["slack", "github"],
@@ -125,6 +127,8 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			minSync: false,
+			everything: false,
+			fsearch: false,
 			datasourceSkills: [slackSkill()],
 		});
 		await agent.refresh(true, { methods: ["datasources"] });
@@ -145,6 +149,8 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			minSync: false,
+			everything: false,
+			fsearch: false,
 			datasourceSkills: [slackSkill(), githubSkill()],
 			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/ws-1/**"] },
 		});
@@ -170,6 +176,8 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			minSync: false,
+			everything: false,
+			fsearch: false,
 			datasourceSkills: [failing],
 			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/**"] },
 		});
@@ -251,6 +259,8 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			minSync: false,
+			everything: false,
+			fsearch: false,
 			datasourceSkills: [skill],
 			datasourceAccess: { allowedTags: ["obsidian"], allowedScopes: ["/obsidian/**"] },
 		});

@@ -18,6 +18,8 @@ function writeConfig(root: string, configPath: string, model = false): void {
 			...(model ? { model: { provider: "invalid-provider", id: "invalid-model" } } : {}),
 			minSync: false,
 			jikji: false,
+			everything: false,
+			fsearch: false,
 		}),
 	);
 }

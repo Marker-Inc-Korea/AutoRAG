@@ -367,6 +367,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		root: workspacePath,
 		searchPaths: lite.config.searchPaths,
 		parserOptions: resolveParserOptions(lite.config.parserOptions, normalizeLanguages(lite.config.languages)),
+		userExcludedSourcePaths: new Set(lite.config.excludePaths ?? []),
 	});
 	if (staleDiagnostics.length > 0 && ctx.flags.strict === true) {
 		const envelope: IndexNotReadyEnvelope = {

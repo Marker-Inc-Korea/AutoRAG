@@ -28,6 +28,8 @@ describe("AutoRAGAgent watch refresh", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			everything: false,
+			fsearch: false,
 			minSync: { autoInstall: false },
 		});
 		await agent.refresh(true);
