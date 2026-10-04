@@ -76,8 +76,7 @@
       <div class="tool-grid">
         <article class="tool"><span class="kind">READ</span><div class="name">autorag.status</div><p>Index freshness, stale, component health를 조회합니다.</p></article>
         <article class="tool"><span class="kind">READ</span><div class="name">autorag.search</div><p>method/datasource/local을 선택해 검색합니다. 선택은 backend 실행 전 적용됩니다.</p></article>
-        <article class="tool"><span class="kind">READ</span><div class="name">autorag.search.files</div><p>설정된 root 안에서 파일·폴더 이름만 찾습니다. 파일 내용은 읽지 않습니다.</p></article>
-        <article class="tool"><span class="kind">READ</span><div class="name">autorag.search.everything</div><p>Windows Everything provider를 호출합니다.</p></article>
+        <article class="tool"><span class="kind">READ</span><div class="name">autorag.search.files</div><p>설정된 root 안에서 파일·폴더 이름만 찾습니다. OS를 감지해 Windows는 bundled Everything, macOS/Linux는 filesystem walker를 씁니다. literal substring이며 파일 내용은 읽지 않습니다.</p></article>
         <article class="tool"><span class="kind">READ</span><div class="name">autorag.datasources.list/get</div><p>authorized datasource의 description, capability, scope를 노출합니다.</p></article>
         <article class="tool"><span class="kind">READ</span><div class="name">autorag.duplicates</div><p>Dupey로 exact/near/contains family를 검토용 스캔합니다.</p></article>
         <article class="tool write"><span class="kind">WRITE</span><div class="name">autorag.refresh</div><p>parsed mirror와 configured index를 갱신합니다. read-only mode에서는 숨겨집니다.</p></article>
@@ -146,25 +145,36 @@
     </section>
 
     <section class="panel">
-      <h2>8. 오류 contract</h2>
+      <h2>8. 파일명 검색 backend 선택 (OS 자동)</h2>
+      <div class="flow">
+        <div class="node"><strong>autorag.search.files</strong><small>literal substring query</small></div><div class="arrow">→</div>
+        <div class="node"><strong>platform === win32?</strong><small>options.platform ?? process.platform</small></div><div class="arrow">→</div>
+        <div class="node"><strong>Everything</strong><small>Windows · escaped literal → regex:true · user-level index</small></div>
+        <div class="node"><strong>filesystem walker</strong><small>macOS / Linux · configured roots</small></div>
+      </div>
+      <p class="foot">결과는 <code>{ ok, backend, results, truncated, diagnostics }</code>이며 <code>backend</code>가 <code>"everything"</code> 또는 <code>"filesystem"</code>을 구분합니다. Windows provider가 실패/비활성이면 filesystem으로 자동 대체하지 않고 <code>isError: true</code>의 <code>{ ok: false, backend: "everything", reason, message }</code>를 반환합니다. <code>root</code>는 설정된 root 내부로만 제한되고 <code>excludePaths</code>가 존중됩니다.</p>
+    </section>
+
+    <section class="panel">
+      <h2>9. 오류 contract</h2>
       <div class="error"><code>index-not-ready</code> → <code>autorag.refresh</code> 호출 필요</div>
       <div class="error"><code>stale-index</code> → strict 검색이 stale index를 거부함</div>
       <div class="error"><code>invalid-selection</code> → unknown/unauthorized method 또는 datasource</div>
       <div class="error"><code>duplicates-failed</code> → Dupey 실행, timeout, JSON parsing 실패</div>
       <div class="error"><code>datasource-not-found</code> → authorized catalog에 없음</div>
+      <div class="error"><code>autorag.search.files</code> Windows backend 실패 → <code>{ ok: false, backend: "everything", reason, message }</code> (filesystem 대체 없음)</div>
       <pre>{
   "isError": true,
   "structuredContent": {
     "ok": false,
     "errorCode": "index-not-ready",
-    "action": "autorag.refresh",
-    "retryable": false
+    "action": "autorag.refresh"
   }
 }</pre>
     </section>
 
     <section class="panel">
-      <h2>9. 운영자가 기억할 호출 순서</h2>
+      <h2>10. 운영자가 기억할 호출 순서</h2>
       <span class="pill">1 · autorag.status</span>
       <span class="pill">2 · autorag.refresh</span>
       <span class="pill">3 · autorag.datasources.list</span>

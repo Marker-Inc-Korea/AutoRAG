@@ -31,8 +31,7 @@ flowchart LR
     L --> I
 
     L --> D["Retrieval Engine\nBM25 / MinSync / datasource methods"]
-    L --> F["Filesystem name search\nconfigured roots only"]
-    L --> E["Everything\nWindows provider"]
+    L --> F["autorag.search.files\none portable name search\nOS → filesystem / Everything"]
     L --> U["Dupey\nexact / near / contains families"]
     L --> X["Datasource connectors\nSlack / Notion / Spotlight / ..."]
 ```
@@ -74,8 +73,7 @@ flowchart TD
 |---|---|---|---|
 | `autorag.status` | index freshness/health 조회 | `{}` | 아니오 |
 | `autorag.search` | 여러 retrieval surface 선택 검색 | `query`, `topK`, `scope`, `tags`, `strict`, `datasourceIds`, `methods`, `local` | 아니오 |
-| `autorag.search.files` | 파일/폴더 이름 검색 | `query`, `root`, `matchPath`, `matchCase`, `kind`, pagination | 아니오 |
-| `autorag.search.everything` | Windows Everything 검색 | Everything query fields | 아니오 |
+| `autorag.search.files` | 파일/폴더 이름 검색 (OS 자동: Windows Everything, 그 외 filesystem walker) | `query`, `root`, `matchPath`, `matchCase`, `kind`, pagination | 아니오 |
 | `autorag.datasources.list` | authorized datasource 목록 | `{}` | 아니오 |
 | `autorag.datasources.get` | datasource 하나 조회 | `{ datasourceId }` | 아니오 |
 | `autorag.duplicates` | Dupey 중복/문서 family 스캔 | `{}` | 아니오 |
@@ -110,8 +108,7 @@ flowchart TD
     CALL["MCP tools/call"] --> NAME{"tool name"}
     NAME -->|"autorag.search"| SEARCH["searchSelected(query, selection, options)"]
     NAME -->|"autorag.search_datasource_<id>"| ONE["searchSelected(query, {datasourceIds:[id], local:false}, options)"]
-    NAME -->|"autorag.search.files"| FILE["searchFileNames(config.searchPaths, request, excludePaths)"]
-    NAME -->|"autorag.search.everything"| EVERYTHING["lite.searchEverything(request)"]
+    NAME -->|"autorag.search.files"| FILE["platform === win32 ? Everything backend : filesystem walker"]
     NAME -->|"autorag.duplicates"| DUPEY["scanWithDupey(each configured searchPath)"]
     NAME -->|"autorag.datasources.list/get"| CATALOG["authorized catalog projection"]
     NAME -->|"autorag.status"| STATUS["getRefreshStatus()"]
@@ -122,7 +119,6 @@ flowchart TD
     AUTH --> BACKENDS["only eligible retrieval backends"]
     BACKENDS --> RESULT["structuredContent + text JSON"]
     FILE --> RESULT
-    EVERYTHING --> RESULT
     DUPEY --> RESULT
     CATALOG --> RESULT
     STATUS --> RESULT
@@ -289,14 +285,22 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Q["autorag.search.files"] --> ROOT["configured searchPaths"]
-    ROOT --> PIN["realpath pinning"]
-    PIN --> WALK["directory entry walk"]
+    Q["autorag.search.files\nliteral substring query"] --> ROOT["configured searchPaths\nrealpath pinning + excludePaths"]
+    ROOT --> OS{"platform === win32?"}
+    OS -->|"아니오 (macOS/Linux)"| WALK["filesystem walker\ndirectory entry walk"]
     WALK --> SKIP["skip symlink escape / .git / .autorag / .jikji / node_modules"]
-    SKIP --> OUT["{path, type, truncated, diagnostics}"]
+    OS -->|"예"| EV["Everything backend\nescaped literal → regex:true\nuser-level index over the roots"]
+    SKIP --> OUT["{ ok, backend: filesystem, results, truncated, diagnostics }"]
+    EV --> OUT2["{ ok, backend: everything, results, truncated, diagnostics }"]
+    EV -.->|"provider 비활성/실패, no fallback"| FAIL["{ ok: false, backend: everything, reason, message }"]
 ```
 
-파일 내용은 읽지 않습니다. `root`는 configured search root 내부로만 제한됩니다.
+- `backend` discriminator가 `"filesystem"`과 `"everything"`을 구분합니다.
+- `query`는 정규식이 아니라 literal substring입니다. Windows에서는 escape한 뒤 Everything regex(`regex: true`)로 전달합니다.
+- Windows provider가 실패/비활성이면 filesystem walker로 조용히 대체하지 않고 `isError: true`의 구조화된 실패를 반환합니다.
+- `root`는 configured search root 내부로만 제한되고 `excludePaths`가 존중됩니다.
+- `maxResults`/`offset` 페이지는 권한 필터링 이후에 적용되며 lookahead로 `truncated`를 판정합니다.
+- parsed mirror refresh가 없어도 동작합니다. 파일 내용은 읽지 않습니다.
 
 ### Dupey 중복 스캔
 
@@ -331,8 +335,7 @@ sequenceDiagram
     "ok": false,
     "errorCode": "index-not-ready",
     "message": "...",
-    "action": "autorag.refresh",
-    "retryable": false
+    "action": "autorag.refresh"
   }
 }
 ```
@@ -348,11 +351,12 @@ sequenceDiagram
 | `datasource-not-found` | authorized catalog에 없음 | `datasources.list` 재확인 |
 | `refresh-failed` | refresh 실패 | diagnostic 확인 후 재시도 |
 
-Everything provider는 자체 union을 유지합니다.
+`autorag.search.files`의 Windows Everything backend는 실패 시 자체 union을 반환하며, filesystem backend로 자동 대체하지 않습니다.
 
 ```json
 {
   "ok": false,
+  "backend": "everything",
   "reason": "unsupported-platform",
   "message": "Everything is not enabled on this host."
 }

@@ -1,5 +1,5 @@
 import { type Dirent, realpathSync } from "node:fs";
-import { readdir, realpath } from "node:fs/promises";
+import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /**
@@ -50,7 +50,7 @@ export interface FileNameSearchRequest {
 
 export interface FileNameSearchResult {
 	readonly ok: true;
-	readonly backend: "filesystem";
+	readonly backend: "filesystem" | "everything";
 	readonly results: readonly FileNameSearchMatch[];
 	readonly truncated: boolean;
 	readonly diagnostics: readonly FileNameSearchDiagnostic[];
@@ -248,6 +248,49 @@ async function resolveRequestRoots(requestRoot: string, pinnedRoots: readonly st
 		if (!allowed.includes(real)) allowed.push(real);
 	}
 	return allowed.length === 0 ? undefined : allowed;
+}
+
+/** Resolve one requested root inside the configured roots for backend routing. */
+export async function resolveConfiguredFileSearchRoot(
+	roots: readonly string[],
+	requestRoot: string,
+): Promise<string | undefined> {
+	const diagnostics: FileNameSearchDiagnostic[] = [];
+	const pinnedRoots = await pinConfiguredRoots(roots ?? [], diagnostics);
+	const resolvedRoots = await resolveRequestRoots(requestRoot, pinnedRoots);
+	return resolvedRoots?.length === 1 ? resolvedRoots[0] : undefined;
+}
+
+/**
+ * Keep provider-returned file-name hits inside configured roots and exclusions.
+ * Revalidates lstat/realpath so an external index cannot widen MCP scope.
+ */
+export async function filterFileNameSearchMatches(
+	roots: readonly string[],
+	candidates: readonly FileNameSearchMatch[],
+	excludePaths: readonly string[] = [],
+): Promise<FileNameSearchMatch[]> {
+	const diagnostics: FileNameSearchDiagnostic[] = [];
+	const pinnedRoots = await pinConfiguredRoots(roots ?? [], diagnostics);
+	const excluded = (excludePaths ?? []).map(pinExcludedPath);
+	const matches: FileNameSearchMatch[] = [];
+	for (const candidate of candidates) {
+		let stat: Awaited<ReturnType<typeof lstat>>;
+		let real: string;
+		try {
+			stat = await lstat(candidate.path);
+			if (stat.isSymbolicLink()) continue;
+			real = await realpath(candidate.path);
+		} catch {
+			continue;
+		}
+		if (!pinnedRoots.some((root) => isContained(real, root))) continue;
+		if (isExcluded(real, excluded)) continue;
+		const segments = real.split(sep);
+		if (segments.some((segment) => SKIP_DIR_NAMES[segment] === true)) continue;
+		matches.push({ path: real, type: stat.isDirectory() ? "folder" : "file" });
+	}
+	return matches;
 }
 
 export async function searchFileNames(

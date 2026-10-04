@@ -90,7 +90,6 @@ describe("AutoRAG Lite MCP stdio", () => {
 				"autorag.status",
 				"autorag.search",
 				"autorag.search.files",
-				"autorag.search.everything",
 				"autorag.datasources.list",
 				"autorag.datasources.get",
 				"autorag.duplicates",
@@ -142,8 +141,15 @@ describe("AutoRAG Lite MCP stdio", () => {
 				name: "autorag.search.files",
 				arguments: { query: "refund" },
 			});
-			expect(files.isError).not.toBe(true);
-			expect(hasFieldValue(files.structuredContent, "path", realpathSync(join(docs, "refund.md")))).toBe(true);
+			if (process.platform === "win32") {
+				// The fixture disables Everything, so Windows routing must surface the
+				// provider failure as an MCP error instead of silently using the walker.
+				expect(files.isError).toBe(true);
+				expect(hasFieldValue(files.structuredContent, "backend", "everything")).toBe(true);
+			} else {
+				expect(files.isError).not.toBe(true);
+				expect(hasFieldValue(files.structuredContent, "path", realpathSync(join(docs, "refund.md")))).toBe(true);
+			}
 			await first.client.close();
 
 			const second = await connect(config, binDir);

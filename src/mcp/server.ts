@@ -7,8 +7,11 @@ import type { RefreshMethod } from "../agent/agent.ts";
 import type { AutoRAGLite } from "../core.ts";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import { type DupeyScanResult, scanWithDupey } from "../dupey/index.ts";
-import type { EverythingSearchRequest } from "../everything/index.ts";
-import { searchFileNames } from "../filesystem/name-search.ts";
+import {
+	filterFileNameSearchMatches,
+	resolveConfiguredFileSearchRoot,
+	searchFileNames,
+} from "../filesystem/name-search.ts";
 import { isParsedRefreshComplete } from "../mirror/paths.ts";
 import { RetrievalSelectionError } from "../retrieval/index.ts";
 
@@ -46,32 +49,6 @@ const fileSearchInput = z
 	})
 	.strict();
 
-const everythingSearchInput = z
-	.strictObject({
-		query: z.string().trim().min(1),
-		regex: z.boolean().optional(),
-		matchCase: z.boolean().optional(),
-		matchPath: z.boolean().optional(),
-		wholeWord: z.boolean().optional(),
-		kind: z.enum(["files", "folders"]).optional(),
-		path: z.string().trim().min(1).optional(),
-		sort: z
-			.enum([
-				"name-ascending",
-				"name-descending",
-				"path-ascending",
-				"path-descending",
-				"size-ascending",
-				"size-descending",
-				"date-modified-ascending",
-				"date-modified-descending",
-			])
-			.optional(),
-		offset: z.number().int().nonnegative().optional(),
-		maxResults: z.number().int().positive().max(1000).optional(),
-	})
-	.strict();
-
 const refreshInput = z
 	.strictObject({
 		force: z.boolean().optional(),
@@ -105,6 +82,8 @@ function exactGroupsFromScan(scan: DupeyScanResult): ExactDuplicateGroup[] {
 export interface AutoRAGMcpServerOptions {
 	readonly readOnly?: boolean;
 	readonly tools?: readonly string[];
+	/** Test/embedded override; defaults to the current Node platform. */
+	readonly platform?: NodeJS.Platform;
 }
 
 function jsonResult<T extends object>(value: T, isError = false) {
@@ -140,9 +119,91 @@ function readPackageVersion(): string {
 	return "0.0.0-dev";
 }
 
+function escapeEverythingRegexLiteral(value: string): string {
+	let escaped = "";
+	for (const character of value) {
+		if ("\\^$.*+?()[]{}|".includes(character)) escaped += "\\";
+		escaped += character;
+	}
+	return escaped;
+}
+
+async function searchConfiguredFileNames(
+	lite: AutoRAGLite,
+	request: {
+		readonly query: string;
+		readonly root?: string;
+		readonly matchPath?: boolean;
+		readonly matchCase?: boolean;
+		readonly kind?: "files" | "folders";
+		readonly maxResults?: number;
+		readonly offset?: number;
+	},
+	platform: NodeJS.Platform,
+): Promise<object> {
+	if (platform !== "win32") return searchFileNames(lite.config.searchPaths, request, lite.config.excludePaths ?? []);
+	const scopedRoot =
+		request.root === undefined
+			? undefined
+			: await resolveConfiguredFileSearchRoot(lite.config.searchPaths, request.root);
+	if (request.root !== undefined && scopedRoot === undefined) {
+		return {
+			ok: true,
+			backend: "everything",
+			results: [],
+			truncated: false,
+			diagnostics: [
+				{
+					code: "root-out-of-scope",
+					severity: "warning",
+					source: request.root,
+					message: "The requested search root is not inside any configured search root.",
+				},
+			],
+		};
+	}
+	const maxResults = Math.min(request.maxResults ?? 100, 1000);
+	const requestedEnd = (request.offset ?? 0) + maxResults + 1;
+	const filtered: { path: string; type: "file" | "folder" }[] = [];
+	let providerOffset = 0;
+	let providerHasMore = true;
+	while (providerHasMore && filtered.length < requestedEnd) {
+		const result = await lite.searchEverything({
+			query: escapeEverythingRegexLiteral(request.query),
+			regex: true,
+			matchPath: request.matchPath,
+			matchCase: request.matchCase,
+			kind: request.kind,
+			path: scopedRoot,
+			offset: providerOffset,
+			maxResults: maxResults + 1,
+		});
+		if (!result.ok) return { ...result, backend: "everything" };
+		const batch = result.results.map(({ path: resultPath, type }) => ({ path: resultPath, type }));
+		const allowed = await filterFileNameSearchMatches(
+			scopedRoot === undefined ? lite.config.searchPaths : [scopedRoot],
+			batch,
+			lite.config.excludePaths ?? [],
+		);
+		filtered.push(...allowed);
+		providerOffset += batch.length;
+		providerHasMore = batch.length === maxResults + 1;
+		if (batch.length === 0) break;
+	}
+	const offset = request.offset ?? 0;
+	return {
+		ok: true,
+		backend: "everything",
+		results: filtered.slice(offset, offset + maxResults),
+		truncated: filtered.length > offset + maxResults || providerHasMore,
+		diagnostics: [],
+	};
+}
+
 export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpServerOptions = {}): McpServer {
 	const server = new McpServer({ name: "autorag-lite", version: readPackageVersion() });
 	const readOnly = options.readOnly === true;
+	const platform = options.platform ?? process.platform;
 
 	if (isToolEnabled("autorag.status", options)) {
 		server.registerTool(
@@ -350,34 +411,19 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 			{
 				title: "Search Configured File Names",
 				description:
-					"Search file and folder names under configured search roots without reading file contents. The optional root must remain inside a configured root.",
+					"Search file and folder names under configured roots. Uses Windows Everything on Windows and the configured-root filesystem walker elsewhere; never reads file contents.",
 				inputSchema: fileSearchInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
 			async ({ query, root, matchPath, matchCase, kind, maxResults, offset }) => {
-				const result = await searchFileNames(
-					lite.config.searchPaths,
+				const result = await searchConfiguredFileNames(
+					lite,
 					{ query, root, matchPath, matchCase, kind, maxResults, offset },
-					lite.config.excludePaths ?? [],
+					platform,
 				);
-				return jsonResult(result, false);
+				return jsonResult(result, Reflect.get(result, "ok") === false);
 			},
-		);
-	}
-
-	if (isToolEnabled("autorag.search.everything", options)) {
-		server.registerTool(
-			"autorag.search.everything",
-			{
-				title: "Search Everything File Index",
-				description:
-					"Search the Windows-only user-level Everything index. Returns an unsupported-platform result elsewhere.",
-				inputSchema: everythingSearchInput,
-				outputSchema: objectOutput,
-				annotations: { readOnlyHint: true, openWorldHint: false },
-			},
-			async (request) => jsonResult(await lite.searchEverything(request as EverythingSearchRequest)),
 		);
 	}
 

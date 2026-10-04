@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -46,14 +46,34 @@ interface SearchCall {
 	readonly options: unknown;
 }
 
+interface EverythingRequest {
+	readonly query: string;
+	readonly regex?: boolean;
+	readonly matchCase?: boolean;
+	readonly matchPath?: boolean;
+	readonly kind?: "files" | "folders";
+	readonly path?: string;
+	readonly offset?: number;
+	readonly maxResults?: number;
+}
+
+interface EverythingEntry {
+	readonly path: string;
+	readonly type: "file" | "folder";
+}
+
 interface EverythingCall {
-	readonly request: unknown;
+	readonly request: EverythingRequest;
 }
 
 interface FakeOptions {
 	readonly workspacePath: string;
 	readonly searchPaths?: readonly string[];
+	readonly excludePaths?: readonly string[];
+	/** Fixed Everything provider result (success or failure). */
 	readonly everything?: unknown;
+	/** Dynamic Everything provider seam; wins over `everything` when both are set. */
+	readonly everythingProvider?: (request: EverythingRequest) => unknown | Promise<unknown>;
 	/** Injected Dupey scanner seam; the server forwards `config.dupey` verbatim. */
 	readonly dupey?: unknown;
 	readonly datasources?: readonly unknown[];
@@ -72,6 +92,7 @@ function fakeLite(options: FakeOptions): {
 	const lite = {
 		config: {
 			searchPaths: options.searchPaths ?? [],
+			excludePaths: options.excludePaths ?? [],
 			workspacePath: options.workspacePath,
 			memoryPath: join(options.workspacePath, "memory.json"),
 			dupey: options.dupey ?? {
@@ -118,17 +139,27 @@ function fakeLite(options: FakeOptions): {
 			};
 		},
 		searchEverything: async (request: unknown) => {
-			everythingCalls.push({ request });
-			return (
-				options.everything ?? {
-					ok: true,
-					results: [{ path: "C:\\docs\\refund.txt", type: "file", size: 12, dateModified: undefined }],
-				}
-			);
+			const typed = request as EverythingRequest;
+			everythingCalls.push({ request: typed });
+			if (options.everythingProvider !== undefined) return await options.everythingProvider(typed);
+			return options.everything ?? { ok: true, results: [] };
 		},
 		refresh: async () => ({ ok: true }),
 	} as unknown as AutoRAGLite;
 	return { lite, searchCalls, everythingCalls };
+}
+
+/**
+ * A fake Everything provider that serves a fixed universe lazily: it slices by
+ * the request's own `offset`/`maxResults`, so the server must page correctly to
+ * take a stable page after its own filtering.
+ */
+function pagingEverything(universe: readonly EverythingEntry[]) {
+	return (request: EverythingRequest) => {
+		const offset = request.offset ?? 0;
+		const max = request.maxResults ?? universe.length;
+		return { ok: true, results: universe.slice(offset, offset + max) };
+	};
 }
 
 async function connectedServer(lite: AutoRAGLite, serverOptions = {}) {
@@ -154,6 +185,15 @@ function hasFieldValue(value: unknown, key: string, expected: unknown, seen = ne
 	return Object.values(value).some((item) => hasFieldValue(item, key, expected, seen));
 }
 
+/** Extract `{ path, type }` entries from a tool result's `results` array, ignoring other fields. */
+function resultEntries(value: unknown): { path: string; type: string }[] {
+	const results = field(value, "results");
+	if (!Array.isArray(results)) return [];
+	return results
+		.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+		.map((entry) => ({ path: String(entry.path), type: String(entry.type) }));
+}
+
 describe("AutoRAG Lite MCP server", () => {
 	it("exposes the search-only tools with stable names", async () => {
 		const { lite } = fakeLite({ workspacePath: workspace(true) });
@@ -165,7 +205,6 @@ describe("AutoRAG Lite MCP server", () => {
 				"autorag.status",
 				"autorag.search",
 				"autorag.search.files",
-				"autorag.search.everything",
 				"autorag.datasources.list",
 				"autorag.datasources.get",
 				"autorag.duplicates",
@@ -199,7 +238,6 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(names).not.toContain("autorag.refresh");
 		expect(names).toContain("autorag.search");
 		expect(names).toContain("autorag.search.files");
-		expect(names).toContain("autorag.search.everything");
 		expect(names).toContain("autorag.datasources.list");
 		expect(names).toContain("autorag.datasources.get");
 		expect(names).toContain("autorag.duplicates");
@@ -260,46 +298,232 @@ describe("AutoRAG Lite MCP server", () => {
 		await server.close();
 	});
 
-	it("searches configured file roots by name without reading contents", async () => {
+	it("searches configured file roots on non-Windows platforms via the filesystem walker", async () => {
 		const docs = mkdtempSync(join(tmpdir(), "autorag-mcp-docs-"));
 		roots.push(docs);
 		writeFileSync(join(docs, "refund-policy.md"), "Director approval is required.\n");
-		const { lite } = fakeLite({ workspacePath: workspace(true), searchPaths: [docs] });
-		const { client, server } = await connectedServer(lite);
+		const { lite, everythingCalls } = fakeLite({ workspacePath: workspace(true), searchPaths: [docs] });
+		// Pin the non-Windows backend so the walker is exercised on every CI OS.
+		const { client, server } = await connectedServer(lite, { platform: "darwin" });
 		const result = await client.callTool({ name: "autorag.search.files", arguments: { query: "refund" } });
 		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({ ok: true, backend: "filesystem" });
 		expect(hasFieldValue(result.structuredContent, "path", realpathSync(join(docs, "refund-policy.md")))).toBe(true);
+		expect(everythingCalls).toHaveLength(0);
 		await client.close();
 		await server.close();
 	});
 
-	it("forwards Everything search fields to the provider", async () => {
-		const { lite, everythingCalls } = fakeLite({ workspacePath: workspace(true) });
-		const { client, server } = await connectedServer(lite);
+	it("escapes literal query punctuation into an Everything regex on Windows", async () => {
+		const { lite, everythingCalls } = fakeLite({
+			workspacePath: workspace(true),
+			everything: { ok: true, results: [] },
+		});
+		const { client, server } = await connectedServer(lite, { platform: "win32" });
 		const result = await client.callTool({
-			name: "autorag.search.everything",
-			arguments: { query: "ext:txt refund", regex: true, kind: "files", sort: "name-ascending" },
+			name: "autorag.search.files",
+			arguments: { query: "a.b", matchPath: true, matchCase: true },
 		});
 		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({ ok: true, backend: "everything" });
 		expect(everythingCalls).toHaveLength(1);
-		expect(everythingCalls[0]?.request).toMatchObject({
-			query: "ext:txt refund",
-			regex: true,
-			kind: "files",
-			sort: "name-ascending",
-		});
+		const request = everythingCalls[0]?.request;
+		expect(request).toMatchObject({ regex: true, matchPath: true, matchCase: true });
+		expect(typeof request?.query).toBe("string");
+		// Proves literal semantics: the escaped pattern matches the literal ".", not a wildcard.
+		const pattern = new RegExp(request?.query ?? "");
+		expect(pattern.test("a.b")).toBe(true);
+		expect(pattern.test("axb")).toBe(false);
 		await client.close();
 		await server.close();
 	});
 
-	it("surfaces an Everything backend failure as an error", async () => {
+	it("routes Windows file search through Everything and drops denied results", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-win-")));
+		roots.push(docs);
+		const keep = join(docs, "keep.txt");
+		const privateDir = join(docs, "private");
+		const secret = join(privateDir, "secret.txt");
+		const folder = join(docs, "keep-folder");
+		mkdirSync(privateDir, { recursive: true });
+		mkdirSync(folder, { recursive: true });
+		writeFileSync(keep, "keep\n");
+		writeFileSync(secret, "secret\n");
+		const { lite, everythingCalls } = fakeLite({
+			workspacePath: workspace(true),
+			searchPaths: [docs],
+			excludePaths: [privateDir],
+			everything: {
+				ok: true,
+				results: [
+					{ path: keep, type: "file" },
+					{ path: secret, type: "file" },
+					{ path: folder, type: "folder" },
+				],
+			},
+		});
+		const { client, server } = await connectedServer(lite, { platform: "win32" });
+		const result = await client.callTool({ name: "autorag.search.files", arguments: { query: "keep" } });
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({ ok: true, backend: "everything" });
+		expect(everythingCalls).toHaveLength(1);
+		const entries = resultEntries(result.structuredContent).sort((a, b) => a.path.localeCompare(b.path));
+		expect(entries).toEqual(
+			[
+				{ path: keep, type: "file" },
+				{ path: folder, type: "folder" },
+			].sort((a, b) => a.path.localeCompare(b.path)),
+		);
+		expect(entries.some((entry) => entry.path === secret)).toBe(false);
+		await client.close();
+		await server.close();
+	});
+
+	it("rejects a Windows search root outside the configured roots without invoking the provider", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-win-")));
+		const outside = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-out-")));
+		roots.push(docs, outside);
+		const { lite, everythingCalls } = fakeLite({ workspacePath: workspace(true), searchPaths: [docs] });
+		const { client, server } = await connectedServer(lite, { platform: "win32" });
+		const result = await client.callTool({
+			name: "autorag.search.files",
+			arguments: { query: "keep", root: outside },
+		});
+		expect(everythingCalls).toHaveLength(0);
+		expect(resultEntries(result.structuredContent)).toEqual([]);
+		expect(result.structuredContent).toMatchObject({ backend: "everything" });
+		expect(hasFieldValue(result.structuredContent, "code", "root-out-of-scope")).toBe(true);
+		await client.close();
+		await server.close();
+	});
+
+	it("surfaces an Everything backend failure as an MCP error without filesystem fallback", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-win-")));
+		roots.push(docs);
+		const { lite, everythingCalls } = fakeLite({
+			workspacePath: workspace(true),
+			searchPaths: [docs],
+			everything: { ok: false, reason: "search-failed", message: "Everything exploded" },
+		});
+		const { client, server } = await connectedServer(lite, { platform: "win32" });
+		const result = await client.callTool({ name: "autorag.search.files", arguments: { query: "refund" } });
+		expect(result.isError).toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			ok: false,
+			backend: "everything",
+			reason: "search-failed",
+			message: "Everything exploded",
+		});
+		expect(everythingCalls).toHaveLength(1);
+		await client.close();
+		await server.close();
+	});
+
+	it("paginates filesystem results with a lookahead slot", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-page-")));
+		roots.push(docs);
+		for (const name of ["report-1.txt", "report-2.txt", "report-3.txt"]) {
+			writeFileSync(join(docs, name), "x\n");
+		}
+		const { lite } = fakeLite({ workspacePath: workspace(true), searchPaths: [docs] });
+		const { client, server } = await connectedServer(lite, { platform: "darwin" });
+
+		const first = await client.callTool({
+			name: "autorag.search.files",
+			arguments: { query: "report", maxResults: 2 },
+		});
+		expect(resultEntries(first.structuredContent).map((entry) => entry.path)).toEqual([
+			join(docs, "report-1.txt"),
+			join(docs, "report-2.txt"),
+		]);
+		expect(field(first.structuredContent, "truncated")).toBe(true);
+
+		const rest = await client.callTool({
+			name: "autorag.search.files",
+			arguments: { query: "report", maxResults: 2, offset: 2 },
+		});
+		expect(resultEntries(rest.structuredContent).map((entry) => entry.path)).toEqual([join(docs, "report-3.txt")]);
+		expect(field(rest.structuredContent, "truncated")).toBe(false);
+
+		const pastEnd = await client.callTool({
+			name: "autorag.search.files",
+			arguments: { query: "report", maxResults: 2, offset: 3 },
+		});
+		expect(resultEntries(pastEnd.structuredContent)).toEqual([]);
+		expect(field(pastEnd.structuredContent, "truncated")).toBe(false);
+		await client.close();
+		await server.close();
+	});
+
+	it("excludes configured paths, internal directories, and symlinks from filesystem results", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-excl-")));
+		roots.push(docs);
+		const keep = join(docs, "report-keep.txt");
+		writeFileSync(keep, "keep\n");
+		const privateDir = join(docs, "private");
+		mkdirSync(privateDir, { recursive: true });
+		writeFileSync(join(privateDir, "report-secret.txt"), "secret\n");
+		const gitDir = join(docs, ".git");
+		mkdirSync(gitDir, { recursive: true });
+		writeFileSync(join(gitDir, "report-git.txt"), "internal\n");
+		let symlinked = false;
+		try {
+			symlinkSync(keep, join(docs, "report-link.txt"));
+			symlinked = true;
+		} catch {
+			// Symlink creation needs privileges on Windows; the other exclusions still apply.
+		}
 		const { lite } = fakeLite({
 			workspacePath: workspace(true),
-			everything: { ok: false, reason: "unsupported-platform", message: "Everything is not enabled on this host." },
+			searchPaths: [docs],
+			excludePaths: [privateDir],
 		});
-		const { client, server } = await connectedServer(lite);
-		const result = await client.callTool({ name: "autorag.search.everything", arguments: { query: "refund" } });
-		expect(result.isError === true || field(result.structuredContent, "ok") === false).toBe(true);
+		const { client, server } = await connectedServer(lite, { platform: "darwin" });
+		const result = await client.callTool({ name: "autorag.search.files", arguments: { query: "report" } });
+		const paths = resultEntries(result.structuredContent).map((entry) => entry.path);
+		expect(paths).toEqual([keep]);
+		if (symlinked) expect(paths).not.toContain(join(docs, "report-link.txt"));
+		await client.close();
+		await server.close();
+	});
+
+	it("pages Windows Everything results after dropping denied entries", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-winpage-")));
+		roots.push(docs);
+		const privateDir = join(docs, "private");
+		mkdirSync(privateDir, { recursive: true });
+		const denied = join(privateDir, "denied.txt");
+		writeFileSync(denied, "denied\n");
+		const keep1 = join(docs, "keep-1.txt");
+		const keep2 = join(docs, "keep-2.txt");
+		const keep3 = join(docs, "keep-3.txt");
+		for (const path of [keep1, keep2, keep3]) writeFileSync(path, "keep\n");
+		const { lite } = fakeLite({
+			workspacePath: workspace(true),
+			searchPaths: [docs],
+			excludePaths: [privateDir],
+			everythingProvider: pagingEverything([
+				{ path: denied, type: "file" },
+				{ path: keep1, type: "file" },
+				{ path: keep2, type: "file" },
+				{ path: keep3, type: "file" },
+			]),
+		});
+		const { client, server } = await connectedServer(lite, { platform: "win32" });
+
+		const first = await client.callTool({
+			name: "autorag.search.files",
+			arguments: { query: "keep", maxResults: 2 },
+		});
+		expect(resultEntries(first.structuredContent).map((entry) => entry.path)).toEqual([keep1, keep2]);
+		expect(field(first.structuredContent, "truncated")).toBe(true);
+
+		const rest = await client.callTool({
+			name: "autorag.search.files",
+			arguments: { query: "keep", maxResults: 2, offset: 2 },
+		});
+		expect(resultEntries(rest.structuredContent).map((entry) => entry.path)).toEqual([keep3]);
+		expect(field(rest.structuredContent, "truncated")).toBe(false);
 		await client.close();
 		await server.close();
 	});
