@@ -307,8 +307,26 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 			},
 			async () => {
 				try {
+					if (lite.config.dupey?.enabled === false) {
+						return toolError("duplicates-disabled", "Dupey duplicate scanning is disabled by configuration.");
+					}
+					const configuredDupey = lite.config.dupey as
+						| (NonNullable<AutoRAGLite["config"]["dupey"]> & {
+								readonly run?: (args: readonly string[]) => Promise<string>;
+						  })
+						| undefined;
+					const dupeyOptions =
+						configuredDupey === undefined
+							? {}
+							: {
+									...(configuredDupey.binaryPath !== undefined
+										? { executable: configuredDupey.binaryPath }
+										: {}),
+									...(configuredDupey.timeoutMs !== undefined ? { timeoutMs: configuredDupey.timeoutMs } : {}),
+									...(configuredDupey.run !== undefined ? { run: configuredDupey.run } : {}),
+								};
 					const roots = lite.config.searchPaths.map((path) => resolve(path));
-					const scans = await Promise.all(roots.map((root) => scanWithDupey(root, lite.config.dupey ?? {})));
+					const scans = await Promise.all(roots.map((root) => scanWithDupey(root, dupeyOptions)));
 					return jsonResult({
 						ok: true,
 						roots,
