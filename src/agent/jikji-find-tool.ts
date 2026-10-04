@@ -59,6 +59,8 @@ export interface JikjiFindProvider {
 }
 
 export interface JikjiFindDetails {
+	/** Provider diagnostics, including failed roots alongside healthy answers. */
+	readonly diagnostics?: readonly JikjiDiagnostic[];
 	readonly method: "jikji_find";
 	readonly answerCount: number;
 	readonly handoffAction: JikjiHandoffAction | undefined;
@@ -108,6 +110,7 @@ export function createJikjiFindTool(provider: JikjiFindProvider): AgentTool<type
 						forbiddenTools: [],
 						allowedFollowups: [],
 						perRoot: [],
+						diagnostics: [],
 					},
 				};
 			}
@@ -140,6 +143,7 @@ export function createJikjiFindTool(provider: JikjiFindProvider): AgentTool<type
 						forbiddenTools: [],
 						allowedFollowups: [],
 						perRoot,
+						diagnostics,
 					},
 				};
 			}
@@ -161,6 +165,7 @@ export function createJikjiFindTool(provider: JikjiFindProvider): AgentTool<type
 					forbiddenTools: policy?.forbiddenTools ?? [],
 					allowedFollowups: policy?.allowedFollowups ?? [],
 					perRoot,
+					diagnostics,
 				},
 			};
 		},
