@@ -69,6 +69,23 @@ describe("RssConnector", () => {
 		}
 	});
 
+	it("honors a configured maxContentChars cap per item", async () => {
+		const mock = createMockFetch([{ match: "rss.example.com", text: RSS_XML }]);
+		const connector = new RssConnector({
+			feeds: [{ url: "https://rss.example.com/feed.xml" }],
+			fetchImpl: mock.fetchImpl,
+			maxContentChars: 10,
+		});
+
+		const result = await connector.fetch();
+
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.documents.length).toBeGreaterThan(0);
+			for (const document of result.documents) expect(document.content.length).toBeLessThanOrEqual(10);
+		}
+	});
+
 	it("degrades per-feed failures to index-based warnings and fails only when all feeds fail", async () => {
 		const mock = createMockFetch([
 			{ match: "down.example.com", status: 404 },

@@ -47,6 +47,8 @@ export interface SpotlightConnectorOptions {
 	readonly maxResultsPerQuery?: number;
 	/** Total documents hydrated per fetch. Default 300. */
 	readonly maxDocuments?: number;
+	/** Characters kept per document body. Default 100000. */
+	readonly maxContentChars?: number;
 	/** Files larger than this are skipped. Default 256 KiB. */
 	readonly maxBytesPerFile?: number;
 	/** Per-process timeout in ms. Default 15s. */
@@ -139,6 +141,7 @@ export class SpotlightConnector implements DatasourceConnector {
 
 		// Hydrate content. Directories, oversized, and unreadable files skip.
 		const maxBytes = this.options.maxBytesPerFile ?? DEFAULT_MAX_BYTES_PER_FILE;
+		const maxContentChars = this.options.maxContentChars ?? MAX_CONTENT_CHARS;
 		const documents: ConnectorDocument[] = [];
 		let permissionDenied = 0;
 		let readFailures = 0;
@@ -148,7 +151,7 @@ export class SpotlightConnector implements DatasourceConnector {
 				const info = await stat(path);
 				if (!info.isFile() || info.size > maxBytes) continue;
 				const text = await this.readFile(path);
-				const content = text.trim().slice(0, MAX_CONTENT_CHARS);
+				const content = text.trim().slice(0, maxContentChars);
 				if (content.length === 0) continue;
 				documents.push({
 					docId: createHash("sha256").update(path).digest("hex").slice(0, 16),

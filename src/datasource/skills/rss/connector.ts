@@ -24,6 +24,8 @@ export interface RssConnectorOptions {
 	readonly fetchImpl?: typeof fetch;
 	readonly maxDocuments?: number;
 	readonly maxItemsPerFeed?: number;
+	/** Characters kept per item body. Default 20000. */
+	readonly maxContentChars?: number;
 }
 
 const DEFAULT_MAX_DOCUMENTS = 500;
@@ -46,6 +48,7 @@ export class RssConnector implements DatasourceConnector {
 		if (feeds.length === 0) return { ok: false, reason: "not-configured", message: "no feeds configured" };
 		const maxDocuments = this.options.maxDocuments ?? DEFAULT_MAX_DOCUMENTS;
 		const maxItemsPerFeed = this.options.maxItemsPerFeed ?? DEFAULT_MAX_ITEMS_PER_FEED;
+		const maxContentChars = this.options.maxContentChars ?? MAX_CONTENT_CHARS;
 
 		const documents: ConnectorDocument[] = [];
 		const warnings: string[] = [];
@@ -88,7 +91,7 @@ export class RssConnector implements DatasourceConnector {
 					docId: item.id,
 					hierarchy,
 					title,
-					content: content.slice(0, MAX_CONTENT_CHARS),
+					content: content.slice(0, maxContentChars),
 					...(item.publishedAt !== undefined ? { publishedAt: item.publishedAt } : {}),
 					metadata: { feedIndex: index, feedTitle, categories: item.categories },
 				});

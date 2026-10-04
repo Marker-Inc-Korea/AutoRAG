@@ -95,8 +95,8 @@ The zero-configuration boundary is narrow:
 Embedding requests contain text and selected model/profile data only. AutoRAG
 does not send archive IDs, source paths, credentials, or native store paths to
 the gateway. If the runtime is unavailable, a datasource keeps its native
-lexical/FTS lane where supported and reports a diagnostic; it does not silently
-switch to a remote embedding service.
+lexical/FTS lane where supported and reports a diagnostic; a remote embedding
+service is used only when the operator explicitly configures one.
 ## Contract
 
 A datasource skill is both:
@@ -115,6 +115,22 @@ RetrievalMethodRegistry
 ```
 
 A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
+
+Search-tool calls earn a weak positive `followup` memory signal only when they
+complete without a tool error and return nonempty evidence. Empty, unavailable,
+failed, or aborted searches earn no signal and no negative penalty. Partial
+multi-source searches retain their results and diagnostics but earn no aggregate
+credit: `retrieval-method-failed`, `minsync-unavailable`, `jikji-find-failed`,
+and `jikji-unavailable` diagnostics indicate failure even at warning severity.
+Error-severity diagnostics also withhold credit; other informational or warning
+diagnostics do not. There is no reliable per-method attribution for crediting
+healthy members of an incomplete aggregate.
+
+Current tools require a finite positive result count (Jikji uses its answer-path
+count). For compatibility, legacy details without that count may qualify through
+a nonempty source identity in `sources` or `results`. This fallback never overrides
+an explicit zero or invalid count. Calls still count toward the search budget and
+retain their retrieval trace, and explicit user feedback is unchanged.
 
 ## Connector sync/index timeouts
 
@@ -454,8 +470,11 @@ added/changed indexable files into `mirror/`. Deleted and renamed virtual paths
 are removed from the completed snapshot. A no-op refresh downloads zero bodies
 and does not rewrite `chunks.json`. A failed copy leaves the previous manifest
 and mirror available for query-time search. `include`, `exclude`,
-`maxBytesPerFile`, `concurrency`, `bandwidthLimit`, and `dryRun` are trusted
-server configuration; model/tool arguments cannot change them.
+`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
+`bandwidthLimit`, and `dryRun` are trusted server configuration; model/tool
+arguments cannot change them. The RSS connector takes the same trusted
+`maxDocuments`/`maxItemsPerFeed`/`maxContentChars` caps, and Spotlight takes
+`maxDocuments`/`maxContentChars`/`maxResultsPerQuery`/`maxBytesPerFile`.
 
 Before searching, the agent loads the datasource skill with
 `load_datasource_skill`, then calls the connection's dedicated

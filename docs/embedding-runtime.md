@@ -5,9 +5,11 @@ datasource integrations. The service owns embedding computation only. MinSync,
 discrawl, and other datasource CLIs retain ownership of their archives, chunks,
 vector stores, generations, and source identities.
 
-The service binds to `127.0.0.1` and does not silently fall back to a remote
-embedding provider. Model weights are mutable user-cache data and are never
-included in the npm package or source tree.
+The service binds to `127.0.0.1`. It does not proxy to a remote embedder, and
+it never silently substitutes a remote provider for the local runtime — a
+remote embedding endpoint is a separate, explicit operator choice. Model
+weights are mutable user-cache data and are never included in the npm package
+or source tree.
 
 ## Profiles
 

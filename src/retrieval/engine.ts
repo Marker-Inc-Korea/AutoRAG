@@ -18,6 +18,7 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
+import type { Reranker } from "./rerank.ts";
 import { MINSYNC_SURFACE } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
@@ -58,6 +59,13 @@ export interface RetrievalEngineOptions {
 	 * preservation — matching the existing {@link AutoRAGAgent} behavior.
 	 */
 	readonly isMinSyncBinaryMissing?: () => boolean;
+	/**
+	 * Optional post-merge reranker. When set, merged results are reordered by
+	 * the reranker after dedup and score normalization. A reranker failure is
+	 * reported as a `rerank-failed` diagnostic and the unranked order is kept —
+	 * the engine never silently drops evidence because a reranker was down.
+	 */
+	readonly reranker?: Reranker;
 }
 
 /**
@@ -90,6 +98,7 @@ export class RetrievalEngine {
 	private readonly defaultTopK: number;
 	private readonly defaultDedup: boolean;
 	private readonly isMinSyncBinaryMissing: (() => boolean) | undefined;
+	private readonly reranker: Reranker | undefined;
 
 	constructor(options: RetrievalEngineOptions = {}) {
 		this.registry = new RetrievalMethodRegistry();
@@ -100,6 +109,7 @@ export class RetrievalEngine {
 		this.defaultTopK = options.defaultTopK ?? DEFAULT_MERGED_EVIDENCE_CEILING;
 		this.defaultDedup = options.defaultDedup ?? true;
 		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
+		this.reranker = options.reranker;
 	}
 
 	/** The underlying method registry. Intentionally public for tooling. */
@@ -166,11 +176,44 @@ export class RetrievalEngine {
 		const ctx = this.accessContextFor(options);
 		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
 		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
+		const merged = this.merger.merge(filtered, { topK, dedup: this.defaultDedup });
+		const results = await this.applyRerank(query, merged, skipped.diagnostics, options);
 		return {
-			results: this.merger.merge(filtered, { topK, dedup: this.defaultDedup }),
+			results,
 			diagnostics: skipped.diagnostics,
 			unsearched: skipped.unsearched,
 		};
+	}
+
+	/**
+	 * Reorder merged results with the configured reranker. On failure the
+	 * unranked order is returned and a `rerank-failed` diagnostic is appended.
+	 */
+	private async applyRerank(
+		query: string,
+		results: RetrievalResult[],
+		diagnostics: RetrievalDiagnostic[],
+		options: RetrievalOptions,
+	): Promise<RetrievalResult[]> {
+		if (this.reranker === undefined || results.length === 0) return results;
+		try {
+			const reranked = await this.reranker.rerank(query, results, {
+				topN: options.topK,
+				signal: options.signal,
+			});
+			return reranked;
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			const descriptor = this.reranker.describe();
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" failed and was skipped; merged order preserved: ${reason}`,
+				source: descriptor.name,
+				reason,
+			});
+			return results;
+		}
 	}
 
 	/**

@@ -70,6 +70,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
+import { createReranker, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
@@ -158,6 +159,50 @@ const SEARCH_TOOLS = [
 	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
 
+/** Only completed searches that returned evidence earn implicit positive feedback. */
+function hasSearchEvidence(toolName: string, details: unknown, isError: boolean): boolean {
+	if (isError || details === null || typeof details !== "object") return false;
+	const outcome = details as Record<string, unknown>;
+	if (outcome.available === false) return false;
+	if (
+		Array.isArray(outcome.diagnostics) &&
+		outcome.diagnostics.some(
+			(diagnostic) =>
+				diagnostic !== null &&
+				typeof diagnostic === "object" &&
+				(diagnostic.severity === "error" ||
+					diagnostic.code === "retrieval-method-failed" ||
+					diagnostic.code === "minsync-unavailable" ||
+					diagnostic.code === "jikji-find-failed" ||
+					diagnostic.code === "jikji-unavailable"),
+		)
+	) {
+		// Pipeline failures are warnings even when healthy methods return hits.
+		// Without per-method attribution, the incomplete aggregate earns no credit.
+		return false;
+	}
+	// Jikji reports answer paths, while the other search tools report resultCount.
+	const countKey = toolName === JIKJI_FIND_TOOL_NAME ? "answerCount" : "resultCount";
+	if (countKey in outcome) {
+		const count = outcome[countKey];
+		return typeof count === "number" && Number.isFinite(count) && count > 0;
+	}
+	// Legacy producers may omit counts. Never override an explicit zero/invalid
+	// count, and require an actual source identity rather than an arbitrary item.
+	return (
+		(Array.isArray(outcome.sources) &&
+			outcome.sources.some((source) => typeof source === "string" && source.trim().length > 0)) ||
+		(Array.isArray(outcome.results) &&
+			outcome.results.some(
+				(result) =>
+					result !== null &&
+					typeof result === "object" &&
+					typeof result.source === "string" &&
+					result.source.trim().length > 0,
+			))
+	);
+}
+
 /**
  * Messages the model sees. pi-agent-core declares the callable tools through
  * `system` transcript messages (`toolsAdded`/`toolsRemoved`), so they must pass
@@ -185,6 +230,115 @@ function keepLlmMessages(messages: AgentMessage[]): Message[] {
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+
+/**
+ * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
+ * the model. Every field is optional: an omitted field keeps the shipped
+ * default below, so this only exists to let an operator tighten or widen a
+ * specific cap without rebuilding. Values must be positive integers.
+ */
+export interface AutoRAGRetrievalLimits {
+	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
+	readonly mergedEvidenceCeiling?: number;
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	readonly singleDatasourceTopK?: number;
+	/** MinSync semantic retrieval default `topK`. Default 50. */
+	readonly minSyncTopK?: number;
+	/** MinSync fetch cap when a scope narrows the query. Default 100. */
+	readonly minSyncScopedQueryTopK?: number;
+	/** Instance scopes listed in one datasource tool description. Default 8. */
+	readonly toolDescriptionInstanceScopes?: number;
+	/** Baseline evidence prefetched for the fast answer. */
+	readonly prefetch?: {
+		/** Jikji find candidate count. Default 30. */
+		readonly jikjiTopK?: number;
+		/** MinSync retrieve candidate count. Default 100. */
+		readonly minSyncTopK?: number;
+		/** Max Jikji answer paths rendered into the baseline. Default 100. */
+		readonly jikjiPathLimit?: number;
+		/** Max results rendered per baseline section. Default 100. */
+		readonly sectionLimit?: number;
+	};
+}
+
+/** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
+const DEFAULT_RETRIEVAL_LIMITS = {
+	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
+	singleDatasourceTopK: 50,
+	minSyncTopK: 50,
+	minSyncScopedQueryTopK: 100,
+	toolDescriptionInstanceScopes: 8,
+	prefetch: { jikjiTopK: 30, minSyncTopK: 100, jikjiPathLimit: 100, sectionLimit: 100 },
+} as const;
+
+type ResolvedRetrievalLimits = {
+	readonly mergedEvidenceCeiling: number;
+	readonly singleDatasourceTopK: number;
+	readonly minSyncTopK: number;
+	readonly minSyncScopedQueryTopK: number;
+	readonly toolDescriptionInstanceScopes: number;
+	readonly prefetch: {
+		readonly jikjiTopK: number;
+		readonly minSyncTopK: number;
+		readonly jikjiPathLimit: number;
+		readonly sectionLimit: number;
+	};
+};
+
+function positiveLimit(value: number | undefined, fallback: number, path: string): number {
+	if (value === undefined) return fallback;
+	if (!Number.isInteger(value) || value <= 0) throw new Error(`${path} must be a positive integer`);
+	return value;
+}
+
+function resolveRetrievalLimits(limits: AutoRAGRetrievalLimits | undefined): ResolvedRetrievalLimits {
+	const prefetch = limits?.prefetch;
+	return {
+		mergedEvidenceCeiling: positiveLimit(
+			limits?.mergedEvidenceCeiling,
+			DEFAULT_RETRIEVAL_LIMITS.mergedEvidenceCeiling,
+			"limits.mergedEvidenceCeiling",
+		),
+		singleDatasourceTopK: positiveLimit(
+			limits?.singleDatasourceTopK,
+			DEFAULT_RETRIEVAL_LIMITS.singleDatasourceTopK,
+			"limits.singleDatasourceTopK",
+		),
+		minSyncTopK: positiveLimit(limits?.minSyncTopK, DEFAULT_RETRIEVAL_LIMITS.minSyncTopK, "limits.minSyncTopK"),
+		minSyncScopedQueryTopK: positiveLimit(
+			limits?.minSyncScopedQueryTopK,
+			DEFAULT_RETRIEVAL_LIMITS.minSyncScopedQueryTopK,
+			"limits.minSyncScopedQueryTopK",
+		),
+		toolDescriptionInstanceScopes: positiveLimit(
+			limits?.toolDescriptionInstanceScopes,
+			DEFAULT_RETRIEVAL_LIMITS.toolDescriptionInstanceScopes,
+			"limits.toolDescriptionInstanceScopes",
+		),
+		prefetch: {
+			jikjiTopK: positiveLimit(
+				prefetch?.jikjiTopK,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiTopK,
+				"limits.prefetch.jikjiTopK",
+			),
+			minSyncTopK: positiveLimit(
+				prefetch?.minSyncTopK,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.minSyncTopK,
+				"limits.prefetch.minSyncTopK",
+			),
+			jikjiPathLimit: positiveLimit(
+				prefetch?.jikjiPathLimit,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiPathLimit,
+				"limits.prefetch.jikjiPathLimit",
+			),
+			sectionLimit: positiveLimit(
+				prefetch?.sectionLimit,
+				DEFAULT_RETRIEVAL_LIMITS.prefetch.sectionLimit,
+				"limits.prefetch.sectionLimit",
+			),
+		},
+	};
+}
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
@@ -386,11 +540,24 @@ export interface AutoRAGAgentOptions {
 	 * Web tools are always omitted for remote P2P sessions.
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
+	/**
+	 * Post-merge reranking. When set (and not `false`), merged retrieval evidence
+	 * is reordered by a dedicated rerank model — OpenRouter by default. A
+	 * configured-but-unavailable reranker is reported as a diagnostic and the
+	 * merged order is preserved. `false` disables reranking.
+	 */
+	rerank?: RerankAgentOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
+	/**
+	 * Hard caps on retrieval, baseline prefetch, and model-facing candidate
+	 * lists. Omitted fields keep their shipped defaults — see
+	 * {@link AutoRAGRetrievalLimits}. Values must be positive integers.
+	 */
+	limits?: AutoRAGRetrievalLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
@@ -408,6 +575,24 @@ export interface AutoRAGAgentOptions {
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
 	thinking?: AutoRAGThinkingOptions | false;
+}
+
+/** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
+export interface RerankAgentOptions {
+	/** Provider id. @default "openrouter" */
+	provider?: string;
+	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	model?: string;
+	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. */
+	apiKey?: string;
+	/** Environment variable holding the provider API key. */
+	apiKeyEnv?: string;
+	/** Override the provider base URL. */
+	baseUrl?: string;
+	/** Return only the top N merged results. */
+	topN?: number;
+	/** Per-request timeout in milliseconds. */
+	timeoutMs?: number;
 }
 
 export interface AutoRAGSearchSession {
@@ -479,6 +664,8 @@ export class AutoRAGAgent {
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
+	private readonly reranker: Reranker | undefined;
+	private readonly rerankTopN: number | undefined;
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
@@ -501,6 +688,7 @@ export class AutoRAGAgent {
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
+	private readonly limits: ResolvedRetrievalLimits;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -541,16 +729,22 @@ export class AutoRAGAgent {
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
+		this.limits = resolveRetrievalLimits(options.limits);
+		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
+		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
-			this.minSyncMethod = new MinSyncVectorMethod({
+			const minSyncDefaults = {
 				...minSyncOpts,
 				root: this.workspaceProjectRoot,
-			});
+				defaultTopK: this.limits.minSyncTopK,
+				scopedTopK: this.limits.minSyncScopedQueryTopK,
+			};
+			this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
 			this.minSyncReady = this.minSyncMethod.isReady();
 			this.methodRegistry.register(this.minSyncMethod);
-			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
+			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
 		for (const skill of this.datasourceSkills) {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
@@ -726,6 +920,7 @@ export class AutoRAGAgent {
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
 				if (!this.lastQuery || !this.searchToolNames.has(toolName)) return undefined;
+				if (!hasSearchEvidence(toolName, context.result.details, context.isError)) return undefined;
 
 				const details = context.result.details as
 					| { resultCount?: number; sources?: string[]; method?: string }
@@ -863,8 +1058,10 @@ export class AutoRAGAgent {
 				results: details?.results ?? [],
 			});
 		}
-		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
-		this.memory.save();
+		if (hasSearchEvidence(event.toolName, details, event.isError)) {
+			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
+			this.memory.save();
+		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
@@ -1342,7 +1539,7 @@ export class AutoRAGAgent {
 				.describeSources()
 				.map((source) => source.source)
 				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
-				.slice(0, 8);
+				.slice(0, this.limits.toolDescriptionInstanceScopes);
 			specs.push({
 				datasourceId: descriptor.datasourceId,
 				description: descriptor.description,
@@ -1418,19 +1615,19 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 100, scope: options.scope };
+		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
 		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 30 }).catch(() => undefined),
+				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 100)
+					.slice(0, this.limits.prefetch.jikjiPathLimit)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
@@ -1449,11 +1646,8 @@ export class AutoRAGAgent {
 						seen.add(key);
 						return true;
 					})
-					.slice(0, 100)
-					.map(
-						(result, index) =>
-							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
-					)
+					.slice(0, this.limits.prefetch.sectionLimit)
+					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		};
@@ -2343,13 +2537,15 @@ export class AutoRAGAgent {
 				source: "minsync",
 			});
 		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
-			),
-			diagnostics,
-		};
+		const merged = this.rerankWithMemory(
+			query,
+			this.merger.merge(filteredByMethod, {
+				topK: options.topK ?? this.limits.mergedEvidenceCeiling,
+				dedup: true,
+			}),
+		);
+		const results = await this.applyRerank(query, merged, diagnostics);
+		return { results, diagnostics };
 	}
 
 	async searchAllDocuments(
@@ -2395,13 +2591,15 @@ export class AutoRAGAgent {
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
-			),
-			diagnostics,
-		};
+		const merged = this.rerankWithMemory(
+			query,
+			this.merger.merge(filteredByMethod, {
+				topK: options.topK ?? this.limits.singleDatasourceTopK,
+				dedup: true,
+			}),
+		);
+		const results = await this.applyRerank(query, merged, diagnostics);
+		return { results, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2419,6 +2617,8 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				datasourceAccess: this.datasourceAccessOptions,
+				defaultTopK: this.limits.mergedEvidenceCeiling,
+				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 			});
@@ -2431,6 +2631,43 @@ export class AutoRAGAgent {
 
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
+	}
+
+	/**
+	 * Reorder merged evidence with the configured reranker. A configured-but-
+	 * unavailable reranker, or a rerank failure, is reported as a diagnostic and
+	 * the merged order is preserved — a reranker outage never hides evidence.
+	 */
+	private async applyRerank(
+		query: string,
+		results: RetrievalResult[],
+		diagnostics: RetrievalDiagnostic[],
+	): Promise<RetrievalResult[]> {
+		if (this.reranker === undefined || results.length === 0) return results;
+		const descriptor = this.reranker.describe();
+		if (!descriptor.available) {
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" is configured but unavailable; merged order preserved: ${descriptor.reason ?? "unknown reason"}`,
+				source: descriptor.name,
+				...(descriptor.reason !== undefined ? { reason: descriptor.reason } : {}),
+			});
+			return results;
+		}
+		try {
+			return await this.reranker.rerank(query, results, { topN: this.rerankTopN });
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" failed; merged order preserved: ${reason}`,
+				source: descriptor.name,
+				reason,
+			});
+			return results;
+		}
 	}
 
 	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {
