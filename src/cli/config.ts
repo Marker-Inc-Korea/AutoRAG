@@ -5,6 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import type { JevBackendName } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -15,7 +16,6 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
-import { JEV_BACKENDS, type JevBackend } from "../jev/index.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import {
@@ -89,21 +89,18 @@ export interface WebSearchCliConfig {
 
 /**
  * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
- * it explicitly. Secrets never appear here: `apiKeyEnv` names the environment
- * variable holding the backend API key.
+ * it explicitly. Secrets never appear here: the `jev-use` engine reads the
+ * backend credential from its own environment variable (`TYPESAFE_API_KEY`,
+ * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
  */
 export interface JevCliConfig {
 	enabled?: boolean;
-	/** Jev backend. Omit to let the first authenticated backend win. */
-	backend?: JevBackend;
-	/** Provider-neutral model id, e.g. `jev-latest` or `jev-1.13`. */
+	/** Force one backend; omit to let the first credential present win. */
+	backend?: JevBackendName;
+	/** Model id sent with every call, e.g. `jev-latest`. */
 	model?: string;
-	/** Environment variable holding the backend API key (never the key itself). */
-	apiKeyEnv?: string;
-	/** Per-request timeout in milliseconds (1000-120000). */
-	timeoutMs?: number;
-	/** Retries for transient failures (0-5). */
-	maxRetries?: number;
+	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
+	confidenceThreshold?: number;
 }
 
 /**
@@ -1106,10 +1103,11 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 	enabled: true,
 	backend: true,
 	model: true,
-	apiKeyEnv: true,
-	timeoutMs: true,
-	maxRetries: true,
+	confidenceThreshold: true,
 };
+
+/** Backends the `jev-use` engine can resolve from the environment. */
+const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel"];
 
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
@@ -1129,11 +1127,11 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 	}
 	if (record.backend !== undefined) {
 		const backend = record.backend;
-		if (typeof backend !== "string" || !JEV_BACKENDS.some((known) => known === backend)) {
-			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKENDS.join(", ")}`);
+		if (typeof backend !== "string" || !JEV_BACKEND_NAMES.some((known) => known === backend)) {
+			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKEND_NAMES.join(", ")}`);
 		}
 		// Narrowed by the membership check above.
-		out.backend = backend as JevBackend;
+		out.backend = backend as JevBackendName;
 	}
 	if (record.model !== undefined) {
 		if (typeof record.model !== "string" || record.model.trim().length === 0) {
@@ -1141,33 +1139,16 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 		}
 		out.model = record.model.trim();
 	}
-	if (record.apiKeyEnv !== undefined) {
-		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
-			throw new ConfigError("jev.apiKeyEnv must be an environment variable name");
-		}
-		out.apiKeyEnv = record.apiKeyEnv;
-	}
-	if (record.timeoutMs !== undefined) {
+	if (record.confidenceThreshold !== undefined) {
 		if (
-			typeof record.timeoutMs !== "number" ||
-			!Number.isInteger(record.timeoutMs) ||
-			record.timeoutMs < 1000 ||
-			record.timeoutMs > 120000
+			typeof record.confidenceThreshold !== "number" ||
+			!Number.isFinite(record.confidenceThreshold) ||
+			record.confidenceThreshold < 0 ||
+			record.confidenceThreshold > 1
 		) {
-			throw new ConfigError("jev.timeoutMs must be an integer between 1000 and 120000");
+			throw new ConfigError("jev.confidenceThreshold must be a number between 0 and 1");
 		}
-		out.timeoutMs = record.timeoutMs;
-	}
-	if (record.maxRetries !== undefined) {
-		if (
-			typeof record.maxRetries !== "number" ||
-			!Number.isInteger(record.maxRetries) ||
-			record.maxRetries < 0 ||
-			record.maxRetries > 5
-		) {
-			throw new ConfigError("jev.maxRetries must be an integer between 0 and 5");
-		}
-		out.maxRetries = record.maxRetries;
+		out.confidenceThreshold = record.confidenceThreshold;
 	}
 	return out;
 }

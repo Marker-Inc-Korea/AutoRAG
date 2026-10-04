@@ -24,7 +24,6 @@ import {
 	type FSearchSearchRequest,
 	type FSearchSearchResult,
 } from "../fsearch/index.ts";
-import { JEV_TOOL_NAME, type JevToolOptions } from "../jev/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -103,7 +102,7 @@ import {
 	EMIT_FAST_ANSWER_TOOL_NAME,
 } from "./fast-answer-tool.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
-import { createJevExtension } from "./jev-extension.ts";
+import { createJevExtension, JEV_TOOL_NAME, type JevToolOptions } from "./jev-extension.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,

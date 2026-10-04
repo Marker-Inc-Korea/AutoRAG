@@ -29,23 +29,11 @@ describe("jev CLI config", () => {
 		expect(buildAgentOptions(baseConfig()).jev).toBeUndefined();
 	});
 
-	it("passes backend, model, credential env, and limits through", () => {
+	it("passes backend, model, and confidence threshold through", () => {
 		const opts = buildAgentOptions(
-			baseConfig({
-				backend: "openrouter",
-				model: "jev-1.13",
-				apiKeyEnv: "OPENROUTER_API_KEY",
-				timeoutMs: 5000,
-				maxRetries: 1,
-			}),
+			baseConfig({ backend: "openrouter", model: "jev-1.13", confidenceThreshold: 0.7 }),
 		);
-		expect(opts.jev).toEqual({
-			backend: "openrouter",
-			model: "jev-1.13",
-			apiKeyEnv: "OPENROUTER_API_KEY",
-			timeoutMs: 5000,
-			maxRetries: 1,
-		});
+		expect(opts.jev).toEqual({ backend: "openrouter", model: "jev-1.13", confidenceThreshold: 0.7 });
 	});
 
 	it("maps false and enabled:false to the agent opt-out", () => {
@@ -63,13 +51,8 @@ describe("jev CLI config", () => {
 		expect(() => normalizeJevConfig("openrouter")).toThrow(ConfigError);
 	});
 
-	it("rejects out-of-range timeouts and retries", () => {
-		expect(() => buildAgentOptions(baseConfig({ timeoutMs: 10 }))).toThrow(ConfigError);
-		expect(() => buildAgentOptions(baseConfig({ timeoutMs: 120_001 }))).toThrow(ConfigError);
-		expect(() => buildAgentOptions(baseConfig({ maxRetries: 9 }))).toThrow(ConfigError);
-	});
-
-	it("rejects an invalid apiKeyEnv name", () => {
-		expect(() => buildAgentOptions(baseConfig({ apiKeyEnv: "not a name" }))).toThrow(ConfigError);
+	it("rejects an out-of-range confidence threshold", () => {
+		expect(() => buildAgentOptions(baseConfig({ confidenceThreshold: -0.1 }))).toThrow(ConfigError);
+		expect(() => buildAgentOptions(baseConfig({ confidenceThreshold: 1.5 }))).toThrow(ConfigError);
 	});
 });

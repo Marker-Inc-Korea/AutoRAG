@@ -9,11 +9,11 @@
         "@earendil-works/pi-ai": "^0.86.1",
         "@earendil-works/pi-coding-agent": "0.86.1",
         "@earendil-works/pi-tui": "0.86.1",
-        "@geminixiang/jev": "^0.3.1",
         "@openrouter/sdk": "^1.4.21",
         "chardet": "^2.2.0",
         "fast-xml-parser": "^5.11.1",
         "iconv-lite": "^0.7.3",
+        "jev-use": "^0.8.0",
         "jszip": "^3.10.1",
         "kordoc": "^4.15.7",
         "mailparser": "^3.9.20",
@@ -173,8 +173,6 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.8", "", { "dependencies": { "@floating-ui/dom": "^1.7.6" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-cC52bHwM/n/CxS87FH0yWdngEZrjdtLW/qVruo68qg+prK7ZQ4YGdut2GyDVpoGeAYe/h899rVeOVm6Oi40k2A=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
-
-    "@geminixiang/jev": ["@geminixiang/jev@0.3.1", "", { "peerDependencies": { "@earendil-works/pi-ai": ">=0.85.0" } }, "sha512-zJ2BdxUwLaWWvq1d//o3rw4nAC5Gt0ViZ4rPaT8XgYXcTxAcPv9J/8tFlvcD9LKbU5pYBOhTi9RL5fTiMvz5lw=="],
 
     "@google/genai": ["@google/genai@2.21.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q=="],
 
@@ -923,6 +921,8 @@
     "isarray": ["isarray@1.0.0", "", {}, "sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ=="],
 
     "isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
+
+    "jev-use": ["jev-use@0.8.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "zod": "^4.6.5" }, "bin": { "jev-use": "dist/cli.js" } }, "sha512-nHOS52eGinSdH90lluFAGTGzP0YuOyLSrkn67VXA75kbo7usVweBF99lr+YXcZNOAhgLqukD5ezIQVU3Mcxz3w=="],
 
     "jiti": ["jiti@2.7.0", "", { "bin": "lib/jiti-cli.mjs" }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
 

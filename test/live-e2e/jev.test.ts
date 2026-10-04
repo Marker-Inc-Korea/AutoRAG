@@ -7,51 +7,60 @@
  *   AUTORAG_JEV_LIVE=1 OPENROUTER_API_KEY=... bunx vitest run test/live-e2e/jev.test.ts
  *
  * Acceptance bar: a narrow, unambiguous state must produce a calibrated
- * probability from Jev through the OpenRouter decisions API, and the tool must
- * surface the provider, model, and usage it used.
+ * probability from Jev through the OpenRouter backend, and the verdicts must
+ * carry the backend that served them.
  */
+import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createJevEvaluator, createJevTool } from "../../src/jev/index.ts";
+import { createJevExtension } from "../../src/agent/jev-extension.ts";
 
 const LIVE = process.env.AUTORAG_JEV_LIVE === "1" && (process.env.OPENROUTER_API_KEY ?? "").length > 0;
 
+function jevTool(): ToolDefinition {
+	const tools: ToolDefinition[] = [];
+	(createJevExtension({ backend: "openrouter", model: "jev-latest" }) as ExtensionFactory)({
+		registerTool: (tool: ToolDefinition) => tools.push(tool),
+	} as unknown as ExtensionAPI);
+	const tool = tools[0];
+	if (tool === undefined) throw new Error("expected the jev tool to register");
+	return tool;
+}
+
+async function run(tool: ToolDefinition, params: unknown): Promise<Record<string, unknown>> {
+	const execute = tool.execute as unknown as (
+		id: string,
+		params: unknown,
+	) => Promise<{ details: Record<string, unknown> }>;
+	return (await execute("live-jev", params)).details;
+}
+
 describe.skipIf(!LIVE)("jev tool over OpenRouter", () => {
 	it("returns a calibrated noul probability for an unambiguous state", async () => {
-		const tool = createJevTool(createJevEvaluator({ backend: "openrouter", model: "jev-latest" }));
-		const result = await tool.execute("live-jev-noul", {
-			state: { message: "Production checkout is down and customers cannot pay." },
-			questions: {
-				is_urgent: {
-					type: "noul",
-					instructions: "Does this message describe an urgent production incident?",
-				},
-			},
+		const details = await run(jevTool(), {
+			state: "Production checkout is down and customers cannot pay.",
+			questions: [{ id: "urgent", type: "noul", question: "Does this describe an urgent production incident?" }],
 		});
-
-		const answer = result.details.answers.is_urgent;
-		expect(answer?.type).toBe("noul");
-		expect(answer?.noul).toBeGreaterThan(0.5);
-		expect(answer?.noul).toBeLessThanOrEqual(1);
-		expect(result.details.provider).toBe("openrouter");
-		expect(result.details.model.length).toBeGreaterThan(0);
-		expect(result.details.usage.totalTokens).toBeGreaterThan(0);
+		const verdicts = details.verdicts as { type: string; answer: number | string | null }[];
+		expect(verdicts[0]?.type).toBe("noul");
+		expect(verdicts[0]?.answer as number).toBeGreaterThan(0.5);
+		expect(verdicts[0]?.answer as number).toBeLessThanOrEqual(1);
+		expect(details.backend).toBe("openrouter");
 	}, 60_000);
 
 	it("picks one option for a choice question", async () => {
-		const tool = createJevTool(createJevEvaluator({ backend: "openrouter", model: "jev-latest" }));
-		const result = await tool.execute("live-jev-choice", {
-			state: { message: "The invoice PDF fails to download when I click the receipt button." },
-			questions: {
-				department: {
+		const details = await run(jevTool(), {
+			state: "The invoice PDF fails to download when I click the receipt button.",
+			questions: [
+				{
+					id: "department",
 					type: "choice",
-					instructions: "Which team should handle this request?",
-					criteria: { billing: "Payments, invoices, refunds", technical: "Bugs, outages, integrations" },
+					question: "Which team should handle this request?",
+					options: { billing: "Payments, invoices, refunds", technical: "Bugs, outages, integrations" },
 				},
-			},
+			],
 		});
-
-		const answer = result.details.answers.department;
-		expect(answer?.type).toBe("choice");
-		expect(["billing", "technical"]).toContain(answer?.choice);
+		const verdicts = details.verdicts as { type: string; answer: string | null }[];
+		expect(verdicts[0]?.type).toBe("choice");
+		expect(["billing", "technical"]).toContain(verdicts[0]?.answer);
 	}, 60_000);
 });

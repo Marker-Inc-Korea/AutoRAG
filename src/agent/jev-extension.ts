@@ -1,23 +1,128 @@
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { createJevEvaluator } from "../jev/evaluator.ts";
-import { createJevTool } from "../jev/tool.ts";
-import type { JevToolOptions } from "../jev/types.ts";
+import { Jev, type Question, type State } from "jev-use";
+import { type Static, Type } from "typebox";
 import { toToolDefinition } from "./pi-session.ts";
 
+/** `jev` tool name, kept in AutoRAG's reserved set and system prompt. */
+export const JEV_TOOL_NAME = "jev";
+
 /**
- * Builds the pi extension that registers the optional `jev` decision tool.
+ * Jev backends the `jev-use` engine resolves from the environment, in
+ * auto-select order: TypeSafe -> OpenRouter -> Vercel AI Gateway.
+ */
+export type JevBackendName = "typesafe" | "openrouter" | "vercel";
+
+/**
+ * Options for the `jev` decision tool. Secrets never appear here: `jev-use`
+ * reads the backend credential from its own environment variable
+ * (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
+ */
+export interface JevToolOptions {
+	/** Force one backend; omit to let the first credential present win. */
+	readonly backend?: JevBackendName;
+	/** Model id sent with every call, e.g. `jev-latest`. */
+	readonly model?: string;
+	/** Escalate verdicts below this confidence. Default: per-source thresholds. */
+	readonly confidenceThreshold?: number;
+}
+
+const jevQuestionSchema = Type.Object({
+	id: Type.Optional(Type.String({ description: "Caller-assigned id, echoed back in the verdict" })),
+	type: Type.Union([Type.Literal("noul"), Type.Literal("choice"), Type.Literal("score")], {
+		description: "noul = P(yes), choice = pick one option, score = ordered level index",
+	}),
+	question: Type.String({
+		minLength: 1,
+		description: "One narrow question about the state. Jev answers exactly this.",
+	}),
+	options: Type.Optional(
+		Type.Union([Type.Array(Type.String()), Type.Record(Type.String(), Type.String())], {
+			description: "choice only: at least two option labels (or label -> meaning)",
+		}),
+	),
+	levels: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "score only: at least two ordered level descriptions; the answer indexes into them",
+		}),
+	),
+	criteria: Type.Optional(
+		Type.Object(
+			{ true: Type.String(), false: Type.String() },
+			{ description: "noul only: what yes and no mean, to sharpen calibration" },
+		),
+	),
+});
+
+const jevParameters = Type.Object({
+	state: Type.Unknown({
+		description: "Text, JSON object, or JSON array Jev should judge. Keep it small and self-contained.",
+	}),
+	questions: Type.Array(jevQuestionSchema, {
+		minItems: 1,
+		description: "Named questions, all evaluated against the same state in one batched request.",
+	}),
+	confidence_threshold: Type.Optional(
+		Type.Number({
+			minimum: 0,
+			maximum: 1,
+			description: "Escalate any verdict below this confidence; omitted uses jev-use's per-source defaults",
+		}),
+	),
+});
+
+type JevParams = Static<typeof jevParameters>;
+
+/**
+ * Builds the pi extension that registers the `jev` decision tool on top of the
+ * [`jev-use`](https://www.npmjs.com/package/jev-use) engine.
  *
- * Jev is TypeSafe's judgment model: typed questions about a state in,
- * calibrated probabilities out — no generated text. Registering it as a pi
- * extension (rather than an AutoRAG custom tool) keeps the tool on pi's
- * extension surface: pi owns activation, rendering, and the `tools`
- * allow-list, and AutoRAG only declares the tool name for its prompt.
- *
- * The evaluator is lazy — no credentials are resolved when the extension
- * loads, only on the first `jev` call.
+ * Jev is TypeSafe's judgment model: typed questions about a state in, calibrated
+ * probabilities out — no generated text. `jev-use` owns backend auto-selection,
+ * request screening, and response validation; this extension only adapts the
+ * pi tool surface. The client is built lazily, so no credential resolves at
+ * extension load time.
  */
 export function createJevExtension(options: JevToolOptions = {}): ExtensionFactory {
+	let client: Jev | undefined;
 	return (pi) => {
-		pi.registerTool(toToolDefinition(createJevTool(createJevEvaluator(options))));
+		const tool: AgentTool<typeof jevParameters, unknown> = {
+			name: JEV_TOOL_NAME,
+			label: "Jev Decision",
+			description: [
+				"Ask the Jev judgment model typed questions about a state and get calibrated probabilities.",
+				"Use for classification, triage, comparison, ranking, and yes/no checks where a number beats prose.",
+				"Batch every question about one state into a single call; keep each question narrow and atomic.",
+				"Verdicts with escalate=true are handed back to you; check confidence before acting on a close call.",
+			].join(" "),
+			parameters: jevParameters,
+			async execute(_toolCallId: string, params: JevParams) {
+				try {
+					client ??= new Jev({
+						...(options.backend !== undefined ? { backend: options.backend } : {}),
+						...(options.model !== undefined ? { model: options.model } : {}),
+						...(options.confidenceThreshold !== undefined
+							? { confidenceThreshold: options.confidenceThreshold }
+							: {}),
+					});
+					const state = (params.state ?? "") as State;
+					const judgment = await client.judge(state, params.questions as Question[], {
+						...(params.confidence_threshold !== undefined
+							? { confidenceThreshold: params.confidence_threshold }
+							: {}),
+					});
+					return { content: [{ type: "text", text: JSON.stringify(judgment, null, 2) }], details: judgment };
+				} catch (error) {
+					// Missing credentials are surfaced, never silent: hand the step
+					// back to the model with jev-use's escalation vocabulary.
+					const hint = error instanceof Error ? error.message : String(error);
+					return {
+						content: [{ type: "text", text: `Jev unavailable: ${hint}` }],
+						details: { escalated: true, reason: "unreachable", hint },
+					};
+				}
+			},
+		};
+		pi.registerTool(toToolDefinition(tool));
 	};
 }
