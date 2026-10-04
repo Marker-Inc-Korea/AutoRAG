@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey, getModel, getProviders } from "@earendil-works/pi-ai/compat";
-import type { AutoRAGAgentOptions } from "../agent/agent.ts";
+import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -146,6 +146,8 @@ export interface CliConfig {
 	excludeExactDuplicates?: boolean;
 	/** Absolute or workspace-relative files/directories omitted from local indexing. */
 	excludePaths?: string[];
+	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
+	limits?: AutoRAGRetrievalLimits;
 	/** Trusted datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
@@ -822,6 +824,78 @@ export function normalizeIndexingConfig(raw: RawIndexingMethods): NormalizedInde
 	};
 }
 
+const LIMITS_ALLOWLIST: Record<string, true> = {
+	mergedEvidenceCeiling: true,
+	singleDatasourceTopK: true,
+	minSyncTopK: true,
+	minSyncScopedQueryTopK: true,
+	toolDescriptionInstanceScopes: true,
+	prefetch: true,
+};
+
+const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
+	jikjiTopK: true,
+	minSyncTopK: true,
+	jikjiPathLimit: true,
+	sectionLimit: true,
+};
+
+function positiveLimitField(record: Record<string, unknown>, key: string, path: string): number | undefined {
+	const value = record[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new ConfigError(`${path}.${key} must be a positive integer`);
+	}
+	return value;
+}
+
+/** Validate the `limits` section and map it onto the agent option. */
+export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'limits' must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(LIMITS_ALLOWLIST, key)) throw new ConfigError(`limits.${key} is not a recognized field`);
+	}
+	const mergedEvidenceCeiling = positiveLimitField(record, "mergedEvidenceCeiling", "limits");
+	const singleDatasourceTopK = positiveLimitField(record, "singleDatasourceTopK", "limits");
+	const minSyncTopK = positiveLimitField(record, "minSyncTopK", "limits");
+	const minSyncScopedQueryTopK = positiveLimitField(record, "minSyncScopedQueryTopK", "limits");
+	const toolDescriptionInstanceScopes = positiveLimitField(record, "toolDescriptionInstanceScopes", "limits");
+	let prefetch: AutoRAGRetrievalLimits["prefetch"];
+	const rawPrefetch = record.prefetch;
+	if (rawPrefetch !== undefined) {
+		if (typeof rawPrefetch !== "object" || rawPrefetch === null || Array.isArray(rawPrefetch)) {
+			throw new ConfigError("limits.prefetch must be an object");
+		}
+		const prefetchRecord = rawPrefetch as Record<string, unknown>;
+		for (const key of Object.keys(prefetchRecord)) {
+			if (!Object.hasOwn(LIMITS_PREFETCH_ALLOWLIST, key)) {
+				throw new ConfigError(`limits.prefetch.${key} is not a recognized field`);
+			}
+		}
+		const jikjiTopK = positiveLimitField(prefetchRecord, "jikjiTopK", "limits.prefetch");
+		const prefetchMinSyncTopK = positiveLimitField(prefetchRecord, "minSyncTopK", "limits.prefetch");
+		const jikjiPathLimit = positiveLimitField(prefetchRecord, "jikjiPathLimit", "limits.prefetch");
+		const sectionLimit = positiveLimitField(prefetchRecord, "sectionLimit", "limits.prefetch");
+		prefetch = {
+			...(jikjiTopK !== undefined ? { jikjiTopK } : {}),
+			...(prefetchMinSyncTopK !== undefined ? { minSyncTopK: prefetchMinSyncTopK } : {}),
+			...(jikjiPathLimit !== undefined ? { jikjiPathLimit } : {}),
+			...(sectionLimit !== undefined ? { sectionLimit } : {}),
+		};
+	}
+	return {
+		...(mergedEvidenceCeiling !== undefined ? { mergedEvidenceCeiling } : {}),
+		...(singleDatasourceTopK !== undefined ? { singleDatasourceTopK } : {}),
+		...(minSyncTopK !== undefined ? { minSyncTopK } : {}),
+		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
+		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
+		...(prefetch !== undefined ? { prefetch } : {}),
+	};
+}
+
 export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const flags = input.flags;
 	const env = input.env ?? process.env;
@@ -891,6 +965,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	};
 	if (model) config.model = model;
 	if (fileExcludePaths !== undefined) config.excludePaths = fileExcludePaths;
+	if (file.limits !== undefined) config.limits = normalizeLimitsConfig(file.limits);
 	const normalized = normalizeIndexingConfig({
 		minSync: file.minSync as MinSyncMethodConfig | false | undefined,
 	});
@@ -1041,6 +1116,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
+	if (config.limits !== undefined) opts.limits = config.limits;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
