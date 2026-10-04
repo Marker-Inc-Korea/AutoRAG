@@ -13,6 +13,11 @@ import {
 	walkFileSearch,
 } from "../../src/fsearch/index.ts";
 
+// FSearch is macOS/Linux-only: the client, daemon socket (/tmp), and path-prefix
+// filtering assume POSIX paths, and on Windows the agent never constructs the
+// client (isSupported() === false), so the suite is skipped there.
+const describeFSearch = process.platform === "win32" ? describe.skip : describe;
+
 let root: string;
 
 beforeEach(() => {
@@ -23,7 +28,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
-describe("buildFSearchSearchArgs", () => {
+describeFSearch("buildFSearchSearchArgs", () => {
 	const SOCKET = "/tmp/autorag-fsearch-501-a1b2c3d4e5f6.sock";
 
 	it("builds a plain name search with the query after --", () => {
@@ -93,7 +98,7 @@ describe("buildFSearchSearchArgs", () => {
 	});
 });
 
-describe("fsearchSocketPath", () => {
+describeFSearch("fsearchSocketPath", () => {
 	it("derives a short per-database socket path that fits the unix sun_path limit", () => {
 		const dbPath = join(root, ".autorag", "fsearch", "fsearch.db");
 		const socket = fsearchSocketPath(dbPath);
@@ -113,7 +118,7 @@ describe("fsearchSocketPath", () => {
 	});
 });
 
-describe("buildFSearchIndexArgs", () => {
+describeFSearch("buildFSearchIndexArgs", () => {
 	it("includes every folder and excludes workspace state directories", () => {
 		expect(buildFSearchIndexArgs("/db", ["/docs", "/media"], ["/ws/.autorag", "/docs/.autorag"])).toEqual([
 			"index",
@@ -131,7 +136,7 @@ describe("buildFSearchIndexArgs", () => {
 	});
 });
 
-describe("parseFSearchJsonLines", () => {
+describeFSearch("parseFSearchJsonLines", () => {
 	it("parses entries, normalizes names, converts mtime, and reads the done line total", () => {
 		const stdout = [
 			'{"path":"/docs","name":"/docs","type":"folder","size":6,"mtime":1790956870}',
@@ -169,7 +174,7 @@ describe("parseFSearchJsonLines", () => {
 	});
 });
 
-describe("parseFSearchStats", () => {
+describeFSearch("parseFSearchStats", () => {
 	it("reads counts and the live flag", () => {
 		expect(parseFSearchStats('{"db":"/db","live":true,"files":2,"folders":3,"includes":[]}')).toEqual({
 			files: 2,
@@ -231,7 +236,7 @@ function fakeClient(
 
 const VERSION_OK = { code: 0, stdout: "fsearch-cli 0.3\n" };
 
-describe("FSearchClient", () => {
+describeFSearch("FSearchClient", () => {
 	it("is supported on macOS and Linux, not on Windows", () => {
 		expect(new FSearchClient({ root, folders: [root], platform: "darwin" }).isSupported()).toBe(true);
 		expect(new FSearchClient({ root, folders: [root], platform: "linux" }).isSupported()).toBe(true);
@@ -425,7 +430,7 @@ describe("FSearchClient", () => {
 	});
 });
 
-describe("walkFileSearch", () => {
+describeFSearch("walkFileSearch", () => {
 	let docs: string;
 
 	beforeEach(() => {
