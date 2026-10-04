@@ -67,7 +67,7 @@ export function createSingleDatasourceSearchTools(
 
 const searchSingleDatasourceSchema = Type.Object({
 	query: Type.String({ description: "Query to search within this datasource connection." }),
-	topK: Type.Optional(Type.Integer({ description: "Maximum number of chunks to return. Defaults to 50." })),
+	topK: Type.Optional(Type.Integer({ description: "Maximum number of chunks to return. Defaults to 20." })),
 	scope: Type.Optional(
 		Type.String({ description: "Optional scope narrowing inside this datasource, e.g. one instance root." }),
 	),

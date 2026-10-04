@@ -70,7 +70,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
-import { createReranker, type Reranker } from "../retrieval/rerank.ts";
+import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
@@ -232,7 +232,7 @@ const MERGED_EVIDENCE_CEILING = 500;
 export interface AutoRAGRetrievalLimits {
 	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
 	readonly mergedEvidenceCeiling?: number;
-	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 20. */
 	readonly singleDatasourceTopK?: number;
 	/** MinSync semantic retrieval default `topK`. Default 50. */
 	readonly minSyncTopK?: number;
@@ -256,7 +256,7 @@ export interface AutoRAGRetrievalLimits {
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
 const DEFAULT_RETRIEVAL_LIMITS = {
 	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
-	singleDatasourceTopK: 50,
+	singleDatasourceTopK: 20,
 	minSyncTopK: 50,
 	minSyncScopedQueryTopK: 100,
 	toolDescriptionInstanceScopes: 8,
@@ -744,7 +744,10 @@ export class AutoRAGAgent {
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
-		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
+		this.rerankTopN =
+			options.rerank === false || options.rerank === undefined
+				? undefined
+				: (options.rerank.topN ?? DEFAULT_RERANK_TOP_N);
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -2701,8 +2704,9 @@ export class AutoRAGAgent {
 				dedup: true,
 			}),
 		);
-		const results = await this.applyRerank(query, merged, diagnostics);
-		return { results, diagnostics };
+		// Single-datasource retrieval is intentionally NOT model-reranked: the
+		// caller already narrowed to one connection, so the merged order is kept.
+		return { results: merged, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2722,6 +2726,7 @@ export class AutoRAGAgent {
 				datasourceAccess: this.datasourceAccessOptions,
 				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
+				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 			});
