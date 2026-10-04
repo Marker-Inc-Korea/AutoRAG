@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, it } from "vitest";
-import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
+import { writeFakeMinSyncExecutable } from "../helpers/fake-minsync.ts";
 
 function makeFixture() {
 	const root = mkdtempSync(join(tmpdir(), "autorag-mcp-stdio-"));
@@ -14,7 +14,12 @@ function makeFixture() {
 	const stagedFiles = join(root, ".autorag", "minsync", "files");
 	mkdirSync(stagedFiles, { recursive: true });
 	writeFileSync(join(stagedFiles, "refund.md"), "Refund exceptions require director approval before payout.\n");
-	writeFakeMinSync(join(root, "fake-minsync.mjs"));
+	// `AUTORAG_CONFIG` deliberately ignores `minSync.binaryPath` (MinSync resolves
+	// from PATH/the workspace cache), so the fake must sit on PATH under the
+	// resolver's platform name to make the e2e independent of an installed minsync.
+	const binDir = join(root, "bin");
+	mkdirSync(binDir, { recursive: true });
+	writeFakeMinSyncExecutable(binDir);
 	const config = join(root, "config.json");
 	writeFileSync(
 		config,
@@ -23,22 +28,29 @@ function makeFixture() {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			minSync: {
-				binaryPath: join(root, "fake-minsync.mjs"),
 				workspacePath: join(root, ".autorag", "minsync"),
 				autoInstall: false,
 			},
 			jikji: false,
 			everything: false,
+			fsearch: false,
 		}),
 	);
-	return { root, config };
+	return { root, config, binDir };
 }
 
-async function connect(config: string) {
+async function connect(config: string, binDir: string) {
+	// Windows spells the variable `Path`; reuse the existing key so the child
+	// env has no case-duplicate entry and the fake stays first on the lookup path.
+	const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: [join(process.cwd(), "src/mcp/index.ts")],
-		env: { ...process.env, AUTORAG_CONFIG: config },
+		env: {
+			...process.env,
+			AUTORAG_CONFIG: config,
+			[pathKey]: `${binDir}${delimiter}${process.env[pathKey] ?? ""}`,
+		},
 		stderr: "pipe",
 	});
 	const client = new Client({ name: "autorag-stdio-qa", version: "1.0.0" });
@@ -48,9 +60,9 @@ async function connect(config: string) {
 
 describe("AutoRAG Lite MCP stdio", () => {
 	it("runs refresh, search, report, evidence, and feedback across a restart", async () => {
-		const { root, config } = makeFixture();
+		const { root, config, binDir } = makeFixture();
 		try {
-			const first = await connect(config);
+			const first = await connect(config, binDir);
 			const listed = await first.client.listTools();
 			expect(listed.tools.map((tool) => tool.name)).toContain("autorag.search");
 
@@ -112,7 +124,7 @@ describe("AutoRAG Lite MCP stdio", () => {
 			const sessionId = reportContent.sessionId;
 			await first.client.close();
 
-			const second = await connect(config);
+			const second = await connect(config, binDir);
 			const evidence = await second.client.callTool({
 				name: "autorag.evidence",
 				arguments: { sessionId },

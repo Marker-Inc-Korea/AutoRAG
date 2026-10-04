@@ -2535,7 +2535,10 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 }
 
 function sanitizeDiagnosticMessage(raw: string): string {
-	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	// `\s+` must not overlap the leading `\n` or `.split` walks a long newline
+	// run quadratically (CodeQL js/polynomial-redos): `[^\S\n]` is whitespace
+	// that excludes the newline, so stack-frame indentation still matches.
+	let out = raw.split(/\n[^\S\n]+at\s/)[0] ?? raw;
 	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
 	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
 	return out.replace(/\s{2,}/g, " ").trim();
