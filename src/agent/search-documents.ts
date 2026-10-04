@@ -32,6 +32,7 @@ export type SearchDocumentDiagnosticCode =
 	| "deleted-mirror"
 	| "pdf-extract-thin"
 	| "retrieval-method-failed"
+	| "rerank-failed"
 	| "jikji-unavailable"
 	| "jikji-prepare-failed"
 	| "jikji-find-failed"

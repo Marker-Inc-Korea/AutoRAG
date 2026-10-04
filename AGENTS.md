@@ -14,7 +14,8 @@ Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay withi
 - Adding or committing secrets (`.env`, `*.key`, tokens, cookies, private corpus dumps)
 - Rewriting git history
 - Attaching `node_modules` to releases
-- Sending corpus text to remote embedders (no `OPENAI_API_KEY` / remote embedding endpoint for corpus text)
+- Sending corpus text to a remote provider without an explicit trusted-config opt-in (remote embedders and rerankers are supported; the local gateway remains the zero-config default)
+- Hard-coding provider credentials in config files or argv; store only environment-variable, keychain, or profile references
 - Creating git worktrees (this clone is the isolation boundary)
 
 ### Required
@@ -203,8 +204,9 @@ Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`
 ## Required MinSync Live QA
 
 When validating local-file retrieval changes, run a real semantic query
-through the product default gateway path. Do not use OpenAI credentials or
-send corpus text to a remote embedding service.
+through the product default gateway path. The local gateway is the default;
+a remote embedding service is used only when the operator explicitly
+configures one.
 
 The default product path uses the AutoRAG-owned `autorag-gateway` with the
 `qwen3-embedding-0.6b` profile (1024 dimensions, no query/passage prefixes).
@@ -243,7 +245,7 @@ The QA gate is not complete until all of the following are observed:
 2. The semantic query returns a hit for the fixture document.
 3. AutoRAG maps that hit to an OS-absolute original `source` path.
 4. `fs.existsSync(source)` and reading `source` succeed.
-5. `OPENAI_API_KEY` is unset and no request leaves the local machine.
+5. The run used the local gateway (no remote embedding endpoint configured).
 
 If the model prefetch fails, the gateway is unavailable, or MinSync reports a
 semantic failure, report the exact blocking diagnostic and do not claim live
@@ -385,8 +387,8 @@ Raw search tools return file paths and matching lines. A human still has to open
 
 The loop exists to serve the three core values above: it searches data where
 it already lives (value 1), hides the retrieval plumbing behind curated
-answers (value 2), and keeps every step local and latency-sensitive
-(value 3).
+answers (value 2), and keeps the default retrieval path local and
+latency-sensitive (value 3).
 
 ## Agent Tools
 
@@ -536,6 +538,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
+| `src/retrieval/rerank.ts` | Post-merge reranker seam + OpenRouter implementation (`OpenRouterReranker`, `createReranker`) |
 | `src/minsync/method.ts` | MinSync retrieval method (vector / BM25 / hybrid over shared CDC chunks) |
 | `src/language.ts` | Curated global language tags, normalization, and defaults |
 | `src/parser/kordoc.ts` | Default document parser (kordoc) for HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS |
