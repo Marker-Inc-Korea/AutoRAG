@@ -37,6 +37,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { autoInstall: false },
 		});
 
@@ -65,6 +66,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: false,
 			dupey: {
 				run: async () =>
@@ -97,6 +99,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: false,
 			excludeExactDuplicates: false,
 		});
@@ -118,6 +121,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { autoInstall: false },
 		});
 
@@ -147,6 +151,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { autoInstall: false },
 		});
 
@@ -181,6 +186,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { autoInstall: false },
 		});
 
