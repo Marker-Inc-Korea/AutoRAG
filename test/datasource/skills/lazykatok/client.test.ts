@@ -427,6 +427,37 @@ setInterval(() => undefined, 1000);
 		expect(result).toMatchObject({ ok: false, reason: "timeout" });
 	});
 
+	it("gives sync/index the long budget while interactive reads keep the short one", { timeout: 20_000 }, async () => {
+		// The contract under test is a real process-kill timer, so the child must
+		// consume wall-clock time; fake timers cannot drive an external process.
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+await new Promise((resolve) => setTimeout(resolve, 900));
+process.stdout.write(process.env.LAZYKATOK_FAKE_OUTPUT ?? "{}");
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const base = { binaryPath, env: { PATH: `${binDir}:${process.env.PATH ?? ""}` } };
+		const indexClient = new LazykatokClient({
+			...base,
+			timeoutMs: 200,
+			indexTimeoutMs: 5_000,
+			env: { ...base.env, LAZYKATOK_FAKE_OUTPUT: jsonEnv({ chunkCount: 7 }) },
+		});
+
+		expect(await indexClient.index()).toMatchObject({ ok: true, data: { chunkCount: 7 } });
+		expect(await indexClient.doctor()).toMatchObject({ ok: false, reason: "timeout" });
+
+		// `timeoutMs` is the fallback when `indexTimeoutMs` is not set.
+		const syncClient = new LazykatokClient({
+			...base,
+			timeoutMs: 5_000,
+			env: { ...base.env, LAZYKATOK_FAKE_OUTPUT: jsonEnv({ synced: true, messageCount: 3 }) },
+		});
+		expect(await syncClient.sync()).toMatchObject({ ok: true, data: { synced: true, messageCount: 3 } });
+	});
+
 	it("terminates descendants that inherit the lazykatok stdio pipes", { timeout: 20_000 }, async () => {
 		writeFakeLazykatok();
 		const client = new LazykatokClient({

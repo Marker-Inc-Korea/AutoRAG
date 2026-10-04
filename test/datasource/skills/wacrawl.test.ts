@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CrawlerSkillClient } from "../../../src/datasource/crawler-skill.ts";
 import { WacrawlClient, WacrawlSkill } from "../../../src/datasource/skills/wacrawl/index.ts";
 
 let root: string;
@@ -115,6 +116,28 @@ describe("WacrawlClient", () => {
 		expect(args.join(" ")).not.toContain(".autorag/datasources/wacrawl");
 	});
 
+	it("gives sync the long budget while search keeps the short interactive one", { timeout: 20_000 }, async () => {
+		// The contract under test is a real process-kill timer, so the child must
+		// consume wall-clock time; fake timers cannot drive an external process.
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+await new Promise((resolve) => setTimeout(resolve, 900));
+process.stdout.write(process.env.WACRAWL_FAKE_OUTPUT ?? "{}");
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const client = new WacrawlClient({
+			binaryPath,
+			timeoutMs: 200,
+			indexTimeoutMs: 5_000,
+			env: { WACRAWL_FAKE_OUTPUT: JSON.stringify({ messages: 3 }) },
+		});
+
+		expect(await client.sync()).toMatchObject({ ok: true, count: 3 });
+		expect(await client.search("dinner")).toMatchObject({ ok: false, reason: "timeout" });
+	});
+
 	it("maps a missing binary and malformed output without throwing", async () => {
 		const missing = new WacrawlClient({ binaryPath: join(root, "missing") });
 		expect(await missing.sync()).toMatchObject({ ok: false, reason: "binary-missing" });
@@ -185,6 +208,19 @@ describe("WacrawlSkill", () => {
 		const results = await method?.retrieve("deploy freeze", { topK: 5 });
 		expect(results?.[0]?.source).toBe("/whatsapp/personal/chunks/m-2");
 		expect(results?.[0]?.metadata).toMatchObject({ backend: "wacrawl", title: "Ops" });
+	});
+
+	it("hints at the override when the sync budget kills the import", async () => {
+		const stub: CrawlerSkillClient = {
+			sync: async () => ({ ok: false, reason: "timeout", stdout: "", stderr: "", code: null }),
+			search: async () => ({ ok: false, reason: "timeout", stdout: "", stderr: "", code: null }),
+		};
+		const skill = new WacrawlSkill({ client: stub, instanceId: "personal" });
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
+		expect(JSON.stringify(result)).toContain("connector.indexTimeoutMs");
 	});
 });
 

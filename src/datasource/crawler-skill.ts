@@ -4,6 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../retrieval/types.ts";
+import { connectorSyncTimeoutHint } from "./connector-timeouts.ts";
 import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
 import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
@@ -187,7 +188,10 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	}
 
 	private fail(code: DatasourceDiagnosticCode, reason: string): DatasourceIndexResult {
-		const message = `${this.definition.backendName} ${reason}`;
+		const base = `${this.definition.backendName} ${reason}`;
+		// This fail path is the sync/index step; a timeout there restarts from
+		// scratch next refresh, so it carries the override hint.
+		const message = reason === "timeout" ? `${base} — ${connectorSyncTimeoutHint()}` : base;
 		return {
 			ok: false,
 			instanceId: this.instanceId,

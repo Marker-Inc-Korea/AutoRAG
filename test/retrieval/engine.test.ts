@@ -482,3 +482,32 @@ describe("RetrievalEngine", () => {
 		});
 	});
 });
+
+describe("RetrievalEngine reranking", () => {
+	it("reorders merged results when a reranker is configured", async () => {
+		const engine = new RetrievalEngine({
+			reranker: {
+				describe: () => ({ name: "stub", provider: "stub", model: "m", available: true }),
+				rerank: async (_query, results) => [...results].reverse(),
+			},
+		});
+		engine.register(stubMethod("posix", [{ source: "/a" }, { source: "/b" }]));
+		const { results } = await engine.retrieve("q", { topK: 10 });
+		expect(results.map((entry) => entry.source)).toEqual(["/b", "/a"]);
+	});
+
+	it("preserves merged order and emits rerank-failed when the reranker throws", async () => {
+		const engine = new RetrievalEngine({
+			reranker: {
+				describe: () => ({ name: "stub", provider: "stub", model: "m", available: true }),
+				rerank: async () => {
+					throw new Error("boom");
+				},
+			},
+		});
+		engine.register(stubMethod("posix", [{ source: "/a" }, { source: "/b" }]));
+		const { results, diagnostics } = await engine.retrieve("q", { topK: 10 });
+		expect(results).toHaveLength(2);
+		expect(diagnostics.some((entry) => entry.code === "rerank-failed")).toBe(true);
+	});
+});

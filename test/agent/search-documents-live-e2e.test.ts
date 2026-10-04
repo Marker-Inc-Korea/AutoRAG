@@ -259,6 +259,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			everything: false,
+			fsearch: false,
 			minSync: {
 				binaryPath: join(root, "fake-minsync.mjs"),
 				workspacePath: join(root, ".autorag", "minsync"),

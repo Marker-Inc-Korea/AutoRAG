@@ -169,6 +169,28 @@ describe("LazykatokSkill index", () => {
 		expect(result).toMatchObject({ ok: false, code: "datasource-index-failed" });
 	});
 
+	it("appends the timeout override hint when sync is killed by the budget", async () => {
+		const stub = new StubSkillClient();
+		stub.syncResult = { ok: false, reason: "timeout", stdout: "", stderr: "", code: null };
+		const skill = new LazykatokSkill({ client: asClient(stub) });
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-index-failed" });
+		expect(JSON.stringify(result)).toContain("connector.indexTimeoutMs");
+	});
+
+	it("keeps the bare reason when a doctor timeout is not a sync/index step", async () => {
+		const stub = new StubSkillClient();
+		stub.doctorResult = { ok: false, reason: "timeout", stdout: "", stderr: "", code: null };
+		const skill = new LazykatokSkill({ client: asClient(stub) });
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
+		expect(JSON.stringify(result)).not.toContain("connector.indexTimeoutMs");
+	});
+
 	it("returns datasource-index-failed when index fails (degraded)", async () => {
 		const stub = new StubSkillClient();
 		stub.indexResult = failStep("invalid-json");

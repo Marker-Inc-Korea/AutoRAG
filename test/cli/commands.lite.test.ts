@@ -19,6 +19,7 @@ function writeConfig(root: string, configPath: string, model = false): void {
 			minSync: false,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 		}),
 	);
 }

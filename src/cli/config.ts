@@ -16,6 +16,7 @@ import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/ski
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import { DEFAULT_RERANK_API_KEY_ENV, DEFAULT_RERANK_MODEL, DEFAULT_RERANK_PROVIDER } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
@@ -79,6 +80,29 @@ export interface WebSearchCliConfig {
 		| false;
 }
 
+/**
+ * Post-merge reranking config. Routes merged evidence through a dedicated
+ * rerank model. `provider` is `openrouter` today; `model` is the OpenRouter
+ * wire id (default `voyageai/rerank-3-lite`). Secrets never appear here — only
+ * the environment-variable name that holds the provider API key.
+ */
+export interface RerankConfig {
+	/** `false` disables reranking. Missing means enabled when the block is present. */
+	enabled?: boolean;
+	/** Provider id. @default "openrouter" */
+	provider?: string;
+	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	model?: string;
+	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" */
+	apiKeyEnv?: string;
+	/** Override the provider base URL (e.g. a gateway). */
+	baseUrl?: string;
+	/** Return only the top N merged results. Omitted ⇒ all distinct results are reordered. */
+	topN?: number;
+	/** Per-request timeout in milliseconds. */
+	timeoutMs?: number;
+}
+
 export interface P2pConfig {
 	enabled?: boolean;
 	port?: number;
@@ -111,8 +135,10 @@ export interface AgentModelConfig {
 	 */
 	api?: Api;
 	/**
-	 * Endpoint base URL. When set, AutoRAG builds a Model from this config
-	 * instead of requiring a pi-ai catalog entry. Omit for catalog/local models.
+	 * Endpoint base URL. For a pi-ai catalog `provider/id`, it overrides only the
+	 * catalog endpoint and keeps the catalog's reasoning, compat, and limits. For an
+	 * id outside the catalog, AutoRAG builds a generic Model from this config.
+	 * Omit for catalog/local models that use the catalog endpoint.
 	 */
 	baseUrl?: string;
 	/**
@@ -136,7 +162,20 @@ export interface CliConfig {
 	jikji?: Record<string, unknown> | false;
 	/** Windows-only bundled Everything file-name search. Default enabled on Windows; `false` disables. */
 	everything?: { enabled?: boolean; timeoutMs?: number; startupTimeoutMs?: number; indexTimeoutMs?: number } | false;
+	/** macOS/Linux fsearch-cli file-name search. Default enabled on macOS/Linux; `false` disables. */
+	fsearch?:
+		| {
+				enabled?: boolean;
+				binaryPath?: string;
+				timeoutMs?: number;
+				startupTimeoutMs?: number;
+				indexTimeoutMs?: number;
+				watch?: boolean;
+		  }
+		| false;
 	webSearch?: WebSearchCliConfig;
+	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
+	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -980,6 +1019,15 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.everything = file.everything as CliConfig["everything"];
 	}
+	if (file.fsearch !== undefined) {
+		if (
+			file.fsearch !== false &&
+			(typeof file.fsearch !== "object" || file.fsearch === null || Array.isArray(file.fsearch))
+		) {
+			throw new ConfigError("Config field 'fsearch' must be false or an object");
+		}
+		config.fsearch = file.fsearch as CliConfig["fsearch"];
+	}
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1008,6 +1056,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
 	}
 	config.p2p = normalizeP2pConfig(file.p2p);
+	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
 	return config;
 }
 
@@ -1084,6 +1133,63 @@ function buildWebSearchAgentOption(
 	return out as AutoRAGAgentOptions["webSearch"] & object;
 }
 
+const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKeyEnv", "baseUrl", "topN", "timeoutMs"]);
+
+/** Normalize and validate the `rerank` config section, filling in defaults. */
+export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig | false {
+	if (raw === false) return false;
+	const out: RerankConfig = {
+		provider: DEFAULT_RERANK_PROVIDER,
+		model: DEFAULT_RERANK_MODEL,
+		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+	};
+	if (raw === undefined || raw === null) return out;
+	if (typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ConfigError(`${path} must be an object or false`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
+	}
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError(`${path}.enabled must be a boolean`);
+		out.enabled = record.enabled;
+	}
+	if (record.provider !== undefined) {
+		if (typeof record.provider !== "string" || record.provider.trim() === "") {
+			throw new ConfigError(`${path}.provider must be a non-empty string`);
+		}
+		out.provider = record.provider.trim();
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || record.model.trim() === "") {
+			throw new ConfigError(`${path}.model must be a non-empty string`);
+		}
+		out.model = record.model.trim();
+	}
+	if (record.apiKeyEnv !== undefined) {
+		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
+			throw new ConfigError(`${path}.apiKeyEnv must match ${API_KEY_ENV_PATTERN}`);
+		}
+		out.apiKeyEnv = record.apiKeyEnv;
+	}
+	if (record.baseUrl !== undefined) {
+		if (typeof record.baseUrl !== "string" || record.baseUrl.trim() === "") {
+			throw new ConfigError(`${path}.baseUrl must be a non-empty string`);
+		}
+		out.baseUrl = record.baseUrl.trim();
+	}
+	for (const field of ["topN", "timeoutMs"] as const) {
+		const value = record[field];
+		if (value === undefined) continue;
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			throw new ConfigError(`${path}.${field} must be a positive integer`);
+		}
+		out[field] = value;
+	}
+	return out;
+}
+
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -1104,7 +1210,26 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		const { enabled: _omitEverythingEnabled, ...everythingFields } = config.everything;
 		opts.everything = everythingFields;
 	}
+	if (config.fsearch === false || config.fsearch?.enabled === false) {
+		opts.fsearch = false;
+	} else if (config.fsearch !== undefined) {
+		const { enabled: _omitFSearchEnabled, ...fsearchFields } = config.fsearch;
+		opts.fsearch = fsearchFields;
+	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	if (config.rerank !== undefined) {
+		opts.rerank =
+			config.rerank === false || config.rerank.enabled === false
+				? false
+				: {
+						...(config.rerank.provider !== undefined ? { provider: config.rerank.provider } : {}),
+						...(config.rerank.model !== undefined ? { model: config.rerank.model } : {}),
+						...(config.rerank.apiKeyEnv !== undefined ? { apiKeyEnv: config.rerank.apiKeyEnv } : {}),
+						...(config.rerank.baseUrl !== undefined ? { baseUrl: config.rerank.baseUrl } : {}),
+						...(config.rerank.topN !== undefined ? { topN: config.rerank.topN } : {}),
+						...(config.rerank.timeoutMs !== undefined ? { timeoutMs: config.rerank.timeoutMs } : {}),
+					};
+	}
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
@@ -1176,33 +1301,41 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 
 function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefined {
 	if (!(getProviders() as readonly string[]).includes(reference.provider)) return undefined;
-	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
+	const catalog = getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
+	if (catalog === undefined) return undefined;
+	// The catalog entry is the base; only fields the config declares override it, so a
+	// configured endpoint keeps the catalog's reasoning, compat, thinking map, and limits.
+	return {
+		...catalog,
+		...(reference.name !== undefined ? { name: reference.name } : {}),
+		...(reference.api !== undefined ? { api: reference.api } : {}),
+		...(isConfiguredEndpoint(reference) ? { baseUrl: reference.baseUrl } : {}),
+		...(reference.reasoning !== undefined ? { reasoning: reference.reasoning } : {}),
+		...(reference.input !== undefined ? { input: reference.input } : {}),
+		...(reference.contextWindow !== undefined ? { contextWindow: reference.contextWindow } : {}),
+		...(reference.maxTokens !== undefined ? { maxTokens: reference.maxTokens } : {}),
+	};
 }
 
+const UNKNOWN_MODEL_HINT =
+	"Add baseUrl (and optional api/apiKeyEnv) for an OpenAI-compatible endpoint outside the pi-ai catalog, or use a pi-ai catalog model id.";
+
 function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
-	if (isConfiguredEndpoint(reference)) {
-		return buildModelFromConfiguredEndpoint(reference);
-	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
-	const hint =
-		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
-	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
+	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
+	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 }
 
 function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
 	if (reference === undefined) return undefined;
-	if (isConfiguredEndpoint(reference)) {
-		return buildModelFromConfiguredEndpoint(reference);
-	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
+	if (isConfiguredEndpoint(reference)) return buildModelFromConfiguredEndpoint(reference);
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
 	if ((getProviders() as readonly string[]).includes(reference.provider)) {
-		const hint =
-			"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
-		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
+		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${UNKNOWN_MODEL_HINT}`);
 	}
 	return undefined;
 }
@@ -1500,6 +1633,11 @@ export function writeDefaultConfig(
 	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
+	full.rerank = partial.rerank ?? {
+		provider: DEFAULT_RERANK_PROVIDER,
+		model: DEFAULT_RERANK_MODEL,
+		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
 	mkdirSync(dirname(path), { recursive: true });

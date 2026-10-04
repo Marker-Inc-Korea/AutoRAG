@@ -478,6 +478,7 @@ describe("MinSyncVectorMethod", () => {
 			workspacePath: root,
 			jikji: false,
 			everything: false,
+			fsearch: false,
 			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
 		});
 

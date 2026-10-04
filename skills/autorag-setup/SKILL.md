@@ -123,6 +123,13 @@ flags may be omitted. For a custom endpoint, add `api`, `baseUrl`, and
 }
 ```
 
+When `provider`/`id` names a pi-ai catalog model, the catalog entry stays the
+base: `baseUrl`, `api`, and any declared `reasoning`, `input`, `contextWindow`,
+or `maxTokens` override only those fields, and the catalog's reasoning,
+thinking, and compat settings are kept. Only an id outside the catalog (private
+proxy, Ollama, LiteLLM) gets a generic text model with a 128k context window
+unless those fields are declared.
+
 Use `--force` only when intentionally replacing an existing config. Legacy cwd
 `autorag.config.json` is a migration source only and is never deleted by init.
 

@@ -113,7 +113,7 @@ async def mock_llama_index_response(*args, **kwargs) -> ChatResponse:
 	mock_openai_response,
 )
 def test_passage_dependency_filter_openai():
-	client = AsyncOpenAI()
+	client = AsyncOpenAI(api_key="mock_openai_api_key")
 	en_qa = QA(en_qa_df)
 	result_en_qa = en_qa.batch_filter(
 		passage_dependency_filter_openai, client=client, lang="en"

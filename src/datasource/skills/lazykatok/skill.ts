@@ -1,5 +1,6 @@
 import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
+import { connectorSyncTimeoutHint } from "../../connector-timeouts.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
@@ -184,8 +185,14 @@ export class LazykatokSkill implements DatasourceSkill {
 		code: DatasourceDiagnosticCode,
 		result: { ok: false; reason: string; stdout?: string; stderr: string; code: number | null },
 	): DatasourceIndexResult {
-		const message =
+		const base =
 			result.stderr.length > 0 ? `${result.reason}: ${result.stderr.trim().slice(0, 4000)}` : result.reason;
+		// A sync/index step killed by the timeout restarts from scratch next
+		// refresh; doctor/search failures keep their bare reason.
+		const message =
+			code === "datasource-index-failed" && result.reason === "timeout"
+				? `${base} — ${connectorSyncTimeoutHint()}`
+				: base;
 		const diagnostic: DatasourceDiagnostic = {
 			code,
 			severity: code === "datasource-unavailable" ? "warning" : "error",
