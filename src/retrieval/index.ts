@@ -13,6 +13,7 @@ export {
 	type Reranker,
 	type RerankerDescriptor,
 	type RerankOptions,
+	SUPPORTED_RERANK_PROVIDERS,
 } from "./rerank.ts";
 export {
 	matchesVirtualPathScope,

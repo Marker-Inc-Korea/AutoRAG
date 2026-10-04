@@ -58,6 +58,10 @@ describe("normalizeRerankConfig", () => {
 		expect(() => normalizeRerankConfig({ apiKeyEnv: "1bad" }, "rerank")).toThrow(ConfigError);
 	});
 
+	it("rejects an unsupported provider", () => {
+		expect(() => normalizeRerankConfig({ provider: "cohere" }, "rerank")).toThrow(ConfigError);
+	});
+
 	it("rejects non-positive topN and timeoutMs", () => {
 		expect(() => normalizeRerankConfig({ topN: 0 }, "rerank")).toThrow(ConfigError);
 		expect(() => normalizeRerankConfig({ timeoutMs: -1 }, "rerank")).toThrow(ConfigError);

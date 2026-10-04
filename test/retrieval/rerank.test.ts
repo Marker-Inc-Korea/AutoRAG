@@ -62,6 +62,21 @@ describe("OpenRouterReranker", () => {
 		expect(out.map((entry) => entry.id)).toEqual(["b", "a"]);
 	});
 
+	it("forwards the abort signal to the client", async () => {
+		let seen: AbortSignal | undefined;
+		const controller = new AbortController();
+		const reranker = new OpenRouterReranker({
+			client: {
+				async rerank(_request, options) {
+					seen = options?.signal;
+					return { results: [{ index: 0, relevanceScore: 0.5 }] };
+				},
+			},
+		});
+		await reranker.rerank("q", [result("a", "alpha")], { signal: controller.signal });
+		expect(seen).toBe(controller.signal);
+	});
+
 	it("reports unavailable without an API key and throws instead of silently ranking", async () => {
 		const reranker = new OpenRouterReranker({ env: {} });
 		expect(reranker.describe().available).toBe(false);
@@ -75,10 +90,15 @@ describe("OpenRouterReranker", () => {
 });
 
 describe("createReranker", () => {
-	it("returns undefined for absent config, explicit false, and unknown providers", () => {
+	it("returns undefined for absent config and explicit false", () => {
 		expect(createReranker(undefined)).toBeUndefined();
 		expect(createReranker(false)).toBeUndefined();
-		expect(createReranker({ provider: "not-a-provider", client: clientReturning([]) })).toBeUndefined();
+	});
+
+	it("throws for an unsupported provider", () => {
+		expect(() => createReranker({ provider: "not-a-provider", client: clientReturning([]) })).toThrow(
+			/Unsupported rerank provider "not-a-provider"/,
+		);
 	});
 
 	it("builds an OpenRouter reranker for the default provider", () => {

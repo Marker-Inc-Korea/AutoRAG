@@ -31,7 +31,7 @@ explicit, trusted-config opt-in. Nothing falls back between providers silently.
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `enabled` | boolean | `true` when the block is present | `false` disables reranking |
-| `provider` | string | `openrouter` | Rerank provider id |
+| `provider` | string | `openrouter` | Rerank provider id (`openrouter` is the only supported id; any other value is a config error) |
 | `model` | string | `voyageai/rerank-3-lite` | OpenRouter wire model id |
 | `apiKeyEnv` | string | `OPENROUTER_API_KEY` | Env var holding the provider API key (never the secret itself) |
 | `baseUrl` | string | OpenRouter default | Override the provider base URL (e.g. a gateway or self-hosted endpoint) |
@@ -42,8 +42,8 @@ Setting `"rerank": false` disables reranking. A config file with no `rerank`
 block leaves the stage off; `autorag init` writes the block above so new
 configurations have it.
 
-The API key is read from the environment at call time. Set it before starting
-AutoRAG:
+The API key is read from the environment when the reranker is created. Set it
+before starting AutoRAG:
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
@@ -64,6 +64,6 @@ export OPENROUTER_API_KEY=sk-or-...
 ## Local reranking
 
 `baseUrl` can point at any Cohere-compatible `/v1/rerank` endpoint, including a
-local server. The `Reranker` interface (`src/retrieval/rerank.ts`) is
-provider-agnostic: a local reranker implements `describe()` + `rerank()` and
-plugs into `RetrievalEngine` / `AutoRAGAgent` without touching the pipeline.
+local server. `openrouter` is the only supported `provider` id; any other value
+is rejected as a configuration error. For an in-process implementation, pass a
+custom `Reranker` to `RetrievalEngine` through its `reranker` option.
