@@ -66,6 +66,19 @@ if (healthyRun.exitCode !== 0) throw new Error(`lite-retrieve-exit-${healthyRun.
 const healthyEnvelope = JSON.parse(healthyRun.stdout);
 assertLiteRetrieveHealthy(healthyEnvelope, resolve(source));
 
+let embedderDown:
+	| {
+			exitCode: number;
+			ok: boolean;
+			unsearched: unknown;
+			diagnostics: unknown;
+			skippedSurface: string;
+			skippedMethods: readonly string[];
+			reasonVerbatim: string;
+			humanWarningWithoutDebug: readonly string[];
+	  }
+	| undefined;
+
 if (process.env.AUTORAG_LIVE_E2E_EMBEDDER !== "native") {
 	// Point MinSync at a closed loopback port so the embedder is genuinely down for
 	// this call. Retrieval must still answer, name the skipped surface, and hand
@@ -84,6 +97,18 @@ if (process.env.AUTORAG_LIVE_E2E_EMBEDDER !== "native") {
 	if (!degradedHuman.stdout.includes("warning: not searched: minsync")) {
 		throw new Error("lite-retrieve-human-skip-missing");
 	}
+	embedderDown = {
+		exitCode: degradedRun.exitCode,
+		ok: degradedEnvelope.ok,
+		unsearched: degradedEnvelope.unsearched,
+		diagnostics: degradedEnvelope.diagnostics,
+		skippedSurface: skipped.surface,
+		skippedMethods: skipped.methods,
+		reasonVerbatim: skipped.reason,
+		humanWarningWithoutDebug: degradedHuman.stdout
+			.split("\n")
+			.filter((line: string) => line.startsWith("warning: not searched:")),
+	};
 }
 
 const status = await agent.getRefreshStatus();
@@ -103,22 +128,7 @@ const result = {
 			unsearched: healthyEnvelope.unsearched,
 			sourceMatched: resolve(source),
 		},
-		...(process.env.AUTORAG_LIVE_E2E_EMBEDDER !== "native"
-			? {
-					embedderDown: {
-						exitCode: degradedRun.exitCode,
-						ok: degradedEnvelope.ok,
-						unsearched: degradedEnvelope.unsearched,
-						diagnostics: degradedEnvelope.diagnostics,
-						skippedSurface: skipped.surface,
-						skippedMethods: skipped.methods,
-						reasonVerbatim: skipped.reason,
-						humanWarningWithoutDebug: degradedHuman.stdout
-							.split("\n")
-							.filter((line: string) => line.startsWith("warning: not searched:")),
-					},
-				}
-			: {}),
+		...(embedderDown !== undefined ? { embedderDown } : {}),
 	},
 	embedding: {
 		endpoint: process.env.AUTORAG_GATEWAY_ENDPOINT,

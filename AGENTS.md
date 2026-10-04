@@ -106,10 +106,10 @@ make e2e-live-docker E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT" E2E_DATASOURCES=local
 The container sets an ephemeral `HOME`, `AUTORAG_HOME`, and `AUTORAG_CONFIG`,
 bind-mounts this clone at `/workspace`, and does not mount the host `~/.autorag`
 or native datasource stores. Only the model credential allowlist in `QA_MODEL_ENV`
-is forwarded. Live E2E defaults to the local native MinSync embedder; set
-`E2E_EMBEDDER=gateway` only when the Docker image has a compatible gateway
-runtime. Use `QA_PLATFORM` and `QA_MODEL_ENV` to select a supported architecture
-or credential allowlist.
+is forwarded; set it empty (`QA_MODEL_ENV=`) to forward no credentials at all.
+Live E2E defaults to the local native MinSync embedder; set `E2E_EMBEDDER=gateway`
+only when the Docker image has a compatible gateway runtime. Use `QA_PLATFORM`
+and `QA_MODEL_ENV` to select a supported architecture or credential allowlist.
 The live target keeps runner state inside the clone's `.autorag-e2e` directory;
 evidence remains in the mounted clone under `.omo/evidence`.
 

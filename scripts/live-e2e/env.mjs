@@ -59,19 +59,35 @@ export const RUNNER_SCHEMA_VERSION = 1;
  * @returns {{ sha: string, dirty: boolean }}
  */
 function gitHead() {
-	try {
-		const sha = spawnSync("git", ["rev-parse", "HEAD"], {
-			encoding: "utf-8",
-			cwd: REPO_ROOT,
-		}).stdout?.trim() ?? "";
-		const porcelain = spawnSync("git", ["status", "--porcelain"], {
-			encoding: "utf-8",
-			cwd: REPO_ROOT,
-		}).stdout?.trim() ?? "";
-		return { sha, dirty: porcelain.length > 0 };
-	} catch {
-		return { sha: "unknown", dirty: false };
+	// The Docker launcher resolves the identity on the host when the checkout's
+	// git metadata is unreachable inside the container (linked worktrees keep
+	// it outside the mounted tree) and passes it through these variables.
+	const envSha = process.env.AUTORAG_LIVE_E2E_GIT_SHA;
+	if (typeof envSha === "string" && envSha.length > 0) {
+		return {
+			sha: envSha,
+			dirty: process.env.AUTORAG_LIVE_E2E_GIT_DIRTY === "true",
+		};
 	}
+	// Warm-mode comparison keys on the commit SHA, so a missing or failing git
+	// (for example a minimal QA image) must not silently produce an empty
+	// identity that would match any previous empty identity.
+	const shaRun = spawnSync("git", ["rev-parse", "HEAD"], {
+		encoding: "utf-8",
+		cwd: REPO_ROOT,
+	});
+	if (shaRun.error !== undefined || shaRun.status !== 0) return { sha: "unknown", dirty: false };
+	const sha = (shaRun.stdout ?? "").trim();
+	if (sha.length === 0) return { sha: "unknown", dirty: false };
+	const porcelainRun = spawnSync("git", ["status", "--porcelain"], {
+		encoding: "utf-8",
+		cwd: REPO_ROOT,
+	});
+	// When dirtiness cannot be determined, report dirty: the flag is evidence,
+	// and a false "clean" is the only wrong answer here.
+	const dirty =
+		porcelainRun.status === 0 ? ((porcelainRun.stdout ?? "").trim().length > 0) : true;
+	return { sha, dirty };
 }
 
 // ── Corpus digest ────────────────────────────────────────────────────

@@ -29,6 +29,9 @@ export function buildLiveStackOptions(root, workspace) {
 		searchPaths: [join(resolve(root), "corpus")],
 		workspacePath: resolve(workspace),
 		memoryPath: join(resolve(workspace), "memory.json"),
+		// Never let E2E write .jikji state into the shared corpus root or
+		// trigger a jikji/cargo install mid-run: the corpus root is immutable.
+		jikji: false,
 		minSync: {
 			workspacePath: resolve(workspace),
 			autoInstall: process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native",

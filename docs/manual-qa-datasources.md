@@ -30,7 +30,8 @@ The shell mounts this checkout at `/workspace` with a container-only `HOME`,
 `AUTORAG_HOME`, and `AUTORAG_CONFIG`; it does not mount the host AutoRAG home or
 native datasource stores. Use `make e2e-live-docker` for the fixture-based live
 workflow. Only explicitly selected model credential names in `QA_MODEL_ENV` are
-forwarded. Do not mount a real host home to make a native lane pass; provision a
+forwarded; set it empty (`QA_MODEL_ENV=`) to forward none. Do not mount a real
+host home to make a native lane pass; provision a
 synthetic store inside the container or accept `SKIP`.
 
 ## Harnesses
