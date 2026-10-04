@@ -26,6 +26,7 @@ export {
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 	emitResultsSchema,
 } from "./emit-results-tool.ts";
+export { createJevExtension } from "./jev-extension.ts";
 export {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,

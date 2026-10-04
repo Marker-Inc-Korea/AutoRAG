@@ -107,6 +107,10 @@ const agent = new AutoRAGLite({
 });
 ```
 
-`createJevTool` and `createJevEvaluator` are exported for callers that compose
-their own agent; `createJevEvaluator` is the transport seam and can be replaced
-with any `JevEvaluator` implementation.
+The tool is registered through pi's extension surface: `createJevExtension`
+builds a pi `ExtensionFactory` that calls `pi.registerTool`, and AutoRAG loads
+it (and allow-lists the `jev` name) only when the config enables it. pi owns
+tool activation and rendering; AutoRAG keeps the prompt line and the reserved
+name. `createJevTool` and `createJevEvaluator` are also exported for callers
+that compose their own agent; `createJevEvaluator` is the transport seam and
+can be replaced with any `JevEvaluator` implementation.

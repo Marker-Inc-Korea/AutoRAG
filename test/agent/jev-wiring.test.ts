@@ -1,10 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "typebox";
+import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { createJevExtension } from "../../src/agent/jev-extension.ts";
 import { JEV_TOOL_NAME } from "../../src/jev/index.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
@@ -18,78 +18,53 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
-interface AgentInternals {
-	innerAgent: {
-		state: {
-			tools: AgentTool[];
-		};
-	};
+/** Runs an extension factory against a minimal ExtensionAPI and returns registered tools. */
+function registeredTools(factory: ExtensionFactory): ToolDefinition[] {
+	const tools: ToolDefinition[] = [];
+	const api = { registerTool: (tool: ToolDefinition) => tools.push(tool) } as unknown as ExtensionAPI;
+	factory(api);
+	return tools;
 }
 
-function toolNames(agent: AutoRAGAgent): string[] {
-	const inner = (agent as unknown as AgentInternals).innerAgent;
-	return inner.state.tools.map((tool) => tool.name);
-}
-
-describe("AutoRAGAgent jev tool surface", () => {
-	it("omits the jev tool by default", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(toolNames(agent)).not.toContain(JEV_TOOL_NAME);
+describe("jev pi extension", () => {
+	it("registers exactly one tool under the reserved jev name", () => {
+		const tools = registeredTools(createJevExtension({ backend: "openrouter" }));
+		expect(tools).toHaveLength(1);
+		expect(tools[0]?.name).toBe(JEV_TOOL_NAME);
+		expect(tools[0]?.description).toContain("Jev");
+		// pi rejects non-object parameter schemas, so the object schema is load-critical.
+		expect(typeof tools[0]?.parameters).toBe("object");
 	});
 
-	it("registers the jev tool exactly once when enabled", () => {
-		const agent = new AutoRAGAgent({
+	it("advertises the jev tool in the agent system prompt only when enabled", () => {
+		const enabled = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			jev: { backend: "openrouter" },
 		});
-		const names = toolNames(agent);
-		expect(names.filter((name) => name === JEV_TOOL_NAME)).toHaveLength(1);
-		const inner = (agent as unknown as AgentInternals).innerAgent;
-		const jevTool = inner.state.tools.find((tool) => tool.name === JEV_TOOL_NAME);
-		expect(jevTool?.description).toContain("Jev");
-	});
+		expect(enabled.getSystemPrompt()).toContain("**jev**");
 
-	it("omits the jev tool when disabled and for remote P2P sessions", () => {
 		const disabled = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			jev: false,
 		});
-		expect(toolNames(disabled)).not.toContain(JEV_TOOL_NAME);
+		expect(disabled.getSystemPrompt()).not.toContain("**jev**");
 
+		const off = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(off.getSystemPrompt()).not.toContain("**jev**");
+	});
+
+	it("omits the jev prompt line for remote P2P sessions even when enabled", () => {
 		const remote = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			jev: {},
 			remoteSession: true,
 		});
-		expect(toolNames(remote)).not.toContain(JEV_TOOL_NAME);
-	});
-
-	it("drops a caller-provided tool that collides with the reserved jev name", () => {
-		const callerTool: AgentTool = {
-			name: JEV_TOOL_NAME,
-			label: "caller jev",
-			description: "caller stub",
-			parameters: Type.Object({ state: Type.String() }),
-			async execute() {
-				return { content: [{ type: "text", text: "caller" }], details: {} };
-			},
-		};
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			jev: { backend: "openrouter" },
-			tools: [callerTool],
-		});
-		const names = toolNames(agent);
-		expect(names.filter((name) => name === JEV_TOOL_NAME)).toHaveLength(1);
-		const inner = (agent as unknown as AgentInternals).innerAgent;
-		const jevTool = inner.state.tools.find((tool) => tool.name === JEV_TOOL_NAME);
-		expect(jevTool?.description).toContain("Jev");
+		expect(remote.getSystemPrompt()).not.toContain("**jev**");
 	});
 });
