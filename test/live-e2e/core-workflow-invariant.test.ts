@@ -125,17 +125,49 @@ describe("live-e2e core workflow invariants", () => {
 	it("builds the agent with clone-local workspace and shared search path", () => {
 		const root = tempRoot();
 		const workspace = join(root, ".autorag-e2e", "workspace");
-		const options = buildLiveStackOptions(root, workspace);
-		expect(options.workspacePath).toBe(workspace);
-		expect(options.searchPaths).toEqual([join(root, "corpus")]);
-		expect(options.workspacePath).not.toBe(root);
-		expect(options.minSync).toMatchObject({
-			embedder: {
-				id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
-				dimension: 1024,
-			},
-		});
+		const previous = process.env.AUTORAG_LIVE_E2E_EMBEDDER;
+		try {
+			process.env.AUTORAG_LIVE_E2E_EMBEDDER = "gateway";
+			const options = buildLiveStackOptions(root, workspace);
+			expect(options.workspacePath).toBe(workspace);
+			expect(options.searchPaths).toEqual([join(root, "corpus")]);
+			expect(options.workspacePath).not.toBe(root);
+			// The corpus root is immutable fixture state: jikji must never run
+			// against it, and the gateway embedder points at the pinned loopback TEI.
+			expect(options.jikji).toBe(false);
+			expect(options.minSync).toMatchObject({
+				autoInstall: false,
+				embedder: {
+					id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+					dimension: 1024,
+				},
+			});
+		} finally {
+			restoreEmbedderEnv(previous);
+		}
 	});
+
+	it("defaults to the native embedder with auto-install inside Docker", () => {
+		const root = tempRoot();
+		const workspace = join(root, ".autorag-e2e", "workspace");
+		const previous = process.env.AUTORAG_LIVE_E2E_EMBEDDER;
+		try {
+			process.env.AUTORAG_LIVE_E2E_EMBEDDER = "native";
+			const options = buildLiveStackOptions(root, workspace);
+			expect(options.jikji).toBe(false);
+			expect(options.minSync).toMatchObject({
+				autoInstall: true,
+				embedder: { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 },
+			});
+		} finally {
+			restoreEmbedderEnv(previous);
+		}
+	});
+
+	function restoreEmbedderEnv(previous: string | undefined): void {
+		if (previous === undefined) delete process.env.AUTORAG_LIVE_E2E_EMBEDDER;
+		else process.env.AUTORAG_LIVE_E2E_EMBEDDER = previous;
+	}
 
 	it("keeps mutable parsed state out of the shared corpus root", () => {
 		const root = tempRoot();

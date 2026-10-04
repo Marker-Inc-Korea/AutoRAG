@@ -18,6 +18,22 @@ Issue #1672 adds Lark/Feishu remote search through `lark-cli` (no local
 archive). A real tenant run needs `lark-cli auth login` and must not copy
 tenant content into CI fixtures.
 
+## Isolation boundary
+
+Run the manual-QA commands below inside the repository's isolated Docker shell:
+
+```bash
+make qa-shell
+```
+
+The shell mounts this checkout at `/workspace` with a container-only `HOME`,
+`AUTORAG_HOME`, and `AUTORAG_CONFIG`; it does not mount the host AutoRAG home or
+native datasource stores. Use `make e2e-live-docker` for the fixture-based live
+workflow. Only explicitly selected model credential names in `QA_MODEL_ENV` are
+forwarded; set it empty (`QA_MODEL_ENV=`) to forward none. Do not mount a real
+host home to make a native lane pass; provision a
+synthetic store inside the container or accept `SKIP`.
+
 ## Harnesses
 
 | Harness | Target systems | Command |
