@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Agent, AgentEvent, AgentTool } from "@earendil-works/pi-agent-core";
@@ -39,7 +39,7 @@ const diagnostic: RetrievalDiagnostic = {
 };
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), "autorag-search-followup-"));
+	root = realpathSync(mkdtempSync(join(tmpdir(), "autorag-search-followup-")));
 	registrations = [];
 	vi.stubEnv("AUTORAG_HOME", join(root, "home"));
 	vi.stubEnv("AUTORAG_CONFIG", join(root, "home", "config.json"));
