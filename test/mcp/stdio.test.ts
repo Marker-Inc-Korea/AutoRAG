@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, it } from "vitest";
+import { writeFakeDupeyExecutable } from "../helpers/fake-dupey.ts";
 import { writeFakeMinSyncExecutable } from "../helpers/fake-minsync.ts";
 
 function makeFixture() {
@@ -20,6 +21,7 @@ function makeFixture() {
 	const binDir = join(root, "bin");
 	mkdirSync(binDir, { recursive: true });
 	writeFakeMinSyncExecutable(binDir);
+	writeFakeDupeyExecutable(binDir);
 	const config = join(root, "config.json");
 	writeFileSync(
 		config,
@@ -34,6 +36,10 @@ function makeFixture() {
 			jikji: false,
 			everything: false,
 			fsearch: false,
+			// Spotlight needs no external install, so a configured skill yields a
+			// dynamic datasource tool without touching the network or a binary.
+			datasources: { spotlight: { enabled: true } },
+			datasourceAccess: { allowedTags: ["spotlight"] },
 		}),
 	);
 	return { root, docs, config, binDir };
@@ -74,7 +80,7 @@ function hasFieldValue(value: unknown, key: string, expected: unknown, seen = ne
 }
 
 describe("AutoRAG Lite MCP stdio", () => {
-	it("runs refresh, search, file-name search, and datasource list/get across a restart", async () => {
+	it("runs refresh, search, file-name search, duplicates, dynamic datasource tool, and datasource list/get across a restart", async () => {
 		const { root, docs, config, binDir } = makeFixture();
 		try {
 			const first = await connect(config, binDir);
@@ -87,10 +93,31 @@ describe("AutoRAG Lite MCP stdio", () => {
 				"autorag.search.everything",
 				"autorag.datasources.list",
 				"autorag.datasources.get",
+				"autorag.duplicates",
+				"autorag.search_datasource_spotlight",
 				"autorag.refresh",
 			]) {
 				expect(names).toContain(tool);
 			}
+
+			const duplicatesTool = listed.tools.find((tool) => tool.name === "autorag.duplicates");
+			expect(duplicatesTool?.description).toContain("Dupey");
+			const dynamicTool = listed.tools.find((tool) => tool.name === "autorag.search_datasource_spotlight");
+			expect(dynamicTool?.description).toContain("Spotlight");
+
+			// Before refresh the dynamic tool must fail ready-gated without touching Spotlight.
+			const dynamicNotReady = await first.client.callTool({
+				name: "autorag.search_datasource_spotlight",
+				arguments: { query: "refund" },
+			});
+			expect(dynamicNotReady.isError).toBe(true);
+			expect(hasFieldValue(dynamicNotReady.structuredContent, "errorCode", "index-not-ready")).toBe(true);
+			expect(hasFieldValue(dynamicNotReady.structuredContent, "datasourceId", "spotlight")).toBe(true);
+
+			const duplicates = await first.client.callTool({ name: "autorag.duplicates", arguments: {} });
+			expect(duplicates.isError).not.toBe(true);
+			expect(hasFieldValue(duplicates.structuredContent, "action", "review")).toBe(true);
+			expect(hasFieldValue(duplicates.structuredContent, "hash", "dupey-fixture-hash")).toBe(true);
 
 			const refresh = await first.client.callTool({ name: "autorag.refresh", arguments: {} });
 			expect(refresh.isError).not.toBe(true);

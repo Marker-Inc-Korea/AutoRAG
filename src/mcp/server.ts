@@ -1,13 +1,22 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { RefreshMethod } from "../agent/agent.ts";
 import type { AutoRAGLite } from "../core.ts";
+import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
+import { type DupeyScanResult, scanWithDupey } from "../dupey/index.ts";
 import type { EverythingSearchRequest } from "../everything/index.ts";
 import { searchFileNames } from "../filesystem/name-search.ts";
 import { isParsedRefreshComplete } from "../mirror/paths.ts";
 import { RetrievalSelectionError } from "../retrieval/index.ts";
+
+const datasourceSearchInput = z.strictObject({
+	query: z.string().trim().min(1),
+	topK: z.number().int().positive().max(100).optional(),
+	scope: z.string().trim().min(1).optional(),
+});
 
 const emptyInput = z.strictObject({});
 const objectOutput = z.looseObject({});
@@ -74,6 +83,24 @@ const refreshInput = z
 	.strict();
 
 const datasourceGetInput = z.strictObject({ datasourceId: z.string().trim().min(1) });
+
+interface ExactDuplicateGroup {
+	readonly hash: string;
+	readonly files: readonly string[];
+}
+
+function exactGroupsFromScan(scan: DupeyScanResult): ExactDuplicateGroup[] {
+	const groups = new Map<string, string[]>();
+	for (const file of scan.files) {
+		if (typeof file.content_hash !== "string" || file.content_hash.length === 0) continue;
+		const files = groups.get(file.content_hash) ?? [];
+		files.push(file.path);
+		groups.set(file.content_hash, files);
+	}
+	return [...groups.entries()]
+		.filter(([, files]) => files.length > 1)
+		.map(([hash, files]) => ({ hash, files: [...files].sort() }));
+}
 
 export interface AutoRAGMcpServerOptions {
 	readonly readOnly?: boolean;
@@ -192,6 +219,108 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 						error instanceof Error ? error.message : String(error),
 						{ retryable: !(error instanceof RetrievalSelectionError) },
 					);
+				}
+			},
+		);
+	}
+
+	const integratedDatasourceIds = new Set<string>();
+	try {
+		for (const method of lite.getRetrievalEngine().getMethodRegistry().list()) {
+			const datasourceId = method.describe().datasourceId;
+			if (datasourceId !== undefined) integratedDatasourceIds.add(datasourceId);
+		}
+	} catch {
+		for (const entry of lite.listDatasources()) integratedDatasourceIds.add(entry.datasourceId);
+	}
+	for (const entry of lite.listDatasources()) {
+		if (!integratedDatasourceIds.has(entry.datasourceId)) continue;
+		const toolName = `autorag.${datasourceSearchToolName(entry.datasourceId)}`;
+		if (!isToolEnabled(toolName, options)) continue;
+		server.registerTool(
+			toolName,
+			{
+				title: `Search ${entry.name}`,
+				description:
+					`Search only the integrated ${entry.name} datasource (${entry.datasourceId}): ${entry.description}. ` +
+					"The datasource and authorization scope are server-configured; query, topK, and scope only narrow the search.",
+				inputSchema: datasourceSearchInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async ({ query, topK, scope }) => {
+				const status = await lite.getRefreshStatus();
+				if (!isParsedRefreshComplete(lite.config.workspacePath)) {
+					return toolError(
+						"index-not-ready",
+						"Index has not been refreshed. Call autorag.refresh before searching.",
+						{
+							action: "autorag.refresh",
+							query,
+							datasourceId: entry.datasourceId,
+						},
+					);
+				}
+				try {
+					const retrieved = await lite.searchSelected(
+						query,
+						{ datasourceIds: [entry.datasourceId], local: false },
+						{ topK, scope },
+					);
+					return jsonResult({
+						ok: true,
+						query,
+						datasourceId: entry.datasourceId,
+						stale: status.stale,
+						results: retrieved.results.map((result, index) => ({
+							number: index + 1,
+							source: result.source,
+							method: typeof result.metadata.method === "string" ? result.metadata.method : "unknown",
+							score: result.score,
+							metadata: result.metadata,
+							content: result.content,
+						})),
+						unsearched: retrieved.unsearched,
+						diagnostics: [...status.diagnostics, ...retrieved.diagnostics],
+					});
+				} catch (error) {
+					return toolError(
+						error instanceof RetrievalSelectionError ? "invalid-selection" : "search-failed",
+						error instanceof Error ? error.message : String(error),
+						{ datasourceId: entry.datasourceId, retryable: !(error instanceof RetrievalSelectionError) },
+					);
+				}
+			},
+		);
+	}
+
+	if (isToolEnabled("autorag.duplicates", options)) {
+		server.registerTool(
+			"autorag.duplicates",
+			{
+				title: "Scan Duplicate Documents",
+				description:
+					"Scan configured search roots with Dupey for exact duplicate files and near-duplicate document families. Review results before moving or deleting anything.",
+				inputSchema: emptyInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async () => {
+				try {
+					const roots = lite.config.searchPaths.map((path) => resolve(path));
+					const scans = await Promise.all(roots.map((root) => scanWithDupey(root, lite.config.dupey ?? {})));
+					return jsonResult({
+						ok: true,
+						roots,
+						exactGroups: scans.flatMap(exactGroupsFromScan),
+						families: scans.flatMap((scan) => scan.families),
+						extractionErrors: scans.flatMap((scan) => scan.errors),
+						action: "review",
+					});
+				} catch (error) {
+					return toolError("duplicates-failed", error instanceof Error ? error.message : String(error), {
+						retryable: true,
+					});
 				}
 			},
 		);

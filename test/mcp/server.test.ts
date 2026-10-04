@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AutoRAGLite } from "../../src/core.ts";
@@ -54,6 +54,11 @@ interface FakeOptions {
 	readonly workspacePath: string;
 	readonly searchPaths?: readonly string[];
 	readonly everything?: unknown;
+	/** Injected Dupey scanner seam; the server forwards `config.dupey` verbatim. */
+	readonly dupey?: unknown;
+	readonly datasources?: readonly unknown[];
+	/** Datasource ids with a registered retrieval method (dynamic tool exposure). */
+	readonly retrievalDatasourceIds?: readonly string[];
 }
 
 function fakeLite(options: FakeOptions): {
@@ -69,6 +74,9 @@ function fakeLite(options: FakeOptions): {
 			searchPaths: options.searchPaths ?? [],
 			workspacePath: options.workspacePath,
 			memoryPath: join(options.workspacePath, "memory.json"),
+			dupey: options.dupey ?? {
+				run: async () => JSON.stringify({ dir: "", files: [], families: [], errors: [] }),
+			},
 		},
 		getRefreshStatus: async () => ({
 			state: "success",
@@ -77,7 +85,22 @@ function fakeLite(options: FakeOptions): {
 			diagnostics: [],
 			components: {},
 		}),
-		listDatasources: () => [datasource],
+		getRetrievalEngine: () => ({
+			getMethodRegistry: () => ({
+				list: () =>
+					(options.retrievalDatasourceIds ?? ["kakao"]).map((datasourceId) => ({
+						describe: () => ({
+							name: `${datasourceId}-lexical`,
+							type: "posix",
+							description: "stub datasource retrieval method",
+							status: "active",
+							capabilities: [],
+							datasourceId,
+						}),
+					})),
+			}),
+		}),
+		listDatasources: () => options.datasources ?? [datasource],
 		searchSelected: async (query: string, selection: unknown, retrievalOptions: unknown) => {
 			searchCalls.push({ query, selection, options: retrievalOptions });
 			return {
@@ -145,9 +168,25 @@ describe("AutoRAG Lite MCP server", () => {
 				"autorag.search.everything",
 				"autorag.datasources.list",
 				"autorag.datasources.get",
+				"autorag.duplicates",
+				"autorag.search_datasource_kakao",
 				"autorag.refresh",
 			].sort(),
 		);
+		await client.close();
+		await server.close();
+	});
+
+	it("publishes a description on every tool", async () => {
+		const { lite } = fakeLite({ workspacePath: workspace(true) });
+		const { client, server } = await connectedServer(lite);
+		const { tools } = await client.listTools();
+		for (const tool of tools) {
+			expect(typeof tool.description).toBe("string");
+			expect(tool.description?.length ?? 0).toBeGreaterThan(0);
+		}
+		const duplicates = tools.find((tool) => tool.name === "autorag.duplicates");
+		expect(duplicates?.description).toContain("Dupey");
 		await client.close();
 		await server.close();
 	});
@@ -163,6 +202,8 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(names).toContain("autorag.search.everything");
 		expect(names).toContain("autorag.datasources.list");
 		expect(names).toContain("autorag.datasources.get");
+		expect(names).toContain("autorag.duplicates");
+		expect(names).toContain("autorag.search_datasource_kakao");
 		await client.close();
 		await server.close();
 	});
@@ -268,7 +309,7 @@ describe("AutoRAG Lite MCP server", () => {
 		const { client, server } = await connectedServer(lite);
 		const result = await client.callTool({ name: "autorag.datasources.list", arguments: {} });
 		expect(result.isError).not.toBe(true);
-		expect(hasFieldValue(result.structuredContent, "datasourceId", "kakao")).toBe(true);
+		expect(hasFieldValue(result.structuredContent, "description", datasource.description)).toBe(true);
 		await client.close();
 		await server.close();
 	});
@@ -298,6 +339,119 @@ describe("AutoRAG Lite MCP server", () => {
 		const result = await client.callTool({ name: "autorag.search", arguments: {} });
 		expect(result.isError).toBe(true);
 		expect(result.content[0]).toMatchObject({ type: "text" });
+		await client.close();
+		await server.close();
+	});
+
+	it("groups exact duplicates and reports families from the configured Dupey scanner", async () => {
+		const docs = mkdtempSync(join(tmpdir(), "autorag-mcp-dupes-"));
+		roots.push(docs);
+		const runCalls: string[][] = [];
+		const scan = {
+			dir: resolve(docs),
+			files: [
+				{ path: join(docs, "a.md"), content_hash: "hash-a" },
+				{ path: join(docs, "b.md"), content_hash: "hash-a" },
+				{ path: join(docs, "c.md"), content_hash: "hash-c" },
+			],
+			families: [{ id: 1, relation: "contains", files: [join(docs, "a.md")], members: [], edges: [] }],
+			errors: [{ path: join(docs, "broken.pdf"), message: "extract failed" }],
+		};
+		const { lite } = fakeLite({
+			workspacePath: docs,
+			searchPaths: [docs],
+			dupey: {
+				run: async (args: readonly string[]) => {
+					runCalls.push([...args]);
+					return JSON.stringify(scan);
+				},
+			},
+		});
+		const { client, server } = await connectedServer(lite);
+		const result = await client.callTool({ name: "autorag.duplicates", arguments: {} });
+		expect(result.isError).not.toBe(true);
+		const output = result.structuredContent as Record<string, unknown>;
+		expect(output.ok).toBe(true);
+		expect(output.action).toBe("review");
+		expect(output.roots).toEqual([resolve(docs)]);
+		expect(output.exactGroups).toEqual([{ hash: "hash-a", files: [join(docs, "a.md"), join(docs, "b.md")].sort() }]);
+		expect(hasFieldValue(output, "relation", "contains")).toBe(true);
+		expect(hasFieldValue(output, "message", "extract failed")).toBe(true);
+		expect(runCalls).toEqual([["scan", resolve(docs), "--json"]]);
+		await client.close();
+		await server.close();
+	});
+
+	it("returns duplicates-failed when the Dupey scanner fails", async () => {
+		const docs = mkdtempSync(join(tmpdir(), "autorag-mcp-dupes-"));
+		roots.push(docs);
+		const { lite } = fakeLite({
+			workspacePath: docs,
+			searchPaths: [docs],
+			dupey: {
+				run: async () => {
+					throw new Error("dupey exploded");
+				},
+			},
+		});
+		const { client, server } = await connectedServer(lite);
+		const result = await client.callTool({ name: "autorag.duplicates", arguments: {} });
+		expect(result.isError).toBe(true);
+		expect(result.structuredContent).toMatchObject({ errorCode: "duplicates-failed" });
+		await client.close();
+		await server.close();
+	});
+
+	it("exposes dynamic datasource tools only for datasources with a registered retrieval method", async () => {
+		const slack = { ...datasource, datasourceId: "slack", name: "slack", description: "Slack workspace" };
+		const { lite } = fakeLite({
+			workspacePath: workspace(true),
+			datasources: [datasource, slack],
+			retrievalDatasourceIds: ["kakao"],
+		});
+		const { client, server } = await connectedServer(lite);
+		const { tools } = await client.listTools();
+		const names = tools.map((tool) => tool.name);
+		expect(names).toContain("autorag.search_datasource_kakao");
+		expect(names).not.toContain("autorag.search_datasource_slack");
+		const dynamic = tools.find((tool) => tool.name === "autorag.search_datasource_kakao");
+		expect(dynamic?.description).toContain(datasource.description);
+		await client.close();
+		await server.close();
+	});
+
+	it("routes a dynamic datasource search with only that datasource", async () => {
+		const { lite, searchCalls } = fakeLite({ workspacePath: workspace(true) });
+		const { client, server } = await connectedServer(lite);
+		const result = await client.callTool({
+			name: "autorag.search_datasource_kakao",
+			arguments: { query: "refund", topK: 4, scope: "/kakao/default" },
+		});
+		expect(result.isError).not.toBe(true);
+		expect(searchCalls).toHaveLength(1);
+		expect(searchCalls[0]).toMatchObject({
+			query: "refund",
+			selection: { datasourceIds: ["kakao"], local: false },
+			options: { topK: 4, scope: "/kakao/default" },
+		});
+		expect(result.structuredContent).toMatchObject({ ok: true, datasourceId: "kakao" });
+		await client.close();
+		await server.close();
+	});
+
+	it("reports index-not-ready from a dynamic datasource tool before refresh", async () => {
+		const { lite, searchCalls } = fakeLite({ workspacePath: workspace(false) });
+		const { client, server } = await connectedServer(lite);
+		const result = await client.callTool({
+			name: "autorag.search_datasource_kakao",
+			arguments: { query: "refund" },
+		});
+		expect(result.isError).toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			errorCode: "index-not-ready",
+			datasourceId: "kakao",
+		});
+		expect(searchCalls).toHaveLength(0);
 		await client.close();
 		await server.close();
 	});
