@@ -40,6 +40,7 @@ Check `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 - `searchPaths`, `workspacePath`, and `memoryPath`
 - `model.provider`, `model.id`, `model.api`, `model.baseUrl`, `model.apiKeyEnv`
 - `bm25`, `minSync`, and `jikji`
+- `limits` (retrieval, baseline-prefetch, and model-facing candidate caps)
 - `datasources`, `datasourceAccess`, and `ui`
 
 Preserve explicit user choices and a working config unless the user asks to
@@ -195,6 +196,48 @@ autorag init \
 Only store the environment-variable name, never its value. Dimension and batch
 size must be positive integers, and the dimension must match the embedder
 (default Qwen3 is 1024; legacy EmbeddingGemma is 768; text-embedding-3-small is 1536).
+
+### Retrieval and ingest caps
+
+`limits` bounds retrieval, baseline prefetch, and the candidate lists handed to
+the model. Every field is optional — an omitted field keeps the shipped default,
+so add the section only to tighten or widen a specific cap. Values must be
+positive integers; unknown keys (and unknown `prefetch` keys) fail config
+resolution.
+
+| Field | Default | Controls |
+|---|---|---|
+| `mergedEvidenceCeiling` | 500 | `search_all_documents` / model-free merge ceiling when the model omits `topK` |
+| `singleDatasourceTopK` | 50 | `search_datasource_*` merge default when the model omits `topK` |
+| `minSyncTopK` | 50 | MinSync semantic default `topK` |
+| `minSyncScopedQueryTopK` | 100 | MinSync fetch cap applied when a scope narrows the query |
+| `toolDescriptionInstanceScopes` | 8 | Instance scopes listed in one datasource tool description |
+| `prefetch.jikjiTopK` | 30 | Jikji find candidate count |
+| `prefetch.minSyncTopK` | 100 | MinSync retrieve candidate count |
+| `prefetch.jikjiPathLimit` | 100 | Max Jikji answer paths rendered into the baseline |
+| `prefetch.sectionLimit` | 100 | Max results rendered per baseline section |
+
+```json
+{
+  "limits": {
+    "mergedEvidenceCeiling": 1000,
+    "prefetch": { "jikjiTopK": 12, "sectionLimit": 30 }
+  }
+}
+```
+
+The baseline renders each prefetched result's full chunk content (not a
+per-result excerpt) so the model can see where the hit came from. Bound baseline
+size with `prefetch.sectionLimit` / `prefetch.minSyncTopK` /
+`prefetch.jikjiPathLimit`, not with a per-result content truncation.
+
+Ingest caps are trusted connector options under `datasources.<name>.connector`
+and are never settable from model/tool arguments: `maxDocuments`,
+`maxItemsPerFeed`, and `maxContentChars` (RSS); `maxDocuments`,
+`maxContentChars`, `maxResultsPerQuery`, and `maxBytesPerFile` (Spotlight);
+`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
+`bandwidthLimit`, and `dryRun` (cloud-drive/rclone). `maxContentChars` defaults
+to 20000 for RSS and 100000 for Spotlight and cloud-drive.
 
 ## Probe and configure datasource skills (setup wizard)
 
