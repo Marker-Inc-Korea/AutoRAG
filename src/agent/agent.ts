@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
-import type { Api, Message, Model } from "@earendil-works/pi-ai";
-import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
+import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -78,7 +78,6 @@ import {
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -110,6 +109,14 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
+import {
+	type AutoRAGPiInteractiveRuntime,
+	type AutoRAGPiInteractiveRuntimeOptions,
+	type AutoRAGPiSession,
+	createAutoRAGPiInteractiveRuntime,
+	createAutoRAGPiSession,
+	PI_BUILTIN_TOOL_NAMES,
+} from "./pi-session.ts";
 import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
 import {
 	isRefreshOwnerAlive,
@@ -157,21 +164,6 @@ const SEARCH_TOOLS = [
 	EVERYTHING_SEARCH_TOOL_NAME,
 	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
-
-/**
- * Messages the model sees. pi-agent-core declares the callable tools through
- * `system` transcript messages (`toolsAdded`/`toolsRemoved`), so they must pass
- * through; dropping them sends every request without tools.
- */
-function keepLlmMessages(messages: AgentMessage[]): Message[] {
-	return messages.filter(
-		(message): message is Message =>
-			message.role === "system" ||
-			message.role === "user" ||
-			message.role === "assistant" ||
-			message.role === "toolResult",
-	);
-}
 
 /**
  * Safety ceiling on merged evidence when the caller names no `topK`.
@@ -408,10 +400,17 @@ export interface AutoRAGAgentOptions {
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
 	thinking?: AutoRAGThinkingOptions | false;
+	/** pi agent directory for auth/models/extensions. Defaults to ~/.pi/agent. */
+	piAgentDir?: string;
+	/** Optional persistent pi session directory. */
+	piSessionDir?: string;
+	/** Persist one pi session transcript per AutoRAG search. Defaults true. */
+	persistPiSessions?: boolean;
 }
 
 export interface AutoRAGSearchSession {
 	readonly agent: Agent;
+	readonly piSession?: AutoRAGPiSession["session"];
 	prompt(text: string): Promise<void>;
 	abort(): Promise<void> | void;
 	dispose(): void;
@@ -431,7 +430,14 @@ export type AutoRAGJikjiPrepareResult =
 	  };
 
 export class AutoRAGAgent {
-	private readonly innerAgent: Agent;
+	private readonly innerAgent: {
+		readonly state: {
+			systemPrompt: string;
+			tools: readonly { name: string }[];
+			messages: AgentMessage[];
+		};
+		readonly transformContext: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
+	};
 	private readonly tools: readonly AgentTool[];
 	/** Static SEARCH_TOOLS plus the generated per-datasource tool names. */
 	private readonly searchToolNames: ReadonlySet<string>;
@@ -447,7 +453,7 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
-	/** This agent's model credential for model-native web search (per instance, never shared). */
+	private interactiveFastAnswerCallback: ((details: AutoRAGFastAnswerDetails) => void) | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
@@ -497,6 +503,10 @@ export class AutoRAGAgent {
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
+	private readonly piAgentDir: string | undefined;
+	private readonly piSessionDir: string | undefined;
+	private readonly persistPiSessions: boolean;
+	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
@@ -519,6 +529,9 @@ export class AutoRAGAgent {
 		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
+		this.piAgentDir = options.piAgentDir;
+		this.piSessionDir = options.piSessionDir;
+		this.persistPiSessions = options.persistPiSessions ?? true;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -604,9 +617,6 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
-		const bashTool = createBashTool({
-			cwd: this.workspaceProjectRoot,
-		});
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 		const peerQuery = options.peerQuery;
 		const queryPeerTool =
@@ -648,7 +658,7 @@ export class AutoRAGAgent {
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
 		const reservedNames = new Set<string>([
-			BASH_TOOL_NAME,
+			...PI_BUILTIN_TOOL_NAMES,
 			"check_memory",
 			...singleDatasourceTools.map((tool) => tool.name),
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -675,10 +685,8 @@ export class AutoRAGAgent {
 		});
 		this.droppedCallerToolNames = [...new Set(droppedCallerToolNames)];
 
-		// Deterministic, duplicate-free ordering: bash first, then surviving
-		// caller tools, then AutoRAG-internal tools.
+		// pi owns the built-in tools; AutoRAG contributes caller and domain tools.
 		const orderedTools: AgentTool[] = [
-			...(bashTool !== undefined ? [bashTool] : []),
 			...callerTools,
 			checkMemoryTool,
 			searchMinSyncTool,
@@ -702,7 +710,7 @@ export class AutoRAGAgent {
 			return true;
 		});
 		this.tools = tools;
-		const toolNames = tools.map((tool) => tool.name);
+		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name)];
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
@@ -714,28 +722,14 @@ export class AutoRAGAgent {
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
-		this.innerAgent = new Agent({
-			initialState: {
+		this.innerAgent = {
+			state: {
 				systemPrompt,
-				model: options.model as Model<Api>,
-				tools,
+				tools: [...PI_BUILTIN_TOOL_NAMES.map((name) => ({ name })), ...tools],
+				messages: [],
 			},
-			streamFn: streamSimple,
-			convertToLlm: keepLlmMessages,
-			transformContext: async (messages) => this.withMemoryContext(messages),
-			afterToolCall: async (context) => {
-				const toolName = context.toolCall.name;
-				if (!this.lastQuery || !this.searchToolNames.has(toolName)) return undefined;
-
-				const details = context.result.details as
-					| { resultCount?: number; sources?: string[]; method?: string }
-					| undefined;
-				const method = details?.method ?? toolName;
-				this.memory.recordWeakSignal(this.lastQuery, method, "followup");
-				this.memory.save();
-				return undefined;
-			},
-		});
+			transformContext: (messages) => this.withMemoryContext(messages),
+		};
 
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
@@ -780,11 +774,20 @@ export class AutoRAGAgent {
 		];
 	}
 
-	private resolveSessionModel(): {
+	private async resolveSessionModel(): Promise<{
 		readonly model: Model<Api>;
 		readonly apiKey?: string;
 		readonly providerApiKeys?: Readonly<Record<string, string>>;
-	} {
+	}> {
+		const boundModel = this.boundPiRuntime?.session.model as Model<Api> | undefined;
+		if (boundModel !== undefined) {
+			const auth = await this.boundPiRuntime?.session.modelRuntime.getAuth(boundModel);
+			const apiKey = auth?.auth.apiKey;
+			return {
+				model: boundModel,
+				...(apiKey !== undefined ? { apiKey, providerApiKeys: { [boundModel.provider]: apiKey } } : {}),
+			};
+		}
 		if (this.configuredModel !== undefined) {
 			return {
 				model: this.configuredModel,
@@ -800,28 +803,50 @@ export class AutoRAGAgent {
 		};
 	}
 
-	private createSearchSession(
+	private async createSearchSession(
 		resolved: {
 			readonly model: Model<Api>;
 			readonly apiKey?: string;
 			readonly providerApiKeys?: Readonly<Record<string, string>>;
 		},
 		systemPrompt: string,
-	): AutoRAGSearchSession {
-		const agent = new Agent({
-			initialState: { systemPrompt, model: resolved.model, tools: [...this.tools] },
-			streamFn: streamSimple,
-			getApiKey: (provider) =>
-				resolved.providerApiKeys?.[provider] ??
-				(provider === resolved.model.provider ? resolved.apiKey : undefined),
-			convertToLlm: keepLlmMessages,
-			transformContext: async (messages) => this.withMemoryContext(messages),
+		extraTools: readonly AgentTool[] = [],
+	): Promise<AutoRAGSearchSession> {
+		if (this.boundPiRuntime !== undefined) {
+			const session = this.boundPiRuntime.session;
+			return {
+				agent: session.agent,
+				piSession: session,
+				prompt: async (prompt) => session.prompt(prompt, { source: "extension" }),
+				abort: async () => session.abort(),
+				dispose: () => {},
+			};
+		}
+		const piSession = await createAutoRAGPiSession({
+			cwd: this.workspaceProjectRoot,
+			agentDir: this.piAgentDir,
+			sessionDir: this.piSessionDir,
+			persistSession: this.persistPiSessions,
+			model: resolved.model,
+			apiKey: resolved.apiKey,
+			providerApiKeys: resolved.providerApiKeys,
+			getSystemPrompt: () => systemPrompt,
+			customTools: [
+				...this.tools.filter(
+					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
+				),
+				...extraTools,
+			],
+			remoteSession: this.remoteSession,
+			contextTransform: (messages) => this.withMemoryContext(messages),
 		});
+		const agent = piSession.session.agent;
 		return {
 			agent,
-			prompt: async (prompt) => agent.prompt(prompt),
-			abort: async () => agent.abort(),
-			dispose: () => {},
+			piSession: piSession.session,
+			prompt: async (prompt) => piSession.session.prompt(prompt, { source: "extension" }),
+			abort: async () => piSession.session.abort(),
+			dispose: () => piSession.session.dispose(),
 		};
 	}
 
@@ -882,10 +907,73 @@ export class AutoRAGAgent {
 		};
 	}
 
+	async createPiInteractiveRuntime(): Promise<AutoRAGPiInteractiveRuntime> {
+		const resolved = this.configuredModel === undefined ? undefined : await this.resolveSessionModel();
+		const runtime = await createAutoRAGPiInteractiveRuntime({
+			cwd: this.workspaceProjectRoot,
+			agentDir: this.piAgentDir,
+			sessionDir: this.piSessionDir,
+			persistSession: this.persistPiSessions,
+			...(resolved === undefined
+				? {}
+				: {
+						model: resolved.model,
+						...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+						...(resolved.providerApiKeys !== undefined ? { providerApiKeys: resolved.providerApiKeys } : {}),
+					}),
+			getSystemPrompt: () =>
+				buildSystemPrompt(
+					this.currentSystemPromptConfig({
+						modelId: this.boundPiRuntime?.session.model?.id ?? resolved?.model.id,
+					}),
+				),
+			contextTransform: (messages) => this.withMemoryContext(messages),
+			customTools: [
+				...this.tools.filter(
+					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
+				),
+				...(this.fastThinkingLevel === undefined
+					? []
+					: [createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details))]),
+			],
+			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
+			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+		});
+		this.boundPiRuntime = runtime.runtime;
+		if (this.fastThinkingLevel !== undefined) {
+			runtime.runtime.session.setActiveToolsByName(
+				runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+			);
+		}
+		const dispose = runtime.dispose;
+		return {
+			...runtime,
+			dispose: async () => {
+				if (this.boundPiRuntime === runtime.runtime) this.boundPiRuntime = undefined;
+				await dispose();
+			},
+		};
+	}
+
+	private async runInteractivePiQuery(
+		query: string,
+		pi: Parameters<NonNullable<AutoRAGPiInteractiveRuntimeOptions["onQuery"]>>[1],
+	): Promise<void> {
+		pi.setSessionName(query.slice(0, 80));
+		for await (const event of this.searchDocumentsStream(query)) {
+			const text = event.type === "progress" ? event.text : event.response.answer;
+			pi.sendMessage({
+				customType: `autorag.${event.type}`,
+				content: [{ type: "text", text }],
+				display: true,
+				details: event,
+			});
+		}
+	}
+
 	abort(): void {
 		void this.activeSession?.abort();
 	}
-
 	/**
 	 * Periodically re-runs the incremental {@link refresh} so parsed mirrors and
 	 * indexes stay current. Re-parsing is incremental (mtime/size) via the
@@ -977,14 +1065,27 @@ export class AutoRAGAgent {
 		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
+		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (fastCaptured !== undefined) return;
+			fastCaptured = details;
+			this.preliminaryCallback?.(
+				createPreliminarySearchDocumentsResponse(
+					sessionId,
+					trimmedQuery,
+					details,
+					this.collectComponentDiagnostics(),
+				),
+			);
+		};
 		let session: AutoRAGSearchSession | undefined;
+		this.interactiveFastAnswerCallback = emitPreliminary;
 		let unsubscribers: readonly (() => void)[] = [];
 		this.resultCapture = (details) => {
 			captured = details;
 		};
 		let searchStarted = false;
 		try {
-			const resolved = this.resolveSessionModel();
+			const resolved = await this.resolveSessionModel();
 			// Model-native web search rides on the same model credential the
 			// agent loop uses — no separate search key (see web/search/model-auth).
 			// It lives on the instance, never in module state, so a second agent
@@ -1003,9 +1104,10 @@ export class AutoRAGAgent {
 				model: resolved.model.id,
 			});
 			searchStarted = true;
-			session = this.createSearchSession(
+			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
+				this.fastThinkingLevel === undefined ? [] : [createEmitFastAnswerTool(emitPreliminary)],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
@@ -1029,35 +1131,36 @@ export class AutoRAGAgent {
 						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-							if (fastCaptured !== undefined) return;
-							fastCaptured = details;
-							this.preliminaryCallback?.(
-								createPreliminarySearchDocumentsResponse(
-									sessionId,
-									trimmedQuery,
-									details,
-									this.collectComponentDiagnostics(),
-								),
-							);
-						};
-						const fastTool = createEmitFastAnswerTool(emitPreliminary);
 						const baseline = await retrievalPromise;
-						session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
-						session.agent.state.tools = [...this.tools, fastTool];
+						const sessionAgent = session.piSession;
+						if (sessionAgent !== undefined) {
+							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
+							sessionAgent.setActiveToolsByName([
+								...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+								EMIT_FAST_ANSWER_TOOL_NAME,
+							]);
+						} else {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
+							session.agent.state.tools = [...this.tools, { name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool];
+						}
 						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
 						let preliminary = fastCaptured;
 						if (preliminary === undefined) {
-							const text = lastAssistantText(session.agent.state.messages);
+							const text = lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
 						if (preliminary !== undefined) emitPreliminary(preliminary);
 						if (captured === undefined && this.finalThinkingLevel !== undefined) {
-							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
-							session.agent.state.tools = [...this.tools];
-							// Only a preliminary a consumer actually received may turn the
-							// final answer into a delta; otherwise the caller needs the
-							// complete answer.
+							if (sessionAgent !== undefined) {
+								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+								sessionAgent.setActiveToolsByName(
+									sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+								);
+							} else {
+								session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+								session.agent.state.tools = [...this.tools];
+							}
+							// Only a preliminary consumer actually received may turn the final answer into a delta.
 							const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
 							await session.prompt(
 								this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
@@ -1209,6 +1312,7 @@ export class AutoRAGAgent {
 			this.resultCapture = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
+			if (this.interactiveFastAnswerCallback === emitPreliminary) this.interactiveFastAnswerCallback = undefined;
 			this.activeRun = false;
 		}
 	}

@@ -72,7 +72,7 @@ try {
 		minSync: { enabled: false } as const,
 		jikji: false as const,
 	};
-	const resolvedModel = resolveAgentModel(isolated);
+	const resolvedModel = await resolveAgentModel(isolated);
 	const agent = new AutoRAGAgent({
 		...buildAgentOptions(isolated),
 		model: resolvedModel.model,

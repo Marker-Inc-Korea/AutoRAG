@@ -43,27 +43,18 @@ function toolNames(agent: AutoRAGAgent): string[] {
 }
 
 describe("AutoRAGAgent bash-based tool surface", () => {
-	it("default tool set contains bash exactly once and no deleted builtins", () => {
+	it("default tool set contains pi builtins exactly once", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const names = toolNames(agent);
-		expect(names.filter((n) => n === "bash")).toHaveLength(1);
-		// the old builtin/posix tools were deleted; they must never appear
-		for (const name of ["grep", "find", "read", "ls", "stat", "search_posix_documents"]) {
-			expect(names).not.toContain(name);
+		for (const name of ["read", "bash", "edit", "write", "grep", "find", "ls"]) {
+			expect(names.filter((entry) => entry === name)).toHaveLength(1);
 		}
-		// the always-present search_* + structural tools are registered
-		for (const name of [
-			"check_memory",
-			"semantic_search_local_docs",
-			"semantic_search_local_docs",
-			"search_all_documents",
-			"emit_autorag_results",
-		]) {
+		for (const name of ["stat", "search_posix_documents"]) expect(names).not.toContain(name);
+		for (const name of ["check_memory", "semantic_search_local_docs", "search_all_documents", "emit_autorag_results"])
 			expect(names).toContain(name);
-		}
 	});
 
 	it("a caller-provided bash tool is dropped while AutoRAG's own bash remains once", () => {

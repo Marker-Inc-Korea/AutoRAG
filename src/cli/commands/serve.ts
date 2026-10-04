@@ -14,7 +14,9 @@ import {
 import { type SimplexTransport, type StartSimplexOptions, startSimplexChat } from "../../p2p/simplex-transport.ts";
 import {
 	buildAgentOptions,
+	type CliConfig,
 	ConfigError,
+	type ResolveAgentModelOptions,
 	type ResolvedAgentModel,
 	resolveAgentModel,
 	resolveConfig,
@@ -28,7 +30,10 @@ export interface ServeCommandDeps {
 	readonly startSimplexChat?: (options: StartSimplexOptions) => Promise<SimplexTransport>;
 	readonly syncSimplexPeers?: typeof syncSimplexPeers;
 	readonly waitUntilStopped?: (server: SimplexPeerServer) => Promise<void>;
-	readonly modelResolver?: typeof resolveAgentModel;
+	readonly modelResolver?: (
+		config: CliConfig,
+		options?: ResolveAgentModelOptions,
+	) => ResolvedAgentModel | Promise<ResolvedAgentModel>;
 }
 
 function classifierText(message: AssistantMessage): string {
@@ -107,7 +112,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	const injectionClassifier = p2p.injectionClassifier !== false;
 	let resolvedModel: ResolvedAgentModel | undefined;
 	try {
-		resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
+		resolvedModel = await (deps.modelResolver ?? resolveAgentModel)(config);
 	} catch (error) {
 		if (!injectionClassifier) {
 			// Model resolution still required for the search agent itself; classifier-only failures are non-fatal.
