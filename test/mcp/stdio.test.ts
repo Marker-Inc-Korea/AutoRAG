@@ -43,14 +43,15 @@ async function connect(config: string, binDir: string) {
 	// Windows spells the variable `Path`; reuse the existing key so the child
 	// env has no case-duplicate entry and the fake stays first on the lookup path.
 	const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+	const env = Object.fromEntries(
+		Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+	) as Record<string, string>;
+	env.AUTORAG_CONFIG = config;
+	env[pathKey] = `${binDir}${delimiter}${env[pathKey] ?? ""}`;
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: [join(process.cwd(), "src/mcp/index.ts")],
-		env: {
-			...process.env,
-			AUTORAG_CONFIG: config,
-			[pathKey]: `${binDir}${delimiter}${process.env[pathKey] ?? ""}`,
-		},
+		env,
 		stderr: "pipe",
 	});
 	const client = new Client({ name: "autorag-stdio-qa", version: "1.0.0" });
