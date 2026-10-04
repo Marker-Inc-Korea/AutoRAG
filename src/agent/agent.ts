@@ -70,6 +70,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
+import { createReranker, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
@@ -386,6 +387,13 @@ export interface AutoRAGAgentOptions {
 	 * Web tools are always omitted for remote P2P sessions.
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
+	/**
+	 * Post-merge reranking. When set (and not `false`), merged retrieval evidence
+	 * is reordered by a dedicated rerank model — OpenRouter by default. A
+	 * configured-but-unavailable reranker is reported as a diagnostic and the
+	 * merged order is preserved. `false` disables reranking.
+	 */
+	rerank?: RerankAgentOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
@@ -408,6 +416,24 @@ export interface AutoRAGAgentOptions {
 	remoteSession?: boolean;
 	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
 	thinking?: AutoRAGThinkingOptions | false;
+}
+
+/** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
+export interface RerankAgentOptions {
+	/** Provider id. @default "openrouter" */
+	provider?: string;
+	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	model?: string;
+	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. */
+	apiKey?: string;
+	/** Environment variable holding the provider API key. */
+	apiKeyEnv?: string;
+	/** Override the provider base URL. */
+	baseUrl?: string;
+	/** Return only the top N merged results. */
+	topN?: number;
+	/** Per-request timeout in milliseconds. */
+	timeoutMs?: number;
 }
 
 export interface AutoRAGSearchSession {
@@ -479,6 +505,8 @@ export class AutoRAGAgent {
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
+	private readonly reranker: Reranker | undefined;
+	private readonly rerankTopN: number | undefined;
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
@@ -541,6 +569,8 @@ export class AutoRAGAgent {
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
+		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
+		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -2343,13 +2373,12 @@ export class AutoRAGAgent {
 				source: "minsync",
 			});
 		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
-			),
-			diagnostics,
-		};
+		const merged = this.rerankWithMemory(
+			query,
+			this.merger.merge(filteredByMethod, { topK: options.topK ?? MERGED_EVIDENCE_CEILING, dedup: true }),
+		);
+		const results = await this.applyRerank(query, merged, diagnostics);
+		return { results, diagnostics };
 	}
 
 	async searchAllDocuments(
@@ -2395,13 +2424,12 @@ export class AutoRAGAgent {
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
-		return {
-			results: this.rerankWithMemory(
-				query,
-				this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
-			),
-			diagnostics,
-		};
+		const merged = this.rerankWithMemory(
+			query,
+			this.merger.merge(filteredByMethod, { topK: options.topK ?? 50, dedup: true }),
+		);
+		const results = await this.applyRerank(query, merged, diagnostics);
+		return { results, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2419,6 +2447,7 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				datasourceAccess: this.datasourceAccessOptions,
+				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 			});
@@ -2431,6 +2460,43 @@ export class AutoRAGAgent {
 
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
+	}
+
+	/**
+	 * Reorder merged evidence with the configured reranker. A configured-but-
+	 * unavailable reranker, or a rerank failure, is reported as a diagnostic and
+	 * the merged order is preserved — a reranker outage never hides evidence.
+	 */
+	private async applyRerank(
+		query: string,
+		results: RetrievalResult[],
+		diagnostics: RetrievalDiagnostic[],
+	): Promise<RetrievalResult[]> {
+		if (this.reranker === undefined || results.length === 0) return results;
+		const descriptor = this.reranker.describe();
+		if (!descriptor.available) {
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" is configured but unavailable; merged order preserved: ${descriptor.reason ?? "unknown reason"}`,
+				source: descriptor.name,
+				...(descriptor.reason !== undefined ? { reason: descriptor.reason } : {}),
+			});
+			return results;
+		}
+		try {
+			return await this.reranker.rerank(query, results, { topN: this.rerankTopN });
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			diagnostics.push({
+				code: "rerank-failed",
+				severity: "warning",
+				message: `Reranker "${descriptor.name}" failed; merged order preserved: ${reason}`,
+				source: descriptor.name,
+				reason,
+			});
+			return results;
+		}
 	}
 
 	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {

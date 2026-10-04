@@ -30,7 +30,7 @@ export interface RetrievalMethod {
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 }
 
-export type RetrievalDiagnosticCode = "retrieval-method-failed" | "minsync-unavailable";
+export type RetrievalDiagnosticCode = "retrieval-method-failed" | "minsync-unavailable" | "rerank-failed";
 
 /**
  * A retrieval surface (local MinSync files or one datasource) that was not
