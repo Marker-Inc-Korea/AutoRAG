@@ -106,9 +106,20 @@ autorag init \
   --model-id MODEL
 ```
 
-If the authenticated local runtime already supplies the intended model, model
-flags may be omitted. For a custom endpoint, add `api`, `baseUrl`, and
-`apiKeyEnv` to the single `model` object in the trusted config:
+Model resolution runs through the pi runtime. A configured `provider`/`id` is
+resolved against the pi runtime catalog — the built-in providers plus any
+`~/.pi/agent/models.json`, custom, or extension providers — and credentials come
+from stored pi auth (`~/.pi/agent/auth.json`, API key or OAuth established with
+`pi /login`), then provider environment variables. When no `model` is
+configured, AutoRAG uses pi's `defaultProvider`/`defaultModel` when that
+provider has configured credentials; otherwise it falls back to the
+authenticated local codex runtime. So model flags may be omitted when either pi
+or the local runtime already supplies the intended model. Inspect what pi can
+resolve with `autorag models list` (`--available` shows only providers with
+configured credentials); it never prints credential values.
+
+For a custom endpoint, add `api`, `baseUrl`, and `apiKeyEnv` to the single
+`model` object in the trusted config:
 
 ```json
 {
@@ -123,12 +134,12 @@ flags may be omitted. For a custom endpoint, add `api`, `baseUrl`, and
 }
 ```
 
-When `provider`/`id` names a pi-ai catalog model, the catalog entry stays the
-base: `baseUrl`, `api`, and any declared `reasoning`, `input`, `contextWindow`,
-or `maxTokens` override only those fields, and the catalog's reasoning,
-thinking, and compat settings are kept. Only an id outside the catalog (private
-proxy, Ollama, LiteLLM) gets a generic text model with a 128k context window
-unless those fields are declared.
+When `provider`/`id` names a pi runtime catalog model, the catalog entry stays
+the base: `baseUrl`, `api`, and any declared `reasoning`, `input`,
+`contextWindow`, or `maxTokens` override only those fields, and the catalog's
+reasoning, thinking, and compat settings are kept. Only an id outside the
+catalog (private proxy, Ollama, LiteLLM) gets a generic text model with a 128k
+context window unless those fields are declared.
 
 Use `--force` only when intentionally replacing an existing config, and target it
 with an explicit path (`--config` or `AUTORAG_CONFIG`); `--force` refuses to

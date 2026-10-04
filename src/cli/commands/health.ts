@@ -1,8 +1,8 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
-import type { LoadLocalAutoRAGModelOptions } from "../../agent/local-model.ts";
 import {
 	type CliConfig,
+	type ResolveAgentModelOptions,
 	type ResolvedAgentModelDetailed,
 	resolveAgentModelDetailed,
 	resolveConfigReadOnly,
@@ -101,7 +101,10 @@ export interface HealthDeps {
 		cwd?: string;
 		env?: NodeJS.ProcessEnv;
 	}) => CliConfig;
-	modelResolver?: (config: CliConfig, localOptions?: LoadLocalAutoRAGModelOptions) => ResolvedHealthModel;
+	modelResolver?: (
+		config: CliConfig,
+		options?: ResolveAgentModelOptions,
+	) => ResolvedHealthModel | Promise<ResolvedHealthModel>;
 	probe?: (input: ProbeInput, signal: AbortSignal) => Promise<ProbeOutput>;
 	now?: () => number;
 }
@@ -247,7 +250,7 @@ export async function runHealth(ctx: CommandContext, deps: HealthDeps = {}): Pro
 
 	let resolved: ResolvedHealthModel;
 	try {
-		const detailed = (deps.modelResolver ?? resolveAgentModelDetailed)(config);
+		const detailed = await (deps.modelResolver ?? resolveAgentModelDetailed)(config);
 		resolved = detailed;
 	} catch (error) {
 		const report: HealthReportV1 = {
