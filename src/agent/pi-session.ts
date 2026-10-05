@@ -22,6 +22,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { registerAutoRAGProvider } from "../cloud/provider.ts";
+import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
 import { fitRequestLimits } from "./request-limits.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
@@ -187,15 +188,42 @@ function enforceRequestLimits(pi: ExtensionAPI): void {
 	});
 }
 
+/**
+ * Runs AutoRAG's context transform, then keeps the aggregate retrieval payload
+ * within the active model's context window by dropping whole lower-ranked
+ * candidates. Registered before {@link enforceRequestLimits}.
+ */
+function guardContext(
+	pi: ExtensionAPI,
+	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
+): void {
+	pi.on("context", async (event, ctx) => {
+		// Not part of event.messages, yet sent with every request.
+		const activeTools = new Set(pi.getActiveTools());
+		const toolDeclarations = pi
+			.getAllTools()
+			.filter((tool) => activeTools.has(tool.name))
+			.map(({ name, description, parameters }) => ({ name, description, parameters }));
+		const fixedOverheadTokens = Math.ceil(
+			(ctx.getSystemPrompt().length + JSON.stringify(toolDeclarations).length) / 4,
+		);
+		return {
+			messages: await createContextTokenGuardedTransform(
+				ctx.model,
+				contextTransform,
+				() => fixedOverheadTokens,
+			)(event.messages),
+		};
+	});
+}
+
 function createAutoRAGExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
 	};
 }
@@ -227,9 +255,7 @@ function createAutoRAGInteractiveExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
 		if (updateNotice !== undefined) {
 			pi.on("session_start", () => {
