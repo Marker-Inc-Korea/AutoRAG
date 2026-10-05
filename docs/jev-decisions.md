@@ -14,9 +14,9 @@ between runs.
 
 `jev-use` owns backend auto-selection, request screening, and response
 validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
-on top. The tool is **disabled by default** because it calls a paid external
-API, and it is always omitted for remote P2P sessions because its `state`
-leaves the machine.
+on top, and uses the same client for the query pipeline described below. Jev
+is **disabled by default** because it calls a paid external API, and it is
+always omitted for remote P2P sessions because its `state` leaves the machine.
 
 ## Enable it
 
@@ -95,6 +95,54 @@ Guidance:
   neither.
 - Read `confidence` (and `confidenceFrom`) before acting on a close call; an
   `escalate` verdict means the LLM should take the step over.
+
+## Query pipeline (routing + question decomposition)
+
+Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
+search **before** `emit_fast_answer`. Jev answers two typed questions about the
+user question in one batched call:
+
+1. **Branch** (`choice`): `local`, `web`, or `direct`. The branch with the
+   highest probability wins, even when Jev reports low confidence.
+   - `local`: answering needs information only the user can reach (files on
+     their computer, Discord/KakaoTalk/Slack chats, email, notes).
+   - `web`: not answerable from general knowledge, but one public internet
+     search would answer it.
+   - `direct`: general knowledge, simple reasoning, or small talk.
+2. **Decomposition** (`noul`): does the question need several search queries
+   (multiple sub-questions, comparisons, several facts to confirm)? A
+   probability of 0.5 or more means yes.
+
+What happens next:
+
+| Branch   | Pipeline                                                                                 |
+| -------- | ---------------------------------------------------------------------------------------- |
+| `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
+| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged evidence → fast answer → verification. |
+| `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → verification. |
+
+Decomposition sends a short prompt to an LLM and keeps **at most five** search
+queries. By default it uses the search session's own model; set a dedicated
+(usually smaller, faster) model with `queryDecomposition.model`, which takes
+the same fields and credential rules as the top-level `model`:
+
+```json
+{
+  "jev": { "backend": "openrouter" },
+  "queryDecomposition": {
+    "model": { "provider": "openrouter", "id": "google/gemini-2.5-flash-lite" }
+  }
+}
+```
+
+Failures never block a search. A missing Jev credential, an unreachable Jev
+backend, or an unusable verdict falls back to today's single local search for
+the original question (diagnostic `query-route-fallback`). A `web` verdict with
+web tools disabled also falls back to local search. A failed decomposition
+searches the original question (`query-decomposition-failed`). Every routed run
+records its branch and queries as a `query-routed` diagnostic (`--debug`
+shows it). The pipeline never runs for remote P2P sessions or when thinking is
+disabled (`thinking: false`).
 
 ## Live verification
 

@@ -1,4 +1,5 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
+import type { DecompositionModel } from "../../agent/query-decomposition.ts";
 import { stopRuntime as stopEmbeddingRuntime } from "../../embedding-runtime/index.ts";
 import {
 	buildAgentOptions,
@@ -8,6 +9,7 @@ import {
 	type ResolvedAgentModel,
 	resolveAgentModel,
 	resolveConfig,
+	resolveQueryDecompositionModel,
 } from "../config.ts";
 import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -218,8 +220,10 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		});
 	} else {
 		let resolvedModel: ResolvedAgentModel;
+		let decompositionModel: DecompositionModel | undefined;
 		try {
 			resolvedModel = await (deps.modelResolver ?? resolveAgentModel)(config);
+			decompositionModel = await resolveQueryDecompositionModel(config);
 		} catch (error) {
 			const hint = classifySearchHealthHint(error);
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
@@ -230,6 +234,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 			model: resolvedModel.model,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
+			...(decompositionModel !== undefined ? { queryDecomposition: decompositionModel } : {}),
 			...(thinking !== undefined ? { thinking } : {}),
 		};
 		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);

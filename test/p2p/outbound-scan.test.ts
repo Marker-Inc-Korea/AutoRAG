@@ -82,7 +82,10 @@ describe("P2P outbound payload scan", () => {
 			jikji: false,
 		});
 		const remoteInternals = remote as unknown as {
-			prefetchInitialRetrievalContext: (query: string, options: Record<string, never>) => Promise<string>;
+			prefetchInitialRetrievalContext: (
+				queries: readonly string[],
+				options: Record<string, never>,
+			) => Promise<string>;
 		};
 		(remote as unknown as { minSyncMethod: unknown }).minSyncMethod = {
 			isReady: () => true,
@@ -91,7 +94,7 @@ describe("P2P outbound payload scan", () => {
 			],
 		};
 
-		const prefetch = await remoteInternals.prefetchInitialRetrievalContext("query", {});
+		const prefetch = await remoteInternals.prefetchInitialRetrievalContext(["query"], {});
 		expect(prefetch).toContain("retrieved corpus text");
 		expect(prefetch).not.toContain("<retrieved_content");
 		expect(remote.getSystemPrompt()).not.toContain(FENCING_GUARD_LINE);

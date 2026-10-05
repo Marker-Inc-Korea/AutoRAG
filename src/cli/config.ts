@@ -11,6 +11,7 @@ import {
 	type LocalAutoRAGModel,
 	loadLocalAutoRAGModel,
 } from "../agent/local-model.ts";
+import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
@@ -101,6 +102,12 @@ export interface JevCliConfig {
 	model?: string;
 	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
 	confidenceThreshold?: number;
+}
+
+/** Question-decomposition config. Secrets stay in env/pi auth like the main model. */
+export interface QueryDecompositionConfig {
+	/** Dedicated decomposition model; same shape and auth rules as the top-level `model`. */
+	model?: AgentModelConfig;
 }
 
 /**
@@ -203,6 +210,12 @@ export interface CliConfig {
 	 * environment variable holding the backend API key.
 	 */
 	jev?: JevCliConfig | false;
+	/**
+	 * Question decomposition for the Jev query pipeline. `model` names the LLM
+	 * that splits one question into at most five search queries; absent, the
+	 * agent's own model decomposes.
+	 */
+	queryDecomposition?: QueryDecompositionConfig;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -1058,6 +1071,9 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
 	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	if (file.queryDecomposition !== undefined) {
+		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
+	}
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1151,6 +1167,19 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 		out.confidenceThreshold = record.confidenceThreshold;
 	}
 	return out;
+}
+
+/** Validate the `queryDecomposition` config section. */
+export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecompositionConfig {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'queryDecomposition' must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (key !== "model") throw new ConfigError(`queryDecomposition.${key} is not a recognized field`);
+	}
+	const model = modelReference(record.model, "queryDecomposition.model");
+	return model === undefined ? {} : { model };
 }
 
 /**
@@ -1764,6 +1793,22 @@ export async function resolveAgentModel(
 		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
 		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
 	};
+}
+
+/**
+ * Resolve the dedicated question-decomposition model and its credential
+ * through the same chain as the agent model. Undefined when no
+ * `queryDecomposition.model` is configured: the agent's model decomposes.
+ */
+export async function resolveQueryDecompositionModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<DecompositionModel | undefined> {
+	const reference = config.queryDecomposition?.model;
+	if (reference === undefined) return undefined;
+	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
+	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
+	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
 }
 
 function providerApiKeyEnvName(provider: string): string {

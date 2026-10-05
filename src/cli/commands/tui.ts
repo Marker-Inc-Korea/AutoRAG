@@ -1,6 +1,6 @@
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
-import { buildAgentOptions, resolveAgentModel, resolveConfig } from "../config.ts";
+import { buildAgentOptions, resolveAgentModel, resolveConfig, resolveQueryDecompositionModel } from "../config.ts";
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
 import { readPackageVersion } from "../version.ts";
@@ -56,6 +56,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 		if (resolved.apiKey !== undefined) options.apiKey = resolved.apiKey;
 		if (resolved.providerApiKeys !== undefined) options.providerApiKeys = resolved.providerApiKeys;
 	}
+	const decompositionModel = await resolveQueryDecompositionModel(config);
+	if (decompositionModel !== undefined) options.queryDecomposition = decompositionModel;
 	return new AutoRAGAgent(options);
 }
 

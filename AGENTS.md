@@ -547,6 +547,9 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
+| `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
+| `src/agent/query-routing.ts` | Jev query router: local / web / direct branch and the decomposition check |
+| `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |

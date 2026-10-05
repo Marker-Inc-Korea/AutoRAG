@@ -22,7 +22,7 @@ type AgentInternals = {
 		options?: { readonly topK?: number; readonly scope?: string },
 	) => Promise<{ results: RetrievalResult[] }>;
 	singleDatasourceToolSpecs: () => readonly { readonly instanceScopes: readonly string[] }[];
-	prefetchInitialRetrievalContext: (query: string, options: RetrievalOptions) => Promise<string>;
+	prefetchInitialRetrievalContext: (queries: readonly string[], options: RetrievalOptions) => Promise<string>;
 };
 
 let root: string;
@@ -132,7 +132,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 		const internals = agentWith({ prefetch: { sectionLimit: 2 } });
 		injectMinSync(internals, 5);
 
-		const context = await internals.prefetchInitialRetrievalContext("candidates", {});
+		const context = await internals.prefetchInitialRetrievalContext(["candidates"], {});
 
 		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(2);
 		expect(context).toContain("candidate 1");
@@ -144,7 +144,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 		const seenTopK: number[] = [];
 		injectMinSync(internals, 3, seenTopK);
 
-		await internals.prefetchInitialRetrievalContext("candidates", {});
+		await internals.prefetchInitialRetrievalContext(["candidates"], {});
 
 		expect(seenTopK).toEqual([7]);
 	});
@@ -154,7 +154,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 		const seenTopK: number[] = [];
 		injectMinSync(internals, 5, seenTopK);
 
-		const context = await internals.prefetchInitialRetrievalContext("candidates", {});
+		const context = await internals.prefetchInitialRetrievalContext(["candidates"], {});
 
 		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(5);
 		expect(seenTopK).toEqual([100]);
@@ -212,7 +212,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 			return { answerPack: { answerPaths: ["/p/1", "/p/2", "/p/3", "/p/4"] } };
 		};
 
-		const context = await internals.prefetchInitialRetrievalContext("query", {});
+		const context = await internals.prefetchInitialRetrievalContext(["query"], {});
 
 		expect(seenTopK).toEqual([12]);
 		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(2);

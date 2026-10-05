@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { Jev, type Question, type State } from "jev-use";
+import { Jev, type JevBackend, type Judgment, type Question, type State } from "jev-use";
 import { type Static, Type } from "typebox";
 import { toToolDefinition } from "./pi-session.ts";
 
@@ -29,8 +29,12 @@ const BACKEND_DEFAULT_MODEL: Record<string, string> = { openrouter: OPENROUTER_D
  * (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
  */
 export interface JevToolOptions {
-	/** Force one backend; omit to let the first credential present win. */
-	readonly backend?: JevBackendName;
+	/**
+	 * Force one backend by name; omit to let the first credential present win.
+	 * A ready-made `jev-use` backend instance is a programmatic seam (tests,
+	 * custom transports); config only accepts names.
+	 */
+	readonly backend?: JevBackendName | JevBackend;
 	/**
 	 * Wire model id sent with every call. Omit for the backend default;
 	 * OpenRouter is pinned to {@link OPENROUTER_DEFAULT_MODEL} because
@@ -40,6 +44,48 @@ export interface JevToolOptions {
 	readonly model?: string;
 	/** Escalate verdicts below this confidence. Default: per-source thresholds. */
 	readonly confidenceThreshold?: number;
+}
+
+/** {@link JevToolOptions} plus the environment `jev-use` resolves credentials from. */
+export interface JevJudgeOptions extends JevToolOptions {
+	/** Environment consulted for the backend credential. Default `process.env`. */
+	readonly env?: Record<string, string | undefined>;
+}
+
+/**
+ * One batched Jev judgment. Rejects only when no backend can be built (for
+ * example a missing credential); an unreachable backend resolves with
+ * `escalate: true` verdicts, per `jev-use`'s contract.
+ */
+export type JevJudge = (
+	state: State,
+	questions: Question[],
+	options?: { readonly confidenceThreshold?: number },
+) => Promise<Judgment>;
+
+/**
+ * Builds the Jev judge shared by the `jev` tool and the query router. The
+ * `jev-use` client is created lazily on the first call, so no credential
+ * resolves at construction time, and the OpenRouter model pin applies to
+ * every caller.
+ */
+export function createJevJudge(options: JevJudgeOptions = {}): JevJudge {
+	let client: Jev | undefined;
+	return async (state, questions, callOptions = {}) => {
+		client ??= new Jev({
+			...(options.backend !== undefined ? { backend: options.backend } : {}),
+			...(options.env !== undefined ? { env: options.env } : {}),
+			...(options.model !== undefined ? { model: options.model } : {}),
+			...(options.confidenceThreshold !== undefined ? { confidenceThreshold: options.confidenceThreshold } : {}),
+		});
+		const model = options.model ?? BACKEND_DEFAULT_MODEL[client.backend.name];
+		return client.judge(state, questions, {
+			...(model !== undefined ? { model } : {}),
+			...(callOptions.confidenceThreshold !== undefined
+				? { confidenceThreshold: callOptions.confidenceThreshold }
+				: {}),
+		});
+	};
 }
 
 const jevQuestionSchema = Type.Object({
@@ -95,11 +141,11 @@ type JevParams = Static<typeof jevParameters>;
  * Jev is TypeSafe's judgment model: typed questions about a state in, calibrated
  * probabilities out — no generated text. `jev-use` owns backend auto-selection,
  * request screening, and response validation; this extension only adapts the
- * pi tool surface. The client is built lazily, so no credential resolves at
- * extension load time.
+ * pi tool surface over {@link createJevJudge}. Pass the agent's shared judge
+ * so the tool and the query router reuse one lazily built client.
  */
-export function createJevExtension(options: JevToolOptions = {}): ExtensionFactory {
-	let client: Jev | undefined;
+export function createJevExtension(judgeOrOptions: JevJudge | JevToolOptions = {}): ExtensionFactory {
+	const judge = typeof judgeOrOptions === "function" ? judgeOrOptions : createJevJudge(judgeOrOptions);
 	return (pi) => {
 		const tool: AgentTool<typeof jevParameters, unknown> = {
 			name: JEV_TOOL_NAME,
@@ -113,17 +159,8 @@ export function createJevExtension(options: JevToolOptions = {}): ExtensionFacto
 			parameters: jevParameters,
 			async execute(_toolCallId: string, params: JevParams) {
 				try {
-					client ??= new Jev({
-						...(options.backend !== undefined ? { backend: options.backend } : {}),
-						...(options.model !== undefined ? { model: options.model } : {}),
-						...(options.confidenceThreshold !== undefined
-							? { confidenceThreshold: options.confidenceThreshold }
-							: {}),
-					});
 					const state = (params.state ?? "") as State;
-					const model = options.model ?? BACKEND_DEFAULT_MODEL[client.backend.name];
-					const judgment = await client.judge(state, params.questions as Question[], {
-						...(model !== undefined ? { model } : {}),
+					const judgment = await judge(state, params.questions as Question[], {
 						...(params.confidence_threshold !== undefined
 							? { confidenceThreshold: params.confidence_threshold }
 							: {}),
