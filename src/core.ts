@@ -12,7 +12,6 @@ import { AutoRAGAgent } from "./agent/agent.ts";
 import type { AutoRAGResultsDetails } from "./agent/emit-results-tool.ts";
 import {
 	recordStructuredResultsSession as persistStructuredResultsSession,
-	recordNumberedFeedback,
 	type SearchDocumentsResponse,
 } from "./agent/search-documents.ts";
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
@@ -185,13 +184,40 @@ export class AutoRAGLite {
 		return this.sessions.get(sessionId)?.registry ?? new Map();
 	}
 
+	/** Record numbered feedback and report whether numbers matched and changed memory. */
+	recordFeedbackByNumbersDetailed(
+		sessionId: string,
+		usefulNumbers: readonly number[],
+		notUsefulNumbers: readonly number[] = [],
+	): { matched: boolean; applied: boolean } {
+		const session = this.sessions.get(sessionId);
+		const persistedResults = this.memory
+			.getSchema()
+			.curatedResults.filter((result) => result.sessionId === sessionId);
+		const validNumbers = new Set(
+			session === undefined ? persistedResults.map((result) => result.number) : [...session.registry.keys()],
+		);
+		const feedback = [
+			...usefulNumbers.filter((number) => validNumbers.has(number)).map((number) => ({ number, useful: true })),
+			...notUsefulNumbers.filter((number) => validNumbers.has(number)).map((number) => ({ number, useful: false })),
+		];
+		if (feedback.length === 0) return { matched: false, applied: false };
+		const applied = this.memory.recordNumberedFeedback({
+			sessionId,
+			query: session?.query ?? persistedResults[0]?.query ?? "",
+			feedback,
+		});
+		if (applied) this.memory.save();
+		return { matched: true, applied };
+	}
+
 	/** Record numbered feedback against a report persisted by this facade. */
 	recordFeedbackByNumbers(
 		sessionId: string,
 		usefulNumbers: readonly number[],
 		notUsefulNumbers: readonly number[] = [],
-	): void {
-		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
+	): boolean {
+		return this.recordFeedbackByNumbersDetailed(sessionId, usefulNumbers, notUsefulNumbers).applied;
 	}
 
 	/** Return a detached snapshot of persisted evidence and feedback state. */

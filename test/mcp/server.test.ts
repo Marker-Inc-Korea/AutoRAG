@@ -237,7 +237,7 @@ function resultEntries(value: unknown): { path: string; type: string }[] {
 }
 
 describe("AutoRAG Lite MCP server", () => {
-	it("exposes the search-only tools with stable names", async () => {
+	it("exposes the Lite tools with stable names", async () => {
 		const { lite } = fakeLite({ workspacePath: workspace(true) });
 		const { client, server } = await connectedServer(lite);
 		const { tools } = await client.listTools();
@@ -252,6 +252,9 @@ describe("AutoRAG Lite MCP server", () => {
 				"autorag.duplicates",
 				"autorag.search_datasource_kakao",
 				"autorag.refresh",
+				"autorag.report",
+				"autorag.evidence",
+				"autorag.feedback",
 			].sort(),
 		);
 		await client.close();
@@ -272,19 +275,21 @@ describe("AutoRAG Lite MCP server", () => {
 		await server.close();
 	});
 
-	it("omits only refresh in read-only mode", async () => {
+	it("omits mutating tools in read-only mode", async () => {
 		const { lite } = fakeLite({ workspacePath: workspace(true) });
 		const { client, server } = await connectedServer(lite, { readOnly: true });
 		const { tools } = await client.listTools();
 		const names = tools.map((tool) => tool.name);
 		expect(names).not.toContain("autorag.refresh");
+		expect(names).not.toContain("autorag.report");
+		expect(names).not.toContain("autorag.feedback");
 		expect(names).toContain("autorag.search");
+		expect(names).toContain("autorag.evidence");
 		expect(names).toContain("autorag.search.files");
 		expect(names).toContain("autorag.datasources.list");
 		expect(names).toContain("autorag.datasources.get");
 		expect(names).toContain("autorag.duplicates");
 		expect(names).toContain("autorag.search_datasource_kakao");
-		await client.close();
 		await server.close();
 	});
 

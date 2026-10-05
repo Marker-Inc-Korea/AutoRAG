@@ -335,9 +335,9 @@ export function recordNumberedFeedback(
 	sessionId: string,
 	usefulNumbers: readonly number[],
 	notUsefulNumbers: readonly number[],
-): void {
+): boolean {
 	const session = sessions.get(sessionId);
-	if (!session || session.transient) return;
+	if (!session || session.transient) return false;
 	const feedback = [];
 	for (const n of usefulNumbers) {
 		if (session.registry.has(n)) feedback.push({ number: n, useful: true });
@@ -345,8 +345,8 @@ export function recordNumberedFeedback(
 	for (const n of notUsefulNumbers) {
 		if (session.registry.has(n)) feedback.push({ number: n, useful: false });
 	}
-	if (feedback.length === 0) return;
-	if (memory.recordNumberedFeedback({ sessionId, query: session.query, feedback })) {
-		memory.save();
-	}
+	if (feedback.length === 0) return false;
+	if (!memory.recordNumberedFeedback({ sessionId, query: session.query, feedback })) return false;
+	memory.save();
+	return true;
 }

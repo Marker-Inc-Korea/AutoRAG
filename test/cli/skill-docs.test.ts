@@ -3,20 +3,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
-import { validateReport } from "../../src/cli/commands/report.ts";
 import { normalizeIndexingConfig } from "../../src/cli/config.ts";
 import { renderSearch } from "../../src/cli/output.ts";
 import { BUILTIN_DATASOURCE_SKILL_NAMES } from "../../src/datasource/skills/factory.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
-const SKILL_NAMES = [
-	"autorag",
-	"autorag-setup",
-	"autorag-lite-setup",
-	"autorag-lite-search",
-	"autorag-doctor",
-] as const;
+const SKILL_NAMES = ["autorag", "autorag-setup", "autorag-lite-setup", "autorag-doctor"] as const;
 
 type SkillName = (typeof SKILL_NAMES)[number];
 
@@ -83,13 +76,6 @@ function section(markdown: string, heading: string): string {
  */
 function subsection(markdown: string, heading: string): string {
 	return new RegExp(`\\n### ${heading}\\s*\\n([\\s\\S]*?)(?=\\n#{2,3} |$)`).exec(markdown)?.[1] ?? "";
-}
-
-/** Every fenced ```json block inside one `## <heading>` section, parsed. */
-function jsonFences(markdown: string, heading: string): unknown[] {
-	return [...section(markdown, heading).matchAll(/```json\n([\s\S]*?)```/g)].map(
-		(match) => JSON.parse(match[1]) as unknown,
-	);
 }
 
 /** Every string literal used as a diagnostic/warning code anywhere in the shipped source. */
@@ -196,34 +182,6 @@ describe("parent-agent skill docs", () => {
 			files: string[];
 		};
 		expect(pkg.files).toContain("skills");
-	});
-
-	it("documents the lite retrieve JSON contract and diagnostics codes", () => {
-		const search = readSkill("autorag-lite-search");
-		expect(search).toContain("autorag lite retrieve");
-		expect(search).toContain("index-not-ready");
-		expect(search).toContain("retrieval-method-failed");
-		expect(search).toContain("minsync-unavailable");
-		expect(search).toContain("--scope");
-		expect(search).toContain("--tags");
-		expect(search).toContain("sessionId");
-		expect(search).toContain("autorag evidence");
-		expect(search).toContain("autorag feedback");
-	});
-
-	it("ships a lite report input example the real validator accepts", () => {
-		const fences = jsonFences(readSkill("autorag-lite-search"), "Persisting a curated report");
-		const inputs = fences.filter(
-			(fence): fence is Record<string, unknown> =>
-				typeof fence === "object" && fence !== null && "results" in fence && "mapping" in fence,
-		);
-		expect(inputs.length, "lite-search skill must show a complete report input example").toBeGreaterThan(0);
-		for (const input of inputs) {
-			const details = validateReport(input);
-			expect(details.results.length).toBeGreaterThan(0);
-			expect(details.results.every((result) => result.evidence.length > 0)).toBe(true);
-			expect(details.mapping.every((entry) => entry.content.length > 0)).toBe(true);
-		}
 	});
 
 	it("documents the lite refresh method values and force flags", () => {

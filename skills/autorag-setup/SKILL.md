@@ -1,6 +1,6 @@
 ---
 name: autorag-setup
-description: Install and configure AutoRAG, or repair its single search model, approved document roots, retrieval indexes, datasource skills, and health checks without exposing credentials. Use when autorag is missing, init/refresh/health fails, indexes are stale, or the user wants to add folders or datasources.
+description: Install and configure AutoRAG, register its Lite MCP server for external agents, or repair its single search model, approved roots, indexes, datasources, and health checks without exposing credentials. Use when AutoRAG or MCP is missing, init/refresh/health fails, indexes are stale, or the user wants to add folders or datasources.
 license: MIT
 ---
 
@@ -9,6 +9,11 @@ license: MIT
 Use this skill when AutoRAG is unconfigured, the `autorag` CLI is missing, model
 resolution fails, indexes are missing or stale, or the user wants to change the
 document collection or datasources.
+
+For model-free external-agent search, use `autorag-lite-setup` to configure
+and register `autorag-mcp`; do not configure a search model or install a search
+skill for Lite. This skill's model setup and CLI search apply to the full
+librarian, not the Lite MCP server.
 
 ## Safety
 
@@ -342,6 +347,23 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   exact source chunks behind numbered results, including source, method,
   stable evidence ID, excerpt/content, chunk index, and line number.
 
+## Connect external agents through MCP
+
+When setting up AutoRAG for a coding agent, register the package's
+`autorag-mcp` stdio executable with the same absolute `AUTORAG_CONFIG` path.
+Follow `autorag-lite-setup`'s MCP registration and verification procedure:
+inspect existing host registration, use an absolute executable path,
+reload/reconnect, discover schemas with `tools/list`, and exercise
+`autorag.status`, `autorag.datasources.list`, and a known-phrase
+`autorag.search` through MCP. Restart the MCP server after config changes.
+The MCP server returns model-free source chunks; the calling agent curates
+them. It does not invoke the configured librarian model. The same server also
+exposes `autorag.report`, `autorag.evidence`, and `autorag.feedback` for the
+curation lifecycle; the matching CLI commands remain a maintenance path.
+Discover the exact schemas with MCP `tools/list`. Keep the full `autorag` skill
+only when model-backed curated search is also wanted. For MCP-only setup, use
+`autorag-lite-setup` instead of requiring live model health.
+
 ## Keep indexes fresh
 
 For continuous freshness, create or verify an OS-appropriate scheduled
@@ -371,3 +393,5 @@ installed or its absence reported, `status` is acceptable, live `health`
 passes, `refresh` builds the requested indexes, one real structured search
 succeeds, and any requested ongoing schedule is installed or verified with the
 user told it is active.
+For external-agent integration, also require successful MCP discovery and a
+known-source MCP search; CLI success alone does not prove the host connection.
