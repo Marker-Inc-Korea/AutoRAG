@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { portableSpawnCommand } from "../process/portable-spawn.ts";
 
 export interface DupeyScanFile {
 	readonly path: string;
@@ -71,8 +72,12 @@ function isScanResult(value: unknown): value is DupeyScanResult {
 }
 
 function spawnDupey(executable: string, args: readonly string[], options: DupeyCliOptions): Promise<string> {
+	// tsconfig lib is ES2022, which predates Promise.withResolvers.
 	return new Promise((resolveOutput, reject) => {
-		const child = spawn(executable, [...args], {
+		// Windows cannot spawn shebang scripts or extensionless entrypoints; route
+		// script shims through their interpreter the same way MinSync/FSearch do.
+		const portable = portableSpawnCommand(executable, args);
+		const child = spawn(portable.command, [...portable.args], {
 			cwd: options.cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 		});

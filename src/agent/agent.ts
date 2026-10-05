@@ -79,6 +79,7 @@ import {
 	type RetrievalScopeBinding,
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
+import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
@@ -785,7 +786,13 @@ export class AutoRAGAgent {
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
+		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
+			const datasourceId = skill.describe().datasourceId;
+			if (datasourceId !== undefined) {
+				if (registeredDatasourceIds.has(datasourceId)) continue;
+				registeredDatasourceIds.add(datasourceId);
+			}
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
 		if (options.jikji !== false) {
@@ -808,6 +815,7 @@ export class AutoRAGAgent {
 				...(options.fsearch ?? {}),
 				root: this.workspaceProjectRoot,
 				folders: this.searchPaths,
+				excludeFolders: this.excludePaths,
 			});
 			if (fsearchClient.isSupported()) this.fsearchClient = fsearchClient;
 		}
@@ -1694,6 +1702,58 @@ export class AutoRAGAgent {
 			});
 		}
 		return specs;
+	}
+
+	/**
+	 * Authorized configured datasource descriptors for catalog/listing surfaces.
+	 *
+	 * Built from the same trusted, server-bound access context as
+	 * {@link buildAuthorizedDatasourceSkills}: only tag-authorized datasources
+	 * are listed — including ones that expose no retrieval methods — and each
+	 * entry carries only identity, capability tags, and authorized source scope
+	 * strings (never credentials, config paths, or raw instance metadata).
+	 * Duplicate datasource ids collapse to the first registration.
+	 */
+	listDatasources(): DatasourceCatalogEntry[] {
+		const ctx = this.datasourceAccessContext();
+		const seen = new Set<string>();
+		const entries: DatasourceCatalogEntry[] = [];
+		for (const skill of this.datasourceSkills) {
+			const descriptor = skill.describe();
+			if (descriptor.datasourceId === undefined) continue;
+			if (!ctx.isAccessible(descriptor)) continue;
+			if (seen.has(descriptor.datasourceId)) continue;
+			seen.add(descriptor.datasourceId);
+			entries.push({
+				datasourceId: descriptor.datasourceId,
+				name: descriptor.name,
+				type: descriptor.type,
+				description: descriptor.description,
+				tags: [...descriptor.tags],
+				capabilities: [...descriptor.capabilities],
+				status: descriptor.status,
+				sourceScopes: this.authorizedSourceScopes(skill, ctx),
+			});
+		}
+		return entries;
+	}
+
+	/**
+	 * Opaque source scope strings for one datasource that the trusted context
+	 * authorizes. Datasources without the `scoped` capability expose their
+	 * sources unfiltered (they are gated only at the tag level).
+	 */
+	private authorizedSourceScopes(skill: DatasourceSkill, ctx: DatasourceAccessContext): string[] {
+		const scoped = skill.describe().capabilities.includes("scoped");
+		const predicate = scoped ? ctx.allowedSourcesPredicate() : undefined;
+		const scopes = new Set<string>();
+		for (const source of skill.describeSources()) {
+			const scope = source.source;
+			if (scope.includes("#")) continue;
+			if (predicate !== undefined && !predicate(scope)) continue;
+			scopes.add(scope);
+		}
+		return [...scopes];
 	}
 
 	/**
@@ -2824,6 +2884,7 @@ export class AutoRAGAgent {
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
+				authorizedDatasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
 			});
 			for (const method of this.methodRegistry.list()) {
 				this.retrievalEngine.register(method);
@@ -3078,7 +3139,10 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 }
 
 function sanitizeDiagnosticMessage(raw: string): string {
-	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	// `\s+` must not overlap the leading `\n` or `.split` walks a long newline
+	// run quadratically (CodeQL js/polynomial-redos): `[^\S\n]` is whitespace
+	// that excludes the newline, so stack-frame indentation still matches.
+	let out = raw.split(/\n[^\S\n]+at\s/)[0] ?? raw;
 	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
 	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
 	return out.replace(/\s{2,}/g, " ").trim();

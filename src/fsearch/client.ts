@@ -121,6 +121,8 @@ export interface FSearchClientOptions extends FSearchOptions {
 	readonly root: string;
 	/** Folders FSearch indexes (the configured search paths). */
 	readonly folders: readonly string[];
+	/** Additional configured folders omitted from the index. */
+	readonly excludeFolders?: readonly string[];
 	readonly platform?: NodeJS.Platform;
 	readonly run?: FSearchRunner;
 	readonly launch?: FSearchLauncher;
@@ -365,6 +367,7 @@ export class FSearchClient {
 			...new Set([
 				join(this.options.root, ".autorag"),
 				...this.options.folders.map((folder) => join(folder, ".autorag")),
+				...(this.options.excludeFolders ?? []),
 			]),
 		]);
 		const indexed = await this.run(binaryPath, indexArgs, this.options.indexTimeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS);

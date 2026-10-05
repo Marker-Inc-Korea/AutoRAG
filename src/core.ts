@@ -16,11 +16,14 @@ import {
 	type SearchDocumentsResponse,
 } from "./agent/search-documents.ts";
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
+import type { EverythingSearchRequest, EverythingSearchResult } from "./everything/index.ts";
+import type { FSearchSearchRequest, FSearchSearchResult } from "./fsearch/index.ts";
 import type { MemorySchemaV4 } from "./memory/memory.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import type { MinSyncSyncResult } from "./minsync/types.ts";
 import type { ParsedMirrorSyncResult } from "./mirror/sync.ts";
 import type { RetrievalEngine } from "./retrieval/engine.ts";
+import type { DatasourceCatalogEntry, RetrievalSelection } from "./retrieval/selection.ts";
 import type {
 	CuratedResult,
 	RetrievalDiagnostic,
@@ -97,6 +100,46 @@ export class AutoRAGLite {
 	/** Return the deterministic retrieval engine used by this configured runtime. */
 	getRetrievalEngine(): RetrievalEngine {
 		return this.retrievalEngine;
+	}
+
+	/**
+	 * List the authorized configured datasources for this runtime: identity,
+	 * capability tags, and authorized source scope strings only — no
+	 * credentials or config metadata.
+	 */
+	listDatasources(): DatasourceCatalogEntry[] {
+		return this.agent.listDatasources();
+	}
+
+	/**
+	 * Search only the selected datasources/methods/local surfaces. Selection is
+	 * applied before any backend is invoked, so an unselected or unauthorized
+	 * datasource never runs. Unknown or unauthorized selections throw
+	 * {@link RetrievalSelectionError}.
+	 */
+	searchSelected(
+		query: string,
+		selection: RetrievalSelection = {},
+		options?: RetrievalOptions,
+	): Promise<{
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
+		return this.retrievalEngine.retrieveSelected(query, selection, options);
+	}
+
+	/**
+	 * Search the Windows-only Everything index through the model-free provider,
+	 * delegating to the existing agent backend (unsupported off Windows).
+	 */
+	searchEverything(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
+		return this.agent.searchEverything(request);
+	}
+
+	/** Search the existing macOS/Linux FSearch client through the model-free provider. */
+	searchFsearch(request: FSearchSearchRequest): Promise<FSearchSearchResult> {
+		return this.agent.searchFsearch(request);
 	}
 
 	/** Retrieve merged results without entering the model-backed agent loop. */

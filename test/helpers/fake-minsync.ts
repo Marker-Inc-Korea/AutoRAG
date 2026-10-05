@@ -1,12 +1,25 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-/** Deterministic minsync stand-in that stages nothing itself and queries `files/`. */
-export function writeFakeMinSync(binaryPath: string, logPath?: string): void {
-	writeFileSync(
-		binaryPath,
-		`#!/usr/bin/env node
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+type ModuleFormat = "esm" | "cjs";
+
+/**
+ * Platform name the MinSync resolver looks up on PATH and in the workspace
+ * cache (`minsync` on POSIX, `minsync.exe` on Windows).
+ */
+export function fakeMinSyncExecutableName(platform: NodeJS.Platform = process.platform): string {
+	return platform === "win32" ? "minsync.exe" : "minsync";
+}
+
+function fakeMinSyncScript(logPath: string | undefined, format: ModuleFormat): string {
+	const loader =
+		format === "esm"
+			? `import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";`
+			: `const { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");`;
+	return `#!/usr/bin/env node
+${loader}
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
@@ -47,9 +60,29 @@ if (args[0] === "query") {
 }
 console.error("unexpected fake minsync command: " + args.join(" "));
 process.exit(2);
-`,
-	);
+`;
+}
+
+/** Deterministic minsync stand-in that stages nothing itself and queries `files/`. */
+export function writeFakeMinSync(binaryPath: string, logPath?: string): void {
+	writeFileSync(binaryPath, fakeMinSyncScript(logPath, "esm"));
 	chmodSync(binaryPath, 0o755);
+}
+
+/**
+ * Write the fake MinSync under the resolver's platform name into `directory`,
+ * so a config-only stdio test resolves it from PATH or the workspace cache.
+ * The resolver name has no `.mjs` extension, and Node loads a shebang script
+ * without a module extension as CommonJS, so this entry uses `require` to work
+ * on POSIX and on Windows (where the lookup name is `minsync.exe`).
+ *
+ * @returns the written binary path.
+ */
+export function writeFakeMinSyncExecutable(directory: string, logPath?: string): string {
+	const binaryPath = join(directory, fakeMinSyncExecutableName());
+	writeFileSync(binaryPath, fakeMinSyncScript(logPath, "cjs"));
+	chmodSync(binaryPath, 0o755);
+	return binaryPath;
 }
 
 export function fakeMinSyncLoggedModes(logPath: string): string[] {
