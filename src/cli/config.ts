@@ -22,6 +22,7 @@ import {
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	DEFAULT_RERANK_TOP_N,
 	SUPPORTED_RERANK_PROVIDERS,
 } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -120,7 +121,7 @@ export interface RerankConfig {
 	apiKeyEnv?: string;
 	/** Override the provider base URL (e.g. a gateway). */
 	baseUrl?: string;
-	/** Return only the top N merged results. Omitted ⇒ all distinct results are reordered. */
+	/** Return only the top N merged results. @default 25 (DEFAULT_RERANK_TOP_N) */
 	topN?: number;
 	/** Per-request timeout in milliseconds. */
 	timeoutMs?: number;
@@ -1239,6 +1240,7 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 		provider: DEFAULT_RERANK_PROVIDER,
 		model: DEFAULT_RERANK_MODEL,
 		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (raw === undefined || raw === null) return out;
 	if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -1891,6 +1893,7 @@ export function writeDefaultConfig(
 		provider: DEFAULT_RERANK_PROVIDER,
 		model: DEFAULT_RERANK_MODEL,
 		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };

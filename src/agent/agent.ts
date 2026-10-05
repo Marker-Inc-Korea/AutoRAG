@@ -72,7 +72,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
-import { createReranker, type Reranker } from "../retrieval/rerank.ts";
+import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
@@ -235,7 +235,7 @@ const MERGED_EVIDENCE_CEILING = 500;
 export interface AutoRAGRetrievalLimits {
 	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
 	readonly mergedEvidenceCeiling?: number;
-	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 20. */
 	readonly singleDatasourceTopK?: number;
 	/** MinSync semantic retrieval default `topK`. Default 50. */
 	readonly minSyncTopK?: number;
@@ -259,7 +259,7 @@ export interface AutoRAGRetrievalLimits {
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
 const DEFAULT_RETRIEVAL_LIMITS = {
 	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
-	singleDatasourceTopK: 50,
+	singleDatasourceTopK: 20,
 	minSyncTopK: 50,
 	minSyncScopedQueryTopK: 100,
 	toolDescriptionInstanceScopes: 8,
@@ -766,7 +766,10 @@ export class AutoRAGAgent {
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
-		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
+		this.rerankTopN =
+			options.rerank === false || options.rerank === undefined
+				? undefined
+				: (options.rerank.topN ?? DEFAULT_RERANK_TOP_N);
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -1766,6 +1769,16 @@ export class AutoRAGAgent {
 				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
+		const minSyncResults = vector ?? [];
+		if (vector !== undefined) {
+			for (const result of vector) options.observedSources?.add(result.source);
+		}
+		// Rerank the whole pre-fast-answer pool (Jikji paths + MinSync chunks) so
+		// the fast answer is grounded in relevance order. Falls back to the
+		// unranked sections when reranking is disabled or unavailable.
+		const reranked = await this.rerankPrefetchPool(query, jikji, minSyncResults);
+		if (reranked !== undefined) return formatRerankedBaseline(reranked);
+
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
@@ -1776,9 +1789,6 @@ export class AutoRAGAgent {
 			);
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
-			if (results) {
-				for (const result of results) options.observedSources?.add(result.source);
-			}
 			if (!results || results.length === 0) return;
 			const seen = new Set<string>();
 			sections.push(
@@ -1798,6 +1808,40 @@ export class AutoRAGAgent {
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
+	}
+
+	/**
+	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths plus MinSync
+	 * chunks — down to the configured `rerank.topN`. Returns `undefined` when
+	 * reranking is disabled/unavailable or the pool is empty, so the caller keeps
+	 * the unranked sections; a rerank failure never blocks the fast answer.
+	 */
+	private async rerankPrefetchPool(
+		query: string,
+		jikji: { readonly answerPack?: { readonly answerPaths: readonly string[] } } | undefined,
+		minSyncResults: readonly RetrievalResult[],
+	): Promise<RetrievalResult[] | undefined> {
+		const reranker = this.reranker;
+		if (reranker === undefined) return undefined;
+		const answerPaths = jikji?.answerPack?.answerPaths ?? [];
+		const candidates: RetrievalResult[] = answerPaths
+			.slice(0, this.limits.prefetch.jikjiPathLimit)
+			.map((path, index) => ({
+				id: `jikji:${index}`,
+				content: path,
+				source: path,
+				score: 1 - index / Math.max(answerPaths.length, 1),
+				metadata: { method: "jikji" },
+			}));
+		candidates.push(...minSyncResults);
+		if (candidates.length === 0) return undefined;
+		if (!reranker.describe().available) return undefined;
+		try {
+			const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN });
+			return reranked.length > 0 ? reranked : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**
@@ -2750,8 +2794,9 @@ export class AutoRAGAgent {
 				dedup: true,
 			}),
 		);
-		const results = await this.applyRerank(query, merged, diagnostics);
-		return { results, diagnostics };
+		// Single-datasource retrieval is intentionally NOT model-reranked: the
+		// caller already narrowed to one connection, so the merged order is kept.
+		return { results: merged, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2771,6 +2816,7 @@ export class AutoRAGAgent {
 				datasourceAccess: this.datasourceAccessOptions,
 				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
+				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 			});
@@ -2902,6 +2948,18 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+/**
+ * Baseline block for the reranked pre-fast-answer pool. A single numbering
+ * sequence replaces the per-section numbering so bracketed citations are
+ * unambiguous in the fast-answer prompt.
+ */
+function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
+	const lines = results.map(
+		(result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
+	);
+	return `Reranked initial candidates (ordered by relevance to the query):\n${lines.join("\n")}`;
 }
 
 /**
