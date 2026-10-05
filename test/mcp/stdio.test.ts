@@ -29,7 +29,7 @@ function makeFixture() {
 	mkdirSync(binDir, { recursive: true });
 	writeFakeFSearchExecutable(binDir, join(docs, REFUND_FILE));
 	writeFakeMinSyncExecutable(binDir);
-	writeFakeDupeyExecutable(binDir);
+	const dupeyBinary = writeFakeDupeyExecutable(binDir);
 	const config = join(root, "config.json");
 	writeFileSync(
 		config,
@@ -49,6 +49,9 @@ function makeFixture() {
 				binaryPath: join(binDir, process.platform === "win32" ? "fsearch-cli.exe" : "fsearch-cli"),
 				watch: false,
 			},
+			// Pass the shim explicitly: `portableSpawnCommand` only rewrites a shebang
+			// script to its interpreter when it can see the file at that exact path.
+			dupey: { binaryPath: dupeyBinary },
 			// Spotlight needs no external install, so a configured skill yields a
 			// dynamic datasource tool without touching the network or a binary.
 			datasources: { spotlight: { enabled: true } },
