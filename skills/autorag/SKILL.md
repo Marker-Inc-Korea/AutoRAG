@@ -75,7 +75,10 @@ autorag search "what were the key findings in the Q3 report" --top-k 5 --json --
 
 `--json --debug` includes `answer`, numbered `results` (`number`, `title`,
 `summary`, optional `source`), and `sessionId`. Use that `sessionId` for
-feedback. `--json` without `--debug` is only `answer` plus `results`.
+feedback. `--json` without `--debug` is only `answer` plus `results`. Every
+bracketed `[n]` citation in `answer` resolves to a `results[].number` of the
+same response; an unmatched citation is removed and reported as a
+`citation-without-result` diagnostic.
 
 To inspect the exact persisted evidence behind numbered results, use:
 
