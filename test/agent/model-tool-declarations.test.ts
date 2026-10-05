@@ -53,7 +53,6 @@ describe("AutoRAGAgent model requests", () => {
 			minSync: false,
 			jikji: false,
 			webSearch: false,
-			thinking: false,
 		});
 		await agent.searchDocuments("where is the report?");
 

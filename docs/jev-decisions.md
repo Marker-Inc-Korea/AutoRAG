@@ -96,7 +96,7 @@ Guidance:
 - Read `confidence` (and `confidenceFrom`) before acting on a close call; an
   `escalate` verdict means the LLM should take the step over.
 
-## Query pipeline (routing + question decomposition)
+## Query pipeline (routing, decomposition, follow-up check)
 
 Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
@@ -118,8 +118,23 @@ What happens next:
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
-| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → verification. |
-| `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → verification. |
+| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
+| `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
+
+### Follow-up check after the fast answer
+
+After `emit_fast_answer` on the `local` and `web` branches, Jev answers one more
+`noul` about the question **and** the fast answer together: does the answer need
+correction, clarification from the user, or further research? Below 0.5, the run
+ends there: the fast answer becomes the final response (its numbered results and
+sources are kept), the verification phase does not run, and a
+`follow-up-skipped` diagnostic records the probability. At 0.5 or above, the
+fast answer is published as the preliminary answer and verification continues
+as usual. With Jev enabled, the preliminary is held until this decision, so an
+answer that turns out to be final reaches the caller once, as the complete
+response. If the check fails (missing credential, unreachable backend), the run
+verifies (`follow-up-check-fallback`), because ending on an unchecked answer is
+the costlier mistake.
 
 Decomposition sends a short prompt to an LLM and keeps **at most five** search
 queries. By default it uses the search session's own model; set a dedicated
@@ -141,8 +156,9 @@ the original question (diagnostic `query-route-fallback`). A `web` verdict with
 web tools disabled also falls back to local search. A failed decomposition
 searches the original question (`query-decomposition-failed`). Every routed run
 records its branch and queries as a `query-routed` diagnostic (`--debug`
-shows it). The pipeline never runs for remote P2P sessions or when thinking is
-disabled (`thinking: false`).
+shows it). The pipeline never runs for remote P2P sessions. Every search is
+two-phase (fast answer, then verification unless Jev ends the run); there is
+no single-phase mode.
 
 ## Live verification
 

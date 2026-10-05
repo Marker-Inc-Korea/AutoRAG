@@ -135,13 +135,11 @@ function parseThinkingLevel(value: string | boolean | undefined): AutoRAGThinkin
 }
 
 /**
- * Thinking flags for the two-phase progressive-answer flow. `--fast-thinking`
- * and `--final-thinking` set per-phase levels (default: off/high);
- * `--single-phase` disables the two-phase flow entirely. An unrecognized
- * level rejects with exit 2.
+ * Per-phase thinking flags for the two-phase (fast → verification) search.
+ * `--fast-thinking` and `--final-thinking` set the levels (default: off/high).
+ * An unrecognized level rejects with exit 2.
  */
 function buildThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
-	if (flags["single-phase"] === true) return false;
 	const fastProvided = flags["fast-thinking"] !== undefined;
 	const finalProvided = flags["final-thinking"] !== undefined;
 	const fast = parseThinkingLevel(flags["fast-thinking"]);

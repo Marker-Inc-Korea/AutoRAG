@@ -105,7 +105,6 @@ function setup(
 		jikji: false,
 		everything: false,
 		webSearch: false,
-		thinking: false,
 		datasourceSkills: [skill],
 		datasourceAccess: { allowedTags: ["fixture"] },
 		maxSearchToolCalls,

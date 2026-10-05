@@ -18,7 +18,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
-import { DECOMPOSE_QUESTION_ID, QUERY_ROUTE_QUESTION_ID, type QueryRoute } from "../../src/agent/query-routing.ts";
+import {
+	DECOMPOSE_QUESTION_ID,
+	FOLLOW_UP_QUESTION_ID,
+	QUERY_ROUTE_QUESTION_ID,
+	type QueryRoute,
+} from "../../src/agent/query-routing.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
@@ -102,11 +107,12 @@ function finalEmit(answer: string, source: string): FauxResponseStep {
 	);
 }
 
-function jevRouting(route: QueryRoute, decomposeProbability: number): JevBackend {
+function jevRouting(route: QueryRoute, decomposeProbability: number, followUpProbability = 0.9): JevBackend {
 	const distribution = { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 };
 	return new MockBackend({
 		[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.8 },
 		[DECOMPOSE_QUESTION_ID]: { answer: decomposeProbability },
+		[FOLLOW_UP_QUESTION_ID]: { answer: followUpProbability },
 	});
 }
 
@@ -442,5 +448,53 @@ describe("Jev query pipeline before the fast answer", () => {
 
 		expect(minSync.queries).toEqual(["What is the capital of France?"]);
 		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "query-routed")).toBe(false);
+	});
+
+	it("ends after the fast answer when Jev says no correction, clarification, or further research is needed", async () => {
+		const prompts: string[] = [];
+		const source = join(docs, "budget.txt");
+		const model = fauxModel(
+			capture(fastAnswer("The Q3 budget was approved by Mina Park [1].", source), prompts),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+		);
+		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1, 0.1) } });
+		injectMinSync(agent, recordingMinSync().method);
+
+		const events = await collect(agent, "who approved the Q3 budget?");
+
+		// Only the fast prompt reached the model: no verification phase ran.
+		expect(prompts).toHaveLength(1);
+		expect(events.some((event) => event.type === "preliminary")).toBe(false);
+		const complete = events.find((event) => event.type === "complete");
+		if (complete?.type !== "complete") throw new Error("expected a complete event");
+		expect(complete.response.answer).toBe("The Q3 budget was approved by Mina Park [1].");
+		expect(complete.response.results.map((result) => result.source)).toEqual([source]);
+		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
+		expect(
+			complete.response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "follow-up-skipped" && diagnostic.message.includes("0.10"),
+			),
+		).toBe(true);
+	});
+
+	it("continues to verification when Jev says the fast answer needs follow-up", async () => {
+		const prompts: string[] = [];
+		const source = join(docs, "budget.txt");
+		const model = fauxModel(
+			capture(fastAnswer("The approver is not stated in the evidence.", source), prompts),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			capture(finalEmit("Verified: Mina Park approved the Q3 budget.", source), prompts),
+		);
+		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1, 0.8) } });
+		injectMinSync(agent, recordingMinSync().method);
+
+		const events = await collect(agent, "who approved the Q3 budget?");
+
+		expect(prompts).toHaveLength(2);
+		expect(events.some((event) => event.type === "preliminary")).toBe(true);
+		const complete = events.find((event) => event.type === "complete");
+		expect(complete?.type === "complete" && complete.response.answer).toBe(
+			"Verified: Mina Park approved the Q3 budget.",
+		);
 	});
 });

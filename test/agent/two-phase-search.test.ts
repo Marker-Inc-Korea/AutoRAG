@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type AssistantMessage,
 	type FauxProviderRegistration,
@@ -228,10 +227,6 @@ async function collectEvents(agent: AutoRAGAgent, query: string): Promise<Search
 	return events;
 }
 
-function toolNames(agent: AutoRAGAgent): string[] {
-	return (agent as unknown as { tools: readonly AgentTool[] }).tools.map((tool) => tool.name);
-}
-
 describe("two-phase progressive answers (thinking off fast → thinking on final)", () => {
 	it("yields the fast preliminary answer before the verified complete response", async () => {
 		const model = fauxModel(
@@ -401,27 +396,6 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		await agent.searchDocuments("refund approval?");
 
 		expect(reasoningLog).toEqual([undefined, undefined, undefined]);
-	});
-
-	it("keeps the legacy single-phase flow when thinking is disabled", async () => {
-		const model = fauxModel(
-			true,
-			fauxAssistantMessage(
-				[fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, { answer: "should not surface", results: [] })],
-				{
-					stopReason: "toolUse",
-				},
-			),
-			finalEmitCall("Legacy final answer."),
-		);
-		const agent = new AutoRAGAgent({ ...agentOptions(model), thinking: false });
-		expect(toolNames(agent)).not.toContain(EMIT_FAST_ANSWER_TOOL_NAME);
-
-		const events = await collectEvents(agent, "refund approval?");
-
-		expect(events.some((event) => event.type === "preliminary")).toBe(false);
-		const complete = events.find((event) => event.type === "complete");
-		expect(complete?.type === "complete" && complete.response.answer).toContain("Legacy final answer");
 	});
 
 	it("still yields a preliminary answer when the fast phase responds with text only", async () => {

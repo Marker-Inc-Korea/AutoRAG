@@ -9,13 +9,11 @@ import type { CommandContext } from "./types.ts";
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
- * Map the two-phase thinking flags (`--fast-thinking`, `--final-thinking`) and
- * the legacy `--single-phase` switch to the agent's `thinking` option. Returns
- * `undefined` when no flag was given so the agent keeps its default two-phase
- * flow.
+ * Map the two-phase thinking flags (`--fast-thinking`, `--final-thinking`) to
+ * the agent's `thinking` option. Returns `undefined` when no flag was given so
+ * the agent keeps its default levels.
  */
 function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
-	if (flags["single-phase"] === true) return false;
 	const parse = (value: string | boolean | undefined): AutoRAGThinkingLevel | undefined =>
 		typeof value === "string" && THINKING_LEVELS.includes(value as AutoRAGThinkingLevel)
 			? (value as AutoRAGThinkingLevel)

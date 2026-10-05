@@ -48,7 +48,9 @@ export type SearchDocumentDiagnosticCode =
 	| "model-request-failed"
 	| "query-routed"
 	| "query-route-fallback"
-	| "query-decomposition-failed";
+	| "query-decomposition-failed"
+	| "follow-up-skipped"
+	| "follow-up-check-fallback";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

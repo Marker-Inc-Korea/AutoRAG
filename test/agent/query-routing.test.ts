@@ -1,7 +1,13 @@
 import { type JevBackend, MockBackend } from "jev-use";
 import { describe, expect, it } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
-import { DECOMPOSE_QUESTION_ID, QUERY_ROUTE_QUESTION_ID, routeQuery } from "../../src/agent/query-routing.ts";
+import {
+	DECOMPOSE_QUESTION_ID,
+	FOLLOW_UP_QUESTION_ID,
+	needsFollowUp,
+	QUERY_ROUTE_QUESTION_ID,
+	routeQuery,
+} from "../../src/agent/query-routing.ts";
 
 function judgeWith(backend: JevBackend) {
 	return createJevJudge({ backend });
@@ -86,6 +92,64 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 	it("falls back to local search when no Jev credential resolves", async () => {
 		const decision = await routeQuery(createJevJudge({ backend: "typesafe", env: {} }), "where is the signed lease?");
 		expect(decision.route).toBe("local");
+		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
+	});
+});
+
+describe("needsFollowUp (Jev check after emit_fast_answer)", () => {
+	const fastAnswer = "- The Q3 budget was approved by Mina Park on 2026-07-02 [1].";
+
+	it("ends the run when Jev says the fast answer needs no correction, clarification, or further research", async () => {
+		const decision = await needsFollowUp(
+			judgeWith(new MockBackend({ [FOLLOW_UP_QUESTION_ID]: { answer: 0.1 } })),
+			"who approved the Q3 budget?",
+			fastAnswer,
+		);
+		expect(decision.followUp).toBe(false);
+		expect(decision.probability).toBe(0.1);
+		expect(decision.fallbackReason).toBeUndefined();
+	});
+
+	it("continues to verification when Jev's probability reaches one half", async () => {
+		const decision = await needsFollowUp(
+			judgeWith(new MockBackend({ [FOLLOW_UP_QUESTION_ID]: { answer: 0.5 } })),
+			"who approved the Q3 budget?",
+			"- The approver is not stated in the available evidence.",
+		);
+		expect(decision.followUp).toBe(true);
+	});
+
+	it("asks one noul about the question together with the fast answer", async () => {
+		const seen: { state: unknown; questions: { id: string; type: string }[] }[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				seen.push({ state: request.state, questions: request.questions.map(({ id, type }) => ({ id, type })) });
+				return { answers: [{ answer: 0.2 }] };
+			},
+		};
+		await needsFollowUp(judgeWith(backend), "who approved the Q3 budget?", fastAnswer);
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.questions).toEqual([{ id: FOLLOW_UP_QUESTION_ID, type: "noul" }]);
+		expect(String(seen[0]?.state)).toContain("who approved the Q3 budget?");
+		expect(String(seen[0]?.state)).toContain(fastAnswer);
+	});
+
+	it("keeps verifying when Jev is unreachable", async () => {
+		const backend: JevBackend = {
+			name: "down",
+			async judge() {
+				throw new Error("connection refused");
+			},
+		};
+		const decision = await needsFollowUp(judgeWith(backend), "q", fastAnswer);
+		expect(decision.followUp).toBe(true);
+		expect(decision.fallbackReason).toMatch(/connection refused/u);
+	});
+
+	it("keeps verifying when no Jev credential resolves", async () => {
+		const decision = await needsFollowUp(createJevJudge({ backend: "typesafe", env: {} }), "q", fastAnswer);
+		expect(decision.followUp).toBe(true);
 		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
 	});
 });

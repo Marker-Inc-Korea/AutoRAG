@@ -110,7 +110,6 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --tags <csv>           Narrow retrieval to trusted tags",
 		"  --fast-thinking <lvl>  Thinking level for the fast first answer",
 		"  --final-thinking <lvl> Thinking level for the verified answer",
-		"  --single-phase         Disable the two-phase progressive-answer flow",
 		"",
 		"Thinking levels: off, minimal, low, medium, high, xhigh, max.",
 	]),
@@ -204,7 +203,6 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --fast-thinking <lvl>  Thinking level for the fast first answer",
 		"  --final-thinking <lvl> Thinking level for the verified answer",
-		"  --single-phase         Disable the two-phase progressive-answer flow",
 	]),
 	serve: usage([
 		"autorag serve - P2P peer query server over SimpleX",

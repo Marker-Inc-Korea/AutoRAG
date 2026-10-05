@@ -131,7 +131,7 @@ import {
 } from "./pi-session.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
-import { FALLBACK_QUERY_ROUTE, type QueryRoute, routeQuery } from "./query-routing.ts";
+import { FALLBACK_QUERY_ROUTE, needsFollowUp, type QueryRoute, routeQuery } from "./query-routing.ts";
 import {
 	isRefreshOwnerAlive,
 	type PersistedRefreshProgress,
@@ -482,12 +482,10 @@ export class RemoteSessionRejectedError extends Error {
 export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
- * Two-phase progressive answers: the fast phase delivers an immediate first
- * answer with {@link AutoRAGThinkingOptions.fast} thinking (default "off"),
- * then the verification phase re-checks and finalizes with
- * {@link AutoRAGThinkingOptions.final} thinking (default "high"). Pass
- * `false` on {@link AutoRAGAgentOptions.thinking} to keep the legacy
- * single-phase flow.
+ * Per-phase thinking for AutoRAG's two-phase search: the fast phase delivers
+ * an immediate first answer with {@link AutoRAGThinkingOptions.fast} thinking
+ * (default "off"), then the verification phase re-checks and finalizes with
+ * {@link AutoRAGThinkingOptions.final} thinking (default "high").
  */
 export interface AutoRAGThinkingOptions {
 	/** Thinking level for the immediate first answer. Default "off". */
@@ -597,8 +595,8 @@ export interface AutoRAGAgentOptions {
 	peerQuery?: PeerQueryOptions | false;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
-	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
-	thinking?: AutoRAGThinkingOptions | false;
+	/** Per-phase thinking levels for the two-phase (fast → verification) search. */
+	thinking?: AutoRAGThinkingOptions;
 	/** pi agent directory for auth/models/extensions. Defaults to ~/.pi/agent. */
 	piAgentDir?: string;
 	/** Optional persistent pi session directory. */
@@ -680,9 +678,9 @@ export class AutoRAGAgent {
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
-	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
-	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
-	private readonly finalThinkingLevel: AutoRAGThinkingLevel | undefined;
+	/** Per-phase thinking levels of the two-phase search. */
+	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
+	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
 	private jikjiPrepareInFlight: Promise<void> | undefined;
@@ -760,9 +758,8 @@ export class AutoRAGAgent {
 		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
 			throw new Error("maxSearchToolCalls must be a positive integer");
 		}
-		const thinking = options.thinking;
-		this.fastThinkingLevel = thinking === false ? undefined : (thinking?.fast ?? "off");
-		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
+		this.fastThinkingLevel = options.thinking?.fast ?? "off";
+		this.finalThinkingLevel = options.thinking?.final ?? "high";
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		this.piAgentDir = options.piAgentDir;
@@ -1206,23 +1203,19 @@ export class AutoRAGAgent {
 				...this.tools.filter(
 					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
 				),
-				...(this.fastThinkingLevel === undefined
-					? []
-					: [createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details))]),
+				createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details)),
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
-			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+			inactiveToolNames: [EMIT_FAST_ANSWER_TOOL_NAME],
 			...(this.jevExtension !== undefined
 				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
 				: {}),
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
-		if (this.fastThinkingLevel !== undefined) {
-			runtime.runtime.session.setActiveToolsByName(
-				runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-			);
-		}
+		runtime.runtime.session.setActiveToolsByName(
+			runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+		);
 		const dispose = runtime.dispose;
 		return {
 			...runtime,
@@ -1344,12 +1337,17 @@ export class AutoRAGAgent {
 		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
-		/** Set by the Jev direct route: the fast answer becomes the final answer. */
-		let directAnswer = false;
-		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-			if (fastCaptured !== undefined) return;
-			fastCaptured = details;
-			if (directAnswer) return;
+		/**
+		 * Without Jev every fast answer goes on to verification, so it is
+		 * published the moment emit_fast_answer runs. With Jev, publishing waits
+		 * for the direct route and the follow-up check: an answer that turns out
+		 * to be final reaches the caller once, as the complete response.
+		 */
+		const publishOnCapture = this.jevJudge === undefined;
+		let published = false;
+		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (published) return;
+			published = true;
 			this.preliminaryCallback?.(
 				createPreliminarySearchDocumentsResponse(
 					sessionId,
@@ -1358,6 +1356,11 @@ export class AutoRAGAgent {
 					this.collectComponentDiagnostics(),
 				),
 			);
+		};
+		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (fastCaptured !== undefined) return;
+			fastCaptured = details;
+			if (publishOnCapture) publishPreliminary(details);
 		};
 		let session: AutoRAGSearchSession | undefined;
 		this.interactiveFastAnswerCallback = emitPreliminary;
@@ -1389,7 +1392,7 @@ export class AutoRAGAgent {
 			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
-				this.fastThinkingLevel === undefined ? [] : [createEmitFastAnswerTool(emitPreliminary)],
+				[createEmitFastAnswerTool(emitPreliminary)],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
@@ -1398,23 +1401,6 @@ export class AutoRAGAgent {
 			try {
 				await Promise.race([
 					(async () => {
-						if (this.fastThinkingLevel === undefined) {
-							// Legacy single-phase flow (thinking disabled). Start retrieval
-							// immediately, without waiting for the model's first inference.
-							const retrievalPromise = this.prefetchInitialRetrievalContext(
-								trimmedQuery,
-								[trimmedQuery],
-								options,
-							);
-							await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
-							if (captured === undefined) {
-								const initialRetrievalContext = await retrievalPromise;
-								await session.prompt(
-									`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
-								);
-							}
-							return;
-						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
 						// With Jev enabled, Jev first picks local search, web search, or a
@@ -1423,7 +1409,6 @@ export class AutoRAGAgent {
 						const sessionAgent = session.piSession;
 						const activeSession = session;
 						const activateFastPhase = (): void => {
-							if (this.fastThinkingLevel === undefined) return;
 							if (sessionAgent !== undefined) {
 								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
 								sessionAgent.setActiveToolsByName([
@@ -1443,9 +1428,8 @@ export class AutoRAGAgent {
 						};
 						if (plan.route === "direct") {
 							// Direct answers skip every retrieval step and the verification
-							// phase: the fast answer is the final answer, so it is captured
-							// as the result instead of being published as a preliminary.
-							directAnswer = true;
+							// phase: the fast answer is the final answer. Only Jev routes
+							// here, so the preliminary was never published.
 							activateFastPhase();
 							await session.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
 							const answer =
@@ -1466,22 +1450,28 @@ export class AutoRAGAgent {
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
 						if (preliminary !== undefined) emitPreliminary(preliminary);
-						if (captured === undefined && this.finalThinkingLevel !== undefined) {
-							if (sessionAgent !== undefined) {
-								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
-								sessionAgent.setActiveToolsByName(
-									sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-								);
-							} else {
-								session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
-								session.agent.state.tools = [...this.tools];
-							}
-							// Only a preliminary consumer actually received may turn the final answer into a delta.
-							const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
-							await session.prompt(
-								this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered, plan.route),
-							);
+						if (captured !== undefined) return;
+						// With Jev enabled, a fast answer that needs no correction,
+						// clarification, or further research ends the run here.
+						if (preliminary !== undefined && !(await this.shouldFollowUp(trimmedQuery, preliminary))) {
+							captured = fastAnswerAsFinal(preliminary);
+							return;
 						}
+						if (preliminary !== undefined) publishPreliminary(preliminary);
+						if (sessionAgent !== undefined) {
+							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+							sessionAgent.setActiveToolsByName(
+								sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+							);
+						} else {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+							session.agent.state.tools = [...this.tools];
+						}
+						// Only a preliminary consumer actually received may turn the final answer into a delta.
+						const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+						await session.prompt(
+							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered, plan.route),
+						);
 					})(),
 					new Promise<never>((_, reject) => {
 						timeout = setTimeout(() => {
@@ -1837,6 +1827,36 @@ export class AutoRAGAgent {
 		}
 		diagnostics.push(...this.routingDiagnostics);
 		return diagnostics;
+	}
+
+	/**
+	 * Jev check run after emit_fast_answer: does the answer need correction,
+	 * clarification, or further research? "No" ends the run with the fast
+	 * answer as the final answer. Without Jev, or when the check fails, the run
+	 * always continues into verification.
+	 */
+	private async shouldFollowUp(query: string, fastAnswer: AutoRAGFastAnswerDetails): Promise<boolean> {
+		if (this.jevJudge === undefined) return true;
+		const decision = await needsFollowUp(this.jevJudge, query, fastAnswer.answer);
+		if (decision.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "follow-up-check-fallback",
+				severity: "warning",
+				message: `Jev follow-up check was unavailable; verifying the fast answer. ${decision.fallbackReason}`,
+				source: "jev",
+			});
+			return true;
+		}
+		const probability = decision.probability?.toFixed(2) ?? "?";
+		if (!decision.followUp) {
+			this.routingDiagnostics.push({
+				code: "follow-up-skipped",
+				severity: "info",
+				message: `Jev judged the fast answer final (P(follow-up)=${probability}); the verification phase was skipped.`,
+				source: "jev",
+			});
+		}
+		return decision.followUp;
 	}
 
 	/**
@@ -3200,6 +3220,35 @@ function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
 		(result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
 	);
 	return `Reranked initial candidates (ordered by relevance to the query):\n${lines.join("\n")}`;
+}
+
+/**
+ * The fast answer as a final emit_autorag_results payload, used when Jev ends
+ * the run after the fast phase. Results keep their numbers, summaries, and
+ * evidence; each mapping entry carries the fast answer's real source so
+ * feedback and the result registry still resolve.
+ */
+function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResultsDetails {
+	const sourceByNumber = new Map(fastAnswer.sources.map((entry) => [entry.number, entry.source]));
+	const results = fastAnswer.results.filter((result) => sourceByNumber.has(result.number));
+	return {
+		answer: fastAnswer.answer,
+		results: results.map((result) => ({
+			number: result.number,
+			title: result.title,
+			summary: result.summary,
+			evidence: result.evidence,
+			confidence: result.confidence ?? 0.5,
+		})),
+		mapping: results.map((result) => ({
+			number: result.number,
+			source: sourceByNumber.get(result.number) ?? "",
+			method: EMIT_FAST_ANSWER_TOOL_NAME,
+			content: result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary,
+			evidenceRefs: [],
+		})),
+		warnings: [],
+	};
 }
 
 /**

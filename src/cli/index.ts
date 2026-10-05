@@ -19,7 +19,6 @@ const BOOLEAN_FLAGS = new Set([
 	"immediate",
 	"skip-probes",
 	"full",
-	"single-phase",
 	"strict",
 	"refresh",
 	"available",
