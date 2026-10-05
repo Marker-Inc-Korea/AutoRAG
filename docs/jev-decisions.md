@@ -108,12 +108,13 @@ AUTORAG_JEV_LIVE=1 OPENROUTER_API_KEY=... bunx vitest run test/live-e2e/jev.test
 ## Programmatic usage
 
 ```ts
-import { AutoRAGLite } from "@autorag/librarian";
+import { AutoRAGAgent } from "@autorag/librarian";
 
-const agent = new AutoRAGLite({
+const agent = new AutoRAGAgent({
   searchPaths: ["./docs"],
   jev: { backend: "openrouter" },
 });
+const response = await agent.searchDocuments("summarize the Q3 report");
 ```
 
 The tool is registered through pi's extension surface: `createJevExtension`
