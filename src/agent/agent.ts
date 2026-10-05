@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -101,6 +102,7 @@ import {
 	EMIT_FAST_ANSWER_TOOL_NAME,
 } from "./fast-answer-tool.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import { createJevExtension, JEV_TOOL_NAME, type JevToolOptions } from "./jev-extension.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -542,6 +544,15 @@ export interface AutoRAGAgentOptions {
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
+	/**
+	 * Optional Jev decision tool (`jev`). Jev is TypeSafe's judgment model:
+	 * typed questions in, calibrated probabilities out — no generated text.
+	 * Disabled by default because it calls a paid external API; enable it with
+	 * a `jev` config section or this option. Backends: TypeSafe, OpenRouter
+	 * (`OPENROUTER_API_KEY`), Vercel AI Gateway, Cloudflare Workers AI.
+	 * Always omitted for remote P2P sessions.
+	 */
+	jev?: JevToolOptions | false;
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
 	/**
@@ -690,6 +701,8 @@ export class AutoRAGAgent {
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
+	/** pi extension registering the optional `jev` tool; undefined when disabled. */
+	private readonly jevExtension: ExtensionFactory | undefined;
 	private readonly excludeExactDuplicates: boolean;
 	private readonly excludePaths: readonly string[];
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
@@ -818,6 +831,10 @@ export class AutoRAGAgent {
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		this.jevExtension =
+			options.jev === undefined || options.jev === false || this.remoteSession
+				? undefined
+				: createJevExtension(options.jev);
 
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 		const peerQuery = options.peerQuery;
@@ -872,6 +889,7 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			JEV_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -912,7 +930,13 @@ export class AutoRAGAgent {
 			return true;
 		});
 		this.tools = tools;
-		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name)];
+		// pi registers the jev tool from its extension; AutoRAG still lists the
+		// name so the prompt advertises it and reserved-name checks cover it.
+		const toolNames = [
+			...PI_BUILTIN_TOOL_NAMES,
+			...tools.map((tool) => tool.name),
+			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
+		];
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
@@ -1041,6 +1065,9 @@ export class AutoRAGAgent {
 			],
 			remoteSession: this.remoteSession,
 			contextTransform: (messages) => this.withMemoryContext(messages),
+			...(this.jevExtension !== undefined
+				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
+				: {}),
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -1142,6 +1169,9 @@ export class AutoRAGAgent {
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
 			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+			...(this.jevExtension !== undefined
+				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
+				: {}),
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;

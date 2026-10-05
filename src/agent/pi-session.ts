@@ -32,6 +32,17 @@ export interface AutoRAGPiSessionOptions {
 	readonly providerApiKeys?: Readonly<Record<string, string>>;
 	readonly getSystemPrompt: () => string;
 	readonly customTools: readonly AgentTool[];
+	/**
+	 * Extra pi extensions to load alongside AutoRAG's own prompt/context
+	 * extension. Each factory registers its tools, commands, and events with pi.
+	 */
+	readonly extensionFactories?: readonly ExtensionFactory[];
+	/**
+	 * Tool names registered by {@link extensionFactories}. pi's `tools`
+	 * allow-list keeps only named tools active, so every extension tool that
+	 * should be callable must appear here too.
+	 */
+	readonly extensionToolNames?: readonly string[];
 	readonly remoteSession?: boolean;
 	readonly contextTransform?: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
 }
@@ -54,7 +65,8 @@ export interface AutoRAGPiSession {
 	readonly sessionFile: string | undefined;
 }
 
-function toToolDefinition(tool: AgentTool): ToolDefinition {
+/** Adapts a pi-agent-core {@link AgentTool} to pi's extension {@link ToolDefinition}. */
+export function toToolDefinition(tool: AgentTool): ToolDefinition {
 	return {
 		name: tool.name,
 		label: tool.label,
@@ -182,11 +194,15 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 	});
 	await configureModelRuntime(modelRuntime, options.model, options.apiKey, options.providerApiKeys);
 	const customTools = [...options.customTools];
+	const extensionToolNames = [...(options.extensionToolNames ?? [])];
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: options.cwd,
 		agentDir,
 		settingsManager,
-		extensionFactories: [createAutoRAGExtension(options.getSystemPrompt, options.contextTransform)],
+		extensionFactories: [
+			createAutoRAGExtension(options.getSystemPrompt, options.contextTransform),
+			...(options.extensionFactories ?? []),
+		],
 		systemPromptOverride: () => options.getSystemPrompt(),
 		appendSystemPromptOverride: () => [],
 	});
@@ -207,11 +223,11 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		sessionManager,
 		model: options.model,
 		customTools: customToolDefinitions,
-		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames],
+		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames],
 		excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		thinkingLevel: "off",
 	});
-	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames])];
+	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames, ...extensionToolNames])];
 	session.setActiveToolsByName(initialToolNames);
 	return {
 		session,
@@ -260,6 +276,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 						options.onQuery,
 						options.updateNotice,
 					),
+					...(options.extensionFactories ?? []),
 				],
 				systemPrompt: options.getSystemPrompt(),
 				appendSystemPrompt: [],
@@ -270,7 +287,11 @@ export async function createAutoRAGPiInteractiveRuntime(
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
 			customTools: options.customTools.map(toToolDefinition),
-			tools: [...PI_BUILTIN_TOOL_NAMES, ...options.customTools.map((tool) => tool.name)],
+			tools: [
+				...PI_BUILTIN_TOOL_NAMES,
+				...options.customTools.map((tool) => tool.name),
+				...(options.extensionToolNames ?? []),
+			],
 			excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		});
 		if (options.inactiveToolNames !== undefined && options.inactiveToolNames.length > 0) {
