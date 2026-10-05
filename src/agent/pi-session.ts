@@ -19,6 +19,7 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
 export interface AutoRAGPiSessionOptions {
@@ -112,24 +113,32 @@ async function configureModelRuntime(
 function createAutoRAGExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
+	initialModel: Model<Api> | undefined,
 ): ExtensionFactory {
 	return (pi) => {
+		let model = initialModel;
+		pi.on("model_select", (event) => {
+			model = event.model;
+		});
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		const transform = createContextTokenGuardedTransform(model, contextTransform);
+		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
 	};
 }
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 	onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>,
+	initialModel: Model<Api> | undefined,
 ): ExtensionFactory {
 	return (pi) => {
+		let model = initialModel;
+		pi.on("model_select", (event) => {
+			model = event.model;
+		});
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		const transform = createContextTokenGuardedTransform(model, contextTransform);
+		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
 		pi.on("input", async (event) => {
 			const query = event.text.trim();
 			if (event.source !== "interactive" || query.length === 0 || query.startsWith("/")) return undefined;
@@ -164,7 +173,7 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		cwd: options.cwd,
 		agentDir,
 		settingsManager,
-		extensionFactories: [createAutoRAGExtension(options.getSystemPrompt, options.contextTransform)],
+		extensionFactories: [createAutoRAGExtension(options.getSystemPrompt, options.contextTransform, options.model)],
 		systemPromptOverride: () => options.getSystemPrompt(),
 		appendSystemPromptOverride: () => [],
 	});
@@ -232,7 +241,12 @@ export async function createAutoRAGPiInteractiveRuntime(
 			settingsManager,
 			resourceLoaderOptions: {
 				extensionFactories: [
-					createAutoRAGInteractiveExtension(options.getSystemPrompt, options.contextTransform, options.onQuery),
+					createAutoRAGInteractiveExtension(
+						options.getSystemPrompt,
+						options.contextTransform,
+						options.onQuery,
+						options.model,
+					),
 				],
 				systemPrompt: options.getSystemPrompt(),
 				appendSystemPrompt: [],
