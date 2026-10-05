@@ -35,6 +35,8 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"",
 		"Writes the config (default ~/.autorag/config.json) for a local collection.",
 		"An existing config is not overwritten without --force.",
+		"--force replaces an existing config only when the path is explicit",
+		"(--config or AUTORAG_CONFIG); it refuses to clobber the implicit home config.",
 		"",
 		"Flags:",
 		"  --search-paths <csv>          Folders to index/search",
@@ -52,7 +54,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --embedder-timeout-ms <n>     Per-request timeout in ms",
 		"  --embedder-batch-size <n>     Embedding batch size",
 		"  --minsync-max-chunk-size <n>  MinSync chunk size limit",
-		"  --force                       Overwrite an existing config",
+		"  --force                       Replace an existing config (explicit path only)",
 	]),
 	setup: usage([
 		"autorag setup - probe the local runtime and datasources",
@@ -272,6 +274,15 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"",
 		"Flags:",
 		"  --format json   Emit machine-readable JSON",
+	]),
+	"update-check": usage([
+		"autorag update-check - compare the running autorag against npm",
+		"",
+		"Usage: autorag update-check [flags]",
+		"",
+		"Queries the published `@autorag/librarian` version and reports whether a",
+		"newer release is available. Set AUTORAG_NO_UPDATE_CHECK=1 to skip the",
+		"lookup; the TUI also runs this check on launch.",
 	]),
 };
 

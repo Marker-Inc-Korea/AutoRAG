@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { chmod, mkdtemp } from "node:fs/promises";
 import { get } from "node:https";
-import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { spawnProcess } from "./process.ts";
@@ -144,10 +143,9 @@ export function selectReleaseAsset(
 	if (!asset) throw new MinSyncReleaseError(`No MinSync ${release.tagName} asset found for ${target}`);
 	return asset;
 }
-
 async function installReleaseAsset(asset: MinSyncReleaseAsset, destination: string): Promise<void> {
 	const expectedSha256 = requireSha256(asset);
-	const tempDir = await mkdtemp(join(tmpdir(), "autorag-minsync-install-"));
+	const tempDir = await mkdtemp(join(dirname(destination), ".autorag-minsync-install-"));
 	try {
 		const archive = join(tempDir, asset.name);
 		await downloadFile(asset.downloadUrl, archive);

@@ -141,7 +141,9 @@ reasoning, thinking, and compat settings are kept. Only an id outside the
 catalog (private proxy, Ollama, LiteLLM) gets a generic text model with a 128k
 context window unless those fields are declared.
 
-Use `--force` only when intentionally replacing an existing config. Legacy cwd
+Use `--force` only when intentionally replacing an existing config, and target it
+with an explicit path (`--config` or `AUTORAG_CONFIG`); `--force` refuses to
+replace the implicit `~/.autorag/config.json`. Legacy cwd
 `autorag.config.json` is a migration source only and is never deleted by init.
 
 ### Retrieval defaults

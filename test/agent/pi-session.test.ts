@@ -6,7 +6,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
@@ -157,6 +157,40 @@ describe("AutoRAG pi coding-agent host", () => {
 			});
 			expect(unlisted.session.getActiveToolNames()).not.toContain("extension_probe");
 			unlisted.session.dispose();
+		} finally {
+			registration.unregister();
+		}
+	});
+
+	it("injects an AutoRAG update notice into the interactive session on startup", async () => {
+		const registration = registerFauxProvider({
+			api: `faux-update-${Date.now()}`,
+			models: [{ id: "update-model" }],
+		});
+		try {
+			const runtime = await createAutoRAGPiInteractiveRuntime({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				sessionDir: join(root, "sessions"),
+				model: registration.getModel(),
+				getSystemPrompt: () => "interactive prompt",
+				customTools: [],
+				onQuery: async () => undefined,
+				updateNotice: async () => "AutoRAG v9.9.9 is available (you have v1.0.0).",
+			});
+			try {
+				// The TUI binds extension UI context on init; session_start (and thus
+				// the notice) fires then, so mirror that here.
+				await runtime.runtime.session.bindExtensions({});
+				await vi.waitFor(() => {
+					const notice = runtime.runtime.session.messages.find(
+						(message) => "customType" in message && message.customType === "autorag.update",
+					);
+					expect(notice).toBeDefined();
+				});
+			} finally {
+				await runtime.dispose();
+			}
 		} finally {
 			registration.unregister();
 		}

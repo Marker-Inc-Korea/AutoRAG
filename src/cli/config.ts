@@ -1845,7 +1845,20 @@ export function writeConfigObject(path: string, config: unknown): void {
 export function writeDefaultConfig(
 	path: string,
 	partial: Partial<CliConfig>,
-	opts: { force?: boolean; atomicCreate?: boolean; cwd?: string; env?: NodeJS.ProcessEnv } = {},
+	opts: {
+		force?: boolean;
+		atomicCreate?: boolean;
+		cwd?: string;
+		env?: NodeJS.ProcessEnv;
+		/**
+		 * Whether the target path was selected explicitly by the caller
+		 * (`--config` / `AUTORAG_CONFIG`). When `false`, `force` refuses to
+		 * replace an existing file: an implicit home config may only be
+		 * replaced through an explicit config path. `undefined` (callers that
+		 * do not distinguish) keeps the historical force semantics.
+		 */
+		explicit?: boolean;
+	} = {},
 ): void {
 	const cwd = resolve(opts.cwd ?? process.cwd());
 	const workspacePath = resolvePersistedPath(partial.workspacePath ?? ".", cwd);
@@ -1885,8 +1898,19 @@ export function writeDefaultConfig(
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);
 	try {
-		if (!opts.force && existsSync(path)) {
+		const exists = existsSync(path);
+		if (!opts.force && exists) {
 			throw new ConfigError(`Config file already exists: ${path}`);
+		}
+		// `--force` must not silently replace an implicit home config: the
+		// caller has to name the config explicitly (--config / AUTORAG_CONFIG).
+		// The check runs inside the write lock so a concurrent first-time
+		// writer still wins over a stale pre-lock existsSync.
+		if (opts.force && opts.explicit === false && exists) {
+			throw new ConfigError(
+				`Refusing to overwrite existing config ${path} without an explicit config path. ` +
+					"Pass --config <path> or set AUTORAG_CONFIG to select the config, or re-run without --force.",
+			);
 		}
 		if (opts.force || opts.atomicCreate) replaceFileAtomically(path, contents, lock.assertOwned);
 		else {
