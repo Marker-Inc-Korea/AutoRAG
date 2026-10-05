@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -158,6 +160,59 @@ describe("AutoRAGAgent retrieval limits", () => {
 
 		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(5);
 		expect(seenTopK).toEqual([100]);
+	});
+
+	it("reranks the pre-fast-answer baseline pool when a reranker is configured", async () => {
+		const server = createServer((request, response) => {
+			let body = "";
+			request.on("data", (chunk) => {
+				body += chunk;
+			});
+			request.on("end", () => {
+				const parsed: unknown = JSON.parse(body.length > 0 ? body : "{}");
+				const documents =
+					typeof parsed === "object" && parsed !== null && "documents" in parsed && Array.isArray(parsed.documents)
+						? parsed.documents
+						: [];
+				// Reverse the pool so candidate 4 must come first. OpenRouter's
+				// rerank wire format is snake_case (`relevance_score`).
+				const results = documents
+					.map((document, index) => ({
+						document: { text: typeof document === "string" ? document : "" },
+						index,
+						relevance_score: (documents.length - index) / documents.length,
+					}))
+					.reverse();
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(JSON.stringify({ model: "test-rerank", results }));
+			});
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		const port = typeof address === "object" && address !== null ? address.port : 0;
+		try {
+			const internals = agentWith(undefined, {
+				rerank: {
+					provider: "openrouter",
+					model: "test-rerank",
+					apiKey: "test-key",
+					baseUrl: `http://127.0.0.1:${port}/`,
+				},
+			});
+			injectMinSync(internals, 5);
+
+			const context = await internals.prefetchInitialRetrievalContext("candidates", {});
+
+			expect(context).toContain("Reranked initial candidates");
+			expect(context).not.toContain("MinSync semantic initial candidates");
+			expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(5);
+			expect(context.indexOf("candidate 4")).toBeLessThan(context.indexOf("candidate 3"));
+			expect(context.indexOf("candidate 3")).toBeLessThan(context.indexOf("candidate 0"));
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 	});
 
 	it("caps the search_all_documents merge at mergedEvidenceCeiling", async () => {
