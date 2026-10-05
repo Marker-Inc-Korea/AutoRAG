@@ -7,8 +7,21 @@ SHELL := /bin/bash
 # documented outside-repo default. Targets NEVER create or bootstrap this
 # root implicitly — run the explicit bootstrap command first.
 E2E_ROOT ?= $(if $(AUTORAG_LIVE_E2E_ROOT),$(AUTORAG_LIVE_E2E_ROOT),$(CURDIR))
+QA_IMAGE ?= autorag-qa-linux
+QA_PLATFORM ?= linux/amd64
+QA_DOCKERFILE ?= scripts/ci/qa.Dockerfile
+QA_CONTAINER_HOME ?= /tmp/autorag-home
+QA_MODEL_ENV ?= OPENAI_API_KEY AUTORAG_OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY GOOGLE_API_KEY OPENROUTER_API_KEY FIREWORKS_API_KEY XAI_API_KEY MISTRAL_API_KEY GROQ_API_KEY AZURE_OPENAI_API_KEY
+E2E_EMBEDDER ?= native
+E2E_MODE ?= cold
 
-.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain e2e-live e2e-live-cold
+# Recipes read these through make's own environment, never by splicing the
+# values into recipe shell source: a value containing $(...) or quotes must
+# stay data, not become executable shell code.
+export QA_IMAGE QA_PLATFORM QA_DOCKERFILE QA_CONTAINER_HOME QA_MODEL_ENV
+export E2E_ROOT E2E_MODE E2E_EMBEDDER E2E_DATASOURCES E2E_ARGS
+
+.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain qa-image qa-shell e2e-live e2e-live-cold e2e-live-docker
 
 help:
 	@printf '%s\n' \
@@ -24,12 +37,17 @@ help:
 		'make test-linux    Run the complete suite in a Linux container' \
 		'make e2e-live      Run warm live-E2E (reuse clone-local state)' \
 		'make e2e-live-cold Run cold live-E2E (delete state, rebuild)' \
+		'make e2e-live-docker Run live-E2E inside an isolated Docker home' \
+		'make qa-shell       Open an isolated Docker shell for manual QA' \
 		'make ci            Run lint, typecheck, tests, and build locally' \
 		'make supply-chain  Run license, NOTICE, and local CycloneDX gates' \
 		'' \
 		'  E2E_ROOT=<root>  Shared corpus root (default: current repo path;' \
 		'                   honors AUTORAG_LIVE_E2E_ROOT if set)' \
-		'  E2E_ARGS=<args>  Extra arguments forwarded to the runner' \
+		'  E2E_ARGS=<args>  Extra runner arguments (quoted words supported)' \
+		'  E2E_EMBEDDER=native|gateway  Live-E2E embedder (default native)' \
+		'  QA_MODEL_ENV=<names>  Model credential allowlist; set empty to' \
+		'                   forward none' \
 		'  E2E_DATASOURCES  Lane selection (default: local,configured = every lane;' \
 		'                   native lanes without a store report SKIP)' \
 		'  bootstrap first: node scripts/live-e2e/runner.mjs bootstrap --root "$$AUTORAG_LIVE_E2E_ROOT"'
@@ -54,11 +72,21 @@ test:
 
 test-all: test
 
+qa-image:
+	node scripts/manual-qa/docker-qa.mjs build
+
+qa-shell: qa-image
+	node scripts/manual-qa/docker-qa.mjs shell
+
+e2e-live-docker: qa-image
+	@test -d "$$E2E_ROOT" || { printf 'E2E_ROOT does not exist: %s\n' "$$E2E_ROOT" >&2; exit 2; }
+	node scripts/manual-qa/docker-qa.mjs live
+
 e2e-live:
-	E2E_DATASOURCES="$(E2E_DATASOURCES)" node scripts/live-e2e/runner.mjs live --mode warm --root "$(E2E_ROOT)" $(E2E_ARGS)
+	E2E_MODE=warm $(MAKE) e2e-live-docker
 
 e2e-live-cold:
-	E2E_DATASOURCES="$(E2E_DATASOURCES)" node scripts/live-e2e/runner.mjs live --mode cold --root "$(E2E_ROOT)" $(E2E_ARGS)
+	E2E_MODE=cold $(MAKE) e2e-live-docker
 
 test-macos:
 	@test "$$(uname -s)" = "Darwin" || { echo "test-macos requires a macOS host"; exit 1; }

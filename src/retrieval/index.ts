@@ -8,6 +8,7 @@ export {
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	DEFAULT_RERANK_TOP_N,
 	OpenRouterReranker,
 	type OpenRouterRerankerOptions,
 	type Reranker,

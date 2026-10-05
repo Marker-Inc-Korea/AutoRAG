@@ -14,6 +14,7 @@
         "chardet": "^2.2.0",
         "fast-xml-parser": "^5.11.1",
         "iconv-lite": "^0.7.3",
+        "jev-use": "^0.8.0",
         "jszip": "^3.10.1",
         "kordoc": "^4.15.7",
         "mailparser": "^3.9.20",
@@ -928,6 +929,8 @@
     "isarray": ["isarray@1.0.0", "", {}, "sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ=="],
 
     "isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
+
+    "jev-use": ["jev-use@0.8.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "zod": "^4.6.5" }, "bin": { "jev-use": "dist/cli.js" } }, "sha512-nHOS52eGinSdH90lluFAGTGzP0YuOyLSrkn67VXA75kbo7usVweBF99lr+YXcZNOAhgLqukD5ezIQVU3Mcxz3w=="],
 
     "jiti": ["jiti@2.7.0", "", { "bin": "lib/jiti-cli.mjs" }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
 

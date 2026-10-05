@@ -7,6 +7,7 @@ import {
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	DEFAULT_RERANK_TOP_N,
 } from "../../src/retrieval/rerank.ts";
 
 let root: string;
@@ -30,11 +31,12 @@ function baseConfig(rerank?: CliConfig["rerank"]): CliConfig {
 }
 
 describe("normalizeRerankConfig", () => {
-	it("fills provider, model, and apiKeyEnv defaults", () => {
+	it("fills provider, model, apiKeyEnv, and topN defaults", () => {
 		expect(normalizeRerankConfig(undefined, "rerank")).toEqual({
 			provider: DEFAULT_RERANK_PROVIDER,
 			model: DEFAULT_RERANK_MODEL,
 			apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+			topN: DEFAULT_RERANK_TOP_N,
 		});
 	});
 
@@ -43,6 +45,7 @@ describe("normalizeRerankConfig", () => {
 			provider: "openrouter",
 			model: "voyageai/rerank-3",
 			apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+			topN: DEFAULT_RERANK_TOP_N,
 		});
 	});
 

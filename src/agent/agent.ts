@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -36,6 +37,7 @@ import {
 	type JikjiHandoffAction,
 	type JikjiOptions,
 	type JikjiPrepareResult,
+	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
@@ -70,7 +72,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
-import { createReranker, type Reranker } from "../retrieval/rerank.ts";
+import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
@@ -80,6 +82,7 @@ import {
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
+import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -102,6 +105,7 @@ import {
 	EMIT_FAST_ANSWER_TOOL_NAME,
 } from "./fast-answer-tool.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import { createJevExtension, JEV_TOOL_NAME, type JevToolOptions } from "./jev-extension.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -233,7 +237,7 @@ const MERGED_EVIDENCE_CEILING = 500;
 export interface AutoRAGRetrievalLimits {
 	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
 	readonly mergedEvidenceCeiling?: number;
-	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 20. */
 	readonly singleDatasourceTopK?: number;
 	/** MinSync semantic retrieval default `topK`. Default 50. */
 	readonly minSyncTopK?: number;
@@ -257,7 +261,7 @@ export interface AutoRAGRetrievalLimits {
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
 const DEFAULT_RETRIEVAL_LIMITS = {
 	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
-	singleDatasourceTopK: 50,
+	singleDatasourceTopK: 20,
 	minSyncTopK: 50,
 	minSyncScopedQueryTopK: 100,
 	toolDescriptionInstanceScopes: 8,
@@ -543,6 +547,15 @@ export interface AutoRAGAgentOptions {
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
+	/**
+	 * Optional Jev decision tool (`jev`). Jev is TypeSafe's judgment model:
+	 * typed questions in, calibrated probabilities out — no generated text.
+	 * Disabled by default because it calls a paid external API; enable it with
+	 * a `jev` config section or this option. Backends: TypeSafe, OpenRouter
+	 * (`OPENROUTER_API_KEY`), Vercel AI Gateway, Cloudflare Workers AI.
+	 * Always omitted for remote P2P sessions.
+	 */
+	jev?: JevToolOptions | false;
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
 	/**
@@ -574,6 +587,12 @@ export interface AutoRAGAgentOptions {
 	piSessionDir?: string;
 	/** Persist one pi session transcript per AutoRAG search. Defaults true. */
 	persistPiSessions?: boolean;
+	/**
+	 * Best-effort provider for an interactive-only startup notice (e.g. a newer
+	 * AutoRAG release). Resolves to the notice text or `undefined`; never fails
+	 * a launch.
+	 */
+	updateNotice?: () => Promise<string | undefined>;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -685,6 +704,8 @@ export class AutoRAGAgent {
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
+	/** pi extension registering the optional `jev` tool; undefined when disabled. */
+	private readonly jevExtension: ExtensionFactory | undefined;
 	private readonly excludeExactDuplicates: boolean;
 	private readonly excludePaths: readonly string[];
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
@@ -694,6 +715,7 @@ export class AutoRAGAgent {
 	private readonly piAgentDir: string | undefined;
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
+	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
@@ -721,6 +743,7 @@ export class AutoRAGAgent {
 		this.piAgentDir = options.piAgentDir;
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
+		this.updateNotice = options.updateNotice;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -745,7 +768,10 @@ export class AutoRAGAgent {
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
-		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
+		this.rerankTopN =
+			options.rerank === false || options.rerank === undefined
+				? undefined
+				: (options.rerank.topN ?? DEFAULT_RERANK_TOP_N);
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -818,6 +844,10 @@ export class AutoRAGAgent {
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		this.jevExtension =
+			options.jev === undefined || options.jev === false || this.remoteSession
+				? undefined
+				: createJevExtension(options.jev);
 
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 		const peerQuery = options.peerQuery;
@@ -872,6 +902,7 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			JEV_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -912,7 +943,13 @@ export class AutoRAGAgent {
 			return true;
 		});
 		this.tools = tools;
-		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name)];
+		// pi registers the jev tool from its extension; AutoRAG still lists the
+		// name so the prompt advertises it and reserved-name checks cover it.
+		const toolNames = [
+			...PI_BUILTIN_TOOL_NAMES,
+			...tools.map((tool) => tool.name),
+			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
+		];
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
@@ -1041,6 +1078,9 @@ export class AutoRAGAgent {
 			],
 			remoteSession: this.remoteSession,
 			contextTransform: (messages) => this.withMemoryContext(messages),
+			...(this.jevExtension !== undefined
+				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
+				: {}),
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -1142,6 +1182,10 @@ export class AutoRAGAgent {
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
 			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+			...(this.jevExtension !== undefined
+				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
+				: {}),
+			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
 		if (this.fastThinkingLevel !== undefined) {
@@ -1786,6 +1830,16 @@ export class AutoRAGAgent {
 				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
 			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
 		]);
+		const minSyncResults = vector ?? [];
+		if (vector !== undefined) {
+			for (const result of vector) options.observedSources?.add(result.source);
+		}
+		// Rerank the whole pre-fast-answer pool (Jikji paths + MinSync chunks) so
+		// the fast answer is grounded in relevance order. Falls back to the
+		// unranked sections when reranking is disabled or unavailable.
+		const reranked = await this.rerankPrefetchPool(query, jikji, minSyncResults);
+		if (reranked !== undefined) return formatRerankedBaseline(reranked);
+
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
@@ -1796,9 +1850,6 @@ export class AutoRAGAgent {
 			);
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
-			if (results) {
-				for (const result of results) options.observedSources?.add(result.source);
-			}
 			if (!results || results.length === 0) return;
 			const seen = new Set<string>();
 			sections.push(
@@ -1818,6 +1869,40 @@ export class AutoRAGAgent {
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
+	}
+
+	/**
+	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths plus MinSync
+	 * chunks — down to the configured `rerank.topN`. Returns `undefined` when
+	 * reranking is disabled/unavailable or the pool is empty, so the caller keeps
+	 * the unranked sections; a rerank failure never blocks the fast answer.
+	 */
+	private async rerankPrefetchPool(
+		query: string,
+		jikji: { readonly answerPack?: { readonly answerPaths: readonly string[] } } | undefined,
+		minSyncResults: readonly RetrievalResult[],
+	): Promise<RetrievalResult[] | undefined> {
+		const reranker = this.reranker;
+		if (reranker === undefined) return undefined;
+		const answerPaths = jikji?.answerPack?.answerPaths ?? [];
+		const candidates: RetrievalResult[] = answerPaths
+			.slice(0, this.limits.prefetch.jikjiPathLimit)
+			.map((path, index) => ({
+				id: `jikji:${index}`,
+				content: path,
+				source: path,
+				score: 1 - index / Math.max(answerPaths.length, 1),
+				metadata: { method: "jikji" },
+			}));
+		candidates.push(...minSyncResults);
+		if (candidates.length === 0) return undefined;
+		if (!reranker.describe().available) return undefined;
+		try {
+			const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN });
+			return reranked.length > 0 ? reranked : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**
@@ -1868,6 +1953,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
@@ -1905,12 +1991,14 @@ export class AutoRAGAgent {
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
 		return (
@@ -1941,6 +2029,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations. If there are partial clues or leads, mention them concisely.\n\n` +
@@ -2543,12 +2632,21 @@ export class AutoRAGAgent {
 	 * Merge per-root answer packs into one. Concatenates answer_paths/candidates
 	 * preserving per-root order; dedupes by normalized path. Does NOT cross-root
 	 * rerank when any root has agentShouldNotRerank=true.
+	 *
+	 * Honours `excludePaths` at the retrieval boundary: Jikji indexes the source
+	 * folders directly, bypassing the parsed mirror, so an excluded source still
+	 * appears in the on-disk `.jikji_agent_map.md`. Dropping excluded paths here
+	 * keeps them out of the agent-facing answer pack (the `jikji_find` tool and
+	 * the baseline prefetch) while leaving the shared map artifact complete.
+	 * Excluded paths remain reachable through direct file reads, as Jikji never
+	 * blocks source verification.
 	 */
 	private mergeAnswerPacks(
 		entries: readonly { pack: JikjiAnswerPack; root: string }[],
-		sourceRoots: ReturnType<typeof planJikjiSourceRoots>,
+		sourceRoots: readonly JikjiSourceRoot[],
 		policy: MergedJikjiPolicy,
 	): JikjiAnswerPack {
+		const excluded = new Set(this.excludePaths);
 		const seenPaths = new Set<string>();
 		const answerPaths: string[] = [];
 		const candidates: JikjiCandidate[] = [];
@@ -2565,20 +2663,20 @@ export class AutoRAGAgent {
 			const originRoots = [originRoot];
 			for (const rawPath of entry.pack.answerPaths) {
 				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
-				if (norm !== undefined && !seenPaths.has(norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !seenPaths.has(norm)) {
 					seenPaths.add(norm);
 					answerPaths.push(norm);
 				}
 			}
 			for (const rawPath of entry.pack.paths) {
 				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
-				if (norm !== undefined && !allPaths.includes(norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !allPaths.includes(norm)) {
 					allPaths.push(norm);
 				}
 			}
 			for (const cand of entry.pack.candidates) {
 				const norm = normalizeJikjiAnswerPath(cand.path, originRoots);
-				if (norm !== undefined && !candidates.some((c) => c.path === norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !candidates.some((c) => c.path === norm)) {
 					candidates.push({
 						path: norm,
 						nextRead: cand.nextRead,
@@ -2589,7 +2687,7 @@ export class AutoRAGAgent {
 			}
 			for (const ev of entry.pack.evidencePack) {
 				const norm = normalizeJikjiAnswerPath(ev.path, originRoots);
-				if (norm !== undefined && !evidencePack.some((e) => e.path === norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !evidencePack.some((e) => e.path === norm)) {
 					evidencePack.push({ path: norm, nextRead: ev.nextRead });
 				}
 			}
@@ -2761,8 +2859,9 @@ export class AutoRAGAgent {
 				dedup: true,
 			}),
 		);
-		const results = await this.applyRerank(query, merged, diagnostics);
-		return { results, diagnostics };
+		// Single-datasource retrieval is intentionally NOT model-reranked: the
+		// caller already narrowed to one connection, so the merged order is kept.
+		return { results: merged, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2782,6 +2881,7 @@ export class AutoRAGAgent {
 				datasourceAccess: this.datasourceAccessOptions,
 				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
+				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 				authorizedDatasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
@@ -2914,6 +3014,18 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+/**
+ * Baseline block for the reranked pre-fast-answer pool. A single numbering
+ * sequence replaces the per-section numbering so bracketed citations are
+ * unambiguous in the fast-answer prompt.
+ */
+function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
+	const lines = results.map(
+		(result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
+	);
+	return `Reranked initial candidates (ordered by relevance to the query):\n${lines.join("\n")}`;
 }
 
 /**

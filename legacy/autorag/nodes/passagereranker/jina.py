@@ -30,15 +30,35 @@ class JinaReranker(BasePassageReranker):
 					"API key is not provided."
 					"You can set it as an argument or as an environment variable 'JINAAI_API_KEY'"
 				)
-		self.session = aiohttp.ClientSession(loop=get_event_loop())
-		self.session.headers.update(
-			{"Authorization": f"Bearer {api_key}", "Accept-Encoding": "identity"}
-		)
+		# Open the session lazily on the loop that runs the requests. aiohttp's loop=
+		# kwarg is a deprecated no-op, so a session created here would bind to whatever
+		# loop happens to exist at construction time instead of the request loop.
+		self._headers = {
+			"Authorization": f"Bearer {api_key}",
+			"Accept-Encoding": "identity",
+		}
+		self.session = None
+
+	def _ensure_session(self) -> aiohttp.ClientSession:
+		if self.session is None or self.session.closed:
+			self.session = aiohttp.ClientSession(headers=self._headers)
+		return self.session
 
 	def __del__(self):
-		self.session.close()
-		del self.session
-		super().__del__()
+		# Best-effort safety net. _pure closes the session on the request loop; calling
+		# session.close() without awaiting it leaks the session and warns at shutdown.
+		try:
+			session = getattr(self, "session", None)
+			if session is not None and not session.closed:
+				loop = get_event_loop()
+				if not loop.is_running() and not loop.is_closed():
+					loop.run_until_complete(session.close())
+		except Exception:
+			pass
+		try:
+			super().__del__()
+		except Exception:
+			pass
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
@@ -71,14 +91,25 @@ class JinaReranker(BasePassageReranker):
 		:param batch: The number of queries to be processed in a batch
 		:return: Tuple of lists containing the reranked contents, ids, and scores
 		"""
-		tasks = [
-			jina_reranker_pure(
-				self.session, query, contents, ids, top_k=top_k, model=model
-			)
-			for query, contents, ids in zip(queries, contents_list, ids_list)
-		]
 		loop = get_event_loop()
-		results = loop.run_until_complete(process_batch(tasks, batch))
+
+		async def _run_batch():
+			# Create the session here, on the loop that runs the requests. aiohttp 3.13
+			# resolves the session loop from the running loop and rejects loop=.
+			session = self._ensure_session()
+			tasks = [
+				jina_reranker_pure(
+					session, query, contents, ids, top_k=top_k, model=model
+				)
+				for query, contents, ids in zip(queries, contents_list, ids_list)
+			]
+			try:
+				return await process_batch(tasks, batch)
+			finally:
+				if not session.closed:
+					await session.close()
+
+		results = loop.run_until_complete(_run_batch())
 
 		content_result, id_result, score_result = zip(*results)
 

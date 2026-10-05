@@ -157,10 +157,22 @@ describe("print-env", () => {
 	test("print-env prints fingerprint when --mode warm", () => {
 		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
-		expect(exitCode, `stderr: ${stderr}`).toBe(0);
+		expect(exitCode, `exit code, stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, unknown>;
 		expect(parsed).toHaveProperty("fingerprint");
 		expect(typeof parsed.fingerprint).toBe("object");
+	});
+
+	test("fingerprint prefers the launcher-provided git identity over local git", () => {
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot], {
+			AUTORAG_LIVE_E2E_GIT_SHA: "deadbeefcafe1234",
+			AUTORAG_LIVE_E2E_GIT_DIRTY: "true",
+		});
+
+		expect(exitCode, `stderr: ${stderr}`).toBe(0);
+		const fingerprint = (JSON.parse(stdout) as { fingerprint: Record<string, unknown> }).fingerprint;
+		expect(fingerprint.gitCommitSha).toBe("deadbeefcafe1234");
+		expect(fingerprint.gitDirty).toBe(true);
 	});
 });
 

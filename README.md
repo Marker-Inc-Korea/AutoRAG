@@ -80,6 +80,8 @@ AutoRAG uses `@earendil-works/pi-coding-agent` as the runtime host for model ses
 
 The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG librarian: there is no separate AutoRAG renderer. Pi owns the terminal UI and its native in-session commands — `/login`/`/logout`, `/model`, `/resume`, `/new`, `/tree`, `/compact`, and `/settings` — so provider sign-in and model selection work on first launch even when no AutoRAG model is configured. AutoRAG registers its retrieval tools and streams progress, preliminary answers, and final results into the same Pi session, so resume and two-phase search keep working together.
 
+Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi update`" banner (Pi is a bundled host, not a separate install) and instead checks the published `@autorag/librarian` release, showing a one-line notice in the session when a newer version exists. Set `AUTORAG_NO_UPDATE_CHECK=1` to skip the lookup; `AUTORAG_UPDATE_CHECK_URL` overrides the registry endpoint.
+
 
 ---
 
@@ -303,6 +305,7 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 | `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
+| `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
 | `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | Model-free indexing, retrieval, report generation, and status |
@@ -320,6 +323,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and EmbeddingGemma verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model cards: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md), [`embeddinggemma-300m`](docs/model-cards/embeddinggemma-300m.md).
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
+- **[Jev Decisions](docs/jev-decisions.md):** Optional `jev` tool for calibrated, code-thresholded judgments (classification, triage, ranking) through TypeSafe, OpenRouter, or Vercel AI Gateway via `jev-use`.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[P2P SimpleX Sharing & Path Standard](docs/p2p-path-standard.md):** Decentralized peer query sharing with SimpleX, PII redaction, and approval queues.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.

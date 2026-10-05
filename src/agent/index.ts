@@ -27,6 +27,12 @@ export {
 	emitResultsSchema,
 } from "./emit-results-tool.ts";
 export {
+	createJevExtension,
+	JEV_TOOL_NAME,
+	type JevBackendName,
+	type JevToolOptions,
+} from "./jev-extension.ts";
+export {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
 	type JikjiFindDetails,

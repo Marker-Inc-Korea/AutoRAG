@@ -14,9 +14,29 @@ export function isFingerprintCurrent(previous, current) {
 }
 export function assertServiceReady(result) { if (result.verdict === "refused") throw new Error(result.code ?? "live-e2e-service-refused"); }
 export function buildLiveStackOptions(root, workspace) {
+	const embedder =
+		process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native"
+			? { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }
+			: {
+					id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
+					baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT,
+					dimension: 1024,
+					queryPrefix: "",
+					passagePrefix: "",
+					timeoutMs: 120_000,
+				};
 	return {
-		searchPaths: [join(resolve(root), "corpus")], workspacePath: resolve(workspace), memoryPath: join(resolve(workspace), "memory.json"), jikji: false,
-		minSync: { workspacePath: resolve(workspace), autoInstall: false, embedder: { id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf", baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT, dimension: 1024, queryPrefix: "", passagePrefix: "", timeoutMs: 120_000 } }
+		searchPaths: [join(resolve(root), "corpus")],
+		workspacePath: resolve(workspace),
+		memoryPath: join(resolve(workspace), "memory.json"),
+		// Never let E2E write .jikji state into the shared corpus root or
+		// trigger a jikji/cargo install mid-run: the corpus root is immutable.
+		jikji: false,
+		minSync: {
+			workspacePath: resolve(workspace),
+			autoInstall: process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native",
+			embedder,
+		},
 	};
 }
 export function assertAbsoluteReadableSource(source) { if (!isAbsolute(source)) throw new Error("source-not-absolute"); accessSync(source, constants.R_OK); return realpathSync(source); }
@@ -71,19 +91,78 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 	const lock = tryAcquireWorkflowLock(); if (!lock.ok) return finish(evidence, lock.code, evidencePath, 1);
 	let diagnostic; let exitCode = 0; let gatewayProcess;
 	try {
-		const childEnv = { ...process.env, AUTORAG_HOME: env.AUTORAG_HOME, AUTORAG_CONFIG: env.AUTORAG_CONFIG, AUTORAG_WORKSPACE: env.AUTORAG_WORKSPACE, AUTORAG_SEARCH_PATHS: env.AUTORAG_SEARCH_PATHS, AUTORAG_MEMORY_PATH: env.AUTORAG_MEMORY_PATH, OPENAI_API_KEY: "", AUTORAG_OPENAI_API_KEY: "" };
-		const prefetch = record(commandResult("bun", ["src/cli/index.ts", "models", "prefetch", "--profile", "qwen3-embedding-0.6b"], REPO_ROOT, childEnv));
-		if (prefetch.exitCode !== 0) { diagnostic = "live-e2e-runtime-prefetch-failed"; exitCode = 1; }
-		if (exitCode === 0) {
-			const started = await startGatewayProcess(childEnv); gatewayProcess = started.child; childEnv.AUTORAG_GATEWAY_ENDPOINT = started.endpoint;
-			const preflight = await runPreflight({ endpoint: started.endpoint }); evidence.preflight = preflight;
-			try { assertServiceReady(preflight); } catch (error) { diagnostic = error instanceof Error ? error.message : "live-e2e-service-refused"; exitCode = 1; }
+		const nativeEmbedder = process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native";
+		const childEnv = {
+			...process.env,
+			AUTORAG_HOME: env.AUTORAG_HOME,
+			AUTORAG_CONFIG: env.AUTORAG_CONFIG,
+			AUTORAG_WORKSPACE: env.AUTORAG_WORKSPACE,
+			AUTORAG_SEARCH_PATHS: env.AUTORAG_SEARCH_PATHS,
+			AUTORAG_MEMORY_PATH: env.AUTORAG_MEMORY_PATH,
+			AUTORAG_LIVE_E2E_EMBEDDER: nativeEmbedder ? "native" : "gateway",
+			OPENAI_API_KEY: "",
+			AUTORAG_OPENAI_API_KEY: "",
+		};
+		if (!nativeEmbedder) {
+			const prefetch = record(
+				commandResult("bun", ["src/cli/index.ts", "models", "prefetch", "--profile", "qwen3-embedding-0.6b"], REPO_ROOT, childEnv),
+			);
+			if (prefetch.exitCode !== 0) {
+				diagnostic = "live-e2e-runtime-prefetch-failed";
+				exitCode = 1;
+			}
+			if (exitCode === 0) {
+				const started = await startGatewayProcess(childEnv);
+				gatewayProcess = started.child;
+				childEnv.AUTORAG_GATEWAY_ENDPOINT = started.endpoint;
+				const preflight = await runPreflight({ endpoint: started.endpoint });
+				evidence.preflight = preflight;
+				try {
+					assertServiceReady(preflight);
+				} catch (error) {
+					diagnostic = error instanceof Error ? error.message : "live-e2e-service-refused";
+					exitCode = 1;
+				}
+			}
 		}
-		const child = exitCode === 0 ? record(commandResult("bun", ["scripts/live-e2e/live-stack.mts", "--root", resolvedRoot, "--workspace", env.AUTORAG_WORKSPACE, "--mode", mode], REPO_ROOT, childEnv)) : { exitCode: 1 };
-		if (child.exitCode !== 0 && exitCode === 0) { diagnostic = "live-e2e-stack-failed"; exitCode = 1; }
-		if (exitCode === 0) { Object.assign(evidence, readJson(join(env.AUTORAG_WORKSPACE, "live-stack-result.json"))); evidence.commandsSummary.core = "PASS"; const datasources = await runDatasourceMatrix({ root: resolvedRoot, selection: evidence.datasourceSelection }); evidence.datasourceLanes = datasources.lanes; evidence.datasourceSummary = datasources.summary; evidence.commandsSummary.datasources = datasources.exitCode === 0 ? "PASS_OR_SKIP" : "FAIL"; if (datasources.exitCode !== 0) { diagnostic = "live-e2e-datasource-failure"; exitCode = 1; } }
-	} catch (error) { diagnostic = error instanceof Error ? error.message : "live-e2e-gateway-start-failed"; exitCode = 1; }
-	finally { lock.release?.(); evidence.cleanup.lockReleased = true; if (gatewayProcess) { gatewayProcess.kill("SIGTERM"); await new Promise((resolve) => gatewayProcess.once("exit", resolve)); } }
+		const child =
+			exitCode === 0
+				? record(
+						commandResult(
+							"bun",
+							["scripts/live-e2e/live-stack.mts", "--root", resolvedRoot, "--workspace", env.AUTORAG_WORKSPACE, "--mode", mode],
+							REPO_ROOT,
+							childEnv,
+						),
+					)
+				: { exitCode: 1 };
+		if (child.exitCode !== 0 && exitCode === 0) {
+			diagnostic = "live-e2e-stack-failed";
+			exitCode = 1;
+		}
+		if (exitCode === 0) {
+			Object.assign(evidence, readJson(join(env.AUTORAG_WORKSPACE, "live-stack-result.json")));
+			evidence.commandsSummary.core = "PASS";
+			const datasources = await runDatasourceMatrix({ root: resolvedRoot, selection: evidence.datasourceSelection });
+			evidence.datasourceLanes = datasources.lanes;
+			evidence.datasourceSummary = datasources.summary;
+			evidence.commandsSummary.datasources = datasources.exitCode === 0 ? "PASS_OR_SKIP" : "FAIL";
+			if (datasources.exitCode !== 0) {
+				diagnostic = "live-e2e-datasource-failure";
+				exitCode = 1;
+			}
+		}
+	} catch (error) {
+		diagnostic = error instanceof Error ? error.message : "live-e2e-gateway-start-failed";
+		exitCode = 1;
+	} finally {
+		lock.release?.();
+		evidence.cleanup.lockReleased = true;
+		if (gatewayProcess) {
+			gatewayProcess.kill("SIGTERM");
+			await new Promise((resolve) => gatewayProcess.once("exit", resolve));
+		}
+	}
 	return finish(evidence, diagnostic, evidencePath, exitCode);
 }
 

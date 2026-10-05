@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
+import { DEFAULT_RERANK_TOP_N } from "../../src/retrieval/rerank.ts";
 import type { RetrievalMethod, RetrievalMethodDescriptor, RetrievalResult } from "../../src/retrieval/types.ts";
 
 // --- Helpers ---
@@ -494,6 +495,38 @@ describe("RetrievalEngine reranking", () => {
 		engine.register(stubMethod("posix", [{ source: "/a" }, { source: "/b" }]));
 		const { results } = await engine.retrieve("q", { topK: 10 });
 		expect(results.map((entry) => entry.source)).toEqual(["/b", "/a"]);
+	});
+
+	it("passes the default rerank topN when the caller omits topK", async () => {
+		let seenTopN: number | undefined;
+		const engine = new RetrievalEngine({
+			reranker: {
+				describe: () => ({ name: "stub", provider: "stub", model: "m", available: true }),
+				rerank: async (_query, results, options) => {
+					seenTopN = options?.topN;
+					return [...results];
+				},
+			},
+		});
+		engine.register(stubMethod("posix", [{ source: "/a" }]));
+		await engine.retrieve("q");
+		expect(seenTopN).toBe(DEFAULT_RERANK_TOP_N);
+	});
+
+	it("prefers the caller's topK over the default rerank topN", async () => {
+		let seenTopN: number | undefined;
+		const engine = new RetrievalEngine({
+			reranker: {
+				describe: () => ({ name: "stub", provider: "stub", model: "m", available: true }),
+				rerank: async (_query, results, options) => {
+					seenTopN = options?.topN;
+					return [...results];
+				},
+			},
+		});
+		engine.register(stubMethod("posix", [{ source: "/a" }, { source: "/b" }]));
+		await engine.retrieve("q", { topK: 1 });
+		expect(seenTopN).toBe(1);
 	});
 
 	it("preserves merged order and emits rerank-failed when the reranker throws", async () => {

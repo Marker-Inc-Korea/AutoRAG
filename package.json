@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.6.3",
+  "version": "2.7.0",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "MIT",
   "repository": {
@@ -60,6 +60,7 @@
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
     "iconv-lite": "^0.7.3",
+    "jev-use": "^0.8.0",
     "jszip": "^3.10.1",
     "kordoc": "^4.15.7",
     "mailparser": "^3.9.20",

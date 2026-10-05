@@ -5,6 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import type { JevBackendName } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -21,6 +22,7 @@ import {
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	DEFAULT_RERANK_TOP_N,
 	SUPPORTED_RERANK_PROVIDERS,
 } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -87,6 +89,22 @@ export interface WebSearchCliConfig {
 }
 
 /**
+ * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
+ * it explicitly. Secrets never appear here: the `jev-use` engine reads the
+ * backend credential from its own environment variable (`TYPESAFE_API_KEY`,
+ * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
+ */
+export interface JevCliConfig {
+	enabled?: boolean;
+	/** Force one backend; omit to let the first credential present win. */
+	backend?: JevBackendName;
+	/** Model id sent with every call, e.g. `jev-latest`. */
+	model?: string;
+	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
+	confidenceThreshold?: number;
+}
+
+/**
  * Post-merge reranking config. Routes merged evidence through a dedicated
  * rerank model. `provider` is `openrouter` today; `model` is the OpenRouter
  * wire id (default `voyageai/rerank-3-lite`). Secrets never appear here — only
@@ -103,7 +121,7 @@ export interface RerankConfig {
 	apiKeyEnv?: string;
 	/** Override the provider base URL (e.g. a gateway). */
 	baseUrl?: string;
-	/** Return only the top N merged results. Omitted ⇒ all distinct results are reordered. */
+	/** Return only the top N merged results. @default 25 (DEFAULT_RERANK_TOP_N) */
 	topN?: number;
 	/** Per-request timeout in milliseconds. */
 	timeoutMs?: number;
@@ -180,6 +198,12 @@ export interface CliConfig {
 		  }
 		| false;
 	webSearch?: WebSearchCliConfig;
+	/**
+	 * Optional Jev decision tool. Absent disables the tool; `enabled: false`
+	 * disables it explicitly. Secrets never appear here — `apiKeyEnv` names the
+	 * environment variable holding the backend API key.
+	 */
+	jev?: JevCliConfig | false;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -1034,6 +1058,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
+	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1073,6 +1098,73 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
  */
 export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 	return resolveConfig({ ...input, readOnly: true });
+}
+
+const JEV_CONFIG_FIELDS: Record<string, true> = {
+	enabled: true,
+	backend: true,
+	model: true,
+	confidenceThreshold: true,
+};
+
+/** Backends the `jev-use` engine can resolve from the environment. */
+const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel"];
+
+/** Validate and normalize the `jev` config section. */
+export function normalizeJevConfig(raw: unknown): JevCliConfig {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'jev' must be an object or false");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (JEV_CONFIG_FIELDS[key] !== true) {
+			throw new ConfigError(`jev.${key} is not a recognized field`);
+		}
+	}
+	const out: JevCliConfig = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError("jev.enabled must be a boolean");
+		out.enabled = record.enabled;
+	}
+	if (record.backend !== undefined) {
+		const backend = record.backend;
+		if (typeof backend !== "string" || !JEV_BACKEND_NAMES.some((known) => known === backend)) {
+			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKEND_NAMES.join(", ")}`);
+		}
+		// Narrowed by the membership check above.
+		out.backend = backend as JevBackendName;
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || record.model.trim().length === 0) {
+			throw new ConfigError("jev.model must be a non-empty string");
+		}
+		out.model = record.model.trim();
+	}
+	if (record.confidenceThreshold !== undefined) {
+		if (
+			typeof record.confidenceThreshold !== "number" ||
+			!Number.isFinite(record.confidenceThreshold) ||
+			record.confidenceThreshold < 0 ||
+			record.confidenceThreshold > 1
+		) {
+			throw new ConfigError("jev.confidenceThreshold must be a number between 0 and 1");
+		}
+		out.confidenceThreshold = record.confidenceThreshold;
+	}
+	return out;
+}
+
+/**
+ * Map the validated `jev` config section onto the agent option. Absent stays
+ * absent (tool disabled); `false` and `enabled: false` are the agent opt-out.
+ */
+function buildJevAgentOption(raw: JevCliConfig | false | undefined): AutoRAGAgentOptions["jev"] {
+	if (raw === undefined) return undefined;
+	if (raw === false) return false;
+	const normalized = normalizeJevConfig(raw);
+	if (normalized.enabled === false) return false;
+	const { enabled: _omitJevEnabled, ...fields } = normalized;
+	return fields;
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1148,6 +1240,7 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 		provider: DEFAULT_RERANK_PROVIDER,
 		model: DEFAULT_RERANK_MODEL,
 		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (raw === undefined || raw === null) return out;
 	if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -1226,6 +1319,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	opts.jev = buildJevAgentOption(config.jev);
 	if (config.rerank !== undefined) {
 		opts.rerank =
 			config.rerank === false || config.rerank.enabled === false
@@ -1753,7 +1847,20 @@ export function writeConfigObject(path: string, config: unknown): void {
 export function writeDefaultConfig(
 	path: string,
 	partial: Partial<CliConfig>,
-	opts: { force?: boolean; atomicCreate?: boolean; cwd?: string; env?: NodeJS.ProcessEnv } = {},
+	opts: {
+		force?: boolean;
+		atomicCreate?: boolean;
+		cwd?: string;
+		env?: NodeJS.ProcessEnv;
+		/**
+		 * Whether the target path was selected explicitly by the caller
+		 * (`--config` / `AUTORAG_CONFIG`). When `false`, `force` refuses to
+		 * replace an existing file: an implicit home config may only be
+		 * replaced through an explicit config path. `undefined` (callers that
+		 * do not distinguish) keeps the historical force semantics.
+		 */
+		explicit?: boolean;
+	} = {},
 ): void {
 	const cwd = resolve(opts.cwd ?? process.cwd());
 	const workspacePath = resolvePersistedPath(partial.workspacePath ?? ".", cwd);
@@ -1786,6 +1893,7 @@ export function writeDefaultConfig(
 		provider: DEFAULT_RERANK_PROVIDER,
 		model: DEFAULT_RERANK_MODEL,
 		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
@@ -1793,8 +1901,19 @@ export function writeDefaultConfig(
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);
 	try {
-		if (!opts.force && existsSync(path)) {
+		const exists = existsSync(path);
+		if (!opts.force && exists) {
 			throw new ConfigError(`Config file already exists: ${path}`);
+		}
+		// `--force` must not silently replace an implicit home config: the
+		// caller has to name the config explicitly (--config / AUTORAG_CONFIG).
+		// The check runs inside the write lock so a concurrent first-time
+		// writer still wins over a stale pre-lock existsSync.
+		if (opts.force && opts.explicit === false && exists) {
+			throw new ConfigError(
+				`Refusing to overwrite existing config ${path} without an explicit config path. ` +
+					"Pass --config <path> or set AUTORAG_CONFIG to select the config, or re-run without --force.",
+			);
 		}
 		if (opts.force || opts.atomicCreate) replaceFileAtomically(path, contents, lock.assertOwned);
 		else {

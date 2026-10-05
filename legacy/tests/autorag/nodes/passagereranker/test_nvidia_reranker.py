@@ -30,7 +30,7 @@ MOCK_RESPONSE = {
 def nvidia_reranker_instance():
 	reranker = NvidiaReranker(project_dir=project_dir, api_key="test")
 	yield reranker
-	if hasattr(reranker, "session") and not reranker.session.closed:
+	if getattr(reranker, "session", None) is not None and not reranker.session.closed:
 		loop = get_event_loop()
 		if loop.is_running():
 			loop.create_task(reranker.session.close())
@@ -140,3 +140,27 @@ def test_nvidia_reranker_node():
             api_key="test",
         )
         base_reranker_node_test(result_df, top_k)
+
+
+def test_nvidia_session_is_lazy_and_not_loop_pinned(monkeypatch):
+    captured = []
+    real_session = aiohttp.ClientSession
+
+    def spy(*args, **kwargs):
+        captured.append(kwargs)
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(aiohttp, "ClientSession", spy)
+    reranker = NvidiaReranker(project_dir=project_dir, api_key="test")
+    # A session opened at construction time binds to the constructor loop, which is
+    # not the loop that later runs the requests (aiohttp's loop= kwarg is a no-op).
+    assert captured == []
+
+    async def _open():
+        reranker._ensure_session()
+
+    get_event_loop().run_until_complete(_open())
+    assert len(captured) == 1
+    assert "loop" not in captured[0]
+    if reranker.session is not None and not reranker.session.closed:
+        get_event_loop().run_until_complete(reranker.session.close())

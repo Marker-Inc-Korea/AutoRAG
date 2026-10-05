@@ -2,6 +2,8 @@ import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import { buildAgentOptions, resolveAgentModel, resolveConfig } from "../config.ts";
 import { renderError } from "../output.ts";
+import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
+import { readPackageVersion } from "../version.ts";
 import type { CommandContext } from "./types.ts";
 
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -42,6 +44,10 @@ function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions
 async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	const options: AutoRAGAgentOptions = { ...buildAgentOptions(config) };
+	// Pi reports its own version/changelog; this notice is AutoRAG's own npm
+	// release check, injected into the same interactive session.
+	options.updateNotice = async () =>
+		renderAutoRAGUpdateNotice(await checkAutoRAGUpdate({ currentVersion: readPackageVersion() }));
 	const thinking = parseThinkingFlags(ctx.flags);
 	if (thinking !== undefined) options.thinking = thinking;
 	if (config.model !== undefined) {
@@ -70,6 +76,11 @@ export async function runTui(ctx: CommandContext): Promise<number> {
 		const hosted = await agent.createPiInteractiveRuntime();
 		try {
 			const interactive = new InteractiveMode(hosted.runtime, { verbose: ctx.debug });
+			// Pi is a bundled host for `autorag`, not a separate install users manage:
+			// its startup checks tell them to run `pi update`, which does not apply here.
+			// AutoRAG surfaces its own npm release notice instead (options.updateNotice).
+			interactive.showNewVersionNotification = () => undefined;
+			interactive.showPackageUpdateNotification = () => undefined;
 			await interactive.init();
 			await interactive.run();
 			return 0;

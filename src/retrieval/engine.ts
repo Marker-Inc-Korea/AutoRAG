@@ -18,7 +18,7 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
-import type { Reranker } from "./rerank.ts";
+import { DEFAULT_RERANK_TOP_N, type Reranker } from "./rerank.ts";
 import { derivedAuthorizedDatasourceIds, type RetrievalSelection, resolveSelectedMethods } from "./selection.ts";
 import { MINSYNC_SURFACE } from "./skip.ts";
 import type {
@@ -75,6 +75,11 @@ export interface RetrievalEngineOptions {
 	 * the engine never silently drops evidence because a reranker was down.
 	 */
 	readonly reranker?: Reranker;
+	/**
+	 * Number of merged results kept after reranking when the caller omits `topK`.
+	 * Only applies when {@link reranker} is set. @default DEFAULT_RERANK_TOP_N
+	 */
+	readonly rerankTopN?: number;
 }
 
 /**
@@ -109,6 +114,7 @@ export class RetrievalEngine {
 	private readonly isMinSyncBinaryMissing: (() => boolean) | undefined;
 	private readonly authorizedDatasourceIdsProvider: (() => readonly string[]) | undefined;
 	private readonly reranker: Reranker | undefined;
+	private readonly rerankTopN: number;
 
 	constructor(options: RetrievalEngineOptions = {}) {
 		this.registry = new RetrievalMethodRegistry();
@@ -121,6 +127,7 @@ export class RetrievalEngine {
 		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
 		this.authorizedDatasourceIdsProvider = options.authorizedDatasourceIds;
 		this.reranker = options.reranker;
+		this.rerankTopN = options.rerankTopN ?? DEFAULT_RERANK_TOP_N;
 	}
 
 	/** The underlying method registry. Intentionally public for tooling. */
@@ -209,7 +216,7 @@ export class RetrievalEngine {
 		if (this.reranker === undefined || results.length === 0) return results;
 		try {
 			const reranked = await this.reranker.rerank(query, results, {
-				topN: options.topK,
+				topN: options.topK ?? this.rerankTopN,
 				signal: options.signal,
 			});
 			return reranked;

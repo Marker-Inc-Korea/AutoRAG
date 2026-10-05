@@ -217,7 +217,9 @@ describe("runInit", () => {
 			expect(await runInit(makeCtx())).toBe(0);
 			expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).languages).toEqual(["vi", "fr"]);
 			process.env.AUTORAG_LANGUAGES = "de";
-			expect(await runInit(makeCtx({ flags: { languages: " ja , EN ", force: true } }))).toBe(0);
+			expect(
+				await runInit(makeCtx({ flags: { languages: " ja , EN ", force: true, config: homeConfigPath() } })),
+			).toBe(0);
 			expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).languages).toEqual(["ja", "en"]);
 		} finally {
 			if (previous === undefined) delete process.env.AUTORAG_LANGUAGES;
@@ -252,13 +254,69 @@ describe("runInit", () => {
 		expect(config.existing).toBe(true);
 	});
 
-	it("overwrites the existing config when --force is set", async () => {
+	it("refuses implicit --force and preserves existing datasources and access bytes", async () => {
+		mkdirSync(join(process.env.HOME as string, ".autorag"), { recursive: true });
+		const existing = {
+			datasources: { notion: { enabled: true } },
+			datasourceAccess: { allowTags: ["public"] },
+			workspacePath: "/keep/me",
+		};
+		const originalBytes = `${JSON.stringify(existing, null, 2)}\n`;
+		writeFileSync(homeConfigPath(), originalBytes);
+
+		const stderr: string[] = [];
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "new", force: true },
+				stderr: (line) => stderr.push(line),
+			}),
+		);
+
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toMatch(/explicit config path/i);
+		expect(readFileSync(homeConfigPath(), "utf8")).toBe(originalBytes);
+	});
+
+	it("does not treat AUTORAG_HOME as an explicit path for implicit --force", async () => {
+		mkdirSync(join(process.env.HOME as string, ".autorag"), { recursive: true });
+		const originalBytes = `${JSON.stringify({ old: true })}\n`;
+		writeFileSync(homeConfigPath(), originalBytes);
+		const previous = process.env.AUTORAG_HOME;
+		try {
+			process.env.AUTORAG_HOME = join(process.env.HOME as string, ".autorag");
+			const stderr: string[] = [];
+			const code = await runInit(
+				makeCtx({
+					flags: { "search-paths": "new", force: true },
+					stderr: (line) => stderr.push(line),
+				}),
+			);
+
+			expect(code).toBe(2);
+			expect(stderr.join("\n")).toMatch(/explicit config path/i);
+			expect(readFileSync(homeConfigPath(), "utf8")).toBe(originalBytes);
+		} finally {
+			if (previous === undefined) delete process.env.AUTORAG_HOME;
+			else process.env.AUTORAG_HOME = previous;
+		}
+	});
+
+	it("allows --force on a first-time implicit init", async () => {
+		expect(existsSync(homeConfigPath())).toBe(false);
+
+		const code = await runInit(makeCtx({ flags: { force: true } }));
+
+		expect(code).toBe(0);
+		expect(existsSync(homeConfigPath())).toBe(true);
+	});
+
+	it("replaces an existing config with --force when --config is explicit", async () => {
 		mkdirSync(join(process.env.HOME as string, ".autorag"), { recursive: true });
 		writeFileSync(homeConfigPath(), `${JSON.stringify({ old: true })}\n`);
 
 		const code = await runInit(
 			makeCtx({
-				flags: { "search-paths": "new", force: true },
+				flags: { "search-paths": "new", force: true, config: homeConfigPath() },
 			}),
 		);
 
@@ -266,6 +324,25 @@ describe("runInit", () => {
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf-8"));
 		expect(config.searchPaths).toEqual([join(root, "new")]);
 		expect(config.old).toBeUndefined();
+	});
+
+	it("replaces an existing config with --force when AUTORAG_CONFIG is explicit", async () => {
+		mkdirSync(join(process.env.HOME as string, ".autorag"), { recursive: true });
+		writeFileSync(homeConfigPath(), `${JSON.stringify({ old: true })}\n`);
+		const previous = process.env.AUTORAG_CONFIG;
+		try {
+			process.env.AUTORAG_CONFIG = homeConfigPath();
+
+			const code = await runInit(makeCtx({ flags: { "search-paths": "new", force: true } }));
+
+			expect(code).toBe(0);
+			const config = JSON.parse(readFileSync(homeConfigPath(), "utf-8"));
+			expect(config.searchPaths).toEqual([join(root, "new")]);
+			expect(config.old).toBeUndefined();
+		} finally {
+			if (previous === undefined) delete process.env.AUTORAG_CONFIG;
+			else process.env.AUTORAG_CONFIG = previous;
+		}
 	});
 
 	it("emits a JSON envelope with the written filename in --json mode", async () => {
