@@ -136,15 +136,13 @@ Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent sho
 
 ---
 
-## AutoRAG Lite: Model-Free MCP Server
-
-AutoRAG Lite는 MCP server로도 사용할 수 있습니다. 모델 없이 `status`, `search`, `search.files`, `duplicates`, `datasources.list`, `datasources.get`, `refresh` tool과, 권한이 부여된 datasource별 동적 `search_datasource_<id>` tool을 제공합니다. `search.files`는 하나의 portable tool로, 설정된 root 안의 파일·폴더 이름을 literal substring으로 찾으며 실행 OS를 감지해 Windows에서는 bundled Everything index를, macOS/Linux에서는 기존 `FSearchClient`의 `fsearch-cli`/FSearch index를 사용합니다. `fsearch-cli`가 없을 때만 bounded filesystem walk로 degrade하며, Windows provider가 실패해도 FSearch/walker로 자동 대체하지 않습니다. 검색 tool은 답변·근거·feedback을 저장하지 않고 외부 모델에 검색 결과만 전달합니다. `duplicates`는 설정된 검색 root를 Dupey로 read-only 스캔해 exact/near 중복 문서 family를 검토용으로 반환합니다.
+## AutoRAG Lite MCP Server
 
 ```bash
 AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
 ```
 
-시각화된 MCP 계약은 [`docs/autorag-lite-mcp-contract.html`](docs/autorag-lite-mcp-contract.html), 텍스트 계약은 [`docs/autorag-lite-mcp-contract.md`](docs/autorag-lite-mcp-contract.md)에서 확인할 수 있습니다.
+MCP 계약의 SSOT는 [`src/mcp/server.ts`](src/mcp/server.ts)의 tool 등록·schema·handler와 [`src/mcp/index.ts`](src/mcp/index.ts)의 stdio entrypoint입니다. 사용 가능한 tool과 입력은 MCP `tools/list`로 조회합니다.
 
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
