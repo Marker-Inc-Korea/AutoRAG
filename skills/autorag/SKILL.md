@@ -47,7 +47,11 @@ refresh is enabled by default and can be disabled with
 to `workspacePath`) that refresh keeps out of the parsed mirror and MinSync.
 A folder entry excludes everything under it. Removing an entry and running
 `autorag refresh --method minsync` indexes the file again. Excluded sources are
-recorded as `user-excluded` skips, so they are not reported as stale.
+recorded as `user-excluded` skips, so they are not reported as stale. Jikji
+indexes the source folders directly and is not refreshed here, so AutoRAG also
+drops excluded paths from the `jikji_find` answer pack and the baseline prefetch
+at retrieval time; the on-disk `.jikji_agent_map.md` stays complete, and direct
+file reads remain available.
 
 `status` is model-free and path-opaque. `health` resolves the single model,
 checks credential presence, and normally probes one live completion. If the
