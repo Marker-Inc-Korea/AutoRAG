@@ -573,6 +573,12 @@ export interface AutoRAGAgentOptions {
 	piSessionDir?: string;
 	/** Persist one pi session transcript per AutoRAG search. Defaults true. */
 	persistPiSessions?: boolean;
+	/**
+	 * Best-effort provider for an interactive-only startup notice (e.g. a newer
+	 * AutoRAG release). Resolves to the notice text or `undefined`; never fails
+	 * a launch.
+	 */
+	updateNotice?: () => Promise<string | undefined>;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -693,6 +699,7 @@ export class AutoRAGAgent {
 	private readonly piAgentDir: string | undefined;
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
+	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
@@ -720,6 +727,7 @@ export class AutoRAGAgent {
 		this.piAgentDir = options.piAgentDir;
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
+		this.updateNotice = options.updateNotice;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -1134,6 +1142,7 @@ export class AutoRAGAgent {
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
 			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
 		if (this.fastThinkingLevel !== undefined) {

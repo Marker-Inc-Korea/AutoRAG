@@ -275,6 +275,15 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --format json   Emit machine-readable JSON",
 	]),
+	"update-check": usage([
+		"autorag update-check - compare the running autorag against npm",
+		"",
+		"Usage: autorag update-check [flags]",
+		"",
+		"Queries the published `@autorag/librarian` version and reports whether a",
+		"newer release is available. Set AUTORAG_NO_UPDATE_CHECK=1 to skip the",
+		"lookup; the TUI also runs this check on launch.",
+	]),
 };
 
 export function commandUsage(command: string | undefined): string | undefined {

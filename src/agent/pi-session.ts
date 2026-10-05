@@ -39,6 +39,13 @@ export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessio
 	readonly model?: Model<Api>;
 	readonly inactiveToolNames?: readonly string[];
 	readonly onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>;
+	/**
+	 * Optional best-effort provider for a startup update notice. Resolves to the
+	 * notice text, or `undefined` when there is nothing to announce. Called once
+	 * per session; failures are swallowed so the check never blocks or fails a
+	 * launch.
+	 */
+	readonly updateNotice?: () => Promise<string | undefined>;
 }
 
 export interface AutoRAGPiSession {
@@ -124,11 +131,26 @@ function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 	onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>,
+	updateNotice: (() => Promise<string | undefined>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
 		if (contextTransform !== undefined) {
 			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
+		}
+		if (updateNotice !== undefined) {
+			pi.on("session_start", () => {
+				void updateNotice()
+					.then((text) => {
+						if (text === undefined) return;
+						pi.sendMessage({
+							customType: "autorag.update",
+							content: [{ type: "text", text }],
+							display: true,
+						});
+					})
+					.catch(() => undefined);
+			});
 		}
 		pi.on("input", async (event) => {
 			const query = event.text.trim();
@@ -232,7 +254,12 @@ export async function createAutoRAGPiInteractiveRuntime(
 			settingsManager,
 			resourceLoaderOptions: {
 				extensionFactories: [
-					createAutoRAGInteractiveExtension(options.getSystemPrompt, options.contextTransform, options.onQuery),
+					createAutoRAGInteractiveExtension(
+						options.getSystemPrompt,
+						options.contextTransform,
+						options.onQuery,
+						options.updateNotice,
+					),
 				],
 				systemPrompt: options.getSystemPrompt(),
 				appendSystemPrompt: [],
