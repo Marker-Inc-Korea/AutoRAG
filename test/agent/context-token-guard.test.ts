@@ -20,11 +20,11 @@ const model = {
 	maxTokens: 200,
 } as Model<any>;
 
-function retrievalMessage(contents: readonly string[]): AgentMessage {
+function retrievalMessageForTool(toolName: string, contents: readonly string[]): AgentMessage {
 	return {
 		role: "toolResult",
 		toolCallId: "call-1",
-		toolName: "search_all_documents",
+		toolName,
 		content: [
 			{
 				type: "text",
@@ -36,6 +36,10 @@ function retrievalMessage(contents: readonly string[]): AgentMessage {
 		isError: false,
 		timestamp: Date.now(),
 	};
+}
+
+function retrievalMessage(contents: readonly string[]): AgentMessage {
+	return retrievalMessageForTool("search_all_documents", contents);
 }
 
 function resultText(message: AgentMessage | undefined): string {
@@ -58,6 +62,37 @@ describe("context token guard", () => {
 		expect(text).not.toContain(contents[2]);
 		expect(text).toContain("AutoRAG context guard");
 		expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
+	});
+	it.each(["semantic_search_local_docs", "fsearch_search"])("guards oversized %s retrieval results", (toolName) => {
+		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, [
+			retrievalMessageForTool(toolName, ["large retrieval candidate ".repeat(200)]),
+		]);
+
+		expect(resultText(guarded[0])).toContain("AutoRAG context guard");
+	});
+	it("guards Jikji answer paths as whole candidates", () => {
+		const messages: AgentMessage[] = [
+			{
+				role: "toolResult",
+				toolCallId: "call-jikji",
+				toolName: "jikji_find",
+				content: [
+					{
+						type: "text",
+						text: `answer_paths:\n- /docs/first.md ${"hint ".repeat(200)}\n- /docs/second.md ${"hint ".repeat(200)}\n\ndirective: direct_use`,
+					},
+				],
+				isError: false,
+				timestamp: Date.now(),
+			},
+		];
+
+		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
+		const text = resultText(guarded[0]);
+
+		expect(text).toContain("/docs/first.md");
+		expect(text).not.toContain("/docs/second.md");
+		expect(text).toContain("AutoRAG context guard");
 	});
 
 	it("guards baseline retrieval embedded in a user prompt", () => {
@@ -156,5 +191,45 @@ describe("context token guard", () => {
 
 		expect(guarded[0]?.role).toBe("user");
 		expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
+	});
+	it("resolves a model selected after the transform is created", async () => {
+		let selectedModel: Model<any> | undefined;
+		const transform = createContextTokenGuardedTransform(() => selectedModel);
+		const messages = [retrievalMessage(["large evidence ".repeat(200)])];
+
+		expect(await transform(messages)).toBe(messages);
+		selectedModel = { ...model, contextWindow: 500, maxTokens: 100 };
+
+		const guarded = await transform(messages);
+		expect(resultText(guarded[0])).toContain("AutoRAG context guard");
+	});
+	it("trims when reported context exceeds the budget", () => {
+		const messages: AgentMessage[] = [
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "short settled response" }],
+				api: "test-api",
+				provider: "test-provider",
+				model: "guard-test",
+				usage: {
+					input: 1_000,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 1_000,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			},
+			{ role: "user", content: "latest question", timestamp: Date.now() },
+		];
+
+		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
+		const user = guarded[1];
+		const text = user?.role === "user" && typeof user.content === "string" ? user.content : "";
+
+		expect(text).toContain("AutoRAG context guard");
+		expect(estimateContextMessageTokens(guarded, false)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
 	});
 });

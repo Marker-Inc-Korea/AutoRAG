@@ -8,13 +8,15 @@ const RETRIEVAL_TOOL_PREFIX = "search_datasource_";
 const RETRIEVAL_TOOL_NAMES: Record<string, true> = {
 	jikji_find: true,
 	search_all_documents: true,
+	semantic_search_local_docs: true,
 	search_single_datasource_documents: true,
 	everything_search: true,
-	fsearch: true,
+	fsearch_search: true,
 };
 
+type ContextTokenGuardModel = Model<any> | (() => Model<any> | undefined) | undefined;
+
 interface CandidateSection {
-	readonly canonicalMarker: string;
 	readonly prefix: string;
 	readonly suffix: string;
 	readonly blocks: readonly string[];
@@ -27,12 +29,13 @@ interface CandidateSection {
  * and every prior tool result.
  */
 export function createContextTokenGuardedTransform(
-	model: Model<any> | undefined,
+	model: ContextTokenGuardModel,
 	base?: (messages: AgentMessage[]) => Promise<AgentMessage[]>,
 ): (messages: AgentMessage[]) => Promise<AgentMessage[]> {
 	return async (messages) => {
 		const transformed = base === undefined ? messages : await base(messages);
-		return guardAgentContextMessages(model, transformed);
+		const currentModel = typeof model === "function" ? model() : model;
+		return guardAgentContextMessages(currentModel, transformed, transformed === messages);
 	};
 }
 
@@ -41,7 +44,11 @@ export function createContextTokenGuardedTransform(
  * model budget. Removing a per-chunk cut is only safe because this drops whole
  * lower-ranked candidates (with an explicit marker) instead of hiding text.
  */
-export function guardAgentContextMessages(model: Model<any> | undefined, messages: AgentMessage[]): AgentMessage[] {
+export function guardAgentContextMessages(
+	model: Model<any> | undefined,
+	messages: AgentMessage[],
+	useReportedUsage = true,
+): AgentMessage[] {
 	if (
 		model === undefined ||
 		!Number.isFinite(model.contextWindow) ||
@@ -54,7 +61,8 @@ export function guardAgentContextMessages(model: Model<any> | undefined, message
 	const usableContext = Math.floor(model.contextWindow / CONTEXT_HEADROOM);
 	const outputReserve = Math.min(usableContext, Number.isFinite(model.maxTokens) ? Math.max(0, model.maxTokens) : 0);
 	const inputBudget = Math.max(0, usableContext - outputReserve);
-	if (estimateContextMessageTokens(messages, true) <= inputBudget) return messages;
+	const reportedContextOverBudget = estimateContextMessageTokens(messages, useReportedUsage) > inputBudget;
+	if (!reportedContextOverBudget) return messages;
 
 	const candidates: CandidateSection[] = [];
 	const candidateIndexes: number[] = [];
@@ -72,7 +80,9 @@ export function guardAgentContextMessages(model: Model<any> | undefined, message
 	let guarded = messages;
 	if (candidates.length > 0) {
 		const fixedTokens = estimateContextMessageTokens(base, false);
-		let remaining = Math.max(0, inputBudget - fixedTokens - Math.ceil(GUARD_MARKER.length / 4));
+		const maximumOmitted = candidates.reduce((total, section) => total + section.blocks.length, 0);
+		const omissionMarker = (count: number): string => `\n\n${GUARD_MARKER} Retrieval candidates omitted: ${count}.\n`;
+		let remaining = Math.max(0, inputBudget - fixedTokens - Math.ceil(omissionMarker(maximumOmitted).length / 4));
 		const kept: string[][] = candidates.map(() => []);
 		let omitted = 0;
 		let firstOmitted = -1;
@@ -101,8 +111,7 @@ export function guardAgentContextMessages(model: Model<any> | undefined, message
 				const sectionIndex = candidateByMessage.get(index);
 				if (sectionIndex === undefined) return message;
 				const section = candidates[sectionIndex];
-				const marker =
-					sectionIndex === firstOmitted ? `\n\n${GUARD_MARKER} Retrieval candidates omitted: ${omitted}.\n` : "";
+				const marker = sectionIndex === firstOmitted ? omissionMarker(omitted) : "";
 				return replaceTextContent(
 					message,
 					`${section.prefix}${kept[sectionIndex]?.join("") ?? ""}${marker}${section.suffix}`,
@@ -110,8 +119,7 @@ export function guardAgentContextMessages(model: Model<any> | undefined, message
 			});
 		}
 	}
-
-	if (estimateContextMessageTokens(guarded, false) <= inputBudget) return guarded;
+	if (estimateContextMessageTokens(guarded, false) <= inputBudget && guarded !== messages) return guarded;
 	return trimFixedContext(guarded, inputBudget);
 }
 
@@ -294,30 +302,41 @@ function parseCandidateSection(message: AgentMessage, text: string): CandidateSe
 	if (message.role === "user") {
 		const markerMatch =
 			/(?:Baseline retrieval (?:evidence \(already gathered for you\)|context):|initial candidates:)/u.exec(text);
-		if (markerMatch === null || !/^\[\d+\] /mu.test(text)) return undefined;
-		return splitCandidates(text, findBaselineSectionEnd(text));
+		if (markerMatch === null) return undefined;
+		const sectionStart = (markerMatch.index ?? 0) + markerMatch[0].length;
+		const sectionEnd = findBaselineSectionEnd(text, sectionStart);
+		if (!/^\[\d+\] /mu.test(text.slice(sectionStart, sectionEnd))) return undefined;
+		return splitCandidates(text, sectionStart, sectionEnd);
 	}
 	if (message.role !== "toolResult") return undefined;
 	const isRetrieval =
 		RETRIEVAL_TOOL_NAMES[message.toolName] === true || message.toolName.startsWith(RETRIEVAL_TOOL_PREFIX);
 	if (!isRetrieval) return undefined;
+	if (message.toolName === "jikji_find") {
+		const directiveStart = text.indexOf("\n\ndirective:");
+		return splitCandidates(text, 0, directiveStart >= 0 ? directiveStart : text.length, /^- [^\n]*(?:\n|$)/gmu);
+	}
 	const diagnosticsStart = text.indexOf("\n\nDiagnostics:");
-	return splitCandidates(text, diagnosticsStart >= 0 ? diagnosticsStart : text.length);
+	return splitCandidates(text, 0, diagnosticsStart >= 0 ? diagnosticsStart : text.length);
 }
-
-function findBaselineSectionEnd(text: string): number {
+function findBaselineSectionEnd(text: string, startIndex: number): number {
 	const endMarkers = [
 		"\n\nProduce the best",
 		"\n\nTreat candidates as unverified evidence",
 		"\n\nFormatting and content rules",
 	];
-	const positions = endMarkers.map((marker) => text.indexOf(marker)).filter((index) => index >= 0);
+	const positions = endMarkers.map((marker) => text.indexOf(marker, startIndex)).filter((index) => index >= 0);
 	return positions.length > 0 ? Math.min(...positions) : text.length;
 }
 
-function splitCandidates(text: string, sectionEnd: number): CandidateSection | undefined {
-	const region = text.slice(0, sectionEnd);
-	const matches = [...region.matchAll(/^\[\d+\] [^\n]*(?:\n|$)/gmu)];
+function splitCandidates(
+	text: string,
+	sectionStart: number,
+	sectionEnd: number,
+	pattern: RegExp = /^\[\d+\] [^\n]*(?:\n|$)/gmu,
+): CandidateSection | undefined {
+	const region = text.slice(sectionStart, sectionEnd);
+	const matches = [...region.matchAll(pattern)];
 	const firstStart = matches[0]?.index;
 	if (firstStart === undefined) return undefined;
 	const blocks: string[] = [];
@@ -327,8 +346,7 @@ function splitCandidates(text: string, sectionEnd: number): CandidateSection | u
 		blocks.push(region.slice(start, end));
 	}
 	return {
-		canonicalMarker: "",
-		prefix: region.slice(0, firstStart),
+		prefix: text.slice(0, sectionStart) + region.slice(0, firstStart),
 		suffix: text.slice(sectionEnd),
 		blocks,
 	};

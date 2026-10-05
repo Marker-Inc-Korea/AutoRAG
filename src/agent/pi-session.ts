@@ -121,7 +121,7 @@ function createAutoRAGExtension(
 			model = event.model;
 		});
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		const transform = createContextTokenGuardedTransform(model, contextTransform);
+		const transform = createContextTokenGuardedTransform(() => model, contextTransform);
 		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
 	};
 }
@@ -137,7 +137,7 @@ function createAutoRAGInteractiveExtension(
 			model = event.model;
 		});
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		const transform = createContextTokenGuardedTransform(model, contextTransform);
+		const transform = createContextTokenGuardedTransform(() => model, contextTransform);
 		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
 		pi.on("input", async (event) => {
 			const query = event.text.trim();
