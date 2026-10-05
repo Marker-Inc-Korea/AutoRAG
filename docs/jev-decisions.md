@@ -118,7 +118,7 @@ What happens next:
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
-| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged evidence → fast answer → verification. |
+| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → verification. |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → verification. |
 
 Decomposition sends a short prompt to an LLM and keeps **at most five** search

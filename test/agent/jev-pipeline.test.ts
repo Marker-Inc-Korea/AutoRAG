@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -225,6 +227,81 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(events.some((event) => event.type === "preliminary")).toBe(true);
 		const complete = events.find((event) => event.type === "complete");
 		expect(complete?.type === "complete" && complete.response.answer).toBe("Verified approvers.");
+	});
+
+	it("reranks the merged pool of every decomposed local query against the original question", async () => {
+		const rerankRequests: { query: unknown; documents: unknown[] }[] = [];
+		const server = createServer((request, response) => {
+			let body = "";
+			request.on("data", (chunk) => {
+				body += chunk;
+			});
+			request.on("end", () => {
+				const parsed: unknown = JSON.parse(body.length > 0 ? body : "{}");
+				const query = typeof parsed === "object" && parsed !== null && "query" in parsed ? parsed.query : undefined;
+				const documents =
+					typeof parsed === "object" && parsed !== null && "documents" in parsed && Array.isArray(parsed.documents)
+						? parsed.documents
+						: [];
+				rerankRequests.push({ query, documents });
+				// Reverse the pool so the last sub-query's hit must come first.
+				const results = documents
+					.map((document, index) => ({
+						document: { text: typeof document === "string" ? document : "" },
+						index,
+						relevance_score: (index + 1) / documents.length,
+					}))
+					.reverse();
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(JSON.stringify({ model: "test-rerank", results }));
+			});
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		const port = typeof address === "object" && address !== null ? address.port : 0;
+		try {
+			const prompts: string[] = [];
+			const decompositionModel = fauxModel(
+				fauxAssistantMessage('{"queries": ["Q3 budget approver", "Q4 budget approver"]}', { stopReason: "stop" }),
+			);
+			const source = join(docs, "Q3-budget-approver.txt");
+			const model = fauxModel(
+				capture(fastAnswer("Fast: approvers found.", source), prompts),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+				finalEmit("Verified approvers.", source),
+			);
+			const agent = agentWith({
+				model,
+				jev: { backend: jevRouting("local", 0.9) },
+				queryDecomposition: { model: decompositionModel },
+				rerank: {
+					provider: "openrouter",
+					model: "test-rerank",
+					apiKey: "test-key",
+					baseUrl: `http://127.0.0.1:${port}/`,
+				},
+			});
+			const minSync = recordingMinSync();
+			injectMinSync(agent, minSync.method);
+
+			await agent.searchDocuments("Who approved the Q3 and Q4 budgets?");
+
+			expect(rerankRequests).toHaveLength(1);
+			expect(rerankRequests[0]?.query).toBe("Who approved the Q3 and Q4 budgets?");
+			const pool = JSON.stringify(rerankRequests[0]?.documents);
+			expect(pool).toContain("evidence for Q3 budget approver");
+			expect(pool).toContain("evidence for Q4 budget approver");
+			const fastPrompt = prompts[0] ?? "";
+			expect(fastPrompt).toContain("Reranked initial candidates");
+			expect(fastPrompt).toContain("Q3 budget approver");
+			expect(fastPrompt.indexOf("evidence for Q4 budget approver")).toBeLessThan(
+				fastPrompt.indexOf("evidence for Q3 budget approver"),
+			);
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 	});
 
 	it("defaults the decomposition model to the session model", async () => {
