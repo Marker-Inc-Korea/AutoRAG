@@ -306,4 +306,44 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		const second = await agent.findJikji("Q3 report");
 		expect(second.answerPack?.answerPaths).toContain(realpathSync(join(docs, "q3-report.txt")));
 	});
+
+	it("drops user-excluded paths from the merged Jikji answer pack", async () => {
+		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
+		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");
+		writeFakeJikji({
+			answer_paths: ["keep-notes.txt", "secret-plan.txt"],
+			paths: ["keep-notes.txt", "secret-plan.txt"],
+			candidates: [
+				{ path: "keep-notes.txt", next_read: "original", label: "keep" },
+				{ path: "secret-plan.txt", next_read: "original", label: "secret" },
+			],
+			evidence_pack: [
+				{ path: "keep-notes.txt", next_read: "original" },
+				{ path: "secret-plan.txt", next_read: "original" },
+			],
+			handoff_action: "direct_use",
+			tool_call_policy: { stop_after_find: true, forbidden_tools: ["bash"], allowed_followups: [] },
+			agent_should_not_rerank: true,
+		});
+		const excluded = join(docs, "secret-plan.txt");
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+			excludePaths: [excluded],
+			everything: false,
+			fsearch: false,
+		});
+
+		await agent.refresh(true);
+		const result = await agent.findJikji("plans");
+
+		const keep = realpathSync(join(docs, "keep-notes.txt"));
+		expect(result.answerPack?.answerPaths).toEqual([keep]);
+		expect(result.answerPack?.paths).toEqual([keep]);
+		expect(result.answerPack?.candidates.map((c) => c.path)).toEqual([keep]);
+		expect(result.answerPack?.evidencePack.map((e) => e.path)).toEqual([keep]);
+	});
 });

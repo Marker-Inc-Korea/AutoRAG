@@ -37,6 +37,7 @@ import {
 	type JikjiHandoffAction,
 	type JikjiOptions,
 	type JikjiPrepareResult,
+	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
@@ -2522,12 +2523,21 @@ export class AutoRAGAgent {
 	 * Merge per-root answer packs into one. Concatenates answer_paths/candidates
 	 * preserving per-root order; dedupes by normalized path. Does NOT cross-root
 	 * rerank when any root has agentShouldNotRerank=true.
+	 *
+	 * Honours `excludePaths` at the retrieval boundary: Jikji indexes the source
+	 * folders directly, bypassing the parsed mirror, so an excluded source still
+	 * appears in the on-disk `.jikji_agent_map.md`. Dropping excluded paths here
+	 * keeps them out of the agent-facing answer pack (the `jikji_find` tool and
+	 * the baseline prefetch) while leaving the shared map artifact complete.
+	 * Excluded paths remain reachable through direct file reads, as Jikji never
+	 * blocks source verification.
 	 */
 	private mergeAnswerPacks(
 		entries: readonly { pack: JikjiAnswerPack; root: string }[],
-		sourceRoots: ReturnType<typeof planJikjiSourceRoots>,
+		sourceRoots: readonly JikjiSourceRoot[],
 		policy: MergedJikjiPolicy,
 	): JikjiAnswerPack {
+		const excluded = new Set(this.excludePaths);
 		const seenPaths = new Set<string>();
 		const answerPaths: string[] = [];
 		const candidates: JikjiCandidate[] = [];
@@ -2544,20 +2554,20 @@ export class AutoRAGAgent {
 			const originRoots = [originRoot];
 			for (const rawPath of entry.pack.answerPaths) {
 				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
-				if (norm !== undefined && !seenPaths.has(norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !seenPaths.has(norm)) {
 					seenPaths.add(norm);
 					answerPaths.push(norm);
 				}
 			}
 			for (const rawPath of entry.pack.paths) {
 				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
-				if (norm !== undefined && !allPaths.includes(norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !allPaths.includes(norm)) {
 					allPaths.push(norm);
 				}
 			}
 			for (const cand of entry.pack.candidates) {
 				const norm = normalizeJikjiAnswerPath(cand.path, originRoots);
-				if (norm !== undefined && !candidates.some((c) => c.path === norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !candidates.some((c) => c.path === norm)) {
 					candidates.push({
 						path: norm,
 						nextRead: cand.nextRead,
@@ -2568,7 +2578,7 @@ export class AutoRAGAgent {
 			}
 			for (const ev of entry.pack.evidencePack) {
 				const norm = normalizeJikjiAnswerPath(ev.path, originRoots);
-				if (norm !== undefined && !evidencePack.some((e) => e.path === norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !evidencePack.some((e) => e.path === norm)) {
 					evidencePack.push({ path: norm, nextRead: ev.nextRead });
 				}
 			}
