@@ -81,6 +81,7 @@ import {
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
+import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -1848,6 +1849,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
@@ -1885,12 +1887,14 @@ export class AutoRAGAgent {
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
 		return (
@@ -1921,6 +1925,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations. If there are partial clues or leads, mention them concisely.\n\n` +

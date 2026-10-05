@@ -1,5 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 
 export const EMIT_AUTORAG_RESULTS_TOOL_NAME = "emit_autorag_results";
 
@@ -28,8 +29,7 @@ const evidenceRefSchema = Type.Object({
 
 export const emitResultsSchema = Type.Object({
 	answer: Type.String({
-		description:
-			"Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text.",
+		description: `Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}`,
 	}),
 	results: Type.Array(
 		Type.Object({
