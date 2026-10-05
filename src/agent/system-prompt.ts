@@ -1,6 +1,7 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import type { StoreManifest } from "../manifest/types.ts";
 import { FENCING_GUARD_LINE } from "../p2p/injection-classifier.ts";
+import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
 export interface SystemPromptConfig {
@@ -217,6 +218,7 @@ Call \`emit_autorag_results\` exactly once with:
 - **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
 - **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in \`answer\` (keep paths and source metadata in \`results\` and \`mapping\`).
 - **Citation style**: Cite supporting evidence chunks using bracketed numbers only (e.g. [1], [2]). Do not quote raw chunk text or mention source paths directly in \`answer\`.
+- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}
 - **No per-source negative reports**: Never report individual negative findings per source (e.g. "no information found in Slack" or "checked Drive but found nothing"). Simply omit unproductive sources from the answer and focus on what was found or provide a concise overall conclusion.
 - **Conflict resolution (recency preference)**: When conflicting information exists among search results or evidence, treat the freshest and most recent information as the correct source of truth. Resolve discrepancies in favor of newer dates or timestamps.
 - **Honest and concise uncertainty**: When information is incomplete or uncertain, acknowledge it briefly without lengthy explanations of why it is uncertain. State that it is difficult to answer fully with the currently available information and searching continues. If any relevant clues or partial leads exist (even if not the exact answer), mention those clues concisely.

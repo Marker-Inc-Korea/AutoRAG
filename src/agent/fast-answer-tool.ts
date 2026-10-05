@@ -1,12 +1,12 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 
 export const EMIT_FAST_ANSWER_TOOL_NAME = "emit_fast_answer";
 
 const fastAnswerSchema = Type.Object({
 	answer: Type.String({
-		description:
-			"Complete, self-contained first answer for the caller in at most 5 bullet points (plus optional explanation), produced immediately from baseline retrieval evidence. Reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text.",
+		description: `Complete, self-contained first answer for the caller in at most 5 bullet points (plus optional explanation), produced immediately from baseline retrieval evidence. Reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_IMAGE_EMBED_RULE}`,
 	}),
 	results: Type.Array(
 		Type.Object({
