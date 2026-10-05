@@ -24,7 +24,7 @@ Add a `jev` section to `~/.autorag/config.json` (or the workspace config):
 
 ```json
 {
-  "jev": { "backend": "openrouter", "model": "jev-latest" }
+  "jev": { "backend": "openrouter" }
 }
 ```
 
@@ -46,13 +46,17 @@ TypeSafe -> OpenRouter -> Vercel AI Gateway.
 `JEV_MODEL` overrides the wire model id, and `JEV_BACKEND=mock` runs a keyless
 dry run (used by the offline tests).
 
+The OpenRouter path is pinned to `typesafe/jev-1.13`: `jev-use` 0.8.0's own
+OpenRouter default (`typesafe/jev-latest`) is not a live OpenRouter model id and
+returns HTTP 400. Set `model` to override the pin.
+
 ### Configuration fields
 
 | Field                 | Meaning                                                                 |
 | --------------------- | ----------------------------------------------------------------------- |
 | `enabled`             | `false` disables the tool (same as `"jev": false`).                     |
 | `backend`             | Force `typesafe`, `openrouter`, or `vercel`; omit to auto-select.       |
-| `model`               | Model id sent with every call, e.g. `jev-latest`.                       |
+| `model`               | Wire model id sent with every call. Omit for the backend default.       |
 | `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
 
 ## Using the tool
@@ -108,7 +112,7 @@ import { AutoRAGLite } from "@autorag/librarian";
 
 const agent = new AutoRAGLite({
   searchPaths: ["./docs"],
-  jev: { backend: "openrouter", model: "jev-latest" },
+  jev: { backend: "openrouter" },
 });
 ```
 

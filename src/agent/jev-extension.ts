@@ -14,6 +14,16 @@ export const JEV_TOOL_NAME = "jev";
 export type JevBackendName = "typesafe" | "openrouter" | "vercel";
 
 /**
+ * OpenRouter's live Jev model id. `jev-use` 0.8.0 ships `typesafe/jev-latest`,
+ * which OpenRouter rejects with HTTP 400 ("Model ... does not exist"), so the
+ * OpenRouter path is pinned here.
+ */
+export const OPENROUTER_DEFAULT_MODEL = "typesafe/jev-1.13";
+
+/** Per-backend model overrides applied when the caller names none. */
+const BACKEND_DEFAULT_MODEL: Record<string, string> = { openrouter: OPENROUTER_DEFAULT_MODEL };
+
+/**
  * Options for the `jev` decision tool. Secrets never appear here: `jev-use`
  * reads the backend credential from its own environment variable
  * (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
@@ -21,7 +31,12 @@ export type JevBackendName = "typesafe" | "openrouter" | "vercel";
 export interface JevToolOptions {
 	/** Force one backend; omit to let the first credential present win. */
 	readonly backend?: JevBackendName;
-	/** Model id sent with every call, e.g. `jev-latest`. */
+	/**
+	 * Wire model id sent with every call. Omit for the backend default;
+	 * OpenRouter is pinned to {@link OPENROUTER_DEFAULT_MODEL} because
+	 * `jev-use` 0.8.0's own default (`typesafe/jev-latest`) is not a live
+	 * OpenRouter model id.
+	 */
 	readonly model?: string;
 	/** Escalate verdicts below this confidence. Default: per-source thresholds. */
 	readonly confidenceThreshold?: number;
@@ -106,7 +121,9 @@ export function createJevExtension(options: JevToolOptions = {}): ExtensionFacto
 							: {}),
 					});
 					const state = (params.state ?? "") as State;
+					const model = options.model ?? BACKEND_DEFAULT_MODEL[client.backend.name];
 					const judgment = await client.judge(state, params.questions as Question[], {
+						...(model !== undefined ? { model } : {}),
 						...(params.confidence_threshold !== undefined
 							? { confidenceThreshold: params.confidence_threshold }
 							: {}),

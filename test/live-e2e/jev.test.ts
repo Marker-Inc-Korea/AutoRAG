@@ -18,7 +18,7 @@ const LIVE = process.env.AUTORAG_JEV_LIVE === "1" && (process.env.OPENROUTER_API
 
 function jevTool(): ToolDefinition {
 	const tools: ToolDefinition[] = [];
-	(createJevExtension({ backend: "openrouter", model: "jev-latest" }) as ExtensionFactory)({
+	(createJevExtension({ backend: "openrouter" }) as ExtensionFactory)({
 		registerTool: (tool: ToolDefinition) => tools.push(tool),
 	} as unknown as ExtensionAPI);
 	const tool = tools[0];
