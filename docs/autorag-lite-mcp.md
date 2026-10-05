@@ -260,7 +260,7 @@ protocol 오류와 tool 실행 오류를 구분해 처리하십시오. `index-no
 ```bash
 bun run typecheck
 bun run build
-bunx vitest run test/mcp/server.test.ts test/mcp/stdio.test.ts
+ bunx vitest run test/mcp/server.test.ts test/mcp/contract.test.ts test/mcp/stdio.test.ts
 ```
 
-`test/mcp/stdio.test.ts`는 실제 stdio MCP client로 refresh, search, 파일 이름 검색, duplicates 스캔, dynamic datasource tool 노출, datasource list/get을 확인합니다.
+`test/mcp/server.test.ts`와 `test/mcp/contract.test.ts`는 MCP SDK의 실제 `Client`와 `InMemoryTransport`를 사용해 no-socket contract를 검증합니다. 외부 검색 backend만 fake하며, tool listing/schema, validation, structuredContent/text consistency, unavailable-tool protocol errors, readiness/stale transitions, routing, authorization boundary, backend failures, and cleanup을 확인합니다. `test/mcp/stdio.test.ts`는 배포 entrypoint를 실제 subprocess로 실행하는 transport smoke test입니다.

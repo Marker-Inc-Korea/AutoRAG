@@ -15,7 +15,9 @@ if (args[0] === "index") {
   process.exit(0);
 }
 if (args[0] === "stats") {
-  console.log(JSON.stringify({ live: true, files: 1, folders: 0 }));
+  // No watch daemon is ever launched; report live:false so a caller never
+  // adopts a fictional daemon or waits on one.
+  console.log(JSON.stringify({ live: false, files: 1, folders: 0 }));
   process.exit(0);
 }
 if (args[0] === "search") {
