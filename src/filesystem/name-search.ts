@@ -1,5 +1,5 @@
 import { type Dirent, realpathSync } from "node:fs";
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /**
@@ -208,7 +208,7 @@ async function pinConfiguredRoots(
 		const resolvedRoot = resolve(root);
 		let real: string;
 		try {
-			real = await realpath(resolvedRoot);
+			real = realpathSync(resolvedRoot);
 		} catch (error) {
 			diagnostics.push({
 				code: "root-unavailable",
@@ -240,7 +240,7 @@ async function resolveRequestRoots(requestRoot: string, pinnedRoots: readonly st
 	for (const candidate of candidates) {
 		let real: string;
 		try {
-			real = await realpath(candidate);
+			real = realpathSync(candidate);
 		} catch {
 			continue;
 		}
@@ -280,7 +280,7 @@ export async function filterFileNameSearchMatches(
 		try {
 			stat = await lstat(candidate.path);
 			if (stat.isSymbolicLink()) continue;
-			real = await realpath(candidate.path);
+			real = realpathSync(candidate.path);
 		} catch {
 			continue;
 		}

@@ -260,6 +260,8 @@ describe("searchFileNames", () => {
 	});
 
 	it("surfaces an unreadable directory as a diagnostic", async () => {
+		// Windows ignores POSIX mode bits, so chmod 0o000 cannot revoke read access.
+		if (process.platform === "win32") return;
 		if (typeof process.getuid === "function" && process.getuid() === 0) return;
 		chmodSync(join(rootLock, "locked"), 0o000);
 		const result = await searchFileNames([rootLock], { query: "visible" });
