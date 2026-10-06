@@ -235,8 +235,11 @@ records a curated answer, `autorag.evidence` returns the exact chunks behind
 numbered results, and `autorag.feedback` records which numbers were useful or
 not. These accept and return JSON matching the CLI's report/evidence/feedback
 contracts; discover the exact schemas with MCP `tools/list` rather than
-restating them here. The CLI `autorag report`, `autorag evidence`, and
-`autorag feedback` commands remain available for terminal maintenance.
+restating them here. Every bracketed `[n]` citation in a report `answer` must
+be a `results[].number`; an unmatched citation is removed from the persisted
+answer and returned as a `citation-without-result` diagnostic. The CLI
+`autorag report`, `autorag evidence`, and `autorag feedback` commands remain
+available for terminal maintenance.
 
 ## Completion condition
 

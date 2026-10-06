@@ -82,7 +82,7 @@ import {
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -1840,12 +1840,15 @@ export class AutoRAGAgent {
 		const reranked = await this.rerankPrefetchPool(query, jikji, minSyncResults);
 		if (reranked !== undefined) return formatRerankedBaseline(reranked);
 
+		// One flat numbering across every section (issue #1788): candidate [n]
+		// labels never restart, so no number means two different candidates.
 		const sections: string[] = [];
+		let candidateNumber = 0;
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
 					.slice(0, this.limits.prefetch.jikjiPathLimit)
-					.map((path, index) => `[${index + 1}] ${path}`)
+					.map((path) => `[${++candidateNumber}] ${path}`)
 					.join("\n")}`,
 			);
 		}
@@ -1861,7 +1864,7 @@ export class AutoRAGAgent {
 						return true;
 					})
 					.slice(0, this.limits.prefetch.sectionLimit)
-					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		};
@@ -1953,6 +1956,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
@@ -1991,6 +1995,7 @@ export class AutoRAGAgent {
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on a first-answer unit must re-emit that evidence as a result of this call and cite its new number.\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
@@ -1998,6 +2003,7 @@ export class AutoRAGAgent {
 				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_CITATION_RULE}\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
@@ -2029,6 +2035,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
@@ -3044,7 +3051,7 @@ function formatFirstAnswerContext(fastAnswer: AutoRAGFastAnswerDetails | undefin
 	const units =
 		fastAnswer.results.length === 0
 			? ""
-			: `\n\nNumbered units of that first answer:\n${fastAnswer.results
+			: `\n\nNumbered units of that first answer (its own numbering — NOT citation numbers for your final answer; cite only the results you emit):\n${fastAnswer.results
 					.map((result) => `[${result.number}] ${result.title} — ${result.summary}`)
 					.join("\n")}`;
 	const sources =

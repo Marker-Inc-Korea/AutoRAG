@@ -556,6 +556,9 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 						answer: response.answer,
 						resultCount: response.results.length,
 						results: response.results,
+						...(response.diagnostics !== undefined && response.diagnostics.length > 0
+							? { diagnostics: response.diagnostics }
+							: {}),
 					});
 				} catch (error) {
 					return toolError("report-failed", error instanceof Error ? error.message : String(error));
