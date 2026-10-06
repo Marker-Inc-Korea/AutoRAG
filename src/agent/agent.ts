@@ -561,16 +561,13 @@ export interface AutoRAGAgentOptions {
 	 * a `jev` config section or this option. Backends: TypeSafe, OpenRouter
 	 * (`OPENROUTER_API_KEY`), Vercel AI Gateway, Cloudflare Workers AI.
 	 * Always omitted for remote P2P sessions.
-	 *
-	 * When enabled, the two-phase search also asks Jev, before the fast
-	 * answer, whether the question needs local search, web search, or a direct
-	 * answer, and whether to decompose it (see {@link queryDecomposition}).
 	 */
 	jev?: JevToolOptions | false;
 	/**
 	 * Question decomposition used by the Jev query pipeline. `model` (with its
 	 * `apiKey`) is the LLM that splits one question into at most five search
-	 * queries; omitted, the search session's own model decomposes.
+	 * queries; omitted, the search session's own model decomposes. The CLI
+	 * resolves its configured or default model (`openrouter/qwen/qwen3.7-flash`).
 	 */
 	queryDecomposition?: { readonly model?: Model<Api>; readonly apiKey?: string };
 	excludeExactDuplicates?: boolean;
@@ -1241,12 +1238,20 @@ export class AutoRAGAgent {
 		pi.setSessionName(query.slice(0, 80));
 		for await (const event of this.searchDocumentsStream(query)) {
 			const text = event.type === "progress" ? event.text : event.response.answer;
-			pi.sendMessage({
-				customType: `autorag.${event.type}`,
-				content: [{ type: "text", text }],
-				display: true,
-				details: event,
-			});
+			// Display-only: these arrive while the search turn is streaming, and
+			// pi's default delivery steers a custom message into that turn as a
+			// user message, so the model would answer its own progress and the
+			// query would never finish. triggerTurn:false shows them without
+			// adding a turn.
+			pi.sendMessage(
+				{
+					customType: `autorag.${event.type}`,
+					content: [{ type: "text", text }],
+					display: true,
+					details: event,
+				},
+				{ triggerTurn: false },
+			);
 		}
 	}
 
