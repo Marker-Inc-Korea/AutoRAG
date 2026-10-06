@@ -54,6 +54,7 @@ export type EverythingFailureReason =
 	| "unsupported-platform"
 	| "bundle-missing"
 	| "install-failed"
+	| "not-running"
 	| "startup-failed"
 	| "index-failed"
 	| "search-failed";
@@ -258,11 +259,23 @@ export class EverythingClient {
 		return this.platform === "win32";
 	}
 
-	/** Start the instance when needed and search it. */
+	/**
+	 * Search the running instance. Read-only: never starts Everything or waits
+	 * for it to index (refresh does that), so a query never pays startup cost.
+	 */
 	search(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
 		return this.serialize(async () => {
-			const es = await this.ensureRunning(false);
-			if (!es.ok) return es;
+			const binaries = await this.resolveBinaries();
+			if (!binaries.ok) return binaries;
+			const ping = await this.ping(binaries.esPath);
+			if (ping.code !== 0) {
+				return {
+					ok: false,
+					reason: "not-running",
+					message: `Everything instance ${this.instanceName} is not running; run \`autorag refresh\` to start and index it.`,
+				};
+			}
+			const es = { ok: true as const, esPath: binaries.esPath };
 			const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 			const args = buildEverythingSearchArgs(this.instanceName, request, timeoutMs);
 			// ES needs a moment beyond its own -timeout to print the error.

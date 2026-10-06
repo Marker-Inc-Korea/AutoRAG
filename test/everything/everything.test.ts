@@ -271,17 +271,15 @@ describe("EverythingClient", () => {
 		return { client, calls, launched };
 	}
 
-	it("starts a private user-level instance with its own config and db, then searches", async () => {
-		const { client, calls, launched } = fakeClient([
+	it("starts a private user-level instance with its own config and db when refresh indexes", async () => {
+		const { client, launched } = fakeClient([
 			{ code: 8, stderr: "Error 8: Everything IPC not found." },
 			{ code: 0, stdout: "1.4.1.1032\r\n" },
-			{ code: 0, stdout: '[{"filename":"C:\\\\docs\\\\a.txt","size":1,"date_modified":"2026-10-01T00:00:00"}]' },
+			{ code: 0 },
+			{ code: 0, stdout: "1\r\n" },
 		]);
-		const result = await client.search({ query: "a" });
-		expect(result).toEqual({
-			ok: true,
-			results: [{ path: "C:\\docs\\a.txt", type: "file", size: 1, dateModified: "2026-10-01T00:00:00" }],
-		});
+		const result = await client.index();
+		expect(result).toMatchObject({ ok: true, indexedItems: 1 });
 		expect(launched).toHaveLength(1);
 		const launchArgs = launched[0]!.args;
 		expect(launched[0]!.command).toBe("C:\\cache\\everything.exe");
@@ -292,10 +290,30 @@ describe("EverythingClient", () => {
 		expect(launchArgs).not.toContain("-install-service");
 		const ini = readFileSync(join(root, ".autorag", "everything", "Everything.ini"), "utf8");
 		expect(ini).toContain("run_as_admin=0");
+	});
+
+	it("searches the running instance without ever starting it", async () => {
+		const { client, calls, launched } = fakeClient([
+			{ code: 0, stdout: "1.4.1.1032\r\n" },
+			{ code: 0, stdout: '[{"filename":"C:\\\\docs\\\\a.txt","size":1,"date_modified":"2026-10-01T00:00:00"}]' },
+		]);
+		const result = await client.search({ query: "a" });
+		expect(result).toEqual({
+			ok: true,
+			results: [{ path: "C:\\docs\\a.txt", type: "file", size: 1, dateModified: "2026-10-01T00:00:00" }],
+		});
+		expect(launched).toHaveLength(0);
 		expect(calls.at(-1)!.args).toEqual(expect.arrayContaining(["-instance", client.instanceName, "-json"]));
-		// ES must wait for a cold instance instead of returning zero results.
 		const searchArgs = calls.at(-1)!.args;
 		expect(searchArgs[searchArgs.indexOf("-timeout") + 1]).toBe("30000");
+	});
+
+	it("reports not-running instead of launching when no instance answers a search", async () => {
+		// Starting Everything (and waiting for it to index) belongs to refresh.
+		const { client, launched } = fakeClient([{ code: 8, stderr: "Error 8: Everything IPC not found." }]);
+		const result = await client.search({ query: "a" });
+		expect(result).toMatchObject({ ok: false, reason: "not-running" });
+		expect(launched).toHaveLength(0);
 	});
 
 	it("surfaces ES exit status and stderr verbatim when a search fails", async () => {

@@ -59,10 +59,14 @@ export class JikjiClient {
 	 * 2. PATH lookup for `jikji`
 	 * 3. cached `<root>/.autorag/bin/jikji`
 	 * 4. autoInstall (default true) via `cargo install jikji-cli` into the cache
+	 *    — only for `prepare` (refresh); `find` passes `install: false` so a
+	 *    query never waits on an install
 	 * 5. bare `jikji` (spawn-error degrade preserves the previous behavior)
-	 * The result is cached per client so a failed install is not retried.
+	 * A found binary is cached per client. The bare fallback is cached only after
+	 * an install attempt, so a query-time miss does not block a later refresh
+	 * from installing.
 	 */
-	private async resolveCommand(): Promise<string> {
+	private async resolveCommand(options: { readonly install?: boolean } = {}): Promise<string> {
 		if (this.options.binaryPath !== undefined && this.options.binaryPath !== DEFAULT_BINARY) {
 			return commandFor(this.options.binaryPath);
 		}
@@ -78,6 +82,7 @@ export class JikjiClient {
 				this.resolvedCommand = cached;
 				return this.resolvedCommand;
 			}
+			if (options.install === false) return DEFAULT_BINARY;
 			if (this.options.autoInstall !== false) {
 				const installed = await ensureJikjiBinary({ root: this.options.root });
 				if (installed.ok) {
@@ -115,7 +120,7 @@ export class JikjiClient {
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
 		const result = await this.spawn({
-			command: await this.resolveCommand(),
+			command: await this.resolveCommand({ install: false }),
 			args: buildFindArgs(root, query, options),
 			signal: options.signal,
 		});

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -268,6 +268,8 @@ describe("AutoRAGAgent FSearch wiring", () => {
 						stderr: "",
 					};
 				}
+				// Like the real CLI, `index --db <path>` writes the database file.
+				if (args[0] === "index") writeFileSync(args[args.indexOf("--db") + 1]!, "db");
 				return { code: 0, stdout: "", stderr: "" };
 			}) satisfies FSearchRunner,
 			launch: () => {
@@ -280,9 +282,10 @@ describe("AutoRAGAgent FSearch wiring", () => {
 				watchUp = false;
 			},
 		});
+		// Refresh builds the database; a search only reads it.
+		await agent.refresh(false, { methods: ["fsearch"] });
 		const result = await agent.searchFsearch({ query: "a" });
 		expect(result).toMatchObject({ ok: true, backend: "fsearch-cli" });
-		await agent.refresh(false, { methods: ["fsearch"] });
 		await agent.stopFsearch();
 		expect(killed).toContain(5150);
 	});

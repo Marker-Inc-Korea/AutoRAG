@@ -183,7 +183,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const topK = options.topK ?? this.defaultTopK;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
-		const binaryResult = await this.resolveBinary();
+		// Queries never install: they use an existing binary or contribute nothing.
+		const binaryResult = await this.resolveBinary({ install: false });
 		if (binaryResult === undefined || typeof binaryResult !== "string") return [];
 		const client = new MinSyncClient({
 			binaryPath: binaryResult,
@@ -228,19 +229,23 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 
 	/**
 	 * Resolve the MinSync CLI from the user's global PATH first, then the
-	 * workspace cache, and finally the verified auto-install fallback.
+	 * workspace cache, and finally the verified auto-install fallback. The
+	 * auto-install runs only for `sync` (refresh); queries pass
+	 * `install: false` so a user's turn never waits on `cargo install`.
 	 *
 	 * Returns: string path on success, undefined for missing-binary, or a MinSyncSyncResult
 	 * for install-failed.
 	 */
-	protected async resolveBinary(): Promise<string | undefined | MinSyncSyncResult> {
+	protected async resolveBinary(
+		options: { readonly install?: boolean } = {},
+	): Promise<string | undefined | MinSyncSyncResult> {
 		if (this.binaryPath && existsSync(this.binaryPath)) return this.binaryPath;
 		if (this.binaryPath !== undefined) return undefined;
 		const pathBinary = lookupInPath(process.env);
 		if (pathBinary) return pathBinary;
 		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
 		if (existsSync(cachedBinary)) return cachedBinary;
-		if (this.autoInstall) {
+		if (this.autoInstall && options.install !== false) {
 			try {
 				const installed = await ensureMinSyncBinary({ ...this.installer, root: this.root });
 				return installed.binaryPath;

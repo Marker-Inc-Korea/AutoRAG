@@ -58,8 +58,9 @@ checks credential presence, and normally probes one live completion. If the
 model, authentication, configuration, or indexes are unhealthy, use
 `autorag-setup` rather than guessing private provider details.
 
-MinSync and Jikji should normally be healthy. MinSync and Jikji
-auto-install on first use by default. If they are missing or stale, run a full
+MinSync and Jikji should normally be healthy. Answering a question never
+builds or installs them: `autorag refresh` auto-installs both by default and
+builds their indexes incrementally. If they are missing or stale, run a full
 `autorag refresh` or return to setup rather than silently degrading to
 lexical-only search.
 

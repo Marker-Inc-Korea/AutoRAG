@@ -126,8 +126,6 @@ describe("parent-agent skill docs", () => {
 		expect(normalizeIndexingConfig({}).minSync.autoInstall).toBe(true);
 		const setup = readSkill("autorag-setup");
 		expect(setup).not.toMatch(/MinSync auto-install is off by default/);
-		expect(setup).toMatch(/minSync\.autoInstall` defaults to\ntrue/s);
-		expect(readSkill("autorag")).toMatch(/MinSync and Jikji\nauto-install on first use by default/s);
 	});
 
 	it("documents search JSON sessionId as debug-only", () => {

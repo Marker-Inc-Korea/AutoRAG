@@ -750,18 +750,21 @@ process.exit(0);
 		);
 	});
 
-	it("exposes an install-failed diagnostic through retrieval after auto-install fails", async () => {
-		// Given
+	it("never auto-installs during retrieval; a missing binary yields no results", async () => {
+		// Given: no binary anywhere, and an installer that records any attempt.
 		const originalPath = process.env.PATH;
 		process.env.PATH = join(root, "empty-path");
+		const installAttempts: string[] = [];
 		const method = new MinSyncVectorMethod({
 			root,
 			workspacePath: minsyncWorkspace,
 			installer: {
 				cargoInstaller: async () => {
+					installAttempts.push("cargo");
 					throw new Error("mock cargo failure");
 				},
 				releaseProvider: async () => {
+					installAttempts.push("release");
 					throw new Error("mock install failure");
 				},
 			},
@@ -772,16 +775,11 @@ process.exit(0);
 
 		try {
 			// When
-			const { results, diagnostics } = await engine.retrieve("renewal cancellation");
+			const { results } = await engine.retrieve("renewal cancellation");
 
-			// Then
+			// Then: the query turn contributes nothing and never waits on an install.
 			expect(results).toEqual([]);
-			expect(diagnostics).toHaveLength(1);
-			expect(diagnostics[0]).toMatchObject({
-				code: "minsync-unavailable",
-				severity: "warning",
-				source: "minsync",
-			});
+			expect(installAttempts).toEqual([]);
 		} finally {
 			process.env.PATH = originalPath;
 		}
