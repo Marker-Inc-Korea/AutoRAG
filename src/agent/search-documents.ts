@@ -52,6 +52,8 @@ export type SearchDocumentDiagnosticCode =
 	| "query-decomposition-failed"
 	| "follow-up-skipped"
 	| "follow-up-check-fallback"
+	| "datasources-selected"
+	| "datasource-selection-fallback"
 	| "citation-without-result";
 
 export interface SearchDocumentDiagnostic {

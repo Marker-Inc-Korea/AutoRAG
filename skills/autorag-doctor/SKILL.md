@@ -225,7 +225,8 @@ timer, or Task Scheduler).
 | `query-route-fallback` | Jev routing unavailable (often `OPENROUTER_API_KEY` unset); searched local with the original question | `test -n "$OPENROUTER_API_KEY"`; report the env var name, never its value |
 | `query-decomposition-failed` | Decomposition model call failed; searched the original question | Check `queryDecomposition.model` resolves (`autorag models list --provider openrouter`) |
 | `follow-up-check-fallback` | Jev post-fast-answer check unavailable; the run verified | Same as `query-route-fallback` |
-| `query-routed` / `follow-up-skipped` | Info: Jev's branch and queries / fast answer judged final | None; working as intended |
+| `datasource-selection-fallback` | Jev datasource check unavailable; no datasource was searched before the fast answer | Same as `query-route-fallback` |
+| `query-routed` / `datasources-selected` / `follow-up-skipped` | Info: Jev's branch and queries / datasources searched and skipped / fast answer judged final | None; working as intended. A datasource that is never selected usually needs a clearer `description` in the config |
 
 ## Report
 

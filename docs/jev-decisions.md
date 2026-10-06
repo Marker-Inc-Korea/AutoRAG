@@ -102,7 +102,7 @@ Guidance:
 - Read `confidence` (and `confidenceFrom`) before acting on a close call; an
   `escalate` verdict means the LLM should take the step over.
 
-## Query pipeline (routing, decomposition, follow-up check)
+## Query pipeline (routing, decomposition, datasource check, follow-up check)
 
 Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
@@ -124,8 +124,32 @@ What happens next:
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
-| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
+| `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
+
+### Datasource check before the fast answer
+
+On the `local` branch, Jev answers one more batched call: one `noul` per
+registered datasource (authorized, with retrieval methods), "Should the `<id>`
+datasource be searched to answer the user question?". The state lists every
+datasource as `id (type): description` above the question, so each is judged
+against the others; a datasource's `description` in the config is what Jev
+reads, so describe what each one holds. Every datasource at 0.5 or above is
+searched with every search query (the original or the decomposed ones), and its
+chunks join Jikji and MinSync in the pool the reranker orders, before the fast
+answer. The rest are not searched before the fast answer (the verification
+phase can still call `search_datasource_<id>`). A
+`datasources-selected` diagnostic lists the selected and skipped datasources
+with their probabilities. If the check fails (missing credential, unreachable
+backend), no datasource is searched before the fast answer
+(`datasource-selection-fallback`), which is the behavior without Jev.
+
+The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)
+against 10 real datasources and 6 labeled questions (2 English Slack/email, 3
+Korean KakaoTalk/Discord, 1 file-only), 3 runs:
+18/18 passed. Required datasources scored 0.60-0.95; datasources the question
+clearly excluded scored at most 0.37
+(`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`).
 
 ### Follow-up check after the fast answer
 
@@ -177,9 +201,12 @@ Failures never block a search. A missing Jev credential, an unreachable Jev
 backend, or an unusable verdict falls back to today's single local search for
 the original question (diagnostic `query-route-fallback`). A `web` verdict with
 web tools disabled also falls back to local search. A failed decomposition
-searches the original question (`query-decomposition-failed`). Every routed run
-records its branch and queries as a `query-routed` diagnostic (`--debug`
-shows it). The pipeline never runs for remote P2P sessions. Every search is
+searches the original question (`query-decomposition-failed`). A failed
+datasource check searches no datasource before the fast answer
+(`datasource-selection-fallback`). Every routed run records its branch and
+queries as a `query-routed` diagnostic, and the datasource check's picks as
+`datasources-selected` (`--debug` shows both). The pipeline never runs for
+remote P2P sessions. Every search is
 two-phase (fast answer, then verification unless Jev ends the run); there is
 no single-phase mode.
 

@@ -219,9 +219,13 @@ fast and multi-part questions thorough.
 - **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
   `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
   local search, web search, or a direct answer (general knowledge or small
-  talk skips retrieval entirely), and decides whether to decompose it. After
-  the fast answer it decides whether verification is needed, so a complete,
-  evidence-backed fast answer ends the run.
+  talk skips retrieval entirely), and decides whether to decompose it. On
+  local search it also decides, per registered datasource, whether to search
+  it before the fast answer. It reads each datasource's `description`, so
+  write one that says what the datasource holds (for example `"Team Slack:
+  release and on-call channels"`). After the fast answer it decides whether
+  verification is needed, so a complete, evidence-backed fast answer ends the
+  run.
 - **Question decomposition** (`queryDecomposition`, default model
   `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
   five search queries that run in parallel.
