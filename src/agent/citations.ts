@@ -1,20 +1,70 @@
 /**
  * Bracketed answer citations (`[n]`) must resolve to a `results[].number` of
  * the same response (issue #1788). A markdown image target `(<...>)` is
- * matched first and kept verbatim so a bracketed number inside a real file
- * path is never mistaken for a citation; `[n](...)` is a markdown link, not a
- * citation.
+ * skipped verbatim so a bracketed number inside a real file path is never
+ * mistaken for a citation; `[n](...)` is a markdown link, not a citation.
+ *
+ * `answer` is model- or caller-supplied, so this is a single linear scan rather
+ * than a regex: alternations like `\(<[^>]*>\)` / `[ \t]*\[` backtrack
+ * quadratically on inputs such as repeated `(<` or long whitespace runs.
  */
-const CITATION_PATTERN = /\(<[^>]*>\)|[ \t]*\[(\d+)\](?!\()/gu;
+interface CitationMarker {
+	/** Start of the marker, including the spaces/tabs directly before `[`. */
+	readonly start: number;
+	/** Index just past the closing `]`. */
+	readonly end: number;
+	readonly number: number;
+}
+
+function isAsciiDigit(code: number): boolean {
+	return code >= 48 && code <= 57;
+}
+
+function citationMarkers(answer: string): CitationMarker[] {
+	const markers: CitationMarker[] = [];
+	// End of the last consumed token; leading whitespace never reaches back past it.
+	let floor = 0;
+	// First `>` at or after the current image-target body; cached so repeated `(<` stays linear.
+	let closeIndex = -1;
+	let index = 0;
+	while (index < answer.length) {
+		const char = answer[index];
+		if (char === "(" && answer[index + 1] === "<") {
+			if (closeIndex < index + 2) {
+				const found = answer.indexOf(">", index + 2);
+				closeIndex = found === -1 ? answer.length : found;
+			}
+			if (answer[closeIndex + 1] === ")") {
+				index = closeIndex + 2;
+				floor = index;
+				continue;
+			}
+			index += 1;
+			continue;
+		}
+		if (char === "[") {
+			let digitsEnd = index + 1;
+			while (digitsEnd < answer.length && isAsciiDigit(answer.charCodeAt(digitsEnd))) digitsEnd += 1;
+			if (digitsEnd > index + 1 && answer[digitsEnd] === "]" && answer[digitsEnd + 1] !== "(") {
+				let start = index;
+				while (start > floor && (answer[start - 1] === " " || answer[start - 1] === "\t")) start -= 1;
+				markers.push({ start, end: digitsEnd + 1, number: Number(answer.slice(index + 1, digitsEnd)) });
+				index = digitsEnd + 1;
+				floor = index;
+				continue;
+			}
+		}
+		index += 1;
+	}
+	return markers;
+}
 
 /** Sorted, de-duplicated citation numbers in `answer` with no matching result. */
 export function unresolvedCitations(answer: string, results: readonly { readonly number: number }[]): number[] {
 	const known = new Set(results.map((result) => result.number));
 	const unresolved = new Set<number>();
-	for (const match of answer.matchAll(CITATION_PATTERN)) {
-		if (match[1] === undefined) continue;
-		const number = Number(match[1]);
-		if (!known.has(number)) unresolved.add(number);
+	for (const marker of citationMarkers(answer)) {
+		if (!known.has(marker.number)) unresolved.add(marker.number);
 	}
 	return [...unresolved].sort((a, b) => a - b);
 }
@@ -24,13 +74,18 @@ export function stripUnresolvedCitations(
 	answer: string,
 	results: readonly { readonly number: number }[],
 ): { readonly answer: string; readonly unresolved: readonly number[] } {
-	const unresolved = unresolvedCitations(answer, results);
-	if (unresolved.length === 0) return { answer, unresolved };
-	const drop = new Set(unresolved);
-	const stripped = answer.replace(CITATION_PATTERN, (match, digits: string | undefined) =>
-		digits !== undefined && drop.has(Number(digits)) ? "" : match,
-	);
-	return { answer: stripped, unresolved };
+	const known = new Set(results.map((result) => result.number));
+	const unresolved = new Set<number>();
+	let stripped = "";
+	let cursor = 0;
+	for (const marker of citationMarkers(answer)) {
+		if (known.has(marker.number)) continue;
+		unresolved.add(marker.number);
+		stripped += answer.slice(cursor, marker.start);
+		cursor = marker.end;
+	}
+	if (unresolved.size === 0) return { answer, unresolved: [] };
+	return { answer: stripped + answer.slice(cursor), unresolved: [...unresolved].sort((a, b) => a - b) };
 }
 
 export function formatCitationList(numbers: readonly number[]): string {
