@@ -311,6 +311,11 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
 				{ stopReason: "stop" },
 			),
+			// The single final-emit reminder is ignored too.
+			fauxAssistantMessage(
+				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
+				{ stopReason: "stop" },
+			),
 		);
 		const agent = new AutoRAGAgent({
 			...agentOptions(model),
@@ -336,6 +341,29 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(entry?.resultCount).toBe(1);
 		expect(entry?.results[0]?.source).toBe("/kakao/acct-1/chunks/msg-1");
 		expect(entry?.results[0]?.excerpt).toContain("Director approval");
+	});
+
+	it("asks once more for the final emit when verification ends with a prose answer instead", async () => {
+		// Live runs (web route) ended verification with the full answer as plain
+		// text and no emit_autorag_results call; one reminder turn recovers it.
+		const prompts: string[] = [];
+		const model = fauxModel(
+			true,
+			fastAnswerCall(),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			fauxAssistantMessage("- Refund exceptions require director approval before payout [1].", {
+				stopReason: "stop",
+			}),
+			capturePromptStep(finalEmitCall("Verified: refund exceptions require director approval."), prompts),
+		);
+		const agent = new AutoRAGAgent(agentOptions(model));
+
+		const response = await agent.searchDocuments("refund approval");
+
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
+		expect(response.answer).toBe("Verified: refund exceptions require director approval.");
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
 	});
 
 	it("ends the run without a preliminary event when the model emits final results immediately", async () => {

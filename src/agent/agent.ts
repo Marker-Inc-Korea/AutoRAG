@@ -1480,6 +1480,19 @@ export class AutoRAGAgent {
 						await session.prompt(
 							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered, plan.route),
 						);
+						// Models sometimes end verification by writing the final answer as
+						// prose instead of calling emit_autorag_results (seen on the web
+						// route). One reminder turn lets them emit what they already have;
+						// a second miss, a provider error, or an abort (tool-call limit,
+						// timeout) falls through to the degraded response.
+						if (
+							captured === undefined &&
+							!planAbort.signal.aborted &&
+							this.searchToolCallCount < this.maxSearchToolCalls &&
+							lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) === undefined
+						) {
+							await session.prompt(buildFinalEmitReminder());
+						}
 					})(),
 					new Promise<never>((_, reject) => {
 						timeout = setTimeout(() => {
@@ -3391,6 +3404,20 @@ function lastModelRequestError(messages: readonly AgentMessage[]): string | unde
 		return message.errorMessage?.trim() || "the provider returned an error without a message";
 	}
 	return undefined;
+}
+
+/**
+ * One-turn reminder sent when the verification phase stops without calling
+ * emit_autorag_results. It asks only for the structured emit of the answer the
+ * model already reached, never for more searching.
+ */
+function buildFinalEmitReminder(): string {
+	return (
+		`You ended without calling ${EMIT_AUTORAG_RESULTS_TOOL_NAME}, so the user has not received your verified answer. ` +
+		`Do not search again. Call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} now, exactly once, with the answer you just wrote, ` +
+		`its numbered results, and the number-to-source mapping (use the real file paths or URLs you used). ` +
+		`If verification found nothing usable, call it with an answer that says so and an empty results list.`
+	);
 }
 
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
