@@ -592,6 +592,42 @@ scopes `search:message` and `search:docs:read`, and confirm with
 `/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
 coverage of older messages is not guaranteed.
 
+## GitHub Gists
+
+`github-gist` indexes the authenticated account's own Gists through the GitHub
+REST API: public Gists and secret Gists permitted by the token's scopes.
+The local index stores descriptions and file contents (code snippets, notes,
+and design memos), plus Gist IDs, visibility, filenames, URLs, and update times.
+Refresh is incremental: only new or updated Gists need a full content fetch;
+deleted Gists are removed from the index.
+
+```json
+{
+  "datasources": {
+    "github-gist": {
+      "type": "github-gist",
+      "instanceId": "default",
+      "connector": { "tokenEnv": "GITHUB_TOKEN" }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["github", "gists"],
+    "allowedScopes": ["/github-gist/default/**"]
+  }
+}
+```
+
+Set `GITHUB_TOKEN` (or the environment variable named by `connector.tokenEnv`);
+if it is unavailable, authentication falls back to the `gh` CLI login. The
+token is not stored in the index or configuration. Search supports lexical
+BM25 and semantic retrieval through the local loopback embedding gateway;
+Gist content stays on the machine for embeddings. If embeddings are
+unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
+Result sources are `/github-gist/<instance>/chunks/<chunk-id>` (opaque
+datasource identities, not filesystem paths); metadata retains the Gist ID
+and URL. For the live QA harness, see
+[manual datasource QA](manual-qa-datasources.md).
+
 ## New datasource checklist
 
 - Implement `DatasourceSkill`.
