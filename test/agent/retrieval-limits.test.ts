@@ -279,6 +279,17 @@ describe("AutoRAGAgent retrieval limits", () => {
 		expect(context).not.toContain("/p/3");
 	});
 
+	it("numbers the unranked Jikji and MinSync sections as one flat citation list", async () => {
+		const internals = agentWith({ prefetch: { jikjiPathLimit: 2, sectionLimit: 2 } });
+		internals.jikjiClient = {};
+		internals.findJikji = async () => ({ answerPack: { answerPaths: ["/p/1", "/p/2"] } });
+		injectMinSync(internals, 2);
+
+		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
+
+		expect(context.match(/^\[\d+\]/gmu)).toEqual(["[1]", "[2]", "[3]", "[4]"]);
+	});
+
 	it("passes mergedEvidenceCeiling to the standalone retrieval engine", async () => {
 		const internals = agentWith({ mergedEvidenceCeiling: 3 });
 		internals.getMethodRegistry().register(fakeMethod("plain", 5));

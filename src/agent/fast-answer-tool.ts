@@ -1,12 +1,13 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import { ANSWER_CITATION_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import { assertCitationsResolve } from "./citations.ts";
 
 export const EMIT_FAST_ANSWER_TOOL_NAME = "emit_fast_answer";
 
 const fastAnswerSchema = Type.Object({
 	answer: Type.String({
-		description: `Complete, self-contained first answer for the caller in at most 5 bullet points (plus optional explanation), produced immediately from baseline retrieval evidence. Reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_IMAGE_EMBED_RULE}`,
+		description: `Complete, self-contained first answer for the caller in at most 5 bullet points (plus optional explanation), produced immediately from baseline retrieval evidence. Reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
 	}),
 	results: Type.Array(
 		Type.Object({
@@ -33,7 +34,10 @@ const fastAnswerSchema = Type.Object({
 				number: Type.Integer({ description: "Matches the result number this source belongs to" }),
 				source: Type.String({ description: "Source identifier — a real file path or a datasource id" }),
 			}),
-			{ description: "Optional number -> source mapping for the first answer." },
+			{
+				description:
+					"Number -> source mapping: one entry per result, with the real file path or datasource id from the baseline evidence. Omit only a result with no source.",
+			},
 		),
 	),
 });
@@ -65,9 +69,10 @@ export function createEmitFastAnswerTool(
 		name: EMIT_FAST_ANSWER_TOOL_NAME,
 		label: "Emit Fast Answer",
 		description:
-			"Deliver the immediate first answer to the user. Call this exactly once during the fast phase with a complete, self-contained answer built only from the baseline retrieval evidence. Do not call any other tool before this one. The run continues afterwards for verification.",
+			"Deliver the immediate first answer to the user. Call this exactly once during the fast phase with a complete, self-contained answer built only from the baseline retrieval evidence. Do not call any other tool before this one. The run continues afterwards for verification. A call whose answer cites a number missing from results is rejected; fix the numbering and call again.",
 		parameters: fastAnswerSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<AutoRAGFastAnswerDetails>> {
+			assertCitationsResolve(EMIT_FAST_ANSWER_TOOL_NAME, params.answer, params.results);
 			const details: AutoRAGFastAnswerDetails = {
 				answer: params.answer,
 				results: params.results.map((result) => ({

@@ -1,16 +1,15 @@
 ---
 name: autorag-lite-setup
-description: Initialize, index, refresh, and maintain the model-free AutoRAG Lite lifecycle (config, roots, datasources, refresh, watch, status, index reset/rebuild) without configuring any model. Use when autorag lite init/refresh/status is needed, indexes are missing or stale, or the user wants local document indexing without a search model.
+description: Install and register the model-free AutoRAG Lite MCP server, configure approved roots and datasources, build indexes, and verify MCP discovery and search. Use when autorag-mcp is missing, MCP connection fails, indexes are stale, or the user wants document search without configuring a search model.
 license: MIT
 ---
 
 # AutoRAG Lite setup
 
-Use this skill when the user wants AutoRAG's indexing lifecycle without a
-model: initialize a config, build and refresh indexes, watch roots, and inspect
-index health. Everything here is model-free. Use `autorag-setup` instead when a
-search model must be configured or repaired. Use `autorag-lite-search` for
-retrieval, reports, evidence, and feedback.
+Use this skill only to bootstrap, register, or repair AutoRAG Lite MCP:
+initialize trusted config, connect the host, build indexes, and verify search.
+Normal Lite use is MCP tool calling, not a search skill or shell command.
+Use `autorag-setup` instead when the model-backed librarian must be configured.
 
 ## Safety
 
@@ -25,16 +24,22 @@ retrieval, reports, evidence, and feedback.
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.
 
-## Install the CLI if needed
+## Install the package if needed
 
-The CLI is `@autorag/librarian` (`autorag`). Runtime is Node.js >= 24 or Bun.
+`@autorag/librarian` ships both `autorag` (bootstrap/maintenance) and
+`autorag-mcp` (stdio server). The executable requires Node.js >= 24 on PATH.
 
 ```bash
-command -v autorag >/dev/null || bun install -g @autorag/librarian
+command -v autorag-mcp >/dev/null || bun install -g @autorag/librarian
+command -v autorag
+command -v autorag-mcp
 autorag lite --help
 ```
 
 If Bun is unavailable, `npm install -g @autorag/librarian` is acceptable.
+If only `autorag` exists, upgrade the package rather than substituting CLI
+retrieval for MCP. For a source checkout, run `bun run build` and register the
+absolute `dist/mcp/index.js` path instead of the installed executable.
 
 ## Initialize a model-free config
 
@@ -58,6 +63,48 @@ Config resolution follows the usual order: `--config`, `AUTORAG_CONFIG`,
 `$AUTORAG_HOME/config.json`, or `~/.autorag/config.json`. Environment overrides
 include `AUTORAG_HOME`, `AUTORAG_CONFIG`, `AUTORAG_SEARCH_PATHS`,
 `AUTORAG_WORKSPACE`, and `AUTORAG_MEMORY_PATH`.
+
+## Register and verify the MCP connection
+
+After config and datasource setup, register the server with the host. Use
+absolute config, search root, workspace, and executable paths: hosts may start
+the server from a different working directory or with a restricted PATH.
+Resolve `command -v autorag-mcp` and substitute its absolute path below.
+Inspect an existing `autorag` registration first; keep a working registration
+and update only an outdated command or config path.
+
+```bash
+# Claude Code: project-local registration
+claude mcp add --transport stdio --scope local autorag \
+  --env AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json \
+  -- /absolute/path/to/autorag-mcp
+
+# Codex: user registration
+codex mcp add autorag \
+  --env AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json \
+  -- /absolute/path/to/autorag-mcp
+```
+
+For other hosts, use their stdio MCP configuration with the same command,
+empty arguments, and `AUTORAG_CONFIG` environment variable. The host starts
+the subprocess; do not run it as a background HTTP service. Pass any required
+credential environment-variable names through the host's secret mechanism;
+never put credential values in registration examples or logs.
+
+Reload/reconnect the host, then use MCP `tools/list` to discover the actual
+tools and schemas. Verify `autorag.status`, `autorag.refresh`, `autorag.search`,
+`autorag.search.files`, and `autorag.datasources.list` are available. Configured
+integrated datasources add their own search tools; do not assume a fixed count.
+Run `autorag.status` and `autorag.datasources.list` through MCP, then refresh
+and search a known phrase from an approved document. Registration alone is
+not proof of a connected or searchable server. After config changes, restart
+the server so datasource tools and authorization are rebuilt.
+
+`AUTORAG_MCP_READ_ONLY=1` omits refresh; build indexes with the CLI before
+connecting that mode. `AUTORAG_MCP_TOOLS` is an optional comma-separated exact
+tool allowlist; omitted tools cannot be called. Use unrestricted tools for
+initial setup unless the user intentionally requests a restricted connection.
+
 
 ## Probe and configure datasources (setup wizard)
 
@@ -99,22 +146,22 @@ can never grant it. Store only env-var names such as `tokenEnv` or
 
 ## Build and refresh indexes
 
+After connecting, call MCP `autorag.refresh` with `{}` for an incremental run.
+Use `{"methods":["parsed","minsync"]}` to narrow indexing, or
+`{"force":true}` only when a full resync is needed. Omit `methods` to run all
+configured methods; MCP does not accept `"all"` as a method value.
+
+CLI refresh remains available for bootstrap, read-only deployments, and repair:
+
 ```bash
-autorag lite refresh --json
-autorag lite refresh --method parsed,minsync --json
-autorag lite refresh --full --json
-autorag lite refresh --force --json
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --json
 ```
 
-- A plain `refresh` is incremental: it syncs parsed mirrors, MinSync, Jikji,
-  and configured datasources against what changed.
-- `--full` and `--force` both request a full resync. Use them only when
-  incremental refresh is not enough, such as after config changes to roots or
-  index settings.
-- `--method <csv>` deliberately narrows the refresh. Valid values are
-  `parsed`, `minsync`, `datasources`, `jikji`, `everything` (Windows only;
-  a no-op elsewhere), `fsearch` (macOS/Linux only; a no-op elsewhere), and
-  `all`. Omit the flag to run all methods. Unknown values are rejected.
+- Refresh syncs parsed mirrors, MinSync, Jikji, and configured datasources.
+- CLI `--full` and `--force` request a full resync; MCP uses `force: true`.
+- CLI `--method <csv>` accepts `parsed`, `minsync`, `datasources`, `jikji`,
+  `everything` (Windows), `fsearch` (macOS/Linux), and `all`. MCP `methods`
+  accepts the same individual methods, not `all`. Unknown values are rejected.
 - MinSync and Jikji auto-install on first use by default. If they are missing
   or broken, run a full refresh or return to setup rather than silently
   degrading to lexical-only search.
@@ -133,18 +180,12 @@ autorag lite refresh --force --json
   and the user is told duplicate exclusion is off. Set
   `"excludeExactDuplicates": false` to index every copy.
 
-Retrieval requires a completed refresh. `autorag lite retrieve` before any
-refresh exits with code 2 and an `index-not-ready` diagnostic; a successful
-refresh is recorded even when the corpus is empty or only a non-parsed method
-was selected. Always refresh first, and refresh again when roots change.
-Once a refresh has completed, staleness is reported rather than enforced: a
-source that changed afterwards gives `"stale": true` with `stale-index`
-diagnostics (and `autorag lite status` reports `stale: true`) while retrieval
-still answers from the index. Sources the refresh deliberately skipped — exact
-duplicates, oversized or unparseable files, and AutoRAG/Jikji product artifacts
-such as `.jikji_agent_map.md` — do not count as stale. Use `autorag lite
-retrieve --refresh` to rebuild incrementally before one query, or `--strict`
-when a stale index must fail instead of answering.
+Content search requires a completed refresh. MCP `autorag.search` returns
+`isError: true` with `errorCode: "index-not-ready"` until refresh completes.
+Always refresh first, and refresh again when roots change. Stale indexes can
+still return results with `stale: true` and diagnostics; use `strict: true`
+to reject stale answers, or call `autorag.refresh` before searching. Sources
+deliberately skipped during refresh do not count as stale.
 Jikji is a discovery/indexing preparer, not a lite retrieval method.
 
 ## Watch and scheduled freshness
@@ -164,16 +205,13 @@ hourly freshness is set up.
 
 ## Status and index maintenance
 
-```bash
-autorag lite status --json
-autorag lite health --json
-autorag lite index rebuild --yes --json
-autorag lite index reset --method parsed --yes --json
-autorag lite duplicates --json
-```
+Use MCP `autorag.status` for health and `autorag.duplicates` for read-only
+duplicate-family inspection. No search model is required. CLI-only repair:
 
-- `status` shows path-opaque corpus freshness and index health. `health` is an
-  alias of `status`; neither resolves a model.
+```bash
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite index rebuild --yes --json
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite index reset --method parsed --yes --json
+```
 - `index reset` and `index rebuild` remove or rebuild only workspace
   `.autorag` indexes selected by `--method`. They never target source
   documents.
@@ -182,19 +220,34 @@ autorag lite duplicates --json
 
 ## Unavailable components and failure handling
 
-Missing optional components degrade gracefully: refresh and retrieval continue
-with diagnostics such as `minsync-unavailable` or `retrieval-method-failed`
-instead of failing the whole run. Each one quotes the underlying error verbatim,
-and `lite retrieve --json` also names the skipped surface under `unsearched`. Exit codes are 0
-on success, 2 for config or usage errors, and 1 for runtime errors. When a
-component stays unavailable after a full refresh, return to setup rather than
-accepting silently degraded search.
+Inspect MCP `isError`, `errorCode`, `diagnostics`, and `unsearched` before
+trusting results. `ok: true` with skipped surfaces is partial coverage, not
+proof that the whole corpus was searched. Preserve the underlying error text
+when reporting unavailable components such as `minsync-unavailable` or
+`retrieval-method-failed`. Repair the component rather than silently accepting
+degraded search.
+
+## Normal MCP workflow and curation lifecycle
+
+MCP results carry source, method, and content directly. After a search, the
+optional curation lifecycle is also exposed through MCP: `autorag.report`
+records a curated answer, `autorag.evidence` returns the exact chunks behind
+numbered results, and `autorag.feedback` records which numbers were useful or
+not. These accept and return JSON matching the CLI's report/evidence/feedback
+contracts; discover the exact schemas with MCP `tools/list` rather than
+restating them here. Every bracketed `[n]` citation in a report `answer` must
+be a `results[].number`; an unmatched citation is removed from the persisted
+answer and returned as a `citation-without-result` diagnostic. The CLI
+`autorag report`, `autorag evidence`, and `autorag feedback` commands remain
+available for terminal maintenance.
 
 ## Completion condition
 
-Setup is complete only when the CLI is installed, roots are approved, a
-non-secret model-free config is written, every datasource has been probed and
-the auto-configured and skipped lists reported to the user, dupey is installed
-or its absence reported, `refresh` has built the requested indexes, `status`
-reports healthy indexes, and any requested watch schedule is installed or
-verified with the user told it is active.
+Setup is complete only when the package and stdio executable are installed,
+roots are approved, trusted model-free config is written, every datasource has
+been probed and configured/skipped lists reported, and dupey is installed or
+its absence reported. The host must connect, discover tools, refresh requested
+indexes, return acceptable MCP status, and retrieve known source content via
+MCP. Any requested watch schedule must use the same config and be verified.
+Remove any previously copied Lite search skill from the host's skill directory
+so it no longer routes routine search through shell commands.

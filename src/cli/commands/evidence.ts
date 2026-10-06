@@ -22,7 +22,7 @@ function parseResultNumber(value: string | boolean | undefined): number | undefi
 	return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
-function evidenceFor(schema: MemorySchemaV4, sessionId: string, resultNumber?: number) {
+export function evidenceFor(schema: MemorySchemaV4, sessionId: string, resultNumber?: number) {
 	const results = schema.curatedResults
 		.filter((result) => result.sessionId === sessionId)
 		.filter((result) => resultNumber === undefined || result.number === resultNumber)

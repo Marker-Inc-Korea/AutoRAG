@@ -477,6 +477,43 @@ describe("Jev query pipeline before the fast answer", () => {
 		).toBe(true);
 	});
 
+	it("keeps a fast answer's results and citations when the model omits the sources mapping", async () => {
+		// Live models routinely leave the optional `sources` field out; the
+		// final response must still carry every result the answer cites.
+		const model = fauxModel(
+			fauxAssistantMessage(
+				[
+					fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
+						answer: "The Q3 budget was approved by Mina Park [1].",
+						results: [
+							{
+								number: 1,
+								title: "Q3 budget approval",
+								summary: "Mina Park approved the Q3 budget.",
+								evidence: [{ excerpt: "The Q3 2026 budget was approved by Mina Park." }],
+								confidence: 0.8,
+							},
+						],
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+		);
+		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1, 0.1) } });
+		injectMinSync(agent, recordingMinSync().method);
+
+		const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+		expect(response.answer).toBe("The Q3 budget was approved by Mina Park [1].");
+		expect(response.results).toHaveLength(1);
+		expect(response.results[0]).toMatchObject({ number: 1, title: "Q3 budget approval" });
+		expect(response.results[0]?.evidence[0]?.excerpt).toBe("The Q3 2026 budget was approved by Mina Park.");
+		// No source was reported, so none is invented.
+		expect(response.results[0]?.source).toBeUndefined();
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "citation-without-result")).toBe(false);
+	});
+
 	it("continues to verification when Jev says the fast answer needs follow-up", async () => {
 		const prompts: string[] = [];
 		const source = join(docs, "budget.txt");

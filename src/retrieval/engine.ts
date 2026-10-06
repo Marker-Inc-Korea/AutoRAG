@@ -19,6 +19,7 @@ import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
 import { DEFAULT_RERANK_TOP_N, type Reranker } from "./rerank.ts";
+import { derivedAuthorizedDatasourceIds, type RetrievalSelection, resolveSelectedMethods } from "./selection.ts";
 import { MINSYNC_SURFACE } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
@@ -59,6 +60,14 @@ export interface RetrievalEngineOptions {
 	 * preservation — matching the existing {@link AutoRAGAgent} behavior.
 	 */
 	readonly isMinSyncBinaryMissing?: () => boolean;
+	/**
+	 * Authorized datasource ids from the skill catalog, including datasources
+	 * that expose no retrieval methods. {@link retrieveSelected} uses this to
+	 * tell an unknown datasource id from an unauthorized one. When omitted, the
+	 * engine derives ids from its authorized registered methods; method-less
+	 * datasources are then treated as unknown.
+	 */
+	readonly authorizedDatasourceIds?: () => readonly string[];
 	/**
 	 * Optional post-merge reranker. When set, merged results are reordered by
 	 * the reranker after dedup and score normalization. A reranker failure is
@@ -103,6 +112,7 @@ export class RetrievalEngine {
 	private readonly defaultTopK: number;
 	private readonly defaultDedup: boolean;
 	private readonly isMinSyncBinaryMissing: (() => boolean) | undefined;
+	private readonly authorizedDatasourceIdsProvider: (() => readonly string[]) | undefined;
 	private readonly reranker: Reranker | undefined;
 	private readonly rerankTopN: number;
 
@@ -115,6 +125,7 @@ export class RetrievalEngine {
 		this.defaultTopK = options.defaultTopK ?? DEFAULT_MERGED_EVIDENCE_CEILING;
 		this.defaultDedup = options.defaultDedup ?? true;
 		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
+		this.authorizedDatasourceIdsProvider = options.authorizedDatasourceIds;
 		this.reranker = options.reranker;
 		this.rerankTopN = options.rerankTopN ?? DEFAULT_RERANK_TOP_N;
 	}
@@ -246,6 +257,44 @@ export class RetrievalEngine {
 		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
 		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
 		return { byMethod: filtered, diagnostics: skipped.diagnostics, unsearched: skipped.unsearched };
+	}
+
+	/**
+	 * Run a selected subset of the registered methods — parallel retrieve,
+	 * datasource filter, merge — and return merged results with diagnostics.
+	 *
+	 * Unlike {@link retrieve}, selection happens BEFORE any backend is invoked:
+	 * the eligible method list is reduced first, so an unselected or
+	 * unauthorized datasource backend is never spawned. Unknown or unauthorized
+	 * method/datasource selections throw {@link RetrievalSelectionError}. The
+	 * trusted access context still narrows results/tags/scopes after retrieval.
+	 */
+	async retrieveSelected(
+		query: string,
+		selection: RetrievalSelection = {},
+		options: RetrievalOptions = {},
+	): Promise<{
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
+		const topK = options.topK ?? this.defaultTopK;
+		const ctx = this.accessContextFor(options);
+		const authorizedDatasourceIds =
+			this.authorizedDatasourceIdsProvider?.() ?? derivedAuthorizedDatasourceIds(this.registry.list(), ctx);
+		const methods = resolveSelectedMethods(this.registry.list(), ctx, selection, authorizedDatasourceIds);
+		const {
+			results: byMethod,
+			diagnostics,
+			unsearched,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
+		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
+		return {
+			results: this.merger.merge(filtered, { topK, dedup: this.defaultDedup }),
+			diagnostics: skipped.diagnostics,
+			unsearched: skipped.unsearched,
+		};
 	}
 
 	/**

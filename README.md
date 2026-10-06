@@ -91,19 +91,20 @@ If you are an AI coding agent or LLM (Claude Code, Cursor, Windsurf, Codex, Senp
 
 | Skill | Directory | When to Use |
 |---|---|---|
-| **`autorag`** | [`skills/autorag/`](skills/autorag/SKILL.md) | Querying, searching, comparing, and summarizing documents with an already configured AutoRAG librarian. |
-| **`autorag-setup`** | [`skills/autorag-setup/`](skills/autorag-setup/SKILL.md) | Installing AutoRAG, configuring models, adding document roots/datasources, running health checks, and repairing indexes. |
-| **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Initializing and maintaining the model-free AutoRAG Lite lifecycle without an LLM. |
-| **`autorag-lite-search`** | [`skills/autorag-lite-search/`](skills/autorag-lite-search/SKILL.md) | Performing model-free retrieval, reporting evidence, and recording feedback without an LLM. |
+| **`autorag`** | [`skills/autorag/`](skills/autorag/SKILL.md) | Model-backed querying, searching, comparing, and summarizing with an already configured AutoRAG librarian. |
+| **`autorag-setup`** | [`skills/autorag-setup/`](skills/autorag-setup/SKILL.md) | Installing AutoRAG, configuring the model-backed librarian, adding roots/datasources, running health checks, and registering Lite MCP when needed. |
+| **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Installing/registering `autorag-mcp`, initializing model-free config, maintaining indexes, and verifying MCP search. |
 
 ### Install the skills into your coding agent
 
-Skills are not auto-discovered — copy the folders you want into the agent's skill directory. For **Claude Code** that directory is `.claude/skills/` in the project (or `~/.claude/skills/` to enable them everywhere). Once `autorag-lite-setup` and `autorag-lite-search` are in place, Claude Code drives `autorag lite retrieve` as a search tool:
+Skills are not auto-discovered — copy only the setup skill when an agent needs
+to bootstrap AutoRAG. **Routine AutoRAG Lite retrieval is provided by MCP
+tools, not by a `autorag-lite-search` skill or shell command.**
 
 ```bash
 # From a clone of this repository
 mkdir -p .claude/skills
-cp -R skills/autorag-lite-setup skills/autorag-lite-search .claude/skills/
+cp -R skills/autorag-lite-setup .claude/skills/
 ```
 
 ```bash
@@ -111,10 +112,19 @@ cp -R skills/autorag-lite-setup skills/autorag-lite-search .claude/skills/
 AUTORAG_SKILLS="$(npm root -g)/@autorag/librarian/skills"
 # Bun global installs live at ~/.bun/install/global/node_modules/@autorag/librarian/skills
 mkdir -p .claude/skills
-cp -R "$AUTORAG_SKILLS/autorag-lite-setup" "$AUTORAG_SKILLS/autorag-lite-search" .claude/skills/
+cp -R "$AUTORAG_SKILLS/autorag-lite-setup" .claude/skills/
 ```
 
-Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent should also drive the model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other agents read their own directories (for example `~/.agents/skills/`) — copy the same folders there and reload the agent session so it picks them up.
+Run the setup skill once to register the stdio server with the host. Reload the
+agent, then discover the actual tool names and schemas with MCP `tools/list`.
+The normal Lite path is `autorag.status` → `autorag.refresh` when needed →
+`autorag.search`; use `autorag.report`, `autorag.evidence`, and
+`autorag.feedback` for the optional curation lifecycle. Copy `skills/autorag`
+and `skills/autorag-setup` only when the agent should also drive the
+model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
+agents read their own skill directories; copy the same setup folder there and
+reload the agent session so it picks up the MCP registration instructions.
+Do not copy or retain the removed `autorag-lite-search` skill.
 
 ### Quick Agent Workflow
 
@@ -138,6 +148,29 @@ Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent sho
 
 ---
 
+## AutoRAG Lite MCP Server
+
+Register the package's stdio server with the host; the host owns the process
+lifecycle and sends MCP tool calls:
+
+```bash
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
+```
+
+For Claude Code and Codex registration commands, use
+[`skills/autorag-lite-setup/SKILL.md`](skills/autorag-lite-setup/SKILL.md).
+The MCP contract source of truth is [`src/mcp/server.ts`](src/mcp/server.ts)
+(tool registration, schemas, handlers) plus [`src/mcp/index.ts`](src/mcp/index.ts)
+(stdio entrypoint). Discover tools and schemas with MCP `tools/list`; do not
+hard-code a tool count.
+
+Core Lite tools include `autorag.status`, `autorag.search`,
+`autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
+`autorag.refresh`, `autorag.report`, `autorag.evidence`, and
+`autorag.feedback`. Configured integrated datasources expose additional scoped
+search tools. Read-only MCP mode omits mutating tools such as refresh, report,
+and feedback.
+
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
 Need blazing fast local search without configuring an LLM or paying for API tokens? Use **AutoRAG Lite**.
@@ -145,8 +178,8 @@ Need blazing fast local search without configuring an LLM or paying for API toke
 AutoRAG Lite provides the exact same high-performance indexing, BM25 ranking, and local MinSync vector/hybrid retrieval engine as the full librarian, but **runs 100% model-free**:
 
 - **Zero LLM Token Usage:** Run purely local BM25 and vector search offline.
-- **Agent Integration Ready:** Use `autorag lite retrieve` inside your own agentic workflows to supply raw context chunks to an external model.
-- **Fast Local CLI:** Instant responses directly from your terminal.
+- **Agent Integration Ready:** Use the AutoRAG Lite MCP server to supply raw context chunks to an external model; the CLI remains a bootstrap and maintenance interface.
+- **Fast Local CLI:** The CLI remains available for terminal-only indexing and repair.
 
 ```bash
 # Initialize a model-free workspace
@@ -154,13 +187,11 @@ autorag lite init --search-paths ./documents
 
 # Index local files and datasources
 autorag lite refresh
-
-# Retrieve ranked document chunks (returns JSON candidates with scores)
-autorag lite retrieve "compliance policy exception process" --top-k 5 --json
-
-# Check index status and freshness
-autorag lite status
 ```
+
+Normal Lite retrieval runs through the MCP tools (`autorag.status`,
+`autorag.search`); the CLI remains the bootstrap and maintenance interface for
+indexing and repair.
 
 ---
 
@@ -300,9 +331,9 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 | `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
 | `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
-| `autorag lite ...` | Model-free indexing, retrieval, report generation, and status |
-| `autorag feedback <session>` | Record useful / not-useful feedback by item number |
-| `autorag evidence <session>` | Inspect exact underlying document chunks and sources for a past query |
+| `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
+| `autorag feedback <session>` | Record numbered feedback; MCP clients normally use `autorag.feedback`, and the CLI stays available for terminal maintenance |
+| `autorag evidence <session>` | Inspect persisted evidence behind numbered results; MCP clients normally use `autorag.evidence`, and the CLI stays available for terminal maintenance |
 | `autorag serve` | Start the P2P query server over SimpleX (opt-in) |
 | `autorag p2p ...` | Manage peer trust, query approvals, and sharing policies |
 
@@ -361,12 +392,18 @@ autorag health --json          # model resolution + one live completion probe
 autorag gateway status --format json   # on-demand embedding runtime
 ```
 
-Indexing is not the same thing as searchability, so always confirm retrieval itself — this needs no model:
+Indexing is not the same thing as searchability, so always confirm retrieval
+itself through the connected Lite MCP server:
 
-```bash
-autorag lite retrieve 'a word that certainly appears' --top-k 3 --json
-autorag lite retrieve 'recent topic' --tags discord --top-k 3 --json
+```text
+autorag.status {}
+autorag.refresh {}
+autorag.search {"query":"a word that certainly appears","topK":3}
+autorag.search {"query":"recent topic","tags":["discord"],"topK":3}
 ```
+
+The CLI equivalents remain available for terminal repair, but do not use them
+as the agent's normal Lite search path.
 
 Common failures and their fix:
 

@@ -23,6 +23,14 @@ export {
 	virtualPathScopeToRegExp,
 } from "./scope.ts";
 export {
+	type DatasourceCatalogEntry,
+	derivedAuthorizedDatasourceIds,
+	type RetrievalSelection,
+	RetrievalSelectionError,
+	type RetrievalSelectionErrorCode,
+	resolveSelectedMethods,
+} from "./selection.ts";
+export {
 	describeRetrievalError,
 	groupUnsearchedSurfaces,
 	MINSYNC_SURFACE,

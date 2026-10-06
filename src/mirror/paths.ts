@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const PARSED_MIRROR_SUBDIR = join(".autorag", "parsed");
@@ -26,4 +27,28 @@ export function refreshReadinessPath(root: string): string {
 
 export function refreshProgressPath(root: string): string {
 	return join(root, ".autorag", REFRESH_PROGRESS_FILE);
+}
+/**
+ * Whether a parsed-mirror refresh has completed at least once for the given
+ * workspace. Reads the persisted readiness marker so a separate process (CLI,
+ * MCP server) reaches the same verdict as the process that ran the refresh.
+ */
+export function isParsedRefreshComplete(workspacePath: string): boolean {
+	const markerPath = refreshReadinessPath(workspacePath);
+	if (!existsSync(markerPath)) return false;
+	try {
+		const marker: unknown = JSON.parse(readFileSync(markerPath, "utf8"));
+		return (
+			typeof marker === "object" &&
+			marker !== null &&
+			"version" in marker &&
+			marker.version === 1 &&
+			"completed" in marker &&
+			marker.completed === true &&
+			"parsed" in marker &&
+			marker.parsed === true
+		);
+	} catch {
+		return false;
+	}
 }

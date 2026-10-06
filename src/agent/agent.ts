@@ -79,10 +79,11 @@ import {
 	type RetrievalScopeBinding,
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
+import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -808,7 +809,13 @@ export class AutoRAGAgent {
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
+		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
+			const datasourceId = skill.describe().datasourceId;
+			if (datasourceId !== undefined) {
+				if (registeredDatasourceIds.has(datasourceId)) continue;
+				registeredDatasourceIds.add(datasourceId);
+			}
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
 		if (options.jikji !== false) {
@@ -831,6 +838,7 @@ export class AutoRAGAgent {
 				...(options.fsearch ?? {}),
 				root: this.workspaceProjectRoot,
 				folders: this.searchPaths,
+				excludeFolders: this.excludePaths,
 			});
 			if (fsearchClient.isSupported()) this.fsearchClient = fsearchClient;
 		}
@@ -1764,6 +1772,58 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Authorized configured datasource descriptors for catalog/listing surfaces.
+	 *
+	 * Built from the same trusted, server-bound access context as
+	 * {@link buildAuthorizedDatasourceSkills}: only tag-authorized datasources
+	 * are listed — including ones that expose no retrieval methods — and each
+	 * entry carries only identity, capability tags, and authorized source scope
+	 * strings (never credentials, config paths, or raw instance metadata).
+	 * Duplicate datasource ids collapse to the first registration.
+	 */
+	listDatasources(): DatasourceCatalogEntry[] {
+		const ctx = this.datasourceAccessContext();
+		const seen = new Set<string>();
+		const entries: DatasourceCatalogEntry[] = [];
+		for (const skill of this.datasourceSkills) {
+			const descriptor = skill.describe();
+			if (descriptor.datasourceId === undefined) continue;
+			if (!ctx.isAccessible(descriptor)) continue;
+			if (seen.has(descriptor.datasourceId)) continue;
+			seen.add(descriptor.datasourceId);
+			entries.push({
+				datasourceId: descriptor.datasourceId,
+				name: descriptor.name,
+				type: descriptor.type,
+				description: descriptor.description,
+				tags: [...descriptor.tags],
+				capabilities: [...descriptor.capabilities],
+				status: descriptor.status,
+				sourceScopes: this.authorizedSourceScopes(skill, ctx),
+			});
+		}
+		return entries;
+	}
+
+	/**
+	 * Opaque source scope strings for one datasource that the trusted context
+	 * authorizes. Datasources without the `scoped` capability expose their
+	 * sources unfiltered (they are gated only at the tag level).
+	 */
+	private authorizedSourceScopes(skill: DatasourceSkill, ctx: DatasourceAccessContext): string[] {
+		const scoped = skill.describe().capabilities.includes("scoped");
+		const predicate = scoped ? ctx.allowedSourcesPredicate() : undefined;
+		const scopes = new Set<string>();
+		for (const source of skill.describeSources()) {
+			const scope = source.source;
+			if (scope.includes("#")) continue;
+			if (predicate !== undefined && !predicate(scope)) continue;
+			scopes.add(scope);
+		}
+		return [...scopes];
+	}
+
+	/**
 	 * Resolve an authorized datasource agent skill by model-visible name for the
 	 * `load_datasource_skill` tool. Returns `undefined` for unknown or
 	 * unauthorized names — model/tool input can never widen authorization.
@@ -1989,13 +2049,16 @@ export class AutoRAGAgent {
 			return searchQueries.length > 1 ? `${formatSearchQueries(searchQueries)}\n\n${baseline}` : baseline;
 		}
 
+		// One flat numbering across every section (issue #1788): candidate [n]
+		// labels never restart, so no number means two different candidates.
 		const sections: string[] = [];
 		if (searchQueries.length > 1) sections.push(formatSearchQueries(searchQueries));
+		let candidateNumber = 0;
 		if (jikjiFound) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikjiPaths
 					.slice(0, this.limits.prefetch.jikjiPathLimit)
-					.map((path, index) => `[${index + 1}] ${path}`)
+					.map((path) => `[${++candidateNumber}] ${path}`)
 					.join("\n")}`,
 			);
 		}
@@ -2003,7 +2066,7 @@ export class AutoRAGAgent {
 			sections.push(
 				`MinSync semantic initial candidates:\n${minSyncResults
 					.slice(0, this.limits.prefetch.sectionLimit)
-					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		}
@@ -2131,6 +2194,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
@@ -2184,6 +2248,7 @@ export class AutoRAGAgent {
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on a first-answer unit must re-emit that evidence as a result of this call and cite its new number.\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
@@ -2191,6 +2256,7 @@ export class AutoRAGAgent {
 				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_CITATION_RULE}\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
@@ -2224,6 +2290,7 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
@@ -3079,6 +3146,7 @@ export class AutoRAGAgent {
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
+				authorizedDatasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
 			});
 			for (const method of this.methodRegistry.list()) {
 				this.retrievalEngine.register(method);
@@ -3224,23 +3292,24 @@ function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
 
 /**
  * The fast answer as a final emit_autorag_results payload, used when Jev ends
- * the run after the fast phase. Results keep their numbers, summaries, and
- * evidence; each mapping entry carries the fast answer's real source so
- * feedback and the result registry still resolve.
+ * the run after the fast phase. Every result the answer cites is kept: the
+ * fast-answer `sources` mapping is optional and models routinely omit it, so
+ * dropping source-less results would strip the answer's citations. A result
+ * with no reported source keeps an empty mapping source (the response then
+ * carries no `source` for it) rather than an invented path.
  */
 function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResultsDetails {
 	const sourceByNumber = new Map(fastAnswer.sources.map((entry) => [entry.number, entry.source]));
-	const results = fastAnswer.results.filter((result) => sourceByNumber.has(result.number));
 	return {
 		answer: fastAnswer.answer,
-		results: results.map((result) => ({
+		results: fastAnswer.results.map((result) => ({
 			number: result.number,
 			title: result.title,
 			summary: result.summary,
 			evidence: result.evidence,
 			confidence: result.confidence ?? 0.5,
 		})),
-		mapping: results.map((result) => ({
+		mapping: fastAnswer.results.map((result) => ({
 			number: result.number,
 			source: sourceByNumber.get(result.number) ?? "",
 			method: EMIT_FAST_ANSWER_TOOL_NAME,
@@ -3267,7 +3336,7 @@ function formatFirstAnswerContext(fastAnswer: AutoRAGFastAnswerDetails | undefin
 	const units =
 		fastAnswer.results.length === 0
 			? ""
-			: `\n\nNumbered units of that first answer:\n${fastAnswer.results
+			: `\n\nNumbered units of that first answer (its own numbering — NOT citation numbers for your final answer; cite only the results you emit):\n${fastAnswer.results
 					.map((result) => `[${result.number}] ${result.title} — ${result.summary}`)
 					.join("\n")}`;
 	const sources =
@@ -3362,7 +3431,10 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 }
 
 function sanitizeDiagnosticMessage(raw: string): string {
-	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	// `\s+` must not overlap the leading `\n` or `.split` walks a long newline
+	// run quadratically (CodeQL js/polynomial-redos): `[^\S\n]` is whitespace
+	// that excludes the newline, so stack-frame indentation still matches.
+	let out = raw.split(/\n[^\S\n]+at\s/)[0] ?? raw;
 	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
 	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
 	return out.replace(/\s{2,}/g, " ").trim();
