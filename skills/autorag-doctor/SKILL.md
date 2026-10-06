@@ -87,36 +87,41 @@ Rules:
 
 ## 3. Prove searchability
 
-Indexing without retrieval is a failed run. Probe retrieval per datasource with
-the model-free path, then once end to end:
+Indexing without retrieval is a failed run. Probe retrieval per datasource
+through the model-free MCP tools, then once end to end:
+
+```text
+autorag.status {}
+autorag.search {"query":"a word that certainly appears","topK":3}
+autorag.search {"query":"recent topic","tags":["discord"],"topK":3}
+autorag.search {"query":"recent mail subject","scope":"/mailcrawl/**","topK":3}
+```
 
 ```bash
-autorag lite retrieve "a word that certainly appears" --top-k 3 --json --debug
-autorag lite retrieve "recent topic" --tags discord --top-k 3 --json --debug
-autorag lite retrieve "recent mail subject" --scope "/mailcrawl/**" --top-k 3 --json --debug
 autorag search "summarize the collection" --top-k 3 --json --debug
 ```
 
-- **Always pass `--debug` when diagnosing, and read the diagnostics.** A run
+- **Always read the `diagnostics` returned by MCP `autorag.search`.** A run
   that silently dropped a whole retrieval method still looks successful, just
   with fewer results; only the diagnostics name it (`minsync-unavailable`,
-  `retrieval-method-failed`). `autorag search --json` hides `diagnostics`,
-  `sessionId`, and per-result evidence unless `--debug` is set. `lite retrieve
-  --json` always carries the `diagnostics` array, but its human-readable output
-  hides it without `--debug`.
+  `retrieval-method-failed`). The model-backed CLI `autorag search --json`
+  hides `diagnostics`, `sessionId`, and per-result evidence unless `--debug` is
+  set, so pass `--debug` when diagnosing that path.
 - A method missing from the returned `method` values means that method
   contributed nothing. During a full MinSync re-sync this is expected: the
   store is being rebuilt, `minsync status` reports `NotSynced`, and local-file
   hits stay absent until it finishes. Confirm with `minsync status` before
   treating it as a failure, and never kill a running sync to "fix" it.
-- `lite retrieve` needs no model, so it isolates retrieval from model failures.
-- Use `--tags` / `--scope` to force one datasource; they can only narrow
-  trusted access, never grant it. A datasource absent from `datasourceAccess`
-  returns nothing no matter how healthy its store is — fix the config, not the
-  store.
-- `autorag evidence SESSION --json` (session id comes from `--json --debug`)
-  shows the exact chunk behind a numbered result; use it to confirm a hit is
-  real and its source is readable.
+- MCP `autorag.search` needs no model, so it isolates retrieval from model
+  failures.
+- Use the MCP `tags` / `scope` arguments to force one datasource; they can only
+  narrow trusted access, never grant it. A datasource absent from
+  `datasourceAccess` returns nothing no matter how healthy its store is — fix
+  the config, not the store.
+- `autorag.evidence {"sessionId":"...","resultNumber":N}` shows the exact chunk
+  behind a numbered result; use it to confirm a hit is real and its source is
+  readable. The CLI `autorag evidence SESSION --json` remains for terminal
+  repair.
 - Local-file hits must map to an absolute, existing path. Datasource hits keep
   source-native identities such as `/kakao/personal/chunks/42`; those are not
   filesystem paths and must never be passed to `cat`.

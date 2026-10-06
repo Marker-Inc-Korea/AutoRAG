@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { RefreshMethod } from "../agent/agent.ts";
+import { evidenceFor } from "../cli/commands/evidence.ts";
+import { validateReport } from "../cli/commands/report.ts";
 import type { AutoRAGLite } from "../core.ts";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import { type DupeyScanResult, scanWithDupey } from "../dupey/index.ts";
@@ -60,6 +62,28 @@ const refreshInput = z
 	.strict();
 
 const datasourceGetInput = z.strictObject({ datasourceId: z.string().trim().min(1) });
+const reportInput = z.strictObject({
+	query: z.string().trim().min(1),
+	// Detailed report validation stays in validateReport so malformed reports
+	// return a stable tool error rather than protocol-level invalid params.
+	report: z.unknown(),
+});
+const evidenceInput = z.strictObject({
+	sessionId: z.string().trim().min(1),
+	resultNumber: z.number().int().positive().optional(),
+});
+const feedbackInput = z
+	.strictObject({
+		sessionId: z.string().trim().min(1),
+		useful: z.array(z.number().int().positive()).optional(),
+		notUseful: z.array(z.number().int().positive()).optional(),
+	})
+	.refine((value) => (value.useful?.length ?? 0) > 0 || (value.notUseful?.length ?? 0) > 0, {
+		message: "At least one useful or notUseful result number is required.",
+	})
+	.refine((value) => !(value.useful ?? []).some((number) => value.notUseful?.includes(number)), {
+		message: "A result number cannot be both useful and notUseful.",
+	});
 
 interface ExactDuplicateGroup {
 	readonly hash: string;
@@ -501,6 +525,95 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				return datasource === undefined
 					? toolError("datasource-not-found", `No authorized datasource named ${datasourceId}.`, { datasourceId })
 					: jsonResult({ ok: true, datasource });
+			},
+		);
+	}
+
+	if (!readOnly && isToolEnabled("autorag.report", options)) {
+		server.registerTool(
+			"autorag.report",
+			{
+				title: "Persist AutoRAG Curated Report",
+				description:
+					"Persist an externally curated Lite search report with opaque source mappings for later evidence and feedback.",
+				inputSchema: reportInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+			},
+			async ({ query, report }) => {
+				let details: ReturnType<typeof validateReport>;
+				try {
+					details = validateReport(report);
+				} catch (error) {
+					return toolError("invalid-report", error instanceof Error ? error.message : String(error));
+				}
+				try {
+					const response = lite.recordReport(query, details);
+					return jsonResult({
+						ok: true,
+						sessionId: response.sessionId,
+						query: response.query,
+						answer: response.answer,
+						resultCount: response.results.length,
+						results: response.results,
+					});
+				} catch (error) {
+					return toolError("report-failed", error instanceof Error ? error.message : String(error));
+				}
+			},
+		);
+	}
+
+	if (isToolEnabled("autorag.evidence", options)) {
+		server.registerTool(
+			"autorag.evidence",
+			{
+				title: "Inspect AutoRAG Evidence",
+				description: "Return persisted opaque sources and evidence chunks for a curated Lite report session.",
+				inputSchema: evidenceInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async ({ sessionId, resultNumber }) => {
+				const evidence = evidenceFor(lite.getMemorySchema(), sessionId, resultNumber);
+				return evidence.results.length === 0
+					? toolError("evidence-not-found", `No evidence found for session ${sessionId}.`, { sessionId })
+					: jsonResult({ ok: true, ...evidence });
+			},
+		);
+	}
+
+	if (!readOnly && isToolEnabled("autorag.feedback", options)) {
+		server.registerTool(
+			"autorag.feedback",
+			{
+				title: "Record AutoRAG Feedback",
+				description:
+					"Record useful or not-useful feedback for numbered results in a persisted Lite report session.",
+				inputSchema: feedbackInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+			},
+			async ({ sessionId, useful, notUseful }) => {
+				try {
+					const knownNumbers = new Set(
+						lite
+							.getMemorySchema()
+							.curatedResults.filter((result) => result.sessionId === sessionId)
+							.map((result) => result.number),
+					);
+					if ([...(useful ?? []), ...(notUseful ?? [])].some((number) => !knownNumbers.has(number))) {
+						return toolError("feedback-not-applied", `Unknown report result for session ${sessionId}.`, {
+							sessionId,
+						});
+					}
+					const applied = lite.recordFeedbackByNumbers(sessionId, useful ?? [], notUseful ?? []);
+					return jsonResult({ ok: true, sessionId, applied });
+				} catch (error) {
+					return toolError("feedback-failed", error instanceof Error ? error.message : String(error), {
+						retryable: true,
+					});
+				}
 			},
 		);
 	}
