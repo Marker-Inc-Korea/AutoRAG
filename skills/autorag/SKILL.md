@@ -105,6 +105,19 @@ AutoRAG. The search loop can use Jikji, MinSync lexical/vector/hybrid retrieval,
 direct source reading as appropriate. If search fails because of model,
 provider, auth, or timeout problems, diagnose with `autorag health --json`.
 
+Every search is two-phase: a fast answer, then verification. With Jev on (the
+default, OpenRouter), Jev first routes the question:
+
+- General knowledge or small talk is answered directly.
+- Private-data questions use local search; public current facts use web search.
+- A multi-part question is split into up to five parallel search queries.
+
+After the fast answer, Jev ends the run if the answer is complete and
+evidence-backed. So `results` may come straight from the fast answer, with no
+verification phase. `--debug` diagnostics show the decision: `query-routed`
+(branch and queries), `follow-up-skipped` (fast answer final), or
+`query-route-fallback` (Jev unavailable, single local search).
+
 Record feedback so retrieval memory can learn. Numbers refer to the returned
 knowledge units. Supply at least one feedback list:
 

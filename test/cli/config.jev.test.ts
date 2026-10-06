@@ -25,8 +25,8 @@ function baseConfig(jev?: CliConfig["jev"]): CliConfig {
 }
 
 describe("jev CLI config", () => {
-	it("leaves the decision tool disabled when unconfigured", () => {
-		expect(buildAgentOptions(baseConfig()).jev).toBeUndefined();
+	it("enables Jev on OpenRouter by default when unconfigured", () => {
+		expect(buildAgentOptions(baseConfig()).jev).toEqual({ backend: "openrouter" });
 	});
 
 	it("passes backend, model, and confidence threshold through", () => {
@@ -41,8 +41,8 @@ describe("jev CLI config", () => {
 		expect(buildAgentOptions(baseConfig({ enabled: false })).jev).toBe(false);
 	});
 
-	it("enables the tool with an empty section", () => {
-		expect(buildAgentOptions(baseConfig({})).jev).toEqual({});
+	it("keeps the OpenRouter default for an empty section", () => {
+		expect(buildAgentOptions(baseConfig({})).jev).toEqual({ backend: "openrouter" });
 	});
 
 	it("rejects unknown backends and fields", () => {

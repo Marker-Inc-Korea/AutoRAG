@@ -347,7 +347,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and EmbeddingGemma verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model cards: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md), [`embeddinggemma-300m`](docs/model-cards/embeddinggemma-300m.md).
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
-- **[Jev Decisions](docs/jev-decisions.md):** Optional `jev` tool for calibrated, code-thresholded judgments (classification, triage, ranking) through TypeSafe, OpenRouter, or Vercel AI Gateway via `jev-use`.
+- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via OpenRouter: it routes each question to local search, web search, or a direct answer, splits multi-part questions into up to five parallel searches (`openrouter/qwen/qwen3.7-flash`), and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[P2P SimpleX Sharing & Path Standard](docs/p2p-path-standard.md):** Decentralized peer query sharing with SimpleX, PII redaction, and approval queues.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
@@ -417,6 +417,7 @@ Common failures and their fix:
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync or Jikji missing | `minsync-unavailable`, `jikji-unavailable` | check the Rust toolchain, re-run refresh |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
+| Every search does a full local search and verification, even for small talk | `query-route-fallback` | set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 
 Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, `qmd status`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
 

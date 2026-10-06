@@ -47,6 +47,11 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-datasource-skill"
 	| "missing-final-emit"
 	| "model-request-failed"
+	| "query-routed"
+	| "query-route-fallback"
+	| "query-decomposition-failed"
+	| "follow-up-skipped"
+	| "follow-up-check-fallback"
 	| "citation-without-result";
 
 export interface SearchDocumentDiagnostic {
@@ -330,7 +335,8 @@ export function recordStructuredResultsSession(
 		),
 		confidence: confidenceFrom(result.confidence),
 		feedbackId: `${sessionId}:${result.number}`,
-		source: registry.get(result.number)?.source,
+		// An empty mapping source means "not reported" (fast answers may omit it).
+		source: registry.get(result.number)?.source || undefined,
 	}));
 	const citations = reconcileCitations(details.answer, results);
 	const answer = citations.answer;

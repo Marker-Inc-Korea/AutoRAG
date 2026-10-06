@@ -59,7 +59,11 @@ export OPENROUTER_API_KEY=sk-or-...
   to `topN` (default 25) and injected as a single relevance-ordered section, so
   the immediate answer is grounded in relevance order rather than raw method
   order. If the reranker is unavailable or fails, the unranked Jikji/MinSync
-  sections are used and the fast answer is unaffected.
+  sections are used and the fast answer is unaffected. When the Jev query
+  pipeline decomposes a local question (see [Jev Decisions](jev-decisions.md)),
+  every sub-query's Jikji and MinSync hits are interleaved and deduplicated into
+  one pool with the same per-source caps, and that pool is reranked against the
+  **original** question.
 - Single-datasource searches (`search_datasource_*`) are **not** model-reranked:
   they already target one connection, so their merged order is kept as-is.
 - Each reranked result keeps its original `source` and `id`; its `score`

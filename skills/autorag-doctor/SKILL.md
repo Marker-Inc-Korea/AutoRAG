@@ -222,6 +222,10 @@ timer, or Task Scheduler).
 | `unknown-datasource-skill` | Config name is not a known template | Fix the name or add `"type"` |
 | `retrieval-method-failed` | One method errored during the query | Read `--debug` diagnostics |
 | `auth-error` | Credentials missing or rejected | Report the env var name |
+| `query-route-fallback` | Jev routing unavailable (often `OPENROUTER_API_KEY` unset); searched local with the original question | `test -n "$OPENROUTER_API_KEY"`; report the env var name, never its value |
+| `query-decomposition-failed` | Decomposition model call failed; searched the original question | Check `queryDecomposition.model` resolves (`autorag models list --provider openrouter`) |
+| `follow-up-check-fallback` | Jev post-fast-answer check unavailable; the run verified | Same as `query-route-fallback` |
+| `query-routed` / `follow-up-skipped` | Info: Jev's branch and queries / fast answer judged final | None; working as intended |
 
 ## Report
 

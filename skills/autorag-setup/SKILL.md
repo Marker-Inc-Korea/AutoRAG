@@ -204,6 +204,45 @@ Only store the environment-variable name, never its value. Dimension and batch
 size must be positive integers, and the dimension must match the embedder
 (default Qwen3 is 1024; legacy EmbeddingGemma is 768; text-embedding-3-small is 1536).
 
+### Jev routing and question decomposition (on by default)
+
+Leave both enabled. They are the recommended setup: they make simple questions
+fast and multi-part questions thorough.
+
+- **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
+  `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
+  local search, web search, or a direct answer (general knowledge or small
+  talk skips retrieval entirely), and decides whether to decompose it. After
+  the fast answer it decides whether verification is needed, so a complete,
+  evidence-backed fast answer ends the run.
+- **Question decomposition** (`queryDecomposition`, default model
+  `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
+  five search queries that run in parallel.
+
+Both use the user's `OPENROUTER_API_KEY`; confirm it is set (`test -n
+"$OPENROUTER_API_KEY"`, never print it) and tell the user Jev routing is on.
+Without the key, routing falls back to a single local search and the run
+always verifies, so searches still work. A `query-route-fallback` diagnostic
+(`autorag search --debug`) shows that state.
+
+```json
+{
+  "jev": { "backend": "openrouter" },
+  "queryDecomposition": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
+}
+```
+
+`autorag init` writes these defaults into new configs. To change them:
+
+- Jev backend: `"backend": "typesafe"` (`TYPESAFE_API_KEY`) or `"vercel"`
+  (`AI_GATEWAY_API_KEY`).
+- Decomposition model: any catalog `provider`/`id`, with the same fields as
+  the top-level `model`.
+- `"queryDecomposition": false` decomposes with the search model itself.
+- `"jev": false` turns routing off entirely. Do this only when the user
+  explicitly opts out, for example because questions must never leave the
+  machine (Jev and decomposition send the question text to OpenRouter).
+
 ### Retrieval and ingest caps
 
 `limits` bounds retrieval, baseline prefetch, and the candidate lists handed to

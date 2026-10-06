@@ -180,7 +180,6 @@ async function gateB(root: string, registrations: FauxProviderRegistration[]): P
 		remoteSession: true,
 		minSync: false,
 		jikji: false,
-		thinking: false,
 	});
 	const { client, server } = transportPair();
 	const handle = await startSimplexPeerServer({
@@ -258,7 +257,6 @@ async function gateC(root: string, registrations: FauxProviderRegistration[]): P
 		remoteSession: true,
 		minSync: false,
 		jikji: false,
-		thinking: false,
 	});
 	const policyStore = new PolicyStore({
 		workspacePath: root,

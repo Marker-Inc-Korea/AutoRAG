@@ -1,4 +1,5 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
+import type { DecompositionModel } from "../../agent/query-decomposition.ts";
 import { stopRuntime as stopEmbeddingRuntime } from "../../embedding-runtime/index.ts";
 import {
 	buildAgentOptions,
@@ -8,6 +9,7 @@ import {
 	type ResolvedAgentModel,
 	resolveAgentModel,
 	resolveConfig,
+	resolveQueryDecompositionModel,
 } from "../config.ts";
 import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -133,13 +135,11 @@ function parseThinkingLevel(value: string | boolean | undefined): AutoRAGThinkin
 }
 
 /**
- * Thinking flags for the two-phase progressive-answer flow. `--fast-thinking`
- * and `--final-thinking` set per-phase levels (default: off/high);
- * `--single-phase` disables the two-phase flow entirely. An unrecognized
- * level rejects with exit 2.
+ * Per-phase thinking flags for the two-phase (fast → verification) search.
+ * `--fast-thinking` and `--final-thinking` set the levels (default: off/high).
+ * An unrecognized level rejects with exit 2.
  */
 function buildThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
-	if (flags["single-phase"] === true) return false;
 	const fastProvided = flags["fast-thinking"] !== undefined;
 	const finalProvided = flags["final-thinking"] !== undefined;
 	const fast = parseThinkingLevel(flags["fast-thinking"]);
@@ -218,8 +218,10 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		});
 	} else {
 		let resolvedModel: ResolvedAgentModel;
+		let decompositionModel: DecompositionModel | undefined;
 		try {
 			resolvedModel = await (deps.modelResolver ?? resolveAgentModel)(config);
+			decompositionModel = await resolveQueryDecompositionModel(config);
 		} catch (error) {
 			const hint = classifySearchHealthHint(error);
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
@@ -230,6 +232,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 			model: resolvedModel.model,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
+			...(decompositionModel !== undefined ? { queryDecomposition: decompositionModel } : {}),
 			...(thinking !== undefined ? { thinking } : {}),
 		};
 		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);

@@ -1,6 +1,6 @@
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
-import { buildAgentOptions, resolveAgentModel, resolveConfig } from "../config.ts";
+import { buildAgentOptions, resolveAgentModel, resolveConfig, resolveQueryDecompositionModel } from "../config.ts";
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
 import { readPackageVersion } from "../version.ts";
@@ -9,13 +9,11 @@ import type { CommandContext } from "./types.ts";
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
- * Map the two-phase thinking flags (`--fast-thinking`, `--final-thinking`) and
- * the legacy `--single-phase` switch to the agent's `thinking` option. Returns
- * `undefined` when no flag was given so the agent keeps its default two-phase
- * flow.
+ * Map the two-phase thinking flags (`--fast-thinking`, `--final-thinking`) to
+ * the agent's `thinking` option. Returns `undefined` when no flag was given so
+ * the agent keeps its default levels.
  */
 function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
-	if (flags["single-phase"] === true) return false;
 	const parse = (value: string | boolean | undefined): AutoRAGThinkingLevel | undefined =>
 		typeof value === "string" && THINKING_LEVELS.includes(value as AutoRAGThinkingLevel)
 			? (value as AutoRAGThinkingLevel)
@@ -56,6 +54,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 		if (resolved.apiKey !== undefined) options.apiKey = resolved.apiKey;
 		if (resolved.providerApiKeys !== undefined) options.providerApiKeys = resolved.providerApiKeys;
 	}
+	const decompositionModel = await resolveQueryDecompositionModel(config);
+	if (decompositionModel !== undefined) options.queryDecomposition = decompositionModel;
 	return new AutoRAGAgent(options);
 }
 

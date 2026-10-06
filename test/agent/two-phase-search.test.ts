@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type AssistantMessage,
 	type FauxProviderRegistration,
@@ -228,10 +227,6 @@ async function collectEvents(agent: AutoRAGAgent, query: string): Promise<Search
 	return events;
 }
 
-function toolNames(agent: AutoRAGAgent): string[] {
-	return (agent as unknown as { tools: readonly AgentTool[] }).tools.map((tool) => tool.name);
-}
-
 describe("two-phase progressive answers (thinking off fast → thinking on final)", () => {
 	it("yields the fast preliminary answer before the verified complete response", async () => {
 		const model = fauxModel(
@@ -316,6 +311,11 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
 				{ stopReason: "stop" },
 			),
+			// The single final-emit reminder is ignored too.
+			fauxAssistantMessage(
+				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
+				{ stopReason: "stop" },
+			),
 		);
 		const agent = new AutoRAGAgent({
 			...agentOptions(model),
@@ -341,6 +341,29 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(entry?.resultCount).toBe(1);
 		expect(entry?.results[0]?.source).toBe("/kakao/acct-1/chunks/msg-1");
 		expect(entry?.results[0]?.excerpt).toContain("Director approval");
+	});
+
+	it("asks once more for the final emit when verification ends with a prose answer instead", async () => {
+		// Live runs (web route) ended verification with the full answer as plain
+		// text and no emit_autorag_results call; one reminder turn recovers it.
+		const prompts: string[] = [];
+		const model = fauxModel(
+			true,
+			fastAnswerCall(),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			fauxAssistantMessage("- Refund exceptions require director approval before payout [1].", {
+				stopReason: "stop",
+			}),
+			capturePromptStep(finalEmitCall("Verified: refund exceptions require director approval."), prompts),
+		);
+		const agent = new AutoRAGAgent(agentOptions(model));
+
+		const response = await agent.searchDocuments("refund approval");
+
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
+		expect(response.answer).toBe("Verified: refund exceptions require director approval.");
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
 	});
 
 	it("ends the run without a preliminary event when the model emits final results immediately", async () => {
@@ -401,27 +424,6 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		await agent.searchDocuments("refund approval?");
 
 		expect(reasoningLog).toEqual([undefined, undefined, undefined]);
-	});
-
-	it("keeps the legacy single-phase flow when thinking is disabled", async () => {
-		const model = fauxModel(
-			true,
-			fauxAssistantMessage(
-				[fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, { answer: "should not surface", results: [] })],
-				{
-					stopReason: "toolUse",
-				},
-			),
-			finalEmitCall("Legacy final answer."),
-		);
-		const agent = new AutoRAGAgent({ ...agentOptions(model), thinking: false });
-		expect(toolNames(agent)).not.toContain(EMIT_FAST_ANSWER_TOOL_NAME);
-
-		const events = await collectEvents(agent, "refund approval?");
-
-		expect(events.some((event) => event.type === "preliminary")).toBe(false);
-		const complete = events.find((event) => event.type === "complete");
-		expect(complete?.type === "complete" && complete.response.answer).toContain("Legacy final answer");
 	});
 
 	it("still yields a preliminary answer when the fast phase responds with text only", async () => {

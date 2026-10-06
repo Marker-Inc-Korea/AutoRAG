@@ -170,7 +170,11 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		];
 		const internals = agent as unknown as {
 			minSyncMethod: unknown;
-			prefetchInitialRetrievalContext: (query: string, options: Record<string, unknown>) => Promise<string>;
+			prefetchInitialRetrievalContext: (
+				query: string,
+				searchQueries: readonly string[],
+				options: Record<string, unknown>,
+			) => Promise<string>;
 		};
 		internals.minSyncMethod = {
 			isReady: () => true,
@@ -178,7 +182,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			retrieve: async () => duplicated,
 		};
 
-		const context = await internals.prefetchInitialRetrievalContext("refund", {});
+		const context = await internals.prefetchInitialRetrievalContext("refund", ["refund"], {});
 
 		expect(context).toContain("shared boilerplate header");
 		expect(context).toContain("unique refund clause");

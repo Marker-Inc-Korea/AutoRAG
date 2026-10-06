@@ -81,6 +81,7 @@ import {
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
@@ -105,7 +106,13 @@ import {
 	EMIT_FAST_ANSWER_TOOL_NAME,
 } from "./fast-answer-tool.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
-import { createJevExtension, JEV_TOOL_NAME, type JevToolOptions } from "./jev-extension.ts";
+import {
+	createJevExtension,
+	createJevJudge,
+	JEV_TOOL_NAME,
+	type JevJudge,
+	type JevToolOptions,
+} from "./jev-extension.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -123,7 +130,9 @@ import {
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
+import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
+import { FALLBACK_QUERY_ROUTE, needsFollowUp, type QueryRoute, routeQuery } from "./query-routing.ts";
 import {
 	isRefreshOwnerAlive,
 	type PersistedRefreshProgress,
@@ -474,12 +483,10 @@ export class RemoteSessionRejectedError extends Error {
 export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
- * Two-phase progressive answers: the fast phase delivers an immediate first
- * answer with {@link AutoRAGThinkingOptions.fast} thinking (default "off"),
- * then the verification phase re-checks and finalizes with
- * {@link AutoRAGThinkingOptions.final} thinking (default "high"). Pass
- * `false` on {@link AutoRAGAgentOptions.thinking} to keep the legacy
- * single-phase flow.
+ * Per-phase thinking for AutoRAG's two-phase search: the fast phase delivers
+ * an immediate first answer with {@link AutoRAGThinkingOptions.fast} thinking
+ * (default "off"), then the verification phase re-checks and finalizes with
+ * {@link AutoRAGThinkingOptions.final} thinking (default "high").
  */
 export interface AutoRAGThinkingOptions {
 	/** Thinking level for the immediate first answer. Default "off". */
@@ -548,14 +555,25 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	/**
-	 * Optional Jev decision tool (`jev`). Jev is TypeSafe's judgment model:
-	 * typed questions in, calibrated probabilities out — no generated text.
-	 * Disabled by default because it calls a paid external API; enable it with
-	 * a `jev` config section or this option. Backends: TypeSafe, OpenRouter
-	 * (`OPENROUTER_API_KEY`), Vercel AI Gateway, Cloudflare Workers AI.
-	 * Always omitted for remote P2P sessions.
+	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
+	 * probabilities out). When set, the two-phase search asks Jev before the
+	 * fast answer whether the question needs local search, web search, or a
+	 * direct answer, and whether to decompose it; after the fast answer, whether
+	 * verification is needed. It also exposes the `jev` tool. Always omitted for
+	 * remote P2P sessions.
+	 *
+	 * The CLI config enables this by default on OpenRouter (`buildAgentOptions`
+	 * fills it in). On this programmatic option, absent or `false` keeps Jev
+	 * off, so library callers never make paid network calls they did not ask for.
 	 */
 	jev?: JevToolOptions | false;
+	/**
+	 * Question decomposition used by the Jev query pipeline. `model` (with its
+	 * `apiKey`) is the LLM that splits one question into at most five search
+	 * queries; omitted, the search session's own model decomposes. The CLI
+	 * resolves its configured or default model (`openrouter/qwen/qwen3.7-flash`).
+	 */
+	queryDecomposition?: { readonly model?: Model<Api>; readonly apiKey?: string };
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
 	/**
@@ -579,8 +597,8 @@ export interface AutoRAGAgentOptions {
 	peerQuery?: PeerQueryOptions | false;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
-	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
-	thinking?: AutoRAGThinkingOptions | false;
+	/** Per-phase thinking levels for the two-phase (fast → verification) search. */
+	thinking?: AutoRAGThinkingOptions;
 	/** pi agent directory for auth/models/extensions. Defaults to ~/.pi/agent. */
 	piAgentDir?: string;
 	/** Optional persistent pi session directory. */
@@ -662,9 +680,9 @@ export class AutoRAGAgent {
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
-	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
-	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
-	private readonly finalThinkingLevel: AutoRAGThinkingLevel | undefined;
+	/** Per-phase thinking levels of the two-phase search. */
+	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
+	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
 	private jikjiPrepareInFlight: Promise<void> | undefined;
@@ -706,6 +724,13 @@ export class AutoRAGAgent {
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
 	private readonly jevExtension: ExtensionFactory | undefined;
+	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
+	private readonly jevJudge: JevJudge | undefined;
+	private readonly queryDecompositionModel: DecompositionModel | undefined;
+	/** Web search routing for the pipeline's web branch; undefined when web tools are off. */
+	private readonly webSearchOptions: WebSearchToolOptions | undefined;
+	/** Routing diagnostics for the in-flight search; reset per run. */
+	private routingDiagnostics: SearchDocumentDiagnostic[] = [];
 	private readonly excludeExactDuplicates: boolean;
 	private readonly excludePaths: readonly string[];
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
@@ -735,9 +760,8 @@ export class AutoRAGAgent {
 		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
 			throw new Error("maxSearchToolCalls must be a positive integer");
 		}
-		const thinking = options.thinking;
-		this.fastThinkingLevel = thinking === false ? undefined : (thinking?.fast ?? "off");
-		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
+		this.fastThinkingLevel = options.thinking?.fast ?? "off";
+		this.finalThinkingLevel = options.thinking?.final ?? "high";
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		this.piAgentDir = options.piAgentDir;
@@ -844,10 +868,20 @@ export class AutoRAGAgent {
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
-		this.jevExtension =
+		this.jevJudge =
 			options.jev === undefined || options.jev === false || this.remoteSession
 				? undefined
-				: createJevExtension(options.jev);
+				: createJevJudge(options.jev);
+		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
+		this.queryDecompositionModel =
+			options.queryDecomposition?.model === undefined
+				? undefined
+				: {
+						model: options.queryDecomposition.model,
+						...(options.queryDecomposition.apiKey !== undefined
+							? { apiKey: options.queryDecomposition.apiKey }
+							: {}),
+					};
 
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 		const peerQuery = options.peerQuery;
@@ -879,9 +913,11 @@ export class AutoRAGAgent {
 
 		const webSearchOption = options.webSearch;
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
-		const webSearchTool = webToolsEnabled
-			? createWebSearchTool({ ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth })
+		this.webSearchOptions = webToolsEnabled
+			? { ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth }
 			: undefined;
+		const webSearchTool =
+			this.webSearchOptions !== undefined ? createWebSearchTool(this.webSearchOptions) : undefined;
 		const webFetchTool =
 			webToolsEnabled && webSearchOption?.fetch !== false
 				? createWebFetchTool(webSearchOption?.fetch ?? {})
@@ -1176,23 +1212,19 @@ export class AutoRAGAgent {
 				...this.tools.filter(
 					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
 				),
-				...(this.fastThinkingLevel === undefined
-					? []
-					: [createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details))]),
+				createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details)),
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
-			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+			inactiveToolNames: [EMIT_FAST_ANSWER_TOOL_NAME],
 			...(this.jevExtension !== undefined
 				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
 				: {}),
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
-		if (this.fastThinkingLevel !== undefined) {
-			runtime.runtime.session.setActiveToolsByName(
-				runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-			);
-		}
+		runtime.runtime.session.setActiveToolsByName(
+			runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+		);
 		const dispose = runtime.dispose;
 		return {
 			...runtime,
@@ -1210,12 +1242,20 @@ export class AutoRAGAgent {
 		pi.setSessionName(query.slice(0, 80));
 		for await (const event of this.searchDocumentsStream(query)) {
 			const text = event.type === "progress" ? event.text : event.response.answer;
-			pi.sendMessage({
-				customType: `autorag.${event.type}`,
-				content: [{ type: "text", text }],
-				display: true,
-				details: event,
-			});
+			// Display-only: these arrive while the search turn is streaming, and
+			// pi's default delivery steers a custom message into that turn as a
+			// user message, so the model would answer its own progress and the
+			// query would never finish. triggerTurn:false shows them without
+			// adding a turn.
+			pi.sendMessage(
+				{
+					customType: `autorag.${event.type}`,
+					content: [{ type: "text", text }],
+					display: true,
+					details: event,
+				},
+				{ triggerTurn: false },
+			);
 		}
 	}
 
@@ -1307,15 +1347,24 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
+		this.routingDiagnostics = [];
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		this.scheduleJikjiPrepare();
 		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
-		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-			if (fastCaptured !== undefined) return;
-			fastCaptured = details;
+		/**
+		 * Without Jev every fast answer goes on to verification, so it is
+		 * published the moment emit_fast_answer runs. With Jev, publishing waits
+		 * for the direct route and the follow-up check: an answer that turns out
+		 * to be final reaches the caller once, as the complete response.
+		 */
+		const publishOnCapture = this.jevJudge === undefined;
+		let published = false;
+		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (published) return;
+			published = true;
 			this.preliminaryCallback?.(
 				createPreliminarySearchDocumentsResponse(
 					sessionId,
@@ -1324,6 +1373,11 @@ export class AutoRAGAgent {
 					this.collectComponentDiagnostics(),
 				),
 			);
+		};
+		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (fastCaptured !== undefined) return;
+			fastCaptured = details;
+			if (publishOnCapture) publishPreliminary(details);
 		};
 		let session: AutoRAGSearchSession | undefined;
 		this.interactiveFastAnswerCallback = emitPreliminary;
@@ -1355,42 +1409,57 @@ export class AutoRAGAgent {
 			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
-				this.fastThinkingLevel === undefined ? [] : [createEmitFastAnswerTool(emitPreliminary)],
+				[createEmitFastAnswerTool(emitPreliminary)],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
 			let timeout: NodeJS.Timeout | undefined;
+			const planAbort = new AbortController();
 			try {
 				await Promise.race([
 					(async () => {
-						// Start retrieval immediately, without waiting for the model's
-						// first inference.
-						const retrievalPromise = this.prefetchInitialRetrievalContext(trimmedQuery, options);
-						if (this.fastThinkingLevel === undefined) {
-							// Legacy single-phase flow (thinking disabled).
-							await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
-							if (captured === undefined) {
-								const initialRetrievalContext = await retrievalPromise;
-								await session.prompt(
-									`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
-								);
-							}
-							return;
-						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						const baseline = await retrievalPromise;
+						// With Jev enabled, Jev first picks local search, web search, or a
+						// direct answer, and whether the question needs decomposition.
+						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						const sessionAgent = session.piSession;
-						if (sessionAgent !== undefined) {
-							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
-							sessionAgent.setActiveToolsByName([
-								...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-								EMIT_FAST_ANSWER_TOOL_NAME,
-							]);
-						} else {
-							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
-							session.agent.state.tools = [...this.tools, { name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool];
+						const activeSession = session;
+						const activateFastPhase = (): void => {
+							if (sessionAgent !== undefined) {
+								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
+								sessionAgent.setActiveToolsByName([
+									...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+									EMIT_FAST_ANSWER_TOOL_NAME,
+								]);
+							} else {
+								activeSession.agent.state.thinkingLevel = clampThinkingLevel(
+									resolved.model,
+									this.fastThinkingLevel,
+								);
+								activeSession.agent.state.tools = [
+									...this.tools,
+									{ name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool,
+								];
+							}
+						};
+						if (plan.route === "direct") {
+							// Direct answers skip every retrieval step and the verification
+							// phase: the fast answer is the final answer. Only Jev routes
+							// here, so the preliminary was never published.
+							activateFastPhase();
+							await session.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
+							const answer =
+								fastCaptured?.answer ??
+								lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
+							if (answer !== undefined) captured = { answer, results: [], mapping: [], warnings: [] };
+							return;
 						}
+						const baseline =
+							plan.route === "web"
+								? await this.prefetchWebContext(plan.queries, planAbort.signal)
+								: await this.prefetchInitialRetrievalContext(trimmedQuery, plan.queries, options);
+						activateFastPhase();
 						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
 						let preliminary = fastCaptured;
 						if (preliminary === undefined) {
@@ -1398,25 +1467,45 @@ export class AutoRAGAgent {
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
 						if (preliminary !== undefined) emitPreliminary(preliminary);
-						if (captured === undefined && this.finalThinkingLevel !== undefined) {
-							if (sessionAgent !== undefined) {
-								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
-								sessionAgent.setActiveToolsByName(
-									sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-								);
-							} else {
-								session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
-								session.agent.state.tools = [...this.tools];
-							}
-							// Only a preliminary consumer actually received may turn the final answer into a delta.
-							const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
-							await session.prompt(
-								this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
+						if (captured !== undefined) return;
+						// With Jev enabled, a fast answer that needs no correction,
+						// clarification, or further research ends the run here.
+						if (preliminary !== undefined && !(await this.shouldFollowUp(trimmedQuery, preliminary))) {
+							captured = fastAnswerAsFinal(preliminary);
+							return;
+						}
+						if (preliminary !== undefined) publishPreliminary(preliminary);
+						if (sessionAgent !== undefined) {
+							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+							sessionAgent.setActiveToolsByName(
+								sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
 							);
+						} else {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+							session.agent.state.tools = [...this.tools];
+						}
+						// Only a preliminary consumer actually received may turn the final answer into a delta.
+						const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+						await session.prompt(
+							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered, plan.route),
+						);
+						// Models sometimes end verification by writing the final answer as
+						// prose instead of calling emit_autorag_results (seen on the web
+						// route). One reminder turn lets them emit what they already have;
+						// a second miss, a provider error, or an abort (tool-call limit,
+						// timeout) falls through to the degraded response.
+						if (
+							captured === undefined &&
+							!planAbort.signal.aborted &&
+							this.searchToolCallCount < this.maxSearchToolCalls &&
+							lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) === undefined
+						) {
+							await session.prompt(buildFinalEmitReminder());
 						}
 					})(),
 					new Promise<never>((_, reject) => {
 						timeout = setTimeout(() => {
+							planAbort.abort();
 							void Promise.resolve(session?.abort());
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
@@ -1818,76 +1907,247 @@ export class AutoRAGAgent {
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
 		}
+		diagnostics.push(...this.routingDiagnostics);
 		return diagnostics;
 	}
 
-	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
+	/**
+	 * Jev check run after emit_fast_answer: does the answer need correction,
+	 * clarification, or further research? "No" ends the run with the fast
+	 * answer as the final answer. Without Jev, or when the check fails, the run
+	 * always continues into verification.
+	 */
+	private async shouldFollowUp(query: string, fastAnswer: AutoRAGFastAnswerDetails): Promise<boolean> {
+		if (this.jevJudge === undefined) return true;
+		const decision = await needsFollowUp(this.jevJudge, query, fastAnswer.answer);
+		if (decision.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "follow-up-check-fallback",
+				severity: "warning",
+				message: `Jev follow-up check was unavailable; verifying the fast answer. ${decision.fallbackReason}`,
+				source: "jev",
+			});
+			return true;
+		}
+		const probability = decision.probability?.toFixed(2) ?? "?";
+		if (!decision.followUp) {
+			this.routingDiagnostics.push({
+				code: "follow-up-skipped",
+				severity: "info",
+				message: `Jev judged the fast answer final (P(follow-up)=${probability}); the verification phase was skipped.`,
+				source: "jev",
+			});
+		}
+		return decision.followUp;
+	}
+
+	/**
+	 * Jev query pipeline, run before the fast answer. Jev picks the branch
+	 * (local search, web search, or a direct answer) and whether the question
+	 * needs decomposition; a "yes" splits it into at most five search queries
+	 * with the configured decomposition model (default: the session model).
+	 * Without Jev, and on any routing failure, this is today's single local
+	 * search for the original question.
+	 */
+	private async planQuery(
+		query: string,
+		resolved: {
+			readonly model: Model<Api>;
+			readonly apiKey?: string;
+			readonly providerApiKeys?: Readonly<Record<string, string>>;
+		},
+		signal: AbortSignal,
+	): Promise<{ readonly route: QueryRoute; readonly queries: readonly string[] }> {
+		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query] };
+		const decision = await routeQuery(this.jevJudge, query);
+		if (decision.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "query-route-fallback",
+				severity: "warning",
+				message: `Jev query routing was unavailable; searching local sources with the original question. ${decision.fallbackReason}`,
+				source: "jev",
+			});
+			return { route: FALLBACK_QUERY_ROUTE, queries: [query] };
+		}
+		let route = decision.route;
+		if (route === "web" && this.webSearchOptions === undefined) {
+			this.routingDiagnostics.push({
+				code: "query-route-fallback",
+				severity: "info",
+				message:
+					"Jev routed the question to web search, but web tools are disabled; searching local sources instead.",
+				source: "jev",
+			});
+			route = FALLBACK_QUERY_ROUTE;
+		}
+		let queries: readonly string[] = [query];
+		if (decision.decompose && route !== "direct") {
+			const target = this.queryDecompositionModel ?? {
+				model: resolved.model,
+				...((resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider]) !== undefined
+					? { apiKey: resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider] }
+					: {}),
+			};
+			try {
+				queries = await decomposeQuery(createModelDecompositionCompleter(target, signal), query);
+			} catch (error) {
+				this.routingDiagnostics.push({
+					code: "query-decomposition-failed",
+					severity: "warning",
+					message: `Question decomposition failed; searching with the original question. ${error instanceof Error ? error.message : String(error)}`,
+					source: "query-decomposition",
+				});
+			}
+		}
+		const probability = decision.routeProbability === undefined ? "" : ` (p=${decision.routeProbability.toFixed(2)})`;
+		this.routingDiagnostics.push({
+			code: "query-routed",
+			severity: "info",
+			message:
+				`Jev routed the question to ${route}${probability}; ` +
+				(route === "direct"
+					? "answering directly without retrieval."
+					: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
+			source: "jev",
+		});
+		return { route, queries };
+	}
+
+	/**
+	 * Baseline local evidence for the fast answer. Jikji and MinSync run for
+	 * every search query in parallel (MinSync itself queues per workspace), the
+	 * per-query hits are interleaved and deduplicated into one pool, and that
+	 * pool is reranked against the original question.
+	 */
+	private async prefetchInitialRetrievalContext(
+		query: string,
+		searchQueries: readonly string[],
+		options: RetrievalOptions,
+	): Promise<string> {
 		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
 		const vectorReady = this.minSyncMethod?.isReady() === true;
-		const [jikji, vector] = await Promise.all([
-			this.jikjiClient === undefined
-				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
-			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
-		]);
-		const minSyncResults = vector ?? [];
-		if (vector !== undefined) {
-			for (const result of vector) options.observedSources?.add(result.source);
+		const formatSearchQueries = (list: readonly string[]): string =>
+			`Search queries (decomposed from the original question):\n${list.map((entry, index) => `[${index + 1}] ${entry}`).join("\n")}`;
+		const perQuery = await Promise.all(
+			searchQueries.map((searchQuery) =>
+				Promise.all([
+					this.jikjiClient === undefined
+						? Promise.resolve(undefined)
+						: this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
+					vectorReady
+						? (this.minSyncMethod?.retrieve(searchQuery, retrieveOptions).catch(() => []) ?? Promise.resolve([]))
+						: Promise.resolve([]),
+				]),
+			),
+		);
+		const interleave = <T>(lists: readonly (readonly T[])[]): T[] => {
+			const merged: T[] = [];
+			const longest = Math.max(0, ...lists.map((list) => list.length));
+			for (let rank = 0; rank < longest; rank++) {
+				for (const list of lists) {
+					const item = list[rank];
+					if (item !== undefined) merged.push(item);
+				}
+			}
+			return merged;
+		};
+		const jikjiFound = perQuery.some(([jikji]) => jikji?.answerPack !== undefined);
+		const jikjiPaths = [...new Set(interleave(perQuery.map(([jikji]) => jikji?.answerPack?.answerPaths ?? [])))];
+		const seenChunks = new Set<string>();
+		const minSyncResults = interleave(perQuery.map(([, vector]) => vector)).filter((result) => {
+			const key = `${result.source}\0${result.content}`;
+			if (seenChunks.has(key)) return false;
+			seenChunks.add(key);
+			return true;
+		});
+		for (const result of minSyncResults) options.observedSources?.add(result.source);
+		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths
+		// and MinSync chunks) against the original question, so decomposed
+		// sub-query hits compete on relevance to what the user asked. Falls back
+		// to the unranked sections when reranking is disabled or unavailable.
+		const reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults);
+		if (reranked !== undefined) {
+			const baseline = formatRerankedBaseline(reranked);
+			return searchQueries.length > 1 ? `${formatSearchQueries(searchQueries)}\n\n${baseline}` : baseline;
 		}
-		// Rerank the whole pre-fast-answer pool (Jikji paths + MinSync chunks) so
-		// the fast answer is grounded in relevance order. Falls back to the
-		// unranked sections when reranking is disabled or unavailable.
-		const reranked = await this.rerankPrefetchPool(query, jikji, minSyncResults);
-		if (reranked !== undefined) return formatRerankedBaseline(reranked);
 
 		// One flat numbering across every section (issue #1788): candidate [n]
 		// labels never restart, so no number means two different candidates.
 		const sections: string[] = [];
+		if (searchQueries.length > 1) sections.push(formatSearchQueries(searchQueries));
 		let candidateNumber = 0;
-		if (jikji?.answerPack !== undefined) {
+		if (jikjiFound) {
 			sections.push(
-				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
+				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikjiPaths
 					.slice(0, this.limits.prefetch.jikjiPathLimit)
 					.map((path) => `[${++candidateNumber}] ${path}`)
 					.join("\n")}`,
 			);
 		}
-		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
-			if (!results || results.length === 0) return;
-			const seen = new Set<string>();
+		if (minSyncResults.length > 0) {
 			sections.push(
-				`${label} initial candidates:\n${results
-					.filter((result) => {
-						const key = `${result.source}\0${result.content}`;
-						if (seen.has(key)) return false;
-						seen.add(key);
-						return true;
-					})
+				`MinSync semantic initial candidates:\n${minSyncResults
 					.slice(0, this.limits.prefetch.sectionLimit)
 					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
-		};
-		formatResults("MinSync semantic", vector);
+		}
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
 	}
 
+	/** Baseline web evidence for the fast answer: one web search per query, all in parallel. */
+	private async prefetchWebContext(queries: readonly string[], signal: AbortSignal): Promise<string> {
+		const web = this.webSearchOptions ?? {};
+		const modelAuth = web.modelAuth?.();
+		const searches = await Promise.all(
+			queries.map((query) =>
+				executeWebSearch(
+					{ query, ...(web.provider !== undefined ? { provider: web.provider } : {}) },
+					{
+						signal,
+						...(web.timeoutSeconds !== undefined ? { timeoutMs: web.timeoutSeconds * 1_000 } : {}),
+						...(web.order !== undefined ? { order: web.order } : {}),
+						...(web.exclude !== undefined ? { exclude: web.exclude } : {}),
+						...(modelAuth !== undefined ? { modelAuth } : {}),
+					},
+				).catch((error: unknown) => ({
+					content: [],
+					details: {
+						response: { provider: "none" as const, sources: [] },
+						error: error instanceof Error ? error.message : String(error),
+					},
+				})),
+			),
+		);
+		const sections = searches.map((search, index) => {
+			const label = `Web search results for ${JSON.stringify(queries[index])}`;
+			return search.details.error !== undefined
+				? `${label}: unavailable (${search.details.error})`
+				: `${label}:\n${search.content.map((part) => part.text).join("\n")}`;
+		});
+		return searches.every((search) => search.details.error !== undefined)
+			? `${sections.join("\n\n")}\n\nNo web evidence was available; use the configured tools and report degradation honestly.`
+			: sections.join("\n\n");
+	}
+
 	/**
 	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths plus MinSync
-	 * chunks — down to the configured `rerank.topN`. Returns `undefined` when
-	 * reranking is disabled/unavailable or the pool is empty, so the caller keeps
-	 * the unranked sections; a rerank failure never blocks the fast answer.
+	 * chunks — down to the configured `rerank.topN`. With decomposition the pool
+	 * merges every search query's hits (interleaved), capped at the same
+	 * per-source sizes as a single query so the rerank request does not grow
+	 * with the query count. Returns `undefined` when reranking is
+	 * disabled/unavailable or the pool is empty, so the caller keeps the
+	 * unranked sections; a rerank failure never blocks the fast answer.
 	 */
 	private async rerankPrefetchPool(
 		query: string,
-		jikji: { readonly answerPack?: { readonly answerPaths: readonly string[] } } | undefined,
+		answerPaths: readonly string[],
 		minSyncResults: readonly RetrievalResult[],
 	): Promise<RetrievalResult[] | undefined> {
 		const reranker = this.reranker;
 		if (reranker === undefined) return undefined;
-		const answerPaths = jikji?.answerPack?.answerPaths ?? [];
 		const candidates: RetrievalResult[] = answerPaths
 			.slice(0, this.limits.prefetch.jikjiPathLimit)
 			.map((path, index) => ({
@@ -1897,7 +2157,7 @@ export class AutoRAGAgent {
 				score: 1 - index / Math.max(answerPaths.length, 1),
 				metadata: { method: "jikji" },
 			}));
-		candidates.push(...minSyncResults);
+		candidates.push(...minSyncResults.slice(0, this.limits.prefetch.minSyncTopK));
 		if (candidates.length === 0) return undefined;
 		if (!reranker.describe().available) return undefined;
 		try {
@@ -1965,6 +2225,20 @@ export class AutoRAGAgent {
 		);
 	}
 
+	/**
+	 * Prompt for a question Jev routed to a direct answer: general knowledge or
+	 * small talk. No retrieval ran and no verification phase follows, so the
+	 * answer emitted here is final.
+	 */
+	buildDirectAnswerPrompt(query: string): string {
+		return (
+			`Answer this query directly from your own general knowledge: ${query}\n\n` +
+			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ` +
+			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.\n\n` +
+			`Call emit_fast_answer exactly once with the answer and an empty results list, then stop.`
+		);
+	}
+
 	/** Discovery-tool hint naming only the registered discovery tools; empty when none. */
 	private discoveryHint(sentence: (tools: string) => string): string {
 		const names = this.tools
@@ -1984,6 +2258,7 @@ export class AutoRAGAgent {
 		options: RetrievalOptions,
 		fastAnswer: AutoRAGFastAnswerDetails | undefined,
 		fastAnswerDelivered: boolean,
+		route: QueryRoute = "local",
 	): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
@@ -2010,7 +2285,9 @@ export class AutoRAGAgent {
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ` +
+			(route === "web"
+				? `Now verify it rigorously on the internet: Jev routed this question to web search, so the answer lives in public web sources, not in local files. Use ${WEB_SEARCH_TOOL_NAME} (and ${WEB_FETCH_TOOL_NAME} to read a promising page) to confirm or correct each claim, fill gaps with focused web queries, and resolve conflicts and freshness. Use URLs as result sources. `
+				: `Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. `) +
 			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
@@ -3036,6 +3313,36 @@ function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
 }
 
 /**
+ * The fast answer as a final emit_autorag_results payload, used when Jev ends
+ * the run after the fast phase. Every result the answer cites is kept: the
+ * fast-answer `sources` mapping is optional and models routinely omit it, so
+ * dropping source-less results would strip the answer's citations. A result
+ * with no reported source keeps an empty mapping source (the response then
+ * carries no `source` for it) rather than an invented path.
+ */
+function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResultsDetails {
+	const sourceByNumber = new Map(fastAnswer.sources.map((entry) => [entry.number, entry.source]));
+	return {
+		answer: fastAnswer.answer,
+		results: fastAnswer.results.map((result) => ({
+			number: result.number,
+			title: result.title,
+			summary: result.summary,
+			evidence: result.evidence,
+			confidence: result.confidence ?? 0.5,
+		})),
+		mapping: fastAnswer.results.map((result) => ({
+			number: result.number,
+			source: sourceByNumber.get(result.number) ?? "",
+			method: EMIT_FAST_ANSWER_TOOL_NAME,
+			content: result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary,
+			evidenceRefs: [],
+		})),
+		warnings: [],
+	};
+}
+
+/**
  * Render the fast-phase first answer for the verification prompt. When a
  * consumer already received it, the model must diff against it and return only
  * the delta; otherwise the draft is internal context only and the final answer
@@ -3106,6 +3413,20 @@ function lastModelRequestError(messages: readonly AgentMessage[]): string | unde
 		return message.errorMessage?.trim() || "the provider returned an error without a message";
 	}
 	return undefined;
+}
+
+/**
+ * One-turn reminder sent when the verification phase stops without calling
+ * emit_autorag_results. It asks only for the structured emit of the answer the
+ * model already reached, never for more searching.
+ */
+function buildFinalEmitReminder(): string {
+	return (
+		`You ended without calling ${EMIT_AUTORAG_RESULTS_TOOL_NAME}, so the user has not received your verified answer. ` +
+		`Do not search again. Call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} now, exactly once, with the answer you just wrote, ` +
+		`its numbered results, and the number-to-source mapping (use the real file paths or URLs you used). ` +
+		`If verification found nothing usable, call it with an answer that says so and an empty results list.`
+	);
 }
 
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {

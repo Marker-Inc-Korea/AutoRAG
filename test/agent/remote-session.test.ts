@@ -68,7 +68,6 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 			remoteSession: true,
 			minSync: false,
 			jikji: false,
-			thinking: false,
 		});
 
 		const response = await agent.searchDocuments("is there anything about unicorns?");
@@ -87,7 +86,6 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 			minSync: false,
 			jikji: false,
-			thinking: false,
 		});
 
 		const response = await agent.searchDocuments("is there anything about unicorns?");

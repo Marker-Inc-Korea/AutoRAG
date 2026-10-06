@@ -34,7 +34,10 @@ const fastAnswerSchema = Type.Object({
 				number: Type.Integer({ description: "Matches the result number this source belongs to" }),
 				source: Type.String({ description: "Source identifier — a real file path or a datasource id" }),
 			}),
-			{ description: "Optional number -> source mapping for the first answer." },
+			{
+				description:
+					"Number -> source mapping: one entry per result, with the real file path or datasource id from the baseline evidence. Omit only a result with no source.",
+			},
 		),
 	),
 });

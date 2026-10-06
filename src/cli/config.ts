@@ -11,6 +11,7 @@ import {
 	type LocalAutoRAGModel,
 	loadLocalAutoRAGModel,
 } from "../agent/local-model.ts";
+import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
@@ -102,6 +103,12 @@ export interface JevCliConfig {
 	model?: string;
 	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
 	confidenceThreshold?: number;
+}
+
+/** Question-decomposition config. Secrets stay in env/pi auth like the main model. */
+export interface QueryDecompositionConfig {
+	/** Dedicated decomposition model; same shape and auth rules as the top-level `model`. */
+	model?: AgentModelConfig;
 }
 
 /**
@@ -199,11 +206,20 @@ export interface CliConfig {
 		| false;
 	webSearch?: WebSearchCliConfig;
 	/**
-	 * Optional Jev decision tool. Absent disables the tool; `enabled: false`
-	 * disables it explicitly. Secrets never appear here — `apiKeyEnv` names the
-	 * environment variable holding the backend API key.
+	 * Jev query routing (local / web / direct), the decomposition check, the
+	 * post-fast-answer follow-up check, and the `jev` tool. On by default with
+	 * the OpenRouter backend; `false` or `enabled: false` disables it. Secrets
+	 * never appear here: `jev-use` reads the backend key from its own
+	 * environment variable.
 	 */
 	jev?: JevCliConfig | false;
+	/**
+	 * Question decomposition for the Jev query pipeline. `model` names the LLM
+	 * that splits one question into at most five search queries; absent or `{}`
+	 * uses {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}, and `false` lets the
+	 * agent's own model decompose.
+	 */
+	queryDecomposition?: QueryDecompositionConfig | false;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -1059,6 +1075,9 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
 	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	if (file.queryDecomposition !== undefined) {
+		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
+	}
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1154,17 +1173,42 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 	return out;
 }
 
+/** Jev backend used when the config names none (absent section or `{}`). */
+export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
+
 /**
- * Map the validated `jev` config section onto the agent option. Absent stays
- * absent (tool disabled); `false` and `enabled: false` are the agent opt-out.
+ * Question-decomposition model used when the config names none. Picked from a
+ * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
+ * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
+ * cheaper per call than google/gemini-2.5-flash-lite at equal quality.
+ */
+export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
+
+/** Validate the `queryDecomposition` config section (`false` = decompose with the session model). */
+export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecompositionConfig | false {
+	if (raw === false) return false;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'queryDecomposition' must be an object or false");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (key !== "model") throw new ConfigError(`queryDecomposition.${key} is not a recognized field`);
+	}
+	const model = modelReference(record.model, "queryDecomposition.model");
+	return model === undefined ? {} : { model };
+}
+
+/**
+ * Map the `jev` config section onto the agent option. Jev is on by default:
+ * an absent section or `{}` enables it on {@link DEFAULT_JEV_BACKEND}; `false`
+ * and `enabled: false` are the opt-out.
  */
 function buildJevAgentOption(raw: JevCliConfig | false | undefined): AutoRAGAgentOptions["jev"] {
-	if (raw === undefined) return undefined;
 	if (raw === false) return false;
-	const normalized = normalizeJevConfig(raw);
+	const normalized = normalizeJevConfig(raw ?? {});
 	if (normalized.enabled === false) return false;
 	const { enabled: _omitJevEnabled, ...fields } = normalized;
-	return fields;
+	return { backend: DEFAULT_JEV_BACKEND, ...fields };
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1768,6 +1812,23 @@ export async function resolveAgentModel(
 	};
 }
 
+/**
+ * Resolve the question-decomposition model and its credential through the same
+ * chain as the agent model. An absent section or `{}` uses
+ * {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}; `queryDecomposition: false`
+ * returns undefined so the agent's own model decomposes.
+ */
+export async function resolveQueryDecompositionModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<DecompositionModel | undefined> {
+	if (config.queryDecomposition === false) return undefined;
+	const reference = config.queryDecomposition?.model ?? DEFAULT_QUERY_DECOMPOSITION_MODEL;
+	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
+	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
+	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
+}
+
 function providerApiKeyEnvName(provider: string): string {
 	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }
@@ -1897,6 +1958,10 @@ export function writeDefaultConfig(
 	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
+	// Jev routing and question decomposition are on by default; new configs
+	// spell the defaults out so they are visible and editable.
+	full.jev = partial.jev ?? { backend: DEFAULT_JEV_BACKEND };
+	full.queryDecomposition = partial.queryDecomposition ?? { model: { ...DEFAULT_QUERY_DECOMPOSITION_MODEL } };
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);
