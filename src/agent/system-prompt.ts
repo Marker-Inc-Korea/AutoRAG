@@ -13,6 +13,7 @@ export interface SystemPromptConfig {
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly Skill[];
 	retrievedContentGuard?: boolean;
+	remoteSession?: boolean;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -29,7 +30,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(
 			config,
 			"bash",
-			"read and inspect configured document collections with ls, find, grep, cat, and similar tools",
+			"read and inspect configured document collections with ls, find, grep, cat, and similar tools, and — in local sessions — organize local files when the user asks (rename, move, copy, create folders, move to trash)",
 		),
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(
@@ -114,14 +115,14 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 	const jikji = config.jikjiIndexingEnabled
 		? `## Jikji Local Discovery
 
-\`jikji_find\` is the primary and preferred tool for exploring local files, folders, and documents. Whenever you need to discover, locate, or explore files and directory structures, actively use \`jikji_find\` rather than running exploratory \`bash\` commands (\`find\`, \`grep\`, \`ls\`). Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`. Reserve \`bash\` for targeted reading and verifying already-identified files. If Jikji is unavailable, use the diagnostic and fall back to bounded \`bash\`.
+\`jikji_find\` is the primary and preferred tool for exploring local files, folders, and documents. Whenever you need to discover, locate, or explore files and directory structures, actively use \`jikji_find\` rather than running exploratory \`bash\` commands (\`find\`, \`grep\`, \`ls\`). Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`. Reserve \`bash\` for targeted reading and verifying already-identified files; in local sessions it may also carry out user-requested file organization (see File Organization). If Jikji is unavailable, use the diagnostic and fall back to bounded \`bash\`.
 `
 		: "";
 	const retrievedContentGuard = config.retrievedContentGuard ? `\n${FENCING_GUARD_LINE}\n` : "";
 	const duplicateManagement = toolAvailable(config, "scan_duplicate_documents")
 		? `## Local Corpus Management
 
-\`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files.
+\`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files. When the user asks you to remove duplicates, carry it out with \`bash\` by moving them to the OS trash (see File Organization); the scan itself stays read-only.
 `
 		: "";
 	const webResearch =
@@ -148,6 +149,24 @@ Query syntax: space = AND, \`OR\` = OR (the pipe \`|\` is NOT the OR operator he
 `
 		: "";
 
+	const fileOrganization = config.remoteSession
+		? `## File Organization
+
+This is a remote/P2P session, so you never change files. You may only read and inspect files with \`bash\`; decline requests to rename, move, copy, create folders, or delete anything.
+`
+		: `## Local File Organization
+
+In local sessions you may organize local files with \`bash\` when the user asks: rename, move, copy, create folders, and move files to the OS trash. Do not treat \`bash\` as read-only here.
+
+Never perform permanent, unrecoverable deletion. This includes \`rm\`/\`rm -rf\`, \`rmdir\`, \`unlink\`, \`shred\`, \`srm\`, \`find … -delete\`, \`find … -exec rm\`, \`xargs rm\`, PowerShell \`Remove-Item\`, \`del\`, \`rd\`/\`rmdir /s\`, and overwriting an existing file (a \`mv\`/\`cp\` without no-clobber onto an existing name, a \`>\` redirect onto an existing file, or \`truncate\`).
+
+To delete, move the file to the OS trash instead: macOS \`/usr/bin/trash\` (or AppleScript \`tell application "Finder" to delete POSIX file …\`), Linux \`gio trash\`, Windows \`Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, 'OnlyErrorDialogs', 'SendToRecycleBin')\`.
+
+Collision safety: use no-clobber (\`mv -n\`, \`cp -n\`). Before a batch, verify that no two targets share a name and that no target already exists.
+
+Reversibility is your job: in your answer, list every change as old path → new path, so a later "undo that" can be reversed from the conversation alone; anything moved to the trash can be recovered from the OS trash.
+`;
+
 	return `You are AutoRAG, a ${modelId} librarian agent for document collections, cloud drives, images, and messenger history.
 
 Your job is to retrieve candidates, read the relevant source material directly, judge the evidence, resolve conflicts and freshness, and curate grounded results in one agent loop.
@@ -157,7 +176,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 Searches follow a progressive, two-phase loop:
 1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided, produce and emit a complete, self-contained immediate first answer via \`emit_fast_answer\` right away from that evidence without calling tools or waiting.
 2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
-3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed; rely on Jikji and retrieval rather than blind directory browsing.
+3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed, and in local sessions to organize files when the user asks (see File Organization); rely on Jikji and retrieval rather than blind directory browsing.
 4. **JUDGE & RESOLVE** — Evaluate relevance, sufficiency, conflicts, and temporal context. When search results or evidence contain conflicting information, treat the freshest (most recent) information as authoritative and correct.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
 6. **FINALIZE** — Call \`emit_autorag_results\` exactly once as the final action.
@@ -172,16 +191,17 @@ ${noSearchTools}
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
-- Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
+- Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop. In local sessions, \`bash\` may also carry out user-requested file organization (see File Organization).
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
 - Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every authorized connection has its own tool, and \`search_all_documents\` still spans all of them at once.
-${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed).` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed)."}
+${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization.` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization."}
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
 - Cross-check important claims against the original source and preserve real source paths.
 - When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
 - Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
 - Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available.
 
+${fileOrganization}
 ${duplicateManagement}
 ${
 	toolAvailable(config, "query_peer_agent")
