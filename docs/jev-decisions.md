@@ -15,21 +15,27 @@ between runs.
 `jev-use` owns backend auto-selection, request screening, and response
 validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
 on top, and uses the same client for the query pipeline described below. Jev
-is **disabled by default** because it calls a paid external API, and it is
-always omitted for remote P2P sessions because its `state` leaves the machine.
+is **on by default** with the OpenRouter backend, and it is always omitted for
+remote P2P sessions because its `state` leaves the machine.
 
-## Enable it
+## Defaults and opt-out
 
-Add a `jev` section to `~/.autorag/config.json` (or the workspace config):
+With no `jev` section, AutoRAG behaves as if the config said:
 
 ```json
 {
-  "jev": { "backend": "openrouter" }
+  "jev": { "backend": "openrouter" },
+  "queryDecomposition": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
 }
 ```
 
-`enabled: false` (or `"jev": false`) keeps the tool off. An empty `{}` section
-enables it with defaults.
+`autorag init` writes exactly these sections into new configs so they are
+visible and editable. An empty `{}` keeps the defaults. `"jev": false` or
+`enabled: false` turns Jev off completely: no routing, no follow-up check, no
+`jev` tool. Both features send the question text to OpenRouter, so disable them
+when questions must stay on the machine. Without `OPENROUTER_API_KEY`, routing
+falls back to a single local search with a `query-route-fallback` diagnostic;
+searches keep working.
 
 ### Backends
 
@@ -54,8 +60,8 @@ returns HTTP 400. Set `model` to override the pin.
 
 | Field                 | Meaning                                                                 |
 | --------------------- | ----------------------------------------------------------------------- |
-| `enabled`             | `false` disables the tool (same as `"jev": false`).                     |
-| `backend`             | Force `typesafe`, `openrouter`, or `vercel`; omit to auto-select.       |
+| `enabled`             | `false` disables Jev (same as `"jev": false`).                          |
+| `backend`             | `openrouter` (default), `typesafe`, or `vercel`.                        |
 | `model`               | Wire model id sent with every call. Omit for the backend default.       |
 | `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
 
@@ -137,15 +143,32 @@ verifies (`follow-up-check-fallback`), because ending on an unchecked answer is
 the costlier mistake.
 
 Decomposition sends a short prompt to an LLM and keeps **at most five** search
-queries. By default it uses the search session's own model; set a dedicated
-(usually smaller, faster) model with `queryDecomposition.model`, which takes
-the same fields and credential rules as the top-level `model`:
+queries. The default model is `openrouter/qwen/qwen3.7-flash`.
+`queryDecomposition.model` takes the same fields and credential rules as the
+top-level `model`; `"queryDecomposition": false` decomposes with the search
+session's own model instead.
+
+The default was picked on a live OpenRouter benchmark: the real decomposition
+prompt, 6 questions (including 2 Korean), and 2 runs each, scored on valid
+JSON, at most five queries, coverage of every sub-question, and language
+preserved:
+
+| Model | Score | p50 latency | Cost per 12 calls |
+| ----- | ----- | ----------- | ----------------- |
+| `qwen/qwen3.7-flash` (default) | 12/12 | 0.92s | $0.00011 |
+| `google/gemini-2.5-flash-lite` (previous) | 12/12 | 0.87s | $0.00039 |
+| `qwen/qwen3.8-flash` | 12/12 | 1.19s | $0.00051 |
+| `upstage/solar-mini4` | 12/12 | 0.86s | $0.00021 (not in the pi catalog) |
+| `openai/gpt-6-luna` | 12/12 | 2.24s | $0.00038 (not in the pi catalog) |
+| `xiaomi/mimo-v2.6-flash` | 12/12 | 5.19s | $0.00030 |
+| `nvidia/nemotron-3.5-lightning` | 11/12 | 0.38s | $0.00021 |
+| `inception/mercury-2.5` | 10/12 | 0.75s | $0.00010 (2 upstream timeouts) |
+| `z-ai/glm-5.3-flash` | 0/12 | — | requires reasoning; rejected with reasoning off |
 
 ```json
 {
-  "jev": { "backend": "openrouter" },
   "queryDecomposition": {
-    "model": { "provider": "openrouter", "id": "google/gemini-2.5-flash-lite" }
+    "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" }
   }
 }
 ```

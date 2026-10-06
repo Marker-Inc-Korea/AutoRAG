@@ -34,9 +34,17 @@ describe("queryDecomposition config", () => {
 		expect(() => configWith("gpt")).toThrow(ConfigError);
 	});
 
-	it("resolves no dedicated model when unset, so the session model decomposes", async () => {
+	it("defaults the decomposition model to OpenRouter qwen/qwen3.7-flash when unset", async () => {
 		const resolved = await resolveQueryDecompositionModel(
 			{ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") },
+			{ configPath: join(root, "missing.toml"), agentDir: join(root, "agent"), env: {} },
+		);
+		expect(resolved?.model).toMatchObject({ provider: "openrouter", id: "qwen/qwen3.7-flash" });
+	});
+
+	it("decomposes with the session model when queryDecomposition is false", async () => {
+		const resolved = await resolveQueryDecompositionModel(
+			{ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json"), queryDecomposition: false },
 			{ configPath: join(root, "missing.toml"), agentDir: join(root, "agent") },
 		);
 		expect(resolved).toBeUndefined();

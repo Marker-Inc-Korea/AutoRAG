@@ -555,12 +555,16 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	/**
-	 * Optional Jev decision tool (`jev`). Jev is TypeSafe's judgment model:
-	 * typed questions in, calibrated probabilities out — no generated text.
-	 * Disabled by default because it calls a paid external API; enable it with
-	 * a `jev` config section or this option. Backends: TypeSafe, OpenRouter
-	 * (`OPENROUTER_API_KEY`), Vercel AI Gateway, Cloudflare Workers AI.
-	 * Always omitted for remote P2P sessions.
+	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
+	 * probabilities out). When set, the two-phase search asks Jev before the
+	 * fast answer whether the question needs local search, web search, or a
+	 * direct answer, and whether to decompose it; after the fast answer, whether
+	 * verification is needed. It also exposes the `jev` tool. Always omitted for
+	 * remote P2P sessions.
+	 *
+	 * The CLI config enables this by default on OpenRouter (`buildAgentOptions`
+	 * fills it in). On this programmatic option, absent or `false` keeps Jev
+	 * off, so library callers never make paid network calls they did not ask for.
 	 */
 	jev?: JevToolOptions | false;
 	/**
