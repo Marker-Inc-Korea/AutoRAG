@@ -440,6 +440,101 @@ describe("Jev query pipeline before the fast answer", () => {
 		).toBe(true);
 	});
 
+	it("tells Jev which datasources answered a similar past question, from retrieval memory", async () => {
+		const states: string[] = [];
+		const routing = jevRouting("local", 0.1, 0.1, { slack: 0.9, discord: 0.1 });
+		const recordingJev: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				if (request.questions.some((question) => question.id === datasourceQuestionId("slack"))) {
+					states.push(String(request.state));
+				}
+				return routing.judge(request);
+			},
+		};
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		const discord = recordingDatasource("discord", "Gaming community Discord server");
+		const pastSource = "/slack/default/release-plan";
+		const model = fauxModel(
+			fastAnswer("The release moved to Friday [1].", pastSource),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			fastAnswer("Still Friday [1].", pastSource),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: recordingJev },
+			datasourceSkills: [slack.skill, discord.skill],
+			datasourceAccess: { allowedTags: ["slack", "discord"] },
+		});
+		injectMinSync(agent, recordingMinSync().method);
+
+		await agent.searchDocuments("팀에서 릴리즈 날짜 언제로 정했지?");
+		await agent.searchDocuments("릴리즈 날짜 언제로 정했어?");
+
+		expect(states).toHaveLength(2);
+		expect(states[0]).not.toContain("Similar past questions");
+		expect(states[1]).toContain("Similar past questions");
+		expect(states[1]).toMatch(/"팀에서 릴리즈 날짜 언제로 정했지\?"\n {2}- Evidence \[slack\]/u);
+		expect(states[1]).not.toContain("[discord]");
+	});
+
+	it("attributes past evidence to the datasource named in its retrieval method, even without a virtual-path source", async () => {
+		const states: string[] = [];
+		const routing = jevRouting("local", 0.1, 0.9, { slack: 0.1, discord: 0.9 });
+		const recordingJev: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				if (request.questions.some((question) => question.id === datasourceQuestionId("discord"))) {
+					states.push(String(request.state));
+				}
+				return routing.judge(request);
+			},
+		};
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		const discord = recordingDatasource("discord", "Gaming community Discord server");
+		const verified = fauxAssistantMessage(
+			[
+				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+					answer: "The raid is on Saturday [1].",
+					results: [
+						{
+							number: 1,
+							title: "Raid",
+							summary: "Saturday",
+							evidence: [{ excerpt: "Saturday" }],
+							confidence: 0.9,
+						},
+					],
+					mapping: [{ number: 1, source: "chunk_77ab", method: "datasource:discord", content: "Saturday" }],
+				}),
+			],
+			{ stopReason: "toolUse" },
+		);
+		const model = fauxModel(
+			fastAnswer("Not sure yet."),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			verified,
+			fastAnswer("Saturday [1].", "chunk_77ab"),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			finalEmit("Saturday.", "/discord/default/raid"),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: recordingJev },
+			datasourceSkills: [slack.skill, discord.skill],
+			datasourceAccess: { allowedTags: ["slack", "discord"] },
+		});
+		injectMinSync(agent, recordingMinSync().method);
+
+		await agent.searchDocuments("길드 레이드 언제 하기로 했지?");
+		await agent.searchDocuments("레이드 언제 하기로 했어?");
+
+		expect(states[1]).toContain('"길드 레이드 언제 하기로 했지?"');
+		expect(states[1]).toMatch(/Raid.*discord/u);
+		expect(states[1]).not.toMatch(/Raid.*slack/u);
+	});
+
 	it("searches a selected datasource with every decomposed query and reranks its chunks in the same pool", async () => {
 		const rerankServer = await startRerankServer();
 		try {

@@ -207,6 +207,61 @@ describe("selectDatasources (Jev noul per registered datasource)", () => {
 		expect(seen[0]?.questions[0]?.question).toContain("slack");
 	});
 
+	it("tells Jev each description is only a summary and the datasource can hold other content", async () => {
+		const states: string[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				states.push(String(request.state));
+				return { answers: request.questions.map(() => ({ answer: 0.1 })) };
+			},
+		};
+		await selectDatasources(judgeWith(backend), "release date?", datasources);
+		expect(states[0]).toMatch(/summary/iu);
+		expect(states[0]).toMatch(/not (a )?complete|other (topics|content)/iu);
+	});
+
+	it("adds similar past questions, their result titles, and where each was found to the state", async () => {
+		const states: string[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				states.push(String(request.state));
+				return { answers: request.questions.map(() => ({ answer: 0.1 })) };
+			},
+		};
+		await selectDatasources(judgeWith(backend), "릴리즈 날짜 언제로 정했어?", datasources, [
+			{
+				query: "팀에서 릴리즈 날짜 언제로 정했지?",
+				results: [
+					{ title: "Release moved to Friday", foundIn: ["slack"] },
+					{ title: "Release checklist", foundIn: ["local files"] },
+				],
+			},
+			{ query: "릴리즈 날짜 메일 왔었나?", results: [] },
+		]);
+		const state = states[0] ?? "";
+		expect(state).toContain('"팀에서 릴리즈 날짜 언제로 정했지?"');
+		expect(state).toMatch(/Release moved to Friday.*slack/u);
+		expect(state).toMatch(/Release checklist.*local files/u);
+		expect(state).toMatch(/릴리즈 날짜 메일 왔었나\?.*no result/iu);
+		expect(state).toMatch(/not found|negative/iu);
+		expect(state.indexOf("Similar past questions")).toBeLessThan(state.indexOf("User question:"));
+	});
+
+	it("leaves past questions out of the state when memory has none", async () => {
+		const states: string[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				states.push(String(request.state));
+				return { answers: request.questions.map(() => ({ answer: 0.1 })) };
+			},
+		};
+		await selectDatasources(judgeWith(backend), "release date?", datasources, []);
+		expect(states[0]).not.toContain("Similar past questions");
+	});
+
 	it("does not call Jev when no datasource is registered", async () => {
 		let calls = 0;
 		const backend: JevBackend = {

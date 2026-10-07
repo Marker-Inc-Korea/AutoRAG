@@ -136,6 +136,7 @@ import {
 	type DatasourceCandidate,
 	FALLBACK_QUERY_ROUTE,
 	needsFollowUp,
+	type PastSearchHint,
 	type QueryRoute,
 	routeQuery,
 	selectDatasources,
@@ -243,6 +244,11 @@ function hasSearchEvidence(toolName: string, details: unknown, isError: boolean)
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+
+/** Similar past searches shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
+const SIMILAR_PAST_SEARCH_LIMIT = 5;
+/** Results listed per similar past search; a search's leading results carry its answer. */
+const SIMILAR_PAST_RESULT_LIMIT = 4;
 
 /**
  * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
@@ -2028,8 +2034,9 @@ export class AutoRAGAgent {
 
 	/**
 	 * Jev datasource check for the local branch: one `noul` per authorized
-	 * datasource that has retrieval methods. Returns the ids to search with
-	 * every query before the rerank; a failed check searches none.
+	 * datasource that has retrieval methods, with where similar past questions
+	 * were answered (from retrieval memory) in the state. Returns the ids to
+	 * search with every query before the rerank; a failed check searches none.
 	 */
 	private async selectSearchDatasources(query: string): Promise<readonly string[]> {
 		if (this.jevJudge === undefined) return [];
@@ -2039,11 +2046,45 @@ export class AutoRAGAgent {
 				.map((method) => method.describe().datasourceId)
 				.filter((datasourceId) => datasourceId !== undefined),
 		);
-		const candidates: DatasourceCandidate[] = this.listDatasources()
-			.filter((entry) => searchable.has(entry.datasourceId))
-			.map(({ datasourceId, type, description }) => ({ datasourceId, type, description }));
+		const catalog = this.listDatasources().filter((entry) => searchable.has(entry.datasourceId));
+		const candidates: DatasourceCandidate[] = catalog.map(({ datasourceId, type, description }) => ({
+			datasourceId,
+			type,
+			description,
+		}));
 		if (candidates.length === 0) return [];
-		const selection = await selectDatasources(this.jevJudge, query, candidates);
+		// Where a past result's evidence came from: datasource chunks carry a
+		// virtual path rooted at the skill name (`/kakao/default/...`), but the
+		// model sometimes maps a datasource hit to a bare chunk id. The evidence
+		// method then still names the datasource (`search_datasource_kakao`,
+		// `datasource:kakao`, `kakao_sqlite`), so a datasource id that appears as
+		// a whole token of the method attributes it; longer ids are checked first
+		// so `kakao-work` wins over `kakao`. Indexed files are absolute paths
+		// under a search path; web evidence is a URL. Anything else names nothing.
+		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
+		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		const whereFound = ({ source, method }: { source: string; method: string }): string | undefined => {
+			if (/^https?:\/\//u.test(source)) return "web";
+			if (this.configuredSearchPaths.some((root) => source === root || source.startsWith(`${root}/`))) {
+				return "local files";
+			}
+			const byRoot = datasourceByRoot.get(source.split("/")[1] ?? "");
+			if (byRoot !== undefined) return byRoot;
+			const methodTokens = `_${method.toLowerCase().replace(/[^a-z0-9-]+/gu, "_")}_`;
+			return idsLongestFirst.find((id) =>
+				methodTokens.includes(`_${id.toLowerCase().replace(/[^a-z0-9-]+/gu, "_")}_`),
+			);
+		};
+		const pastSearches: PastSearchHint[] = this.memory
+			.findSimilarSearches(query, { limit: SIMILAR_PAST_SEARCH_LIMIT })
+			.map((past) => ({
+				query: past.query,
+				results: past.results.slice(0, SIMILAR_PAST_RESULT_LIMIT).map((result) => ({
+					title: result.title,
+					foundIn: [...new Set(result.evidence.map(whereFound).filter((where) => where !== undefined))],
+				})),
+			}));
+		const selection = await selectDatasources(this.jevJudge, query, candidates, pastSearches);
 		if (selection.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "datasource-selection-fallback",

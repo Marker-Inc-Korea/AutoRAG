@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acquireFileLock } from "../../src/filesystem/file-lock.ts";
-import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
+import { normalizeSessionEvidenceRef, RetrievalMemory, SIMILAR_SEARCH_THRESHOLD } from "../../src/memory/memory.ts";
 
 const MEMORY_PROCESS_FIXTURE = fileURLToPath(new URL("./memory-process-fixture.ts", import.meta.url));
 
@@ -176,6 +176,121 @@ function recordSession(memory: RetrievalMemory): void {
 		],
 	});
 }
+
+function recordPastSearch(
+	memory: RetrievalMemory,
+	sessionId: string,
+	query: string,
+	evidence: readonly { readonly source: string; readonly excerpt: string }[],
+): void {
+	memory.recordCuratedResultsSession({
+		sessionId,
+		query,
+		results: evidence.map((item, index) => ({
+			number: index + 1,
+			title: `Result ${index + 1}`,
+			summary: item.excerpt,
+			content: item.excerpt,
+			method: "search_datasource",
+			source: item.source,
+			evidenceRefs: [normalizeSessionEvidenceRef({ method: "search_datasource", ...item })],
+		})),
+	});
+}
+
+describe("RetrievalMemory.findSimilarSearches", () => {
+	it("returns a past search with a similar question, its result titles, and where their evidence came from", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		recordPastSearch(memory, "s1", "우리 슬랙 채널에 올라온 dependabot PR 알림 뭐 있었어?", [
+			{ source: "/slack/default/chunks/a", excerpt: "Pull request opened by dependabot[bot]" },
+			{ source: "/Users/me/notes/deps.md", excerpt: "dependency bump notes" },
+		]);
+		recordPastSearch(memory, "s2", "Latest stable Node.js version?", [
+			{ source: "https://nodejs.org/en", excerpt: "Node.js 24 LTS" },
+		]);
+
+		const similar = memory.findSimilarSearches("슬랙에 dependabot PR 올라온 거 알려줘");
+
+		expect(similar).toHaveLength(1);
+		expect(similar[0]?.query).toBe("우리 슬랙 채널에 올라온 dependabot PR 알림 뭐 있었어?");
+		expect(similar[0]?.similarity).toBeGreaterThanOrEqual(SIMILAR_SEARCH_THRESHOLD);
+		expect(similar[0]?.results).toEqual([
+			{ title: "Result 1", evidence: [{ source: "/slack/default/chunks/a", method: "search_datasource" }] },
+			{ title: "Result 2", evidence: [{ source: "/Users/me/notes/deps.md", method: "search_datasource" }] },
+		]);
+	});
+
+	it("orders by similarity, keeps only the newest search per question, and honours the limit", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		const now = vi.spyOn(Date, "now");
+		now.mockReturnValue(1_000);
+		recordPastSearch(memory, "old", "우리 회사 이번 분기 예산 승인자가 누구야?", [
+			{ source: "/Users/me/old-budget.md", excerpt: "old approver" },
+		]);
+		now.mockReturnValue(2_000);
+		recordPastSearch(memory, "new", "우리 회사 이번 분기 예산 승인자가 누구야?", [
+			{ source: "/Users/me/budget.md", excerpt: "approved by Mina" },
+		]);
+		recordPastSearch(memory, "s3", "이번 분기 예산 승인 일정 알려줘", [
+			{ source: "/kakao/default/chunks/b", excerpt: "예산 승인 일정" },
+		]);
+
+		const all = memory.findSimilarSearches("이번 분기 예산 승인자 누구야");
+		expect(all.map((entry) => entry.query)).toEqual([
+			"우리 회사 이번 분기 예산 승인자가 누구야?",
+			"이번 분기 예산 승인 일정 알려줘",
+		]);
+		expect(all[0]?.results.flatMap((result) => result.evidence.map(({ source }) => source))).toEqual([
+			"/Users/me/budget.md",
+		]);
+		expect(all[0]?.searchedAt).toBe(2_000);
+		expect(
+			memory.findSimilarSearches("이번 분기 예산 승인자 누구야", { limit: 1 }).map((entry) => entry.query),
+		).toEqual(["우리 회사 이번 분기 예산 승인자가 누구야?"]);
+	});
+
+	it("drops results the user marked not useful, and a search left with none", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		recordPastSearch(memory, "s1", "슬랙에서 Team Attention 관련 얘기 뭐 했었지?", [
+			{ source: "/discord/server/chunks/x", excerpt: "wrong guess" },
+			{ source: "/kakao/default/chunks/y", excerpt: "[팀어텐션 구봉님] 랄프톤 공지" },
+		]);
+		recordPastSearch(memory, "s2", "슬랙에서 Team Attention 얘기 했던 거", [
+			{ source: "/slack/default/chunks/z", excerpt: "unrelated" },
+		]);
+		memory.recordNumberedFeedback({
+			sessionId: "s1",
+			query: "슬랙에서 Team Attention 관련 얘기 뭐 했었지?",
+			feedback: [{ number: 1, useful: false }],
+		});
+		memory.recordNumberedFeedback({
+			sessionId: "s2",
+			query: "슬랙에서 Team Attention 얘기 했던 거",
+			feedback: [{ number: 1, useful: false }],
+		});
+
+		const similar = memory.findSimilarSearches("슬랙에서 Team Attention 관련 얘기");
+
+		expect(similar.map((entry) => entry.query)).toEqual(["슬랙에서 Team Attention 관련 얘기 뭐 했었지?"]);
+		expect(similar[0]?.results.flatMap((result) => result.evidence.map(({ source }) => source))).toEqual([
+			"/kakao/default/chunks/y",
+		]);
+	});
+
+	it("returns nothing for an unrelated question", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		recordPastSearch(memory, "s1", "카카오톡 대화에서 이번 주 저녁 약속 잡힌 게 있는지 찾아줘", [
+			{ source: "/kakao/default/chunks/z", excerpt: "저녁 7시" },
+		]);
+
+		expect(memory.findSimilarSearches("디스코드 대화에서 AutoRAG 관련 논의가 있었는지 찾아줘")).toEqual([]);
+		expect(memory.findSimilarSearches("야호")).toEqual([]);
+	});
+});
 
 describe("RetrievalMemory", () => {
 	it("starts with empty v4 state when file does not exist", () => {

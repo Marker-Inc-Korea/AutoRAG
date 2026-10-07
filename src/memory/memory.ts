@@ -185,6 +185,29 @@ export interface RetrievalMemoryOptions {
 	insightExtractor?: InsightExtractor;
 }
 
+/** One result of a past search, with where its evidence came from. */
+export interface SimilarSearchResult {
+	readonly title: string;
+	readonly evidence: readonly { readonly source: string; readonly method: string }[];
+}
+
+/** A past search whose question resembles the current one. */
+export interface SimilarSearch {
+	readonly query: string;
+	/** Character-bigram Dice similarity to the current question, in [0, 1]. */
+	readonly similarity: number;
+	/** When the past search recorded its results (epoch ms). */
+	readonly searchedAt: number;
+	readonly results: readonly SimilarSearchResult[];
+}
+
+/**
+ * Bigram Dice at or above this counts as a similar question. Calibrated on
+ * the maintainer's 113 recorded searches (Korean and English): rephrasings
+ * of one question scored 0.40-0.91, unrelated questions at most 0.29.
+ */
+export const SIMILAR_SEARCH_THRESHOLD = 0.35;
+
 const DEFAULT_SIGNAL_DEFAULTS: SignalDefaults = {
 	explicitWeight: 1,
 	followupWeight: 0.25,
@@ -459,6 +482,33 @@ function insightMatches(insight: RetrievalInsight, query: string): boolean {
 	let overlap = 0;
 	for (const token of queryTokens) if (insightTokens.has(token)) overlap++;
 	return overlap >= Math.min(2, insightTokens.size) && overlap / insightTokens.size >= 0.6;
+}
+
+/** Character bigrams of a question, ignoring case, spaces, and punctuation. */
+function questionBigrams(query: string): Map<string, number> {
+	const text = query.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+	const bigrams = new Map<string, number>();
+	for (let index = 0; index < text.length - 1; index++) {
+		const bigram = text.slice(index, index + 2);
+		bigrams.set(bigram, (bigrams.get(bigram) ?? 0) + 1);
+	}
+	return bigrams;
+}
+
+/**
+ * Dice coefficient over character bigrams. Works for Korean and English
+ * without a tokenizer: rephrasings share most bigrams even when particles
+ * and word endings differ.
+ */
+function questionSimilarity(left: ReadonlyMap<string, number>, right: ReadonlyMap<string, number>): number {
+	let shared = 0;
+	let total = 0;
+	for (const [bigram, count] of left) {
+		shared += Math.min(count, right.get(bigram) ?? 0);
+		total += count;
+	}
+	for (const count of right.values()) total += count;
+	return total === 0 ? 0 : (2 * shared) / total;
 }
 
 function defaultInsightExtractor(signals: readonly InsightExtractionSignal[], now: number): RetrievalInsight[] {
@@ -765,6 +815,47 @@ export class RetrievalMemory {
 					b.updatedAt - a.updatedAt ||
 					a.domain.localeCompare(b.domain),
 			);
+	}
+
+	/**
+	 * Past searches whose question resembles `query` (bigram Dice >=
+	 * {@link SIMILAR_SEARCH_THRESHOLD}), most similar first, newest search per
+	 * question. Each lists its result titles and evidence sources. Results the
+	 * user last marked not useful are dropped, and so is a search left with no
+	 * result.
+	 */
+	findSimilarSearches(query: string, options: { readonly limit?: number } = {}): SimilarSearch[] {
+		const target = questionBigrams(query);
+		const lastVerdict = new Map<string, FeedbackSentiment>();
+		for (const signal of this.data.feedbackSignals) {
+			if (signal.source === "explicit" && signal.target.type === "curated_result") {
+				lastVerdict.set(signal.target.resultId, signal.sentiment);
+			}
+		}
+		const evidenceById = new Map(this.data.evidenceChunks.map((chunk) => [chunk.stableEvidenceId, chunk]));
+		const sessions = new Map<string, { query: string; searchedAt: number; results: SimilarSearchResult[] }>();
+		for (const record of this.data.curatedResults) {
+			if (lastVerdict.get(record.resultId) === "not_useful") continue;
+			const session = sessions.get(record.sessionId) ?? { query: record.query, searchedAt: 0, results: [] };
+			session.searchedAt = Math.max(session.searchedAt, record.createdAt);
+			const evidence = record.evidenceIds
+				.map((id) => evidenceById.get(id))
+				.filter((chunk) => chunk !== undefined)
+				.map(({ source, method }) => ({ source, method }));
+			session.results.push({ title: record.title, evidence });
+			sessions.set(record.sessionId, session);
+		}
+		const newestPerQuestion = new Map<string, SimilarSearch>();
+		for (const session of sessions.values()) {
+			const similarity = questionSimilarity(target, questionBigrams(session.query));
+			if (similarity < SIMILAR_SEARCH_THRESHOLD) continue;
+			const existing = newestPerQuestion.get(session.query);
+			if (existing !== undefined && existing.searchedAt >= session.searchedAt) continue;
+			newestPerQuestion.set(session.query, { ...session, similarity });
+		}
+		return [...newestPerQuestion.values()]
+			.sort((a, b) => b.similarity - a.similarity || b.searchedAt - a.searchedAt)
+			.slice(0, options.limit);
 	}
 
 	// Compatibility projection for existing callers/tests while product code migrates to MethodHint wording.

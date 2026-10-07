@@ -189,35 +189,73 @@ export interface DatasourceSelection {
 	readonly fallbackReason?: string;
 }
 
-function describeDatasources(query: string, datasources: readonly DatasourceCandidate[]): string {
+/** A similar question asked before, its results, and where each was found. */
+export interface PastSearchHint {
+	readonly query: string;
+	/**
+	 * Results it returned. `foundIn` names registered datasource ids, `local
+	 * files`, or `web`; a title can also record that nothing was found there.
+	 */
+	readonly results: readonly { readonly title: string; readonly foundIn: readonly string[] }[];
+}
+
+function describeDatasources(
+	query: string,
+	datasources: readonly DatasourceCandidate[],
+	pastSearches: readonly PastSearchHint[],
+): string {
 	const catalog = datasources
 		.map((datasource) => `- ${datasource.datasourceId} (${datasource.type}): ${datasource.description}`)
 		.join("\n");
+	const history =
+		pastSearches.length === 0
+			? ""
+			: `\n\nSimilar past questions, the results they returned, and where each result came from. A hint, ` +
+				`not a rule: the same question can need other datasources this time. A result titled as not ` +
+				`found / no result / negative means that datasource was searched and did NOT have the answer.\n${pastSearches
+					.map((past) => {
+						const results = past.results
+							.map(
+								(result) =>
+									`\n  - ${result.title}${result.foundIn.length > 0 ? ` [${result.foundIn.join(", ")}]` : ""}`,
+							)
+							.join("");
+						return `- "${past.query}"${results.length > 0 ? results : " -> no result"}`;
+					})
+					.join("\n")}`;
 	return (
 		`An assistant answers the user's question from their local files and a set of registered datasources. ` +
 		`Local files are always searched. Each registered datasource is searched only when its content could hold ` +
-		`part of the answer.\n\nRegistered datasources:\n${catalog}\n\nUser question: ${query}`
+		`part of the answer.\n\n` +
+		`Each description below is only a short summary of what the operator knows is in that datasource, not a ` +
+		`complete list: every datasource can also hold other topics, people, and conversations that are not ` +
+		`mentioned. Do not rule a datasource out only because its description does not mention the question's ` +
+		`topic; judge by what kind of content the datasource holds and what the question asks for.\n\n` +
+		`Registered datasources:\n${catalog}${history}\n\nUser question: ${query}`
 	);
 }
 
 /**
  * Ask Jev, in one batched call, one `noul` per registered datasource: does
  * answering the question need that datasource searched? The state describes
- * every datasource, so Jev judges each one against the others. Never throws: a
- * missing credential or an unreachable backend searches no datasource, which
- * is the behavior without Jev.
+ * every datasource (descriptions are flagged as non-exhaustive summaries), so
+ * Jev judges each one against the others, plus where similar past questions
+ * were answered, when retrieval memory has any. Never throws: a missing
+ * credential or an unreachable backend searches no datasource, which is the
+ * behavior without Jev.
  */
 export async function selectDatasources(
 	judge: JevJudge,
 	query: string,
 	datasources: readonly DatasourceCandidate[],
+	pastSearches: readonly PastSearchHint[] = [],
 ): Promise<DatasourceSelection> {
 	if (datasources.length === 0) return { selected: [], probabilities: {} };
 	let verdicts: readonly Verdict[];
 	try {
 		verdicts = (
 			await judge(
-				describeDatasources(query, datasources),
+				describeDatasources(query, datasources, pastSearches),
 				datasources.map(({ datasourceId }) => ({
 					...check(`Should the "${datasourceId}" datasource be searched to answer the user question?`, {
 						true: `The "${datasourceId}" datasource's content could contain information that answers some part of the question.`,

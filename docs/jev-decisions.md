@@ -131,25 +131,51 @@ What happens next:
 
 On the `local` branch, Jev answers one more batched call: one `noul` per
 registered datasource (authorized, with retrieval methods), "Should the `<id>`
-datasource be searched to answer the user question?". The state lists every
-datasource as `id (type): description` above the question, so each is judged
-against the others; a datasource's `description` in the config is what Jev
-reads, so describe what each one holds. Every datasource at 0.5 or above is
-searched with every search query (the original or the decomposed ones), and its
-chunks join Jikji and MinSync in the pool the reranker orders, before the fast
-answer. The rest are not searched before the fast answer (the verification
-phase can still call `search_datasource_<id>`). A
+datasource be searched to answer the user question?". The registered set comes
+from the config: `autorag search` reads it on every call, while `autorag tui`
+and `autorag serve` read it at startup, so restart them after adding,
+disabling, or re-describing a datasource. Every datasource at 0.5 or
+above is searched with every search query (the original or the decomposed
+ones), and its chunks join Jikji and MinSync in the pool the reranker orders,
+before the fast answer. The rest are not searched before the fast answer (the
+verification phase can still call `search_datasource_<id>`). A
 `datasources-selected` diagnostic lists the selected and skipped datasources
 with their probabilities. If the check fails (missing credential, unreachable
 backend), no datasource is searched before the fast answer
 (`datasource-selection-fallback`), which is the behavior without Jev.
 
+The state Jev judges has three parts, followed by the question:
+
+1. **Datasource catalog**: `id (type): description` for every datasource.
+   Write each `description` in the config to say what the datasource holds
+   (channels, rooms, people, topics, time range). The state tells Jev that
+   every description is a **short, non-exhaustive summary**: a datasource can
+   hold other topics, people, and conversations that its description does not
+   mention, so a datasource is not ruled out just because its description is
+   silent on the question's topic.
+2. **Similar past questions** (only when retrieval memory has any): up to 5
+   earlier searches whose question resembles this one (character-bigram Dice
+   ≥ 0.35, newest per question), each with up to 4 result titles and where the
+   evidence came from (`[kakao]`, `[local files]`, `[web]`, ...). Results the
+   user marked not useful are left out. A result titled as not found or
+   negative tells Jev that datasource was searched and did not have the
+   answer. Jev treats this as a hint, not a rule.
+3. **User question**.
+
 The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)
-against 10 real datasources and 6 labeled questions (2 English Slack/email, 3
-Korean KakaoTalk/Discord, 1 file-only), 3 runs:
-18/18 passed. Required datasources scored 0.60-0.95; datasources the question
-clearly excluded scored at most 0.37
-(`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`).
+with the maintainer's 10 real datasources (descriptions written from each
+archive's actual content) and retrieval memory (113 past searches). The set has
+10 labeled questions: 6 naming a datasource, 3 whose topic no description
+mentions (a restaurant tip in KakaoTalk, a birthday in a Discord server, a
+flight booking email), and 1 that only description content can resolve (the
+shared-fund ledger lives in one of two Discord servers). Over 3 runs, 30/30
+passed. Required datasources scored 0.71-0.96, and datasources the question
+excluded scored at most 0.38
+(`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`). With memory, a
+similar past question sharpens the choice: for "dependabot PR 알림", Discord,
+Spotlight, and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
+showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉님
+랄프톤 공지" rose from 0.91 to 0.98.
 
 ### Follow-up check after the fast answer
 
