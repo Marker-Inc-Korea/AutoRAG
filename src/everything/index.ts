@@ -3,6 +3,7 @@ export {
 	type EnsureEverythingBinariesResult,
 	type EverythingArch,
 	type EverythingArchAssets,
+	type EverythingBinaryResolutionMode,
 	type EverythingBundleManifest,
 	ensureEverythingBinaries,
 	everythingArch,

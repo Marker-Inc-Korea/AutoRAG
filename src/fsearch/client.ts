@@ -292,14 +292,23 @@ export class FSearchClient {
 		return this.platform === "darwin" || this.platform === "linux";
 	}
 
-	/** Search the workspace database, building it on first use; walks when fsearch-cli is missing. */
+	/**
+	 * Search the prebuilt workspace database. Read-only: a missing database is
+	 * never built here (refresh does that), so a query never pays for indexing.
+	 * Without fsearch-cli or a database, it walks the configured folders.
+	 */
 	search(request: FSearchSearchRequest): Promise<FSearchSearchResult> {
 		return this.serialize(async () => {
 			const unsupported = this.unsupportedFailure();
 			if (unsupported !== undefined) return unsupported;
 			const binary = await this.resolveBinary();
-			if (!binary.ok) {
-				// Issue #1763 graceful fallback: no fsearch-cli → bounded slow walk.
+			const unavailable = !binary.ok
+				? `fsearch-cli is unavailable (${binary.message})`
+				: !existsSync(this.dbPath)
+					? "the fsearch database has not been built yet (run `autorag refresh`)"
+					: undefined;
+			if (unavailable !== undefined || !binary.ok) {
+				// Issue #1763 graceful fallback: bounded slow walk.
 				try {
 					const walked = await walkFileSearch(this.options.folders, request, {
 						maxVisited: this.options.walkMaxVisited,
@@ -310,15 +319,11 @@ export class FSearchClient {
 						backend: "walk",
 						results: walked.entries,
 						truncated: walked.truncated || undefined,
-						note: `fsearch-cli is unavailable (${binary.message}); answered with a slow filesystem walk over the configured search folders${walked.truncated ? " (truncated)" : ""}.`,
+						note: `${unavailable}; answered with a slow filesystem walk over the configured search folders${walked.truncated ? " (truncated)" : ""}.`,
 					};
 				} catch (error) {
 					return { ok: false, reason: "search-failed", message: (error as Error).message };
 				}
-			}
-			if (!existsSync(this.dbPath)) {
-				const indexed = await this.indexLocked(binary.path);
-				if (!indexed.ok) return indexed;
 			}
 			const args = buildFSearchSearchArgs(this.dbPath, this.socketPath(), request);
 			const result = await this.run(binary.path, args, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);

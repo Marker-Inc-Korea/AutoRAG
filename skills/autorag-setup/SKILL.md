@@ -154,11 +154,18 @@ replace the implicit `~/.autorag/config.json`. Legacy cwd
 ### Retrieval defaults
 
 MinSync and Jikji are enabled by default. Leave them enabled unless the
-user explicitly asks otherwise. MinSync auto-installs a verified GitHub release
-into `<workspace>/.autorag/bin` on first use (`minSync.autoInstall` defaults to
-true). Set `"autoInstall": false` only when managing the binary yourself. Jikji
-auto-installs `jikji-cli` through cargo when enabled (`jikji.autoInstall`
-defaults to true; requires the Rust toolchain).
+user explicitly asks otherwise. Indexing never happens while answering: a
+question only reads indexes that `autorag refresh` (or `autorag watch`) built,
+so run a refresh after setup and whenever documents change. A never-refreshed
+workspace still answers, but without MinSync/Jikji evidence.
+
+Refresh (never a query) auto-installs the binaries: MinSync installs a verified
+GitHub release into `<workspace>/.autorag/bin` (`minSync.autoInstall` defaults
+to true), and Jikji installs `jikji-cli` through cargo (`jikji.autoInstall`
+defaults to true; requires the Rust toolchain). Set `"autoInstall": false` only
+when managing the binary yourself. Refresh is incremental: MinSync syncs only
+changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Roots
+prepare in parallel.
 
 Jikji stores its prepared corpus metadata in a hidden `.jikji` directory
 inside each indexed source root — that is Jikji's native index layout and

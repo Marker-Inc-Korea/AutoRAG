@@ -332,48 +332,9 @@ export class MinSyncClient {
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
-		const configPath = minSyncConfigPath(this.workspacePath);
-		const configuredDimension = configuredVectorDimension(this.workspacePath);
-		const effective = mode === "bm25" ? { config: this.embedder ?? {} } : await this.effectiveEmbedder();
-		if (
-			effective.config.dimension !== undefined &&
-			configuredDimension !== undefined &&
-			effective.config.dimension !== configuredDimension
-		) {
-			const migration =
-				configuredDimension === 768 && effective.config.dimension !== 768
-					? ` ${MINSYNC_OLLAMA_MIGRATION_MESSAGE}`
-					: "";
-			throw new MinSyncQueryError(
-				null,
-				`configured embedder dimension ${effective.config.dimension} does not match indexed dimension ${configuredDimension}; reindex required.${migration}`,
-			);
-		}
-		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
-		if (existsSync(cursorPath) && effective.identity !== undefined && this.identityMismatch(effective.identity)) {
-			throw new MinSyncQueryError(
-				null,
-				"embedding identity does not match the indexed workspace; full reindex required",
-			);
-		}
-		const shouldRewriteConfig = this.embedder !== undefined || effective.identity !== undefined;
-		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
-		const configRewritten =
-			shouldRewriteConfig && rewriteEmbedderConfig(this.workspacePath, effective.config) === true;
-		try {
-			if (effective.runtimeUnavailable)
-				throw new MinSyncQueryError(
-					null,
-					effective.runtimeReason ??
-						"Semantic embedder is unavailable; run autorag models prefetch (or models import).",
-				);
-			await ensureLocalEmbedder({ baseUrl: effective.config.baseUrl, timeoutMs: effective.config.timeoutMs });
-			const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
-			if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
-			return parseQueryHits(result.stdout);
-		} finally {
-			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
-		}
+		const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
+		if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
+		return parseQueryHits(result.stdout);
 	}
 
 	private async spawn(

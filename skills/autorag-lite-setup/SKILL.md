@@ -162,9 +162,10 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --jso
 - CLI `--method <csv>` accepts `parsed`, `minsync`, `datasources`, `jikji`,
   `everything` (Windows), `fsearch` (macOS/Linux), and `all`. MCP `methods`
   accepts the same individual methods, not `all`. Unknown values are rejected.
-- MinSync and Jikji auto-install on first use by default. If they are missing
-  or broken, run a full refresh or return to setup rather than silently
-  degrading to lexical-only search.
+- Indexing never runs while answering: retrieval only reads what refresh built.
+  MinSync and Jikji auto-install during refresh (never during a query). If they
+  are missing or broken, run a full refresh or return to setup rather than
+  silently degrading to lexical-only search.
 - MinSync's default embedder is in-process native Qwen3 embeddings
   (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.5+): no
   embedder flags, no API key, and no external daemon (such as Ollama) are

@@ -286,7 +286,8 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(result.diagnostics[0]?.code).toBe("jikji-unavailable");
 	});
 
-	it("starts prepare asynchronously and skips Jikji for the current find", async () => {
+	it("serves find from the existing index and never runs prepare on a query", async () => {
+		// Index builds belong to refresh; a query only reads what is there.
 		writeFakeJikji();
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
@@ -298,13 +299,10 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			fsearch: false,
 		});
 
-		const first = await agent.findJikji("Q3 report");
-		expect(first.answerPack).toBeUndefined();
+		const result = await agent.findJikji("Q3 report");
 
-		await agent.prepareJikji();
-
-		const second = await agent.findJikji("Q3 report");
-		expect(second.answerPack?.answerPaths).toContain(realpathSync(join(docs, "q3-report.txt")));
+		expect(result.answerPack?.answerPaths).toContain(realpathSync(join(docs, "q3-report.txt")));
+		expect(loggedArgs().map((args) => args[0])).toEqual(["find"]);
 	});
 
 	it("drops user-excluded paths from the merged Jikji answer pack", async () => {

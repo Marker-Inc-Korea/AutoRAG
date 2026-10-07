@@ -685,10 +685,6 @@ export class AutoRAGAgent {
 	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
-	private jikjiPrepareInFlight: Promise<void> | undefined;
-	private jikjiReady = false;
-	private minSyncPrepareInFlight: Promise<MinSyncSyncResult | undefined> | undefined;
-	private minSyncReady = false;
 	private refreshState: RefreshState = {
 		inFlight: false,
 		lastOutcome: "never",
@@ -806,7 +802,6 @@ export class AutoRAGAgent {
 				scopedTopK: this.limits.minSyncScopedQueryTopK,
 			};
 			this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
-			this.minSyncReady = this.minSyncMethod.isReady();
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
@@ -824,7 +819,6 @@ export class AutoRAGAgent {
 				...(options.jikji ?? {}),
 				root: this.workspaceProjectRoot,
 			});
-			this.jikjiReady = this.searchPaths.every((searchPath) => this.jikjiClient?.isPrepared(searchPath) === true);
 		}
 		if (options.everything !== false) {
 			const everythingClient = new EverythingClient({
@@ -1350,8 +1344,6 @@ export class AutoRAGAgent {
 		this.routingDiagnostics = [];
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
-		this.scheduleJikjiPrepare();
-		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
 		/**
@@ -2025,7 +2017,8 @@ export class AutoRAGAgent {
 		options: RetrievalOptions,
 	): Promise<string> {
 		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
-		const vectorReady = this.minSyncMethod?.isReady() === true;
+		// Queries only read the prebuilt MinSync index; an unbuilt workspace makes
+		// `minsync query` fail fast and this source contributes nothing.
 		const formatSearchQueries = (list: readonly string[]): string =>
 			`Search queries (decomposed from the original question):\n${list.map((entry, index) => `[${index + 1}] ${entry}`).join("\n")}`;
 		const perQuery = await Promise.all(
@@ -2034,9 +2027,9 @@ export class AutoRAGAgent {
 					this.jikjiClient === undefined
 						? Promise.resolve(undefined)
 						: this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
-					vectorReady
-						? (this.minSyncMethod?.retrieve(searchQuery, retrieveOptions).catch(() => []) ?? Promise.resolve([]))
-						: Promise.resolve([]),
+					this.minSyncMethod === undefined
+						? Promise.resolve([])
+						: this.minSyncMethod.retrieve(searchQuery, retrieveOptions).catch(() => []),
 				]),
 			),
 		);
@@ -2166,37 +2159,6 @@ export class AutoRAGAgent {
 		} catch {
 			return undefined;
 		}
-	}
-
-	/**
-	 * Prepare MinSync lazily without holding up the current search. Parsed
-	 * mirrors are built first because MinSync stages and indexes those mirrors.
-	 */
-	/** Prepare MinSync in the background; the returned promise is for tests. */
-	scheduleMinSyncPrepareForTest(): Promise<MinSyncSyncResult | undefined> | undefined {
-		return this.scheduleMinSyncPrepare();
-	}
-
-	private scheduleMinSyncPrepare(): Promise<MinSyncSyncResult | undefined> | undefined {
-		if (this.minSyncMethod === undefined || this.minSyncReady || this.minSyncPrepareInFlight !== undefined) {
-			return this.minSyncPrepareInFlight;
-		}
-		this.minSyncPrepareInFlight = Promise.resolve()
-			.then(async () => {
-				await this.syncParsedMirrors(false);
-				if (!this.minSyncMethod) return undefined;
-				this.minSyncReady = this.minSyncMethod.isReady();
-				if (this.minSyncReady) return undefined;
-				const result = await this.minSyncMethod.sync();
-				this.minSyncReady = result?.ok === true;
-				this.refreshState = { ...this.refreshState, minsync: result };
-				return result;
-			})
-			.catch(() => undefined)
-			.finally(() => {
-				this.minSyncPrepareInFlight = undefined;
-			});
-		return this.minSyncPrepareInFlight;
 	}
 
 	/**
@@ -2746,7 +2708,6 @@ export class AutoRAGAgent {
 
 	async syncMinSync(force = false): Promise<MinSyncSyncResult | undefined> {
 		const result = await this.minSyncMethod?.sync(force);
-		this.minSyncReady = result?.ok === true;
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
@@ -2791,38 +2752,16 @@ export class AutoRAGAgent {
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
 	}
 
-	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
-		if (this.jikjiClient === undefined) return undefined;
-		const results: JikjiPrepareResult[] = [];
-		for (const sourcePath of this.searchPaths) {
-			results.push(await this.jikjiClient.prepare(sourcePath));
-		}
-		this.jikjiReady = results.length === this.searchPaths.length && results.every((result) => result.ok);
-		return results;
-	}
-
 	/**
-	 * Start Jikji preparation without delaying the current search turn. A
-	 * subsequent turn can use the prepared index, while the child process keeps
-	 * running after emit_autorag_results has terminated the agent loop.
+	 * Build or incrementally update every root's Jikji index. Called only by
+	 * refresh/watch (and the explicit `prepareJikji()` API), never by a query:
+	 * `jikji prepare` reuses unchanged documents, and roots run in parallel so
+	 * one slow root does not serialize the rest.
 	 */
-	private scheduleJikjiPrepare(): void {
-		if (this.jikjiClient === undefined || this.jikjiPrepareInFlight !== undefined) return;
-		this.jikjiPrepareInFlight = Promise.resolve()
-			.then(async () => {
-				const results = await this.executeJikjiPrepare();
-				const diagnostics = (results ?? [])
-					.map((result) => jikjiPrepareDiagnostic(result))
-					.filter((diag): diag is JikjiDiagnostic => diag !== undefined);
-				this.refreshState = { ...this.refreshState, jikjiDiagnostics: diagnostics };
-			})
-			.catch(() => {
-				// Jikji is optional; the current and future searches fall back to
-				// the other retrieval paths when background preparation fails.
-			})
-			.finally(() => {
-				this.jikjiPrepareInFlight = undefined;
-			});
+	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
+		const client = this.jikjiClient;
+		if (client === undefined) return undefined;
+		return Promise.all(this.searchPaths.map((sourcePath) => client.prepare(sourcePath)));
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
@@ -2854,23 +2793,6 @@ export class AutoRAGAgent {
 	): Promise<JikjiFindProviderResult> {
 		if (this.jikjiClient === undefined) {
 			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
-		}
-		if (!this.jikjiReady) {
-			this.scheduleJikjiPrepare();
-			return {
-				answerPack: undefined,
-				policy: undefined,
-				diagnostics: [
-					{
-						code: "jikji-unavailable",
-						severity: "warning",
-						message: "Jikji is not prepared yet; background preparation started and this turn is falling back.",
-						source: "jikji",
-					},
-				],
-				roots: this.searchPaths,
-				perRoot: [],
-			};
 		}
 		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
 		const findOpts: JikjiFindOptions = {

@@ -5,12 +5,18 @@ import { join } from "node:path";
 export function writeFakeFSearchExecutable(directory: string, resultPath: string): string {
 	const binaryPath = join(directory, process.platform === "win32" ? "fsearch-cli.exe" : "fsearch-cli");
 	const script = `#!/usr/bin/env node
+const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname } = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] === "--version") {
   console.log("fsearch-cli 0.3");
   process.exit(0);
 }
 if (args[0] === "index") {
+  // Like the real CLI, \`index --db <path>\` writes the database file.
+  const db = args[args.indexOf("--db") + 1];
+  mkdirSync(dirname(db), { recursive: true });
+  writeFileSync(db, "db");
   console.log(JSON.stringify({ indexed: true }));
   process.exit(0);
 }

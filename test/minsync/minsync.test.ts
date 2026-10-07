@@ -156,6 +156,23 @@ describe("MinSyncClient", () => {
 		]);
 	});
 
+	it("does not rewrite the managed config during a query", async () => {
+		const config = join(minsyncWorkspace, ".minsync", "config.toml");
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		const original = '[embedder]\nid = "indexed"\n';
+		writeFileSync(config, original);
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const client = new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { id: "query-only", dimension: 1024 },
+		});
+
+		await client.query("renewal cancellation", 2);
+
+		expect(readFileSync(config, "utf8")).toBe(original);
+	});
+
 	it("surfaces the native query failure instead of returning empty hits", async () => {
 		// Given
 		writeFileSync(
@@ -720,6 +737,21 @@ process.exit(0);
 		expect(hybridResults).toHaveLength(1);
 	});
 
+	it("fails fast instead of waiting behind a refresh sync", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+		const refresh = method.sync();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
+			`another sync is in progress (${minsyncWorkspace})`,
+		);
+		await refresh;
+	});
+
 	it("routes lexical retrieval through MinSync BM25 mode", async () => {
 		writeFakeMinSync(
 			JSON.stringify({
@@ -750,18 +782,21 @@ process.exit(0);
 		);
 	});
 
-	it("exposes an install-failed diagnostic through retrieval after auto-install fails", async () => {
-		// Given
+	it("never auto-installs during retrieval; a missing binary yields no results", async () => {
+		// Given: no binary anywhere, and an installer that records any attempt.
 		const originalPath = process.env.PATH;
 		process.env.PATH = join(root, "empty-path");
+		const installAttempts: string[] = [];
 		const method = new MinSyncVectorMethod({
 			root,
 			workspacePath: minsyncWorkspace,
 			installer: {
 				cargoInstaller: async () => {
+					installAttempts.push("cargo");
 					throw new Error("mock cargo failure");
 				},
 				releaseProvider: async () => {
+					installAttempts.push("release");
 					throw new Error("mock install failure");
 				},
 			},
@@ -772,16 +807,11 @@ process.exit(0);
 
 		try {
 			// When
-			const { results, diagnostics } = await engine.retrieve("renewal cancellation");
+			const { results } = await engine.retrieve("renewal cancellation");
 
-			// Then
+			// Then: the query turn contributes nothing and never waits on an install.
 			expect(results).toEqual([]);
-			expect(diagnostics).toHaveLength(1);
-			expect(diagnostics[0]).toMatchObject({
-				code: "minsync-unavailable",
-				severity: "warning",
-				source: "minsync",
-			});
+			expect(installAttempts).toEqual([]);
 		} finally {
 			process.env.PATH = originalPath;
 		}
