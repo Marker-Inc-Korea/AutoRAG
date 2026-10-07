@@ -14,6 +14,13 @@ import JSZip from "jszip";
 
 export type EverythingArch = "x64" | "arm64";
 
+/**
+ * `"install"` extracts and verifies the pinned binaries when the workspace
+ * cache is missing or invalid; `"cached"` returns only an already extracted,
+ * hash-verified cache entry and never writes to disk.
+ */
+export type EverythingBinaryResolutionMode = "cached" | "install";
+
 export interface EverythingArchAssets {
 	readonly everythingArchive: string;
 	readonly everythingArchiveSha256: string;
@@ -41,6 +48,8 @@ export interface EnsureEverythingBinariesOptions {
 	readonly bundleDir?: string;
 	/** Bundle manifest. Defaults to `<bundleDir>/manifest.json`. */
 	readonly manifest?: EverythingBundleManifest;
+	/** Defaults to `"install"`; `"cached"` is the read-only resolution a query uses. */
+	readonly mode?: EverythingBinaryResolutionMode;
 }
 
 export type EnsureEverythingBinariesResult =
@@ -52,7 +61,7 @@ export type EnsureEverythingBinariesResult =
 	  }
 	| {
 			readonly ok: false;
-			readonly reason: "unsupported-platform" | "bundle-missing" | "install-failed";
+			readonly reason: "unsupported-platform" | "bundle-missing" | "install-failed" | "not-installed";
 			readonly message: string;
 	  };
 
@@ -95,8 +104,12 @@ export function loadEverythingBundleManifest(bundleDir: string): EverythingBundl
 }
 
 /**
- * Extract and verify the bundled Everything + ES binaries for this Windows
- * host. Never throws: every failure is reported with its underlying message.
+ * Resolve the bundled Everything + ES binaries for this Windows host. Never
+ * throws: every failure is reported with its underlying message. `mode:
+ * "install"` (default) extracts and verifies them from the bundled ZIPs when
+ * the workspace cache is missing or invalid; `mode: "cached"` is read-only and
+ * reports `not-installed` instead of writing so a query can only use verified,
+ * already-extracted binaries.
  */
 export async function ensureEverythingBinaries(
 	options: EnsureEverythingBinariesOptions,
@@ -135,8 +148,21 @@ export async function ensureEverythingBinaries(
 	}
 
 	const { everythingPath, esPath } = everythingBinaryPaths(options.root, manifest.everythingVersion, arch);
-	if (fileHasSha256(everythingPath, assets.everythingSha256) && fileHasSha256(esPath, assets.esSha256)) {
+	const everythingCached = fileHasSha256(everythingPath, assets.everythingSha256);
+	const esCached = fileHasSha256(esPath, assets.esSha256);
+	if (everythingCached && esCached) {
 		return { ok: true, everythingPath, esPath, source: "cached" };
+	}
+	if ((options.mode ?? "install") === "cached") {
+		const state =
+			everythingCached || esCached
+				? "are incomplete or do not match their pinned SHA-256 digests"
+				: "are not installed";
+		return {
+			ok: false,
+			reason: "not-installed",
+			message: `Everything ${manifest.everythingVersion} (${arch}) binaries ${state} under ${dirname(everythingPath)}; run \`autorag refresh\` to (re)install and index them.`,
+		};
 	}
 	try {
 		mkdirSync(dirname(everythingPath), { recursive: true });

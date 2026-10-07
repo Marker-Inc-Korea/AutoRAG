@@ -156,6 +156,23 @@ describe("MinSyncClient", () => {
 		]);
 	});
 
+	it("does not rewrite the managed config during a query", async () => {
+		const config = join(minsyncWorkspace, ".minsync", "config.toml");
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		const original = '[embedder]\nid = "indexed"\n';
+		writeFileSync(config, original);
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const client = new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { id: "query-only", dimension: 1024 },
+		});
+
+		await client.query("renewal cancellation", 2);
+
+		expect(readFileSync(config, "utf8")).toBe(original);
+	});
+
 	it("surfaces the native query failure instead of returning empty hits", async () => {
 		// Given
 		writeFileSync(
@@ -718,6 +735,21 @@ process.exit(0);
 
 		expect(semantic).toHaveLength(1);
 		expect(hybridResults).toHaveLength(1);
+	});
+
+	it("fails fast instead of waiting behind a refresh sync", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+		const refresh = method.sync();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
+			`another sync is in progress (${minsyncWorkspace})`,
+		);
+		await refresh;
 	});
 
 	it("routes lexical retrieval through MinSync BM25 mode", async () => {

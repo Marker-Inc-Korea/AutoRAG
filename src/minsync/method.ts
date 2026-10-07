@@ -64,6 +64,7 @@ function lookupInPath(env: NodeJS.ProcessEnv): string | undefined {
  * retriever runs them at once, so operations for one workspace queue here.
  */
 const workspaceOperationTails = new Map<string, Promise<unknown>>();
+const workspaceSyncInFlight = new Map<string, number>();
 
 function withWorkspaceLock<T>(workspacePath: string, run: () => Promise<T>): Promise<T> {
 	const previous = workspaceOperationTails.get(workspacePath) ?? Promise.resolve();
@@ -90,7 +91,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly runtime: MinSyncRuntime | undefined;
 	private readonly defaultTopK: number;
 	private readonly scopedTopK: number;
-	private installFailed = false;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -131,7 +131,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async sync(force = false): Promise<MinSyncSyncResult> {
-		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force));
+		const inFlight = workspaceSyncInFlight.get(this.workspacePath) ?? 0;
+		workspaceSyncInFlight.set(this.workspacePath, inFlight + 1);
+		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force)).finally(() => {
+			const remaining = (workspaceSyncInFlight.get(this.workspacePath) ?? 1) - 1;
+			if (remaining === 0) workspaceSyncInFlight.delete(this.workspacePath);
+			else workspaceSyncInFlight.set(this.workspacePath, remaining);
+		});
 	}
 
 	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
@@ -162,7 +168,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		if (lookupInPath(process.env) !== undefined) return false;
 		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
 		if (existsSync(cachedBinary)) return false;
-		return this.installFailed || !this.autoInstall;
+		return true;
 	}
 
 	/** Status distinguishes an explicit missing override from deferred resolution. */
@@ -176,6 +182,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		if ((workspaceSyncInFlight.get(this.workspacePath) ?? 0) > 0) {
+			throw new Error(`another sync is in progress (${this.workspacePath})`);
+		}
 		return withWorkspaceLock(this.workspacePath, () => this.retrieveUnlocked(query, options));
 	}
 
@@ -250,7 +259,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				const installed = await ensureMinSyncBinary({ ...this.installer, root: this.root });
 				return installed.binaryPath;
 			} catch {
-				this.installFailed = true;
 				return degrade(this.workspacePath, "install-failed");
 			}
 		}

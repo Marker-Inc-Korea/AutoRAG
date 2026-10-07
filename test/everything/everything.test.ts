@@ -124,6 +124,43 @@ describe("ensureEverythingBinaries", () => {
 		if (result.ok) throw new Error("expected failure");
 		expect(result.message).toContain("ia32");
 	});
+
+	it("cached mode never extracts and reports not-installed with a refresh hint", async () => {
+		const { bundleDir, manifest } = await writeBundle();
+		const result = await ensureEverythingBinaries({
+			root,
+			platform: "win32",
+			arch: "x64",
+			bundleDir,
+			manifest,
+			mode: "cached",
+		});
+		expect(result).toMatchObject({ ok: false, reason: "not-installed" });
+		if (result.ok) throw new Error("expected failure");
+		expect(result.message).toContain("autorag refresh");
+		expect(existsSync(join(root, ".autorag"))).toBe(false);
+	});
+
+	it("cached mode returns the verified cache and never rewrites an invalid one", async () => {
+		const { bundleDir, manifest } = await writeBundle();
+		const installed = await ensureEverythingBinaries({ root, platform: "win32", arch: "x64", bundleDir, manifest });
+		expect(installed).toMatchObject({ ok: true, source: "installed" });
+		if (!installed.ok) throw new Error("expected install");
+
+		const cachedOptions = {
+			root,
+			platform: "win32" as const,
+			arch: "x64",
+			bundleDir,
+			manifest,
+			mode: "cached" as const,
+		};
+		expect(await ensureEverythingBinaries(cachedOptions)).toMatchObject({ ok: true, source: "cached" });
+
+		writeFileSync(installed.esPath, "corrupted");
+		expect(await ensureEverythingBinaries(cachedOptions)).toMatchObject({ ok: false, reason: "not-installed" });
+		expect(readFileSync(installed.esPath, "utf8")).toBe("corrupted");
+	});
 });
 
 describe("buildEverythingIni", () => {
@@ -362,5 +399,76 @@ describe("EverythingClient", () => {
 		const client = new EverythingClient({ root, folders: [root], platform: "linux" });
 		expect(client.isSupported()).toBe(false);
 		expect(await client.search({ query: "a" })).toMatchObject({ ok: false, reason: "unsupported-platform" });
+	});
+
+	it("never installs on a cold search and still installs on the following refresh", async () => {
+		const { bundleDir, manifest } = await writeBundle();
+		const calls: Array<{ command: string; args: readonly string[] }> = [];
+		let launches = 0;
+		const client = new EverythingClient({
+			root,
+			folders: [join(root, "docs")],
+			platform: "win32",
+			resolveBinaries: (mode) =>
+				ensureEverythingBinaries({ root, platform: "win32", arch: "x64", bundleDir, manifest, mode }),
+			run: async (command, args) => {
+				calls.push({ command, args });
+				const stdout = args.includes("-get-everything-version")
+					? "1.4.1.1032\r\n"
+					: args.includes("-json")
+						? '[{"filename":"C:\\\\docs\\\\a.txt","size":1,"date_modified":"2026-10-01T00:00:00"}]'
+						: "0\r\n";
+				return { code: 0, stdout, stderr: "" };
+			},
+			launch: () => {
+				launches += 1;
+			},
+		});
+
+		// Cold query: nothing extracted, no process started, actionable failure.
+		const cold = await client.search({ query: "a" });
+		expect(cold).toMatchObject({ ok: false, reason: "not-installed" });
+		if (cold.ok) throw new Error("expected failure");
+		expect(cold.message).toContain("autorag refresh");
+		expect(calls).toHaveLength(0);
+		expect(launches).toBe(0);
+		expect(existsSync(join(root, ".autorag", "everything"))).toBe(false);
+
+		// The miss did not poison refresh: index still builds, starts, and indexes.
+		expect(await client.index()).toMatchObject({ ok: true });
+		expect(launches).toBe(1);
+		expect(existsSync(join(root, ".autorag", "everything", "1.4.1.1032", "x64", "es.exe"))).toBe(true);
+
+		// A warm query now reads only the verified cache.
+		expect(await client.search({ query: "a" })).toEqual({
+			ok: true,
+			results: [{ path: "C:\\docs\\a.txt", type: "file", size: 1, dateModified: "2026-10-01T00:00:00" }],
+		});
+	});
+
+	it("stop never installs binaries just to stop a non-running instance", async () => {
+		const { bundleDir, manifest } = await writeBundle();
+		const calls: string[][] = [];
+		const client = new EverythingClient({
+			root,
+			folders: [root],
+			platform: "win32",
+			resolveBinaries: (mode) =>
+				ensureEverythingBinaries({ root, platform: "win32", arch: "x64", bundleDir, manifest, mode }),
+			run: async (_command, args) => {
+				calls.push([...args]);
+				return { code: 0, stdout: "1.4.1.1032\r\n", stderr: "" };
+			},
+			launch: () => {},
+		});
+		await client.stop();
+		expect(calls).toHaveLength(0);
+		expect(existsSync(join(root, ".autorag", "everything"))).toBe(false);
+	});
+
+	it("a query through the default resolver writes nothing to the workspace cache", async () => {
+		const client = new EverythingClient({ root, folders: [root], platform: "win32" });
+		expect((await client.search({ query: "a" })).ok).toBe(false);
+		expect(existsSync(join(root, ".autorag"))).toBe(false);
 	});
 });

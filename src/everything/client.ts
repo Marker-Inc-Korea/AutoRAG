@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type EnsureEverythingBinariesResult, ensureEverythingBinaries } from "./bundle.ts";
+import {
+	type EnsureEverythingBinariesResult,
+	type EverythingBinaryResolutionMode,
+	ensureEverythingBinaries,
+} from "./bundle.ts";
 
 /**
  * Drives a private, user-level Everything instance per AutoRAG workspace.
@@ -54,6 +58,7 @@ export type EverythingFailureReason =
 	| "unsupported-platform"
 	| "bundle-missing"
 	| "install-failed"
+	| "not-installed"
 	| "not-running"
 	| "startup-failed"
 	| "index-failed"
@@ -103,7 +108,12 @@ export interface EverythingClientOptions extends EverythingOptions {
 	/** Folders Everything indexes (the configured search paths). */
 	readonly folders: readonly string[];
 	readonly platform?: NodeJS.Platform;
-	readonly resolveBinaries?: () => Promise<EnsureEverythingBinariesResult>;
+	/**
+	 * Resolve the bundled executables. `"cached"` (queries and stop) must
+	 * return only already extracted, hash-verified binaries; `"install"`
+	 * (refresh/index) may extract them. Defaults to `ensureEverythingBinaries`.
+	 */
+	readonly resolveBinaries?: (mode: EverythingBinaryResolutionMode) => Promise<EnsureEverythingBinariesResult>;
 	readonly run?: EverythingRunner;
 	readonly launch?: EverythingLauncher;
 	readonly pollIntervalMs?: number;
@@ -260,12 +270,14 @@ export class EverythingClient {
 	}
 
 	/**
-	 * Search the running instance. Read-only: never starts Everything or waits
-	 * for it to index (refresh does that), so a query never pays startup cost.
+	 * Search the running instance. Read-only: never starts Everything, waits
+	 * for it to index, or installs its binaries (refresh does that), so a query
+	 * never pays startup or extraction cost. A cold cache reports
+	 * `not-installed` with a refresh hint instead.
 	 */
 	search(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
 		return this.serialize(async () => {
-			const binaries = await this.resolveBinaries();
+			const binaries = await this.resolveBinaries("cached");
 			if (!binaries.ok) return binaries;
 			const ping = await this.ping(binaries.esPath);
 			if (ping.code !== 0) {
@@ -312,10 +324,10 @@ export class EverythingClient {
 		});
 	}
 
-	/** Exit this workspace's Everything instance if it is running. */
+	/** Exit this workspace's Everything instance if it is running. Never installs binaries. */
 	stop(): Promise<void> {
 		return this.serialize(async () => {
-			const binaries = await this.resolveBinaries();
+			const binaries = await this.resolveBinaries("cached");
 			if (!binaries.ok) return;
 			await this.run(
 				binaries.esPath,
@@ -331,7 +343,14 @@ export class EverythingClient {
 		return next;
 	}
 
-	private async resolveBinaries(): Promise<EnsureEverythingBinariesResult> {
+	/**
+	 * Resolve the ES + Everything executables. `"cached"` reads only the
+	 * already extracted, hash-verified workspace cache and never writes;
+	 * `"install"` (refresh/index) may extract from the bundled ZIPs. Only a
+	 * verified resolution is memoized, so a cached-mode miss never poisons the
+	 * install-mode resolution that refresh depends on.
+	 */
+	private async resolveBinaries(mode: EverythingBinaryResolutionMode): Promise<EnsureEverythingBinariesResult> {
 		if (!this.isSupported()) {
 			return {
 				ok: false,
@@ -340,16 +359,19 @@ export class EverythingClient {
 			};
 		}
 		if (this.binaries?.ok) return this.binaries;
-		this.binaries = await (
-			this.options.resolveBinaries ?? (() => ensureEverythingBinaries({ root: this.options.root }))
-		)();
-		return this.binaries;
+		const resolve =
+			this.options.resolveBinaries ??
+			((resolveMode: EverythingBinaryResolutionMode) =>
+				ensureEverythingBinaries({ root: this.options.root, mode: resolveMode }));
+		const result = await resolve(mode);
+		if (result.ok) this.binaries = result;
+		return result;
 	}
 
 	private async ensureRunning(
 		reconfigure: boolean,
 	): Promise<{ readonly ok: true; readonly esPath: string } | EverythingFailure> {
-		const binaries = await this.resolveBinaries();
+		const binaries = await this.resolveBinaries("install");
 		if (!binaries.ok) return binaries;
 		const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		let ping = await this.ping(binaries.esPath);
