@@ -988,6 +988,7 @@ export class AutoRAGAgent {
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
 			retrievedContentGuard: false,
+			remoteSession: this.remoteSession,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
