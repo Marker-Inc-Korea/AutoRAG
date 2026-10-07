@@ -93,6 +93,30 @@ export function formatCitationList(numbers: readonly number[]): string {
 }
 
 /**
+ * Throw a corrective error unless `results` and `mapping` carry the same
+ * numbers, one entry each. Emit tools call this at tool time (issue #1807) so
+ * the model sees the error and re-emits; checking only after the run ended
+ * failed the whole search and discarded an already-delivered answer.
+ */
+export function assertResultsMappingOneToOne(
+	label: string,
+	results: readonly { readonly number: number }[],
+	mapping: readonly { readonly number: number }[],
+): void {
+	const resultNumbers = results.map((result) => result.number).sort((a, b) => a - b);
+	const mappingNumbers = mapping.map((entry) => entry.number).sort((a, b) => a - b);
+	const oneToOne =
+		resultNumbers.length === mappingNumbers.length &&
+		resultNumbers.every((number, index) => number === mappingNumbers[index]);
+	if (oneToOne) return;
+	throw new Error(
+		`${label}: result numbers and mapping numbers must be one-to-one, but results contain ${formatCitationList(resultNumbers)} ` +
+			`and mapping contains ${formatCitationList(mappingNumbers)}. ` +
+			"Give every result exactly one mapping entry with the same number and no mapping entry without a result. Re-emit with consistent numbering.",
+	);
+}
+
+/**
  * Throw a corrective error when `answer` cites numbers absent from `results`.
  * Emit tools surface the message to the model as a tool error so it re-emits
  * with one consistent numbering.
