@@ -49,3 +49,27 @@ describe("buildSelfConfigPrompt", () => {
 		expect(prompt).toContain("add an anthropic provider");
 	});
 });
+
+describe("buildSelfConfigPrompt guidance learned from manual QA", () => {
+	const prompt = buildSelfConfigPrompt({
+		query: "x",
+		configPath: "/tmp/qa/config.json",
+		agentDir: "/tmp/qa/pi-agent",
+		skill: "# Skill\n",
+	});
+
+	it("sends custom providers to the config model object, not a hand-written models.json", () => {
+		expect(prompt).toContain("model.baseUrl");
+		expect(prompt).toMatch(/do not (create|write|edit) .*models\.json/iu);
+	});
+
+	it("makes a provider-usability claim depend on that provider's own credential and a live health probe", () => {
+		expect(prompt).toMatch(/test -n/u);
+		expect(prompt).toMatch(/gateway/iu);
+		expect(prompt).toContain("autorag health --json --config /tmp/qa/config.json");
+	});
+
+	it("tells the model what to do when the workspace directory is missing", () => {
+		expect(prompt).toMatch(/workspace.*(does not exist|missing)/iu);
+	});
+});

@@ -1456,6 +1456,9 @@ export class AutoRAGAgent {
 							// model gets the full setup skill and edits the config itself,
 							// then reports through emit_autorag_results.
 							selfConfigRun = true;
+							// pi's bash tool refuses to run from a missing cwd, and a freshly
+							// initialised config has not created its workspace yet.
+							mkdirSync(this.workspaceProjectRoot, { recursive: true });
 							const previousTools = sessionAgent?.getActiveToolNames();
 							if (sessionAgent !== undefined) {
 								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));

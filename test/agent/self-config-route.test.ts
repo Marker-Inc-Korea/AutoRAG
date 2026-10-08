@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -176,6 +176,34 @@ describe("Jev config branch: the agent configures itself", () => {
 				(diagnostic) => diagnostic.code === "query-routed" && diagnostic.message.includes("config"),
 			),
 		).toBe(true);
+	});
+
+	it("makes bash usable when the configured workspace directory does not exist yet", async () => {
+		const workspace = join(root, "not-created-yet");
+		const bashResults: boolean[] = [];
+		const probeBash: FauxResponseStep = (context) => {
+			const last = context.messages.at(-1);
+			if (last?.role === "toolResult") {
+				bashResults.push(last.isError === true);
+				return emitConfigReport("- checked.") as AssistantMessage;
+			}
+			return fauxAssistantMessage([fauxToolCall("bash", { command: "echo ok" })], {
+				stopReason: "toolUse",
+			}) as AssistantMessage;
+		};
+		const model = fauxModel(probeBash, probeBash);
+		const agent = agentWith({
+			model,
+			workspacePath: workspace,
+			jev: { backend: jevRouting("config") },
+			selfConfig: { configPath, skillPath },
+		});
+
+		const response = await agent.searchDocuments("check the provider health");
+
+		expect(bashResults).toEqual([false]);
+		expect(existsSync(workspace)).toBe(true);
+		expect(response.answer).toBe("- checked.");
 	});
 
 	it("lets the model edit the config file with its write tool and report the change", async () => {
