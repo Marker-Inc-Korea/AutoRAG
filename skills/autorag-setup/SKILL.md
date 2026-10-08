@@ -221,11 +221,15 @@ fast and multi-part questions thorough.
   local search, web search, or a direct answer (general knowledge or small
   talk skips retrieval entirely), and decides whether to decompose it. On
   local search it also decides, per registered datasource, whether to search
-  it before the fast answer. It reads each datasource's `description`, so
-  write one that says what the datasource holds (for example `"Team Slack:
-  release and on-call channels"`). After the fast answer it decides whether
-  verification is needed, so a complete, evidence-backed fast answer ends the
-  run.
+  it before the fast answer, using each datasource's `description` and where
+  similar past questions were answered (retrieval memory). When setting up a
+  datasource, always write a `description` from what it actually holds:
+  channels or rooms, people, topics, time range (for example `"Team Slack,
+  2024-2026: #release and #on-call channels, dependabot notifications"`).
+  Jev is told descriptions are short, non-exhaustive summaries, so list the
+  main content and do not try to list everything. After the fast answer it
+  decides whether verification is needed, so a complete, evidence-backed fast
+  answer ends the run.
 - **Question decomposition** (`queryDecomposition`, default model
   `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
   five search queries that run in parallel.

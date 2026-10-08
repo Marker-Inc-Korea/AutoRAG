@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
@@ -136,6 +136,7 @@ import {
 	type DatasourceCandidate,
 	FALLBACK_QUERY_ROUTE,
 	needsFollowUp,
+	type PastSearchHint,
 	type QueryRoute,
 	routeQuery,
 	selectDatasources,
@@ -243,6 +244,11 @@ function hasSearchEvidence(toolName: string, details: unknown, isError: boolean)
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+
+/** Similar past searches shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
+const SIMILAR_PAST_SEARCH_LIMIT = 5;
+/** Results listed per similar past search; a search's leading results carry its answer. */
+const SIMILAR_PAST_RESULT_LIMIT = 4;
 
 /**
  * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
@@ -1606,6 +1612,7 @@ export class AutoRAGAgent {
 				this.sessions,
 				this.memory,
 				componentDiagnostics,
+				{ remote: this.remoteSession },
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -2028,8 +2035,9 @@ export class AutoRAGAgent {
 
 	/**
 	 * Jev datasource check for the local branch: one `noul` per authorized
-	 * datasource that has retrieval methods. Returns the ids to search with
-	 * every query before the rerank; a failed check searches none.
+	 * datasource that has retrieval methods, with where similar past questions
+	 * were answered (from retrieval memory) in the state. Returns the ids to
+	 * search with every query before the rerank; a failed check searches none.
 	 */
 	private async selectSearchDatasources(query: string): Promise<readonly string[]> {
 		if (this.jevJudge === undefined) return [];
@@ -2039,11 +2047,60 @@ export class AutoRAGAgent {
 				.map((method) => method.describe().datasourceId)
 				.filter((datasourceId) => datasourceId !== undefined),
 		);
-		const candidates: DatasourceCandidate[] = this.listDatasources()
-			.filter((entry) => searchable.has(entry.datasourceId))
-			.map(({ datasourceId, type, description }) => ({ datasourceId, type, description }));
+		const catalog = this.listDatasources().filter((entry) => searchable.has(entry.datasourceId));
+		const candidates: DatasourceCandidate[] = catalog.map(({ datasourceId, type, description }) => ({
+			datasourceId,
+			type,
+			description,
+		}));
 		if (candidates.length === 0) return [];
-		const selection = await selectDatasources(this.jevJudge, query, candidates);
+		// Where a past result's evidence came from: datasource chunks carry a
+		// virtual path rooted at the skill name (`/kakao/default/...`), but the
+		// model sometimes maps a datasource hit to a bare chunk id. The evidence
+		// method then still names the datasource (`search_datasource_kakao_work`,
+		// `datasource:kakao`, `kakao-work-lexical`): both sides collapse every
+		// non-alphanumeric to `_` exactly like generated tool names, and a
+		// datasource id that appears as a whole token attributes it; longer ids
+		// are checked first so `kakao-work` wins over `kakao`. Indexed files are
+		// absolute paths under a search path; web evidence is a URL.
+		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
+		// Configured datasources the current trusted context does not authorize.
+		// Memory is global (shared across workspaces and configs), so a past
+		// result from one of them must never reach the Jev state.
+		const deniedRoots = new Set(
+			this.datasourceSkills.map((skill) => skill.describe().name).filter((name) => !datasourceByRoot.has(name)),
+		);
+		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
+		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		const whereFound = ({ source, method }: { source: string; method: string }): string | undefined => {
+			if (/^https?:\/\//u.test(source)) return "web";
+			if (this.configuredSearchPaths.some((root) => source === root || source.startsWith(`${root}${sep}`))) {
+				return "local files";
+			}
+			const root = source.startsWith("/") ? (source.split("/")[1] ?? "") : "";
+			if (deniedRoots.has(root)) return undefined;
+			const byRoot = datasourceByRoot.get(root);
+			if (byRoot !== undefined) return byRoot;
+			const tokens = methodToken(method);
+			return idsLongestFirst.find((id) => tokens.includes(methodToken(id)));
+		};
+		// A past result is shown only when every piece of its evidence is
+		// attributed to something this context authorizes (an authorized
+		// datasource, a configured search path, or the web): its title is
+		// model-written text about that evidence and leaves the machine.
+		const pastSearches: PastSearchHint[] = [];
+		for (const past of this.memory.findSimilarSearches(query)) {
+			const results: { title: string; foundIn: string[] }[] = [];
+			for (const result of past.results) {
+				const places = result.evidence.map(whereFound);
+				if (places.length === 0 || places.some((place) => place === undefined)) continue;
+				results.push({ title: result.title, foundIn: [...new Set(places.filter((place) => place !== undefined))] });
+			}
+			if (results.length === 0) continue;
+			pastSearches.push({ query: past.query, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
+			if (pastSearches.length === SIMILAR_PAST_SEARCH_LIMIT) break;
+		}
+		const selection = await selectDatasources(this.jevJudge, query, candidates, pastSearches);
 		if (selection.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "datasource-selection-fallback",

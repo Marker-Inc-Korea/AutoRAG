@@ -286,7 +286,11 @@ export function recordStructuredResultsSession(
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
-	options: { readonly isolateMemory?: boolean } = {},
+	options: {
+		readonly isolateMemory?: boolean;
+		/** A remote P2P peer's search: recorded, but kept out of local past-search hints. */
+		readonly remote?: boolean;
+	} = {},
 ): SearchDocumentsResponse {
 	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
 	const mappingNumbers = details.mapping.map((entry) => entry.number).sort((a, b) => a - b);
@@ -322,7 +326,12 @@ export function recordStructuredResultsSession(
 	}
 	sessions.set(sessionId, { query, registry, ...(options.isolateMemory ? { transient: true } : {}) });
 	if (!options.isolateMemory) {
-		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
+		memory.recordCuratedResultsSession({
+			sessionId,
+			query,
+			results: memoryResults,
+			...(options.remote === true ? { remote: true } : {}),
+		});
 		memory.save();
 	}
 
