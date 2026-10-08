@@ -218,8 +218,8 @@ fast and multi-part questions thorough.
 
 - **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
   `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
-  local search, web search, or a direct answer (general knowledge or small
-  talk skips retrieval entirely), and decides whether to decompose it. After
+  local search, web search, a direct answer (general knowledge or small
+  talk skips retrieval entirely), or the `config` branch, and decides whether to decompose it. After
   the fast answer it decides whether verification is needed, so a complete,
   evidence-backed fast answer ends the run.
 - **Question decomposition** (`queryDecomposition`, default model
@@ -249,6 +249,14 @@ always verifies, so searches still work. A `query-route-fallback` diagnostic
 - `"jev": false` turns routing off entirely. Do this only when the user
   explicitly opts out, for example because questions must never leave the
   machine (Jev and decomposition send the question text to OpenRouter).
+
+When a user asks the running agent itself to change its settings (switch the
+default model, add a provider, check that a provider works), Jev's `config`
+branch loads this whole skill into that turn. The agent edits only the active
+config file (and `models.json` for a custom provider), verifies with
+`autorag health --json` and `autorag models list --available`, and reports each
+change as old → new through `emit_autorag_results`. It never prints a
+credential value and never uses `init --force`.
 
 ### Retrieval and ingest caps
 

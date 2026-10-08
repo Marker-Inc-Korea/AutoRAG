@@ -108,13 +108,16 @@ Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
 user question in one batched call:
 
-1. **Branch** (`choice`): `local`, `web`, or `direct`. The branch with the
+1. **Branch** (`choice`): `local`, `web`, `direct`, or `config`. The branch with the
    highest probability wins, even when Jev reports low confidence.
    - `local`: answering needs information only the user can reach (files on
      their computer, Discord/KakaoTalk/Slack chats, email, notes).
    - `web`: not answerable from general knowledge, but one public internet
      search would answer it.
    - `direct`: general knowledge, simple reasoning, or small talk.
+   - `config`: the user wants to view, change, or test AutoRAG's own settings
+     (model, providers, API-key environment variables, Jev, search roots,
+     datasources). Offered only to local sessions, never to remote P2P peers.
 2. **Decomposition** (`noul`): does the question need several search queries
    (multiple sub-questions, comparisons, several facts to confirm)? A
    probability of 0.5 or more means yes.
@@ -124,6 +127,7 @@ What happens next:
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
+| `config` | Skips retrieval, decomposition, `emit_fast_answer`, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new through `emit_autorag_results` (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
 | `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
 

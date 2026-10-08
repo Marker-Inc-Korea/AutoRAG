@@ -110,6 +110,10 @@ Every search is two-phase: a fast answer, then verification. With Jev on (the
 default, OpenRouter), Jev first routes the question:
 
 - General knowledge or small talk is answered directly.
+- A request to view or change AutoRAG's own settings (model, providers,
+  datasources) is handled by the agent itself: it loads the setup skill, edits
+  the active config, verifies it, and reports what changed. The running agent
+  keeps its startup model; changes apply to the next `autorag` launch.
 - Private-data questions use local search; public current facts use web search.
 - A multi-part question is split into up to five parallel search queries.
 

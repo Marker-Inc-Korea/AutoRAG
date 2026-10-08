@@ -52,7 +52,8 @@ export type SearchDocumentDiagnosticCode =
 	| "query-decomposition-failed"
 	| "follow-up-skipped"
 	| "follow-up-check-fallback"
-	| "citation-without-result";
+	| "citation-without-result"
+	| "self-config-unavailable";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
