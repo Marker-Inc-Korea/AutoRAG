@@ -112,11 +112,15 @@ default, OpenRouter), Jev first routes the question:
 - General knowledge or small talk is answered directly.
 - Private-data questions use local search; public current facts use web search.
 - A multi-part question is split into up to five parallel search queries.
+- On local search, Jev also picks which registered datasources (Slack,
+  Discord, KakaoTalk, email, ...) to search before the fast answer; their
+  chunks are reranked together with local file evidence.
 
 After the fast answer, Jev ends the run if the answer is complete and
 evidence-backed. So `results` may come straight from the fast answer, with no
 verification phase. `--debug` diagnostics show the decision: `query-routed`
-(branch and queries), `follow-up-skipped` (fast answer final), or
+(branch and queries), `datasources-selected` (datasources searched or skipped,
+with probabilities), `follow-up-skipped` (fast answer final), or
 `query-route-fallback` (Jev unavailable, single local search).
 
 Record feedback so retrieval memory can learn. Numbers refer to the returned

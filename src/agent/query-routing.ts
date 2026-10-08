@@ -25,6 +25,14 @@ export const DECOMPOSE_PROBABILITY_THRESHOLD = 0.5;
 /** A `noul` probability at or above this sends the fast answer on to verification. */
 export const FOLLOW_UP_PROBABILITY_THRESHOLD = 0.5;
 
+/** A `noul` probability at or above this searches that datasource before the fast answer. */
+export const DATASOURCE_PROBABILITY_THRESHOLD = 0.5;
+
+/** Jev question id of the "search this datasource?" check for one datasource. */
+export function datasourceQuestionId(datasourceId: string): string {
+	return `datasource:${datasourceId}`;
+}
+
 /**
  * Wording calibrated against live Jev (OpenRouter `typesafe/jev-1.13`): asking
  * whether the answer "needs correction or further research before it can be
@@ -160,5 +168,90 @@ export async function routeQuery(judge: JevJudge, query: string): Promise<QueryR
 			decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD,
 		...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
 		...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
+	};
+}
+
+/** One registered, authorized datasource Jev may send the question to. */
+export interface DatasourceCandidate {
+	readonly datasourceId: string;
+	/** Content kind, e.g. `chat`, `mail`, `docs`. */
+	readonly type: string;
+	/** Operator- or connector-authored description of what the datasource holds. */
+	readonly description: string;
+}
+
+export interface DatasourceSelection {
+	/** Datasource ids to search, in registration order. */
+	readonly selected: readonly string[];
+	/** Jev's P(search needed) per datasource id, for every datasource it answered. */
+	readonly probabilities: Readonly<Record<string, number>>;
+	/** Why no datasource is searched instead of following Jev; absent when Jev decided. */
+	readonly fallbackReason?: string;
+}
+
+function describeDatasources(query: string, datasources: readonly DatasourceCandidate[]): string {
+	const catalog = datasources
+		.map((datasource) => `- ${datasource.datasourceId} (${datasource.type}): ${datasource.description}`)
+		.join("\n");
+	return (
+		`An assistant answers the user's question from their local files and a set of registered datasources. ` +
+		`Local files are always searched. Each registered datasource is searched only when its content could hold ` +
+		`part of the answer.\n\nRegistered datasources:\n${catalog}\n\nUser question: ${query}`
+	);
+}
+
+/**
+ * Ask Jev, in one batched call, one `noul` per registered datasource: does
+ * answering the question need that datasource searched? The state describes
+ * every datasource, so Jev judges each one against the others. Never throws: a
+ * missing credential or an unreachable backend searches no datasource, which
+ * is the behavior without Jev.
+ */
+export async function selectDatasources(
+	judge: JevJudge,
+	query: string,
+	datasources: readonly DatasourceCandidate[],
+): Promise<DatasourceSelection> {
+	if (datasources.length === 0) return { selected: [], probabilities: {} };
+	let verdicts: readonly Verdict[];
+	try {
+		verdicts = (
+			await judge(
+				describeDatasources(query, datasources),
+				datasources.map(({ datasourceId }) => ({
+					...check(`Should the "${datasourceId}" datasource be searched to answer the user question?`, {
+						true: `The "${datasourceId}" datasource's content could contain information that answers some part of the question.`,
+						false: `The "${datasourceId}" datasource's content is unrelated to the question, or the question needs no datasource at all.`,
+					}),
+					id: datasourceQuestionId(datasourceId),
+				})),
+			)
+		).verdicts;
+	} catch (error) {
+		return {
+			selected: [],
+			probabilities: {},
+			fallbackReason: error instanceof Error ? error.message : String(error),
+		};
+	}
+	const probabilities: Record<string, number> = {};
+	for (const datasource of datasources) {
+		const answer = verdicts.find((verdict) => verdict.id === datasourceQuestionId(datasource.datasourceId))?.answer;
+		if (typeof answer === "number") probabilities[datasource.datasourceId] = answer;
+	}
+	if (Object.keys(probabilities).length === 0) {
+		return {
+			selected: [],
+			probabilities,
+			fallbackReason:
+				verdicts.find((verdict) => verdict.hint !== undefined)?.hint ??
+				"Jev returned no usable datasource verdict.",
+		};
+	}
+	return {
+		selected: datasources
+			.map((datasource) => datasource.datasourceId)
+			.filter((datasourceId) => (probabilities[datasourceId] ?? 0) >= DATASOURCE_PROBABILITY_THRESHOLD),
+		probabilities,
 	};
 }
