@@ -207,21 +207,21 @@ function describeDatasources(
 	const catalog = datasources
 		.map((datasource) => `- ${datasource.datasourceId} (${datasource.type}): ${datasource.description}`)
 		.join("\n");
+	// Past questions and titles are model- or caller-written text: JSON-quote
+	// them so a newline or a fake "User question:" line cannot forge the
+	// state's structure.
 	const history =
 		pastSearches.length === 0
 			? ""
 			: `\n\nSimilar past questions, the results they returned, and where each result came from. A hint, ` +
 				`not a rule: the same question can need other datasources this time. A result titled as not ` +
 				`found / no result / negative means that datasource was searched and did NOT have the answer.\n${pastSearches
-					.map((past) => {
-						const results = past.results
-							.map(
-								(result) =>
-									`\n  - ${result.title}${result.foundIn.length > 0 ? ` [${result.foundIn.join(", ")}]` : ""}`,
-							)
-							.join("");
-						return `- "${past.query}"${results.length > 0 ? results : " -> no result"}`;
-					})
+					.map(
+						(past) =>
+							`- ${JSON.stringify(past.query)}${past.results
+								.map((result) => `\n  - ${JSON.stringify(result.title)} [${result.foundIn.join(", ")}]`)
+								.join("")}`,
+					)
 					.join("\n")}`;
 	return (
 		`An assistant answers the user's question from their local files and a set of registered datasources. ` +

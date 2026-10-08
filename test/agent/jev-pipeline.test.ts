@@ -475,7 +475,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(states).toHaveLength(2);
 		expect(states[0]).not.toContain("Similar past questions");
 		expect(states[1]).toContain("Similar past questions");
-		expect(states[1]).toMatch(/"팀에서 릴리즈 날짜 언제로 정했지\?"\n {2}- Evidence \[slack\]/u);
+		expect(states[1]).toMatch(/"팀에서 릴리즈 날짜 언제로 정했지\?"\n {2}- "Evidence" \[slack\]/u);
 		expect(states[1]).not.toContain("[discord]");
 	});
 
@@ -531,8 +531,150 @@ describe("Jev query pipeline before the fast answer", () => {
 		await agent.searchDocuments("레이드 언제 하기로 했어?");
 
 		expect(states[1]).toContain('"길드 레이드 언제 하기로 했지?"');
-		expect(states[1]).toMatch(/Raid.*discord/u);
-		expect(states[1]).not.toMatch(/Raid.*slack/u);
+		expect(states[1]).toContain('"Raid" [discord]');
+		expect(states[1]).not.toContain("[slack]");
+	});
+
+	it("keeps past results from datasources the current access context does not authorize out of the Jev state", async () => {
+		const states: string[] = [];
+		const routing = jevRouting("local", 0.1, 0.1, { slack: 0.9 });
+		const recordingJev: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				if (request.questions.some((question) => question.id === datasourceQuestionId("slack"))) {
+					states.push(String(request.state));
+				}
+				return routing.judge(request);
+			},
+		};
+		const memoryPath = join(root, "shared-memory.json");
+		const kakao = recordingDatasource("kakao", "Personal KakaoTalk chats");
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		const wide = agentWith({
+			model: fauxModel(
+				fastAnswer("Mom's new address is in the chat [1].", "/kakao/default/mom-address"),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			),
+			memoryPath,
+			jev: { backend: jevRouting("local", 0.1, 0.1, { kakao: 0.9, slack: 0.1 }) },
+			datasourceSkills: [kakao.skill, slack.skill],
+			datasourceAccess: { allowedTags: ["kakao", "slack"] },
+		});
+		injectMinSync(wide, recordingMinSync().method);
+		await wide.searchDocuments("엄마가 보낸 새 주소 뭐였지?");
+
+		const narrow = agentWith({
+			model: fauxModel(
+				fastAnswer("Not found [1].", "/slack/default/x"),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			),
+			memoryPath,
+			jev: { backend: recordingJev },
+			datasourceSkills: [kakao.skill, slack.skill],
+			datasourceAccess: { allowedTags: ["slack"] },
+		});
+		injectMinSync(narrow, recordingMinSync().method);
+		await narrow.searchDocuments("엄마가 보낸 주소 뭐였지?");
+
+		expect(states).toHaveLength(1);
+		expect(states[0]).not.toContain("엄마가 보낸 새 주소 뭐였지?");
+		expect(states[0]).not.toContain("Evidence");
+	});
+
+	it("never shows a remote peer's past searches to the local Jev datasource check", async () => {
+		const states: string[] = [];
+		const routing = jevRouting("local", 0.1, 0.1, { slack: 0.9 });
+		const recordingJev: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				if (request.questions.some((question) => question.id === datasourceQuestionId("slack"))) {
+					states.push(String(request.state));
+				}
+				return routing.judge(request);
+			},
+		};
+		const memoryPath = join(root, "shared-memory.json");
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		const remote = agentWith({
+			model: fauxModel(finalEmit("Peer answer.", "/slack/default/peer")),
+			memoryPath,
+			remoteSession: true,
+			datasourceSkills: [slack.skill],
+			datasourceAccess: { allowedTags: ["slack"] },
+		});
+		await remote.searchDocuments("릴리즈 날짜 언제로 정했지?");
+
+		const local = agentWith({
+			model: fauxModel(
+				fastAnswer("Friday [1].", "/slack/default/release"),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			),
+			memoryPath,
+			jev: { backend: recordingJev },
+			datasourceSkills: [slack.skill],
+			datasourceAccess: { allowedTags: ["slack"] },
+		});
+		injectMinSync(local, recordingMinSync().method);
+		await local.searchDocuments("릴리즈 날짜 언제로 정했어?");
+
+		expect(states).toHaveLength(1);
+		expect(states[0]).not.toContain("Similar past questions");
+	});
+
+	it("attributes evidence from a hyphenated datasource id to that datasource, not a shorter one it contains", async () => {
+		const states: string[] = [];
+		const routing = jevRouting("local", 0.1, 0.9, { "kakao-work": 0.9, kakao: 0.1 });
+		const recordingJev: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				if (request.questions.some((question) => question.id === datasourceQuestionId("kakao-work"))) {
+					states.push(String(request.state));
+				}
+				return routing.judge(request);
+			},
+		};
+		const kakao = recordingDatasource("kakao", "Personal KakaoTalk chats");
+		const kakaoWork = recordingDatasource("kakao-work", "Work KakaoTalk chats");
+		const emitFrom = (method: string, chunk: string): FauxResponseStep =>
+			fauxAssistantMessage(
+				[
+					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+						answer: "Standup is at 10 [1].",
+						results: [
+							{ number: 1, title: "Standup", summary: "10am", evidence: [{ excerpt: chunk }], confidence: 0.9 },
+						],
+						mapping: [{ number: 1, source: chunk, method, content: chunk }],
+					}),
+				],
+				{ stopReason: "toolUse" },
+			);
+		const model = fauxModel(
+			fastAnswer("Not sure."),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			emitFrom("search_datasource_kakao_work", "chunk_9f"),
+			fastAnswer("Not sure."),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			emitFrom("kakao-work-lexical", "chunk_a0"),
+			fastAnswer("10 [1].", "chunk_9f"),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			finalEmit("10am.", "/kakao-work/default/standup"),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: recordingJev },
+			datasourceSkills: [kakao.skill, kakaoWork.skill],
+			datasourceAccess: { allowedTags: ["kakao", "kakao-work"] },
+		});
+		injectMinSync(agent, recordingMinSync().method);
+
+		await agent.searchDocuments("회사 단톡 스탠드업 몇 시야?");
+		await agent.searchDocuments("회사 단톡방 스탠드업 몇 시였어?");
+		await agent.searchDocuments("회사 단톡 스탠드업 몇시?");
+
+		const state = states[2] ?? "";
+		// Two distinct past searches (one per method form), both attributed to kakao-work.
+		expect(state.match(/"Standup" \[kakao-work\]/gu)).toHaveLength(2);
+		expect(state).not.toContain('"Standup" [kakao]');
 	});
 
 	it("searches a selected datasource with every decomposed query and reranks its chunks in the same pool", async () => {

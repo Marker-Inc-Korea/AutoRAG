@@ -156,10 +156,29 @@ The state Jev judges has three parts, followed by the question:
 2. **Similar past questions** (only when retrieval memory has any): up to 5
    earlier searches whose question resembles this one (character-bigram Dice
    ≥ 0.35, newest per question), each with up to 4 result titles and where the
-   evidence came from (`[kakao]`, `[local files]`, `[web]`, ...). Results the
-   user marked not useful are left out. A result titled as not found or
+   evidence came from (`[kakao]`, `[local files]`, `[web]`, ...). Question and
+   title are JSON-quoted, so a newline or a fake `User question:` line inside
+   them cannot forge the state's structure. A result titled as not found or
    negative tells Jev that datasource was searched and did not have the
    answer. Jev treats this as a hint, not a rule.
+
+   These titles are model-written text about your private content and the
+   state goes to the Jev backend (OpenRouter by default), so a past result is
+   shown only when it is safe for the **current** run:
+
+   - Memory is shared across workspaces and configs, so a result is dropped
+     unless every piece of its evidence comes from a datasource this run's
+     `datasourceAccess` authorizes, a configured search path, or the web.
+     Evidence from a datasource that is denied or not configured here, and
+     evidence with no recognizable origin, drops the whole result; a search
+     left with no result is not shown at all.
+   - Results the user marked not useful are left out. The verdict is stored
+     on the result itself, so it still applies after older feedback signals
+     are evicted (memory written before this keeps using its feedback
+     signals).
+   - Searches a remote P2P peer ran are recorded (they still feed method
+     hints and peer feedback) but tagged `remote` and never shown. Records
+     written before the tag existed cannot be told apart.
 3. **User question**.
 
 The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)

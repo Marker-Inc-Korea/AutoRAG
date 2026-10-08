@@ -280,6 +280,62 @@ describe("RetrievalMemory.findSimilarSearches", () => {
 		]);
 	});
 
+	it("still drops a result marked not useful after newer signals evict its feedback signal", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		recordPastSearch(memory, "s1", "슬랙에서 Team Attention 관련 얘기 뭐 했었지?", [
+			{ source: "/discord/server/chunks/x", excerpt: "wrong guess" },
+			{ source: "/kakao/default/chunks/y", excerpt: "[팀어텐션 구봉님] 랄프톤 공지" },
+		]);
+		memory.recordNumberedFeedback({
+			sessionId: "s1",
+			query: "슬랙에서 Team Attention 관련 얘기 뭐 했었지?",
+			feedback: [{ number: 1, useful: false }],
+		});
+		memory.save();
+		for (let index = 0; index < 600; index++) memory.recordWeakSignal("other question", "bash", "followup");
+		memory.save();
+
+		const reloaded = new RetrievalMemory({ storagePath: memoryPath });
+		reloaded.load();
+		expect(reloaded.getSchema().feedbackSignals.some((signal) => signal.target.type === "curated_result")).toBe(
+			false,
+		);
+		expect(
+			reloaded
+				.findSimilarSearches("슬랙에서 Team Attention 관련 얘기")[0]
+				?.results.flatMap((result) => result.evidence.map(({ source }) => source)),
+		).toEqual(["/kakao/default/chunks/y"]);
+	});
+
+	it("excludes searches recorded as remote-originated", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordCuratedResultsSession({
+			sessionId: "peer",
+			query: "릴리즈 날짜 언제로 정했지?",
+			remote: true,
+			results: [
+				{
+					number: 1,
+					title: "Peer result",
+					summary: "s",
+					content: "c",
+					method: "search_datasource_slack",
+					source: "/slack/default/a",
+					evidenceRefs: [
+						normalizeSessionEvidenceRef({
+							method: "search_datasource_slack",
+							source: "/slack/default/a",
+							excerpt: "c",
+						}),
+					],
+				},
+			],
+		});
+		expect(memory.findSimilarSearches("릴리즈 날짜 언제로 정했어?")).toEqual([]);
+	});
+
 	it("returns nothing for an unrelated question", () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
