@@ -226,6 +226,73 @@ describe("Jev config branch: the agent configures itself", () => {
 		expect(response.answer).toBe("- model.id: old/model → new/model");
 	});
 
+	it("restores the previous config and says so when the edited config no longer validates", async () => {
+		const before = readFileSync(configPath, "utf8");
+		const broken = `${JSON.stringify({ model: { provider: "openrouter", id: "glm-5.3-flash" } }, null, 2)}\n`;
+		const model = fauxModel(
+			fauxAssistantMessage([fauxToolCall("write", { path: configPath, content: broken })], {
+				stopReason: "toolUse",
+			}),
+			emitConfigReport("- model.id: old/model → glm-5.3-flash"),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("config") },
+			selfConfig: {
+				configPath,
+				skillPath,
+				validate: async () => "Model openrouter/glm-5.3-flash is not in the catalog",
+			},
+		});
+
+		const response = await agent.searchDocuments("switch the agent model to glm 5.3 flash");
+
+		expect(readFileSync(configPath, "utf8")).toBe(before);
+		expect(response.answer).toContain("- model.id: old/model → glm-5.3-flash");
+		expect(response.answer).toMatch(/restored/iu);
+		expect(response.answer).toContain("not in the catalog");
+		expect(response.diagnostics?.some((d) => d.code === "self-config-rolled-back" && d.severity === "warning")).toBe(
+			true,
+		);
+	});
+
+	it("keeps a valid edit and does not append a rollback notice", async () => {
+		const next = `${JSON.stringify({ model: { provider: "openrouter", id: "new/model" } }, null, 2)}\n`;
+		const model = fauxModel(
+			fauxAssistantMessage([fauxToolCall("write", { path: configPath, content: next })], {
+				stopReason: "toolUse",
+			}),
+			emitConfigReport("- model.id: old/model → new/model"),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("config") },
+			selfConfig: { configPath, skillPath, validate: async () => undefined },
+		});
+
+		const response = await agent.searchDocuments("switch the agent model to new/model");
+
+		expect(readFileSync(configPath, "utf8")).toBe(next);
+		expect(response.answer).toBe("- model.id: old/model → new/model");
+		expect(response.diagnostics?.some((d) => d.code === "self-config-rolled-back")).toBe(false);
+	});
+
+	it("does not roll back when the config was left unchanged, even if it was already invalid", async () => {
+		const before = readFileSync(configPath, "utf8");
+		const model = fauxModel(emitConfigReport("- Nothing changed."));
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("config") },
+			selfConfig: { configPath, skillPath, validate: async () => "was already broken" },
+		});
+
+		const response = await agent.searchDocuments("how is my model configured?");
+
+		expect(readFileSync(configPath, "utf8")).toBe(before);
+		expect(response.answer).toBe("- Nothing changed.");
+		expect(response.diagnostics?.some((d) => d.code === "self-config-rolled-back")).toBe(false);
+	});
+
 	it("reminds the model to emit when it ends the configuration turn with prose", async () => {
 		const seen: Seen = { prompts: [], toolNames: [] };
 		const model = fauxModel(

@@ -131,6 +131,8 @@ What happens next:
 | `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
 
+After a `config` turn that changed the config file, the host re-resolves it the way the next launch will (JSON, schema, and that the model id exists in the pi catalog or a declared endpoint). If it no longer resolves, the pre-turn file is restored, a warning is appended to the report, and a `self-config-rolled-back` diagnostic is recorded, so a bad model id can never leave the agent unable to start. A missing credential is not a rollback reason; that is reported by `autorag health` as `auth_missing`. An unchanged file is never touched.
+
 ### Follow-up check after the fast answer
 
 After `emit_fast_answer` on the `local` and `web` branches, Jev answers one more

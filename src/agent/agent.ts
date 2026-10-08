@@ -158,7 +158,13 @@ import {
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
 import { createSingleDatasourceSearchTools, type SingleDatasourceToolSpec } from "./search-single-datasource-tool.ts";
-import { buildSelfConfigPrompt, loadSetupSkill, type SelfConfigOptions } from "./self-config.ts";
+import {
+	buildSelfConfigPrompt,
+	loadSetupSkill,
+	rollbackIfBroken,
+	type SelfConfigOptions,
+	snapshotConfigFile,
+} from "./self-config.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -1472,6 +1478,7 @@ export class AutoRAGAgent {
 									(tool) => tool.name === EMIT_AUTORAG_RESULTS_TOOL_NAME,
 								);
 							}
+							const configBefore = snapshotConfigFile(this.selfConfig.configPath);
 							try {
 								await session.prompt(
 									buildSelfConfigPrompt({
@@ -1488,6 +1495,22 @@ export class AutoRAGAgent {
 										undefined
 								) {
 									await session.prompt(buildFinalEmitReminder());
+								}
+								const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
+								if (rolledBack !== undefined) {
+									this.routingDiagnostics.push({
+										code: "self-config-rolled-back",
+										severity: "warning",
+										message: `The edited config did not validate, so the previous config was restored. ${rolledBack}`,
+										source: "self-config",
+									});
+									const emitted = captured;
+									if (emitted !== undefined) {
+										captured = {
+											...emitted,
+											answer: `${emitted.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
+										};
+									}
 								}
 							} finally {
 								// A bound interactive session outlives this run: give it its search tools back.

@@ -73,3 +73,27 @@ describe("buildSelfConfigPrompt guidance learned from manual QA", () => {
 		expect(prompt).toMatch(/workspace.*(does not exist|missing)/iu);
 	});
 });
+
+describe("buildSelfConfigPrompt model-switch discipline", () => {
+	const prompt = buildSelfConfigPrompt({
+		query: "x",
+		configPath: "/tmp/qa/config.json",
+		agentDir: "/tmp/qa/pi-agent",
+		skill: "# Skill\n",
+	});
+
+	it("forbids guessing a model id and requires the exact id from the catalog", () => {
+		expect(prompt).toMatch(/never (guess|invent)/iu);
+		expect(prompt).toContain("autorag models list --available --config /tmp/qa/config.json");
+	});
+
+	it("requires restoring the previous model when verification fails, so a broken config is never left behind", () => {
+		expect(prompt).toMatch(/must not leave (a|the) (broken|failing)/iu);
+		expect(prompt).toMatch(/restore/iu);
+	});
+
+	it("explains how to split a listed `provider/id` line, whose id may itself contain slashes", () => {
+		expect(prompt).toContain("openrouter/z-ai/glm-5.3-flash");
+		expect(prompt).toMatch(/before the first slash/iu);
+	});
+});

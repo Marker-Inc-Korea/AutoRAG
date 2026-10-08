@@ -53,7 +53,8 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-skipped"
 	| "follow-up-check-fallback"
 	| "citation-without-result"
-	| "self-config-unavailable";
+	| "self-config-unavailable"
+	| "self-config-rolled-back";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

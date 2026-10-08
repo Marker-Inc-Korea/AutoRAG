@@ -19,19 +19,22 @@ describe("agent self-configuration wiring", () => {
 		const path = join(root, "custom.json");
 		writeFileSync(path, JSON.stringify({ searchPaths: ["."], workspacePath: root }));
 		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
-		expect(buildAgentOptions(config).selfConfig).toEqual({ configPath: path });
+		expect(buildAgentOptions(config).selfConfig).toMatchObject({ configPath: path, validate: expect.any(Function) });
 	});
 
 	it("points the agent at AUTORAG_CONFIG when the environment selects the file", () => {
 		const path = join(root, "from-env.json");
 		writeFileSync(path, JSON.stringify({ searchPaths: ["."], workspacePath: root }));
 		const config = resolveConfig({ flags: {}, cwd: root, env: { AUTORAG_CONFIG: path } });
-		expect(buildAgentOptions(config).selfConfig).toEqual({ configPath: path });
+		expect(buildAgentOptions(config).selfConfig).toMatchObject({ configPath: path, validate: expect.any(Function) });
 	});
 
 	it("falls back to $AUTORAG_HOME/config.json for the implicit home config", () => {
 		const home = join(root, "home");
 		const config = resolveConfig({ flags: {}, cwd: root, env: { AUTORAG_HOME: home }, readOnly: true });
-		expect(buildAgentOptions(config).selfConfig).toEqual({ configPath: join(home, "config.json") });
+		expect(buildAgentOptions(config).selfConfig).toMatchObject({
+			configPath: join(home, "config.json"),
+			validate: expect.any(Function),
+		});
 	});
 });
