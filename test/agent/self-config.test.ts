@@ -29,6 +29,12 @@ describe("loadSetupSkill", () => {
 		expect(loadSetupSkill(path)).toBe("# Plain skill\n\nbody\n");
 	});
 
+	it("strips the front matter and the blank line after it from a CRLF checkout, as on Windows", () => {
+		const path = join(root, "SKILL.md");
+		writeFileSync(path, "---\r\nname: autorag-setup\r\n---\r\n\r\n# AutoRAG setup\r\n\r\nbody\r\n");
+		expect(loadSetupSkill(path).startsWith("# AutoRAG setup")).toBe(true);
+	});
+
 	it("throws a descriptive error for a missing skill file", () => {
 		mkdirSync(join(root, "empty"));
 		expect(() => loadSetupSkill(join(root, "empty", "SKILL.md"))).toThrow(/SKILL\.md/u);

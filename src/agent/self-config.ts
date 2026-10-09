@@ -52,7 +52,7 @@ export function loadSetupSkill(skillPath?: string): string {
 			`Could not read the setup skill ${path}: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
-	return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n+/u, "");
+	return text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)+/u, "");
 }
 
 export interface SelfConfigPromptInput {
