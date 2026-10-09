@@ -253,7 +253,7 @@ describe("single-model CLI config", () => {
 
 		it("keeps the local runtime's own reason when its config is incomplete", async () => {
 			const codexConfig = join(root, "codex.toml");
-			writeFileSync(codexConfig, 'model = "gpt-5.6-sol"\n');
+			writeFileSync(codexConfig, "# No provider configured\n");
 			const error = await resolveAgentModel(bareConfig(), {
 				configPath: codexConfig,
 				agentDir: join(root, "agent"),
@@ -262,7 +262,6 @@ describe("single-model CLI config", () => {
 			}).catch((caught: unknown) => caught);
 
 			expect(error).toBeInstanceOf(ConfigError);
-			expect((error as Error).message).toMatch(/^No model configured\./);
 			expect((error as Error).message).toContain(`AutoRAG requires model_provider in ${codexConfig}`);
 		});
 

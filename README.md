@@ -293,15 +293,16 @@ first run either sign in and choose a model inside the TUI:
 autorag tui      # then /login (OAuth or API key) and /model
 ```
 
-or set it in config (list provider/model ids with `autorag models list`), then
-confirm it with `autorag health`:
+or add the `model` entry to your existing AutoRAG config, preserving its other
+settings. Find provider/model ids with `autorag models list --available`:
 
-```bash
-autorag init --config ~/.autorag/config.json --force \
-  --search-paths ~/Documents/research \
-  --model-provider <provider> --model-id <id>
-autorag health
+```json
+"model": { "provider": "<provider>", "id": "<id>" }
 ```
+
+Then run `autorag health`. Do not re-run `autorag init --force` just to select
+a model: it replaces the existing config, including datasource and parser settings.
+Configure the provider's credentials through `/login` or its supported environment variables.
 
 ```bash
 # Perform a curated search (uses your configured reasoning model)
