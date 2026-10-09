@@ -246,7 +246,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"The search tool ranks by relevance, not time, so a question such as “what came in today” or “the latest messages” has no keyword to match. List messages by time with `discrawl messages` instead (it needs at least one filter):",
 				"- `discrawl --json messages --since <RFC3339> --limit 200` — messages at or after a timestamp; for “today” use local midnight with its UTC offset (e.g. `2026-10-09T00:00:00+09:00`)",
 				"- `discrawl --json messages --hours 24 --limit 200` (or `--days N`) — a rolling window",
-				"- `discrawl --json messages --days 365 --last 20` — the newest 20 archived messages",
+				"- `discrawl --json messages --since 1970-01-01T00:00:00Z --last 20` — the newest 20 archived messages, including archives older than a year",
 				"- add `--channel <id-or-name>`, `--guild <id>`, or `--dm` (local desktop DM cache) to narrow",
 				"An empty window prints `null`. Run the same command without `--json` to see the newest archived timestamp, and tell the user when the archive simply has nothing that recent: it only holds what discrawl has synced or imported (wiretap captures only what Discord Desktop has cached).",
 				"",
