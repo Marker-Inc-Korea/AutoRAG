@@ -105,6 +105,42 @@ describe("search timeout after a first answer", () => {
 		expect(complete.response.diagnostics?.some((d) => d.code === "search-timeout")).toBe(true);
 	});
 
+	it("records the timeout answer so numbered feedback still resolves", async () => {
+		const agent = agentFor(
+			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
+		);
+
+		const response = await agent.searchDocuments("프로미스 나인 총 몇명이지.");
+		expect(response.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "search-timeout", severity: "warning" }),
+		);
+
+		// A timeout-fallback answer behaves like any final answer: numbered
+		// feedback must match recorded results and update memory.
+		expect(() => agent.recordFeedbackByNumbers(response.sessionId, [1], [])).not.toThrow();
+		const registry = agent.getResultRegistry(response.sessionId);
+		expect(registry.get(1)?.content).toBe("now has five");
+	});
+
+	it("does not leak a timed-out run's preliminary into a later search", async () => {
+		const agent = agentFor(
+			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
+		);
+		await agent.searchDocuments("프로미스 나인 총 몇명이지.");
+
+		const second = agentFor(fauxModel(fastAnswer, fauxAssistantMessage("done", { stopReason: "stop" })));
+		const settled: SearchDocumentsStreamEvent[] = [];
+		for await (const event of second.searchDocumentsStream("두번째 검색")) {
+			if (event.type === "preliminary" || event.type === "complete") settled.push(event);
+		}
+		const complete = settled.find((event) => event.type === "complete");
+		if (complete?.type !== "complete") throw new Error("missing complete event");
+		expect(complete.response.query).toBe("두번째 검색");
+		expect(settled.every((event) => event.type !== "preliminary" || event.response.query === "두번째 검색")).toBe(
+			true,
+		);
+	});
+
 	it("still rejects when the search times out before any answer exists", async () => {
 		const agent = agentFor(fauxModel(hang));
 
