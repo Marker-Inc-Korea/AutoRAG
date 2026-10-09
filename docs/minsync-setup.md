@@ -137,6 +137,19 @@ Direct Ollama OpenAI-compatible embedding endpoints are also operator-managed
 legacy configuration, not the AutoRAG default. An explicit external endpoint
 remains authoritative and is not overwritten by the shared runtime.
 
+## Refresh diagnostics
+
+Parsed refresh reads each scanned file before MinSync indexes its mirror. A
+source deleted or replaced after the scan (`ENOENT`, `ENOTDIR`, or `EISDIR`)
+records a `source-vanished` informational diagnostic. A source that cannot be
+read (`EACCES` or `EPERM`) records a `source-unreadable` warning. The
+diagnostic `source` is the virtual path, and the message is the underlying
+filesystem error. Refresh removes any previous mirror for that path and
+continues with the remaining files. These transient reads are not stored as
+skip records, so a later refresh tries the source again once it can be read.
+Unexpected read errors, parser bugs, and mirror or index write failures still
+stop the refresh.
+
 ## Migration and failure behavior
 
 A MinSync workspace keeps its state in the `.minsync` subdirectory of
