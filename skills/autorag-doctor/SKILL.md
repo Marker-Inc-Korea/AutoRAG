@@ -93,7 +93,7 @@ through the model-free MCP tools, then once end to end:
 ```text
 autorag.status {}
 autorag.search {"query":"a word that certainly appears","topK":3}
-autorag.search {"query":"recent topic","tags":["discord"],"topK":3}
+autorag.search {"query":"recent topic","datasourceIds":["discord"],"topK":3}
 autorag.search {"query":"recent mail subject","scope":"/mailcrawl/**","topK":3}
 ```
 
@@ -114,11 +114,11 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   treating it as a failure, and never kill a running sync to "fix" it.
 - MCP `autorag.search` needs no model, so it isolates retrieval from model
   failures.
-- Use the MCP `tags` / `scope` arguments to select one configured datasource;
-  `tags` match a datasource's descriptive metadata and `scope` narrows a query
-  to a sub-path, both ordinary filtering. Every configured connection is
-  searchable — if one returns nothing, investigate its native store, connector,
-  or the query itself.
+- Use MCP `datasourceIds` to select configured connections before retrieval;
+  `scope` narrows results within scope-capable datasources. Discover connection
+  IDs with `autorag.datasources.list`; descriptor tags are metadata only, not
+  search filters. Every configured connection is searchable — if one returns
+  nothing, investigate its native store, connector, or the query itself.
 - `autorag.evidence {"sessionId":"...","resultNumber":N}` shows the exact chunk
   behind a numbered result; use it to confirm a hit is real and its source is
   readable. The CLI `autorag evidence SESSION --json` remains for terminal

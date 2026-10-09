@@ -140,9 +140,10 @@ Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
-`scope` narrows a query to a sub-path as ordinary filtering; tags are
-descriptive metadata on a datasource and select among configured
-connections. Store only env-var names such as `tokenEnv` or
+`scope` narrows a query to a sub-path as ordinary filtering. Tags are
+descriptive metadata only, not search filters. Use MCP `datasourceIds` to
+select configured connections before retrieval; discover their IDs with
+`autorag.datasources.list`. Store only env-var names such as `tokenEnv` or
 `apiKeyEnv`, never credential values.
 
 ## Build and refresh indexes

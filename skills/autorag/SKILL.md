@@ -95,8 +95,6 @@ rather than only the curated summary.
 
 - `--scope` narrows datasource retrieval to a requested sub-path (ordinary
   per-query filtering).
-- `--tags` narrows results to datasources whose descriptive tags match; tags
-  are metadata only and select among already-configured datasources.
 - `--json` is required for programmatic consumption.
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.

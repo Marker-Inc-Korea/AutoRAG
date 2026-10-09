@@ -340,7 +340,7 @@ template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `mailcrawl`, `obsidian`, `rss`, `spotlight`, and `lark`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
-`scope` narrows a query to a sub-path as ordinary filtering; tags are descriptive metadata on a datasource and select among configured connections.
+`scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.
 
 ```jsonc
 {
