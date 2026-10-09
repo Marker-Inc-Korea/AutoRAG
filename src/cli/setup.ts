@@ -1,7 +1,6 @@
 import { accessSync, constants, existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
-import { resolveAutoRAGHome } from "../config/home.ts";
+import { delimiter, isAbsolute, join } from "node:path";
+import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { createEmbeddingRuntime, type RuntimeStatus } from "../embedding-runtime/index.ts";
 import { resolveProfile } from "../embedding-runtime/manifest.ts";
 import type { ProfileId } from "../embedding-runtime/types.ts";
@@ -129,9 +128,11 @@ function storesFor(
 }
 
 function discrawlStoreCandidates(workspace: string, env: NodeJS.ProcessEnv): readonly string[] {
-	const home = env.HOME ?? homedir();
+	const home = resolveUserHome(env);
+	// XDG_DATA_HOME must be absolute; a relative value is ignored per the spec.
+	const xdgDataHome = env.XDG_DATA_HOME;
 	return [
-		...(env.XDG_DATA_HOME ? [join(env.XDG_DATA_HOME, "discrawl", "discrawl.db")] : []),
+		...(xdgDataHome && isAbsolute(xdgDataHome) ? [join(xdgDataHome, "discrawl", "discrawl.db")] : []),
 		join(home, "Library", "Application Support", "discrawl", "discrawl.db"),
 		join(home, ".local", "share", "discrawl", "discrawl.db"),
 		join(home, ".discrawl", "discrawl.db"),

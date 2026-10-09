@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSetup } from "../../src/cli/setup.ts";
 
@@ -277,5 +277,54 @@ describe("discord native store probe", () => {
 			},
 		});
 		expect(seen.filter((path) => path.includes("discrawl"))).toEqual([explicit]);
+	});
+
+	async function discordCandidates(env: Record<string, string>): Promise<string[]> {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-discrawl-home-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ workspacePath: root, datasources: { discord: {} } }));
+		const seen: string[] = [];
+		await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", ...env },
+				executable: (name) => (name === "discrawl" ? "/bin/discrawl" : undefined),
+				pathExists: (path) => {
+					seen.push(path);
+					return false;
+				},
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => {
+						throw new Error("offline");
+					},
+					verifyModel: async () => {
+						throw new Error("offline");
+					},
+				},
+			},
+		});
+		return seen.filter((path) => path.includes("discrawl"));
+	}
+
+	it("resolves an empty or relative HOME to an absolute OS home", async () => {
+		for (const home of ["", "relative-home"]) {
+			const candidates = await discordCandidates({ HOME: home });
+			expect(candidates.length).toBeGreaterThan(0);
+			expect(candidates.every((path) => isAbsolute(path))).toBe(true);
+		}
+	});
+
+	it("falls back to USERPROFILE when HOME is unset", async () => {
+		const candidates = await discordCandidates({ USERPROFILE: "/win-home" });
+		expect(candidates).toContain(join("/win-home", "Library", "Application Support", "discrawl", "discrawl.db"));
+		expect(candidates).toContain(join("/win-home", ".discrawl", "discrawl.db"));
+	});
+
+	it("ignores a relative XDG_DATA_HOME", async () => {
+		const candidates = await discordCandidates({ HOME: "/h", XDG_DATA_HOME: "relative-xdg" });
+		expect(candidates).not.toContain(join("relative-xdg", "discrawl", "discrawl.db"));
 	});
 });
