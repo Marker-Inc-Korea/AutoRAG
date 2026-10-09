@@ -298,6 +298,17 @@ describe("DiscrawlSkill retrieval methods", () => {
 });
 
 describe("DiscrawlSkill manifest", () => {
+	it("routes time-based questions to discrawl messages instead of relevance search", () => {
+		const manifest = new DiscrawlSkill({ client: asClient(new StubClient()) }).skillManifest();
+		expect(manifest.content).toContain("Time-based questions");
+		expect(manifest.content).toContain("discrawl --json messages --since <RFC3339>");
+		expect(manifest.content).toContain("discrawl --json messages --hours 24");
+		expect(manifest.content).toContain("discrawl --json messages --days 365 --last 20");
+		expect(manifest.content).toContain("--dm");
+		expect(manifest.content).toContain("without `--json` to see the newest archived timestamp");
+		expect(manifest.content).not.toContain("/Users/");
+	});
+
 	it("documents hybrid default and the FTS newline caveat without leaking paths", () => {
 		const manifest = new DiscrawlSkill({ client: asClient(new StubClient()) }).skillManifest();
 		expect(manifest.name).toBe("datasource-discord");
