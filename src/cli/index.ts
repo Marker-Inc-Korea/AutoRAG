@@ -33,7 +33,6 @@ const VALUE_FLAGS = new Set([
 	"model-id",
 	"top-k",
 	"scope",
-	"tags",
 	"result",
 	"useful",
 	"not-useful",
@@ -122,7 +121,7 @@ Commands:
                        (lite refresh: --full --force --method; watch: --once)
   lite retrieve <query>
                        Retrieve documents without model curation
-                       (--top-k N  --scope SCOPE  --tags A,B  --json  --debug)
+                       (--top-k N  --scope SCOPE  --json  --debug)
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI

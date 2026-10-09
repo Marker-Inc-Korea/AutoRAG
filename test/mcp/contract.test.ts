@@ -128,7 +128,7 @@ const invalidArguments: [string, Record<string, unknown>][] = [
 	["autorag.search", { query: "hello", topK: 1.5 }],
 	["autorag.search", { query: "hello", strict: "true" }],
 	["autorag.search", { query: "hello", workspacePath: "/" }],
-	["autorag.search", { query: "hello", tags: [""] }],
+	["autorag.search", { query: "hello", tags: ["kakao"] }],
 	["autorag.search.files", { query: "hello", maxResults: 0 }],
 	["autorag.search.files", { query: "hello", maxResults: 1001 }],
 	["autorag.search.files", { query: "hello", offset: -1 }],
@@ -257,7 +257,7 @@ describe("MCP Client contract boundaries", () => {
 		async (name) => {
 			const f = fixture();
 			f.search.mockRejectedValueOnce(
-				new RetrievalSelectionError("unauthorized-datasource", "Datasource access denied"),
+				new RetrievalSelectionError("unknown-datasource", "Unknown datasource: secret"),
 			);
 			f.search.mockRejectedValueOnce(new Error("Archive unavailable"));
 			const client = await connect(f.lite);
@@ -266,7 +266,7 @@ describe("MCP Client contract boundaries", () => {
 			expect(payload(invalid)).toMatchObject({
 				errorCode: "invalid-selection",
 				retryable: false,
-				message: "Datasource access denied",
+				message: "Unknown datasource: secret",
 			});
 			const failed = await client.callTool({ name, arguments: { query: "policy" } });
 			expect(failed.isError).toBe(true);
@@ -331,17 +331,14 @@ describe("MCP Client contract boundaries", () => {
 		},
 	);
 
-	it("enforces trusted datasource authorization through the real engine", async () => {
+	it("routes explicit datasource selection through the real engine", async () => {
 		const f = fixture();
-		const engine = new RetrievalEngine({
-			datasourceAccess: { allowedTags: ["local"], allowedScopes: ["/docs/default/**"] },
-		});
-		const authorized = vi.fn(async () => [
-			{ id: "allowed", source: "/docs/default/allowed", score: 1, metadata: {}, content: "Allowed evidence" },
-			{ id: "secret-scope", source: "/docs/private/secret", score: 1, metadata: {}, content: "Must not leak" },
+		const engine = new RetrievalEngine();
+		const docsRetrieve = vi.fn(async () => [
+			{ id: "docs-1", source: "/docs/a.md", score: 1, metadata: {}, content: "Docs evidence" },
 		]);
-		const denied = vi.fn(async () => [
-			{ id: "secret", source: "/secret/a", score: 1, metadata: {}, content: "Forbidden backend" },
+		const secretRetrieve = vi.fn(async () => [
+			{ id: "secret-1", source: "/secret/a", score: 1, metadata: {}, content: "Secret evidence" },
 		]);
 		engine.register({
 			describe: () => ({
@@ -350,10 +347,10 @@ describe("MCP Client contract boundaries", () => {
 				type: "bm25",
 				description: "docs",
 				status: "active",
-				capabilities: ["scoped"],
+				capabilities: [],
 				tags: ["local"],
 			}),
-			retrieve: authorized,
+			retrieve: docsRetrieve,
 		});
 		engine.register({
 			describe: () => ({
@@ -362,36 +359,35 @@ describe("MCP Client contract boundaries", () => {
 				type: "bm25",
 				description: "secret",
 				status: "active",
-				capabilities: ["scoped"],
+				capabilities: [],
 				tags: ["secret"],
 			}),
-			retrieve: denied,
+			retrieve: secretRetrieve,
 		});
 		f.lite.getRetrievalEngine = () => engine;
 		f.lite.searchSelected = (query, selection, options) => engine.retrieveSelected(query, selection, options);
 		const client = await connect(f.lite);
-		expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain(
-			"autorag.search_datasource_secret",
-		);
-		const success = await client.callTool({ name: "autorag.search_datasource_docs", arguments: { query: "policy" } });
-		expect(payload(success)).toMatchObject({
-			results: [{ source: "/docs/default/allowed", content: "Allowed evidence" }],
-		});
-		expect(payload(success).results as unknown[]).toHaveLength(1);
-		const refused = await client.callTool({
+
+		const toolNames = (await client.listTools()).tools.map((tool) => tool.name);
+		expect(toolNames).toContain("autorag.search_datasource_docs");
+
+		const selected = await client.callTool({
 			name: "autorag.search",
 			arguments: { query: "policy", datasourceIds: ["secret"] },
 		});
-		expect(refused.isError).toBe(true);
-		expect(payload(refused)).toMatchObject({ errorCode: "invalid-selection", retryable: false });
-		const widened = await client.callTool({
+		expect(selected.isError).not.toBe(true);
+		expect(payload(selected)).toMatchObject({ results: [{ source: "/secret/a", content: "Secret evidence" }] });
+		expect(secretRetrieve).toHaveBeenCalledTimes(1);
+		expect(docsRetrieve).not.toHaveBeenCalled();
+
+		const unknown = await client.callTool({
 			name: "autorag.search",
-			arguments: { query: "policy", tags: ["secret"], scope: "/secret/**" },
+			arguments: { query: "policy", datasourceIds: ["missing"] },
 		});
-		expect(payload(widened)).toMatchObject({ results: [] });
-		expect(denied).not.toHaveBeenCalled();
-		expect(authorized).toHaveBeenCalledTimes(1);
+		expect(unknown.isError).toBe(true);
+		expect(payload(unknown)).toMatchObject({ errorCode: "invalid-selection", retryable: false });
 	});
+
 	it("uses the real FSearchClient missing-binary fallback without claiming an indexed search", async () => {
 		const f = fixture(false);
 		writeFileSync(join(f.root, "report.a.txt"), "original content");

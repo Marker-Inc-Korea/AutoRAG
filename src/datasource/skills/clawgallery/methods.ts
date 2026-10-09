@@ -69,11 +69,6 @@ export class ClawGalleryMethod implements RetrievalMethod {
 		for (const hit of result.hits) {
 			const source = clawGallerySourcePath(this.instanceId, hit.imageId);
 			if (!matchesDatasourceScope(source, options.scope)) continue;
-			if (
-				options.allowedScopes?.length &&
-				!options.allowedScopes.some((scope) => matchesDatasourceScope(source, scope))
-			)
-				continue;
 			out.push(toResult(hit, source, this.mode, this.instanceId));
 			if (out.length >= (options.topK ?? 20)) break;
 		}

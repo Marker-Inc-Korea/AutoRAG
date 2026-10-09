@@ -51,7 +51,6 @@ try {
 		workspacePath: tmpRoot,
 		minSync: false,
 		datasourceSkills: skills,
-		datasourceAccess: { allowedTags: ["github", "gists"], allowedScopes: ["/github-gist/**"] },
 	});
 
 	const refresh1 = await agent.refresh(true, { methods: ["datasources"] });

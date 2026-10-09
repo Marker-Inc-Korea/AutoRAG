@@ -292,7 +292,7 @@ describe("DiscrawlSkill retrieval methods", () => {
 		const stub = new StubClient();
 		stub.searchResult = okSearch(HITS);
 		const [hybrid] = new DiscrawlSkill({ client: asClient(stub), instanceId: "guild-1" }).retrievalMethods();
-		const results = await hybrid?.retrieve("공금", { topK: 5, allowedScopes: ["/discord/guild-1/**"] });
+		const results = await hybrid?.retrieve("공금", { topK: 5, scope: "/discord/guild-1/**" });
 		expect(results).toHaveLength(1);
 	});
 });

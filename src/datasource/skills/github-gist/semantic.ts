@@ -242,7 +242,7 @@ export class GitHubGistSemanticMethod implements RetrievalMethod {
 			const chunk = byChunkId.get(chunkId);
 			if (chunk === undefined) continue;
 			const source = datasourceSourcePath(skillName, instanceId, chunk.chunkId);
-			if (!this.matchesScope(source, options.scope, options.allowedScopes)) continue;
+			if (!matchesDatasourceScope(source, options.scope)) continue;
 			mapped.push({
 				id: `${skillName}:${instanceId}:${chunk.chunkId}`,
 				content: chunk.content,
@@ -262,16 +262,6 @@ export class GitHubGistSemanticMethod implements RetrievalMethod {
 			if (mapped.length >= topK) break;
 		}
 		return mapped;
-	}
-
-	private matchesScope(
-		source: string,
-		scope: string | undefined,
-		allowedScopes: readonly string[] | undefined,
-	): boolean {
-		if (!matchesDatasourceScope(source, scope)) return false;
-		if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-		return allowedScopes.some((entry) => matchesDatasourceScope(source, entry));
 	}
 }
 
