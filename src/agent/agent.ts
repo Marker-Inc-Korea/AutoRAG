@@ -1420,6 +1420,7 @@ export class AutoRAGAgent {
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
 			let timeout: NodeJS.Timeout | undefined;
+			let timedOutAfterFastAnswer = false;
 			const planAbort = new AbortController();
 			try {
 				await Promise.race([
@@ -1514,16 +1515,43 @@ export class AutoRAGAgent {
 							await session.prompt(buildFinalEmitReminder());
 						}
 					})(),
-					new Promise<never>((_, reject) => {
+					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
 							planAbort.abort();
 							void Promise.resolve(session?.abort());
+							// A first answer already exists: return it below instead of
+							// failing the whole search and discarding it. Remote sessions
+							// keep failing soft through their outbound-scanned path.
+							if (fastCaptured !== undefined && !this.remoteSession) {
+								timedOutAfterFastAnswer = true;
+								resolve();
+								return;
+							}
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
 					}),
 				]);
 			} finally {
 				if (timeout !== undefined) clearTimeout(timeout);
+			}
+
+			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
+				const response = createPreliminarySearchDocumentsResponse(sessionId, trimmedQuery, fastCaptured, [
+					...this.collectComponentDiagnostics(),
+					{
+						code: "search-timeout",
+						severity: "warning",
+						message: `search timed out after ${this.searchTimeoutMs}ms before verification finished; returning the first answer`,
+					},
+				]);
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: response.results.length,
+					degraded: true,
+				});
+				return response;
 			}
 
 			let emittedNoVerifiedResults = false;

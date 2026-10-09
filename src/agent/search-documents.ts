@@ -47,6 +47,7 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-datasource-skill"
 	| "missing-final-emit"
 	| "model-request-failed"
+	| "search-timeout"
 	| "query-routed"
 	| "query-route-fallback"
 	| "query-decomposition-failed"
