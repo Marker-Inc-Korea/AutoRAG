@@ -22,7 +22,7 @@ function writeConfig(config: Record<string, unknown>): string {
 }
 
 describe("CLI config datasources wiring", () => {
-	it("materializes configured datasource skills and trusted access into agent options", () => {
+	it("materializes configured datasource skills into agent options", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
 			workspacePath: tmpRoot,
@@ -32,31 +32,14 @@ describe("CLI config datasources wiring", () => {
 				slack: false,
 				github: { enabled: false },
 			},
-			datasourceAccess: { allowedTags: ["rss", "obsidian"], allowedScopes: ["/rss/**", "/obsidian/**"] },
 		});
 		const config = resolveConfig({ flags: { config: configPath } });
 		expect(config.datasources).toBeDefined();
-		expect(config.datasourceAccess).toEqual({
-			allowedTags: ["rss", "obsidian"],
-			allowedScopes: ["/rss/**", "/obsidian/**"],
-		});
 
 		const options = buildAgentOptions(config);
 		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
 		expect(skills.map((skill) => skill.describe().name).sort()).toEqual(["obsidian", "rss"]);
 		expect(skills.find((skill) => skill.describe().name === "obsidian")?.describe().instanceId).toBe("vault");
-		expect(options.datasourceAccess).toEqual(config.datasourceAccess);
-	});
-
-	it("stays default-deny when datasourceAccess is omitted", () => {
-		const configPath = writeConfig({
-			searchPaths: [tmpRoot],
-			workspacePath: tmpRoot,
-			datasources: { rss: { connector: { feeds: [{ url: "https://feeds.example.com/a.xml" }] } } },
-		});
-		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
-		expect(options.datasourceSkills).toHaveLength(1);
-		expect(options.datasourceAccess).toBeUndefined();
 	});
 
 	it("skips unknown datasource skill names and keeps known skills", () => {
@@ -281,7 +264,6 @@ describe("CLI config datasources wiring", () => {
 					},
 				},
 			},
-			datasourceAccess: { allowedTags: ["cloud-drive"], allowedScopes: ["/cloud-drive/**"] },
 		});
 
 		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
@@ -312,10 +294,6 @@ describe("CLI config datasources wiring", () => {
 					instanceId: "work",
 					connector: { provider: "onedrive", remote: "company-onedrive:Documents" },
 				},
-			},
-			datasourceAccess: {
-				allowedTags: ["cloud-drive"],
-				allowedScopes: ["/personal-google-drive/**", "/company-onedrive/**"],
 			},
 		});
 
@@ -375,10 +353,6 @@ describe("CLI config datasources wiring", () => {
 					connector: { binaryPath: "/missing/lazykatok" },
 				},
 			},
-			datasourceAccess: {
-				allowedTags: ["mailcrawl", "github", "slack", "kakaotalk"],
-				allowedScopes: ["/personal-mail/**", "/company-github/**", "/engineering-slack/**", "/family-kakao/**"],
-			},
 		});
 		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
 		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
@@ -398,11 +372,8 @@ describe("CLI config datasources wiring", () => {
 		);
 	});
 
-	it("rejects malformed datasources and datasourceAccess sections", () => {
+	it("rejects a malformed datasources section", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);
-		const badAccess = join(tmpRoot, "config2.json");
-		writeFileSync(badAccess, JSON.stringify({ searchPaths: [tmpRoot], datasourceAccess: "all" }));
-		expect(() => resolveConfig({ flags: { config: badAccess } })).toThrow(ConfigError);
 	});
 });

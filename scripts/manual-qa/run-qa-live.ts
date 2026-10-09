@@ -42,7 +42,6 @@ try {
 		workspacePath: tmpRoot,
 		minSync: false,
 		datasourceSkills: skills,
-		datasourceAccess: { allowedTags: ["github", "rss"], allowedScopes: ["/github/**", "/rss/**"] },
 	});
 
 	const refresh = await agent.refresh(true, { methods: ["datasources"] });
@@ -59,7 +58,7 @@ try {
 		.map((entry) => entry.name)
 		.filter((name) => name.startsWith("search_datasource_"));
 	check(
-		"live tools: every authorized connection has its own generated tool and no fan-out datasource tool",
+		"live tools: every configured connection has its own generated tool and no fan-out datasource tool",
 		generatedToolNames.length === 2 &&
 		generatedToolNames.includes(singleDatasourceToolName("github")) &&
 		generatedToolNames.includes(singleDatasourceToolName("rss")) &&

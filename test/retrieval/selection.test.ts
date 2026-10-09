@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { DatasourceAccessContext } from "../../src/datasource/access-context.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 import { RetrievalSelectionError, resolveSelectedMethods } from "../../src/retrieval/selection.ts";
 import type { RetrievalMethod, RetrievalMethodDescriptor, RetrievalResult } from "../../src/retrieval/types.ts";
@@ -62,7 +61,7 @@ describe("RetrievalEngine.retrieveSelected", () => {
 	it("runs only the selected datasource and never invokes the others", async () => {
 		const kakao = { count: 0 };
 		const slack = { count: 0 };
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: ["kakao", "slack"] } });
+		const engine = new RetrievalEngine();
 		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], kakao));
 		engine.register(spyDatasourceMethod("slack.keyword", "slack", ["slack"], [{ source: "/slack/s" }], slack));
 
@@ -73,9 +72,9 @@ describe("RetrievalEngine.retrieveSelected", () => {
 		expect(slack.count).toBe(0);
 	});
 
-	it("never invokes an unauthorized datasource, even when nothing was selected", async () => {
-		const denied = { count: 0 };
+	it("runs local and datasource methods when nothing is selected", async () => {
 		const local = { count: 0 };
+		const datasource = { count: 0 };
 		const localSpy: RetrievalMethod = {
 			describe: (): RetrievalMethodDescriptor => ({
 				name: "posix",
@@ -89,21 +88,21 @@ describe("RetrievalEngine.retrieveSelected", () => {
 				return [{ id: "l1", source: "/repo/file", content: "c", score: 1, metadata: {} }];
 			},
 		};
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: [] } });
+		const engine = new RetrievalEngine();
 		engine.register(localSpy);
-		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], denied));
+		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], datasource));
 
 		const { results } = await engine.retrieveSelected("q", {});
 
-		expect(results.map((r) => r.source)).toEqual(["/repo/file"]);
-		expect(denied.count).toBe(0);
+		expect(results.map((r) => r.source).sort()).toEqual(["/kakao/a", "/repo/file"]);
+		expect(datasource.count).toBe(1);
 		expect(local.count).toBe(1);
 	});
 
 	it("excludes local methods for explicit datasourceIds unless local is true", async () => {
 		const localRuns = { count: 0 };
 		const kakao = { count: 0 };
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: ["kakao"] } });
+		const engine = new RetrievalEngine();
 		const posix: RetrievalMethod = {
 			describe: (): RetrievalMethodDescriptor => ({
 				name: "posix",
@@ -131,7 +130,7 @@ describe("RetrievalEngine.retrieveSelected", () => {
 
 	it("excludes local methods when local is false", async () => {
 		const localRuns = { count: 0 };
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: ["kakao"] } });
+		const engine = new RetrievalEngine();
 		const posix: RetrievalMethod = {
 			describe: (): RetrievalMethodDescriptor => ({
 				name: "posix",
@@ -157,7 +156,7 @@ describe("RetrievalEngine.retrieveSelected", () => {
 	it("intersects an explicit methods selection with the eligible set", async () => {
 		const kakao = { count: 0 };
 		const slack = { count: 0 };
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: ["kakao", "slack"] } });
+		const engine = new RetrievalEngine();
 		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], kakao));
 		engine.register(
 			spyDatasourceMethod("kakao.semantic", "kakao", ["kakao"], [{ source: "/kakao/b" }], { count: 0 }),
@@ -172,7 +171,7 @@ describe("RetrievalEngine.retrieveSelected", () => {
 	});
 
 	it("rejects an unknown method selection", async () => {
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: ["kakao"] } });
+		const engine = new RetrievalEngine();
 		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], { count: 0 }));
 
 		await expect(engine.retrieveSelected("q", { methods: ["nope"] })).rejects.toMatchObject({
@@ -180,35 +179,19 @@ describe("RetrievalEngine.retrieveSelected", () => {
 		});
 	});
 
-	it("rejects an unauthorized method selection without executing it", async () => {
+	it("rejects an unknown datasource selection", async () => {
 		const denied = { count: 0 };
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: [] } });
+		const engine = new RetrievalEngine();
 		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], denied));
 
-		await expect(engine.retrieveSelected("q", { methods: ["kakao.keyword"] })).rejects.toMatchObject({
-			code: "unauthorized-method",
-		});
-		expect(denied.count).toBe(0);
-	});
-
-	it("rejects an unauthorized and an unknown datasource selection", async () => {
-		const denied = { count: 0 };
-		const engine = new RetrievalEngine({ datasourceAccess: { allowedTags: [] } });
-		engine.register(spyDatasourceMethod("kakao.keyword", "kakao", ["kakao"], [{ source: "/kakao/a" }], denied));
-
-		await expect(engine.retrieveSelected("q", { datasourceIds: ["kakao"] })).rejects.toMatchObject({
-			code: "unauthorized-datasource",
-		});
 		await expect(engine.retrieveSelected("q", { datasourceIds: ["ghost"] })).rejects.toMatchObject({
 			code: "unknown-datasource",
 		});
 		expect(denied.count).toBe(0);
 	});
 
-	it("preserves trusted scope narrowing through the existing filter", async () => {
-		const engine = new RetrievalEngine({
-			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/allowed/**"] },
-		});
+	it("narrows selected results by the query scope", async () => {
+		const engine = new RetrievalEngine();
 		engine.register(
 			spyDatasourceMethod(
 				"slack.keyword",
@@ -219,15 +202,18 @@ describe("RetrievalEngine.retrieveSelected", () => {
 			),
 		);
 
-		const { results } = await engine.retrieveSelected("q", { datasourceIds: ["slack"] });
+		const { results } = await engine.retrieveSelected(
+			"q",
+			{ datasourceIds: ["slack"] },
+			{ scope: "/slack/allowed/**" },
+		);
 
 		expect(results.map((r) => r.source)).toEqual(["/slack/allowed/channel/m1"]);
 	});
 
-	it("selects a method-less authorized datasource cleanly when the catalog supplies it", async () => {
+	it("selects a method-less configured datasource cleanly when the catalog supplies it", async () => {
 		const engine = new RetrievalEngine({
-			datasourceAccess: { allowedTags: ["kakao"] },
-			authorizedDatasourceIds: () => ["kakao"],
+			datasourceIds: () => ["kakao"],
 		});
 		engine.register(localMethod("posix", [{ source: "/repo/file" }]));
 
@@ -251,16 +237,20 @@ describe("resolveSelectedMethods", () => {
 		retrieve: async () => [],
 	});
 
-	it("defaults to every authorized datasource plus local", () => {
-		const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
+	it("defaults to every configured datasource plus local", () => {
 		const methods = [method(descriptor("posix")), method(descriptor("kakao.keyword", "kakao", ["kakao"]))];
 
-		const selected = resolveSelectedMethods(methods, ctx, {}, ["kakao"]);
+		const selected = resolveSelectedMethods(methods, {}, ["kakao"]);
 		expect(selected.map((m) => m.describe().name)).toEqual(["posix", "kakao.keyword"]);
 	});
 
 	it("throws a typed error for an unknown method", () => {
-		const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
-		expect(() => resolveSelectedMethods([], ctx, { methods: ["nope"] }, [])).toThrow(RetrievalSelectionError);
+		expect(() => resolveSelectedMethods([], { methods: ["nope"] }, [])).toThrow(RetrievalSelectionError);
+	});
+
+	it("throws a typed error for an unknown datasource", () => {
+		expect(() => resolveSelectedMethods([], { datasourceIds: ["ghost"] }, ["kakao"])).toThrow(
+			RetrievalSelectionError,
+		);
 	});
 });

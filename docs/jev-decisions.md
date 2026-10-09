@@ -108,13 +108,22 @@ Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
 user question in one batched call:
 
-1. **Branch** (`choice`): `local`, `web`, or `direct`. The branch with the
-   highest probability wins, even when Jev reports low confidence.
+1. **Branch** (`choice`): `local`, `web`, or `direct`. The highest-probability
+   branch wins, but leaving local search needs confidence: a `direct` or `web`
+   branch **at or below 0.75** (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one
+   Jev reports without a probability — falls back to `local` search with a
+   `query-route-fallback` diagnostic, so a weak verdict never silently drops the
+   corpus evidence the question depends on.
    - `local`: answering needs information only the user can reach (files on
-     their computer, Discord/KakaoTalk/Slack chats, email, notes).
-   - `web`: not answerable from general knowledge, but one public internet
-     search would answer it.
-   - `direct`: general knowledge, simple reasoning, or small talk.
+     their computer, Discord/KakaoTalk/Slack chats, email, notes, calendar,
+     history). Jev is told to prefer `local` whenever the question refers to the
+     user's own life, situation, plans, or records — "my/I/our", a named friend,
+     family member, or colleague, or "my case/hearing/appointment/routine" — even
+     when a generic answer would also be possible.
+   - `web`: not answerable from general knowledge and not from the user's private
+     information either, but one public internet search would answer it.
+   - `direct`: general knowledge, simple reasoning, or small talk. Never chosen
+     for a question that refers to the user's own life, files, or records.
 2. **Decomposition** (`noul`): does the question need several search queries
    (multiple sub-questions, comparisons, several facts to confirm)? A
    probability of 0.5 or more means yes.
@@ -130,7 +139,7 @@ What happens next:
 ### Datasource check before the fast answer
 
 On the `local` branch, Jev answers one more batched call: one `noul` per
-registered datasource (authorized, with retrieval methods), "Should the `<id>`
+registered datasource (configured, with retrieval methods), "Should the `<id>`
 datasource be searched to answer the user question?". The registered set comes
 from the config: `autorag search` reads it on every call, while `autorag tui`
 and `autorag serve` read it at startup, so restart them after adding,
@@ -167,9 +176,9 @@ The state Jev judges has three parts, followed by the question:
    shown only when it is safe for the **current** run:
 
    - Memory is shared across workspaces and configs, so a result is dropped
-     unless every piece of its evidence comes from a datasource this run's
-     `datasourceAccess` authorizes, a configured search path, or the web.
-     Evidence from a datasource that is denied or not configured here, and
+     unless every piece of its evidence comes from a datasource this run
+     configures, a configured search path, or the web.
+     Evidence from a datasource that is not configured here, and
      evidence with no recognizable origin, drops the whole result; a search
      left with no result is not shown at all.
    - Results the user marked not useful are left out. The verdict is stored

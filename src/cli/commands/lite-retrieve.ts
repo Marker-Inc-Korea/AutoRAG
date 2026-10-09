@@ -94,7 +94,6 @@ interface RejectionEnvelope {
 interface LiteRetrieveOptions {
 	topK?: number;
 	scope?: string;
-	allowedTags?: readonly string[];
 }
 
 function parseIntOptional(value: string | boolean | undefined): number | undefined {
@@ -104,22 +103,11 @@ function parseIntOptional(value: string | boolean | undefined): number | undefin
 	return Math.trunc(parsed);
 }
 
-function parseCsvStrings(value: string | boolean | undefined): readonly string[] | undefined {
-	if (typeof value !== "string" || value.trim() === "") return undefined;
-	const parts = value
-		.split(",")
-		.map((part) => part.trim())
-		.filter((part) => part !== "");
-	return parts.length > 0 ? parts : undefined;
-}
-
 function buildRetrieveOptions(flags: CommandContext["flags"]): LiteRetrieveOptions {
 	const options: LiteRetrieveOptions = {};
 	const topK = parseIntOptional(flags["top-k"]);
 	if (topK !== undefined) options.topK = topK;
 	if (typeof flags.scope === "string" && flags.scope.trim() !== "") options.scope = flags.scope;
-	const tags = parseCsvStrings(flags.tags);
-	if (tags !== undefined) options.allowedTags = tags;
 	return options;
 }
 
@@ -281,7 +269,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const query = ctx.positionals.join(" ").trim();
 	if (query.length === 0) {
 		ctx.stderr(
-			renderError(new Error("Usage: autorag lite retrieve <query> [--top-k N] [--scope SCOPE] [--tags tag1,tag2]"), {
+			renderError(new Error("Usage: autorag lite retrieve <query> [--top-k N] [--scope SCOPE]"), {
 				json: ctx.json,
 				debug: ctx.debug,
 			}),
@@ -375,7 +363,6 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		retrievalResult = await lite.retrieve(query, {
 			topK: topKResult.value ?? options.topK,
 			scope: options.scope,
-			allowedTags: options.allowedTags,
 		});
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));

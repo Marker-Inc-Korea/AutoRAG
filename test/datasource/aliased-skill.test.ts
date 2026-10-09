@@ -63,7 +63,7 @@ function chatSkill(): DatasourceSkill {
 }
 
 it("rewrites alias scopes before delegating retrieval", async () => {
-	const received: { scope?: string; allowedScopes?: readonly string[] }[] = [];
+	const received: { scope?: string }[] = [];
 	const base = chatSkill();
 	const originalMethod = base.retrievalMethods()[0];
 	base.retrievalMethods = () => [
@@ -79,13 +79,11 @@ it("rewrites alias scopes before delegating retrieval", async () => {
 	const aliased = new AliasedDatasourceSkill(base, { alias: "account-a" });
 	await aliased.retrievalMethods()[0].retrieve("query", {
 		scope: "/account-a/channel-1",
-		allowedScopes: ["/account-a/channel-1/**"],
 	});
 
 	expect(received).toEqual([
 		{
 			scope: "/chat/channel-1",
-			allowedScopes: ["/chat/channel-1/**"],
 		},
 	]);
 });
