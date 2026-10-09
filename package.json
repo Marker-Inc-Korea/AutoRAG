@@ -51,10 +51,10 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.86.1",
-    "@earendil-works/pi-ai": "^0.86.1",
-    "@earendil-works/pi-coding-agent": "0.86.1",
-    "@earendil-works/pi-tui": "0.86.1",
+    "@earendil-works/pi-agent-core": "^1.1.0",
+    "@earendil-works/pi-ai": "^1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "@modelcontextprotocol/server": "^2.3.0",
     "@openrouter/sdk": "^1.4.21",
     "chardet": "^2.2.0",

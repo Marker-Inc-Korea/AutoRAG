@@ -29,7 +29,7 @@ describe("single-model CLI config", () => {
 		const config = resolveConfig({
 			flags: {
 				"model-provider": "openai",
-				"model-id": "gpt-5.6-luna",
+				"model-id": "gpt-6-luna",
 				"search-paths": "docs,notes",
 				workspace: root,
 				"memory-path": join(root, "memory.json"),
@@ -37,7 +37,7 @@ describe("single-model CLI config", () => {
 			env: { HOME: root },
 			cwd: root,
 		});
-		expect(config.model).toEqual({ provider: "openai", id: "gpt-5.6-luna" });
+		expect(config.model).toEqual({ provider: "openai", id: "gpt-6-luna" });
 		expect(config.searchPaths).toEqual(["docs", "notes"]);
 		expect(config.minSync?.enabled).toBe(true);
 		expect(config.minSync?.autoInstall).toBe(true);
@@ -138,13 +138,13 @@ describe("single-model CLI config", () => {
 				searchPaths: ["docs"],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "openai", id: "gpt-5.6-luna" },
+				model: { provider: "openai", id: "gpt-6-luna" },
 				minSync: { enabled: false },
 			},
 			{ cwd: root },
 		);
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
-		expect(written.model).toEqual({ provider: "openai", id: "gpt-5.6-luna" });
+		expect(written.model).toEqual({ provider: "openai", id: "gpt-6-luna" });
 		expect(written.minSync?.enabled).toBe(false);
 		expect(JSON.stringify(written)).not.toMatch(/explorer|orchestrator/i);
 	});
@@ -184,11 +184,11 @@ describe("single-model CLI config", () => {
 				searchPaths: ["."],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "openai", id: "gpt-5.6-luna" },
+				model: { provider: "openai", id: "gpt-6-luna" },
 			},
 			{ configPath: join(root, "missing.toml"), agentDir: join(root, "agent") },
 		);
-		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-5.6-luna" });
+		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 	});
 
 	it("uses stored pi credentials for a catalog model", async () => {
@@ -200,11 +200,11 @@ describe("single-model CLI config", () => {
 				searchPaths: ["."],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "openai", id: "gpt-5.6-luna" },
+				model: { provider: "openai", id: "gpt-6-luna" },
 			},
 			{ configPath: join(root, "missing.toml"), agentDir },
 		);
-		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-5.6-luna" });
+		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 		expect(resolved.apiKey).toBe("sk-stored");
 		expect(resolved.providerApiKeys).toEqual({ openai: "sk-stored" });
 	});
@@ -214,14 +214,14 @@ describe("single-model CLI config", () => {
 		mkdirSync(agentDir, { recursive: true });
 		writeFileSync(
 			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-5.6-luna" }),
+			JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }),
 		);
 		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "sk-stored" } }));
 		const resolved = await resolveAgentModel(
 			{ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") },
 			{ configPath: join(root, "missing.toml"), agentDir, cwd: root },
 		);
-		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-5.6-luna" });
+		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 		expect(resolved.apiKey).toBe("sk-stored");
 	});
 

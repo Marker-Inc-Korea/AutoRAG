@@ -59,12 +59,12 @@ describe("queryDecomposition config", () => {
 				searchPaths: ["."],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "anthropic", id: "claude-sonnet-5" },
-				queryDecomposition: { model: { provider: "openai", id: "gpt-5.6-luna" } },
+				model: { provider: "anthropic", id: "claude-sonnet-5-5" },
+				queryDecomposition: { model: { provider: "openai", id: "gpt-6-luna" } },
 			},
 			{ configPath: join(root, "missing.toml"), agentDir },
 		);
-		expect(resolved?.model).toMatchObject({ provider: "openai", id: "gpt-5.6-luna" });
+		expect(resolved?.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 		expect(resolved?.apiKey).toBe("sk-decompose");
 	});
 });

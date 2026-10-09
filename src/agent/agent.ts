@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
+import type { Agent, AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
@@ -87,6 +87,7 @@ import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../we
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
+	type DatasourceAgentSkill,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
@@ -731,7 +732,7 @@ export class AutoRAGAgent {
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
-	private readonly datasourceAgentSkills: readonly Skill[];
+	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
@@ -1829,9 +1830,9 @@ export class AutoRAGAgent {
 	 * trusted, server-bound access context. Only authorized skills become
 	 * model-visible; unauthorized skills are omitted entirely (default-deny).
 	 */
-	private buildAuthorizedDatasourceSkills(): Skill[] {
+	private buildAuthorizedDatasourceSkills(): DatasourceAgentSkill[] {
 		const ctx = this.datasourceAccessContext();
-		const skills: Skill[] = [];
+		const skills: DatasourceAgentSkill[] = [];
 		for (const skill of this.datasourceSkills) {
 			if (!ctx.isAccessible(skill.describe())) continue;
 			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
@@ -1928,7 +1929,7 @@ export class AutoRAGAgent {
 	 * `load_datasource_skill` tool. Returns `undefined` for unknown or
 	 * unauthorized names — model/tool input can never widen authorization.
 	 */
-	loadDatasourceSkill(name: string): Skill | undefined {
+	loadDatasourceSkill(name: string): DatasourceAgentSkill | undefined {
 		return this.datasourceAgentSkills.find((skill) => skill.name === name);
 	}
 
