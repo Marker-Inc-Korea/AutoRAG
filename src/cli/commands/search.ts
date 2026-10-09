@@ -124,7 +124,6 @@ export interface SearchDeps {
 interface SearchOptions {
 	topK?: number;
 	scope?: string;
-	allowedTags?: string[];
 }
 
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -160,22 +159,11 @@ function parseIntOptional(value: string | boolean | undefined): number | undefin
 	return Math.trunc(parsed);
 }
 
-function parseCsvStrings(value: string | boolean | undefined): string[] | undefined {
-	if (typeof value !== "string" || value.trim() === "") return undefined;
-	const parts = value
-		.split(",")
-		.map((part) => part.trim())
-		.filter((part) => part !== "");
-	return parts.length > 0 ? parts : undefined;
-}
-
 function buildSearchOptions(flags: CommandContext["flags"]): SearchOptions {
 	const options: SearchOptions = {};
 	const topK = parseIntOptional(flags["top-k"]);
 	if (topK !== undefined) options.topK = topK;
 	if (typeof flags.scope === "string" && flags.scope.trim() !== "") options.scope = flags.scope;
-	const tags = parseCsvStrings(flags.tags);
-	if (tags !== undefined) options.allowedTags = tags;
 	return options;
 }
 
@@ -187,7 +175,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	const query = ctx.positionals.join(" ").trim();
 	if (query.length === 0) {
 		ctx.stderr(
-			renderError(new Error("Usage: autorag search <query> [--top-k N] [--scope SCOPE] [--tags tag1,tag2]"), {
+			renderError(new Error("Usage: autorag search <query> [--top-k N] [--scope SCOPE]"), {
 				json: ctx.json,
 				debug: ctx.debug,
 			}),

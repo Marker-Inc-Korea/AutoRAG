@@ -89,35 +89,27 @@ function makeCatalogSkill(options: {
 	};
 }
 
-function makeAgent(
-	skills: readonly DatasourceSkill[],
-	allowedTags: readonly string[],
-	allowedScopes?: readonly string[],
-): AutoRAGAgent {
+function makeAgent(skills: readonly DatasourceSkill[]): AutoRAGAgent {
 	return new AutoRAGAgent({
 		searchPaths: ["test/fixtures/sample-project"],
 		workspacePath: tmpDir,
 		jikji: false,
 		minSync: false,
 		datasourceSkills: skills,
-		datasourceAccess: { allowedTags, ...(allowedScopes !== undefined ? { allowedScopes } : {}) },
 	});
 }
 
 describe("AutoRAGAgent.listDatasources", () => {
-	it("lists authorized descriptors, including a datasource with no retrieval methods", () => {
-		const agent = makeAgent(
-			[
-				makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/default"] }),
-				makeCatalogSkill({
-					datasourceId: "empty",
-					tags: ["kakao"],
-					sources: ["/empty/default"],
-					withMethod: false,
-				}),
-			],
-			["kakao"],
-		);
+	it("lists configured descriptors, including a datasource with no retrieval methods", () => {
+		const agent = makeAgent([
+			makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/default"] }),
+			makeCatalogSkill({
+				datasourceId: "empty",
+				tags: ["kakao"],
+				sources: ["/empty/default"],
+				withMethod: false,
+			}),
+		]);
 
 		const entries = agent.listDatasources();
 
@@ -133,40 +125,24 @@ describe("AutoRAGAgent.listDatasources", () => {
 		expect(entries[0]?.sourceScopes).toEqual(["/kakao/default"]);
 	});
 
-	it("omits unauthorized datasources and never exposes config metadata", () => {
-		const agent = makeAgent(
-			[makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/default"] })],
-			[],
-		);
+	it("lists every source scope for a scoped datasource without permission filtering", () => {
+		const agent = makeAgent([
+			makeCatalogSkill({
+				datasourceId: "slack",
+				tags: ["slack"],
+				sources: ["/slack/allowed/channel", "/slack/secret/channel"],
+				capabilities: ["keyword", "scoped"],
+			}),
+		]);
 
-		expect(agent.listDatasources()).toEqual([]);
-	});
-
-	it("narrows scoped source scopes to the trusted allow-scopes", () => {
-		const agent = makeAgent(
-			[
-				makeCatalogSkill({
-					datasourceId: "slack",
-					tags: ["slack"],
-					sources: ["/slack/allowed/channel", "/slack/secret/channel"],
-					capabilities: ["keyword", "scoped"],
-				}),
-			],
-			["slack"],
-			["/slack/allowed/**"],
-		);
-
-		expect(agent.listDatasources()[0]?.sourceScopes).toEqual(["/slack/allowed/channel"]);
+		expect(agent.listDatasources()[0]?.sourceScopes).toEqual(["/slack/allowed/channel", "/slack/secret/channel"]);
 	});
 
 	it("collapses duplicate datasource ids to the first registration", () => {
-		const agent = makeAgent(
-			[
-				makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/one"] }),
-				makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/two"], withMethod: false }),
-			],
-			["kakao"],
-		);
+		const agent = makeAgent([
+			makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/one"] }),
+			makeCatalogSkill({ datasourceId: "kakao", tags: ["kakao"], sources: ["/kakao/two"], withMethod: false }),
+		]);
 
 		const entries = agent.listDatasources();
 		expect(entries).toHaveLength(1);
@@ -178,23 +154,20 @@ describe("AutoRAGAgent retrieval engine selection", () => {
 	it("executes only the selected datasource, not the others", async () => {
 		const kakaoCalls = { count: 0 };
 		const slackCalls = { count: 0 };
-		const agent = makeAgent(
-			[
-				makeCatalogSkill({
-					datasourceId: "kakao",
-					tags: ["kakao"],
-					sources: ["/kakao/default"],
-					calls: kakaoCalls,
-				}),
-				makeCatalogSkill({
-					datasourceId: "slack",
-					tags: ["slack"],
-					sources: ["/slack/default"],
-					calls: slackCalls,
-				}),
-			],
-			["kakao", "slack"],
-		);
+		const agent = makeAgent([
+			makeCatalogSkill({
+				datasourceId: "kakao",
+				tags: ["kakao"],
+				sources: ["/kakao/default"],
+				calls: kakaoCalls,
+			}),
+			makeCatalogSkill({
+				datasourceId: "slack",
+				tags: ["slack"],
+				sources: ["/slack/default"],
+				calls: slackCalls,
+			}),
+		]);
 
 		const { results } = await agent.getRetrievalEngine().retrieveSelected("q", { datasourceIds: ["kakao"] });
 
@@ -203,11 +176,10 @@ describe("AutoRAGAgent retrieval engine selection", () => {
 		expect(slackCalls.count).toBe(0);
 	});
 
-	it("selects an authorized method-less datasource cleanly", async () => {
-		const agent = makeAgent(
-			[makeCatalogSkill({ datasourceId: "empty", tags: ["kakao"], sources: ["/empty/default"], withMethod: false })],
-			["kakao"],
-		);
+	it("selects a method-less datasource cleanly", async () => {
+		const agent = makeAgent([
+			makeCatalogSkill({ datasourceId: "empty", tags: ["kakao"], sources: ["/empty/default"], withMethod: false }),
+		]);
 
 		const { results } = await agent.getRetrievalEngine().retrieveSelected("q", { datasourceIds: ["empty"] });
 

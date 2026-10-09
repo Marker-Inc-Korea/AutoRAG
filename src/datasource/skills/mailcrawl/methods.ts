@@ -58,11 +58,7 @@ export class MailcrawlMethod implements RetrievalMethod {
 				if (this.account !== undefined && hit.accountId !== this.account) return false;
 				if (this.mailbox !== undefined && hit.mailbox !== this.mailbox) return false;
 				const source = datasourceSourcePath("mailcrawl", this.instanceId, hit.chunkId);
-				return (
-					matchesDatasourceScope(source, options.scope) &&
-					(options.allowedScopes === undefined ||
-						options.allowedScopes.some((scope) => matchesDatasourceScope(source, scope)))
-				);
+				return matchesDatasourceScope(source, options.scope);
 			})
 			.map((hit) => {
 				const source = datasourceSourcePath("mailcrawl", this.instanceId, hit.chunkId);

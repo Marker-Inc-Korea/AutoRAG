@@ -96,10 +96,6 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [slackSkill(), githubSkill()],
-			datasourceAccess: {
-				allowedTags: ["slack", "github"],
-				allowedScopes: ["/slack/ws-1/**", "/github/acme/**"],
-			},
 		});
 
 		const refresh = await agent.refresh(true, { methods: ["datasources"] });
@@ -122,29 +118,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		expect(scoped.details.sources.every((source: string) => source.startsWith("/slack/"))).toBe(true);
 	});
 
-	it("stays default-deny for connector skills without trusted access", async () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: ["test/fixtures/sample-project"],
-			workspacePath: tmpDir,
-			minSync: false,
-			everything: false,
-			fsearch: false,
-			datasourceSkills: [slackSkill()],
-		});
-		await agent.refresh(true, { methods: ["datasources"] });
-
-		const { results } = await agent.searchSingleDatasourceDocuments("slack", "budget approved");
-		expect(results).toEqual([]);
-
-		// Default-deny does not merely empty the results: it exposes no datasource
-		// tool at all, so model arguments cannot reach a datasource.
-		const datasourceToolNames = (agent as unknown as { tools: readonly AgentTool[] }).tools
-			.map((tool) => tool.name)
-			.filter((name) => name.startsWith("search_datasource_"));
-		expect(datasourceToolNames).toEqual([]);
-	});
-
-	it("announces authorized connector skills in the system prompt and loads them on demand", async () => {
+	it("announces configured connector skills in the system prompt and loads them on demand", async () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
@@ -152,19 +126,17 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [slackSkill(), githubSkill()],
-			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/ws-1/**"] },
 		});
 
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("datasource-slack");
-		// github is not authorized: omitted entirely (default-deny).
-		expect(prompt).not.toContain("datasource-github");
+		expect(prompt).toContain("datasource-github");
 
 		const loadTool = createLoadDatasourceSkillTool(agent);
 		const loaded = await loadTool.execute("call-load", { name: "datasource-slack" });
 		expect(loaded.details).toEqual({ skill: "datasource-slack", loaded: true });
-		const denied = await loadTool.execute("call-denied", { name: "datasource-github" });
-		expect(denied.details).toEqual({ skill: "datasource-github", loaded: false });
+		const loadedGithub = await loadTool.execute("call-load-github", { name: "datasource-github" });
+		expect(loadedGithub.details).toEqual({ skill: "datasource-github", loaded: true });
 	});
 
 	it("degrades to path-opaque diagnostics when an external crawler fails during refresh", async () => {
@@ -179,7 +151,6 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [failing],
-			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/**"] },
 		});
 
 		const refresh = await agent.refresh(true, { methods: ["datasources"] });
@@ -262,7 +233,6 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [skill],
-			datasourceAccess: { allowedTags: ["obsidian"], allowedScopes: ["/obsidian/**"] },
 		});
 		await agent.refresh(true, { methods: ["datasources"] });
 		const { results } = await agent.searchSingleDatasourceDocuments("obsidian", "postgres core database decision");

@@ -24,7 +24,7 @@ export {
 } from "./scope.ts";
 export {
 	type DatasourceCatalogEntry,
-	derivedAuthorizedDatasourceIds,
+	derivedDatasourceIds,
 	type RetrievalSelection,
 	RetrievalSelectionError,
 	type RetrievalSelectionErrorCode,

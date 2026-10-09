@@ -86,7 +86,6 @@ try {
 		workspacePath: tmpRoot,
 		minSync: false,
 		datasourceSkills: skills,
-		datasourceAccess: { allowedTags: ["spotlight"], allowedScopes: ["/spotlight/**"] },
 	});
 
 	const refresh = await agent.refresh(true, { methods: ["datasources"] });

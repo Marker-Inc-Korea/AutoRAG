@@ -1,6 +1,6 @@
 ---
 name: autorag
-description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and authorized datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
+description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and configured datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
 license: MIT
 ---
 
@@ -8,7 +8,7 @@ license: MIT
 
 Use this skill when AutoRAG is already configured and the user asks to search,
 summarize, compare, or answer questions from local PDFs, wikis, notes, research
-papers, knowledge bases, or authorized datasources.
+papers, knowledge bases, or configured datasources.
 
 AutoRAG is the specialized librarian agent. One configured model plans the
 search, calls MinSync, Jikji, datasource, and filesystem tools, reads
@@ -93,10 +93,10 @@ ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber`,
 the session. Prefer this command whenever the caller wants detailed chunk text
 rather than only the curated summary.
 
-- `--scope` narrows datasource retrieval to a requested sub-path; it cannot
-  grant access.
-- `--tags` further narrows already-authorized datasource results and never
-  grants new access.
+- `--scope` narrows datasource retrieval to a requested sub-path (ordinary
+  per-query filtering).
+- `--tags` narrows results to datasources whose descriptive tags match; tags
+  are metadata only and select among already-configured datasources.
 - `--json` is required for programmatic consumption.
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.

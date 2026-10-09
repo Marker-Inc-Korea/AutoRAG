@@ -43,7 +43,7 @@ autorag gateway status --format json
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`,
-`jikji`, `datasources`, and `datasourceAccess` before changing anything.
+`jikji`, and `datasources` before changing anything.
 
 If the CLI itself is missing or the config does not exist, stop and run the
 `autorag-setup` skill first — doctor repairs an existing install, it does not
@@ -114,10 +114,11 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   treating it as a failure, and never kill a running sync to "fix" it.
 - MCP `autorag.search` needs no model, so it isolates retrieval from model
   failures.
-- Use the MCP `tags` / `scope` arguments to force one datasource; they can only
-  narrow trusted access, never grant it. A datasource absent from
-  `datasourceAccess` returns nothing no matter how healthy its store is — fix
-  the config, not the store.
+- Use the MCP `tags` / `scope` arguments to select one configured datasource;
+  `tags` match a datasource's descriptive metadata and `scope` narrows a query
+  to a sub-path, both ordinary filtering. Every configured connection is
+  searchable — if one returns nothing, investigate its native store, connector,
+  or the query itself.
 - `autorag.evidence {"sessionId":"...","resultNumber":N}` shows the exact chunk
   behind a numbered result; use it to confirm a hit is real and its source is
   readable. The CLI `autorag evidence SESSION --json` remains for terminal
@@ -202,8 +203,9 @@ timer, or Task Scheduler).
   then `autorag refresh --method minsync` to retry.
 - `auth-error` / `rate-limited`: model or datasource credentials. Report the
   missing environment-variable **name** and let the user supply it.
-- A datasource configured but not listed in `datasourceAccess.allowedTags` /
-  `allowedScopes` is default-denied and invisible to search. Add it there.
+- A configured datasource that returns nothing is a native store, connector, or
+  query problem — every configured connection is searchable. Run its native
+  check from the table above and fix it there.
 
 ## Diagnostic codes
 

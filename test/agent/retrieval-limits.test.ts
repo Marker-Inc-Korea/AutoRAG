@@ -229,10 +229,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 	});
 
 	it("caps the single-datasource merge at singleDatasourceTopK", async () => {
-		const internals = agentWith(
-			{ singleDatasourceTopK: 2 },
-			{ datasourceSkills: [fakeSkill("ds1", 5, 1)], datasourceAccess: { allowedTags: ["t"] } },
-		);
+		const internals = agentWith({ singleDatasourceTopK: 2 }, { datasourceSkills: [fakeSkill("ds1", 5, 1)] });
 
 		const { results } = await internals.searchSingleDatasourceDocuments("ds1", "query");
 
@@ -251,10 +248,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 	});
 
 	it("bounds the datasource tool description instance scopes", () => {
-		const internals = agentWith(
-			{ toolDescriptionInstanceScopes: 2 },
-			{ datasourceSkills: [fakeSkill("ds1", 1, 5)], datasourceAccess: { allowedTags: ["t"] } },
-		);
+		const internals = agentWith({ toolDescriptionInstanceScopes: 2 }, { datasourceSkills: [fakeSkill("ds1", 1, 5)] });
 
 		const specs = internals.singleDatasourceToolSpecs();
 

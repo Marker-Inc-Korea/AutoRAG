@@ -102,9 +102,8 @@ export class AutoRAGLite {
 	}
 
 	/**
-	 * List the authorized configured datasources for this runtime: identity,
-	 * capability tags, and authorized source scope strings only — no
-	 * credentials or config metadata.
+	 * List the configured datasources for this runtime: identity, descriptive
+	 * tags, and source scope strings only — no credentials or config metadata.
 	 */
 	listDatasources(): DatasourceCatalogEntry[] {
 		return this.agent.listDatasources();
@@ -112,8 +111,8 @@ export class AutoRAGLite {
 
 	/**
 	 * Search only the selected datasources/methods/local surfaces. Selection is
-	 * applied before any backend is invoked, so an unselected or unauthorized
-	 * datasource never runs. Unknown or unauthorized selections throw
+	 * applied before any backend is invoked, so an unselected datasource never
+	 * runs. Unknown methods or unknown datasource ids throw
 	 * {@link RetrievalSelectionError}.
 	 */
 	searchSelected(

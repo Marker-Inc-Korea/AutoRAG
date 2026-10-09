@@ -14,7 +14,7 @@ Use `autorag-setup` instead when the model-backed librarian must be configured.
 ## Safety
 
 - Inspect only non-secret config metadata: `searchPaths`, `workspacePath`,
-  `memoryPath`, `minSync`, `jikji`, `datasources`, `datasourceAccess`.
+  `memoryPath`, `minSync`, `jikji`, `datasources`.
 - Never print, copy, migrate, compare, or persist credential values. Store only
   environment-variable names such as `tokenEnv` or `apiKeyEnv`.
 - Never move, rename, edit, or delete source documents. Lite commands write
@@ -98,7 +98,7 @@ integrated datasources add their own search tools; do not assume a fixed count.
 Run `autorag.status` and `autorag.datasources.list` through MCP, then refresh
 and search a known phrase from an approved document. Registration alone is
 not proof of a connected or searchable server. After config changes, restart
-the server so datasource tools and authorization are rebuilt.
+the server so datasource tools are rebuilt.
 
 `AUTORAG_MCP_READ_ONLY=1` omits refresh; build indexes with the CLI before
 connecting that mode. `AUTORAG_MCP_TOOLS` is an optional comma-separated exact
@@ -120,7 +120,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
    (such as `github`) require their credential environment variable
    (`GITHUB_TOKEN`).
 2. Auto-configure every datasource that probes feasible — write its trusted
-   `datasources` / `datasourceAccess` entries without asking. For example,
+   `datasources` entries without asking. For example,
    when Slack (`slacrawl`) and Discord (`discrawl`) are installed with local
    stores present, set both up automatically. Discord uses discrawl's local
    desktop wiretap archive; no Discord bot token is configured or needed.
@@ -133,15 +133,16 @@ setup. Configure datasources directly in trusted config, wizard-style:
    users — always probe them and report their status, even when they end up
    skipped.
 
-Datasource skills belong in trusted config and remain default-deny.
+Datasource skills belong in trusted config.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`,
 `mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
-`datasourceAccess.allowedTags` and `allowedScopes` narrow trusted access and
-can never grant it. Store only env-var names such as `tokenEnv` or
+`scope` narrows a query to a sub-path as ordinary filtering; tags are
+descriptive metadata on a datasource and select among configured
+connections. Store only env-var names such as `tokenEnv` or
 `apiKeyEnv`, never credential values.
 
 ## Build and refresh indexes

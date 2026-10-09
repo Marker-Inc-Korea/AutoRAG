@@ -130,7 +130,7 @@ What happens next:
 ### Datasource check before the fast answer
 
 On the `local` branch, Jev answers one more batched call: one `noul` per
-registered datasource (authorized, with retrieval methods), "Should the `<id>`
+registered datasource (configured, with retrieval methods), "Should the `<id>`
 datasource be searched to answer the user question?". The registered set comes
 from the config: `autorag search` reads it on every call, while `autorag tui`
 and `autorag serve` read it at startup, so restart them after adding,
@@ -167,9 +167,9 @@ The state Jev judges has three parts, followed by the question:
    shown only when it is safe for the **current** run:
 
    - Memory is shared across workspaces and configs, so a result is dropped
-     unless every piece of its evidence comes from a datasource this run's
-     `datasourceAccess` authorizes, a configured search path, or the web.
-     Evidence from a datasource that is denied or not configured here, and
+     unless every piece of its evidence comes from a datasource this run
+     configures, a configured search path, or the web.
+     Evidence from a datasource that is not configured here, and
      evidence with no recognizable origin, drops the whole result; a search
      left with no result is not shown at all.
    - Results the user marked not useful are left out. The verdict is stored

@@ -52,7 +52,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-// Register a real authorized connection so its generated name is tracked by
+// Register a real configured connection so its generated name is tracked by
 // AutoRAG. The tests below replace only the retrieval provider, not the hooks.
 const skill: DatasourceSkill = {
 	describe: () => ({
@@ -106,7 +106,6 @@ function setup(
 		everything: false,
 		webSearch: false,
 		datasourceSkills: [skill],
-		datasourceAccess: { allowedTags: ["fixture"] },
 		maxSearchToolCalls,
 	});
 	const tool = typeof toolOrFactory === "function" ? toolOrFactory(agent) : toolOrFactory;
