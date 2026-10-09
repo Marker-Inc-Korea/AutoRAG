@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
@@ -132,7 +132,15 @@ import {
 } from "./pi-session.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
-import { FALLBACK_QUERY_ROUTE, needsFollowUp, type QueryRoute, routeQuery } from "./query-routing.ts";
+import {
+	type DatasourceCandidate,
+	FALLBACK_QUERY_ROUTE,
+	needsFollowUp,
+	type PastSearchHint,
+	type QueryRoute,
+	routeQuery,
+	selectDatasources,
+} from "./query-routing.ts";
 import {
 	isRefreshOwnerAlive,
 	type PersistedRefreshProgress,
@@ -236,6 +244,11 @@ function hasSearchEvidence(toolName: string, details: unknown, isError: boolean)
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+
+/** Similar past searches shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
+const SIMILAR_PAST_SEARCH_LIMIT = 5;
+/** Results listed per similar past search; a search's leading results carry its answer. */
+const SIMILAR_PAST_RESULT_LIMIT = 4;
 
 /**
  * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
@@ -1451,7 +1464,12 @@ export class AutoRAGAgent {
 						const baseline =
 							plan.route === "web"
 								? await this.prefetchWebContext(plan.queries, planAbort.signal)
-								: await this.prefetchInitialRetrievalContext(trimmedQuery, plan.queries, options);
+								: await this.prefetchInitialRetrievalContext(
+										trimmedQuery,
+										plan.queries,
+										options,
+										plan.datasources,
+									);
 						activateFastPhase();
 						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
 						let preliminary = fastCaptured;
@@ -1594,6 +1612,7 @@ export class AutoRAGAgent {
 				this.sessions,
 				this.memory,
 				componentDiagnostics,
+				{ remote: this.remoteSession },
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -1938,9 +1957,11 @@ export class AutoRAGAgent {
 	 * Jev query pipeline, run before the fast answer. Jev picks the branch
 	 * (local search, web search, or a direct answer) and whether the question
 	 * needs decomposition; a "yes" splits it into at most five search queries
-	 * with the configured decomposition model (default: the session model).
-	 * Without Jev, and on any routing failure, this is today's single local
-	 * search for the original question.
+	 * with the configured decomposition model (default: the session model). On
+	 * the local branch, Jev also judges, per registered datasource, whether it
+	 * must be searched (in parallel with decomposition). Without Jev, and on any
+	 * routing failure, this is today's single local search for the original
+	 * question with no datasource search.
 	 */
 	private async planQuery(
 		query: string,
@@ -1950,8 +1971,12 @@ export class AutoRAGAgent {
 			readonly providerApiKeys?: Readonly<Record<string, string>>;
 		},
 		signal: AbortSignal,
-	): Promise<{ readonly route: QueryRoute; readonly queries: readonly string[] }> {
-		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query] };
+	): Promise<{
+		readonly route: QueryRoute;
+		readonly queries: readonly string[];
+		readonly datasources: readonly string[];
+	}> {
+		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
 		const decision = await routeQuery(this.jevJudge, query);
 		if (decision.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
@@ -1960,7 +1985,7 @@ export class AutoRAGAgent {
 				message: `Jev query routing was unavailable; searching local sources with the original question. ${decision.fallbackReason}`,
 				source: "jev",
 			});
-			return { route: FALLBACK_QUERY_ROUTE, queries: [query] };
+			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
 		}
 		let route = decision.route;
 		if (route === "web" && this.webSearchOptions === undefined) {
@@ -1973,6 +1998,7 @@ export class AutoRAGAgent {
 			});
 			route = FALLBACK_QUERY_ROUTE;
 		}
+		const datasourcesPromise = route === "local" ? this.selectSearchDatasources(query) : Promise.resolve([]);
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route !== "direct") {
 			const target = this.queryDecompositionModel ?? {
@@ -1992,6 +2018,7 @@ export class AutoRAGAgent {
 				});
 			}
 		}
+		const datasources = await datasourcesPromise;
 		const probability = decision.routeProbability === undefined ? "" : ` (p=${decision.routeProbability.toFixed(2)})`;
 		this.routingDiagnostics.push({
 			code: "query-routed",
@@ -2003,19 +2030,112 @@ export class AutoRAGAgent {
 					: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
 			source: "jev",
 		});
-		return { route, queries };
+		return { route, queries, datasources };
 	}
 
 	/**
-	 * Baseline local evidence for the fast answer. Jikji and MinSync run for
-	 * every search query in parallel (MinSync itself queues per workspace), the
-	 * per-query hits are interleaved and deduplicated into one pool, and that
-	 * pool is reranked against the original question.
+	 * Jev datasource check for the local branch: one `noul` per authorized
+	 * datasource that has retrieval methods, with where similar past questions
+	 * were answered (from retrieval memory) in the state. Returns the ids to
+	 * search with every query before the rerank; a failed check searches none.
+	 */
+	private async selectSearchDatasources(query: string): Promise<readonly string[]> {
+		if (this.jevJudge === undefined) return [];
+		const searchable = new Set(
+			this.methodRegistry
+				.list()
+				.map((method) => method.describe().datasourceId)
+				.filter((datasourceId) => datasourceId !== undefined),
+		);
+		const catalog = this.listDatasources().filter((entry) => searchable.has(entry.datasourceId));
+		const candidates: DatasourceCandidate[] = catalog.map(({ datasourceId, type, description }) => ({
+			datasourceId,
+			type,
+			description,
+		}));
+		if (candidates.length === 0) return [];
+		// Where a past result's evidence came from: datasource chunks carry a
+		// virtual path rooted at the skill name (`/kakao/default/...`), but the
+		// model sometimes maps a datasource hit to a bare chunk id. The evidence
+		// method then still names the datasource (`search_datasource_kakao_work`,
+		// `datasource:kakao`, `kakao-work-lexical`): both sides collapse every
+		// non-alphanumeric to `_` exactly like generated tool names, and a
+		// datasource id that appears as a whole token attributes it; longer ids
+		// are checked first so `kakao-work` wins over `kakao`. Indexed files are
+		// absolute paths under a search path; web evidence is a URL.
+		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
+		// Configured datasources the current trusted context does not authorize.
+		// Memory is global (shared across workspaces and configs), so a past
+		// result from one of them must never reach the Jev state.
+		const deniedRoots = new Set(
+			this.datasourceSkills.map((skill) => skill.describe().name).filter((name) => !datasourceByRoot.has(name)),
+		);
+		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
+		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		const whereFound = ({ source, method }: { source: string; method: string }): string | undefined => {
+			if (/^https?:\/\//u.test(source)) return "web";
+			if (this.configuredSearchPaths.some((root) => source === root || source.startsWith(`${root}${sep}`))) {
+				return "local files";
+			}
+			const root = source.startsWith("/") ? (source.split("/")[1] ?? "") : "";
+			if (deniedRoots.has(root)) return undefined;
+			const byRoot = datasourceByRoot.get(root);
+			if (byRoot !== undefined) return byRoot;
+			const tokens = methodToken(method);
+			return idsLongestFirst.find((id) => tokens.includes(methodToken(id)));
+		};
+		// A past result is shown only when every piece of its evidence is
+		// attributed to something this context authorizes (an authorized
+		// datasource, a configured search path, or the web): its title is
+		// model-written text about that evidence and leaves the machine.
+		const pastSearches: PastSearchHint[] = [];
+		for (const past of this.memory.findSimilarSearches(query)) {
+			const results: { title: string; foundIn: string[] }[] = [];
+			for (const result of past.results) {
+				const places = result.evidence.map(whereFound);
+				if (places.length === 0 || places.some((place) => place === undefined)) continue;
+				results.push({ title: result.title, foundIn: [...new Set(places.filter((place) => place !== undefined))] });
+			}
+			if (results.length === 0) continue;
+			pastSearches.push({ query: past.query, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
+			if (pastSearches.length === SIMILAR_PAST_SEARCH_LIMIT) break;
+		}
+		const selection = await selectDatasources(this.jevJudge, query, candidates, pastSearches);
+		if (selection.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "datasource-selection-fallback",
+				severity: "warning",
+				message: `Jev datasource check was unavailable; no datasource was searched before the fast answer. ${selection.fallbackReason}`,
+				source: "jev",
+			});
+			return [];
+		}
+		const describe = (ids: readonly string[]): string =>
+			ids.length === 0
+				? "none"
+				: ids.map((id) => `${id} (p=${selection.probabilities[id]?.toFixed(2) ?? "?"})`).join(", ");
+		const skipped = candidates.map((entry) => entry.datasourceId).filter((id) => !selection.selected.includes(id));
+		this.routingDiagnostics.push({
+			code: "datasources-selected",
+			severity: "info",
+			message: `Jev selected datasources to search before the fast answer: ${describe(selection.selected)}; skipped: ${describe(skipped)}.`,
+			source: "jev",
+		});
+		return selection.selected;
+	}
+
+	/**
+	 * Baseline local evidence for the fast answer. Jikji, MinSync, and every
+	 * Jev-selected datasource run for every search query in parallel (MinSync
+	 * itself queues per workspace), the per-query hits are interleaved and
+	 * deduplicated into one pool, and that pool is reranked against the
+	 * original question.
 	 */
 	private async prefetchInitialRetrievalContext(
 		query: string,
 		searchQueries: readonly string[],
 		options: RetrievalOptions,
+		datasources: readonly string[] = [],
 	): Promise<string> {
 		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
 		// Queries only read the prebuilt MinSync index; an unbuilt workspace makes
@@ -2031,6 +2151,16 @@ export class AutoRAGAgent {
 					this.minSyncMethod === undefined
 						? Promise.resolve([])
 						: this.minSyncMethod.retrieve(searchQuery, retrieveOptions).catch(() => []),
+					Promise.all(
+						datasources.map((datasourceId) =>
+							this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
+								topK: this.limits.singleDatasourceTopK,
+								scope: options.scope,
+							})
+								.then((outcome) => outcome.results)
+								.catch((): RetrievalResult[] => []),
+						),
+					),
 				]),
 			),
 		);
@@ -2048,18 +2178,24 @@ export class AutoRAGAgent {
 		const jikjiFound = perQuery.some(([jikji]) => jikji?.answerPack !== undefined);
 		const jikjiPaths = [...new Set(interleave(perQuery.map(([jikji]) => jikji?.answerPack?.answerPaths ?? [])))];
 		const seenChunks = new Set<string>();
-		const minSyncResults = interleave(perQuery.map(([, vector]) => vector)).filter((result) => {
+		const unseen = (result: RetrievalResult): boolean => {
 			const key = `${result.source}\0${result.content}`;
 			if (seenChunks.has(key)) return false;
 			seenChunks.add(key);
 			return true;
-		});
+		};
+		const minSyncResults = interleave(perQuery.map(([, vector]) => vector)).filter(unseen);
+		const datasourceResults = interleave(perQuery.map(([, , perDatasource]) => interleave(perDatasource))).filter(
+			unseen,
+		);
 		for (const result of minSyncResults) options.observedSources?.add(result.source);
-		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths
-		// and MinSync chunks) against the original question, so decomposed
-		// sub-query hits compete on relevance to what the user asked. Falls back
-		// to the unranked sections when reranking is disabled or unavailable.
-		const reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults);
+		for (const result of datasourceResults) options.observedSources?.add(result.source);
+		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths,
+		// MinSync chunks, and selected-datasource chunks) against the original
+		// question, so decomposed sub-query hits compete on relevance to what the
+		// user asked. Falls back to the unranked sections when reranking is
+		// disabled or unavailable.
+		const reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults);
 		if (reranked !== undefined) {
 			const baseline = formatRerankedBaseline(reranked);
 			return searchQueries.length > 1 ? `${formatSearchQueries(searchQueries)}\n\n${baseline}` : baseline;
@@ -2081,6 +2217,14 @@ export class AutoRAGAgent {
 		if (minSyncResults.length > 0) {
 			sections.push(
 				`MinSync semantic initial candidates:\n${minSyncResults
+					.slice(0, this.limits.prefetch.sectionLimit)
+					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.join("\n")}`,
+			);
+		}
+		if (datasourceResults.length > 0) {
+			sections.push(
+				`Datasource initial candidates:\n${datasourceResults
 					.slice(0, this.limits.prefetch.sectionLimit)
 					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
@@ -2127,18 +2271,20 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths plus MinSync
-	 * chunks — down to the configured `rerank.topN`. With decomposition the pool
-	 * merges every search query's hits (interleaved), capped at the same
-	 * per-source sizes as a single query so the rerank request does not grow
-	 * with the query count. Returns `undefined` when reranking is
-	 * disabled/unavailable or the pool is empty, so the caller keeps the
-	 * unranked sections; a rerank failure never blocks the fast answer.
+	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths, MinSync
+	 * chunks, and Jev-selected datasource chunks — down to the configured
+	 * `rerank.topN`. With decomposition the pool merges every search query's
+	 * hits (interleaved), capped at the same per-source sizes as a single query
+	 * so the rerank request does not grow with the query count. Returns
+	 * `undefined` when reranking is disabled/unavailable or the pool is empty,
+	 * so the caller keeps the unranked sections; a rerank failure never blocks
+	 * the fast answer.
 	 */
 	private async rerankPrefetchPool(
 		query: string,
 		answerPaths: readonly string[],
 		minSyncResults: readonly RetrievalResult[],
+		datasourceResults: readonly RetrievalResult[],
 	): Promise<RetrievalResult[] | undefined> {
 		const reranker = this.reranker;
 		if (reranker === undefined) return undefined;
@@ -2152,6 +2298,7 @@ export class AutoRAGAgent {
 				metadata: { method: "jikji" },
 			}));
 		candidates.push(...minSyncResults.slice(0, this.limits.prefetch.minSyncTopK));
+		candidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
 		if (candidates.length === 0) return undefined;
 		if (!reranker.describe().available) return undefined;
 		try {

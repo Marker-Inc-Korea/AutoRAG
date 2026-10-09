@@ -52,6 +52,8 @@ export type SearchDocumentDiagnosticCode =
 	| "query-decomposition-failed"
 	| "follow-up-skipped"
 	| "follow-up-check-fallback"
+	| "datasources-selected"
+	| "datasource-selection-fallback"
 	| "citation-without-result";
 
 export interface SearchDocumentDiagnostic {
@@ -284,7 +286,11 @@ export function recordStructuredResultsSession(
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
-	options: { readonly isolateMemory?: boolean } = {},
+	options: {
+		readonly isolateMemory?: boolean;
+		/** A remote P2P peer's search: recorded, but kept out of local past-search hints. */
+		readonly remote?: boolean;
+	} = {},
 ): SearchDocumentsResponse {
 	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
 
@@ -313,7 +319,12 @@ export function recordStructuredResultsSession(
 	}
 	sessions.set(sessionId, { query, registry, ...(options.isolateMemory ? { transient: true } : {}) });
 	if (!options.isolateMemory) {
-		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
+		memory.recordCuratedResultsSession({
+			sessionId,
+			query,
+			results: memoryResults,
+			...(options.remote === true ? { remote: true } : {}),
+		});
 		memory.save();
 	}
 

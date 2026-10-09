@@ -55,17 +55,20 @@ export OPENROUTER_API_KEY=sk-or-...
   pool and keeps the top `topN` (default **25**). `search_all_documents` merges
   up to 500 chunks; `AutoRAGLite.retrieve` uses the same ceiling.
 - The **pre-fast-answer baseline** (`emit_fast_answer`) is reranked too: the
-  prefetch pool (Jikji answer paths ≤100 + MinSync chunks ≤100) is reranked down
-  to `topN` (default 25) and injected as a single relevance-ordered section, so
+  prefetch pool (Jikji answer paths ≤100 + MinSync chunks ≤100 + chunks from
+  datasources the Jev datasource check selected ≤100) is reranked down to
+  `topN` (default 25) and injected as a single relevance-ordered section, so
   the immediate answer is grounded in relevance order rather than raw method
-  order. If the reranker is unavailable or fails, the unranked Jikji/MinSync
-  sections are used and the fast answer is unaffected. When the Jev query
-  pipeline decomposes a local question (see [Jev Decisions](jev-decisions.md)),
-  every sub-query's Jikji and MinSync hits are interleaved and deduplicated into
-  one pool with the same per-source caps, and that pool is reranked against the
-  **original** question.
-- Single-datasource searches (`search_datasource_*`) are **not** model-reranked:
-  they already target one connection, so their merged order is kept as-is.
+  order. If the reranker is unavailable or fails, the unranked
+  Jikji/MinSync/datasource sections are used and the fast answer is
+  unaffected. When the Jev query pipeline decomposes a local question (see
+  [Jev Decisions](jev-decisions.md)), every sub-query's Jikji, MinSync, and
+  selected-datasource hits are interleaved and deduplicated into one pool with
+  the same per-source caps, and that pool is reranked against the **original**
+  question.
+- Single-datasource searches (`search_datasource_*`) are **not** model-reranked
+  on their own: they already target one connection, so their merged order is
+  kept as-is (their pre-fast-answer chunks are reranked as part of the pool).
 - Each reranked result keeps its original `source` and `id`; its `score`
   becomes the provider's relevance score, and `metadata` gains
   `rerankProvider`, `rerankModel`, and `rerankScore`.

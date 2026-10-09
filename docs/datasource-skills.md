@@ -246,7 +246,15 @@ Every datasource entry can use a reusable template with a connection alias:
 Each configured connection may include an optional `description`. This text is
 trusted operator context shown in the datasource descriptor and progressive
 disclosure skill manifest. It helps the librarian understand how a connection
-is normally used without changing its access policy.
+is normally used without changing its access policy. With Jev enabled, it is
+also what the pre-fast-answer datasource check reads to decide whether to
+search the connection (see [Jev Decisions](jev-decisions.md)), so write it from
+what the connection actually holds: channels or rooms, people, topics, and
+time range. Jev is told every description is a short, non-exhaustive summary,
+so name the main content rather than trying to list everything. Without a
+description, Jev sees only the connector's generic text (for example "Discord
+datasource via the external discrawl CLI"), which cannot tell two Discord
+servers apart.
 
 ```json
 {
