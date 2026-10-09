@@ -108,13 +108,23 @@ Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
 user question in one batched call:
 
-1. **Branch** (`choice`): `local`, `web`, `direct`, or `config`. The branch with the
-   highest probability wins, even when Jev reports low confidence.
+1. **Branch** (`choice`): `local`, `web`, `direct`, or `config`. The
+   highest-probability branch wins, but leaving local search needs confidence: a
+   `direct`, `web`, or `config` branch **at or below 0.75**
+   (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without a
+   probability — falls back to `local` search with a `query-route-fallback`
+   diagnostic, so a weak verdict never silently drops the corpus evidence the
+   question depends on (and never edits settings on a guess).
    - `local`: answering needs information only the user can reach (files on
-     their computer, Discord/KakaoTalk/Slack chats, email, notes).
-   - `web`: not answerable from general knowledge, but one public internet
-     search would answer it.
-   - `direct`: general knowledge, simple reasoning, or small talk.
+     their computer, Discord/KakaoTalk/Slack chats, email, notes, calendar,
+     history). Jev is told to prefer `local` whenever the question refers to the
+     user's own life, situation, plans, or records — "my/I/our", a named friend,
+     family member, or colleague, or "my case/hearing/appointment/routine" — even
+     when a generic answer would also be possible.
+   - `web`: not answerable from general knowledge and not from the user's private
+     information either, but one public internet search would answer it.
+   - `direct`: general knowledge, simple reasoning, or small talk. Never chosen
+     for a question that refers to the user's own life, files, or records.
    - `config`: the user wants to view, change, or test AutoRAG's own settings
      (model, providers, API-key environment variables, Jev, search roots,
      datasources). Offered only to local sessions, never to remote P2P peers.

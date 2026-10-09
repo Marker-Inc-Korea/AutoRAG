@@ -17,7 +17,7 @@ function judgeWith(backend: JevBackend) {
 }
 
 describe("routeQuery (Jev three-way branch + decomposition check)", () => {
-	it("routes to the most probable branch even when Jev escalates it as unsure", async () => {
+	it("falls back to local search when the winning non-local branch is below the confidence floor", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
@@ -31,9 +31,40 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 			),
 			"latest stable Node.js release",
 		);
+		expect(decision.route).toBe("local");
+		expect(decision.decompose).toBe(false);
+		expect(decision.routeProbability).toBe(0.38);
+		expect(decision.fallbackReason).toMatch(/confidence floor/u);
+	});
+
+	it("leaves local search only when the non-local branch clears the confidence floor", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: { answer: "web", distribution: { local: 0.1, web: 0.8, direct: 0.1 } },
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.2 },
+				}),
+			),
+			"latest stable Node.js release",
+		);
 		expect(decision.route).toBe("web");
 		expect(decision.decompose).toBe(false);
+		expect(decision.routeProbability).toBe(0.8);
 		expect(decision.fallbackReason).toBeUndefined();
+	});
+
+	it("keeps local search when Jev reports a non-local branch with no probability", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: { answer: "direct" },
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			),
+			"can you help me pick a birthday gift for my girlfriend?",
+		);
+		expect(decision.route).toBe("local");
+		expect(decision.fallbackReason).toMatch(/confidence floor/u);
 	});
 
 	it("asks for decomposition when Jev's yes-probability reaches one half", async () => {
@@ -77,6 +108,21 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		expect(seen).toHaveLength(1);
 		expect(String(seen[0]?.state)).toContain("where is the signed lease?");
 		expect(seen[0]?.ids).toEqual([QUERY_ROUTE_QUESTION_ID, DECOMPOSE_QUESTION_ID]);
+	});
+
+	it("tells Jev to prefer local search for the user's own life, files, and records", async () => {
+		let routeOptions: Record<string, string> | undefined;
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				const routeQuestion = request.questions.find((question) => question.id === QUERY_ROUTE_QUESTION_ID);
+				routeOptions = (routeQuestion as { options?: Record<string, string> } | undefined)?.options;
+				return { answers: [{ answer: 0.1 }, { answer: 0.1 }] };
+			},
+		};
+		await routeQuery(judgeWith(backend), "what should I prepare for my hearing on February 14?");
+		expect(routeOptions?.direct).toMatch(/user's own life/u);
+		expect(routeOptions?.local).toMatch(/prefer local/i);
 	});
 
 	it("falls back to local search without decomposition when Jev is unreachable", async () => {
@@ -131,6 +177,25 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		);
 		expect(decision.route).toBe("config");
 		expect(decision.decompose).toBe(false);
+	});
+
+	it("keeps local search when Jev's config verdict does not clear the confidence floor", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: "config",
+						distribution: { local: 0.3, web: 0.02, direct: 0.03, config: 0.65 },
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			),
+			"which model does the agent use for my budget notes?",
+			{ selfConfig: true },
+		);
+		expect(decision.route).toBe("local");
+		expect(decision.routeProbability).toBe(0.65);
+		expect(decision.fallbackReason).toContain("config");
 	});
 
 	it("ignores a config verdict when self-configuration is disabled", async () => {
