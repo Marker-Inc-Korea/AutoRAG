@@ -25,6 +25,7 @@ export {
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 	emitResultsSchema,
+	reportSchema,
 } from "./emit-results-tool.ts";
 export {
 	createJevExtension,

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall, type Message } from "@earendil-works/pi-ai";
@@ -22,6 +22,8 @@ afterEach(() => {
 });
 
 function groundedEmit(answer: string) {
+	const source = join(root, "grounded.txt");
+	writeFileSync(source, answer);
 	return fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 		answer: `[1] ${answer}`,
 		results: [
@@ -31,9 +33,9 @@ function groundedEmit(answer: string) {
 				summary: answer,
 				evidence: [{ excerpt: answer }],
 				confidence: 0.9,
+				refs: [source],
 			},
 		],
-		mapping: [{ number: 1, source: "/docs/a.txt", method: "bash", content: answer }],
 	});
 }
 

@@ -61,7 +61,7 @@ function fauxModel(...responses: FauxResponseStep[]) {
 	return reg.getModel();
 }
 
-function emitResults(localSource: string): FauxResponseStep {
+function emitResults(localSource: string, datasourceSource: string): FauxResponseStep {
 	return fauxAssistantMessage(
 		[
 			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
@@ -76,6 +76,7 @@ function emitResults(localSource: string): FauxResponseStep {
 							{ excerpt: "Refund exceptions now require director approval before payout.", lineNumber: 2 },
 						],
 						confidence: 0.95,
+						refs: [localSource],
 					},
 					{
 						number: 2,
@@ -83,36 +84,7 @@ function emitResults(localSource: string): FauxResponseStep {
 						summary: "Finance acknowledged the director-approval refund policy in KakaoTalk.",
 						evidence: [{ excerpt: "Finance acknowledged director approval for refunds." }],
 						confidence: 0.9,
-					},
-				],
-				mapping: [
-					{
-						number: 1,
-						source: localSource,
-						method: "search_all_documents",
-						content: "Refund exceptions now require director approval before payout.",
-						evidenceRefs: [
-							{ method: "grep", source: localSource, excerpt: "director approval" },
-							{
-								method: "posix",
-								source: localSource,
-								content: "Refund exceptions now require director approval",
-							},
-							{ method: "bm25", source: localSource, content: "refund director approval" },
-						],
-					},
-					{
-						number: 2,
-						source: "/kakao/acct-1/chunks/refund-policy",
-						method: "search_all_documents",
-						content: "Finance acknowledged director approval for refunds.",
-						evidenceRefs: [
-							{
-								method: "kakao.keyword",
-								source: "/kakao/acct-1/chunks/refund-policy",
-								content: "Finance acknowledged director approval for refunds.",
-							},
-						],
+						refs: [datasourceSource],
 					},
 				],
 				warnings: ["MinSync semantic search unavailable; fallback retrieval paths were used."],
@@ -251,7 +223,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 				],
 				{ stopReason: "toolUse" },
 			),
-			emitResults(realpathSync(join(docs, "q3.txt"))),
+			emitResults(realpathSync(join(docs, "q3.txt")), "/kakao/acct-1/chunks/refund-policy"),
 		);
 		const agent = new AutoRAGAgent({
 			model,

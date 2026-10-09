@@ -8,6 +8,7 @@ import type {
 	JikjiHandoffAction,
 	JikjiNextRead,
 } from "../jikji/index.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 
 export const JIKJI_FIND_TOOL_NAME = "jikji_find";
 
@@ -86,7 +87,10 @@ const jikjiFindSchema = Type.Object({
  * Jikji is unavailable or all roots failed, the tool returns a short fallback
  * message so the agent falls back to bash, and no policy is set.
  */
-export function createJikjiFindTool(provider: JikjiFindProvider): AgentTool<typeof jikjiFindSchema, JikjiFindDetails> {
+export function createJikjiFindTool(
+	provider: JikjiFindProvider,
+	ledger: EvidenceLedger = new EvidenceLedger(),
+): AgentTool<typeof jikjiFindSchema, JikjiFindDetails> {
 	return {
 		name: JIKJI_FIND_TOOL_NAME,
 		label: "Jikji Find",
@@ -149,7 +153,17 @@ export function createJikjiFindTool(provider: JikjiFindProvider): AgentTool<type
 			}
 
 			const directive = formatDirective(policy);
-			const body = formatAnswerPack(answerPack);
+			const evidenceIds = new Map(
+				answerPack.answerPaths.map((path) => [
+					path,
+					ledger.register({
+						method: JIKJI_FIND_TOOL_NAME,
+						source: path,
+						content: answerPack.candidates.find((candidate) => candidate.path === path)?.label ?? path,
+					}),
+				]),
+			);
+			const body = formatAnswerPack(answerPack, evidenceIds);
 			const text = `${body}\n\n${directive}`;
 			return {
 				content: [{ type: "text", text }],
@@ -172,15 +186,16 @@ export function createJikjiFindTool(provider: JikjiFindProvider): AgentTool<type
 	};
 }
 
-function formatAnswerPack(pack: JikjiAnswerPack): string {
+function formatAnswerPack(pack: JikjiAnswerPack, evidenceIds: ReadonlyMap<string, string>): string {
 	const lines: string[] = [];
 	if (pack.answerPaths.length === 0) {
 		lines.push("No answer paths returned by Jikji.");
 	} else {
-		lines.push("answer_paths:");
+		lines.push("answer_paths (cite a file by its [eN] id):");
 		for (const path of pack.answerPaths) {
 			const hint = nextReadHintFor(pack.candidates, path);
-			lines.push(hint ? `- ${path} (next_read: ${hint})` : `- ${path}`);
+			const label = `[${evidenceIds.get(path)}] ${path}`;
+			lines.push(hint ? `- ${label} (next_read: ${hint})` : `- ${label}`);
 		}
 	}
 	return lines.join("\n");

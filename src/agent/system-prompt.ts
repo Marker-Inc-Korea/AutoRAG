@@ -65,7 +65,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"recommend local peer personas to ask about a topic without contacting them",
 		),
 		toolLine(config, "query_peer_agent", "ask one trusted peer agent over SimpleX"),
-		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
+		toolLine(config, "emit_autorag_results", "return the final structured answer with evidence ids for each result"),
 		...config.toolNames
 			.filter((name) => name.startsWith("search_datasource_"))
 			.map(
@@ -196,7 +196,7 @@ ${noSearchTools}
 - Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every configured connection has its own tool, and \`search_all_documents\` still spans all of them at once.
 ${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization.` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization."}
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
-- Cross-check important claims against the original source and preserve real source paths.
+- Cross-check important claims against the original source and cite the evidence ids of the results you rely on.
 - When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
 - Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
 - Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available.
@@ -229,14 +229,14 @@ ${manifests}
 
 Call \`emit_autorag_results\` exactly once with:
 - \`answer\`: the curated answer for the caller following the Answer Guidelines below. When a first answer was already delivered to the caller during this run, include only corrections and newly verified findings — never restate the first answer; otherwise give the complete answer. Reference results by bracketed numbers such as [1] and [2].
-- \`results\`: curated units with number, title, summary, evidence, and confidence.
-- \`mapping\`: exactly one matching entry per result number with source, method, content, and evidence references.
+- \`results\`: curated units with number, title, summary, evidence, confidence, and \`refs\`.
+- \`refs\`: for every result, the evidence ids (such as \`e3\`) shown next to the retrieved results that support it; for a local file you opened yourself with \`bash\`, its absolute path. The source, method, and chunk are attached from these ids; never type a path or copy a chunk to describe a source.
 
 ## Answer Guidelines
 
 - **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
 - **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
-- **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in \`answer\` (keep paths and source metadata in \`results\` and \`mapping\`).
+- **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in \`answer\` (source paths are attached to each result from the evidence ids you cite in \`refs\`).
 - **Citation style**: Cite supporting evidence chunks using bracketed numbers only (e.g. [1], [2]). Do not quote raw chunk text or mention source paths directly in \`answer\`.
 - ${ANSWER_CITATION_RULE}
 - ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}
@@ -249,7 +249,7 @@ Call \`emit_autorag_results\` exactly once with:
 - **No fabrication**: report a negative result when evidence is absent.
 - **Curate, don't dump**: return useful knowledge units, not raw search output.
 - **Address intent**: answer the caller's actual need.
-- **Preserve traceability**: keep real source paths and evidence excerpts.
+- **Preserve traceability**: cite evidence by the ids retrieval tools show, so source paths and excerpts are attached for you.
 - **Finalize once**: the structured result tool is the final action.
 `;
 }

@@ -140,7 +140,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 
 		const context = await internals.prefetchInitialRetrievalContext("candidates", ["candidates"], {});
 
-		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(2);
+		expect((context.match(/^\[e\d+\]/gmu) ?? []).length).toBe(2);
 		expect(context).toContain("candidate 1");
 		expect(context).not.toContain("candidate 2");
 	});
@@ -162,7 +162,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 
 		const context = await internals.prefetchInitialRetrievalContext("candidates", ["candidates"], {});
 
-		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(5);
+		expect((context.match(/^\[e\d+\]/gmu) ?? []).length).toBe(5);
 		expect(seenTopK).toEqual([100]);
 	});
 
@@ -210,7 +210,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 
 			expect(context).toContain("Reranked initial candidates");
 			expect(context).not.toContain("MinSync semantic initial candidates");
-			expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(5);
+			expect((context.match(/^\[e\d+\]/gmu) ?? []).length).toBe(5);
 			expect(context.indexOf("candidate 4")).toBeLessThan(context.indexOf("candidate 3"));
 			expect(context.indexOf("candidate 3")).toBeLessThan(context.indexOf("candidate 0"));
 		} finally {
@@ -268,7 +268,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
 
 		expect(seenTopK).toEqual([12]);
-		expect((context.match(/^\[\d+\]/gmu) ?? []).length).toBe(2);
+		expect((context.match(/^\[e\d+\]/gmu) ?? []).length).toBe(2);
 		expect(context).toContain("/p/2");
 		expect(context).not.toContain("/p/3");
 	});
@@ -281,7 +281,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 
 		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
 
-		expect(context.match(/^\[\d+\]/gmu)).toEqual(["[1]", "[2]", "[3]", "[4]"]);
+		expect(context.match(/^\[e\d+\]/gmu)).toEqual(["[e1]", "[e2]", "[e3]", "[e4]"]);
 	});
 
 	it("passes mergedEvidenceCeiling to the standalone retrieval engine", async () => {

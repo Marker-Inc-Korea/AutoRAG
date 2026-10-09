@@ -97,7 +97,6 @@ function fastAnswerCall(): FauxResponseStep {
 						confidence: 0.6,
 					},
 				],
-				sources: [{ number: 1, source: join(docs, "refund-policy.txt") }],
 			}),
 		],
 		{ stopReason: "toolUse" },
@@ -116,14 +115,7 @@ function finalEmitCall(answer: string): FauxResponseStep {
 						summary: "Verified: refund exceptions require director approval before payout.",
 						evidence: [{ excerpt: "Refund exceptions require director approval before payout.", lineNumber: 1 }],
 						confidence: 0.95,
-					},
-				],
-				mapping: [
-					{
-						number: 1,
-						source: join(docs, "refund-policy.txt"),
-						method: "bash",
-						content: "Refund exceptions require director approval before payout.",
+						refs: [join(docs, "refund-policy.txt")],
 					},
 				],
 			}),
@@ -250,7 +242,9 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(preliminary.response.answer).toContain("Fast answer");
 		expect(preliminary.response.answer).toContain("director approval");
 		expect(preliminary.response.results).toHaveLength(1);
-		expect(preliminary.response.results[0]?.source).toBe(join(docs, "refund-policy.txt"));
+		// The fast phase can only cite baseline evidence, and this test arranges
+		// none, so the preliminary result legitimately carries no source.
+		expect(preliminary.response.results[0]?.source).toBeUndefined();
 
 		const complete = events[completeIndex];
 		if (complete.type !== "complete") throw new Error("unreachable");
@@ -458,6 +452,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 					},
 				],
 				sources: [{ number: 1, source: join(docs, "refund-policy.txt") }],
+				evidenceRefs: [],
 			},
 			true,
 		);

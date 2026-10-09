@@ -62,7 +62,7 @@ describe("web_search tool", () => {
 		expect(details.resultCount).toBe(1);
 		expect(details.sources).toEqual(["https://github.com/Marker-Inc-Korea/AutoRAG"]);
 		expect(details.available).toBe(true);
-		expect((result.content[0] as { text: string }).text).toContain("[1] AutoRAG repo");
+		expect((result.content[0] as { text: string }).text).toContain("[e1] AutoRAG repo");
 	});
 
 	it("never calls a provider for an empty query", async () => {

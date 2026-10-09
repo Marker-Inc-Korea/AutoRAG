@@ -10,6 +10,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { renderUrl } from "../web/fetch/render.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 
 export const WEB_FETCH_TOOL_NAME = "web_fetch";
 
@@ -63,6 +64,7 @@ function truncateHead(output: string, maxBytes: number, maxLines: number): HeadT
 
 export function createWebFetchTool(
 	options: WebFetchToolOptions = {},
+	ledger: EvidenceLedger = new EvidenceLedger(),
 ): AgentTool<typeof webFetchSchema, WebFetchToolDetails> {
 	return {
 		name: WEB_FETCH_TOOL_NAME,
@@ -98,7 +100,13 @@ export function createWebFetchTool(
 					raw: params.raw,
 					signal,
 				});
+				const evidenceId = ledger.register({
+					method: WEB_FETCH_TOOL_NAME,
+					source: rendered.finalUrl,
+					content: rendered.content,
+				});
 				const header =
+					`Evidence: [${evidenceId}] (cite this id)\n` +
 					`URL: ${rendered.finalUrl}\n` +
 					`Content-Type: ${rendered.contentType}\n` +
 					`Method: ${rendered.method}\n` +

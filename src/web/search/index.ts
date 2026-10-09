@@ -29,6 +29,7 @@ import {
 	SearchProviderError,
 	type SearchProviderId,
 	type SearchResponse,
+	type SearchSource,
 } from "./types.ts";
 
 export interface WebSearchQueryParams {
@@ -69,6 +70,12 @@ export interface WebSearchExecuteOptions {
 	modelAuth?: ModelNativeSearchAuth;
 	/** Transport injection for tests/proxies; forwarded to providers that accept it. */
 	fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+	/**
+	 * Called with the sources that survived filtering, just before formatting.
+	 * Returns one label per source (e.g. an evidence id) that replaces its
+	 * positional `[n]` in the output the model reads.
+	 */
+	labelSources?: (sources: readonly SearchSource[]) => readonly string[];
 }
 
 function resolveTimeoutMs(timeoutMs: number | undefined): number {
@@ -179,7 +186,7 @@ export async function executeWebSearch(
 				throw new SearchProviderError(provider.id, `${provider.label} returned no renderable search content.`, 204);
 			}
 
-			const text = formatForLLM(finalResponse, constraintNotes);
+			const text = formatForLLM(finalResponse, constraintNotes, options.labelSources?.(finalResponse.sources) ?? []);
 
 			return {
 				content: [{ type: "text" as const, text }],

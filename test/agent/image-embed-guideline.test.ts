@@ -8,6 +8,7 @@ import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { createEmitResultsTool } from "../../src/agent/emit-results-tool.ts";
+import { EvidenceLedger } from "../../src/agent/evidence-ledger.ts";
 import { createEmitFastAnswerTool } from "../../src/agent/fast-answer-tool.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 
@@ -108,6 +109,7 @@ describe("answer image-embed exception (#1790)", () => {
 					},
 				],
 				sources: [{ number: 1, source: join(docs, "q3-chart.png") }],
+				evidenceRefs: [],
 			},
 			true,
 		);
@@ -117,7 +119,10 @@ describe("answer image-embed exception (#1790)", () => {
 	});
 
 	it("states the image-embed exception in both answer tool descriptions", () => {
-		expectImageEmbedRule(answerDescription(createEmitResultsTool(() => {}).parameters));
-		expectImageEmbedRule(answerDescription(createEmitFastAnswerTool(() => {}).parameters));
+		const ledger = new EvidenceLedger();
+		expectImageEmbedRule(
+			answerDescription(createEmitResultsTool(() => {}, { ledger, allowLocalFiles: false }).parameters),
+		);
+		expectImageEmbedRule(answerDescription(createEmitFastAnswerTool(() => {}, { ledger }).parameters));
 	});
 });

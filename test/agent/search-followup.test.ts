@@ -293,10 +293,9 @@ describe("search followup via recordSearchToolEvent", () => {
 		const { agent, internal, registration } = setup(tool);
 		registration.setResponses([
 			fauxAssistantMessage([fauxToolCall(tool.name, { query: blank ? " " : query })], { stopReason: "toolUse" }),
-			fauxAssistantMessage(
-				[fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [], mapping: [] })],
-				{ stopReason: "toolUse" },
-			),
+			fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
+				stopReason: "toolUse",
+			}),
 			fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 		]);
 		const events: AgentEvent[] = [];
@@ -400,10 +399,9 @@ describe("multi-root Jikji followup via recordSearchToolEvent", () => {
 			const aggregate = vi.spyOn(agent, "findJikji");
 			registration.setResponses([
 				fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" }),
-				fauxAssistantMessage(
-					[fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [], mapping: [] })],
-					{ stopReason: "toolUse" },
-				),
+				fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
+					stopReason: "toolUse",
+				}),
 				fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 			]);
 			const ends: Extract<AgentEvent, { type: "tool_execution_end" }>[] = [];
@@ -470,6 +468,11 @@ it("still exhausts the tool budget and preserves the empty trace without rewardi
 it("preserves explicit numbered feedback after an empty search", async () => {
 	const tool = allTool([]);
 	const { agent, internal, registration } = setup(tool);
+	// The search returned nothing, so the agent curated a local file it read
+	// itself; a real absolute path is the only evidence a non-remote run may
+	// cite without a tool having returned it.
+	const refundSource = join(root, "refund.txt");
+	writeFileSync(refundSource, hit.content);
 	registration.setResponses([
 		fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" }),
 		fauxAssistantMessage(
@@ -483,9 +486,9 @@ it("preserves explicit numbered feedback after an empty search", async () => {
 							summary: hit.content,
 							evidence: [{ excerpt: hit.content }],
 							confidence: 1,
+							refs: [refundSource],
 						},
 					],
-					mapping: [{ number: 1, source: hit.source, method: "bash", content: hit.content }],
 				}),
 			],
 			{ stopReason: "toolUse" },

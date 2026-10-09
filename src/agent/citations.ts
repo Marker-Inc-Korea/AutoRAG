@@ -103,6 +103,20 @@ function duplicateNumbers(sortedNumbers: readonly number[]): number[] {
 }
 
 /**
+ * Throw a corrective error when two results share a number. A repeated number
+ * collapses into one registry entry and one feedback id, so the other result's
+ * evidence would be lost. Emit tools call this at tool time so the model sees
+ * the error and re-emits.
+ */
+export function assertUniqueResultNumbers(label: string, results: readonly { readonly number: number }[]): void {
+	const duplicates = duplicateNumbers(results.map((result) => result.number).sort((a, b) => a - b));
+	if (duplicates.length === 0) return;
+	throw new Error(
+		`${label}: result numbers must be unique, but results repeat ${formatCitationList(duplicates)}. Give every result its own number and re-emit.`,
+	);
+}
+
+/**
  * Throw a corrective error unless `results` and `mapping` carry the same
  * numbers, exactly one entry each. Duplicates are rejected even when both
  * sides repeat them: a repeated number collapses into a single registry entry

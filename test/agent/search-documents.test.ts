@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
@@ -21,6 +21,12 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
+function groundedSource(answer: string): string {
+	const source = join(root, "grounded-answer.txt");
+	writeFileSync(source, answer);
+	return source;
+}
+
 function modelFor(answer = "grounded answer") {
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "single-agent" }] });
 	registration.setResponses([
@@ -35,9 +41,9 @@ function modelFor(answer = "grounded answer") {
 							summary: answer,
 							evidence: [{ excerpt: answer }],
 							confidence: 0.9,
+							refs: [groundedSource(answer)],
 						},
 					],
-					mapping: [{ number: 1, source: "/docs/a.txt", method: "bash", content: answer }],
 				}),
 			],
 			{ stopReason: "toolUse" },
@@ -61,11 +67,13 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		expect(response.answer).toBe("[1] grounded answer");
 		expect(response.results).toHaveLength(1);
-		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/docs/a.txt");
+		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe(join(root, "grounded-answer.txt"));
 	});
 
 	it("passes programmatic provider credentials to the model request", async () => {
 		const apiKey = "programmatic-test-api-key";
+		const authSource = join(root, "auth.txt");
+		writeFileSync(authSource, "authenticated");
 		const registration = registerFauxProvider({
 			api: `faux-${randomUUID()}`,
 			provider: `credential-provider-${randomUUID()}`,
@@ -85,14 +93,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 									summary: "authenticated",
 									evidence: [{ excerpt: "authenticated" }],
 									confidence: 1,
-								},
-							],
-							mapping: [
-								{
-									number: 1,
-									source: "/docs/auth.txt",
-									method: "bash",
-									content: "authenticated",
+									refs: [authSource],
 								},
 							],
 						}),
@@ -192,9 +193,9 @@ describe("AutoRAGAgent searchDocuments", () => {
 								summary: "확인된 답변",
 								evidence: [{ excerpt: "확인된 답변" }],
 								confidence: 1,
+								refs: [groundedSource("확인된 답변")],
 							},
 						],
-						mapping: [{ number: 1, source: "/docs/a.txt", method: "bash", content: "확인된 답변" }],
 					}),
 				],
 				{ stopReason: "toolUse" },

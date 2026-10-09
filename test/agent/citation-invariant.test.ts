@@ -78,25 +78,22 @@ function fastCall(answer: string, numbers: readonly number[]): FauxResponseStep 
 			fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
 				answer,
 				results: numbers.map(unit),
-				sources: numbers.map((number) => ({ number, source: join(docs, "fromis.txt") })),
 			}),
 		],
 		{ stopReason: "toolUse" },
 	);
 }
 
-function finalCall(answer: string, numbers: readonly number[]): FauxResponseStep {
+function finalCallWithRefs(
+	answer: string,
+	numbers: readonly number[],
+	refs: readonly string[] = [join(docs, "fromis.txt")],
+): FauxResponseStep {
 	return fauxAssistantMessage(
 		[
 			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 				answer,
-				results: numbers.map(unit),
-				mapping: numbers.map((number) => ({
-					number,
-					source: join(docs, "fromis.txt"),
-					method: "bash",
-					content: "fromis_9 now has five members.",
-				})),
+				results: numbers.map((number) => ({ ...unit(number), refs: [...refs] })),
 			}),
 		],
 		{ stopReason: "toolUse" },
@@ -110,8 +107,8 @@ describe("answer citations resolve to results (#1788)", () => {
 			fastCall("- fromis_9 has five members [6]", [1]),
 			fastCall("- fromis_9 has five members [1]", [1]),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCall("- Correction: debuted with nine [1][2][3][4][5][6]", [1, 2]),
-			finalCall("- Correction: debuted with nine [1][2]", [1, 2]),
+			finalCallWithRefs("- Correction: debuted with nine [1][2][3][4][5][6]", [1, 2]),
+			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2]),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 		const events: SearchDocumentsStreamEvent[] = [];
@@ -163,38 +160,17 @@ describe("answer citations resolve to results (#1788)", () => {
 	});
 });
 
-// Issue #1807: a final emit whose results and mapping numbers disagree used to
-// be accepted by the tool and then fail the whole search after the run ended,
-// discarding the preliminary answer already delivered to the caller.
-function finalCallWithMapping(
-	answer: string,
-	resultNumbers: readonly number[],
-	mappingNumbers: readonly number[],
-): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-				answer,
-				results: resultNumbers.map(unit),
-				mapping: mappingNumbers.map((number) => ({
-					number,
-					source: join(docs, "fromis.txt"),
-					method: "bash",
-					content: "fromis_9 now has five members.",
-				})),
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
-}
-
-describe("results and mapping numbers stay one-to-one (#1807)", () => {
-	it("rejects a mismatched final emit at tool time so the model re-emits instead of the search failing", async () => {
+// Issue #1807: a final emit with inconsistent numbering — repeated result
+// numbers, or refs naming evidence no tool returned — used to be accepted by
+// the tool and then fail the whole search after the run ended, discarding the
+// preliminary answer already delivered to the caller.
+describe("final emit result numbers must be unique (#1807)", () => {
+	it("rejects a final emit whose refs cite evidence no tool returned, so the model re-emits instead of the search failing", async () => {
 		const model = fauxModel(
 			fastCall("- fromis_9 has five members [1]", [1]),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithMapping("- Correction: debuted with nine [1][2]", [1, 2], [1, 2, 3]),
-			finalCallWithMapping("- Correction: debuted with nine [1][2]", [1, 2], [1, 2]),
+			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2], ["e99"]),
+			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2]),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 		const events: SearchDocumentsStreamEvent[] = [];
@@ -207,13 +183,13 @@ describe("results and mapping numbers stay one-to-one (#1807)", () => {
 		expect(complete.response.diagnostics?.some((d) => d.code === "missing-final-emit")).toBe(false);
 	});
 
-	it("degrades instead of throwing when the model never fixes the numbering", async () => {
+	it("degrades instead of throwing when the model never makes the result numbers unique", async () => {
 		const model = fauxModel(
 			fastCall("- fromis_9 has five members [1]", [1]),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithMapping("- Correction: debuted with nine [1]", [1], [1, 2]),
+			finalCallWithRefs("- Correction: debuted with nine [1]", [1, 1]),
 			fauxAssistantMessage("Done.", { stopReason: "stop" }),
-			finalCallWithMapping("- Correction: debuted with nine [1]", [1], [2]),
+			finalCallWithRefs("- Correction: debuted with nine [1]", [1, 1]),
 			fauxAssistantMessage("Done.", { stopReason: "stop" }),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
@@ -229,12 +205,12 @@ describe("results and mapping numbers stay one-to-one (#1807)", () => {
 		);
 	});
 
-	it("rejects duplicate numbers even when results and mapping repeat them identically, then accepts the re-emit", async () => {
+	it("rejects duplicate result numbers, then accepts the re-emit with unique numbers", async () => {
 		const model = fauxModel(
 			fastCall("- fromis_9 has five members [1]", [1]),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithMapping("- Correction: debuted with nine [1]", [1, 1], [1, 1]),
-			finalCallWithMapping("- Correction: debuted with nine [1][2]", [1, 2], [1, 2]),
+			finalCallWithRefs("- Correction: debuted with nine [1]", [1, 1]),
+			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2]),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 		const events: SearchDocumentsStreamEvent[] = [];

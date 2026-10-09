@@ -2,6 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { MinSyncVectorMethod } from "../minsync/method.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME = "semantic_search_local_docs";
@@ -35,6 +36,7 @@ export interface SearchMinSyncDocumentsDetails {
 export function createSearchMinSyncDocumentsTool(
 	getMethod: () => MinSyncVectorMethod | undefined,
 	resolveScope: (scope: string | undefined) => string | undefined = (scope) => scope,
+	ledger: EvidenceLedger = new EvidenceLedger(),
 ): AgentTool<typeof searchMinSyncSchema, SearchMinSyncDocumentsDetails> {
 	return {
 		name: SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
@@ -62,8 +64,11 @@ export function createSearchMinSyncDocumentsTool(
 					topK: params.topK,
 					scope,
 				});
+				const evidenceIds = results.map((result) =>
+					ledger.registerResult(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, result),
+				);
 				return {
-					content: [{ type: "text", text: formatResults(results) }],
+					content: [{ type: "text", text: formatResults(results, evidenceIds) }],
 					details: {
 						method: "semantic_search_local_docs",
 						resultCount: results.length,
@@ -91,11 +96,11 @@ function unavailableResult(message: string): AgentToolResult<SearchMinSyncDocume
 	};
 }
 
-function formatResults(results: readonly RetrievalResult[]): string {
+function formatResults(results: readonly RetrievalResult[], evidenceIds: readonly string[]): string {
 	if (results.length === 0) return "No MinSync results.";
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ").slice(0, 500);
-		return `[${index + 1}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
 	});
-	return `MinSync results:\n\n${rows.join("\n\n")}`;
+	return `MinSync results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}`;
 }

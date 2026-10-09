@@ -81,6 +81,9 @@ if (args[0] === "find") {
 
 function emitModel(onPrompt?: (text: string) => void) {
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "prefetch-model" }] });
+	// The model cites evidence by id; this local ref is the absolute path of a
+	// real file the model verified itself, which the final emit resolves.
+	const refundRef = realpathSync(join(docs, "refund-policy.txt"));
 	registration.setResponses([
 		(context) => {
 			onPrompt?.(extractUserText(context));
@@ -101,10 +104,8 @@ function emitModel(onPrompt?: (text: string) => void) {
 								summary: "Refund exceptions require director approval before payout.",
 								evidence: [{ excerpt: "director approval" }],
 								confidence: 0.9,
+								refs: [refundRef],
 							},
-						],
-						mapping: [
-							{ number: 1, source: "/docs/refund-policy.txt", method: "minsync", content: "director approval" },
 						],
 					}),
 				],

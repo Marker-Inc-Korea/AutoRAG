@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_ALL_DOCUMENTS_TOOL_NAME = "search_all_documents";
@@ -47,6 +48,7 @@ export interface SearchAllDocumentsDetails {
  */
 export function createSearchAllDocumentsTool(
 	provider: SearchAllDocumentsProvider,
+	ledger: EvidenceLedger = new EvidenceLedger(),
 ): AgentTool<typeof searchAllSchema, SearchAllDocumentsDetails> {
 	return {
 		name: SEARCH_ALL_DOCUMENTS_TOOL_NAME,
@@ -67,8 +69,9 @@ export function createSearchAllDocumentsTool(
 				topK: params.topK,
 				scope: params.scope,
 			});
+			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_ALL_DOCUMENTS_TOOL_NAME, result));
 			return {
-				content: [{ type: "text", text: formatResults(results, diagnostics) }],
+				content: [{ type: "text", text: formatResults(results, diagnostics, evidenceIds) }],
 				details: {
 					method: "search_all_documents",
 					resultCount: results.length,
@@ -82,7 +85,11 @@ export function createSearchAllDocumentsTool(
 	};
 }
 
-function formatResults(results: readonly RetrievalResult[], diagnostics: readonly RetrievalDiagnostic[]): string {
+function formatResults(
+	results: readonly RetrievalResult[],
+	diagnostics: readonly RetrievalDiagnostic[],
+	evidenceIds: readonly string[],
+): string {
 	const diagnosticSummary =
 		diagnostics.length > 0
 			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "all"}:${d.code}`).join(", ")}`
@@ -90,7 +97,7 @@ function formatResults(results: readonly RetrievalResult[], diagnostics: readonl
 	if (results.length === 0) return `No results.${diagnosticSummary}`;
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ").slice(0, 500);
-		return `[${index + 1}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
 	});
-	return `Merged results:\n\n${rows.join("\n\n")}${diagnosticSummary}`;
+	return `Merged results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}${diagnosticSummary}`;
 }

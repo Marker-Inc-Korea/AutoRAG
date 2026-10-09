@@ -2,6 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 /**
@@ -61,8 +62,9 @@ export interface SearchSingleDatasourceDetails {
 export function createSingleDatasourceSearchTools(
 	provider: SingleDatasourceSearchProvider,
 	specs: readonly SingleDatasourceToolSpec[],
+	ledger: EvidenceLedger = new EvidenceLedger(),
 ): AgentTool<typeof searchSingleDatasourceSchema, SearchSingleDatasourceDetails>[] {
-	return specs.map((spec) => createTool(provider, spec));
+	return specs.map((spec) => createTool(provider, spec, ledger));
 }
 
 const searchSingleDatasourceSchema = Type.Object({
@@ -76,6 +78,7 @@ const searchSingleDatasourceSchema = Type.Object({
 function createTool(
 	provider: SingleDatasourceSearchProvider,
 	spec: SingleDatasourceToolSpec,
+	ledger: EvidenceLedger,
 ): AgentTool<typeof searchSingleDatasourceSchema, SearchSingleDatasourceDetails> {
 	const scopeLine = spec.instanceScopes.length > 0 ? ` Instance scopes: ${spec.instanceScopes.join(", ")}.` : "";
 	return {
@@ -104,8 +107,11 @@ function createTool(
 				topK: params.topK,
 				scope: params.scope,
 			});
+			const evidenceIds = results.map((result) =>
+				ledger.registerResult(`search_datasource_${spec.datasourceId}`, result),
+			);
 			return {
-				content: [{ type: "text", text: formatDatasourceResults(results, diagnostics) }],
+				content: [{ type: "text", text: formatDatasourceResults(results, diagnostics, evidenceIds) }],
 				details: {
 					method: "datasource",
 					datasource: spec.datasourceId,
@@ -123,6 +129,7 @@ function createTool(
 export function formatDatasourceResults(
 	results: readonly RetrievalResult[],
 	diagnostics: readonly RetrievalDiagnostic[],
+	evidenceIds: readonly string[],
 ): string {
 	const diagnosticSummary =
 		diagnostics.length > 0
@@ -131,7 +138,7 @@ export function formatDatasourceResults(
 	if (results.length === 0) return `No datasource results.${diagnosticSummary}`;
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ").slice(0, 500);
-		return `[${index + 1}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
 	});
-	return `Datasource results:\n\n${rows.join("\n\n")}${diagnosticSummary}`;
+	return `Datasource results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}${diagnosticSummary}`;
 }
