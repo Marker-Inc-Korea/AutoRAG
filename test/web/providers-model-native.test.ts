@@ -88,7 +88,7 @@ describe("model-native auth resolution", () => {
 	});
 
 	it("uses the request's agent model credential for the matching provider family", () => {
-		const auth = { provider: "anthropic", apiKey: "sk-ant-injected", modelId: "claude-haiku-4-5" } as const;
+		const auth = { provider: "anthropic", apiKey: "sk-ant-injected", modelId: "claude-haiku-5-5" } as const;
 		expect(resolveModelNativeCredential("anthropic", auth)?.apiKey).toBe("sk-ant-injected");
 		expect(resolveModelNativeCredential("gemini", auth)).toBeUndefined();
 	});
@@ -132,8 +132,8 @@ describe("model-native auth resolution", () => {
 
 	it("derives injectable auth from a resolved agent model", () => {
 		expect(
-			modelNativeAuthFromAgentModel({ provider: "openai", apiKey: "sk-openai", modelId: "gpt-5" }),
-		).toMatchObject({ provider: "openai", apiKey: "sk-openai", modelId: "gpt-5" });
+			modelNativeAuthFromAgentModel({ provider: "openai", apiKey: "sk-openai", modelId: "gpt-6-luna" }),
+		).toMatchObject({ provider: "openai", apiKey: "sk-openai", modelId: "gpt-6-luna" });
 		expect(modelNativeAuthFromAgentModel({ provider: "openrouter", apiKey: "sk-or" })).toBeUndefined();
 		expect(modelNativeAuthFromAgentModel({ provider: "anthropic", apiKey: undefined })).toBeUndefined();
 	});
@@ -246,7 +246,7 @@ describe("AnthropicProvider (model-native web_search)", () => {
 		process.env.ANTHROPIC_API_KEY = "sk-ant-env";
 		const { fetch: fetchImpl, calls } = stubFetchJson({
 			id: "msg_1",
-			model: "claude-haiku-4-5",
+			model: "claude-haiku-5-5",
 			content: [
 				{ type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: { query: "autorag" } },
 				{
@@ -333,7 +333,7 @@ describe("CodexProvider (OpenAI Responses web_search)", () => {
 		process.env.OPENAI_API_KEY = "sk-openai-env";
 		const { fetch: fetchImpl, calls } = stubFetchJson({
 			id: "resp_1",
-			model: "gpt-5",
+			model: "gpt-6-luna",
 			status: "completed",
 			output: [
 				{

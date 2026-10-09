@@ -106,8 +106,8 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 				return { answers: [{ answer: "local", confidence: 0.9 }, { answer: 0.1 }] };
 			},
 		};
-		await routeQuery(judgeWith(backend), "switch the default model to gpt-5");
-		await routeQuery(judgeWith(backend), "switch the default model to gpt-5", { selfConfig: true });
+		await routeQuery(judgeWith(backend), "switch the default model to gpt-6-luna");
+		await routeQuery(judgeWith(backend), "switch the default model to gpt-6-luna", { selfConfig: true });
 		expect(offered[0]).not.toContain("config");
 		expect(offered[1]).toContain("config");
 	});

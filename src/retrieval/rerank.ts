@@ -32,7 +32,7 @@ export interface RerankerDescriptor {
 	readonly name: string;
 	/** Provider id (e.g. `openrouter`). */
 	readonly provider: string;
-	/** Wire model id (e.g. `cohere/rerank-4-fast`). */
+	/** Wire model id (e.g. `voyageai/rerank-3`). */
 	readonly model: string;
 	/** Whether the reranker has everything it needs to run (credentials, config). */
 	readonly available: boolean;

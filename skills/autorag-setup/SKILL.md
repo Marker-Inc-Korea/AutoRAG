@@ -131,7 +131,7 @@ For a custom endpoint, add `api`, `baseUrl`, and `apiKeyEnv` to the single
   "searchPaths": ["/path/to/documents"],
   "model": {
     "provider": "openrouter",
-    "id": "anthropic/claude-sonnet-4",
+    "id": "anthropic/claude-sonnet-5.5",
     "api": "openai-completions",
     "baseUrl": "https://openrouter.ai/api/v1",
     "apiKeyEnv": "OPENROUTER_API_KEY"
@@ -200,16 +200,16 @@ remote, provider:
 
 ```bash
 autorag init \
-  --embedder-id "text-embedding-3-small" \
-  --embedder-base-url "https://api.openai.com/v1" \
-  --embedder-api-key-env "OPENAI_API_KEY" \
-  --embedder-dimension 1536 \
+  --embedder-id "voyageai/voyage-4-lite" \
+  --embedder-base-url "https://openrouter.ai/api/v1" \
+  --embedder-api-key-env "OPENROUTER_API_KEY" \
+  --embedder-dimension 1024 \
   --embedder-batch-size 64
 ```
 
 Only store the environment-variable name, never its value. Dimension and batch
 size must be positive integers, and the dimension must match the embedder
-(default Qwen3 is 1024; legacy EmbeddingGemma is 768; text-embedding-3-small is 1536).
+(default Qwen3 is 1024; legacy EmbeddingGemma is 768; `voyageai/voyage-4-lite` via OpenRouter is 1024).
 
 ### Jev routing and question decomposition (on by default)
 

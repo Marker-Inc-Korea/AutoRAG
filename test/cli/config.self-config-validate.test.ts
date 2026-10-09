@@ -28,7 +28,7 @@ function writeConfig(model: unknown): string {
 
 describe("validateAgentConfigFile", () => {
 	it("accepts a config whose model resolves in the pi catalog", async () => {
-		const path = writeConfig({ provider: "openai", id: "gpt-4o" });
+		const path = writeConfig({ provider: "openai", id: "gpt-5.6-luna" });
 		expect(
 			await validateAgentConfigFile(path, { agentDir, configPath: join(root, "none.toml"), env: {} }),
 		).toBeUndefined();
@@ -49,7 +49,7 @@ describe("validateAgentConfigFile", () => {
 	});
 
 	it("does not treat a missing credential as a broken config", async () => {
-		const path = writeConfig({ provider: "openai", id: "gpt-4o" });
+		const path = writeConfig({ provider: "openai", id: "gpt-5.6-luna" });
 		expect(
 			await validateAgentConfigFile(path, { agentDir, configPath: join(root, "none.toml"), env: {} }),
 		).toBeUndefined();

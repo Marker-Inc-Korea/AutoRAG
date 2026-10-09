@@ -52,7 +52,7 @@ describe("models commands", () => {
 
 	it("lists chat models through the injected pi runtime lister as JSON", async () => {
 		const listModels = vi.fn(async () => [
-			{ provider: "openai", id: "gpt-4o", name: "GPT-4o", api: "openai-responses", available: true },
+			{ provider: "openai", id: "gpt-6-luna", name: "GPT-6 Luna", api: "openai-responses", available: true },
 		]);
 		const { ctx, stdout } = context(["list"], { json: true });
 		expect(await runModels(ctx, { listModels })).toBe(0);

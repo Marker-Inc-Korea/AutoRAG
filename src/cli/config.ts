@@ -1183,7 +1183,7 @@ export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
  * Question-decomposition model used when the config names none. Picked from a
  * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
  * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
- * cheaper per call than google/gemini-2.5-flash-lite at equal quality.
+ * cheaper per call than the previous default (a 2025 Gemini flash-lite) at equal quality.
  */
 export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
 

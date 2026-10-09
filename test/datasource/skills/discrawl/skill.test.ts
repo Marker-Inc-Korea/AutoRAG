@@ -188,7 +188,7 @@ describe("DiscrawlSkill index", () => {
 	it("does not warn for a multilingual embedding model", async () => {
 		const result = await new DiscrawlSkill({
 			client: asClient(new StubClient()),
-			embeddingModel: "bge-m3",
+			embeddingModel: "qwen3-embedding-0.6b",
 		}).index();
 		expect(result.diagnostics.some((d) => d.message.includes("English-only"))).toBe(false);
 	});

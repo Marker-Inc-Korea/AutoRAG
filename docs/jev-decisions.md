@@ -162,7 +162,7 @@ preserved:
 | Model | Score | p50 latency | Cost per 12 calls |
 | ----- | ----- | ----------- | ----------------- |
 | `qwen/qwen3.7-flash` (default) | 12/12 | 0.92s | $0.00011 |
-| `google/gemini-2.5-flash-lite` (previous) | 12/12 | 0.87s | $0.00039 |
+| previous default (retired 2025 Gemini flash-lite) | 12/12 | 0.87s | $0.00039 |
 | `qwen/qwen3.8-flash` | 12/12 | 1.19s | $0.00051 |
 | `upstage/solar-mini4` | 12/12 | 0.86s | $0.00021 (not in the pi catalog) |
 | `openai/gpt-6-luna` | 12/12 | 2.24s | $0.00038 (not in the pi catalog) |
