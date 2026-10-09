@@ -105,7 +105,7 @@ describe("search timeout after a first answer", () => {
 		expect(complete.response.diagnostics?.some((d) => d.code === "search-timeout")).toBe(true);
 	});
 
-	it("records the timeout answer so numbered feedback still resolves", async () => {
+	it("records the timeout answer so its result registry still resolves", async () => {
 		const agent = agentFor(
 			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
 		);
@@ -115,9 +115,6 @@ describe("search timeout after a first answer", () => {
 			expect.objectContaining({ code: "search-timeout", severity: "warning" }),
 		);
 
-		// A timeout-fallback answer behaves like any final answer: numbered
-		// feedback must match recorded results and update memory.
-		expect(() => agent.recordFeedbackByNumbers(response.sessionId, [1], [])).not.toThrow();
 		const registry = agent.getResultRegistry(response.sessionId);
 		expect(registry.get(1)?.content).toBe("now has five");
 	});

@@ -1688,9 +1688,8 @@ export class AutoRAGAgent {
 
 			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
 				// The caller receives this as the run's final answer, so record it as
-				// one: the fast-answer-as-final conversion (the same one the Jev direct
-				// route uses) registers the session registry and the memory entry, so
-				// the returned feedback ids resolve and past-search hints stay honest.
+				// one: the fast-answer-as-final conversion registers the session
+				// registry and memory entry for the returned response.
 				const response = recordStructuredResultsSession(
 					sessionId,
 					trimmedQuery,
