@@ -43,7 +43,7 @@ autorag gateway status --format json
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`,
-`jikji`, `datasources`, and `datasourceAccess` before changing anything.
+`jikji`, and `datasources` before changing anything.
 
 If the CLI itself is missing or the config does not exist, stop and run the
 `autorag-setup` skill first — doctor repairs an existing install, it does not
@@ -93,7 +93,7 @@ through the model-free MCP tools, then once end to end:
 ```text
 autorag.status {}
 autorag.search {"query":"a word that certainly appears","topK":3}
-autorag.search {"query":"recent topic","tags":["discord"],"topK":3}
+autorag.search {"query":"recent topic","datasourceIds":["discord"],"topK":3}
 autorag.search {"query":"recent mail subject","scope":"/mailcrawl/**","topK":3}
 ```
 
@@ -114,10 +114,11 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   treating it as a failure, and never kill a running sync to "fix" it.
 - MCP `autorag.search` needs no model, so it isolates retrieval from model
   failures.
-- Use the MCP `tags` / `scope` arguments to force one datasource; they can only
-  narrow trusted access, never grant it. A datasource absent from
-  `datasourceAccess` returns nothing no matter how healthy its store is — fix
-  the config, not the store.
+- Use MCP `datasourceIds` to select configured connections before retrieval;
+  `scope` narrows results within scope-capable datasources. Discover connection
+  IDs with `autorag.datasources.list`; descriptor tags are metadata only, not
+  search filters. Every configured connection is searchable — if one returns
+  nothing, investigate its native store, connector, or the query itself.
 - `autorag.evidence {"sessionId":"...","resultNumber":N}` shows the exact chunk
   behind a numbered result; use it to confirm a hit is real and its source is
   readable. The CLI `autorag evidence SESSION --json` remains for terminal
@@ -202,8 +203,9 @@ timer, or Task Scheduler).
   then `autorag refresh --method minsync` to retry.
 - `auth-error` / `rate-limited`: model or datasource credentials. Report the
   missing environment-variable **name** and let the user supply it.
-- A datasource configured but not listed in `datasourceAccess.allowedTags` /
-  `allowedScopes` is default-denied and invisible to search. Add it there.
+- A configured datasource that returns nothing is a native store, connector, or
+  query problem — every configured connection is searchable. Run its native
+  check from the table above and fix it there.
 
 ## Diagnostic codes
 
@@ -225,7 +227,8 @@ timer, or Task Scheduler).
 | `query-route-fallback` | Jev routing unavailable (often `OPENROUTER_API_KEY` unset); searched local with the original question | `test -n "$OPENROUTER_API_KEY"`; report the env var name, never its value |
 | `query-decomposition-failed` | Decomposition model call failed; searched the original question | Check `queryDecomposition.model` resolves (`autorag models list --provider openrouter`) |
 | `follow-up-check-fallback` | Jev post-fast-answer check unavailable; the run verified | Same as `query-route-fallback` |
-| `query-routed` / `follow-up-skipped` | Info: Jev's branch and queries / fast answer judged final | None; working as intended |
+| `datasource-selection-fallback` | Jev datasource check unavailable; no datasource was searched before the fast answer | Same as `query-route-fallback` |
+| `query-routed` / `datasources-selected` / `follow-up-skipped` | Info: Jev's branch and queries / datasources searched and skipped / fast answer judged final | None; working as intended. A datasource that is never selected usually needs a clearer `description` in the config |
 
 ## Report
 

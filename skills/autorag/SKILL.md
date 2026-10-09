@@ -1,6 +1,6 @@
 ---
 name: autorag
-description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and authorized datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
+description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and configured datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
 license: MIT
 ---
 
@@ -8,7 +8,7 @@ license: MIT
 
 Use this skill when AutoRAG is already configured and the user asks to search,
 summarize, compare, or answer questions from local PDFs, wikis, notes, research
-papers, knowledge bases, or authorized datasources.
+papers, knowledge bases, or configured datasources.
 
 AutoRAG is the specialized librarian agent. One configured model plans the
 search, calls MinSync, Jikji, datasource, and filesystem tools, reads
@@ -93,10 +93,8 @@ ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber`,
 the session. Prefer this command whenever the caller wants detailed chunk text
 rather than only the curated summary.
 
-- `--scope` narrows datasource retrieval to a requested sub-path; it cannot
-  grant access.
-- `--tags` further narrows already-authorized datasource results and never
-  grants new access.
+- `--scope` narrows datasource retrieval to a requested sub-path (ordinary
+  per-query filtering).
 - `--json` is required for programmatic consumption.
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.
@@ -116,15 +114,22 @@ default, OpenRouter), Jev first routes the question:
   keeps its startup model; changes apply to the next `autorag` launch.
 - Private-data questions use local search; public current facts use web search.
 - A multi-part question is split into up to five parallel search queries.
+- On local search, Jev also picks which registered datasources (Slack,
+  Discord, KakaoTalk, email, ...) to search before the fast answer, from each
+  datasource's description and where similar past questions were answered;
+  their chunks are reranked together with local file evidence.
 
 After the fast answer, Jev ends the run if the answer is complete and
 evidence-backed. So `results` may come straight from the fast answer, with no
 verification phase. `--debug` diagnostics show the decision: `query-routed`
-(branch and queries), `follow-up-skipped` (fast answer final), or
+(branch and queries), `datasources-selected` (datasources searched or skipped,
+with probabilities), `follow-up-skipped` (fast answer final), or
 `query-route-fallback` (Jev unavailable, single local search).
 
-Record feedback so retrieval memory can learn. Numbers refer to the returned
-knowledge units. Supply at least one feedback list:
+Record feedback so retrieval memory can learn. Results marked not useful are
+also dropped from the past-question hints Jev reads when picking datasources.
+Numbers refer to the returned knowledge units. Supply at least one feedback
+list:
 
 ```bash
 autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json

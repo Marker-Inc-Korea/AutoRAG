@@ -46,7 +46,7 @@ Check `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 - `model.provider`, `model.id`, `model.api`, `model.baseUrl`, `model.apiKeyEnv`
 - `bm25`, `minSync`, and `jikji`
 - `limits` (retrieval, baseline-prefetch, and model-facing candidate caps)
-- `datasources`, `datasourceAccess`, and `ui`
+- `datasources` and `ui`
 
 Preserve explicit user choices and a working config unless the user asks to
 replace them or health checks fail.
@@ -219,9 +219,18 @@ fast and multi-part questions thorough.
 - **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
   `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
   local search, web search, a direct answer (general knowledge or small
-  talk skips retrieval entirely), or the `config` branch, and decides whether to decompose it. After
-  the fast answer it decides whether verification is needed, so a complete,
-  evidence-backed fast answer ends the run.
+  talk skips retrieval entirely), or the `config` branch, and decides whether
+  to decompose it. On
+  local search it also decides, per registered datasource, whether to search
+  it before the fast answer, using each datasource's `description` and where
+  similar past questions were answered (retrieval memory). When setting up a
+  datasource, always write a `description` from what it actually holds:
+  channels or rooms, people, topics, time range (for example `"Team Slack,
+  2024-2026: #release and #on-call channels, dependabot notifications"`).
+  Jev is told descriptions are short, non-exhaustive summaries, so list the
+  main content and do not try to list everything. After the fast answer it
+  decides whether verification is needed, so a complete, evidence-backed fast
+  answer ends the run.
 - **Question decomposition** (`queryDecomposition`, default model
   `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
   five search queries that run in parallel.
@@ -321,7 +330,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
    (such as `github`) require their credential environment variable
    (`GITHUB_TOKEN`).
 2. Auto-configure every datasource that probes feasible — write its trusted
-   `datasources` / `datasourceAccess` entries without asking. For example,
+   `datasources` entries without asking. For example,
    when Slack (`slacrawl`) and Discord (`discrawl`) are installed with local
    stores present, set both up automatically. Discord uses discrawl's local
    desktop wiretap archive; no Discord bot token is configured or needed.
@@ -334,13 +343,13 @@ setup. Configure datasources directly in trusted config, wizard-style:
    users — always probe them and report their status, even when they end up
    skipped.
 
-Datasource skills belong in trusted config and remain default-deny. Builtin
+Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`, `mail-export`,
 `mailcrawl`, `obsidian`, `rss`, `spotlight`, and `lark`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
-`scope` and tags can narrow trusted access but cannot grant it.
+`scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.
 
 ```jsonc
 {
@@ -352,10 +361,6 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["github", "cloud-drive", "mailcrawl", "obsidian", "rss"],
-    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -391,7 +396,7 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   performs one live completion probe.
 - `health --skip-probes` is only for intentionally offline validation and does
   not prove live provider access.
-- `refresh` syncs parsed mirrors, MinSync, Jikji, authorized datasources, and
+- `refresh` syncs parsed mirrors, MinSync, Jikji, configured datasources, and
   on Windows the bundled Everything file-name index. `--method <csv>` may
   deliberately narrow it (`parsed,minsync,datasources,jikji,everything,all`).
 - Use `refresh --force` for a full resync only when incremental refresh is not

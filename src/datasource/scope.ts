@@ -11,6 +11,10 @@
  */
 
 import { matchesVirtualPathScope, normalizeVirtualPath } from "../retrieval/scope.ts";
+import type { RetrievalMethod, RetrievalResult } from "../retrieval/types.ts";
+
+/** Per-method retrieval results keyed by method name. */
+export type ResultsByMethod = Map<string, RetrievalResult[]>;
 
 /** Path segment separating an instance root from its chunk sub-namespace. */
 export const DATASOURCE_CHUNKS_SEGMENT = "chunks";
@@ -60,6 +64,53 @@ export function isDatasourceSource(source: string): boolean {
 export function matchesDatasourceScope(source: string, scope: string | undefined): boolean {
 	if (datasourceSourceHasFragment(source)) return false;
 	return matchesVirtualPathScope(source, scope);
+}
+
+/**
+ * Narrow a per-method result map by the ordinary query `scope`.
+ *
+ * This is the only post-retrieval narrowing left in the datasource layer: every
+ * configured datasource is searchable without permission setup. Methods whose
+ * descriptor has no `datasourceId` (plain retrieval methods such as `posix`) and
+ * datasource methods that do not advertise the `scoped` capability pass through
+ * untouched. Scope-capable datasource methods keep only the results whose
+ * source matches `scope`; `undefined` scope matches every valid source, and
+ * sources containing a `#` fragment are always rejected.
+ *
+ * Result entries for methods not present in `methods` are passed through
+ * unchanged (they cannot be classified). A new map is returned; the input is
+ * not mutated.
+ */
+export function filterDatasourceScope(
+	byMethod: ResultsByMethod,
+	methods: readonly RetrievalMethod[],
+	scope?: string,
+): ResultsByMethod {
+	const descriptors = new Map<string, RetrievalMethod>();
+	for (const method of methods) {
+		descriptors.set(method.describe().name, method);
+	}
+
+	const out: ResultsByMethod = new Map();
+	for (const [name, results] of byMethod) {
+		const method = descriptors.get(name);
+		if (method === undefined) {
+			// No descriptor available: cannot classify as a datasource method.
+			out.set(name, results);
+			continue;
+		}
+		const descriptor = method.describe();
+		if (descriptor.datasourceId === undefined || !descriptor.capabilities.includes("scoped")) {
+			// Non-datasource, or a datasource without source-scope support: pass through.
+			out.set(name, results);
+			continue;
+		}
+		out.set(
+			name,
+			results.filter((result) => matchesDatasourceScope(result.source, scope)),
+		);
+	}
+	return out;
 }
 
 export { matchesVirtualPathScope, normalizeVirtualPath } from "../retrieval/scope.ts";

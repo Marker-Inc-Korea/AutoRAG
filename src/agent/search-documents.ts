@@ -1,6 +1,6 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
-import { formatCitationList, stripUnresolvedCitations } from "./citations.ts";
+import { assertResultsMappingOneToOne, formatCitationList, stripUnresolvedCitations } from "./citations.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
 import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
 
@@ -52,8 +52,11 @@ export type SearchDocumentDiagnosticCode =
 	| "query-decomposition-failed"
 	| "follow-up-skipped"
 	| "follow-up-check-fallback"
+	| "datasources-selected"
+	| "datasource-selection-fallback"
 	| "citation-without-result"
-	| "self-config-unavailable";
+	| "self-config-unavailable"
+	| "self-config-rolled-back";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
@@ -285,16 +288,13 @@ export function recordStructuredResultsSession(
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
-	options: { readonly isolateMemory?: boolean } = {},
+	options: {
+		readonly isolateMemory?: boolean;
+		/** A remote P2P peer's search: recorded, but kept out of local past-search hints. */
+		readonly remote?: boolean;
+	} = {},
 ): SearchDocumentsResponse {
-	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
-	const mappingNumbers = details.mapping.map((entry) => entry.number).sort((a, b) => a - b);
-	const oneToOne =
-		resultNumbers.length === mappingNumbers.length &&
-		resultNumbers.every((number, index) => number === mappingNumbers[index]);
-	if (!oneToOne) {
-		throw new Error("emit_autorag_results: result numbers and mapping numbers must be one-to-one");
-	}
+	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
 
 	const registry = new Map<number, CuratedResult>();
 	const memoryResults = [];
@@ -321,7 +321,12 @@ export function recordStructuredResultsSession(
 	}
 	sessions.set(sessionId, { query, registry, ...(options.isolateMemory ? { transient: true } : {}) });
 	if (!options.isolateMemory) {
-		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
+		memory.recordCuratedResultsSession({
+			sessionId,
+			query,
+			results: memoryResults,
+			...(options.remote === true ? { remote: true } : {}),
+		});
 		memory.save();
 	}
 

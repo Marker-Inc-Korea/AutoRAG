@@ -312,7 +312,6 @@ describe("AutoRAG Lite MCP server", () => {
 				query: "refund approval",
 				topK: 5,
 				scope: "/kakao/default",
-				tags: ["kakao"],
 				strict: true,
 				datasourceIds: ["kakao"],
 				methods: ["kakao.keyword"],
@@ -324,7 +323,7 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(searchCalls[0]).toMatchObject({
 			query: "refund approval",
 			selection: { datasourceIds: ["kakao"], methods: ["kakao.keyword"], local: false },
-			options: { topK: 5, scope: "/kakao/default", allowedTags: ["kakao"] },
+			options: { topK: 5, scope: "/kakao/default" },
 		});
 		expect(hasFieldValue(result.structuredContent, "source", "docs/refund-policy.md")).toBe(true);
 		await client.close();
@@ -602,7 +601,7 @@ describe("AutoRAG Lite MCP server", () => {
 		await server.close();
 	});
 
-	it("lists the authorized datasource catalog", async () => {
+	it("lists the configured datasource catalog", async () => {
 		const { lite } = fakeLite({ workspacePath: workspace(true) });
 		const { client, server } = await connectedServer(lite);
 		const result = await client.callTool({ name: "autorag.datasources.list", arguments: {} });

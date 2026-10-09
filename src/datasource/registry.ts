@@ -3,15 +3,14 @@
  *
  * Skills are constructed from trusted, server-supplied configuration and
  * registered here so the retrieval pipeline can enumerate them, look them up
- * by tag, and resolve the concrete instances a given access context permits.
+ * by tag (descriptive metadata), and resolve the concrete instances they expose.
  *
- * The registry never grants access: {@link resolveInstances} only *narrows*
- * the registered skills to those a {@link DatasourceAccessContext} already
- * allows. Model/tool arguments are not consulted.
+ * Every configured/connected datasource is searchable without permission setup;
+ * there is no access context. The ordinary query `scope` narrows results later
+ * in the pipeline, not here. Model/tool arguments are not consulted.
  */
 
 import type { RetrievalMethod } from "../retrieval/types.ts";
-import type { DatasourceAccessContext } from "./access-context.ts";
 import { buildDatasourceInstanceSource } from "./scope.ts";
 import type { DatasourceInstance, DatasourceSkill, DatasourceSkillDescriptor, PollingMetadata } from "./types.ts";
 
@@ -49,7 +48,7 @@ export class DatasourceSkillRegistry {
 		return Array.from(this.skills.values());
 	}
 
-	/** Skills whose descriptor carries the given tag. */
+	/** Skills whose descriptor carries the given tag (descriptive metadata). */
 	byTag(tag: string): readonly RegisteredDatasourceSkill[] {
 		return this.list().filter((entry) => entry.descriptor.tags.includes(tag));
 	}
@@ -60,29 +59,24 @@ export class DatasourceSkillRegistry {
 	}
 
 	/**
-	 * Resolve the concrete datasource instances reachable under `ctx`.
+	 * Resolve every configured datasource instance.
 	 *
-	 * Only skills whose descriptor {@link DatasourceAccessContext.isAccessible}
-	 * allows contribute instances, and only their declared instance ids are
+	 * All registered skills contribute, and only their declared instance ids are
 	 * materialized. Each instance carries its opaque slash-hierarchical
 	 * {@link DatasourceInstance.sourcePath} (e.g. `/kakao/acct-1`), built from
 	 * the trusted skill name and instance id — never from model input.
 	 */
-	resolveInstances(ctx: DatasourceAccessContext): readonly DatasourceInstance[] {
+	resolveInstances(): readonly DatasourceInstance[] {
 		const out: DatasourceInstance[] = [];
 		for (const { skill, descriptor } of this.skills.values()) {
-			if (!ctx.isAccessible(descriptor)) continue;
 			const instanceIds = descriptor.instances ?? [];
 			const polling = safePolling(skill);
-			const predicate = descriptor.capabilities.includes("scoped") ? ctx.allowedSourcesPredicate() : () => true;
 			for (const id of instanceIds) {
-				const sourcePath = buildDatasourceInstanceSource(descriptor.name, id);
-				if (!predicate(sourcePath)) continue;
 				out.push({
 					id,
 					skill,
 					descriptor,
-					sourcePath,
+					sourcePath: buildDatasourceInstanceSource(descriptor.name, id),
 					polling,
 				});
 			}
@@ -91,13 +85,12 @@ export class DatasourceSkillRegistry {
 	}
 
 	/**
-	 * Convenience: all retrieval methods exposed by accessible skills, for
-	 * feeding the shared retriever. Methods from denied skills are excluded.
+	 * All retrieval methods exposed by registered skills, for feeding the shared
+	 * retriever.
 	 */
-	accessibleMethods(ctx: DatasourceAccessContext): readonly RetrievalMethod[] {
+	retrievalMethods(): readonly RetrievalMethod[] {
 		const out: RetrievalMethod[] = [];
-		for (const { skill, descriptor } of this.skills.values()) {
-			if (!ctx.isAccessible(descriptor)) continue;
+		for (const { skill } of this.skills.values()) {
 			out.push(...skill.retrievalMethods());
 		}
 		return out;

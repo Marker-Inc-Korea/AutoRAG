@@ -14,7 +14,6 @@ import {
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
-import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
@@ -235,10 +234,8 @@ export interface CliConfig {
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
 	limits?: AutoRAGRetrievalLimits;
-	/** Trusted datasource skill configuration (skill name → config). */
+	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
-	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
-	datasourceAccess?: DatasourceAccessContextOptions;
 	/** P2P sharing configuration. Disabled by default. */
 	p2p?: P2pConfig;
 }
@@ -1098,16 +1095,6 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.datasources = file.datasources as DatasourcesConfig;
 	}
-	if (file.datasourceAccess !== undefined) {
-		if (
-			typeof file.datasourceAccess !== "object" ||
-			file.datasourceAccess === null ||
-			Array.isArray(file.datasourceAccess)
-		) {
-			throw new ConfigError("Config field 'datasourceAccess' must be an object with allowedTags/allowedScopes");
-		}
-		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
-	}
 	config.p2p = normalizeP2pConfig(file.p2p);
 	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
 	return config;
@@ -1409,7 +1396,6 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 			opts.startupDiagnostics = [diagnostic];
 		}
 	}
-	if (config.datasourceAccess !== undefined) opts.datasourceAccess = config.datasourceAccess;
 	if (config.p2p?.enabled === true) {
 		opts.peerQuery = {
 			...(config.p2p.port !== undefined ? { port: config.p2p.port } : {}),

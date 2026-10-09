@@ -102,7 +102,7 @@ Guidance:
 - Read `confidence` (and `confidenceFrom`) before acting on a close call; an
   `escalate` verdict means the LLM should take the step over.
 
-## Query pipeline (routing, decomposition, follow-up check)
+## Query pipeline (routing, decomposition, datasource check, follow-up check)
 
 Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
@@ -128,8 +128,77 @@ What happens next:
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
 | `config` | Skips retrieval, decomposition, `emit_fast_answer`, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new through `emit_autorag_results` (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
-| `local`  | Decompose (if needed) → Jikji + MinSync per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
+| `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
+
+### Datasource check before the fast answer
+
+On the `local` branch, Jev answers one more batched call: one `noul` per
+registered datasource (configured, with retrieval methods), "Should the `<id>`
+datasource be searched to answer the user question?". The registered set comes
+from the config: `autorag search` reads it on every call, while `autorag tui`
+and `autorag serve` read it at startup, so restart them after adding,
+disabling, or re-describing a datasource. Every datasource at 0.5 or
+above is searched with every search query (the original or the decomposed
+ones), and its chunks join Jikji and MinSync in the pool the reranker orders,
+before the fast answer. The rest are not searched before the fast answer (the
+verification phase can still call `search_datasource_<id>`). A
+`datasources-selected` diagnostic lists the selected and skipped datasources
+with their probabilities. If the check fails (missing credential, unreachable
+backend), no datasource is searched before the fast answer
+(`datasource-selection-fallback`), which is the behavior without Jev.
+
+The state Jev judges has three parts, followed by the question:
+
+1. **Datasource catalog**: `id (type): description` for every datasource.
+   Write each `description` in the config to say what the datasource holds
+   (channels, rooms, people, topics, time range). The state tells Jev that
+   every description is a **short, non-exhaustive summary**: a datasource can
+   hold other topics, people, and conversations that its description does not
+   mention, so a datasource is not ruled out just because its description is
+   silent on the question's topic.
+2. **Similar past questions** (only when retrieval memory has any): up to 5
+   earlier searches whose question resembles this one (character-bigram Dice
+   ≥ 0.35, newest per question), each with up to 4 result titles and where the
+   evidence came from (`[kakao]`, `[local files]`, `[web]`, ...). Question and
+   title are JSON-quoted, so a newline or a fake `User question:` line inside
+   them cannot forge the state's structure. A result titled as not found or
+   negative tells Jev that datasource was searched and did not have the
+   answer. Jev treats this as a hint, not a rule.
+
+   These titles are model-written text about your private content and the
+   state goes to the Jev backend (OpenRouter by default), so a past result is
+   shown only when it is safe for the **current** run:
+
+   - Memory is shared across workspaces and configs, so a result is dropped
+     unless every piece of its evidence comes from a datasource this run
+     configures, a configured search path, or the web.
+     Evidence from a datasource that is not configured here, and
+     evidence with no recognizable origin, drops the whole result; a search
+     left with no result is not shown at all.
+   - Results the user marked not useful are left out. The verdict is stored
+     on the result itself, so it still applies after older feedback signals
+     are evicted (memory written before this keeps using its feedback
+     signals).
+   - Searches a remote P2P peer ran are recorded (they still feed method
+     hints and peer feedback) but tagged `remote` and never shown. Records
+     written before the tag existed cannot be told apart.
+3. **User question**.
+
+The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)
+with the maintainer's 10 real datasources (descriptions written from each
+archive's actual content) and retrieval memory (113 past searches). The set has
+10 labeled questions: 6 naming a datasource, 3 whose topic no description
+mentions (a restaurant tip in KakaoTalk, a birthday in a Discord server, a
+flight booking email), and 1 that only description content can resolve (the
+shared-fund ledger lives in one of two Discord servers). Over 3 runs, 30/30
+passed. Required datasources scored 0.71-0.96, and datasources the question
+excluded scored at most 0.38
+(`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`). With memory, a
+similar past question sharpens the choice: for "dependabot PR 알림", Discord,
+Spotlight, and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
+showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉님
+랄프톤 공지" rose from 0.91 to 0.98.
 
 ### Follow-up check after the fast answer
 
@@ -181,9 +250,12 @@ Failures never block a search. A missing Jev credential, an unreachable Jev
 backend, or an unusable verdict falls back to today's single local search for
 the original question (diagnostic `query-route-fallback`). A `web` verdict with
 web tools disabled also falls back to local search. A failed decomposition
-searches the original question (`query-decomposition-failed`). Every routed run
-records its branch and queries as a `query-routed` diagnostic (`--debug`
-shows it). The pipeline never runs for remote P2P sessions. Every search is
+searches the original question (`query-decomposition-failed`). A failed
+datasource check searches no datasource before the fast answer
+(`datasource-selection-fallback`). Every routed run records its branch and
+queries as a `query-routed` diagnostic, and the datasource check's picks as
+`datasources-selected` (`--debug` shows both). The pipeline never runs for
+remote P2P sessions. Every search is
 two-phase (fast answer, then verification unless Jev ends the run); there is
 no single-phase mode.
 

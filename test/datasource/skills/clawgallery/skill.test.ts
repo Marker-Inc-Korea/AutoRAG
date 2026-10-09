@@ -42,7 +42,7 @@ describe("ClawGallerySkill", () => {
 		const skill = new ClawGallerySkill({ client: new StubClient(), instanceId: "personal" });
 		const results = await skill
 			.retrievalMethods()[0]
-			?.retrieve("login", { topK: 5, allowedScopes: ["/screenshots/personal/**"] });
+			?.retrieve("login", { topK: 5, scope: "/screenshots/personal/**" });
 		expect(results?.[0]).toMatchObject({
 			source: "/screenshots/personal/images/img-1",
 			id: "clawgallery:personal:img-1",

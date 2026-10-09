@@ -191,7 +191,7 @@ function kakaoSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 					skill: "kakao",
 					instanceId: "acct-1",
 					contentType: "chat",
-					metadata: { description: "authorized KakaoTalk chat history" },
+					metadata: { description: "KakaoTalk chat history for acct-1" },
 				},
 			];
 		},
@@ -267,7 +267,6 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			},
 			jikji: { binaryPath },
 			datasourceSkills: [kakaoSkill(datasourceRows)],
-			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
 		});
 
 		for (const name of [

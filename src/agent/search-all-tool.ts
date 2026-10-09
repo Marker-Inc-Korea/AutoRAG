@@ -41,10 +41,9 @@ export interface SearchAllDocumentsDetails {
 
 /**
  * LLM-facing wrapper around multi-method merged retrieval. The
- * schema accepts only `{ query, topK?, scope? }`; datasource trust fields such
- * as `allowedTags`/`allowedScopes` are not part of the schema and are never
- * forwarded to the provider — only `query`, `topK`, and `scope` are passed
- * through, so model-provided extra properties cannot widen datasource access.
+ * schema accepts only `{ query, topK?, scope? }`; extra model-provided
+ * properties are not part of the schema and are never forwarded to the
+ * provider — only `query`, `topK`, and `scope` are passed through.
  */
 export function createSearchAllDocumentsTool(
 	provider: SearchAllDocumentsProvider,

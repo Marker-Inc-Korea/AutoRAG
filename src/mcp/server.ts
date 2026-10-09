@@ -31,7 +31,6 @@ const searchInput = z
 		query: z.string().trim().min(1),
 		topK: z.number().int().positive().max(100).optional(),
 		scope: z.string().trim().min(1).optional(),
-		tags: z.array(z.string().trim().min(1)).optional(),
 		strict: z.boolean().optional(),
 		datasourceIds: z.array(z.string().trim().min(1)).optional(),
 		methods: z.array(z.string().trim().min(1)).optional(),
@@ -298,7 +297,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
-			async ({ query, topK, scope, tags, strict, datasourceIds, methods, local }) => {
+			async ({ query, topK, scope, strict, datasourceIds, methods, local }) => {
 				const status = await lite.getRefreshStatus();
 				if (!isParsedRefreshComplete(lite.config.workspacePath)) {
 					return toolError(
@@ -321,11 +320,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 					);
 				}
 				try {
-					const retrieved = await lite.searchSelected(
-						query,
-						{ datasourceIds, methods, local },
-						{ topK, scope, allowedTags: tags },
-					);
+					const retrieved = await lite.searchSelected(query, { datasourceIds, methods, local }, { topK, scope });
 					return jsonResult({
 						ok: true,
 						query,
@@ -372,7 +367,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				title: `Search ${entry.name}`,
 				description:
 					`Search only the integrated ${entry.name} datasource (${entry.datasourceId}): ${entry.description}. ` +
-					"The datasource and authorization scope are server-configured; query, topK, and scope only narrow the search.",
+					"The datasource is server-configured; query, topK, and scope only narrow the search.",
 				inputSchema: datasourceSearchInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
@@ -499,8 +494,8 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 		server.registerTool(
 			"autorag.datasources.list",
 			{
-				title: "List Authorized Datasources",
-				description: "List configured datasources visible under the server's default-deny authorization policy.",
+				title: "List Configured Datasources",
+				description: "List the datasources connected under the server's configuration.",
 				inputSchema: emptyInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
@@ -513,9 +508,9 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 		server.registerTool(
 			"autorag.datasources.get",
 			{
-				title: "Get Authorized Datasource",
+				title: "Get Configured Datasource",
 				description:
-					"Return one authorized datasource descriptor without credentials or private configuration metadata.",
+					"Return one configured datasource descriptor without credentials or private configuration metadata.",
 				inputSchema: datasourceGetInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
@@ -523,7 +518,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 			async ({ datasourceId }) => {
 				const datasource = lite.listDatasources().find((entry) => entry.datasourceId === datasourceId);
 				return datasource === undefined
-					? toolError("datasource-not-found", `No authorized datasource named ${datasourceId}.`, { datasourceId })
+					? toolError("datasource-not-found", `No configured datasource named ${datasourceId}.`, { datasourceId })
 					: jsonResult({ ok: true, datasource });
 			},
 		);
