@@ -4,19 +4,16 @@
  * A *datasource* is an external, server-bound source of retrieval evidence
  * (e.g. a KakaoTalk export reached through the external `lazykatok` CLI). The
  * datasource layer sits *on top of* the existing retrieval pipeline: it owns
- * access gating and slash-hierarchical source naming, while actual retrieval
- * still flows through {@link RetrievalMethod} instances returned by a skill.
+ * slash-hierarchical source naming, while actual retrieval still flows through
+ * {@link RetrievalMethod} instances returned by a skill.
  *
- * Security invariants (enforced by {@link DatasourceAccessContext}):
- *  - Access is **default-deny**: when no trusted allow-tags are configured,
- *    every datasource descriptor and source is denied.
- *  - Deny is always an explicit `false` boolean / predicate return — never
- *    `undefined`-as-deny.
- *  - Model/tool arguments never grant access. Only the trusted server-supplied
- *    {@link DatasourceAccessContext} can authorize a datasource.
- *  - Datasource sources are slash-hierarchical opaque paths when the skill
- *    supports the `scoped` capability; skills without that capability may
- *    expose another opaque identity format.
+ * Every configured/connected datasource is searchable without permission
+ * setup: there is no tag/scope authorization layer. The ordinary query `scope`
+ * narrows results after retrieval (see `filterDatasourceScope`), and skill
+ * descriptor `tags` are descriptive metadata only — never authority.
+ * Datasource sources are slash-hierarchical opaque paths for skills that
+ * advertise the `scoped` capability; skills without it may expose another
+ * opaque identity format.
  */
 
 import type { RetrievalMethod } from "../retrieval/types.ts";
@@ -26,8 +23,8 @@ export type { RetrievalMethod } from "../retrieval/types.ts";
 /**
  * Descriptor for a datasource skill (e.g. KakaoTalk via `lazykatok`).
  *
- * Structurally compatible with {@link RetrievalMethodDescriptor} so that
- * retrieval method descriptors can be gated by the same access context.
+ * Structurally compatible with {@link RetrievalMethodDescriptor}: retrieval
+ * method descriptors carry the same `datasourceId`/`tags`/`capabilities` fields.
  */
 export interface DatasourceSkillDescriptor {
 	/** Stable skill name, e.g. `"kakao"`. */
@@ -40,8 +37,8 @@ export interface DatasourceSkillDescriptor {
 	/** Capability tags such as `"chat"`, `"external-cli"`, `"polling"`. */
 	readonly capabilities: readonly string[];
 	/**
-	 * Authorization tags. A descriptor is accessible only when at least one tag
-	 * intersects the trusted allow-tags on the access context.
+	 * Descriptive tags such as `"chat"` or `"external-cli"`. Metadata only —
+	 * never used to authorize or narrow access.
 	 */
 	readonly tags: readonly string[];
 	readonly status: "active" | "stub";
@@ -50,25 +47,13 @@ export interface DatasourceSkillDescriptor {
 	/**
 	 * Set when this descriptor describes a datasource-backed surface.
 	 * Non-datasource descriptors (e.g. plain `posix` retrieval methods) leave
-	 * this undefined and are passed through by the access context.
+	 * this undefined.
 	 */
 	readonly datasourceId?: string;
 	/** Optional primary instance id for single-instance skills. */
 	readonly instanceId?: string;
 	/** Optional list of instance ids this skill reports. */
 	readonly instances?: readonly string[];
-}
-
-/**
- * Minimal structural shape required to gate a descriptor by access context.
- * Both {@link DatasourceSkillDescriptor} and `RetrievalMethodDescriptor`
- * satisfy this interface structurally.
- */
-export interface DatasourceAccessible {
-	readonly datasourceId?: string;
-	readonly tags?: readonly string[];
-	/** Capability names such as `scoped`; absent means no source-scope support. */
-	readonly capabilities?: readonly string[];
 }
 
 /**

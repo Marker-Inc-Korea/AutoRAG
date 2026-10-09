@@ -24,7 +24,7 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 	const skill = new MailcrawlSkill({ client, instanceId: "personal" });
 	const indexed = await skill.index();
 	if (!indexed.ok || indexed.chunkCount !== 1) throw new Error("mailcrawl index failed");
-	const results = await skill.retrievalMethods()[0]?.retrieve("refund approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
+	const results = await skill.retrievalMethods()[0]?.retrieve("refund approval", { topK: 5, scope: "/mailcrawl/personal/**" });
 	if (results?.[0]?.source !== "/mailcrawl/personal/chunks/msg-1:latest:0") throw new Error("mailcrawl source mapping failed");
 	const bad = await new MailcrawlClient({ binaryPath: join(root, "missing") }).sync();
 	if (bad.ok || bad.reason !== "binary-missing") throw new Error("mailcrawl bad binary handling failed");
@@ -48,7 +48,6 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 			minSync: false,
 			dupey: false,
 			datasourceSkills: [skill],
-			datasourceAccess: { allowedTags: ["mailcrawl"], allowedScopes: ["/mailcrawl/personal/**"] },
 			searchTimeoutMs: 30_000,
 		});
 		const response = await agent.searchDocuments("Which refund exceptions require approval before payout?", { topK: 1, scope: "/mailcrawl/personal/**" });
