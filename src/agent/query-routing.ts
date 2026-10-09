@@ -25,6 +25,16 @@ export const DECOMPOSE_PROBABILITY_THRESHOLD = 0.5;
 /** A `noul` probability at or above this sends the fast answer on to verification. */
 export const FOLLOW_UP_PROBABILITY_THRESHOLD = 0.5;
 
+/**
+ * Minimum Jev branch probability required to leave local search. A `direct` or
+ * `web` branch at or below this floor — or one Jev reported without a
+ * probability — keeps the run on local search, the corpus-grounded default.
+ * Without the floor a weakly-favored `direct` verdict (observed at p 0.57-0.63
+ * on personal-corpus questions) skips retrieval entirely and answers from
+ * general knowledge, so the caller loses the evidence the question depends on.
+ */
+export const NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD = 0.75;
+
 /** A `noul` probability at or above this searches that datasource before the fast answer. */
 export const DATASOURCE_PROBABILITY_THRESHOLD = 0.5;
 
@@ -83,10 +93,10 @@ export async function needsFollowUp(judge: JevJudge, query: string, answer: stri
 }
 
 const ROUTE_OPTIONS: Record<QueryRoute, string> = {
-	local: "Answering needs private information only the user can access and that is not on the public internet: files on their computer, their chats (Discord, KakaoTalk, Slack), their email, or their notes.",
-	web: "Not answerable from general knowledge alone, but one public internet search would answer it: current events, recent releases, prices, or other public facts.",
+	local: "Answering needs private information only the user can access and that is not on the public internet: files on their computer, their chats (Discord, KakaoTalk, Slack), their email, their notes, their calendar, or their history. Prefer local whenever the question refers to the user's own life, situation, plans, or records — questions phrased with words like 'my', 'I', 'we', 'our', a named friend, family member, or colleague, or 'my case/hearing/appointment/routine' — even when a generic answer would also be possible.",
+	web: "Not answerable from general knowledge alone and not from the user's private information either, but one public internet search would answer it: current events, recent releases, prices, or other public facts.",
 	direct:
-		"General common knowledge, a definition, simple reasoning, or small talk the assistant can answer from its own knowledge without searching anything.",
+		"General common knowledge, a definition, simple reasoning, or small talk the assistant can answer from its own knowledge without searching anything. Never direct when the question refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine').",
 };
 
 const ROUTE_QUESTION = pick("Where must the answer to this user question come from?", ROUTE_OPTIONS);
@@ -100,11 +110,11 @@ const DECOMPOSE_QUESTION = check(
 );
 
 export interface QueryRouteDecision {
-	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none. */
+	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none or its non-local branch missed {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD}. */
 	readonly route: QueryRoute;
 	/** True when Jev judged the question needs decomposition (never for `direct`). */
 	readonly decompose: boolean;
-	/** Probability Jev gave the chosen branch, when it reported a distribution. */
+	/** Probability Jev gave the winning branch, including a rejected non-local branch whose floor moved the route to local. */
 	readonly routeProbability?: number;
 	/** Jev's P(decomposition needed), when it answered. */
 	readonly decomposeProbability?: number;
@@ -131,8 +141,9 @@ function mostProbableRoute(verdict: Verdict | undefined): { route: QueryRoute; p
 /**
  * Ask Jev, in one batched call about the user question, which branch answers
  * it and whether it needs decomposition. Never throws: a missing credential,
- * an unreachable backend, or an unusable verdict falls back to a single local
- * search, with the reason recorded.
+ * an unreachable backend, an unusable verdict, or a non-local branch that does
+ * not clear {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} falls back to a
+ * single local search, with the reason recorded.
  */
 export async function routeQuery(judge: JevJudge, query: string): Promise<QueryRouteDecision> {
 	const questions: Question[] = [
@@ -160,12 +171,26 @@ export async function routeQuery(judge: JevJudge, query: string): Promise<QueryR
 	}
 	const decomposeVerdict = verdicts.find((verdict) => verdict.id === DECOMPOSE_QUESTION_ID);
 	const decomposeProbability = typeof decomposeVerdict?.answer === "number" ? decomposeVerdict.answer : undefined;
+	const decompose = decomposeProbability !== undefined && decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD;
+	// Leaving local search drops corpus evidence, so it needs a confident branch:
+	// a weak or probability-less `direct`/`web` verdict keeps the local default.
+	if (
+		best.route !== "local" &&
+		(best.probability === undefined || best.probability <= NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD)
+	) {
+		return {
+			route: FALLBACK_QUERY_ROUTE,
+			decompose,
+			fallbackReason:
+				`Jev's ${best.route} route probability (${best.probability ?? "not reported"}) is not above the ` +
+				`${NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} confidence floor; using local search.`,
+			...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
+			...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
+		};
+	}
 	return {
 		route: best.route,
-		decompose:
-			best.route !== "direct" &&
-			decomposeProbability !== undefined &&
-			decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD,
+		decompose: best.route !== "direct" && decompose,
 		...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
 		...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
 	};
