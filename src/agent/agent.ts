@@ -1982,7 +1982,7 @@ export class AutoRAGAgent {
 			this.routingDiagnostics.push({
 				code: "query-route-fallback",
 				severity: "warning",
-				message: `Jev query routing was unavailable; searching local sources with the original question. ${decision.fallbackReason}`,
+				message: `Jev query routing fell back to local search. ${decision.fallbackReason}`,
 				source: "jev",
 			});
 			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
