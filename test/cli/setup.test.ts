@@ -195,3 +195,87 @@ describe("setup orchestration", () => {
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
 	});
 });
+
+describe("discord native store probe", () => {
+	async function probeDiscord(existing: (path: string) => boolean, env: Record<string, string>) {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-discrawl-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root, datasources: { discord: {} } }),
+		);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", ...env },
+				executable: (name) => (name === "discrawl" ? "/opt/homebrew/bin/discrawl" : undefined),
+				pathExists: existing,
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => {
+						throw new Error("offline");
+					},
+					verifyModel: async () => {
+						throw new Error("offline");
+					},
+				},
+			},
+		});
+		return { root, entry: report.datasources.find((d) => d.name === "discord") };
+	}
+
+	it("finds discrawl's own macOS default store instead of requiring an AutoRAG-managed one", async () => {
+		const home = "/home-under-test";
+		const native = join(home, "Library", "Application Support", "discrawl", "discrawl.db");
+		const { entry } = await probeDiscord((path) => path === native, { HOME: home });
+		expect(entry?.reason).not.toBe("native store is not present");
+		expect(entry?.state).toBe("blocked");
+	});
+
+	it("finds discrawl's XDG data store", async () => {
+		const native = join("/xdg-data", "discrawl", "discrawl.db");
+		const { entry } = await probeDiscord((path) => path === native, { HOME: "/h", XDG_DATA_HOME: "/xdg-data" });
+		expect(entry?.reason).not.toBe("native store is not present");
+	});
+
+	it("still skips discord when no discrawl store exists anywhere", async () => {
+		const { entry } = await probeDiscord(() => false, { HOME: "/nowhere" });
+		expect(entry).toMatchObject({ state: "skipped", reason: "native store is not present" });
+	});
+
+	it("honours an explicit connector store path only", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-discrawl-explicit-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		const explicit = join(root, "custom", "discrawl.db");
+		writeFileSync(
+			configPath,
+			JSON.stringify({ workspacePath: root, datasources: { discord: { connector: { databasePath: explicit } } } }),
+		);
+		const seen: string[] = [];
+		await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: "/h" },
+				executable: (name) => (name === "discrawl" ? "/bin/discrawl" : undefined),
+				pathExists: (path) => {
+					seen.push(path);
+					return false;
+				},
+				acquireLock: fakeLock,
+				runtime: {
+					runtimeStatus: async () => {
+						throw new Error("offline");
+					},
+					verifyModel: async () => {
+						throw new Error("offline");
+					},
+				},
+			},
+		});
+		expect(seen.filter((path) => path.includes("discrawl"))).toEqual([explicit]);
+	});
+});

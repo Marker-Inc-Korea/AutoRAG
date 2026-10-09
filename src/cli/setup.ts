@@ -1,4 +1,5 @@
 import { accessSync, constants, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { createEmbeddingRuntime, type RuntimeStatus } from "../embedding-runtime/index.ts";
@@ -106,13 +107,36 @@ function configuredCredentialNames(entry: Record<string, unknown> | undefined, d
 	}
 	return [...new Set(names)];
 }
-function storeFor(name: string, entry: Record<string, unknown> | undefined, workspace: string): string | undefined {
+/**
+ * Native-store locations a datasource may use; the store counts as present
+ * when any of them exists. An explicit connector path wins. Discord reads
+ * discrawl's own default store (the client never forces an AutoRAG-managed
+ * config unless the operator configures one), so every documented discrawl
+ * default is accepted, plus the AutoRAG-managed workspace store.
+ */
+function storesFor(
+	name: string,
+	entry: Record<string, unknown> | undefined,
+	workspace: string,
+	env: NodeJS.ProcessEnv,
+): readonly string[] {
 	for (const key of ["storePath", "databasePath", "dataDir", "vaultPath", "configPath"]) {
-		if (typeof entry?.[key] === "string") return entry[key] as string;
+		if (typeof entry?.[key] === "string") return [entry[key] as string];
 	}
-	if (name === "discord") return join(workspace, ".autorag", "datasources", "discrawl", "discrawl.db");
-	if (name === "kakao") return join(workspace, ".autorag", "datasources", "lazykatok");
-	return undefined;
+	if (name === "discord") return discrawlStoreCandidates(workspace, env);
+	if (name === "kakao") return [join(workspace, ".autorag", "datasources", "lazykatok")];
+	return [];
+}
+
+function discrawlStoreCandidates(workspace: string, env: NodeJS.ProcessEnv): readonly string[] {
+	const home = env.HOME ?? homedir();
+	return [
+		...(env.XDG_DATA_HOME ? [join(env.XDG_DATA_HOME, "discrawl", "discrawl.db")] : []),
+		join(home, "Library", "Application Support", "discrawl", "discrawl.db"),
+		join(home, ".local", "share", "discrawl", "discrawl.db"),
+		join(home, ".discrawl", "discrawl.db"),
+		join(workspace, ".autorag", "datasources", "discrawl", "discrawl.db"),
+	];
 }
 function datasourceNames(config: Record<string, unknown>): string[] {
 	const configured = Object.keys((config.datasources ?? {}) as Record<string, unknown>);
@@ -218,8 +242,13 @@ export async function runSetup(options: {
 					continue;
 				}
 			}
-			const store = storeFor(type, entry?.connector as Record<string, unknown> | undefined, options.workspacePath);
-			if (store && !exists(store)) {
+			const stores = storesFor(
+				type,
+				entry?.connector as Record<string, unknown> | undefined,
+				options.workspacePath,
+				env,
+			);
+			if (stores.length > 0 && !stores.some((store) => exists(store))) {
 				datasources.push({ name, state: "skipped", reason: "native store is not present" });
 				continue;
 			}
