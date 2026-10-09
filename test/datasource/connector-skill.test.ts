@@ -177,7 +177,7 @@ describe("ConnectorDatasourceSkill", () => {
 
 		const scoped = await method?.retrieve("budget", { topK: 10, scope: "/slack/other/**" });
 		expect(scoped).toEqual([]);
-		const allowed = await method?.retrieve("budget", { topK: 10, allowedScopes: ["/slack/ws-1/**"] });
+		const allowed = await method?.retrieve("budget", { topK: 10, scope: "/slack/ws-1/**" });
 		expect(allowed?.length).toBe(2);
 	});
 

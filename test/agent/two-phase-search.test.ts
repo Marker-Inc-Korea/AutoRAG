@@ -203,7 +203,7 @@ function makeSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 					skill: "kakao",
 					instanceId: "acct-1",
 					contentType: "chat",
-					metadata: { description: "authorized KakaoTalk chat history" },
+					metadata: { description: "KakaoTalk chat history for acct-1" },
 				},
 			];
 		},
@@ -320,7 +320,6 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const agent = new AutoRAGAgent({
 			...agentOptions(model),
 			datasourceSkills: [makeSkill(rows)],
-			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/**"] },
 		});
 
 		const response = await agent.searchDocuments("refund approval");

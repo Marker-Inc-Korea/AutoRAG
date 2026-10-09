@@ -171,7 +171,7 @@ export async function routeQuery(judge: JevJudge, query: string): Promise<QueryR
 	};
 }
 
-/** One registered, authorized datasource Jev may send the question to. */
+/** One configured datasource Jev may send the question to. */
 export interface DatasourceCandidate {
 	readonly datasourceId: string;
 	/** Content kind, e.g. `chat`, `mail`, `docs`. */
