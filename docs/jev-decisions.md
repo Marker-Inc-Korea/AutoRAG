@@ -162,32 +162,22 @@ The state Jev judges has three parts, followed by the question:
    hold other topics, people, and conversations that its description does not
    mention, so a datasource is not ruled out just because its description is
    silent on the question's topic.
-2. **Similar past questions** (only when retrieval memory has any): up to 5
-   earlier searches whose question resembles this one (character-bigram Dice
-   ≥ 0.35, newest per question), each with up to 4 result titles and where the
-   evidence came from (`[kakao]`, `[local files]`, `[web]`, ...). Question and
-   title are JSON-quoted, so a newline or a fake `User question:` line inside
-   them cannot forge the state's structure. A result titled as not found or
-   negative tells Jev that datasource was searched and did not have the
-   answer. Jev treats this as a hint, not a rule.
+2. **Similar past questions** (only when retrieval memory has any): up to 5 of
+   the similar past questions found by hybrid BM25 + vector search (see
+   [retrieval-memory.md](retrieval-memory.md)), each with up to 4 result titles
+   and where each result's evidence came from (`[kakao]`, `[local files]`,
+   `[web]`, ...). The question and titles are JSON-quoted, so a newline or a
+   fake `User question:` line inside them cannot forge the state's structure. A
+   result titled as not found or negative tells Jev that datasource was
+   searched and did not have the answer. Jev treats this as a hint, not a rule.
 
    These titles are model-written text about your private content and the
    state goes to the Jev backend (OpenRouter by default), so a past result is
-   shown only when it is safe for the **current** run:
-
-   - Memory is shared across workspaces and configs, so a result is dropped
-     unless every piece of its evidence comes from a datasource this run
-     configures, a configured search path, or the web.
-     Evidence from a datasource that is not configured here, and
-     evidence with no recognizable origin, drops the whole result; a search
-     left with no result is not shown at all.
-   - Results the user marked not useful are left out. The verdict is stored
-     on the result itself, so it still applies after older feedback signals
-     are evicted (memory written before this keeps using its feedback
-     signals).
-   - Searches a remote P2P peer ran are recorded (they still feed method
-     hints and peer feedback) but tagged `remote` and never shown. Records
-     written before the tag existed cannot be told apart.
+   shown only when it is safe for the **current** run: a result is shown only
+   when every piece of its evidence comes from a datasource configured for this
+   run, a configured search path, or the web. Evidence with no recognizable
+   origin drops the whole result; a search left with no result is not shown at
+   all.
 3. **User question**.
 
 The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)
@@ -263,6 +253,25 @@ queries as a `query-routed` diagnostic, and the datasource check's picks as
 remote P2P sessions. Every search is
 two-phase (fast answer, then verification unless Jev ends the run); there is
 no single-phase mode.
+
+## Evidence judgment for memory
+
+Retrieval memory stores only evidence that survived judgment, so after the
+final answer (`emit_autorag_results`, or `emit_fast_answer` when Jev ends the
+run early) every cited evidence is put back to Jev. Each evidence is mapped to
+the search query and retrieval method that surfaced it, then judged as one
+`noul` question: *does the evidence directly support the sentence of the answer
+it backs, and is it needed to answer the user's question?* The wording judges
+one evidence piece against its backed sentence, and the full answer is supplied
+only as reference; user-, model-, and evidence-written text is JSON-quoted so
+none of it can forge the state's structure. Every question in a run is sent in
+**one batched call**, so one or many pieces cost about the same.
+
+At P(supports) >= **0.7** the evidence is stored in `~/.autorag/memory.json`;
+below 0.7 it is discarded. With Jev disabled or unreachable nothing is judged or
+stored, and an `evidence-judgment-fallback` diagnostic carries the verbatim
+error. See [retrieval-memory.md](retrieval-memory.md) for the stored fields,
+the prompt context, privacy rules, and the long-term insights.
 
 ## Live verification
 

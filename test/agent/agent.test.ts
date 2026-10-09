@@ -1,11 +1,12 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
+import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
@@ -33,6 +34,7 @@ function makeTool(name: string): AgentTool {
 
 interface AgentInternals {
 	lastQuery: string | undefined;
+	conversationId: string;
 	memory: RetrievalMemory;
 	minSyncMethod:
 		| {
@@ -54,6 +56,30 @@ function internals(agent: AutoRAGAgent): AgentInternals {
 
 function fakeModel() {
 	return { id: "test-model", provider: "test-provider", api: "test-api" } as never;
+}
+
+let recordCounter = 0;
+
+function judgedRecord(overrides: Partial<JudgedEvidenceRecord> = {}): JudgedEvidenceRecord {
+	recordCounter += 1;
+	const sessionId = overrides.sessionId ?? `session-${recordCounter}`;
+	const conversationId = overrides.conversationId ?? "past-conversation";
+	return {
+		id: `${conversationId}:${sessionId}:e${recordCounter}`,
+		sessionId,
+		conversationId,
+		question: "how to deploy the service",
+		searchQuery: "how to deploy the service",
+		method: "grep",
+		source: `${resolve(FIXTURE_DIR)}/docs/guide.md`,
+		stableEvidenceId: `e${recordCounter}`,
+		resultNumber: 1,
+		title: `Evidence ${recordCounter}`,
+		excerpt: `excerpt ${recordCounter}`,
+		probability: 0.9,
+		createdAt: recordCounter,
+		...overrides,
+	};
 }
 
 describe("AutoRAGAgent", () => {
@@ -272,23 +298,6 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("find/grep");
 	});
 
-	it("submitFeedback resolves pending entries and saves to disk", () => {
-		const memPath = join(tmpDir, "memory.json");
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: memPath,
-		});
-		internals(agent).lastQuery = "find typescript files";
-		internals(agent).memory.append({ query: "find typescript files", method: "grep", outcome: "pending" });
-		agent.submitFeedback(undefined, true);
-		expect(existsSync(memPath)).toBe(true);
-		const memory = new RetrievalMemory({ storagePath: memPath });
-		memory.load();
-		expect(
-			memory.getMethodHints("find typescript files").find((hint) => hint.method === "grep")?.score,
-		).toBeGreaterThan(0);
-	});
-
 	it("subscribe returns an unsubscribe function", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
@@ -347,72 +356,25 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("check_memory");
 	});
 
-	it("submitFeedback resolves all pending entries for the query", () => {
+	it("injects durable long-term insights into the memory context", async () => {
 		const memPath = join(tmpDir, "memory.json");
+		const seeded = new RetrievalMemory({ storagePath: memPath });
+		seeded.recordJudgedEvidence(
+			Array.from({ length: 100 }, (_, index) =>
+				judgedRecord({
+					sessionId: index % 2 === 0 ? "session-a" : "session-b",
+					createdAt: index,
+				}),
+			),
+		);
+		seeded.save();
+
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
+			memoryEmbedder: false,
 		});
-		internals(agent).lastQuery = "test query";
-		internals(agent).memory.append({ query: "test query", method: "grep", outcome: "pending" });
-		internals(agent).memory.append({ query: "test query", method: "find", outcome: "pending" });
-		agent.submitFeedback(undefined, true);
-
-		const memory = new RetrievalMemory({ storagePath: memPath });
-		memory.load();
-		const hints = memory.getMethodHints("test query");
-		expect(hints.find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
-		expect(hints.find((hint) => hint.method === "find")?.score).toBeGreaterThan(0);
-	});
-
-	it("submitFeedback does nothing when no lastQuery", () => {
-		const memPath = join(tmpDir, "memory.json");
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: memPath,
-		});
-		agent.submitFeedback(undefined, true);
-		expect(existsSync(memPath)).toBe(false);
-	});
-
-	it("recordResultFeedback() is a public method", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(typeof agent.recordResultFeedback).toBe("function");
-	});
-
-	it("recordResultFeedback() resolves pending entries by source", () => {
-		const memPath = join(tmpDir, "memory.json");
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: memPath,
-		});
-		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
-		internals(agent).memory.registerAttempt({
-			id: entry.id,
-			query: "q",
-			method: "grep",
-			sources: ["src/a.ts"],
-			timestamp: Date.now(),
-		});
-		agent.recordResultFeedback([{ source: "src/a.ts", useful: true }]);
-
-		const memory = new RetrievalMemory({ storagePath: memPath });
-		memory.load();
-		expect(memory.getMethodHints("q").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
-	});
-
-	it("injects memory context when durable insights exist without live hints", async () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		internals(agent).lastQuery = "photo archive lookup";
-		for (let i = 0; i < 600; i++) internals(agent).memory.recordFeedback("photo archive lookup", "posix", true);
-		internals(agent).memory.save();
-		internals(agent).memory.getSchema().feedbackSignals = [];
+		internals(agent).lastQuery = "deploy the service";
 
 		const transformed = await internals(agent).innerAgent.transformContext?.([
 			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() },
@@ -420,7 +382,53 @@ describe("AutoRAGAgent", () => {
 
 		expect(transformed?.[0].content[0].text).toContain("<memory_context>");
 		expect(transformed?.[0].content[0].text).toContain("Long-Term Retrieval Insights");
-		expect(transformed?.[0].content[0].text).toContain("photo archive lookup");
+	});
+
+	it("injects current-conversation evidence into the memory context", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			memoryEmbedder: false,
+		});
+		internals(agent).memory.recordJudgedEvidence([
+			judgedRecord({
+				conversationId: internals(agent).conversationId,
+				question: "alpha topic",
+				searchQuery: "alpha topic",
+				title: "Alpha title",
+			}),
+		]);
+		internals(agent).lastQuery = "alpha topic";
+
+		const transformed = await internals(agent).innerAgent.transformContext?.([
+			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() },
+		]);
+
+		expect(transformed?.[0].content[0].text).toContain("<memory_context>");
+		expect(transformed?.[0].content[0].text).toContain("Current Conversation Memory");
+		expect(transformed?.[0].content[0].text).toContain("Alpha title");
+	});
+
+	it("returns messages unchanged when only another conversation has evidence", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			memoryEmbedder: false,
+		});
+		internals(agent).memory.recordJudgedEvidence([
+			judgedRecord({
+				conversationId: "other-conversation",
+				question: "alpha topic",
+				searchQuery: "alpha topic",
+			}),
+		]);
+		internals(agent).lastQuery = "photosynthesis cellular respiration";
+
+		const messages = [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }], timestamp: 1 }];
+		const transformed = await internals(agent).innerAgent.transformContext?.(messages);
+
+		expect(transformed).toEqual(messages);
+		expect(transformed?.[0].content[0].text).not.toContain("<memory_context>");
 	});
 
 	it("getResultRegistry returns empty map initially", () => {

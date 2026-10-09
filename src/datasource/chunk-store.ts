@@ -11,6 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { bm25Scores, tokenize } from "../retrieval/bm25.ts";
 import type { ConnectorDocument } from "./connector.ts";
 import { sanitizeIdSegment } from "./connector.ts";
 
@@ -146,51 +147,23 @@ export class DatasourceChunkStore {
 
 	/**
 	 * BM25-style lexical search over the stored chunks. Empty queries and
-	 * empty stores return `[]`; this method never throws.
-	 *
-	 * Terms match document tokens exactly or as a prefix (min 2 chars), so
-	 * agglutinative suffixes — Korean particles/endings (인증서 → 인증서를) and
-	 * English inflections (index → indexing) — still rank. Prefix hits are
-	 * slightly discounted against exact hits.
+	 * empty stores return `[]`; this method never throws. Scoring is delegated
+	 * to {@link bm25Scores}.
 	 */
 	search(query: string, topK: number): readonly ScoredChunk[] {
 		this.ensureLoaded();
-		const queryTerms = [...new Set(tokenize(query))];
-		if (queryTerms.length === 0 || this.chunkList.length === 0 || topK <= 0) return [];
+		if (tokenize(query).length === 0 || this.chunkList.length === 0 || topK <= 0) return [];
 
-		const docCount = this.chunkList.length;
-		const tokenized = this.chunkList.map((chunk) => tokenize(`${chunk.title ?? ""} ${chunk.content}`));
-		const avgLength = tokenized.reduce((sum, tokens) => sum + tokens.length, 0) / docCount || 1;
-
-		// Weighted term frequency per (term, doc): exact = 1, prefix = 0.75.
-		const termFrequency = (term: string, tokens: readonly string[]): number => {
-			let tf = 0;
-			for (const token of tokens) {
-				if (token === term) tf += 1;
-				else if (term.length >= 2 && token.startsWith(term)) tf += 0.75;
-			}
-			return tf;
-		};
-		const frequencies = queryTerms.map((term) => tokenized.map((tokens) => termFrequency(term, tokens)));
-		const documentFrequency = frequencies.map((perDoc) => perDoc.reduce((count, tf) => count + (tf > 0 ? 1 : 0), 0));
-
-		const k1 = 1.2;
-		const b = 0.75;
+		const scores = bm25Scores(
+			query,
+			this.chunkList.map((chunk) => `${chunk.title ?? ""} ${chunk.content}`),
+		);
 		const scored: ScoredChunk[] = [];
 		for (const [index, chunk] of this.chunkList.entries()) {
-			const tokens = tokenized[index] ?? [];
-			let score = 0;
-			for (const [termIndex] of queryTerms.entries()) {
-				const df = documentFrequency[termIndex] ?? 0;
-				if (df === 0) continue;
-				const tf = frequencies[termIndex]?.[index] ?? 0;
-				if (tf === 0) continue;
-				const idf = Math.log(1 + (docCount - df + 0.5) / (df + 0.5));
-				score += (idf * tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * tokens.length) / avgLength));
-			}
+			const score = scores[index] ?? 0;
 			if (score > 0) scored.push({ chunk, score });
 		}
-		scored.sort((a, b2) => b2.score - a.score || a.chunk.chunkId.localeCompare(b2.chunk.chunkId));
+		scored.sort((a, b) => b.score - a.score || a.chunk.chunkId.localeCompare(b.chunk.chunkId));
 		return scored.slice(0, topK);
 	}
 
@@ -266,14 +239,4 @@ function splitContent(content: string, maxChars: number): readonly string[] {
 	}
 	if (current.length > 0) parts.push(current);
 	return parts.filter((part) => part.trim().length > 0);
-}
-
-function tokenize(text: string): string[] {
-	return (
-		text
-			.toLowerCase()
-			// Split on anything that is not a letter, digit, or Hangul syllable.
-			.split(/[^\p{L}\p{N}]+/u)
-			.filter((token) => token.length > 0)
-	);
 }

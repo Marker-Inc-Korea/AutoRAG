@@ -1,23 +1,30 @@
 import { type ChildProcess, fork } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	type renameSync,
+	type rmdirSync,
+	rmSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acquireFileLock } from "../../src/filesystem/file-lock.ts";
-import { normalizeSessionEvidenceRef, RetrievalMemory, SIMILAR_SEARCH_THRESHOLD } from "../../src/memory/memory.ts";
+import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
+import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
 
 const MEMORY_PROCESS_FIXTURE = fileURLToPath(new URL("./memory-process-fixture.ts", import.meta.url));
 
 const fsMock = vi.hoisted(() => ({
-	realRenameSync: undefined as typeof import("node:fs").renameSync | undefined,
-	realRmdirSync: undefined as typeof import("node:fs").rmdirSync | undefined,
-	renameSyncHook: undefined as
-		| ((...args: Parameters<typeof import("node:fs").renameSync>) => ReturnType<typeof import("node:fs").renameSync>)
-		| undefined,
-	rmdirSyncHook: undefined as
-		| ((...args: Parameters<typeof import("node:fs").rmdirSync>) => ReturnType<typeof import("node:fs").rmdirSync>)
-		| undefined,
+	realRenameSync: undefined as typeof renameSync | undefined,
+	realRmdirSync: undefined as typeof rmdirSync | undefined,
+	renameSyncHook: undefined as ((...args: Parameters<typeof renameSync>) => void) | undefined,
+	rmdirSyncHook: undefined as ((...args: Parameters<typeof rmdirSync>) => void) | undefined,
 }));
 
 vi.mock("node:fs", async () => {
@@ -68,6 +75,7 @@ function waitForWorkerMessage(
 	expectedType: WorkerMessage["type"],
 	readStderr: () => string,
 ): Promise<void> {
+	// Child-process IPC cannot be driven by fake timers, so this guard stays wall-clock; it only fires on a hung child.
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			cleanup();
@@ -82,7 +90,7 @@ function waitForWorkerMessage(
 			cleanup();
 			reject(error);
 		};
-		const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+		const onExit = (code: number | null, signal: string | null): void => {
 			cleanup();
 			reject(new Error(`Child exited before ${expectedType}: code=${code} signal=${signal} ${readStderr()}`));
 		};
@@ -144,6 +152,24 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
+function judgedRecord(id: string): JudgedEvidenceRecord {
+	return {
+		id,
+		sessionId: `session-${id}`,
+		conversationId: "conversation-test",
+		question: `question ${id}`,
+		searchQuery: `query ${id}`,
+		method: "search_datasource",
+		source: `/docs/${id}.md`,
+		stableEvidenceId: `evidence:${id}`,
+		resultNumber: 1,
+		title: `Result ${id}`,
+		excerpt: `Excerpt ${id}`,
+		probability: 0.9,
+		createdAt: 1_000,
+	};
+}
+
 function recordSession(memory: RetrievalMemory): void {
 	memory.recordCuratedResultsSession({
 		sessionId: "s1",
@@ -177,210 +203,62 @@ function recordSession(memory: RetrievalMemory): void {
 	});
 }
 
-function recordPastSearch(
-	memory: RetrievalMemory,
-	sessionId: string,
-	query: string,
-	evidence: readonly { readonly source: string; readonly excerpt: string }[],
-): void {
-	memory.recordCuratedResultsSession({
-		sessionId,
-		query,
-		results: evidence.map((item, index) => ({
-			number: index + 1,
-			title: `Result ${index + 1}`,
-			summary: item.excerpt,
-			content: item.excerpt,
-			method: "search_datasource",
-			source: item.source,
-			evidenceRefs: [normalizeSessionEvidenceRef({ method: "search_datasource", ...item })],
-		})),
-	});
-}
-
-describe("RetrievalMemory.findSimilarSearches", () => {
-	it("returns a past search with a similar question, its result titles, and where their evidence came from", () => {
+describe("RetrievalMemory persistence", () => {
+	it("persists v5 data to disk with save()", () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
-		recordPastSearch(memory, "s1", "우리 슬랙 채널에 올라온 dependabot PR 알림 뭐 있었어?", [
-			{ source: "/slack/default/chunks/a", excerpt: "Pull request opened by dependabot[bot]" },
-			{ source: "/Users/me/notes/deps.md", excerpt: "dependency bump notes" },
-		]);
-		recordPastSearch(memory, "s2", "Latest stable Node.js version?", [
-			{ source: "https://nodejs.org/en", excerpt: "Node.js 24 LTS" },
-		]);
-
-		const similar = memory.findSimilarSearches("슬랙에 dependabot PR 올라온 거 알려줘");
-
-		expect(similar).toHaveLength(1);
-		expect(similar[0]?.query).toBe("우리 슬랙 채널에 올라온 dependabot PR 알림 뭐 있었어?");
-		expect(similar[0]?.similarity).toBeGreaterThanOrEqual(SIMILAR_SEARCH_THRESHOLD);
-		expect(similar[0]?.results).toEqual([
-			{ title: "Result 1", evidence: [{ source: "/slack/default/chunks/a", method: "search_datasource" }] },
-			{ title: "Result 2", evidence: [{ source: "/Users/me/notes/deps.md", method: "search_datasource" }] },
-		]);
-	});
-
-	it("orders by similarity, keeps only the newest search per question, and honours the limit", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		const now = vi.spyOn(Date, "now");
-		now.mockReturnValue(1_000);
-		recordPastSearch(memory, "old", "우리 회사 이번 분기 예산 승인자가 누구야?", [
-			{ source: "/Users/me/old-budget.md", excerpt: "old approver" },
-		]);
-		now.mockReturnValue(2_000);
-		recordPastSearch(memory, "new", "우리 회사 이번 분기 예산 승인자가 누구야?", [
-			{ source: "/Users/me/budget.md", excerpt: "approved by Mina" },
-		]);
-		recordPastSearch(memory, "s3", "이번 분기 예산 승인 일정 알려줘", [
-			{ source: "/kakao/default/chunks/b", excerpt: "예산 승인 일정" },
-		]);
-
-		const all = memory.findSimilarSearches("이번 분기 예산 승인자 누구야");
-		expect(all.map((entry) => entry.query)).toEqual([
-			"우리 회사 이번 분기 예산 승인자가 누구야?",
-			"이번 분기 예산 승인 일정 알려줘",
-		]);
-		expect(all[0]?.results.flatMap((result) => result.evidence.map(({ source }) => source))).toEqual([
-			"/Users/me/budget.md",
-		]);
-		expect(all[0]?.searchedAt).toBe(2_000);
-		expect(
-			memory.findSimilarSearches("이번 분기 예산 승인자 누구야", { limit: 1 }).map((entry) => entry.query),
-		).toEqual(["우리 회사 이번 분기 예산 승인자가 누구야?"]);
-	});
-
-	it("drops results the user marked not useful, and a search left with none", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		recordPastSearch(memory, "s1", "슬랙에서 Team Attention 관련 얘기 뭐 했었지?", [
-			{ source: "/discord/server/chunks/x", excerpt: "wrong guess" },
-			{ source: "/kakao/default/chunks/y", excerpt: "[팀어텐션 구봉님] 랄프톤 공지" },
-		]);
-		recordPastSearch(memory, "s2", "슬랙에서 Team Attention 얘기 했던 거", [
-			{ source: "/slack/default/chunks/z", excerpt: "unrelated" },
-		]);
-		memory.recordNumberedFeedback({
-			sessionId: "s1",
-			query: "슬랙에서 Team Attention 관련 얘기 뭐 했었지?",
-			feedback: [{ number: 1, useful: false }],
-		});
-		memory.recordNumberedFeedback({
-			sessionId: "s2",
-			query: "슬랙에서 Team Attention 얘기 했던 거",
-			feedback: [{ number: 1, useful: false }],
-		});
-
-		const similar = memory.findSimilarSearches("슬랙에서 Team Attention 관련 얘기");
-
-		expect(similar.map((entry) => entry.query)).toEqual(["슬랙에서 Team Attention 관련 얘기 뭐 했었지?"]);
-		expect(similar[0]?.results.flatMap((result) => result.evidence.map(({ source }) => source))).toEqual([
-			"/kakao/default/chunks/y",
-		]);
-	});
-
-	it("still drops a result marked not useful after newer signals evict its feedback signal", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		recordPastSearch(memory, "s1", "슬랙에서 Team Attention 관련 얘기 뭐 했었지?", [
-			{ source: "/discord/server/chunks/x", excerpt: "wrong guess" },
-			{ source: "/kakao/default/chunks/y", excerpt: "[팀어텐션 구봉님] 랄프톤 공지" },
-		]);
-		memory.recordNumberedFeedback({
-			sessionId: "s1",
-			query: "슬랙에서 Team Attention 관련 얘기 뭐 했었지?",
-			feedback: [{ number: 1, useful: false }],
-		});
-		memory.save();
-		for (let index = 0; index < 600; index++) memory.recordWeakSignal("other question", "bash", "followup");
-		memory.save();
-
-		const reloaded = new RetrievalMemory({ storagePath: memoryPath });
-		reloaded.load();
-		expect(reloaded.getSchema().feedbackSignals.some((signal) => signal.target.type === "curated_result")).toBe(
-			false,
-		);
-		expect(
-			reloaded
-				.findSimilarSearches("슬랙에서 Team Attention 관련 얘기")[0]
-				?.results.flatMap((result) => result.evidence.map(({ source }) => source)),
-		).toEqual(["/kakao/default/chunks/y"]);
-	});
-
-	it("excludes searches recorded as remote-originated", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.recordCuratedResultsSession({
-			sessionId: "peer",
-			query: "릴리즈 날짜 언제로 정했지?",
-			remote: true,
-			results: [
-				{
-					number: 1,
-					title: "Peer result",
-					summary: "s",
-					content: "c",
-					method: "search_datasource_slack",
-					source: "/slack/default/a",
-					evidenceRefs: [
-						normalizeSessionEvidenceRef({
-							method: "search_datasource_slack",
-							source: "/slack/default/a",
-							excerpt: "c",
-						}),
-					],
-				},
-			],
-		});
-		expect(memory.findSimilarSearches("릴리즈 날짜 언제로 정했어?")).toEqual([]);
-	});
-
-	it("returns nothing for an unrelated question", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		recordPastSearch(memory, "s1", "카카오톡 대화에서 이번 주 저녁 약속 잡힌 게 있는지 찾아줘", [
-			{ source: "/kakao/default/chunks/z", excerpt: "저녁 7시" },
-		]);
-
-		expect(memory.findSimilarSearches("디스코드 대화에서 AutoRAG 관련 논의가 있었는지 찾아줘")).toEqual([]);
-		expect(memory.findSimilarSearches("야호")).toEqual([]);
-	});
-});
-
-describe("RetrievalMemory", () => {
-	it("starts with empty v4 state when file does not exist", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		expect(memory.getSchema().version).toBe(4);
-		expect(memory.getMethodHints("test query")).toEqual([]);
-		expect(memory.getEntries()).toEqual([]);
-	});
-
-	it("records explicit method feedback as advisory hints", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.recordFeedback("search code files", "posix", true);
-		memory.recordFeedback("search code files", "vector", false);
-		const hints = memory.getMethodHints("search code files");
-		expect(hints[0].method).toBe("posix");
-		expect(hints[0].score).toBeGreaterThan(0);
-		expect(hints.find((hint) => hint.method === "vector")?.score).toBeLessThan(0);
-		expect(hints[0].reason).toContain("advisory");
-	});
-
-	it("persists v4 data to disk with save()", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.recordFeedback("find typescript functions", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("judged-1")]);
+		recordSession(memory);
 		memory.save();
 		expect(existsSync(memoryPath)).toBe(true);
 		const raw = JSON.parse(readFileSync(memoryPath, "utf-8"));
-		expect(raw.version).toBe(4);
-		expect(raw.feedbackSignals).toHaveLength(1);
+		expect(raw.version).toBe(5);
+		expect(raw.judgedEvidence.map((record: { id: string }) => record.id)).toEqual(["judged-1"]);
+		expect(raw.curatedResults).toHaveLength(1);
 	});
 
-	it("merges feedback and session results saved by independent processes", { timeout: 10_000 }, async () => {
+	it("loads persisted data after restart", () => {
+		const memory1 = new RetrievalMemory({ storagePath: memoryPath });
+		memory1.load();
+		memory1.recordJudgedEvidence([judgedRecord("judged-1"), judgedRecord("judged-2")]);
+		memory1.save();
+
+		const memory2 = new RetrievalMemory({ storagePath: memoryPath });
+		memory2.load();
+		expect(memory2.getJudgedEvidence().map((entry) => entry.id)).toEqual(["judged-1", "judged-2"]);
+	});
+
+	it("resets corrupted memory file with non-path warning", () => {
+		writeFileSync(memoryPath, "not valid json {{{", "utf-8");
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		expect(() => memory.load()).not.toThrow();
+		expect(memory.getSchema().version).toBe(5);
+		expect(JSON.stringify(memory.getSchema().warnings)).not.toContain(tmpDir);
+		expect(warn).toHaveBeenCalledWith("[AutoRAG] Retrieval memory is not v4/v5-compatible; starting fresh");
+	});
+
+	it("normalizes a v4 file that omits judged evidence and insights", () => {
+		writeFileSync(
+			memoryPath,
+			JSON.stringify({
+				version: 4,
+				curatedResults: [],
+				evidenceChunks: [],
+				warnings: [],
+			}),
+			"utf-8",
+		);
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		expect(memory.getSchema().version).toBe(5);
+		expect(memory.getSchema().insights).toEqual([]);
+		expect(memory.getSchema().judgedEvidence).toEqual([]);
+	});
+});
+
+describe("RetrievalMemory concurrent saves", () => {
+	it("merges judged evidence and curated results saved by independent processes", { timeout: 10_000 }, async () => {
 		const workers = [spawnMemoryWorker("alpha"), spawnMemoryWorker("beta")];
 		try {
 			await Promise.all(workers.map((worker) => worker.ready));
@@ -389,10 +267,10 @@ describe("RetrievalMemory", () => {
 			await Promise.all(workers.map((worker) => worker.exited));
 
 			const raw = JSON.parse(readFileSync(memoryPath, "utf-8"));
-			expect(raw.feedbackSignals).toHaveLength(2);
-			expect(raw.feedbackSignals.map((signal: { query: string }) => signal.query).sort()).toEqual([
-				"feedback-alpha",
-				"feedback-beta",
+			expect(raw.judgedEvidence).toHaveLength(2);
+			expect(raw.judgedEvidence.map((record: { id: string }) => record.id).sort()).toEqual([
+				"session-alpha:worker:alpha",
+				"session-beta:worker:beta",
 			]);
 			expect(raw.curatedResults).toHaveLength(2);
 			expect(raw.curatedResults.map((result: { sessionId: string }) => result.sessionId).sort()).toEqual([
@@ -414,9 +292,9 @@ describe("RetrievalMemory", () => {
 		};
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
-		memory.recordFeedback("first save", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("first")]);
 		memory.save();
-		memory.recordFeedback("second save", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("second")]);
 		memory.save();
 
 		expect(tempPaths).toHaveLength(2);
@@ -428,7 +306,7 @@ describe("RetrievalMemory", () => {
 	it("cleans a unique temporary file after a failed rename without replacing existing memory", () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
-		memory.recordFeedback("existing memory", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("existing-memory")]);
 		memory.save();
 		const existingMemory = readFileSync(memoryPath, "utf-8");
 		fsMock.renameSyncHook = (...args) => {
@@ -436,12 +314,14 @@ describe("RetrievalMemory", () => {
 			return fsMock.realRenameSync?.(...args);
 		};
 
-		memory.recordFeedback("new memory", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("new-memory")]);
 		expect(() => memory.save()).toThrow("rename failed");
 		expect(readFileSync(memoryPath, "utf-8")).toBe(existingMemory);
 		expect(readdirSync(tmpDir).filter((name) => name.endsWith(".tmp") || name.includes(".lock"))).toEqual([]);
 	});
+});
 
+describe("RetrievalMemory locking", () => {
 	it("reclaims an abandoned stale lock and removes its cleanup artifacts", () => {
 		const lockPath = `${memoryPath}.lock`;
 		writeFileSync(lockPath, JSON.stringify({ token: "abandoned", pid: 999_999, createdAt: 0 }), "utf-8");
@@ -449,10 +329,10 @@ describe("RetrievalMemory", () => {
 		utimesSync(lockPath, staleTime, staleTime);
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
-		memory.recordFeedback("after stale lock", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("after-stale-lock")]);
 
 		expect(() => memory.save()).not.toThrow();
-		expect(JSON.parse(readFileSync(memoryPath, "utf-8")).feedbackSignals).toHaveLength(1);
+		expect(JSON.parse(readFileSync(memoryPath, "utf-8")).judgedEvidence).toHaveLength(1);
 		expect(readdirSync(tmpDir).filter((name) => name.includes(".lock") || name.endsWith(".tmp"))).toEqual([]);
 	});
 
@@ -460,7 +340,7 @@ describe("RetrievalMemory", () => {
 		const ownerPath = join(tmpDir, "turnover-owner.json");
 		const ownerMemory = new RetrievalMemory({ storagePath: ownerPath });
 		ownerMemory.load();
-		ownerMemory.recordFeedback("fresh owner update", "posix", true);
+		ownerMemory.recordJudgedEvidence([judgedRecord("fresh-owner")]);
 		ownerMemory.save();
 		const ownerBytes = readFileSync(ownerPath);
 		rmSync(ownerPath, { force: true });
@@ -533,7 +413,7 @@ describe("RetrievalMemory", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
-		memory.recordFeedback("contending update", "minsync", true);
+		memory.recordJudgedEvidence([judgedRecord("contending")]);
 		memory.save();
 
 		expect(turnoverInjected).toBe(true);
@@ -542,12 +422,9 @@ describe("RetrievalMemory", () => {
 		expect(staleReaperBlocked).toBe(true);
 		expect(competingOwnerRejected).toBe(true);
 		const persisted = JSON.parse(readFileSync(memoryPath, "utf-8")) as {
-			feedbackSignals: Array<{ query: string }>;
+			judgedEvidence: Array<{ id: string }>;
 		};
-		expect(persisted.feedbackSignals.map((signal) => signal.query).sort()).toEqual([
-			"contending update",
-			"fresh owner update",
-		]);
+		expect(persisted.judgedEvidence.map((record) => record.id).sort()).toEqual(["contending", "fresh-owner"]);
 		expect(readdirSync(tmpDir).filter((name) => name.includes(".lock") || name.includes(".quarantine"))).toEqual([]);
 	});
 
@@ -562,69 +439,15 @@ describe("RetrievalMemory", () => {
 		});
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
-		memory.recordFeedback("blocked save", "posix", true);
+		memory.recordJudgedEvidence([judgedRecord("blocked-save")]);
 
 		expect(() => memory.save()).toThrow("Timed out waiting for retrieval memory lock");
 		expect(existsSync(lockPath)).toBe(true);
 		expect(readdirSync(tmpDir).filter((name) => name.endsWith(".tmp") || name.includes(".stale"))).toEqual([]);
 	});
+});
 
-	it("loads persisted v4 data after restart", () => {
-		const memory1 = new RetrievalMemory({ storagePath: memoryPath });
-		memory1.load();
-		memory1.recordFeedback("code search query", "posix", true);
-		memory1.recordFeedback("code search query", "posix", true);
-		memory1.save();
-
-		const memory2 = new RetrievalMemory({ storagePath: memoryPath });
-		memory2.load();
-		const hints = memory2.getMethodHints("code search query");
-		expect(hints[0].method).toBe("posix");
-		expect(hints[0].score).toBeGreaterThan(0);
-	});
-
-	it("resets corrupted memory file with non-path warning", () => {
-		writeFileSync(memoryPath, "not valid json {{{", "utf-8");
-		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		expect(() => memory.load()).not.toThrow();
-		expect(memory.getSchema().version).toBe(4);
-		expect(memory.getSchema().warnings[0].message).not.toContain("/");
-		expect(warn).toHaveBeenCalledWith("[AutoRAG] Retrieval memory is not v4-compatible; starting fresh");
-	});
-
-	it("migrates resolved v3 method feedback into v4 signals", () => {
-		writeFileSync(
-			memoryPath,
-			JSON.stringify({
-				version: 3,
-				entries: [
-					{
-						id: "legacy-useful",
-						query: "typescript handbook",
-						method: "posix",
-						outcome: "useful",
-						timestamp: 1234,
-					},
-					{
-						id: "legacy-pending",
-						query: "typescript handbook",
-						method: "minsync",
-						outcome: "pending",
-						timestamp: 1235,
-					},
-				],
-			}),
-			"utf-8",
-		);
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		expect(memory.getSchema().version).toBe(4);
-		expect(memory.getSignalCount()).toBe(1);
-		expect(memory.getMethodHints("typescript handbook")[0]).toMatchObject({ method: "posix", score: 1 });
-		expect(memory.getSchema().warnings).toEqual([]);
-	});
-
+describe("RetrievalMemory curated results and evidence", () => {
 	it("records curated result and evidence records for a session", () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
@@ -672,7 +495,7 @@ describe("RetrievalMemory", () => {
 		expect(ref.confidence).toBe(1);
 	});
 
-	it("sanitizes untrusted context already persisted in v4 memory", () => {
+	it("sanitizes untrusted context already persisted in memory", () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
 		recordSession(memory);
@@ -697,115 +520,6 @@ describe("RetrievalMemory", () => {
 		expect(evidence.confidence).toBe(1);
 	});
 
-	it("distributes explicit numbered feedback to result and evidence without full-strength double-counting", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		recordSession(memory);
-		expect(
-			memory.recordNumberedFeedback({
-				sessionId: "s1",
-				query: "typescript handbook",
-				feedback: [{ number: 1, useful: true }],
-			}),
-		).toBe(true);
-		const signals = memory.getSchema().feedbackSignals;
-		expect(signals).toHaveLength(2);
-		expect(signals[0].target.type).toBe("curated_result");
-		expect(signals[0].weight).toBe(1);
-		expect(signals[1].target.type).toBe("evidence_chunk");
-		expect(signals[1].weight).toBe(1);
-		expect(memory.getMethodHints("typescript handbook")[0].score).toBe(1);
-		expect(memory.getContextHints("typescript handbook")).toMatchObject({
-			documentAreas: [{ value: "language-guides", score: 1 }],
-			documentTypes: [{ value: "handbook", score: 1 }],
-			evidenceTypes: [{ value: "reference", score: 1 }],
-			evidenceLocations: [{ value: "API section", score: 1 }],
-			parserTypes: [{ value: "markdown", score: 1 }],
-			retrieverMix: [
-				{ value: "bm25", score: 1 },
-				{ value: "minsync", score: 1 },
-			],
-		});
-	});
-
-	it("counts context confidence by distinct feedback event", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.recordCuratedResultsSession({
-			sessionId: "multi-evidence",
-			query: "refund policy",
-			results: [
-				{
-					number: 1,
-					title: "Refund policy",
-					summary: "Rules",
-					content: "Rules",
-					method: "bm25",
-					source: "opaque:refunds",
-					evidenceRefs: [
-						normalizeSessionEvidenceRef({
-							method: "bm25",
-							source: "opaque:refunds",
-							content: "one",
-							documentArea: "billing",
-							retrieverMix: ["bm25", "bm25"],
-						}),
-						normalizeSessionEvidenceRef({
-							method: "bm25",
-							source: "opaque:refunds",
-							content: "two",
-							documentArea: "billing",
-							retrieverMix: ["bm25"],
-						}),
-					],
-				},
-			],
-		});
-		memory.recordFeedbackByIds([{ feedbackId: "multi-evidence:1", useful: true }]);
-
-		const hints = memory.getContextHints("refund policy");
-		expect(hints.documentAreas).toMatchObject([{ value: "billing", score: 1, confidence: 0.2 }]);
-		expect(hints.retrieverMix).toMatchObject([{ value: "bm25", score: 1, confidence: 0.2 }]);
-	});
-
-	it("uses persisted structured feedback without matching current query text", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		recordSession(memory);
-		memory.recordFeedbackByIds([{ feedbackId: "s1:1", useful: true }]);
-		memory.save();
-
-		const reloaded = new RetrievalMemory({ storagePath: memoryPath });
-		reloaded.load();
-		const methodHints = reloaded.getMethodHints("an unrelated future question");
-		const contextHints = reloaded.getContextHints("an unrelated future question");
-
-		expect(methodHints[0]).toMatchObject({ method: "posix", score: 1 });
-		expect(contextHints.documentAreas).toMatchObject([{ value: "language-guides", score: 1 }]);
-		expect(contextHints.retrieverMix).toMatchObject([
-			{ value: "bm25", score: 1 },
-			{ value: "minsync", score: 1 },
-		]);
-	});
-
-	it("does not duplicate repeated feedback for the same result and sentiment", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		recordSession(memory);
-		memory.recordNumberedFeedback({
-			sessionId: "s1",
-			query: "typescript handbook",
-			feedback: [{ number: 1, useful: true }],
-		});
-		memory.recordNumberedFeedback({
-			sessionId: "s1",
-			query: "typescript handbook",
-			feedback: [{ number: 1, useful: true }],
-		});
-		expect(memory.getSchema().feedbackSignals).toHaveLength(2);
-		expect(memory.getMethodHints("typescript handbook")[0].score).toBe(1);
-	});
-
 	it("recomputes caller-provided path-like stable evidence IDs", () => {
 		const ref = normalizeSessionEvidenceRef({
 			method: "grep",
@@ -822,180 +536,5 @@ describe("RetrievalMemory", () => {
 			stableEvidenceId: "C:docs-file",
 		});
 		expect(driveRef.stableEvidenceId).toMatch(/^grep:[0-9a-f]{24}$/u);
-	});
-
-	it("splits evidence signal weight across multiple evidence chunks", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.recordCuratedResultsSession({
-			sessionId: "s2",
-			query: "q",
-			results: [
-				{
-					number: 1,
-					title: "T",
-					summary: "S",
-					content: "C",
-					method: "grep",
-					source: "/a",
-					evidenceRefs: [
-						normalizeSessionEvidenceRef({ method: "grep", source: "/a", excerpt: "one" }),
-						normalizeSessionEvidenceRef({ method: "grep", source: "/b", excerpt: "two" }),
-					],
-				},
-			],
-		});
-		memory.recordNumberedFeedback({ sessionId: "s2", query: "q", feedback: [{ number: 1, useful: false }] });
-		const evidenceSignals = memory
-			.getSchema()
-			.feedbackSignals.filter((signal) => signal.target.type === "evidence_chunk");
-		expect(evidenceSignals.map((signal) => signal.weight)).toEqual([-0.5, -0.5]);
-	});
-
-	it("advisory hints remain fallback-eligible for negative methods", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.recordFeedback("find typescript files", "posix", true);
-		memory.recordFeedback("find typescript files", "minsync", false);
-		const methods = memory.getMethodHints("typescript files").map((hint) => hint.method);
-		expect(methods).toContain("posix");
-		expect(methods).toContain("minsync");
-	});
-
-	it("compat append/registerAttempt resolves in-memory pending entries", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		const entry = memory.append({ query: "q", method: "posix", outcome: "pending" });
-		memory.registerAttempt({
-			id: entry.id,
-			query: "q",
-			method: "posix",
-			sources: ["file.ts"],
-			timestamp: Date.now(),
-		});
-		memory.recordResultFeedback([{ source: "file.ts", useful: true }]);
-		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
-	});
-
-	it("compat pending entries are not persisted as legacy v3 state", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		memory.append({ query: "q", method: "posix", outcome: "pending" });
-		memory.save();
-		const memory2 = new RetrievalMemory({ storagePath: memoryPath });
-		memory2.load();
-		expect(memory2.getEntries()).toEqual([]);
-		expect(memory2.getSchema().version).toBe(4);
-	});
-
-	it("caps v4 feedback signals at 500", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		for (let i = 0; i < 510; i++) memory.recordFeedback(`query-${i}`, "posix", true);
-		memory.save();
-		const memory2 = new RetrievalMemory({ storagePath: memoryPath });
-		memory2.load();
-		expect(memory2.getSignalCount()).toBe(500);
-	});
-
-	it("normalizes current v4 files without insights", () => {
-		writeFileSync(
-			memoryPath,
-			JSON.stringify({
-				version: 4,
-				curatedResults: [],
-				evidenceChunks: [],
-				feedbackSignals: [],
-				signalDefaults: { explicitWeight: 1, followupWeight: 0.25, retryWeight: -0.25, implicitCap: 0.5 },
-				warnings: [],
-			}),
-			"utf-8",
-		);
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		expect(memory.getSchema().insights).toEqual([]);
-	});
-
-	it("extracts durable insights from complete 100-signal evicted batches", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		for (let i = 0; i < 600; i++) memory.recordFeedback("photo archive lookup", "posix", true);
-		memory.save();
-
-		const memory2 = new RetrievalMemory({ storagePath: memoryPath });
-		memory2.load();
-		expect(memory2.getSignalCount()).toBe(500);
-		const insights = memory2.getInsights("photo archive lookup");
-		expect(insights).toHaveLength(1);
-		expect(insights[0].domain).toBe("photo archive lookup");
-		expect(insights[0].recommendedMethods).toEqual(["posix"]);
-		expect(insights[0].supportingSignalCount).toBe(100);
-	});
-
-	it("accumulates evicted insight batches across incremental saves", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		for (let i = 0; i < 500; i++) memory.recordFeedback("photo archive lookup", "posix", true);
-		memory.save();
-
-		for (let i = 0; i < 99; i++) {
-			memory.recordFeedback("photo archive lookup", "posix", true);
-			memory.save();
-		}
-		expect(memory.getSignalCount()).toBe(500);
-		expect(memory.getInsights("photo archive lookup")).toEqual([]);
-
-		memory.recordFeedback("photo archive lookup", "posix", true);
-		memory.save();
-		expect(memory.getSignalCount()).toBe(500);
-		const insights = memory.getInsights("photo archive lookup");
-		expect(insights).toHaveLength(1);
-		expect(insights[0].supportingSignalCount).toBe(100);
-	});
-
-	it("does not create insights from under-sized or noisy evictions", () => {
-		const undersized = new RetrievalMemory({ storagePath: memoryPath });
-		undersized.load();
-		for (let i = 0; i < 510; i++) undersized.recordFeedback("photo archive lookup", "posix", true);
-		undersized.save();
-		expect(undersized.getSchema().feedbackSignals).toHaveLength(500);
-		expect(undersized.getInsights("photo archive lookup")).toEqual([]);
-		expect(undersized.getSchema().pendingInsightSignals).toHaveLength(10);
-
-		const noisyPath = join(tmpDir, "noisy-memory.json");
-		const noisy = new RetrievalMemory({ storagePath: noisyPath });
-		noisy.load();
-		for (let i = 0; i < 600; i++) noisy.recordWeakSignal("weak photo lookup", "posix", "followup");
-		noisy.save();
-		expect(noisy.getSignalCount()).toBe(500);
-		expect(noisy.getInsights("weak photo lookup")).toEqual([]);
-	});
-
-	it("merges repeated insight batches instead of duplicating them", () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-		for (let i = 0; i < 600; i++) memory.recordFeedback("insurance claim forms", "minsync", true);
-		memory.save();
-		for (let i = 0; i < 100; i++) memory.recordFeedback("insurance claim forms", "minsync", true);
-		memory.save();
-
-		const insights = memory.getInsights("insurance claim forms");
-		expect(insights).toHaveLength(1);
-		expect(insights[0].supportingSignalCount).toBe(200);
-		expect(insights[0].recommendedMethods).toEqual(["minsync"]);
-	});
-
-	it("keeps save fail-open when insight extraction fails", () => {
-		const memory = new RetrievalMemory({
-			storagePath: memoryPath,
-			insightExtractor: () => {
-				throw new Error("extractor failed");
-			},
-		});
-		memory.load();
-		for (let i = 0; i < 600; i++) memory.recordFeedback("photo archive lookup", "posix", true);
-		expect(() => memory.save()).not.toThrow();
-		expect(memory.getSignalCount()).toBe(500);
-		expect(memory.getSchema().warnings.some((warning) => warning.code === "insight-extraction-failed")).toBe(true);
 	});
 });

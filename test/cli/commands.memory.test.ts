@@ -71,14 +71,6 @@ function seedMemory(): void {
 		],
 	});
 	mem.save();
-	// Record explicit numbered feedback so a feedback signal materializes against the curated result.
-	const applied = mem.recordNumberedFeedback({
-		sessionId: SESSION_ID,
-		query: "",
-		feedback: [{ number: 1, useful: true }],
-	});
-	expect(applied).toBe(true);
-	mem.save();
 }
 
 describe("runMemory inspect (cli)", () => {
@@ -88,7 +80,7 @@ describe("runMemory inspect (cli)", () => {
 		seedMemory();
 	});
 
-	it("emits a JSON envelope with counts and signal defaults", async () => {
+	it("emits a JSON envelope with counts, judged evidence, and insights", async () => {
 		const stdout: string[] = [];
 		const code = await runMemory(makeCtx({ stdout: (line) => stdout.push(line) }));
 
@@ -96,30 +88,21 @@ describe("runMemory inspect (cli)", () => {
 		expect(stdout).toHaveLength(1);
 
 		const schema = JSON.parse(stdout[0]);
-		expect(schema.version).toBe(4);
+		expect(schema.version).toBe(5);
 		expect(Array.isArray(schema.curatedResults)).toBe(true);
-		expect(Array.isArray(schema.feedbackSignals)).toBe(true);
+		expect(Array.isArray(schema.evidenceChunks)).toBe(true);
+		expect(Array.isArray(schema.judgedEvidence)).toBe(true);
 		expect(Array.isArray(schema.insights)).toBe(true);
+		expect(Array.isArray(schema.pendingInsightEntries)).toBe(true);
+		expect(Array.isArray(schema.warnings)).toBe(true);
 		expect(schema.curatedResults.length).toBeGreaterThanOrEqual(1);
-		expect(schema.feedbackSignals.length).toBeGreaterThanOrEqual(1);
 
-		expect(schema.signalDefaults).toBeDefined();
-		expect(typeof schema.signalDefaults.explicitWeight).toBe("number");
-		expect(typeof schema.signalDefaults.followupWeight).toBe("number");
-		expect(typeof schema.signalDefaults.retryWeight).toBe("number");
-		expect(typeof schema.signalDefaults.implicitCap).toBe("number");
-
-		// The curated result and the explicit useful signal are present.
+		// The curated result is present.
 		const curated = schema.curatedResults.find(
 			(entry: { sessionId?: string; number?: number }) => entry.sessionId === SESSION_ID && entry.number === 1,
 		);
 		expect(curated).toBeDefined();
 		expect(curated.query).toBe(QUERY);
-		const usefulSignal = schema.feedbackSignals.find(
-			(signal: { sentiment?: string; source?: string }) =>
-				signal.sentiment === "useful" && signal.source === "explicit",
-		);
-		expect(usefulSignal).toBeDefined();
 	});
 
 	it("does not leak the memory storage path", async () => {

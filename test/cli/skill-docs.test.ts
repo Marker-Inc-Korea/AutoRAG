@@ -106,7 +106,6 @@ const searchResponse: SearchDocumentsResponse = {
 			summary: "answer",
 			evidence: [{ excerpt: "answer" }],
 			confidence: 1,
-			feedbackId: "session-1:1",
 			source: "/docs/a.md",
 		},
 	],

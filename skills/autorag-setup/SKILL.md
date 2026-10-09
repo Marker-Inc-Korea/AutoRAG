@@ -408,7 +408,7 @@ reload/reconnect, discover schemas with `tools/list`, and exercise
 `autorag.search` through MCP. Restart the MCP server after config changes.
 The MCP server returns model-free source chunks; the calling agent curates
 them. It does not invoke the configured librarian model. The same server also
-exposes `autorag.report`, `autorag.evidence`, and `autorag.feedback` for the
+exposes `autorag.report` and `autorag.evidence` for the
 curation lifecycle; the matching CLI commands remain a maintenance path.
 Discover the exact schemas with MCP `tools/list`. Keep the full `autorag` skill
 only when model-backed curated search is also wanted. For MCP-only setup, use

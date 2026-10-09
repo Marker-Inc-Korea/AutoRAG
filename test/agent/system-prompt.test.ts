@@ -34,16 +34,6 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
 
-	it("keeps retrieval, memory, datasource searchability, and Jikji guidance", () => {
-		const text = prompt();
-		expect(text).toContain("search_all_documents");
-		expect(text).toContain("semantic_search_local_docs");
-		expect(text).toContain("semantic_search_local_docs");
-		expect(text).toContain("check_memory");
-		expect(text).toContain("every configured connection is searchable");
-		expect(text).toContain("Jikji Local Discovery");
-	});
-
 	it("fails closed when no tools are provided", () => {
 		expect(prompt([])).toMatch(/blocked\/degraded state/i);
 	});
