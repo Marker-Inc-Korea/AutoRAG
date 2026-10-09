@@ -1,6 +1,6 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
-import { formatCitationList, stripUnresolvedCitations } from "./citations.ts";
+import { assertResultsMappingOneToOne, formatCitationList, stripUnresolvedCitations } from "./citations.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
 import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
 
@@ -292,14 +292,7 @@ export function recordStructuredResultsSession(
 		readonly remote?: boolean;
 	} = {},
 ): SearchDocumentsResponse {
-	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
-	const mappingNumbers = details.mapping.map((entry) => entry.number).sort((a, b) => a - b);
-	const oneToOne =
-		resultNumbers.length === mappingNumbers.length &&
-		resultNumbers.every((number, index) => number === mappingNumbers[index]);
-	if (!oneToOne) {
-		throw new Error("emit_autorag_results: result numbers and mapping numbers must be one-to-one");
-	}
+	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
 
 	const registry = new Map<number, CuratedResult>();
 	const memoryResults = [];

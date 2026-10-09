@@ -92,6 +92,50 @@ export function formatCitationList(numbers: readonly number[]): string {
 	return numbers.length === 0 ? "none" : numbers.map((number) => `[${number}]`).join(", ");
 }
 
+/** Numbers that appear more than once, ascending, each listed once. */
+function duplicateNumbers(sortedNumbers: readonly number[]): number[] {
+	const duplicates: number[] = [];
+	for (let index = 1; index < sortedNumbers.length; index++) {
+		const number = sortedNumbers[index] as number;
+		if (number === sortedNumbers[index - 1] && duplicates[duplicates.length - 1] !== number) duplicates.push(number);
+	}
+	return duplicates;
+}
+
+/**
+ * Throw a corrective error unless `results` and `mapping` carry the same
+ * numbers, exactly one entry each. Duplicates are rejected even when both
+ * sides repeat them: a repeated number collapses into a single registry entry
+ * and shares one feedback id, so the other entry's evidence would be lost.
+ * Emit tools call this at tool time (issue #1807) so the model sees the error
+ * and re-emits; checking only after the run ended failed the whole search and
+ * discarded an already-delivered answer.
+ */
+export function assertResultsMappingOneToOne(
+	label: string,
+	results: readonly { readonly number: number }[],
+	mapping: readonly { readonly number: number }[],
+): void {
+	const resultNumbers = results.map((result) => result.number).sort((a, b) => a - b);
+	const mappingNumbers = mapping.map((entry) => entry.number).sort((a, b) => a - b);
+	const resultDuplicates = duplicateNumbers(resultNumbers);
+	const mappingDuplicates = duplicateNumbers(mappingNumbers);
+	const sameNumbers =
+		resultNumbers.length === mappingNumbers.length &&
+		resultNumbers.every((number, index) => number === mappingNumbers[index]);
+	if (sameNumbers && resultDuplicates.length === 0 && mappingDuplicates.length === 0) return;
+	const duplicateNotes = [
+		resultDuplicates.length > 0 ? `results repeat ${formatCitationList(resultDuplicates)}` : undefined,
+		mappingDuplicates.length > 0 ? `mapping repeats ${formatCitationList(mappingDuplicates)}` : undefined,
+	].filter((note) => note !== undefined);
+	throw new Error(
+		`${label}: result numbers and mapping numbers must be one-to-one, but results contain ${formatCitationList(resultNumbers)} ` +
+			`and mapping contains ${formatCitationList(mappingNumbers)}` +
+			(duplicateNotes.length > 0 ? ` (${duplicateNotes.join("; ")})` : "") +
+			". Give every result a unique number with exactly one mapping entry carrying the same number and no mapping entry without a result. Re-emit with consistent numbering.",
+	);
+}
+
 /**
  * Throw a corrective error when `answer` cites numbers absent from `results`.
  * Emit tools surface the message to the model as a tool error so it re-emits
