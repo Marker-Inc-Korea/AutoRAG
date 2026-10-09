@@ -286,6 +286,23 @@ PDF pages.
 
 ### 2. Search from CLI
 
+`autorag search` needs one chat model. `autorag init` does not pick one, so on
+first run either sign in and choose a model inside the TUI:
+
+```bash
+autorag tui      # then /login (OAuth or API key) and /model
+```
+
+or set it in config (list provider/model ids with `autorag models list`), then
+confirm it with `autorag health`:
+
+```bash
+autorag init --config ~/.autorag/config.json --force \
+  --search-paths ~/Documents/research \
+  --model-provider <provider> --model-id <id>
+autorag health
+```
+
 ```bash
 # Perform a curated search (uses your configured reasoning model)
 autorag search "What are our primary Q3 deliverables?"
