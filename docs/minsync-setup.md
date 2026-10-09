@@ -150,6 +150,9 @@ skip records, so a later refresh tries the source again once it can be read.
 Unexpected read errors, parser bugs, and mirror or index write failures still
 stop the refresh.
 
+`AutoRAGAgent.refresh()` and `getRefreshStatus()` expose both codes through
+the public `SearchDocumentDiagnosticCode` type, alongside parser diagnostics.
+
 ## Migration and failure behavior
 
 A MinSync workspace keeps its state in the `.minsync` subdirectory of
