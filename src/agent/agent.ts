@@ -1508,8 +1508,13 @@ export class AutoRAGAgent {
 		 */
 		const publishOnCapture = this.jevJudge === undefined;
 		let published = false;
+		// A run's timeout aborts this controller. A slow follow-up check or a
+		// late tool call can outlive the timeout, so publishing is gated on it:
+		// an aborted run must never push a preliminary into the callback a later
+		// run already installed on the instance.
+		const planAbort = new AbortController();
 		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-			if (published) return;
+			if (planAbort.signal.aborted || published) return;
 			published = true;
 			this.preliminaryCallback?.(
 				createPreliminarySearchDocumentsResponse(
@@ -1560,7 +1565,7 @@ export class AutoRAGAgent {
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
 			let timeout: NodeJS.Timeout | undefined;
-			const planAbort = new AbortController();
+			let timedOutAfterFastAnswer = false;
 			try {
 				await Promise.race([
 					(async () => {
@@ -1621,9 +1626,16 @@ export class AutoRAGAgent {
 						if (captured !== undefined) return;
 						// With Jev enabled, a fast answer that needs no correction,
 						// clarification, or further research ends the run here.
-						if (preliminary !== undefined && !(await this.shouldFollowUp(trimmedQuery, preliminary))) {
-							captured = fastAnswerAsFinal(preliminary);
-							return;
+						if (preliminary !== undefined) {
+							const followUp = await this.shouldFollowUp(trimmedQuery, preliminary);
+							// The follow-up check is not tied to the session abort, so it
+							// can resolve after the run's timeout fired; stop here rather
+							// than publishing or prompting on behalf of a dead run.
+							if (planAbort.signal.aborted) return;
+							if (!followUp) {
+								captured = fastAnswerAsFinal(preliminary);
+								return;
+							}
 						}
 						if (preliminary !== undefined) publishPreliminary(preliminary);
 						if (sessionAgent !== undefined) {
@@ -1654,16 +1666,54 @@ export class AutoRAGAgent {
 							await session.prompt(buildFinalEmitReminder());
 						}
 					})(),
-					new Promise<never>((_, reject) => {
+					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
 							planAbort.abort();
 							void Promise.resolve(session?.abort());
+							// A first answer already exists: return it below instead of
+							// failing the whole search and discarding it. Remote sessions
+							// keep failing soft through their outbound-scanned path.
+							if (fastCaptured !== undefined && !this.remoteSession) {
+								timedOutAfterFastAnswer = true;
+								resolve();
+								return;
+							}
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
 					}),
 				]);
 			} finally {
 				if (timeout !== undefined) clearTimeout(timeout);
+			}
+
+			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
+				// The caller receives this as the run's final answer, so record it as
+				// one: the fast-answer-as-final conversion (the same one the Jev direct
+				// route uses) registers the session registry and the memory entry, so
+				// the returned feedback ids resolve and past-search hints stay honest.
+				const response = recordStructuredResultsSession(
+					sessionId,
+					trimmedQuery,
+					fastAnswerAsFinal(fastCaptured),
+					this.sessions,
+					this.memory,
+					[
+						...this.collectComponentDiagnostics(),
+						{
+							code: "search-timeout",
+							severity: "warning",
+							message: `search timed out after ${this.searchTimeoutMs}ms before verification finished; returning the first answer`,
+						},
+					],
+				);
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: response.results.length,
+					degraded: true,
+				});
+				return response;
 			}
 
 			let emittedNoVerifiedResults = false;
