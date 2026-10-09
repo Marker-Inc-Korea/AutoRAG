@@ -26,6 +26,8 @@ export type SearchDocumentDiagnosticCode =
 	| "embedding-identity-mismatch"
 	| "parser-skipped"
 	| "parser-failed"
+	| "source-vanished"
+	| "source-unreadable"
 	| "parser-warning"
 	| "duplicate-excluded"
 	| "unsupported-file"
