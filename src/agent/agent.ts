@@ -80,7 +80,6 @@ import {
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
-import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
@@ -569,8 +568,8 @@ export interface AutoRAGAgentOptions {
 	/**
 	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
 	 * probabilities out). When set, the two-phase search asks Jev before the
-	 * fast answer whether the question needs local search, web search, or a
-	 * direct answer, and whether to decompose it; after the fast answer, whether
+	 * fast answer whether the question is answerable from intrinsic knowledge
+	 * (direct answer) or needs local search, and whether to decompose it; after the fast answer, whether
 	 * verification is needed. It also exposes the `jev` tool. Always omitted for
 	 * remote P2P sessions.
 	 *
@@ -732,7 +731,7 @@ export class AutoRAGAgent {
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
 	private readonly jevJudge: JevJudge | undefined;
 	private readonly queryDecompositionModel: DecompositionModel | undefined;
-	/** Web search routing for the pipeline's web branch; undefined when web tools are off. */
+	/** Web search options for the agent's `web_search` / `web_fetch` tools; undefined when web tools are off. */
 	private readonly webSearchOptions: WebSearchToolOptions | undefined;
 	/** Routing diagnostics for the in-flight search; reset per run. */
 	private routingDiagnostics: SearchDocumentDiagnostic[] = [];
@@ -1421,8 +1420,8 @@ export class AutoRAGAgent {
 					(async () => {
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						// With Jev enabled, Jev first picks local search, web search, or a
-						// direct answer, and whether the question needs decomposition.
+						// With Jev enabled, Jev first picks a direct answer (intrinsic knowledge)
+						// or local search, and whether the question needs decomposition.
 						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						const sessionAgent = session.piSession;
 						const activeSession = session;
@@ -1456,15 +1455,12 @@ export class AutoRAGAgent {
 							if (answer !== undefined) captured = { answer, results: [], mapping: [], warnings: [] };
 							return;
 						}
-						const baseline =
-							plan.route === "web"
-								? await this.prefetchWebContext(plan.queries, planAbort.signal)
-								: await this.prefetchInitialRetrievalContext(
-										trimmedQuery,
-										plan.queries,
-										options,
-										plan.datasources,
-									);
+						const baseline = await this.prefetchInitialRetrievalContext(
+							trimmedQuery,
+							plan.queries,
+							options,
+							plan.datasources,
+						);
 						activateFastPhase();
 						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
 						let preliminary = fastCaptured;
@@ -1493,7 +1489,7 @@ export class AutoRAGAgent {
 						// Only a preliminary consumer actually received may turn the final answer into a delta.
 						const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
 						await session.prompt(
-							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered, plan.route),
+							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
 						);
 						// Models sometimes end verification by writing the final answer as
 						// prose instead of calling emit_autorag_results (seen on the web
@@ -1923,7 +1919,7 @@ export class AutoRAGAgent {
 
 	/**
 	 * Jev query pipeline, run before the fast answer. Jev picks the branch
-	 * (local search, web search, or a direct answer) and whether the question
+	 * (direct answer or local search) and whether the question
 	 * needs decomposition; a "yes" splits it into at most five search queries
 	 * with the configured decomposition model (default: the session model). On
 	 * the local branch, Jev also judges, per registered datasource, whether it
@@ -1955,17 +1951,7 @@ export class AutoRAGAgent {
 			});
 			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
 		}
-		let route = decision.route;
-		if (route === "web" && this.webSearchOptions === undefined) {
-			this.routingDiagnostics.push({
-				code: "query-route-fallback",
-				severity: "info",
-				message:
-					"Jev routed the question to web search, but web tools are disabled; searching local sources instead.",
-				source: "jev",
-			});
-			route = FALLBACK_QUERY_ROUTE;
-		}
+		const route = decision.route;
 		const datasourcesPromise = route === "local" ? this.selectSearchDatasources(query) : Promise.resolve([]);
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route !== "direct") {
@@ -2203,41 +2189,6 @@ export class AutoRAGAgent {
 			: sections.join("\n\n");
 	}
 
-	/** Baseline web evidence for the fast answer: one web search per query, all in parallel. */
-	private async prefetchWebContext(queries: readonly string[], signal: AbortSignal): Promise<string> {
-		const web = this.webSearchOptions ?? {};
-		const modelAuth = web.modelAuth?.();
-		const searches = await Promise.all(
-			queries.map((query) =>
-				executeWebSearch(
-					{ query, ...(web.provider !== undefined ? { provider: web.provider } : {}) },
-					{
-						signal,
-						...(web.timeoutSeconds !== undefined ? { timeoutMs: web.timeoutSeconds * 1_000 } : {}),
-						...(web.order !== undefined ? { order: web.order } : {}),
-						...(web.exclude !== undefined ? { exclude: web.exclude } : {}),
-						...(modelAuth !== undefined ? { modelAuth } : {}),
-					},
-				).catch((error: unknown) => ({
-					content: [],
-					details: {
-						response: { provider: "none" as const, sources: [] },
-						error: error instanceof Error ? error.message : String(error),
-					},
-				})),
-			),
-		);
-		const sections = searches.map((search, index) => {
-			const label = `Web search results for ${JSON.stringify(queries[index])}`;
-			return search.details.error !== undefined
-				? `${label}: unavailable (${search.details.error})`
-				: `${label}:\n${search.content.map((part) => part.text).join("\n")}`;
-		});
-		return searches.every((search) => search.details.error !== undefined)
-			? `${sections.join("\n\n")}\n\nNo web evidence was available; use the configured tools and report degradation honestly.`
-			: sections.join("\n\n");
-	}
-
 	/**
 	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths, MinSync
 	 * chunks, and Jev-selected datasource chunks — down to the configured
@@ -2326,6 +2277,18 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Verification-phase nudge toward the internet. Jev no longer routes to web
+	 * search, so the agent decides after the fast answer: when local evidence is
+	 * missing, thin, or possibly stale, it searches the web. Empty when web tools are off.
+	 */
+	private webFallbackHint(): string {
+		const names = new Set(this.tools.map((tool) => tool.name));
+		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
+		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` (and ${WEB_FETCH_TOOL_NAME} to read a promising page)` : "";
+		return `When local evidence is missing, thin, or possibly outdated — or the question concerns current events, recent releases, prices, or other public facts — use ${WEB_SEARCH_TOOL_NAME}${fetch} to confirm or correct claims and fill gaps; use URLs as result sources for web-derived evidence. `;
+	}
+
+	/**
 	 * Verification-phase prompt for two-phase searches. The fast answer, when a
 	 * consumer already received it, is embedded verbatim so the model can diff
 	 * against it; the model then verifies with thinking on and finalizes with
@@ -2336,7 +2299,6 @@ export class AutoRAGAgent {
 		options: RetrievalOptions,
 		fastAnswer: AutoRAGFastAnswerDetails | undefined,
 		fastAnswerDelivered: boolean,
-		route: QueryRoute = "local",
 	): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
@@ -2363,9 +2325,7 @@ export class AutoRAGAgent {
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
-			(route === "web"
-				? `Now verify it rigorously on the internet: Jev routed this question to web search, so the answer lives in public web sources, not in local files. Use ${WEB_SEARCH_TOOL_NAME} (and ${WEB_FETCH_TOOL_NAME} to read a promising page) to confirm or correct each claim, fill gaps with focused web queries, and resolve conflicts and freshness. Use URLs as result sources. `
-				: `Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. `) +
+			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}` +
 			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +

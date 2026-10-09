@@ -205,7 +205,7 @@ export interface CliConfig {
 		| false;
 	webSearch?: WebSearchCliConfig;
 	/**
-	 * Jev query routing (local / web / direct), the decomposition check, the
+	 * Jev query routing (direct / local), the decomposition check, the
 	 * post-fast-answer follow-up check, and the `jev` tool. On by default with
 	 * the OpenRouter backend; `false` or `enabled: false` disables it. Secrets
 	 * never appear here: `jev-use` reads the backend key from its own

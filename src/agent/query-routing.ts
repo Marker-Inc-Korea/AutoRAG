@@ -3,13 +3,15 @@ import type { JevJudge } from "./jev-extension.ts";
 
 /**
  * Where a user question is answered from:
- * - `local`: information only the user can reach (their files, chats, mail).
- * - `web`: public information one internet search would answer.
- * - `direct`: general knowledge or small talk the model answers on its own.
+ * - `local`: anything needing information beyond the model's own knowledge —
+ *   the user's files, chats, mail, or any fact the model cannot reliably recall.
+ *   Local retrieval runs first; web search is left to the agent after the fast
+ *   answer, when local evidence falls short.
+ * - `direct`: intrinsic knowledge or small talk the model answers on its own.
  */
-export type QueryRoute = "local" | "web" | "direct";
+export type QueryRoute = "local" | "direct";
 
-/** Jev question id of the three-way branch. */
+/** Jev question id of the intrinsic-knowledge / local branch. */
 export const QUERY_ROUTE_QUESTION_ID = "route";
 /** Jev question id of the "does this need decomposition?" check. */
 export const DECOMPOSE_QUESTION_ID = "decompose";
@@ -26,9 +28,9 @@ export const DECOMPOSE_PROBABILITY_THRESHOLD = 0.5;
 export const FOLLOW_UP_PROBABILITY_THRESHOLD = 0.5;
 
 /**
- * Minimum Jev branch probability required to leave local search. A `direct` or
- * `web` branch at or below this floor — or one Jev reported without a
- * probability — keeps the run on local search, the corpus-grounded default.
+ * Minimum Jev branch probability required to leave local search. A `direct`
+ * branch at or below this floor — or one Jev reported without a probability —
+ * keeps the run on local search, the corpus-grounded default.
  * Without the floor a weakly-favored `direct` verdict (observed at p 0.57-0.63
  * on personal-corpus questions) skips retrieval entirely and answers from
  * general knowledge, so the caller loses the evidence the question depends on.
@@ -93,13 +95,15 @@ export async function needsFollowUp(judge: JevJudge, query: string, answer: stri
 }
 
 const ROUTE_OPTIONS: Record<QueryRoute, string> = {
-	local: "Answering needs private information only the user can access and that is not on the public internet: files on their computer, their chats (Discord, KakaoTalk, Slack), their email, their notes, their calendar, or their history. Prefer local whenever the question refers to the user's own life, situation, plans, or records — questions phrased with words like 'my', 'I', 'we', 'our', a named friend, family member, or colleague, or 'my case/hearing/appointment/routine' — even when a generic answer would also be possible.",
-	web: "Not answerable from general knowledge alone and not from the user's private information either, but one public internet search would answer it: current events, recent releases, prices, or other public facts.",
+	local: "Answering needs additional information beyond the assistant's intrinsic knowledge: private information only the user can access (files on their computer, their chats such as Discord, KakaoTalk, Slack, their email, notes, calendar, or history), documents, or any fact that may be recent, specific, niche, or changing (current events, recent releases, prices, versions). Prefer local whenever the question refers to the user's own life, situation, plans, or records — questions phrased with words like 'my', 'I', 'we', 'our', a named friend, family member, or colleague, or 'my case/hearing/appointment/routine' — even when a generic answer would also be possible. When unsure whether intrinsic knowledge suffices, choose local.",
 	direct:
-		"General common knowledge, a definition, simple reasoning, or small talk the assistant can answer from its own knowledge without searching anything. Never direct when the question refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine').",
+		"The assistant's intrinsic knowledge alone reliably answers it: stable common knowledge, a definition, simple reasoning, or small talk, with no need to look anything up. Never direct when the question refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine'), and never direct for facts that may have changed recently.",
 };
 
-const ROUTE_QUESTION = pick("Where must the answer to this user question come from?", ROUTE_OPTIONS);
+const ROUTE_QUESTION = pick(
+	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",
+	ROUTE_OPTIONS,
+);
 
 const DECOMPOSE_QUESTION = check(
 	"Does answering this question need several separate search queries instead of one search for the question as written?",
@@ -123,7 +127,7 @@ export interface QueryRouteDecision {
 }
 
 function isQueryRoute(value: unknown): value is QueryRoute {
-	return value === "local" || value === "web" || value === "direct";
+	return value === "local" || value === "direct";
 }
 
 /** The highest-probability branch, even when Jev escalates the verdict as unsure. */
@@ -141,7 +145,7 @@ function mostProbableRoute(verdict: Verdict | undefined): { route: QueryRoute; p
 /**
  * Ask Jev, in one batched call about the user question, which branch answers
  * it and whether it needs decomposition. Never throws: a missing credential,
- * an unreachable backend, an unusable verdict, or a non-local branch that does
+ * an unreachable backend, an unusable verdict, or a `direct` branch that does
  * not clear {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} falls back to a
  * single local search, with the reason recorded.
  */
@@ -173,7 +177,7 @@ export async function routeQuery(judge: JevJudge, query: string): Promise<QueryR
 	const decomposeProbability = typeof decomposeVerdict?.answer === "number" ? decomposeVerdict.answer : undefined;
 	const decompose = decomposeProbability !== undefined && decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD;
 	// Leaving local search drops corpus evidence, so it needs a confident branch:
-	// a weak or probability-less `direct`/`web` verdict keeps the local default.
+	// a weak or probability-less `direct` verdict keeps the local default.
 	if (
 		best.route !== "local" &&
 		(best.probability === undefined || best.probability <= NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD)

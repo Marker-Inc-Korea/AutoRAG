@@ -16,14 +16,14 @@ function judgeWith(backend: JevBackend) {
 	return createJevJudge({ backend });
 }
 
-describe("routeQuery (Jev three-way branch + decomposition check)", () => {
-	it("falls back to local search when the winning non-local branch is below the confidence floor", async () => {
+describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition check)", () => {
+	it("falls back to local search when a direct verdict is below the confidence floor", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
 					[QUERY_ROUTE_QUESTION_ID]: {
-						answer: "web",
-						distribution: { local: 0.3, web: 0.38, direct: 0.32 },
+						answer: "direct",
+						distribution: { local: 0.4, direct: 0.6 },
 						confidence: 0.2,
 					},
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.2 },
@@ -33,27 +33,42 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		);
 		expect(decision.route).toBe("local");
 		expect(decision.decompose).toBe(false);
-		expect(decision.routeProbability).toBe(0.38);
+		expect(decision.routeProbability).toBe(0.6);
 		expect(decision.fallbackReason).toMatch(/confidence floor/u);
 	});
 
-	it("leaves local search only when the non-local branch clears the confidence floor", async () => {
+	it("answers directly only when the direct verdict clears the confidence floor", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
-					[QUERY_ROUTE_QUESTION_ID]: { answer: "web", distribution: { local: 0.1, web: 0.8, direct: 0.1 } },
+					[QUERY_ROUTE_QUESTION_ID]: { answer: "direct", distribution: { local: 0.1, direct: 0.9 } },
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.2 },
 				}),
 			),
-			"latest stable Node.js release",
+			"what is the capital of France?",
 		);
-		expect(decision.route).toBe("web");
-		expect(decision.decompose).toBe(false);
-		expect(decision.routeProbability).toBe(0.8);
+		expect(decision.route).toBe("direct");
+		expect(decision.routeProbability).toBe(0.9);
 		expect(decision.fallbackReason).toBeUndefined();
 	});
 
-	it("keeps local search when Jev reports a non-local branch with no probability", async () => {
+	it("never offers or accepts a web branch: a legacy web verdict is unusable and falls back to local", async () => {
+		let routeOptions: Record<string, string> | undefined;
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				const routeQuestion = request.questions.find((question) => question.id === QUERY_ROUTE_QUESTION_ID);
+				routeOptions = (routeQuestion as { options?: Record<string, string> } | undefined)?.options;
+				return { answers: [{ answer: "web", distribution: { web: 0.95, local: 0.05 } }, { answer: 0.1 }] };
+			},
+		};
+		const decision = await routeQuery(judgeWith(backend), "latest stable Node.js release");
+		expect(Object.keys(routeOptions ?? {}).sort()).toEqual(["direct", "local"]);
+		expect(decision.route).toBe("local");
+		expect(decision.decompose).toBe(false);
+	});
+
+	it("keeps local search when Jev reports a direct branch with no probability", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
@@ -71,7 +86,7 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
-					[QUERY_ROUTE_QUESTION_ID]: { answer: "local", distribution: { local: 0.9, web: 0.05, direct: 0.05 } },
+					[QUERY_ROUTE_QUESTION_ID]: { answer: "local", distribution: { local: 0.9, direct: 0.1 } },
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.5 },
 				}),
 			),
@@ -85,7 +100,7 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
-					[QUERY_ROUTE_QUESTION_ID]: { answer: "direct", distribution: { local: 0.1, web: 0.1, direct: 0.8 } },
+					[QUERY_ROUTE_QUESTION_ID]: { answer: "direct", distribution: { local: 0.2, direct: 0.8 } },
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.99 },
 				}),
 			),
@@ -123,6 +138,7 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		await routeQuery(judgeWith(backend), "what should I prepare for my hearing on February 14?");
 		expect(routeOptions?.direct).toMatch(/user's own life/u);
 		expect(routeOptions?.local).toMatch(/prefer local/i);
+		expect(routeOptions?.direct).toMatch(/intrinsic knowledge/iu);
 	});
 
 	it("falls back to local search without decomposition when Jev is unreachable", async () => {

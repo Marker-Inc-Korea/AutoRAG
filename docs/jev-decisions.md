@@ -108,22 +108,25 @@ Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
 user question in one batched call:
 
-1. **Branch** (`choice`): `local`, `web`, or `direct`. The highest-probability
-   branch wins, but leaving local search needs confidence: a `direct` or `web`
-   branch **at or below 0.75** (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one
-   Jev reports without a probability — falls back to `local` search with a
-   `query-route-fallback` diagnostic, so a weak verdict never silently drops the
-   corpus evidence the question depends on.
-   - `local`: answering needs information only the user can reach (files on
-     their computer, Discord/KakaoTalk/Slack chats, email, notes, calendar,
-     history). Jev is told to prefer `local` whenever the question refers to the
-     user's own life, situation, plans, or records — "my/I/our", a named friend,
-     family member, or colleague, or "my case/hearing/appointment/routine" — even
-     when a generic answer would also be possible.
-   - `web`: not answerable from general knowledge and not from the user's private
-     information either, but one public internet search would answer it.
-   - `direct`: general knowledge, simple reasoning, or small talk. Never chosen
-     for a question that refers to the user's own life, files, or records.
+1. **Branch** (`choice`): can the assistant answer from its **intrinsic
+   knowledge** alone (`direct`), or does it need additional information
+   (`local`)? There is no web branch. The highest-probability branch wins, but
+   leaving local search needs confidence: a `direct` branch **at or below 0.75**
+   (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without a
+   probability — falls back to `local` search with a `query-route-fallback`
+   diagnostic, so a weak verdict never silently drops the corpus evidence the
+   question depends on.
+   - `local`: answering needs anything beyond intrinsic knowledge — information
+     only the user can reach (files on their computer, Discord/KakaoTalk/Slack
+     chats, email, notes, calendar, history) or facts that may be recent,
+     specific, or changing. Jev is told to prefer `local` whenever the question
+     refers to the user's own life, situation, plans, or records — "my/I/our", a
+     named friend, family member, or colleague, or
+     "my case/hearing/appointment/routine" — and whenever it is unsure.
+   - `direct`: stable common knowledge, a definition, simple reasoning, or small
+     talk answerable without looking anything up. Never chosen for a question
+     that refers to the user's own life, files, or records, nor for facts that
+     may have changed recently.
 2. **Decomposition** (`noul`): does the question need several search queries
    (multiple sub-questions, comparisons, several facts to confirm)? A
    probability of 0.5 or more means yes.
@@ -134,7 +137,11 @@ What happens next:
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
 | `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
-| `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
+
+Web search is not part of routing. When verification runs after the fast answer,
+the agent decides on its own whether to call `web_search` / `web_fetch` (when web
+tools are enabled) — for example when local evidence is missing, thin, or
+possibly outdated.
 
 ### Datasource check before the fast answer
 
@@ -207,7 +214,7 @@ showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉�
 
 ### Follow-up check after the fast answer
 
-After `emit_fast_answer` on the `local` and `web` branches, Jev answers one more
+After `emit_fast_answer` on the `local` branch, Jev answers one more
 `noul` about the question **and** the fast answer together: does the answer need
 correction, clarification from the user, or further research? Below 0.5, the run
 ends there: the fast answer becomes the final response (its numbered results and
@@ -253,8 +260,7 @@ preserved:
 
 Failures never block a search. A missing Jev credential, an unreachable Jev
 backend, or an unusable verdict falls back to today's single local search for
-the original question (diagnostic `query-route-fallback`). A `web` verdict with
-web tools disabled also falls back to local search. A failed decomposition
+the original question (diagnostic `query-route-fallback`). A failed decomposition
 searches the original question (`query-decomposition-failed`). A failed
 datasource check searches no datasource before the fast answer
 (`datasource-selection-fallback`). Every routed run records its branch and
