@@ -300,7 +300,7 @@ describe("MailcrawlSkill", () => {
 		]);
 		const result = await skill
 			.retrievalMethods()[0]
-			?.retrieve("approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
+			?.retrieve("approval", { topK: 5, scope: "/mailcrawl/personal/**" });
 		expect(result?.[0]?.source).toBe("/mailcrawl/personal/chunks/m1:latest:0");
 		expect(skill.skillManifest().content).toContain("mailcrawl");
 	});
@@ -361,7 +361,7 @@ describe("MailcrawlSkill", () => {
 
 		const result = await skill.retrievalMethods()[0]?.retrieve("account", {
 			topK: 5,
-			allowedScopes: ["/mailcrawl/personal/**"],
+			scope: "/mailcrawl/personal/**",
 		});
 
 		expect(result).toHaveLength(1);
@@ -416,7 +416,7 @@ describe("MailcrawlSkill", () => {
 
 		const retrieved = await skill
 			.retrievalMethods()[0]
-			?.retrieve("approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
+			?.retrieve("approval", { topK: 5, scope: "/mailcrawl/personal/**" });
 		expect(retrieved?.[0]?.source).toBe("/mailcrawl/personal/chunks/m1:latest:0");
 	});
 

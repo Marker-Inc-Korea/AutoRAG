@@ -169,21 +169,11 @@ function mapDiscrawlHits(
 	const mapped: RetrievalResult[] = [];
 	for (const hit of hits) {
 		const source = discrawlSourcePath(instanceId, hit.messageId);
-		if (!matchesScope(source, options.scope, options.allowedScopes)) continue;
+		if (!matchesDatasourceScope(source, options.scope)) continue;
 		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode, diagnostic));
 		if (mapped.length >= (options.topK ?? DEFAULT_TOP_K)) break;
 	}
 	return mapped;
-}
-
-function matchesScope(
-	source: string,
-	scope: string | undefined,
-	allowedScopes: readonly string[] | undefined,
-): boolean {
-	if (!matchesDatasourceScope(source, scope)) return false;
-	if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-	return allowedScopes.some((entry) => matchesDatasourceScope(source, entry));
 }
 
 function toRetrievalResult(

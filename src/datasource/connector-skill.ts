@@ -14,8 +14,8 @@
  *  - Constructed only from trusted, server-supplied configuration.
  *  - Sources are stable slash-hierarchical paths `/<skill>/<instance>/…`.
  *  - `index()` never throws; failures surface as traceable diagnostics.
- *  - Retrieval honors `scope` and `allowedScopes` narrowing; tool arguments
- *    can never widen access (enforced upstream by DatasourceAccessContext).
+ *  - Retrieval honors the ordinary query `scope`; results are slash-hierarchical
+ *    opaque sources with no `#` fragment.
  *  - Results and metadata may carry real file paths or account identifiers;
  *    privacy is the operator's responsibility (use a local LLM).
  */
@@ -378,7 +378,7 @@ export class ConnectorLexicalMethod implements RetrievalMethod {
 		const mapped: RetrievalResult[] = [];
 		for (const { chunk, score } of hits) {
 			const source = datasourceSourcePath(skillName, instanceId, chunk.chunkId);
-			if (!this.matchesScope(source, options.scope, options.allowedScopes)) continue;
+			if (!matchesDatasourceScope(source, options.scope)) continue;
 			mapped.push({
 				id: `${skillName}:${instanceId}:${chunk.chunkId}`,
 				content: chunk.content,
@@ -398,15 +398,5 @@ export class ConnectorLexicalMethod implements RetrievalMethod {
 			if (mapped.length >= topK) break;
 		}
 		return mapped;
-	}
-
-	private matchesScope(
-		source: string,
-		scope: string | undefined,
-		allowedScopes: readonly string[] | undefined,
-	): boolean {
-		if (!matchesDatasourceScope(source, scope)) return false;
-		if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-		return allowedScopes.some((entry) => matchesDatasourceScope(source, entry));
 	}
 }

@@ -157,7 +157,7 @@ describe("public AutoRAG-lite core facade", () => {
 		expect(retrieved.results[0]?.source).toBe(docs);
 	});
 
-	it("lists authorized datasources and searches a selected empty surface without models", async () => {
+	it("lists configured datasources and searches a selected empty surface without models", async () => {
 		const configPath = join(root, "config.json");
 		writeFileSync(
 			configPath,

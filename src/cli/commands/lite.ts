@@ -29,7 +29,7 @@ Subcommands:
                        reported as "stale": true plus stale-index diagnostics, and
                        the query is still answered; indexes are only rebuilt when
                        asked to.
-                       (--top-k N  --scope SCOPE  --tags A,B
+                       (--top-k N  --scope SCOPE
                         --refresh  --strict  --json  --debug)
                        --refresh rebuilds the indexes incrementally first;
                        --strict fails with exit 2 when the index is stale instead

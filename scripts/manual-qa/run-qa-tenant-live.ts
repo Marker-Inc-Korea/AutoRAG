@@ -62,7 +62,6 @@ const agent = new AutoRAGAgent({
 	workspacePath: ws,
 	minSync: false,
 	datasourceSkills: skills,
-	datasourceAccess: { allowedTags: enabled, allowedScopes: enabled.map((name) => `/${name}/**`) },
 });
 
 console.log("Indexing real tenant data via agent.refresh() ...");
