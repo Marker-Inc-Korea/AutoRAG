@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { RetrievalResult } from "../retrieval/types.ts";
@@ -96,7 +97,11 @@ export class EvidenceLedger {
 	/** Record evidence and return its id. The same chunk always gets the same id. */
 	register(input: LedgerEvidenceInput): string {
 		const content = input.content.slice(0, MAX_CONTENT_CHARS);
-		const key = `${input.source}\0${content.replace(/\s+/gu, " ").trim()}`;
+		// Key on the full normalized chunk, not the capped stored content: two
+		// distinct chunks sharing their first MAX_CONTENT_CHARS must keep their
+		// own ids and metadata instead of merging into the first one.
+		const digest = createHash("sha256").update(input.content.replace(/\s+/gu, " ").trim()).digest("hex");
+		const key = `${input.source}\0${digest}`;
 		const existing = this.byKey.get(key);
 		if (existing !== undefined) {
 			if (!existing.retrieverMix.includes(input.method)) existing.retrieverMix.push(input.method);

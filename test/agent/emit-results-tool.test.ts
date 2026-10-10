@@ -146,7 +146,14 @@ describe("createEmitResultsTool", () => {
 			source,
 			content,
 			score: 1,
-			metadata: { method: "bm25", parserType: "pdf", chunkIndex: 3 },
+			metadata: {
+				method: "bm25",
+				parserType: "pdf",
+				chunkIndex: 3,
+				documentArea: "body",
+				evidenceType: "quote",
+				evidenceLocation: "page 3",
+			},
 		});
 		return { ledger, id };
 	}
@@ -204,6 +211,9 @@ describe("createEmitResultsTool", () => {
 						retrievalResultId: "bm25:one",
 						chunkIndex: 3,
 						parserType: "pdf",
+						documentArea: "body",
+						evidenceType: "quote",
+						evidenceLocation: "page 3",
 					},
 				],
 			},
