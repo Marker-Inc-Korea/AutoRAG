@@ -203,7 +203,6 @@ const SEARCH_TOOLS = [
 	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
 
-
 /**
  * Safety ceiling on merged evidence when the caller names no `topK`.
  *
