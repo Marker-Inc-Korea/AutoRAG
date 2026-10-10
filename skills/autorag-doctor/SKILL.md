@@ -43,7 +43,7 @@ autorag gateway status --format json
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`,
-`jikji`, `datasources`, and `datasourceAccess` before changing anything.
+`jikji`, and `datasources` before changing anything.
 
 If the CLI itself is missing or the config does not exist, stop and run the
 `autorag-setup` skill first — doctor repairs an existing install, it does not
@@ -87,36 +87,42 @@ Rules:
 
 ## 3. Prove searchability
 
-Indexing without retrieval is a failed run. Probe retrieval per datasource with
-the model-free path, then once end to end:
+Indexing without retrieval is a failed run. Probe retrieval per datasource
+through the model-free MCP tools, then once end to end:
+
+```text
+autorag.status {}
+autorag.search {"query":"a word that certainly appears","topK":3}
+autorag.search {"query":"recent topic","datasourceIds":["discord"],"topK":3}
+autorag.search {"query":"recent mail subject","scope":"/mailcrawl/**","topK":3}
+```
 
 ```bash
-autorag lite retrieve "a word that certainly appears" --top-k 3 --json --debug
-autorag lite retrieve "recent topic" --tags discord --top-k 3 --json --debug
-autorag lite retrieve "recent mail subject" --scope "/mailcrawl/**" --top-k 3 --json --debug
 autorag search "summarize the collection" --top-k 3 --json --debug
 ```
 
-- **Always pass `--debug` when diagnosing, and read the diagnostics.** A run
+- **Always read the `diagnostics` returned by MCP `autorag.search`.** A run
   that silently dropped a whole retrieval method still looks successful, just
   with fewer results; only the diagnostics name it (`minsync-unavailable`,
-  `retrieval-method-failed`). `autorag search --json` hides `diagnostics`,
-  `sessionId`, and per-result evidence unless `--debug` is set. `lite retrieve
-  --json` always carries the `diagnostics` array, but its human-readable output
-  hides it without `--debug`.
+  `retrieval-method-failed`). The model-backed CLI `autorag search --json`
+  hides `diagnostics`, `sessionId`, and per-result evidence unless `--debug` is
+  set, so pass `--debug` when diagnosing that path.
 - A method missing from the returned `method` values means that method
   contributed nothing. During a full MinSync re-sync this is expected: the
   store is being rebuilt, `minsync status` reports `NotSynced`, and local-file
   hits stay absent until it finishes. Confirm with `minsync status` before
   treating it as a failure, and never kill a running sync to "fix" it.
-- `lite retrieve` needs no model, so it isolates retrieval from model failures.
-- Use `--tags` / `--scope` to force one datasource; they can only narrow
-  trusted access, never grant it. A datasource absent from `datasourceAccess`
-  returns nothing no matter how healthy its store is — fix the config, not the
-  store.
-- `autorag evidence SESSION --json` (session id comes from `--json --debug`)
-  shows the exact chunk behind a numbered result; use it to confirm a hit is
-  real and its source is readable.
+- MCP `autorag.search` needs no model, so it isolates retrieval from model
+  failures.
+- Use MCP `datasourceIds` to select configured connections before retrieval;
+  `scope` narrows results within scope-capable datasources. Discover connection
+  IDs with `autorag.datasources.list`; descriptor tags are metadata only, not
+  search filters. Every configured connection is searchable — if one returns
+  nothing, investigate its native store, connector, or the query itself.
+- `autorag.evidence {"sessionId":"...","resultNumber":N}` shows the exact chunk
+  behind a numbered result; use it to confirm a hit is real and its source is
+  readable. The CLI `autorag evidence SESSION --json` remains for terminal
+  repair.
 - Local-file hits must map to an absolute, existing path. Datasource hits keep
   source-native identities such as `/kakao/personal/chunks/42`; those are not
   filesystem paths and must never be passed to `cat`.
@@ -197,8 +203,9 @@ timer, or Task Scheduler).
   then `autorag refresh --method minsync` to retry.
 - `auth-error` / `rate-limited`: model or datasource credentials. Report the
   missing environment-variable **name** and let the user supply it.
-- A datasource configured but not listed in `datasourceAccess.allowedTags` /
-  `allowedScopes` is default-denied and invisible to search. Add it there.
+- A configured datasource that returns nothing is a native store, connector, or
+  query problem — every configured connection is searchable. Run its native
+  check from the table above and fix it there.
 
 ## Diagnostic codes
 
@@ -217,6 +224,11 @@ timer, or Task Scheduler).
 | `unknown-datasource-skill` | Config name is not a known template | Fix the name or add `"type"` |
 | `retrieval-method-failed` | One method errored during the query | Read `--debug` diagnostics |
 | `auth-error` | Credentials missing or rejected | Report the env var name |
+| `query-route-fallback` | Jev routing unavailable (often `OPENROUTER_API_KEY` unset); searched local with the original question | `test -n "$OPENROUTER_API_KEY"`; report the env var name, never its value |
+| `query-decomposition-failed` | Decomposition model call failed; searched the original question | Check `queryDecomposition.model` resolves (`autorag models list --provider openrouter`) |
+| `follow-up-check-fallback` | Jev post-fast-answer check unavailable; the run verified | Same as `query-route-fallback` |
+| `datasource-selection-fallback` | Jev datasource check unavailable; no datasource was searched before the fast answer | Same as `query-route-fallback` |
+| `query-routed` / `datasources-selected` / `follow-up-skipped` | Info: Jev's branch and queries / datasources searched and skipped / fast answer judged final | None; working as intended. A datasource that is never selected usually needs a clearer `description` in the config |
 
 ## Report
 

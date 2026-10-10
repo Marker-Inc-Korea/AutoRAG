@@ -1,5 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import { assertCitationsResolve, assertResultsMappingOneToOne } from "./citations.ts";
 
 export const EMIT_AUTORAG_RESULTS_TOOL_NAME = "emit_autorag_results";
 
@@ -28,8 +30,7 @@ const evidenceRefSchema = Type.Object({
 
 export const emitResultsSchema = Type.Object({
 	answer: Type.String({
-		description:
-			"Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text.",
+		description: `Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}`,
 	}),
 	results: Type.Array(
 		Type.Object({
@@ -122,9 +123,11 @@ export function createEmitResultsTool(
 		name: EMIT_AUTORAG_RESULTS_TOOL_NAME,
 		label: "Emit AutoRAG Results",
 		description:
-			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Put each result's source (file path or datasource id) in the mapping parameter.",
+			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Put each result's source (file path or datasource id) in the mapping parameter. A call whose answer cites a number missing from results, or whose results and mapping numbers are not one-to-one, is rejected; fix the numbering and call again.",
 		parameters: emitResultsSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<AutoRAGResultsDetails>> {
+			assertCitationsResolve(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.answer, params.results);
+			assertResultsMappingOneToOne(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.results, params.mapping);
 			const details: AutoRAGResultsDetails = {
 				answer: params.answer,
 				results: params.results.map((result) => ({

@@ -18,6 +18,22 @@ Issue #1672 adds Lark/Feishu remote search through `lark-cli` (no local
 archive). A real tenant run needs `lark-cli auth login` and must not copy
 tenant content into CI fixtures.
 
+## Isolation boundary
+
+Run the manual-QA commands below inside the repository's isolated Docker shell:
+
+```bash
+make qa-shell
+```
+
+The shell mounts this checkout at `/workspace` with a container-only `HOME`,
+`AUTORAG_HOME`, and `AUTORAG_CONFIG`; it does not mount the host AutoRAG home or
+native datasource stores. Use `make e2e-live-docker` for the fixture-based live
+workflow. Only explicitly selected model credential names in `QA_MODEL_ENV` are
+forwarded; set it empty (`QA_MODEL_ENV=`) to forward none. Do not mount a real
+host home to make a native lane pass; provision a
+synthetic store inside the container or accept `SKIP`.
+
 ## Harnesses
 
 | Harness | Target systems | Command |
@@ -36,7 +52,7 @@ tenant content into CI fixtures.
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |
-| `test/datasource/skills/lark.test.ts` | Fake `lark-cli`: message and doc identities, no local archive, default deny, chat vs docs scope, `--chat-id`, hash-fragment rejection, auth/rate-limit stderr, remote-embedder rejection | `bunx vitest run test/datasource/skills/lark.test.ts` |
+| `test/datasource/skills/lark.test.ts` | Fake `lark-cli`: message and doc identities, no local archive, ordinary query-scope narrowing, chat vs docs scope, `--chat-id`, hash-fragment rejection, auth/rate-limit stderr, remote-embedder rejection | `bunx vitest run test/datasource/skills/lark.test.ts` |
 | `scripts/manual-qa/run-qa-lark-live.ts` | Real `lark-cli` on a logged-in tenant. Prints `/lark/...` identities. Refuses to pass with no hits. | `bun scripts/manual-qa/run-qa-lark-live.ts "<query>"` |
 | `test/datasource/skills/notcrawl.test.ts` | Real child-process boundary with a deterministic fake notcrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/notcrawl.test.ts` |
 
@@ -91,25 +107,25 @@ mapping. Configure credentials in notcrawl itself, then set
       `lastError`) tracks success and failure; RSS applies a dedupe window.
 
 ### Progressive disclosure & search
-- [x] Authorized skills appear as `datasource-<name>` in the system prompt;
-      unauthorized skills are omitted entirely.
+- [x] Configured skills appear as `datasource-<name>` in the system prompt;
+      unconfigured skills are omitted entirely.
 - [x] `load_datasource_skill` returns full path-opaque instructions for
-      authorized names and not-available for denied/unknown names.
-- [x] Each authorized connection's dedicated `search_datasource_<id>` tool
+      configured names and not-available for unknown names.
+- [x] Each configured connection's dedicated `search_datasource_<id>` tool
       returns hits with opaque slash-hierarchical sources
       (`/<skill>/<instance>/chunks/<id>`); no `#` fragments, no real filesystem
-      paths. There is no datasource fan-out tool: every authorized connection is
-      reachable through its own generated tool, and default-deny generates none.
+      paths. There is no datasource fan-out tool: every configured connection is
+      reachable through its own generated tool.
 - [x] `scope` narrows results for scope-capable datasources (e.g. `/mail-export/**` excludes Slack hits) and can
-      never widen access.
+      never widen visibility.
 
 ### Security
-- [x] Default-deny: without trusted `allowedTags`, searches return nothing
-      and skills are absent from the prompt.
-- [x] Tool arguments carrying `allowedTags`/`allowedScopes` are ignored —
-      they cannot grant permissions.
-- [x] User scope intersects trusted scopes before merge
-      (`DatasourceResultFilter`).
+- [x] Every configured or already-connected datasource is searchable without
+      access setup: there is no tag/scope authorization layer.
+- [x] Skill/descriptor `tags` are descriptive metadata only, and tool arguments
+      cannot change which connections exist.
+- [x] User scope narrows scope-capable datasource results before merge
+      (`filterDatasourceScope`); `#` fragments are always rejected.
 
 ### Diagnostics
 - [x] Wrong tokens map to `datasource-auth-error`; permission problems to

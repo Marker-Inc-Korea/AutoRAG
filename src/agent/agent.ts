@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
-import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
-import { DatasourceResultFilter } from "../datasource/result-filter.ts";
+import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
 import {
@@ -36,6 +36,7 @@ import {
 	type JikjiHandoffAction,
 	type JikjiOptions,
 	type JikjiPrepareResult,
+	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
@@ -70,15 +71,18 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
-import { createReranker, type Reranker } from "../retrieval/rerank.ts";
+import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
 	buildRetrievalScopeBindings,
 	normalizeVirtualPath,
 	type RetrievalScopeBinding,
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
+import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
+import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -102,6 +106,13 @@ import {
 } from "./fast-answer-tool.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import {
+	createJevExtension,
+	createJevJudge,
+	JEV_TOOL_NAME,
+	type JevJudge,
+	type JevToolOptions,
+} from "./jev-extension.ts";
+import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
 	type JikjiFindPerRootPolicy,
@@ -118,7 +129,17 @@ import {
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
+import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
+import {
+	type DatasourceCandidate,
+	FALLBACK_QUERY_ROUTE,
+	needsFollowUp,
+	type PastSearchHint,
+	type QueryRoute,
+	routeQuery,
+	selectDatasources,
+} from "./query-routing.ts";
 import {
 	isRefreshOwnerAlive,
 	type PersistedRefreshProgress,
@@ -223,6 +244,11 @@ function hasSearchEvidence(toolName: string, details: unknown, isError: boolean)
  */
 const MERGED_EVIDENCE_CEILING = 500;
 
+/** Similar past searches shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
+const SIMILAR_PAST_SEARCH_LIMIT = 5;
+/** Results listed per similar past search; a search's leading results carry its answer. */
+const SIMILAR_PAST_RESULT_LIMIT = 4;
+
 /**
  * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
  * the model. Every field is optional: an omitted field keeps the shipped
@@ -232,7 +258,7 @@ const MERGED_EVIDENCE_CEILING = 500;
 export interface AutoRAGRetrievalLimits {
 	/** `search_all_documents` merge ceiling when the model omits `topK`. Default 500. */
 	readonly mergedEvidenceCeiling?: number;
-	/** `search_datasource_*` merge default when the model omits `topK`. Default 50. */
+	/** `search_datasource_*` merge default when the model omits `topK`. Default 20. */
 	readonly singleDatasourceTopK?: number;
 	/** MinSync semantic retrieval default `topK`. Default 50. */
 	readonly minSyncTopK?: number;
@@ -256,7 +282,7 @@ export interface AutoRAGRetrievalLimits {
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
 const DEFAULT_RETRIEVAL_LIMITS = {
 	mergedEvidenceCeiling: MERGED_EVIDENCE_CEILING,
-	singleDatasourceTopK: 50,
+	singleDatasourceTopK: 20,
 	minSyncTopK: 50,
 	minSyncScopedQueryTopK: 100,
 	toolDescriptionInstanceScopes: 8,
@@ -469,12 +495,10 @@ export class RemoteSessionRejectedError extends Error {
 export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
- * Two-phase progressive answers: the fast phase delivers an immediate first
- * answer with {@link AutoRAGThinkingOptions.fast} thinking (default "off"),
- * then the verification phase re-checks and finalizes with
- * {@link AutoRAGThinkingOptions.final} thinking (default "high"). Pass
- * `false` on {@link AutoRAGAgentOptions.thinking} to keep the legacy
- * single-phase flow.
+ * Per-phase thinking for AutoRAG's two-phase search: the fast phase delivers
+ * an immediate first answer with {@link AutoRAGThinkingOptions.fast} thinking
+ * (default "off"), then the verification phase re-checks and finalizes with
+ * {@link AutoRAGThinkingOptions.final} thinking (default "high").
  */
 export interface AutoRAGThinkingOptions {
 	/** Thinking level for the immediate first answer. Default "off". */
@@ -542,6 +566,26 @@ export interface AutoRAGAgentOptions {
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
+	/**
+	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
+	 * probabilities out). When set, the two-phase search asks Jev before the
+	 * fast answer whether the question needs local search, web search, or a
+	 * direct answer, and whether to decompose it; after the fast answer, whether
+	 * verification is needed. It also exposes the `jev` tool. Always omitted for
+	 * remote P2P sessions.
+	 *
+	 * The CLI config enables this by default on OpenRouter (`buildAgentOptions`
+	 * fills it in). On this programmatic option, absent or `false` keeps Jev
+	 * off, so library callers never make paid network calls they did not ask for.
+	 */
+	jev?: JevToolOptions | false;
+	/**
+	 * Question decomposition used by the Jev query pipeline. `model` (with its
+	 * `apiKey`) is the LLM that splits one question into at most five search
+	 * queries; omitted, the search session's own model decomposes. The CLI
+	 * resolves its configured or default model (`openrouter/qwen/qwen3.7-flash`).
+	 */
+	queryDecomposition?: { readonly model?: Model<Api>; readonly apiKey?: string };
 	excludeExactDuplicates?: boolean;
 	excludePaths?: readonly string[];
 	/**
@@ -551,7 +595,6 @@ export interface AutoRAGAgentOptions {
 	 */
 	limits?: AutoRAGRetrievalLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
-	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
 	/** Maximum time a model/tool search may run before it is aborted. */
@@ -565,14 +608,20 @@ export interface AutoRAGAgentOptions {
 	peerQuery?: PeerQueryOptions | false;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
-	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
-	thinking?: AutoRAGThinkingOptions | false;
+	/** Per-phase thinking levels for the two-phase (fast → verification) search. */
+	thinking?: AutoRAGThinkingOptions;
 	/** pi agent directory for auth/models/extensions. Defaults to ~/.pi/agent. */
 	piAgentDir?: string;
 	/** Optional persistent pi session directory. */
 	piSessionDir?: string;
 	/** Persist one pi session transcript per AutoRAG search. Defaults true. */
 	persistPiSessions?: boolean;
+	/**
+	 * Best-effort provider for an interactive-only startup notice (e.g. a newer
+	 * AutoRAG release). Resolves to the notice text or `undefined`; never fails
+	 * a launch.
+	 */
+	updateNotice?: () => Promise<string | undefined>;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -642,15 +691,11 @@ export class AutoRAGAgent {
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
-	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
-	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
-	private readonly finalThinkingLevel: AutoRAGThinkingLevel | undefined;
+	/** Per-phase thinking levels of the two-phase search. */
+	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
+	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
-	private jikjiPrepareInFlight: Promise<void> | undefined;
-	private jikjiReady = false;
-	private minSyncPrepareInFlight: Promise<MinSyncSyncResult | undefined> | undefined;
-	private minSyncReady = false;
 	private refreshState: RefreshState = {
 		inFlight: false,
 		lastOutcome: "never",
@@ -672,18 +717,25 @@ export class AutoRAGAgent {
 	private readonly merger = new ResultMerger();
 	private readonly reranker: Reranker | undefined;
 	private readonly rerankTopN: number | undefined;
-	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
-	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
+	/** pi extension registering the optional `jev` tool; undefined when disabled. */
+	private readonly jevExtension: ExtensionFactory | undefined;
+	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
+	private readonly jevJudge: JevJudge | undefined;
+	private readonly queryDecompositionModel: DecompositionModel | undefined;
+	/** Web search routing for the pipeline's web branch; undefined when web tools are off. */
+	private readonly webSearchOptions: WebSearchToolOptions | undefined;
+	/** Routing diagnostics for the in-flight search; reset per run. */
+	private routingDiagnostics: SearchDocumentDiagnostic[] = [];
 	private readonly excludeExactDuplicates: boolean;
 	private readonly excludePaths: readonly string[];
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
@@ -693,6 +745,7 @@ export class AutoRAGAgent {
 	private readonly piAgentDir: string | undefined;
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
+	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
@@ -712,22 +765,21 @@ export class AutoRAGAgent {
 		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
 			throw new Error("maxSearchToolCalls must be a positive integer");
 		}
-		const thinking = options.thinking;
-		this.fastThinkingLevel = thinking === false ? undefined : (thinking?.fast ?? "off");
-		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
+		this.fastThinkingLevel = options.thinking?.fast ?? "off";
+		this.finalThinkingLevel = options.thinking?.final ?? "high";
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		this.piAgentDir = options.piAgentDir;
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
+		this.updateNotice = options.updateNotice;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
 			normalizeVirtualPath(`/${skill.describe().name}`),
 		);
-		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 		this.startupDiagnostics = options.startupDiagnostics ?? [];
-		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
+		this.datasourceAgentSkills = this.buildDatasourceAgentSkills();
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.languages = options.languages ?? DEFAULT_LANGUAGES;
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
@@ -744,7 +796,10 @@ export class AutoRAGAgent {
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
-		this.rerankTopN = options.rerank === false || options.rerank === undefined ? undefined : options.rerank.topN;
+		this.rerankTopN =
+			options.rerank === false || options.rerank === undefined
+				? undefined
+				: (options.rerank.topN ?? DEFAULT_RERANK_TOP_N);
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -755,11 +810,16 @@ export class AutoRAGAgent {
 				scopedTopK: this.limits.minSyncScopedQueryTopK,
 			};
 			this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
-			this.minSyncReady = this.minSyncMethod.isReady();
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		}
+		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
+			const datasourceId = skill.describe().datasourceId;
+			if (datasourceId !== undefined) {
+				if (registeredDatasourceIds.has(datasourceId)) continue;
+				registeredDatasourceIds.add(datasourceId);
+			}
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
 		if (options.jikji !== false) {
@@ -767,7 +827,6 @@ export class AutoRAGAgent {
 				...(options.jikji ?? {}),
 				root: this.workspaceProjectRoot,
 			});
-			this.jikjiReady = this.searchPaths.every((searchPath) => this.jikjiClient?.isPrepared(searchPath) === true);
 		}
 		if (options.everything !== false) {
 			const everythingClient = new EverythingClient({
@@ -782,6 +841,7 @@ export class AutoRAGAgent {
 				...(options.fsearch ?? {}),
 				root: this.workspaceProjectRoot,
 				folders: this.searchPaths,
+				excludeFolders: this.excludePaths,
 			});
 			if (fsearchClient.isSupported()) this.fsearchClient = fsearchClient;
 		}
@@ -792,12 +852,12 @@ export class AutoRAGAgent {
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		// One tool per authorized datasource connection, so a question that
+		// One tool per configured datasource connection, so a question that
 		// targets a single connection spawns only that connection's CLIs instead
-		// of fanning out to every datasource. Generated from the same trusted
-		// config + access context as the skill list, so disabled or denied
-		// datasources never appear as tools. These are the only datasource
-		// retrieval tools: cross-datasource fan-out lives in search_all_documents.
+		// of fanning out to every datasource. Generated from the configured
+		// datasource skills, so every connection gets its own tool. These are
+		// the only datasource retrieval tools: cross-datasource fan-out lives in
+		// search_all_documents.
 		const singleDatasourceTools = createSingleDatasourceSearchTools(this, this.singleDatasourceToolSpecs());
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
@@ -810,6 +870,20 @@ export class AutoRAGAgent {
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		this.jevJudge =
+			options.jev === undefined || options.jev === false || this.remoteSession
+				? undefined
+				: createJevJudge(options.jev);
+		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
+		this.queryDecompositionModel =
+			options.queryDecomposition?.model === undefined
+				? undefined
+				: {
+						model: options.queryDecomposition.model,
+						...(options.queryDecomposition.apiKey !== undefined
+							? { apiKey: options.queryDecomposition.apiKey }
+							: {}),
+					};
 
 		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 		const peerQuery = options.peerQuery;
@@ -841,9 +915,11 @@ export class AutoRAGAgent {
 
 		const webSearchOption = options.webSearch;
 		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
-		const webSearchTool = webToolsEnabled
-			? createWebSearchTool({ ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth })
+		this.webSearchOptions = webToolsEnabled
+			? { ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth }
 			: undefined;
+		const webSearchTool =
+			this.webSearchOptions !== undefined ? createWebSearchTool(this.webSearchOptions) : undefined;
 		const webFetchTool =
 			webToolsEnabled && webSearchOption?.fetch !== false
 				? createWebFetchTool(webSearchOption?.fetch ?? {})
@@ -864,6 +940,7 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			JEV_TOOL_NAME,
 			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -904,7 +981,13 @@ export class AutoRAGAgent {
 			return true;
 		});
 		this.tools = tools;
-		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name)];
+		// pi registers the jev tool from its extension; AutoRAG still lists the
+		// name so the prompt advertises it and reserved-name checks cover it.
+		const toolNames = [
+			...PI_BUILTIN_TOOL_NAMES,
+			...tools.map((tool) => tool.name),
+			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
+		];
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
@@ -913,6 +996,7 @@ export class AutoRAGAgent {
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
 			retrievedContentGuard: false,
+			remoteSession: this.remoteSession,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
@@ -1033,6 +1117,9 @@ export class AutoRAGAgent {
 			],
 			remoteSession: this.remoteSession,
 			contextTransform: (messages) => this.withMemoryContext(messages),
+			...(this.jevExtension !== undefined
+				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
+				: {}),
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -1128,19 +1215,19 @@ export class AutoRAGAgent {
 				...this.tools.filter(
 					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
 				),
-				...(this.fastThinkingLevel === undefined
-					? []
-					: [createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details))]),
+				createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details)),
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
-			inactiveToolNames: this.fastThinkingLevel === undefined ? [] : [EMIT_FAST_ANSWER_TOOL_NAME],
+			inactiveToolNames: [EMIT_FAST_ANSWER_TOOL_NAME],
+			...(this.jevExtension !== undefined
+				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
+				: {}),
+			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
-		if (this.fastThinkingLevel !== undefined) {
-			runtime.runtime.session.setActiveToolsByName(
-				runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-			);
-		}
+		runtime.runtime.session.setActiveToolsByName(
+			runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+		);
 		const dispose = runtime.dispose;
 		return {
 			...runtime,
@@ -1158,12 +1245,20 @@ export class AutoRAGAgent {
 		pi.setSessionName(query.slice(0, 80));
 		for await (const event of this.searchDocumentsStream(query)) {
 			const text = event.type === "progress" ? event.text : event.response.answer;
-			pi.sendMessage({
-				customType: `autorag.${event.type}`,
-				content: [{ type: "text", text }],
-				display: true,
-				details: event,
-			});
+			// Display-only: these arrive while the search turn is streaming, and
+			// pi's default delivery steers a custom message into that turn as a
+			// user message, so the model would answer its own progress and the
+			// query would never finish. triggerTurn:false shows them without
+			// adding a turn.
+			pi.sendMessage(
+				{
+					customType: `autorag.${event.type}`,
+					content: [{ type: "text", text }],
+					display: true,
+					details: event,
+				},
+				{ triggerTurn: false },
+			);
 		}
 	}
 
@@ -1255,15 +1350,27 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
+		this.routingDiagnostics = [];
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
-		this.scheduleJikjiPrepare();
-		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
-		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-			if (fastCaptured !== undefined) return;
-			fastCaptured = details;
+		/**
+		 * Without Jev every fast answer goes on to verification, so it is
+		 * published the moment emit_fast_answer runs. With Jev, publishing waits
+		 * for the direct route and the follow-up check: an answer that turns out
+		 * to be final reaches the caller once, as the complete response.
+		 */
+		const publishOnCapture = this.jevJudge === undefined;
+		let published = false;
+		// A run's timeout aborts this controller. A slow follow-up check or a
+		// late tool call can outlive the timeout, so publishing is gated on it:
+		// an aborted run must never push a preliminary into the callback a later
+		// run already installed on the instance.
+		const planAbort = new AbortController();
+		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (planAbort.signal.aborted || published) return;
+			published = true;
 			this.preliminaryCallback?.(
 				createPreliminarySearchDocumentsResponse(
 					sessionId,
@@ -1272,6 +1379,11 @@ export class AutoRAGAgent {
 					this.collectComponentDiagnostics(),
 				),
 			);
+		};
+		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+			if (fastCaptured !== undefined) return;
+			fastCaptured = details;
+			if (publishOnCapture) publishPreliminary(details);
 		};
 		let session: AutoRAGSearchSession | undefined;
 		this.interactiveFastAnswerCallback = emitPreliminary;
@@ -1303,42 +1415,62 @@ export class AutoRAGAgent {
 			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
-				this.fastThinkingLevel === undefined ? [] : [createEmitFastAnswerTool(emitPreliminary)],
+				[createEmitFastAnswerTool(emitPreliminary)],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
 			let timeout: NodeJS.Timeout | undefined;
+			let timedOutAfterFastAnswer = false;
 			try {
 				await Promise.race([
 					(async () => {
-						// Start retrieval immediately, without waiting for the model's
-						// first inference.
-						const retrievalPromise = this.prefetchInitialRetrievalContext(trimmedQuery, options);
-						if (this.fastThinkingLevel === undefined) {
-							// Legacy single-phase flow (thinking disabled).
-							await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
-							if (captured === undefined) {
-								const initialRetrievalContext = await retrievalPromise;
-								await session.prompt(
-									`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
-								);
-							}
-							return;
-						}
 						// Two-phase flow: fast thinking-off answer first, then a
 						// thinking-on verification pass that finalizes the results.
-						const baseline = await retrievalPromise;
+						// With Jev enabled, Jev first picks local search, web search, or a
+						// direct answer, and whether the question needs decomposition.
+						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						const sessionAgent = session.piSession;
-						if (sessionAgent !== undefined) {
-							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
-							sessionAgent.setActiveToolsByName([
-								...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-								EMIT_FAST_ANSWER_TOOL_NAME,
-							]);
-						} else {
-							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
-							session.agent.state.tools = [...this.tools, { name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool];
+						const activeSession = session;
+						const activateFastPhase = (): void => {
+							if (sessionAgent !== undefined) {
+								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
+								sessionAgent.setActiveToolsByName([
+									...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
+									EMIT_FAST_ANSWER_TOOL_NAME,
+								]);
+							} else {
+								activeSession.agent.state.thinkingLevel = clampThinkingLevel(
+									resolved.model,
+									this.fastThinkingLevel,
+								);
+								activeSession.agent.state.tools = [
+									...this.tools,
+									{ name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool,
+								];
+							}
+						};
+						if (plan.route === "direct") {
+							// Direct answers skip every retrieval step and the verification
+							// phase: the fast answer is the final answer. Only Jev routes
+							// here, so the preliminary was never published.
+							activateFastPhase();
+							await session.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
+							const answer =
+								fastCaptured?.answer ??
+								lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
+							if (answer !== undefined) captured = { answer, results: [], mapping: [], warnings: [] };
+							return;
 						}
+						const baseline =
+							plan.route === "web"
+								? await this.prefetchWebContext(plan.queries, planAbort.signal)
+								: await this.prefetchInitialRetrievalContext(
+										trimmedQuery,
+										plan.queries,
+										options,
+										plan.datasources,
+									);
+						activateFastPhase();
 						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
 						let preliminary = fastCaptured;
 						if (preliminary === undefined) {
@@ -1346,32 +1478,97 @@ export class AutoRAGAgent {
 							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
 						}
 						if (preliminary !== undefined) emitPreliminary(preliminary);
-						if (captured === undefined && this.finalThinkingLevel !== undefined) {
-							if (sessionAgent !== undefined) {
-								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
-								sessionAgent.setActiveToolsByName(
-									sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-								);
-							} else {
-								session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
-								session.agent.state.tools = [...this.tools];
+						if (captured !== undefined) return;
+						// With Jev enabled, a fast answer that needs no correction,
+						// clarification, or further research ends the run here.
+						if (preliminary !== undefined) {
+							const followUp = await this.shouldFollowUp(trimmedQuery, preliminary);
+							// The follow-up check is not tied to the session abort, so it
+							// can resolve after the run's timeout fired; stop here rather
+							// than publishing or prompting on behalf of a dead run.
+							if (planAbort.signal.aborted) return;
+							if (!followUp) {
+								captured = fastAnswerAsFinal(preliminary);
+								return;
 							}
-							// Only a preliminary consumer actually received may turn the final answer into a delta.
-							const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
-							await session.prompt(
-								this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
+						}
+						if (preliminary !== undefined) publishPreliminary(preliminary);
+						if (sessionAgent !== undefined) {
+							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+							sessionAgent.setActiveToolsByName(
+								sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
 							);
+						} else {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+							session.agent.state.tools = [...this.tools];
+						}
+						// Only a preliminary consumer actually received may turn the final answer into a delta.
+						const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+						await session.prompt(
+							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered, plan.route),
+						);
+						// Models sometimes end verification by writing the final answer as
+						// prose instead of calling emit_autorag_results (seen on the web
+						// route). One reminder turn lets them emit what they already have;
+						// a second miss, a provider error, or an abort (tool-call limit,
+						// timeout) falls through to the degraded response.
+						if (
+							captured === undefined &&
+							!planAbort.signal.aborted &&
+							this.searchToolCallCount < this.maxSearchToolCalls &&
+							lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) === undefined
+						) {
+							await session.prompt(buildFinalEmitReminder());
 						}
 					})(),
-					new Promise<never>((_, reject) => {
+					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
+							planAbort.abort();
 							void Promise.resolve(session?.abort());
+							// A first answer already exists: return it below instead of
+							// failing the whole search and discarding it. Remote sessions
+							// keep failing soft through their outbound-scanned path.
+							if (fastCaptured !== undefined && !this.remoteSession) {
+								timedOutAfterFastAnswer = true;
+								resolve();
+								return;
+							}
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
 					}),
 				]);
 			} finally {
 				if (timeout !== undefined) clearTimeout(timeout);
+			}
+
+			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
+				// The caller receives this as the run's final answer, so record it as
+				// one: the fast-answer-as-final conversion (the same one the Jev direct
+				// route uses) registers the session registry and the memory entry, so
+				// the returned feedback ids resolve and past-search hints stay honest.
+				const response = recordStructuredResultsSession(
+					sessionId,
+					trimmedQuery,
+					fastAnswerAsFinal(fastCaptured),
+					this.sessions,
+					this.memory,
+					[
+						...this.collectComponentDiagnostics(),
+						{
+							code: "search-timeout",
+							severity: "warning",
+							message: `search timed out after ${this.searchTimeoutMs}ms before verification finished; returning the first answer`,
+						},
+					],
+				);
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: response.results.length,
+					degraded: true,
+				});
+				return response;
 			}
 
 			let emittedNoVerifiedResults = false;
@@ -1460,6 +1657,7 @@ export class AutoRAGAgent {
 				this.sessions,
 				this.memory,
 				componentDiagnostics,
+				{ remote: this.remoteSession },
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -1593,28 +1791,14 @@ export class AutoRAGAgent {
 		}
 	}
 
-	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
-		const effectiveOptions = this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options;
-		const trustedTags = this.datasourceAccessOptions.allowedTags ?? [];
-		const requestedTags = effectiveOptions.allowedTags;
-		const allowedTags =
-			requestedTags === undefined ? trustedTags : trustedTags.filter((tag) => requestedTags.includes(tag));
-		return new DatasourceAccessContext({
-			allowedTags,
-			allowedScopes: this.datasourceAccessOptions.allowedScopes,
-		});
-	}
-
 	/**
-	 * Build the Pi agent-skill list for datasource skills authorized by the
-	 * trusted, server-bound access context. Only authorized skills become
-	 * model-visible; unauthorized skills are omitted entirely (default-deny).
+	 * Build the Pi agent-skill list for every configured datasource skill. All
+	 * configured skills are model-visible; a connection is removed from the
+	 * model surface by removing it from the config, not by a permission layer.
 	 */
-	private buildAuthorizedDatasourceSkills(): Skill[] {
-		const ctx = this.datasourceAccessContext();
+	private buildDatasourceAgentSkills(): Skill[] {
 		const skills: Skill[] = [];
 		for (const skill of this.datasourceSkills) {
-			if (!ctx.isAccessible(skill.describe())) continue;
 			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
 		}
 		return skills;
@@ -1622,18 +1806,15 @@ export class AutoRAGAgent {
 
 	/**
 	 * Per-connection tool specs for the generated `search_datasource_<id>`
-	 * tools, built from the same trusted config and access context as
-	 * {@link buildAuthorizedDatasourceSkills}. One spec per authorized
-	 * datasource skill; duplicate ids collapse to the first registration.
+	 * tools, one per configured datasource skill; duplicate ids collapse to the
+	 * first registration.
 	 */
 	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
-		const ctx = this.datasourceAccessContext();
 		const seen = new Set<string>();
 		const specs: SingleDatasourceToolSpec[] = [];
 		for (const skill of this.datasourceSkills) {
 			const descriptor = skill.describe();
 			if (descriptor.datasourceId === undefined) continue;
-			if (!ctx.isAccessible(descriptor)) continue;
 			if (seen.has(descriptor.datasourceId)) continue;
 			seen.add(descriptor.datasourceId);
 			// Instance roots are two-segment sources like /kakao/personal; deeper
@@ -1653,9 +1834,51 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Resolve an authorized datasource agent skill by model-visible name for the
-	 * `load_datasource_skill` tool. Returns `undefined` for unknown or
-	 * unauthorized names — model/tool input can never widen authorization.
+	 * Configured datasource descriptors for catalog/listing surfaces: every
+	 * configured datasource is listed — including ones that expose no retrieval
+	 * methods — and each entry carries only identity, capability tags, and
+	 * source scope strings (never credentials, config paths, or raw instance
+	 * metadata). Duplicate datasource ids collapse to the first registration.
+	 */
+	listDatasources(): DatasourceCatalogEntry[] {
+		const seen = new Set<string>();
+		const entries: DatasourceCatalogEntry[] = [];
+		for (const skill of this.datasourceSkills) {
+			const descriptor = skill.describe();
+			if (descriptor.datasourceId === undefined) continue;
+			if (seen.has(descriptor.datasourceId)) continue;
+			seen.add(descriptor.datasourceId);
+			entries.push({
+				datasourceId: descriptor.datasourceId,
+				name: descriptor.name,
+				type: descriptor.type,
+				description: descriptor.description,
+				tags: [...descriptor.tags],
+				capabilities: [...descriptor.capabilities],
+				status: descriptor.status,
+				sourceScopes: this.datasourceSourceScopes(skill),
+			});
+		}
+		return entries;
+	}
+
+	/**
+	 * Opaque source scope strings for one datasource. Sources containing a `#`
+	 * fragment are invalid and skipped.
+	 */
+	private datasourceSourceScopes(skill: DatasourceSkill): string[] {
+		const scopes = new Set<string>();
+		for (const source of skill.describeSources()) {
+			const scope = source.source;
+			if (scope.includes("#")) continue;
+			scopes.add(scope);
+		}
+		return [...scopes];
+	}
+
+	/**
+	 * Resolve a configured datasource agent skill by model-visible name for the
+	 * `load_datasource_skill` tool. Returns `undefined` for unknown names.
 	 */
 	loadDatasourceSkill(name: string): Skill | undefined {
 		return this.datasourceAgentSkills.find((skill) => skill.name === name);
@@ -1714,81 +1937,394 @@ export class AutoRAGAgent {
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
 		}
+		diagnostics.push(...this.routingDiagnostics);
 		return diagnostics;
 	}
 
-	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
+	/**
+	 * Jev check run after emit_fast_answer: does the answer need correction,
+	 * clarification, or further research? "No" ends the run with the fast
+	 * answer as the final answer. Without Jev, or when the check fails, the run
+	 * always continues into verification.
+	 */
+	private async shouldFollowUp(query: string, fastAnswer: AutoRAGFastAnswerDetails): Promise<boolean> {
+		if (this.jevJudge === undefined) return true;
+		const decision = await needsFollowUp(this.jevJudge, query, fastAnswer.answer);
+		if (decision.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "follow-up-check-fallback",
+				severity: "warning",
+				message: `Jev follow-up check was unavailable; verifying the fast answer. ${decision.fallbackReason}`,
+				source: "jev",
+			});
+			return true;
+		}
+		const probability = decision.probability?.toFixed(2) ?? "?";
+		if (!decision.followUp) {
+			this.routingDiagnostics.push({
+				code: "follow-up-skipped",
+				severity: "info",
+				message: `Jev judged the fast answer final (P(follow-up)=${probability}); the verification phase was skipped.`,
+				source: "jev",
+			});
+		}
+		return decision.followUp;
+	}
+
+	/**
+	 * Jev query pipeline, run before the fast answer. Jev picks the branch
+	 * (local search, web search, or a direct answer) and whether the question
+	 * needs decomposition; a "yes" splits it into at most five search queries
+	 * with the configured decomposition model (default: the session model). On
+	 * the local branch, Jev also judges, per registered datasource, whether it
+	 * must be searched (in parallel with decomposition). Without Jev, and on any
+	 * routing failure, this is today's single local search for the original
+	 * question with no datasource search.
+	 */
+	private async planQuery(
+		query: string,
+		resolved: {
+			readonly model: Model<Api>;
+			readonly apiKey?: string;
+			readonly providerApiKeys?: Readonly<Record<string, string>>;
+		},
+		signal: AbortSignal,
+	): Promise<{
+		readonly route: QueryRoute;
+		readonly queries: readonly string[];
+		readonly datasources: readonly string[];
+	}> {
+		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+		const decision = await routeQuery(this.jevJudge, query);
+		if (decision.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "query-route-fallback",
+				severity: "warning",
+				message: `Jev query routing fell back to local search. ${decision.fallbackReason}`,
+				source: "jev",
+			});
+			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+		}
+		let route = decision.route;
+		if (route === "web" && this.webSearchOptions === undefined) {
+			this.routingDiagnostics.push({
+				code: "query-route-fallback",
+				severity: "info",
+				message:
+					"Jev routed the question to web search, but web tools are disabled; searching local sources instead.",
+				source: "jev",
+			});
+			route = FALLBACK_QUERY_ROUTE;
+		}
+		const datasourcesPromise = route === "local" ? this.selectSearchDatasources(query) : Promise.resolve([]);
+		let queries: readonly string[] = [query];
+		if (decision.decompose && route !== "direct") {
+			const target = this.queryDecompositionModel ?? {
+				model: resolved.model,
+				...((resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider]) !== undefined
+					? { apiKey: resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider] }
+					: {}),
+			};
+			try {
+				queries = await decomposeQuery(createModelDecompositionCompleter(target, signal), query);
+			} catch (error) {
+				this.routingDiagnostics.push({
+					code: "query-decomposition-failed",
+					severity: "warning",
+					message: `Question decomposition failed; searching with the original question. ${error instanceof Error ? error.message : String(error)}`,
+					source: "query-decomposition",
+				});
+			}
+		}
+		const datasources = await datasourcesPromise;
+		const probability = decision.routeProbability === undefined ? "" : ` (p=${decision.routeProbability.toFixed(2)})`;
+		this.routingDiagnostics.push({
+			code: "query-routed",
+			severity: "info",
+			message:
+				`Jev routed the question to ${route}${probability}; ` +
+				(route === "direct"
+					? "answering directly without retrieval."
+					: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
+			source: "jev",
+		});
+		return { route, queries, datasources };
+	}
+
+	/**
+	 * Jev datasource check for the local branch: one `noul` per configured
+	 * datasource that has retrieval methods, with where similar past questions
+	 * were answered (from retrieval memory) in the state. Returns the ids to
+	 * search with every query before the rerank; a failed check searches none.
+	 */
+	private async selectSearchDatasources(query: string): Promise<readonly string[]> {
+		if (this.jevJudge === undefined) return [];
+		const searchable = new Set(
+			this.methodRegistry
+				.list()
+				.map((method) => method.describe().datasourceId)
+				.filter((datasourceId) => datasourceId !== undefined),
+		);
+		const catalog = this.listDatasources().filter((entry) => searchable.has(entry.datasourceId));
+		const candidates: DatasourceCandidate[] = catalog.map(({ datasourceId, type, description }) => ({
+			datasourceId,
+			type,
+			description,
+		}));
+		if (candidates.length === 0) return [];
+		// Where a past result's evidence came from: datasource chunks carry a
+		// virtual path rooted at the skill name (`/kakao/default/...`), but the
+		// model sometimes maps a datasource hit to a bare chunk id. The evidence
+		// method then still names the datasource (`search_datasource_kakao_work`,
+		// `datasource:kakao`, `kakao-work-lexical`): both sides collapse every
+		// non-alphanumeric to `_` exactly like generated tool names, and a
+		// datasource id that appears as a whole token attributes it; longer ids
+		// are checked first so `kakao-work` wins over `kakao`. Indexed files are
+		// absolute paths under a search path; web evidence is a URL.
+		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
+		// Configured skills that are not catalog datasources (no datasource id).
+		// Memory is global (shared across workspaces and configs), so a past
+		// result attributed to one of them must never reach the Jev state.
+		const nonDatasourceRoots = new Set(
+			this.datasourceSkills.map((skill) => skill.describe().name).filter((name) => !datasourceByRoot.has(name)),
+		);
+		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
+		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		const whereFound = ({ source, method }: { source: string; method: string }): string | undefined => {
+			if (/^https?:\/\//u.test(source)) return "web";
+			if (this.configuredSearchPaths.some((root) => source === root || source.startsWith(`${root}${sep}`))) {
+				return "local files";
+			}
+			const root = source.startsWith("/") ? (source.split("/")[1] ?? "") : "";
+			if (nonDatasourceRoots.has(root)) return undefined;
+			const byRoot = datasourceByRoot.get(root);
+			if (byRoot !== undefined) return byRoot;
+			const tokens = methodToken(method);
+			return idsLongestFirst.find((id) => tokens.includes(methodToken(id)));
+		};
+		// A past result is shown only when every piece of its evidence is
+		// attributed to something this run searches (a configured datasource, a
+		// configured search path, or the web): its title is
+		// model-written text about that evidence and leaves the machine.
+		const pastSearches: PastSearchHint[] = [];
+		for (const past of this.memory.findSimilarSearches(query)) {
+			const results: { title: string; foundIn: string[] }[] = [];
+			for (const result of past.results) {
+				const places = result.evidence.map(whereFound);
+				if (places.length === 0 || places.some((place) => place === undefined)) continue;
+				results.push({ title: result.title, foundIn: [...new Set(places.filter((place) => place !== undefined))] });
+			}
+			if (results.length === 0) continue;
+			pastSearches.push({ query: past.query, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
+			if (pastSearches.length === SIMILAR_PAST_SEARCH_LIMIT) break;
+		}
+		const selection = await selectDatasources(this.jevJudge, query, candidates, pastSearches);
+		if (selection.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "datasource-selection-fallback",
+				severity: "warning",
+				message: `Jev datasource check was unavailable; no datasource was searched before the fast answer. ${selection.fallbackReason}`,
+				source: "jev",
+			});
+			return [];
+		}
+		const describe = (ids: readonly string[]): string =>
+			ids.length === 0
+				? "none"
+				: ids.map((id) => `${id} (p=${selection.probabilities[id]?.toFixed(2) ?? "?"})`).join(", ");
+		const skipped = candidates.map((entry) => entry.datasourceId).filter((id) => !selection.selected.includes(id));
+		this.routingDiagnostics.push({
+			code: "datasources-selected",
+			severity: "info",
+			message: `Jev selected datasources to search before the fast answer: ${describe(selection.selected)}; skipped: ${describe(skipped)}.`,
+			source: "jev",
+		});
+		return selection.selected;
+	}
+
+	/**
+	 * Baseline local evidence for the fast answer. Jikji, MinSync, and every
+	 * Jev-selected datasource run for every search query in parallel (MinSync
+	 * itself queues per workspace), the per-query hits are interleaved and
+	 * deduplicated into one pool, and that pool is reranked against the
+	 * original question.
+	 */
+	private async prefetchInitialRetrievalContext(
+		query: string,
+		searchQueries: readonly string[],
+		options: RetrievalOptions,
+		datasources: readonly string[] = [],
+	): Promise<string> {
 		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
-		const vectorReady = this.minSyncMethod?.isReady() === true;
-		const [jikji, vector] = await Promise.all([
-			this.jikjiClient === undefined
-				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
-			vectorReady ? this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []) : Promise.resolve([]),
-		]);
+		// Queries only read the prebuilt MinSync index; an unbuilt workspace makes
+		// `minsync query` fail fast and this source contributes nothing.
+		const formatSearchQueries = (list: readonly string[]): string =>
+			`Search queries (decomposed from the original question):\n${list.map((entry, index) => `[${index + 1}] ${entry}`).join("\n")}`;
+		const perQuery = await Promise.all(
+			searchQueries.map((searchQuery) =>
+				Promise.all([
+					this.jikjiClient === undefined
+						? Promise.resolve(undefined)
+						: this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
+					this.minSyncMethod === undefined
+						? Promise.resolve([])
+						: this.minSyncMethod.retrieve(searchQuery, retrieveOptions).catch(() => []),
+					Promise.all(
+						datasources.map((datasourceId) =>
+							this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
+								topK: this.limits.singleDatasourceTopK,
+								scope: options.scope,
+							})
+								.then((outcome) => outcome.results)
+								.catch((): RetrievalResult[] => []),
+						),
+					),
+				]),
+			),
+		);
+		const interleave = <T>(lists: readonly (readonly T[])[]): T[] => {
+			const merged: T[] = [];
+			const longest = Math.max(0, ...lists.map((list) => list.length));
+			for (let rank = 0; rank < longest; rank++) {
+				for (const list of lists) {
+					const item = list[rank];
+					if (item !== undefined) merged.push(item);
+				}
+			}
+			return merged;
+		};
+		const jikjiFound = perQuery.some(([jikji]) => jikji?.answerPack !== undefined);
+		const jikjiPaths = [...new Set(interleave(perQuery.map(([jikji]) => jikji?.answerPack?.answerPaths ?? [])))];
+		const seenChunks = new Set<string>();
+		const unseen = (result: RetrievalResult): boolean => {
+			const key = `${result.source}\0${result.content}`;
+			if (seenChunks.has(key)) return false;
+			seenChunks.add(key);
+			return true;
+		};
+		const minSyncResults = interleave(perQuery.map(([, vector]) => vector)).filter(unseen);
+		const datasourceResults = interleave(perQuery.map(([, , perDatasource]) => interleave(perDatasource))).filter(
+			unseen,
+		);
+		for (const result of minSyncResults) options.observedSources?.add(result.source);
+		for (const result of datasourceResults) options.observedSources?.add(result.source);
+		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths,
+		// MinSync chunks, and selected-datasource chunks) against the original
+		// question, so decomposed sub-query hits compete on relevance to what the
+		// user asked. Falls back to the unranked sections when reranking is
+		// disabled or unavailable.
+		const reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults);
+		if (reranked !== undefined) {
+			const baseline = formatRerankedBaseline(reranked);
+			return searchQueries.length > 1 ? `${formatSearchQueries(searchQueries)}\n\n${baseline}` : baseline;
+		}
+
+		// One flat numbering across every section (issue #1788): candidate [n]
+		// labels never restart, so no number means two different candidates.
 		const sections: string[] = [];
-		if (jikji?.answerPack !== undefined) {
+		if (searchQueries.length > 1) sections.push(formatSearchQueries(searchQueries));
+		let candidateNumber = 0;
+		if (jikjiFound) {
 			sections.push(
-				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
+				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikjiPaths
 					.slice(0, this.limits.prefetch.jikjiPathLimit)
-					.map((path, index) => `[${index + 1}] ${path}`)
+					.map((path) => `[${++candidateNumber}] ${path}`)
 					.join("\n")}`,
 			);
 		}
-		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
-			if (results) {
-				for (const result of results) options.observedSources?.add(result.source);
-			}
-			if (!results || results.length === 0) return;
-			const seen = new Set<string>();
+		if (minSyncResults.length > 0) {
 			sections.push(
-				`${label} initial candidates:\n${results
-					.filter((result) => {
-						const key = `${result.source}\0${result.content}`;
-						if (seen.has(key)) return false;
-						seen.add(key);
-						return true;
-					})
+				`MinSync semantic initial candidates:\n${minSyncResults
 					.slice(0, this.limits.prefetch.sectionLimit)
-					.map((result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
-		};
-		formatResults("MinSync semantic", vector);
+		}
+		if (datasourceResults.length > 0) {
+			sections.push(
+				`Datasource initial candidates:\n${datasourceResults
+					.slice(0, this.limits.prefetch.sectionLimit)
+					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.join("\n")}`,
+			);
+		}
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
 	}
 
-	/**
-	 * Prepare MinSync lazily without holding up the current search. Parsed
-	 * mirrors are built first because MinSync stages and indexes those mirrors.
-	 */
-	/** Prepare MinSync in the background; the returned promise is for tests. */
-	scheduleMinSyncPrepareForTest(): Promise<MinSyncSyncResult | undefined> | undefined {
-		return this.scheduleMinSyncPrepare();
+	/** Baseline web evidence for the fast answer: one web search per query, all in parallel. */
+	private async prefetchWebContext(queries: readonly string[], signal: AbortSignal): Promise<string> {
+		const web = this.webSearchOptions ?? {};
+		const modelAuth = web.modelAuth?.();
+		const searches = await Promise.all(
+			queries.map((query) =>
+				executeWebSearch(
+					{ query, ...(web.provider !== undefined ? { provider: web.provider } : {}) },
+					{
+						signal,
+						...(web.timeoutSeconds !== undefined ? { timeoutMs: web.timeoutSeconds * 1_000 } : {}),
+						...(web.order !== undefined ? { order: web.order } : {}),
+						...(web.exclude !== undefined ? { exclude: web.exclude } : {}),
+						...(modelAuth !== undefined ? { modelAuth } : {}),
+					},
+				).catch((error: unknown) => ({
+					content: [],
+					details: {
+						response: { provider: "none" as const, sources: [] },
+						error: error instanceof Error ? error.message : String(error),
+					},
+				})),
+			),
+		);
+		const sections = searches.map((search, index) => {
+			const label = `Web search results for ${JSON.stringify(queries[index])}`;
+			return search.details.error !== undefined
+				? `${label}: unavailable (${search.details.error})`
+				: `${label}:\n${search.content.map((part) => part.text).join("\n")}`;
+		});
+		return searches.every((search) => search.details.error !== undefined)
+			? `${sections.join("\n\n")}\n\nNo web evidence was available; use the configured tools and report degradation honestly.`
+			: sections.join("\n\n");
 	}
 
-	private scheduleMinSyncPrepare(): Promise<MinSyncSyncResult | undefined> | undefined {
-		if (this.minSyncMethod === undefined || this.minSyncReady || this.minSyncPrepareInFlight !== undefined) {
-			return this.minSyncPrepareInFlight;
+	/**
+	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths, MinSync
+	 * chunks, and Jev-selected datasource chunks — down to the configured
+	 * `rerank.topN`. With decomposition the pool merges every search query's
+	 * hits (interleaved), capped at the same per-source sizes as a single query
+	 * so the rerank request does not grow with the query count. Returns
+	 * `undefined` when reranking is disabled/unavailable or the pool is empty,
+	 * so the caller keeps the unranked sections; a rerank failure never blocks
+	 * the fast answer.
+	 */
+	private async rerankPrefetchPool(
+		query: string,
+		answerPaths: readonly string[],
+		minSyncResults: readonly RetrievalResult[],
+		datasourceResults: readonly RetrievalResult[],
+	): Promise<RetrievalResult[] | undefined> {
+		const reranker = this.reranker;
+		if (reranker === undefined) return undefined;
+		const candidates: RetrievalResult[] = answerPaths
+			.slice(0, this.limits.prefetch.jikjiPathLimit)
+			.map((path, index) => ({
+				id: `jikji:${index}`,
+				content: path,
+				source: path,
+				score: 1 - index / Math.max(answerPaths.length, 1),
+				metadata: { method: "jikji" },
+			}));
+		candidates.push(...minSyncResults.slice(0, this.limits.prefetch.minSyncTopK));
+		candidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
+		if (candidates.length === 0) return undefined;
+		if (!reranker.describe().available) return undefined;
+		try {
+			const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN });
+			return reranked.length > 0 ? reranked : undefined;
+		} catch {
+			return undefined;
 		}
-		this.minSyncPrepareInFlight = Promise.resolve()
-			.then(async () => {
-				await this.syncParsedMirrors(false);
-				if (!this.minSyncMethod) return undefined;
-				this.minSyncReady = this.minSyncMethod.isReady();
-				if (this.minSyncReady) return undefined;
-				const result = await this.minSyncMethod.sync();
-				this.minSyncReady = result?.ok === true;
-				this.refreshState = { ...this.refreshState, minsync: result };
-				return result;
-			})
-			.catch(() => undefined)
-			.finally(() => {
-				this.minSyncPrepareInFlight = undefined;
-			});
-		return this.minSyncPrepareInFlight;
 	}
 
 	/**
@@ -1808,10 +2344,26 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
 			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and their real source paths, then stop.`
+		);
+	}
+
+	/**
+	 * Prompt for a question Jev routed to a direct answer: general knowledge or
+	 * small talk. No retrieval ran and no verification phase follows, so the
+	 * answer emitted here is final.
+	 */
+	buildDirectAnswerPrompt(query: string): string {
+		return (
+			`Answer this query directly from your own general knowledge: ${query}\n\n` +
+			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ` +
+			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.\n\n` +
+			`Call emit_fast_answer exactly once with the answer and an empty results list, then stop.`
 		);
 	}
 
@@ -1834,6 +2386,7 @@ export class AutoRAGAgent {
 		options: RetrievalOptions,
 		fastAnswer: AutoRAGFastAnswerDetails | undefined,
 		fastAnswerDelivered: boolean,
+		route: QueryRoute = "local",
 	): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
@@ -1845,18 +2398,24 @@ export class AutoRAGAgent {
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on a first-answer unit must re-emit that evidence as a result of this call and cite its new number.\n` +
+				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+				`- ${ANSWER_CITATION_RULE}\n` +
+				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ` +
+			(route === "web"
+				? `Now verify it rigorously on the internet: Jev routed this question to web search, so the answer lives in public web sources, not in local files. Use ${WEB_SEARCH_TOOL_NAME} (and ${WEB_FETCH_TOOL_NAME} to read a promising page) to confirm or correct each claim, fill gaps with focused web queries, and resolve conflicts and freshness. Use URLs as result sources. `
+				: `Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. `) +
 			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
@@ -1881,6 +2440,8 @@ export class AutoRAGAgent {
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations. If there are partial clues or leads, mention them concisely.\n\n` +
@@ -2313,7 +2874,6 @@ export class AutoRAGAgent {
 
 	async syncMinSync(force = false): Promise<MinSyncSyncResult | undefined> {
 		const result = await this.minSyncMethod?.sync(force);
-		this.minSyncReady = result?.ok === true;
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
@@ -2358,38 +2918,16 @@ export class AutoRAGAgent {
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
 	}
 
-	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
-		if (this.jikjiClient === undefined) return undefined;
-		const results: JikjiPrepareResult[] = [];
-		for (const sourcePath of this.searchPaths) {
-			results.push(await this.jikjiClient.prepare(sourcePath));
-		}
-		this.jikjiReady = results.length === this.searchPaths.length && results.every((result) => result.ok);
-		return results;
-	}
-
 	/**
-	 * Start Jikji preparation without delaying the current search turn. A
-	 * subsequent turn can use the prepared index, while the child process keeps
-	 * running after emit_autorag_results has terminated the agent loop.
+	 * Build or incrementally update every root's Jikji index. Called only by
+	 * refresh/watch (and the explicit `prepareJikji()` API), never by a query:
+	 * `jikji prepare` reuses unchanged documents, and roots run in parallel so
+	 * one slow root does not serialize the rest.
 	 */
-	private scheduleJikjiPrepare(): void {
-		if (this.jikjiClient === undefined || this.jikjiPrepareInFlight !== undefined) return;
-		this.jikjiPrepareInFlight = Promise.resolve()
-			.then(async () => {
-				const results = await this.executeJikjiPrepare();
-				const diagnostics = (results ?? [])
-					.map((result) => jikjiPrepareDiagnostic(result))
-					.filter((diag): diag is JikjiDiagnostic => diag !== undefined);
-				this.refreshState = { ...this.refreshState, jikjiDiagnostics: diagnostics };
-			})
-			.catch(() => {
-				// Jikji is optional; the current and future searches fall back to
-				// the other retrieval paths when background preparation fails.
-			})
-			.finally(() => {
-				this.jikjiPrepareInFlight = undefined;
-			});
+	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
+		const client = this.jikjiClient;
+		if (client === undefined) return undefined;
+		return Promise.all(this.searchPaths.map((sourcePath) => client.prepare(sourcePath)));
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
@@ -2421,23 +2959,6 @@ export class AutoRAGAgent {
 	): Promise<JikjiFindProviderResult> {
 		if (this.jikjiClient === undefined) {
 			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
-		}
-		if (!this.jikjiReady) {
-			this.scheduleJikjiPrepare();
-			return {
-				answerPack: undefined,
-				policy: undefined,
-				diagnostics: [
-					{
-						code: "jikji-unavailable",
-						severity: "warning",
-						message: "Jikji is not prepared yet; background preparation started and this turn is falling back.",
-						source: "jikji",
-					},
-				],
-				roots: this.searchPaths,
-				perRoot: [],
-			};
 		}
 		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
 		const findOpts: JikjiFindOptions = {
@@ -2483,12 +3004,21 @@ export class AutoRAGAgent {
 	 * Merge per-root answer packs into one. Concatenates answer_paths/candidates
 	 * preserving per-root order; dedupes by normalized path. Does NOT cross-root
 	 * rerank when any root has agentShouldNotRerank=true.
+	 *
+	 * Honours `excludePaths` at the retrieval boundary: Jikji indexes the source
+	 * folders directly, bypassing the parsed mirror, so an excluded source still
+	 * appears in the on-disk `.jikji_agent_map.md`. Dropping excluded paths here
+	 * keeps them out of the agent-facing answer pack (the `jikji_find` tool and
+	 * the baseline prefetch) while leaving the shared map artifact complete.
+	 * Excluded paths remain reachable through direct file reads, as Jikji never
+	 * blocks source verification.
 	 */
 	private mergeAnswerPacks(
 		entries: readonly { pack: JikjiAnswerPack; root: string }[],
-		sourceRoots: ReturnType<typeof planJikjiSourceRoots>,
+		sourceRoots: readonly JikjiSourceRoot[],
 		policy: MergedJikjiPolicy,
 	): JikjiAnswerPack {
+		const excluded = new Set(this.excludePaths);
 		const seenPaths = new Set<string>();
 		const answerPaths: string[] = [];
 		const candidates: JikjiCandidate[] = [];
@@ -2505,20 +3035,20 @@ export class AutoRAGAgent {
 			const originRoots = [originRoot];
 			for (const rawPath of entry.pack.answerPaths) {
 				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
-				if (norm !== undefined && !seenPaths.has(norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !seenPaths.has(norm)) {
 					seenPaths.add(norm);
 					answerPaths.push(norm);
 				}
 			}
 			for (const rawPath of entry.pack.paths) {
 				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
-				if (norm !== undefined && !allPaths.includes(norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !allPaths.includes(norm)) {
 					allPaths.push(norm);
 				}
 			}
 			for (const cand of entry.pack.candidates) {
 				const norm = normalizeJikjiAnswerPath(cand.path, originRoots);
-				if (norm !== undefined && !candidates.some((c) => c.path === norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !candidates.some((c) => c.path === norm)) {
 					candidates.push({
 						path: norm,
 						nextRead: cand.nextRead,
@@ -2529,7 +3059,7 @@ export class AutoRAGAgent {
 			}
 			for (const ev of entry.pack.evidencePack) {
 				const norm = normalizeJikjiAnswerPath(ev.path, originRoots);
-				if (norm !== undefined && !evidencePack.some((e) => e.path === norm)) {
+				if (norm !== undefined && !isPathExcluded(norm, excluded) && !evidencePack.some((e) => e.path === norm)) {
 					evidencePack.push({ path: norm, nextRead: ev.nextRead });
 				}
 			}
@@ -2622,13 +3152,7 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
-		const filteredByMethod = this.datasourceFilter.filter(
-			byMethod,
-			methods,
-			this.datasourceAccessContext(options),
-			options.scope,
-			options.allowedScopes,
-		);
+		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) options.observedSources?.add(result.source);
 		}
@@ -2662,10 +3186,9 @@ export class AutoRAGAgent {
 	 * Search one datasource connection only. Only the target connection's
 	 * retrieval methods are registered with the retriever, so no other
 	 * datasource CLI is spawned at all and only that connection's hits are
-	 * returned. Access is still gated by the trusted datasource context: an
-	 * unknown or unauthorized `datasourceId` yields an empty result set.
+	 * returned. An unknown `datasourceId` yields an empty result set.
 	 *
-	 * This backs the generated `search_datasource_<id>` tools; every authorized
+	 * This backs the generated `search_datasource_<id>` tools; every configured
 	 * connection has one. Cross-datasource fan-out is
 	 * {@link searchAllDocuments}, which spans every retrieval method.
 	 */
@@ -2679,10 +3202,9 @@ export class AutoRAGAgent {
 			topK: options.topK,
 			scope: options.scope,
 		};
-		const ctx = this.datasourceAccessContext(retrievalOptions);
 		const methods = this.methodRegistry.list().filter((method) => {
 			const descriptor = method.describe();
-			return descriptor.datasourceId === datasourceId && ctx.isAccessible(descriptor);
+			return descriptor.datasourceId === datasourceId;
 		});
 		if (methods.length === 0) return { results: [], diagnostics: [] };
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
@@ -2690,7 +3212,7 @@ export class AutoRAGAgent {
 			query,
 			retrievalOptions,
 		);
-		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
@@ -2701,8 +3223,9 @@ export class AutoRAGAgent {
 				dedup: true,
 			}),
 		);
-		const results = await this.applyRerank(query, merged, diagnostics);
-		return { results, diagnostics };
+		// Single-datasource retrieval is intentionally NOT model-reranked: the
+		// caller already narrowed to one connection, so the merged order is kept.
+		return { results: merged, diagnostics };
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -2713,17 +3236,18 @@ export class AutoRAGAgent {
 	/**
 	 * The standalone retrieval engine for this agent's method pipeline.
 	 * Built on first access using the agent's registered methods and configured
-	 * datasource access context. Model-free — no agent state required.
+	 * datasource catalog. Model-free — no agent state required.
 	 */
 	private retrievalEngine: RetrievalEngine | undefined;
 	getRetrievalEngine(): RetrievalEngine {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
-				datasourceAccess: this.datasourceAccessOptions,
 				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
+				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
+				datasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
 			});
 			for (const method of this.methodRegistry.list()) {
 				this.retrievalEngine.register(method);
@@ -2856,6 +3380,48 @@ export class AutoRAGAgent {
 }
 
 /**
+ * Baseline block for the reranked pre-fast-answer pool. A single numbering
+ * sequence replaces the per-section numbering so bracketed citations are
+ * unambiguous in the fast-answer prompt.
+ */
+function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
+	const lines = results.map(
+		(result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
+	);
+	return `Reranked initial candidates (ordered by relevance to the query):\n${lines.join("\n")}`;
+}
+
+/**
+ * The fast answer as a final emit_autorag_results payload, used when Jev ends
+ * the run after the fast phase. Every result the answer cites is kept: the
+ * fast-answer `sources` mapping is optional and models routinely omit it, so
+ * dropping source-less results would strip the answer's citations. A result
+ * with no reported source keeps an empty mapping source (the response then
+ * carries no `source` for it) rather than an invented path.
+ */
+function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResultsDetails {
+	const sourceByNumber = new Map(fastAnswer.sources.map((entry) => [entry.number, entry.source]));
+	return {
+		answer: fastAnswer.answer,
+		results: fastAnswer.results.map((result) => ({
+			number: result.number,
+			title: result.title,
+			summary: result.summary,
+			evidence: result.evidence,
+			confidence: result.confidence ?? 0.5,
+		})),
+		mapping: fastAnswer.results.map((result) => ({
+			number: result.number,
+			source: sourceByNumber.get(result.number) ?? "",
+			method: EMIT_FAST_ANSWER_TOOL_NAME,
+			content: result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary,
+			evidenceRefs: [],
+		})),
+		warnings: [],
+	};
+}
+
+/**
  * Render the fast-phase first answer for the verification prompt. When a
  * consumer already received it, the model must diff against it and return only
  * the delta; otherwise the draft is internal context only and the final answer
@@ -2871,7 +3437,7 @@ function formatFirstAnswerContext(fastAnswer: AutoRAGFastAnswerDetails | undefin
 	const units =
 		fastAnswer.results.length === 0
 			? ""
-			: `\n\nNumbered units of that first answer:\n${fastAnswer.results
+			: `\n\nNumbered units of that first answer (its own numbering — NOT citation numbers for your final answer; cite only the results you emit):\n${fastAnswer.results
 					.map((result) => `[${result.number}] ${result.title} — ${result.summary}`)
 					.join("\n")}`;
 	const sources =
@@ -2928,6 +3494,20 @@ function lastModelRequestError(messages: readonly AgentMessage[]): string | unde
 	return undefined;
 }
 
+/**
+ * One-turn reminder sent when the verification phase stops without calling
+ * emit_autorag_results. It asks only for the structured emit of the answer the
+ * model already reached, never for more searching.
+ */
+function buildFinalEmitReminder(): string {
+	return (
+		`You ended without calling ${EMIT_AUTORAG_RESULTS_TOOL_NAME}, so the user has not received your verified answer. ` +
+		`Do not search again. Call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} now, exactly once, with the answer you just wrote, ` +
+		`its numbered results, and the number-to-source mapping (use the real file paths or URLs you used). ` +
+		`If verification found nothing usable, call it with an answer that says so and an empty results list.`
+	);
+}
+
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];
@@ -2966,7 +3546,10 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 }
 
 function sanitizeDiagnosticMessage(raw: string): string {
-	let out = raw.split(/\n\s+at\s/)[0] ?? raw;
+	// `\s+` must not overlap the leading `\n` or `.split` walks a long newline
+	// run quadratically (CodeQL js/polynomial-redos): `[^\S\n]` is whitespace
+	// that excludes the newline, so stack-frame indentation still matches.
+	let out = raw.split(/\n[^\S\n]+at\s/)[0] ?? raw;
 	out = out.replace(/(?:^|[^A-Za-z0-9])(\/(?:[^/\s]+\/)+[^/\s]+)/g, " <path>");
 	out = out.replace(/[A-Za-z]:\\[^\s]+/g, "<path>");
 	return out.replace(/\s{2,}/g, " ").trim();

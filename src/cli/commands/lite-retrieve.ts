@@ -1,9 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { normalizeLanguages } from "../../language.ts";
 import { detectMirrorStaleness } from "../../mirror/index.ts";
-import { refreshReadinessPath } from "../../mirror/paths.ts";
+import { isParsedRefreshComplete } from "../../mirror/paths.ts";
 import { resolveParserOptions } from "../../parser/index.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
@@ -95,7 +94,6 @@ interface RejectionEnvelope {
 interface LiteRetrieveOptions {
 	topK?: number;
 	scope?: string;
-	allowedTags?: readonly string[];
 }
 
 function parseIntOptional(value: string | boolean | undefined): number | undefined {
@@ -105,22 +103,11 @@ function parseIntOptional(value: string | boolean | undefined): number | undefin
 	return Math.trunc(parsed);
 }
 
-function parseCsvStrings(value: string | boolean | undefined): readonly string[] | undefined {
-	if (typeof value !== "string" || value.trim() === "") return undefined;
-	const parts = value
-		.split(",")
-		.map((part) => part.trim())
-		.filter((part) => part !== "");
-	return parts.length > 0 ? parts : undefined;
-}
-
 function buildRetrieveOptions(flags: CommandContext["flags"]): LiteRetrieveOptions {
 	const options: LiteRetrieveOptions = {};
 	const topK = parseIntOptional(flags["top-k"]);
 	if (topK !== undefined) options.topK = topK;
 	if (typeof flags.scope === "string" && flags.scope.trim() !== "") options.scope = flags.scope;
-	const tags = parseCsvStrings(flags.tags);
-	if (tags !== undefined) options.allowedTags = tags;
 	return options;
 }
 
@@ -228,27 +215,6 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	}
 	return lines.join("\n");
 }
-
-function hasCompletedParsedRefresh(workspacePath: string): boolean {
-	const markerPath = refreshReadinessPath(workspacePath);
-	if (!existsSync(markerPath)) return false;
-	try {
-		const marker: unknown = JSON.parse(readFileSync(markerPath, "utf8"));
-		return (
-			typeof marker === "object" &&
-			marker !== null &&
-			"version" in marker &&
-			marker.version === 1 &&
-			"completed" in marker &&
-			marker.completed === true &&
-			"parsed" in marker &&
-			marker.parsed === true
-		);
-	} catch {
-		return false;
-	}
-}
-
 /**
  * Turn refresh's stale-source diagnostics into the retrieve envelope's shape.
  * `severity` stays a warning: stale sources are reported, not blocked.
@@ -303,7 +269,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const query = ctx.positionals.join(" ").trim();
 	if (query.length === 0) {
 		ctx.stderr(
-			renderError(new Error("Usage: autorag lite retrieve <query> [--top-k N] [--scope SCOPE] [--tags tag1,tag2]"), {
+			renderError(new Error("Usage: autorag lite retrieve <query> [--top-k N] [--scope SCOPE]"), {
 				json: ctx.json,
 				debug: ctx.debug,
 			}),
@@ -332,7 +298,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	// mirror index file is created by `lite refresh` / `autorag refresh` and
 	// persists across CLI process boundaries.
 	const workspacePath = lite.config.workspacePath;
-	const parsedReady = hasCompletedParsedRefresh(workspacePath);
+	const parsedReady = isParsedRefreshComplete(workspacePath);
 	if (!parsedReady) {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,
@@ -397,7 +363,6 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		retrievalResult = await lite.retrieve(query, {
 			topK: topKResult.value ?? options.topK,
 			scope: options.scope,
-			allowedTags: options.allowedTags,
 		});
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));

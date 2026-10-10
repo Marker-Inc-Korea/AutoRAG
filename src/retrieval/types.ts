@@ -20,8 +20,6 @@ export interface RetrievalOptions {
 	topK?: number;
 	scope?: string;
 	filters?: Record<string, unknown>;
-	allowedTags?: readonly string[];
-	allowedScopes?: readonly string[];
 	signal?: AbortSignal;
 }
 

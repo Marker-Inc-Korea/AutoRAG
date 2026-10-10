@@ -325,24 +325,16 @@ describeFSearch("FSearchClient", () => {
 		expect(existsSync(pidPath)).toBe(false);
 	});
 
-	it("builds the database lazily on the first search, then searches it", async () => {
-		const { client, calls } = fakeClient([
-			VERSION_OK,
-			{ code: 0 },
-			{ code: 0, stdout: '{"live":false,"files":1,"folders":0}' },
-			{ code: 0, stdout: '{"live":true,"files":1,"folders":0}' },
-			{
-				code: 0,
-				stdout:
-					'{"path":"/docs/a.txt","name":"a.txt","type":"file","size":1,"mtime":1790956800}\n{"done":true,"num_results":1,"num_returned":1}\n',
-			},
-		]);
+	it("never builds the database on a search; it walks the folders until refresh indexes them", async () => {
+		// Index builds belong to `autorag refresh`, never to a query turn.
+		mkdirSync(join(root, "docs"), { recursive: true });
+		writeFileSync(join(root, "docs", "a.txt"), "a");
+		const { client, calls } = fakeClient([VERSION_OK]);
 		const result = await client.search({ query: "a" });
-		expect(result).toMatchObject({ ok: true, backend: "fsearch-cli", total: 1 });
+		expect(result).toMatchObject({ ok: true, backend: "walk" });
 		if (!result.ok) throw new Error("expected ok");
-		expect(result.results[0]).toMatchObject({ path: "/docs/a.txt", type: "file" });
-		// --version, index, stats (count), stats (watch poll), search
-		expect(calls.map((call) => call.args[0])).toEqual(["--version", "index", "stats", "stats", "search"]);
+		expect(result.results.map((entry) => entry.name)).toContain("a.txt");
+		expect(calls.map((call) => call.args[0])).toEqual(["--version"]);
 	});
 
 	it("searches an existing database without reindexing", async () => {

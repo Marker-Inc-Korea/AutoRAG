@@ -24,9 +24,6 @@ describe("search_all_documents tool", () => {
 		expect(tool.name).toBe(SEARCH_ALL_DOCUMENTS_TOOL_NAME);
 		const keys = Object.keys(tool.parameters.properties ?? {});
 		expect(keys.sort()).toEqual(["query", "scope", "topK"]);
-		// No datasource trust override fields in the schema.
-		expect(keys).not.toContain("allowedTags");
-		expect(keys).not.toContain("allowedScopes");
 	});
 
 	it("returns a path-free zero-result message for an empty query without calling the provider", async () => {
@@ -67,59 +64,6 @@ describe("search_all_documents tool", () => {
 		expect(text).toContain("minsync:minsync-unavailable");
 		// Diagnostics summary must not contain real paths.
 		expect(text).not.toMatch(/[A-Z]:[\\/]/u);
-	});
-
-	it("does not forward allowedTags/allowedScopes from forged model args to the provider", async () => {
-		const forwarded: Array<[string, { topK?: number; scope?: string } | undefined]> = [];
-		const searchAllDocuments = async (query: string, options?: { topK?: number; scope?: string }) => {
-			forwarded.push([query, options]);
-			return { results: [], diagnostics: [] };
-		};
-		const tool = createSearchAllDocumentsTool({ searchAllDocuments });
-
-		// A hostile/forged tool call carrying datasource trust fields the schema
-		// does not declare. The provider must never see them.
-		const out = await tool.execute("call-3", {
-			query: "message",
-			topK: 10,
-			scope: "/kakao/acct-1/**",
-			allowedTags: ["kakao"],
-			allowedScopes: ["/kakao/**"],
-		} as never);
-
-		expect(forwarded).toHaveLength(1);
-		const [queryArg, optionsArg] = forwarded[0]!;
-		expect(queryArg).toBe("message");
-		expect(optionsArg).toEqual({ topK: 10, scope: "/kakao/acct-1/**" });
-		expect(optionsArg).not.toHaveProperty("allowedTags");
-		expect(optionsArg).not.toHaveProperty("allowedScopes");
-
-		expect(out.details.method).toBe("search_all_documents");
-		expect(out.details.resultCount).toBe(0);
-	});
-
-	it("fails closed if the provider would have been granted access via forwarded fields", async () => {
-		// Provider that fails loudly if any trust field reaches it.
-		const provider: SearchAllDocumentsProvider = {
-			searchAllDocuments(_query, options) {
-				if (options && ("allowedTags" in options || "allowedScopes" in options)) {
-					throw new Error("trust fields leaked into provider");
-				}
-				return Promise.resolve({ results: [result("a", "/docs/x")], diagnostics: [] });
-			},
-		};
-		const tool = createSearchAllDocumentsTool(provider);
-
-		const out = await tool.execute("call-4", {
-			query: "message",
-			allowedTags: ["kakao"],
-			allowedScopes: ["/kakao/**"],
-		} as never);
-
-		// No throw, no leak: the provider received only query (and undefined options minus trust fields).
-		expect(out.details.method).toBe("search_all_documents");
-		expect(out.details.resultCount).toBe(1);
-		expect(out.details.sources).toEqual(["/docs/x"]);
 	});
 
 	it("attributes details.method to the tool name search_all_documents", async () => {

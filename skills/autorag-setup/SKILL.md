@@ -1,6 +1,6 @@
 ---
 name: autorag-setup
-description: Install and configure AutoRAG, or repair its single search model, approved document roots, retrieval indexes, datasource skills, and health checks without exposing credentials. Use when autorag is missing, init/refresh/health fails, indexes are stale, or the user wants to add folders or datasources.
+description: Install and configure AutoRAG, register its Lite MCP server for external agents, or repair its single search model, approved roots, indexes, datasources, and health checks without exposing credentials. Use when AutoRAG or MCP is missing, init/refresh/health fails, indexes are stale, or the user wants to add folders or datasources.
 license: MIT
 ---
 
@@ -9,6 +9,11 @@ license: MIT
 Use this skill when AutoRAG is unconfigured, the `autorag` CLI is missing, model
 resolution fails, indexes are missing or stale, or the user wants to change the
 document collection or datasources.
+
+For model-free external-agent search, use `autorag-lite-setup` to configure
+and register `autorag-mcp`; do not configure a search model or install a search
+skill for Lite. This skill's model setup and CLI search apply to the full
+librarian, not the Lite MCP server.
 
 ## Safety
 
@@ -41,7 +46,7 @@ Check `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 - `model.provider`, `model.id`, `model.api`, `model.baseUrl`, `model.apiKeyEnv`
 - `bm25`, `minSync`, and `jikji`
 - `limits` (retrieval, baseline-prefetch, and model-facing candidate caps)
-- `datasources`, `datasourceAccess`, and `ui`
+- `datasources` and `ui`
 
 Preserve explicit user choices and a working config unless the user asks to
 replace them or health checks fail.
@@ -141,17 +146,26 @@ reasoning, thinking, and compat settings are kept. Only an id outside the
 catalog (private proxy, Ollama, LiteLLM) gets a generic text model with a 128k
 context window unless those fields are declared.
 
-Use `--force` only when intentionally replacing an existing config. Legacy cwd
+Use `--force` only when intentionally replacing an existing config, and target it
+with an explicit path (`--config` or `AUTORAG_CONFIG`); `--force` refuses to
+replace the implicit `~/.autorag/config.json`. Legacy cwd
 `autorag.config.json` is a migration source only and is never deleted by init.
 
 ### Retrieval defaults
 
 MinSync and Jikji are enabled by default. Leave them enabled unless the
-user explicitly asks otherwise. MinSync auto-installs a verified GitHub release
-into `<workspace>/.autorag/bin` on first use (`minSync.autoInstall` defaults to
-true). Set `"autoInstall": false` only when managing the binary yourself. Jikji
-auto-installs `jikji-cli` through cargo when enabled (`jikji.autoInstall`
-defaults to true; requires the Rust toolchain).
+user explicitly asks otherwise. Indexing never happens while answering: a
+question only reads indexes that `autorag refresh` (or `autorag watch`) built,
+so run a refresh after setup and whenever documents change. A never-refreshed
+workspace still answers, but without MinSync/Jikji evidence.
+
+Refresh (never a query) auto-installs the binaries: MinSync installs a verified
+GitHub release into `<workspace>/.autorag/bin` (`minSync.autoInstall` defaults
+to true), and Jikji installs `jikji-cli` through cargo (`jikji.autoInstall`
+defaults to true; requires the Rust toolchain). Set `"autoInstall": false` only
+when managing the binary yourself. Refresh is incremental: MinSync syncs only
+changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Roots
+prepare in parallel.
 
 Jikji stores its prepared corpus metadata in a hidden `.jikji` directory
 inside each indexed source root — that is Jikji's native index layout and
@@ -196,6 +210,53 @@ autorag init \
 Only store the environment-variable name, never its value. Dimension and batch
 size must be positive integers, and the dimension must match the embedder
 (default Qwen3 is 1024; legacy EmbeddingGemma is 768; text-embedding-3-small is 1536).
+
+### Jev routing and question decomposition (on by default)
+
+Leave both enabled. They are the recommended setup: they make simple questions
+fast and multi-part questions thorough.
+
+- **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
+  `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
+  local search, web search, or a direct answer (general knowledge or small
+  talk skips retrieval entirely), and decides whether to decompose it. On
+  local search it also decides, per registered datasource, whether to search
+  it before the fast answer, using each datasource's `description` and where
+  similar past questions were answered (retrieval memory). When setting up a
+  datasource, always write a `description` from what it actually holds:
+  channels or rooms, people, topics, time range (for example `"Team Slack,
+  2024-2026: #release and #on-call channels, dependabot notifications"`).
+  Jev is told descriptions are short, non-exhaustive summaries, so list the
+  main content and do not try to list everything. After the fast answer it
+  decides whether verification is needed, so a complete, evidence-backed fast
+  answer ends the run.
+- **Question decomposition** (`queryDecomposition`, default model
+  `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
+  five search queries that run in parallel.
+
+Both use the user's `OPENROUTER_API_KEY`; confirm it is set (`test -n
+"$OPENROUTER_API_KEY"`, never print it) and tell the user Jev routing is on.
+Without the key, routing falls back to a single local search and the run
+always verifies, so searches still work. A `query-route-fallback` diagnostic
+(`autorag search --debug`) shows that state.
+
+```json
+{
+  "jev": { "backend": "openrouter" },
+  "queryDecomposition": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
+}
+```
+
+`autorag init` writes these defaults into new configs. To change them:
+
+- Jev backend: `"backend": "typesafe"` (`TYPESAFE_API_KEY`) or `"vercel"`
+  (`AI_GATEWAY_API_KEY`).
+- Decomposition model: any catalog `provider`/`id`, with the same fields as
+  the top-level `model`.
+- `"queryDecomposition": false` decomposes with the search model itself.
+- `"jev": false` turns routing off entirely. Do this only when the user
+  explicitly opts out, for example because questions must never leave the
+  machine (Jev and decomposition send the question text to OpenRouter).
 
 ### Retrieval and ingest caps
 
@@ -260,7 +321,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
    (such as `github`) require their credential environment variable
    (`GITHUB_TOKEN`).
 2. Auto-configure every datasource that probes feasible — write its trusted
-   `datasources` / `datasourceAccess` entries without asking. For example,
+   `datasources` entries without asking. For example,
    when Slack (`slacrawl`) and Discord (`discrawl`) are installed with local
    stores present, set both up automatically. Discord uses discrawl's local
    desktop wiretap archive; no Discord bot token is configured or needed.
@@ -273,13 +334,13 @@ setup. Configure datasources directly in trusted config, wizard-style:
    users — always probe them and report their status, even when they end up
    skipped.
 
-Datasource skills belong in trusted config and remain default-deny. Builtin
+Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`, `mail-export`,
 `mailcrawl`, `obsidian`, `rss`, `spotlight`, and `lark`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
-`scope` and tags can narrow trusted access but cannot grant it.
+`scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.
 
 ```jsonc
 {
@@ -291,10 +352,6 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["github", "cloud-drive", "mailcrawl", "obsidian", "rss"],
-    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -330,7 +387,7 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   performs one live completion probe.
 - `health --skip-probes` is only for intentionally offline validation and does
   not prove live provider access.
-- `refresh` syncs parsed mirrors, MinSync, Jikji, authorized datasources, and
+- `refresh` syncs parsed mirrors, MinSync, Jikji, configured datasources, and
   on Windows the bundled Everything file-name index. `--method <csv>` may
   deliberately narrow it (`parsed,minsync,datasources,jikji,everything,all`).
 - Use `refresh --force` for a full resync only when incremental refresh is not
@@ -339,6 +396,23 @@ autorag search "summarize the collection" --top-k 3 --json --debug
 - After a search, use `autorag evidence <sessionId> --json` to inspect the
   exact source chunks behind numbered results, including source, method,
   stable evidence ID, excerpt/content, chunk index, and line number.
+
+## Connect external agents through MCP
+
+When setting up AutoRAG for a coding agent, register the package's
+`autorag-mcp` stdio executable with the same absolute `AUTORAG_CONFIG` path.
+Follow `autorag-lite-setup`'s MCP registration and verification procedure:
+inspect existing host registration, use an absolute executable path,
+reload/reconnect, discover schemas with `tools/list`, and exercise
+`autorag.status`, `autorag.datasources.list`, and a known-phrase
+`autorag.search` through MCP. Restart the MCP server after config changes.
+The MCP server returns model-free source chunks; the calling agent curates
+them. It does not invoke the configured librarian model. The same server also
+exposes `autorag.report`, `autorag.evidence`, and `autorag.feedback` for the
+curation lifecycle; the matching CLI commands remain a maintenance path.
+Discover the exact schemas with MCP `tools/list`. Keep the full `autorag` skill
+only when model-backed curated search is also wanted. For MCP-only setup, use
+`autorag-lite-setup` instead of requiring live model health.
 
 ## Keep indexes fresh
 
@@ -369,3 +443,5 @@ installed or its absence reported, `status` is acceptable, live `health`
 passes, `refresh` builds the requested indexes, one real structured search
 succeeds, and any requested ongoing schedule is installed or verified with the
 user told it is active.
+For external-agent integration, also require successful MCP discovery and a
+known-source MCP search; CLI success alone does not prove the host connection.

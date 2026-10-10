@@ -1,16 +1,21 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { MockBackend } from "jev-use";
 import { Type } from "typebox";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "../../src/agent/pi-session.ts";
+import { DECOMPOSE_QUESTION_ID, QUERY_ROUTE_QUESTION_ID } from "../../src/agent/query-routing.ts";
 
 let root: string;
 
@@ -112,6 +117,145 @@ describe("AutoRAG pi coding-agent host", () => {
 			expect(runtime.runtime.session.model).toBeDefined();
 		} finally {
 			await runtime.dispose();
+		}
+	});
+
+	it("activates an extension tool only when its name is allow-listed", async () => {
+		const registration = registerFauxProvider({
+			api: `faux-extension-${Date.now()}`,
+			models: [{ id: "pi-extension-test" }],
+		});
+		const extensionTool: ExtensionFactory = (pi) =>
+			pi.registerTool({
+				name: "extension_probe",
+				label: "Extension probe",
+				description: "Probe tool registered by a pi extension",
+				parameters: Type.Object({}),
+				async execute() {
+					return { content: [{ type: "text", text: "probe" }], details: {} };
+				},
+			});
+		try {
+			const listed = await createAutoRAGPiSession({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				sessionDir: join(root, "sessions"),
+				model: registration.getModel(),
+				getSystemPrompt: () => "AutoRAG system prompt",
+				customTools: [],
+				extensionFactories: [extensionTool],
+				extensionToolNames: ["extension_probe"],
+			});
+			expect(listed.session.getActiveToolNames()).toContain("extension_probe");
+			listed.session.dispose();
+
+			// pi's `tools` allow-list drops extension tools that are not named.
+			const unlisted = await createAutoRAGPiSession({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				sessionDir: join(root, "sessions"),
+				model: registration.getModel(),
+				getSystemPrompt: () => "AutoRAG system prompt",
+				customTools: [],
+				extensionFactories: [extensionTool],
+			});
+			expect(unlisted.session.getActiveToolNames()).not.toContain("extension_probe");
+			unlisted.session.dispose();
+		} finally {
+			registration.unregister();
+		}
+	});
+
+	it("injects an AutoRAG update notice into the interactive session on startup", async () => {
+		const registration = registerFauxProvider({
+			api: `faux-update-${Date.now()}`,
+			models: [{ id: "update-model" }],
+		});
+		try {
+			const runtime = await createAutoRAGPiInteractiveRuntime({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				sessionDir: join(root, "sessions"),
+				model: registration.getModel(),
+				getSystemPrompt: () => "interactive prompt",
+				customTools: [],
+				onQuery: async () => undefined,
+				updateNotice: async () => "AutoRAG v9.9.9 is available (you have v1.0.0).",
+			});
+			try {
+				// The TUI binds extension UI context on init; session_start (and thus
+				// the notice) fires then, so mirror that here.
+				await runtime.runtime.session.bindExtensions({});
+				await vi.waitFor(() => {
+					const notice = runtime.runtime.session.messages.find(
+						(message) => "customType" in message && message.customType === "autorag.update",
+					);
+					expect(notice).toBeDefined();
+				});
+			} finally {
+				await runtime.dispose();
+			}
+		} finally {
+			registration.unregister();
+		}
+	});
+
+	it("finishes a TUI query without feeding its own progress messages back into the model", async () => {
+		// Progress/preliminary messages are display-only. Sent while the search
+		// turn streams, pi's default steer delivery injects each one as a user
+		// message, the model answers it, which emits more progress: the TUI
+		// query never finishes (seen live on the Jev direct route).
+		const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
+		registration.setResponses([
+			fauxAssistantMessage([fauxToolCall("emit_fast_answer", { answer: "Paris.", results: [] })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			...Array.from({ length: 20 }, () =>
+				fauxAssistantMessage("Replying to a progress note.", { stopReason: "stop" }),
+			),
+		]);
+		const agentDir = join(root, "agent");
+		mkdirSync(agentDir, { recursive: true });
+		const model = registration.getModel();
+		writeFileSync(
+			join(agentDir, "settings.json"),
+			JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
+		);
+		const agent = new AutoRAGAgent({
+			model,
+			apiKey: "test-key",
+			searchPaths: [root],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: false,
+			jikji: false,
+			piAgentDir: agentDir,
+			piSessionDir: join(root, "sessions"),
+			jev: {
+				backend: new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: "direct",
+						distribution: { local: 0.1, web: 0.1, direct: 0.8 },
+						confidence: 0.8,
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			},
+		});
+		const hosted = await agent.createPiInteractiveRuntime();
+		try {
+			const session = hosted.runtime.session;
+			await session.prompt("What is the capital of France?", { source: "interactive" });
+			// Two model calls: the direct fast answer and its tool-result turn.
+			expect(registration.state.callCount).toBe(2);
+			const complete = session.messages.filter(
+				(message) => message.role === "custom" && message.customType === "autorag.complete",
+			);
+			expect(complete).toHaveLength(1);
+		} finally {
+			await hosted.dispose();
+			registration.unregister();
 		}
 	});
 });

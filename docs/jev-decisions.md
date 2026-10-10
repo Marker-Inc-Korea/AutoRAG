@@ -1,0 +1,293 @@
+# Jev Decisions
+
+AutoRAG Agent can expose one optional extra tool, `jev`, backed by
+[TypeSafe's Jev](https://docs.typesafe.ai/) judgment model through the
+[`jev-use`](https://www.npmjs.com/package/jev-use) engine. Jev is not a chat
+model: it answers **typed questions about a state** — `noul` (yes/no
+probability), `choice` (one option from a set), and `score` (position on an
+ordered rubric) — with calibrated probabilities instead of generated prose.
+
+That makes it a cheap, deterministic alternative to asking the main model to
+classify or rank something. The number comes back to the caller, and **the
+caller owns the threshold**: the model cannot grade its own work or drift
+between runs.
+
+`jev-use` owns backend auto-selection, request screening, and response
+validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
+on top, and uses the same client for the query pipeline described below. Jev
+is **on by default** with the OpenRouter backend, and it is always omitted for
+remote P2P sessions because its `state` leaves the machine.
+
+## Defaults and opt-out
+
+With no `jev` section, AutoRAG behaves as if the config said:
+
+```json
+{
+  "jev": { "backend": "openrouter" },
+  "queryDecomposition": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
+}
+```
+
+`autorag init` writes exactly these sections into new configs so they are
+visible and editable. An empty `{}` keeps the defaults. `"jev": false` or
+`enabled: false` turns Jev off completely: no routing, no follow-up check, no
+`jev` tool. Both features send the question text to OpenRouter, so disable them
+when questions must stay on the machine. Without `OPENROUTER_API_KEY`, routing
+falls back to a single local search with a `query-route-fallback` diagnostic;
+searches keep working.
+
+### Backends
+
+`jev-use` resolves the backend from the environment. Set `JEV_BACKEND` to force
+one, or leave it unset to let the first credential present win, in the order
+TypeSafe -> OpenRouter -> Vercel AI Gateway.
+
+| `backend`    | Credential environment variable                     | Model id on the wire |
+| ------------ | --------------------------------------------------- | -------------------- |
+| `typesafe`   | `TYPESAFE_API_KEY`                                  | `jev-1.13.0`         |
+| `openrouter` | `OPENROUTER_API_KEY`                                | `typesafe/jev-1.13`  |
+| `vercel`     | `AI_GATEWAY_API_KEY`                                | `typesafe-ai/jev`    |
+
+`JEV_MODEL` overrides the wire model id, and `JEV_BACKEND=mock` runs a keyless
+dry run (used by the offline tests).
+
+The OpenRouter path is pinned to `typesafe/jev-1.13`: `jev-use` 0.8.0's own
+OpenRouter default (`typesafe/jev-latest`) is not a live OpenRouter model id and
+returns HTTP 400. Set `model` to override the pin.
+
+### Configuration fields
+
+| Field                 | Meaning                                                                 |
+| --------------------- | ----------------------------------------------------------------------- |
+| `enabled`             | `false` disables Jev (same as `"jev": false`).                          |
+| `backend`             | `openrouter` (default), `typesafe`, or `vercel`.                        |
+| `model`               | Wire model id sent with every call. Omit for the backend default.       |
+| `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
+
+## Using the tool
+
+The agent calls `jev` once per state with any number of typed questions. Each
+verdict carries the answer plus its confidence, and `escalate: true` when Jev
+cannot decide (with a typed `reason`: `writing`, `open_ended`, `oversized`,
+`unsure`, or `unreachable`):
+
+```json
+{
+  "state": "Help! Payouts have been failing for three days.",
+  "questions": [
+    { "id": "is_urgent", "type": "noul", "question": "Does this convey urgency?" },
+    {
+      "id": "department",
+      "type": "choice",
+      "question": "Which team should handle this?",
+      "options": { "billing": "Payments, invoices, refunds", "technical": "Bugs, outages, integrations" }
+    },
+    {
+      "id": "frustration",
+      "type": "score",
+      "question": "How frustrated is the customer?",
+      "levels": ["Calm", "Frustrated", "Very angry"]
+    }
+  ]
+}
+```
+
+Guidance:
+
+- Ask narrow, atomic questions; Jev answers exactly what is asked.
+- Batch every question about one state into a single call.
+- For `noul`, describe **both** the true and false outcomes with `criteria` or
+  neither.
+- Read `confidence` (and `confidenceFrom`) before acting on a close call; an
+  `escalate` verdict means the LLM should take the step over.
+
+## Query pipeline (routing, decomposition, datasource check, follow-up check)
+
+Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
+search **before** `emit_fast_answer`. Jev answers two typed questions about the
+user question in one batched call:
+
+1. **Branch** (`choice`): `local`, `web`, or `direct`. The highest-probability
+   branch wins, but leaving local search needs confidence: a `direct` or `web`
+   branch **at or below 0.75** (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one
+   Jev reports without a probability — falls back to `local` search with a
+   `query-route-fallback` diagnostic, so a weak verdict never silently drops the
+   corpus evidence the question depends on.
+   - `local`: answering needs information only the user can reach (files on
+     their computer, Discord/KakaoTalk/Slack chats, email, notes, calendar,
+     history). Jev is told to prefer `local` whenever the question refers to the
+     user's own life, situation, plans, or records — "my/I/our", a named friend,
+     family member, or colleague, or "my case/hearing/appointment/routine" — even
+     when a generic answer would also be possible.
+   - `web`: not answerable from general knowledge and not from the user's private
+     information either, but one public internet search would answer it.
+   - `direct`: general knowledge, simple reasoning, or small talk. Never chosen
+     for a question that refers to the user's own life, files, or records.
+2. **Decomposition** (`noul`): does the question need several search queries
+   (multiple sub-questions, comparisons, several facts to confirm)? A
+   probability of 0.5 or more means yes.
+
+What happens next:
+
+| Branch   | Pipeline                                                                                 |
+| -------- | ---------------------------------------------------------------------------------------- |
+| `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
+| `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
+| `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
+
+### Datasource check before the fast answer
+
+On the `local` branch, Jev answers one more batched call: one `noul` per
+registered datasource (configured, with retrieval methods), "Should the `<id>`
+datasource be searched to answer the user question?". The registered set comes
+from the config: `autorag search` reads it on every call, while `autorag tui`
+and `autorag serve` read it at startup, so restart them after adding,
+disabling, or re-describing a datasource. Every datasource at 0.5 or
+above is searched with every search query (the original or the decomposed
+ones), and its chunks join Jikji and MinSync in the pool the reranker orders,
+before the fast answer. The rest are not searched before the fast answer (the
+verification phase can still call `search_datasource_<id>`). A
+`datasources-selected` diagnostic lists the selected and skipped datasources
+with their probabilities. If the check fails (missing credential, unreachable
+backend), no datasource is searched before the fast answer
+(`datasource-selection-fallback`), which is the behavior without Jev.
+
+The state Jev judges has three parts, followed by the question:
+
+1. **Datasource catalog**: `id (type): description` for every datasource.
+   Write each `description` in the config to say what the datasource holds
+   (channels, rooms, people, topics, time range). The state tells Jev that
+   every description is a **short, non-exhaustive summary**: a datasource can
+   hold other topics, people, and conversations that its description does not
+   mention, so a datasource is not ruled out just because its description is
+   silent on the question's topic.
+2. **Similar past questions** (only when retrieval memory has any): up to 5
+   earlier searches whose question resembles this one (character-bigram Dice
+   ≥ 0.35, newest per question), each with up to 4 result titles and where the
+   evidence came from (`[kakao]`, `[local files]`, `[web]`, ...). Question and
+   title are JSON-quoted, so a newline or a fake `User question:` line inside
+   them cannot forge the state's structure. A result titled as not found or
+   negative tells Jev that datasource was searched and did not have the
+   answer. Jev treats this as a hint, not a rule.
+
+   These titles are model-written text about your private content and the
+   state goes to the Jev backend (OpenRouter by default), so a past result is
+   shown only when it is safe for the **current** run:
+
+   - Memory is shared across workspaces and configs, so a result is dropped
+     unless every piece of its evidence comes from a datasource this run
+     configures, a configured search path, or the web.
+     Evidence from a datasource that is not configured here, and
+     evidence with no recognizable origin, drops the whole result; a search
+     left with no result is not shown at all.
+   - Results the user marked not useful are left out. The verdict is stored
+     on the result itself, so it still applies after older feedback signals
+     are evicted (memory written before this keeps using its feedback
+     signals).
+   - Searches a remote P2P peer ran are recorded (they still feed method
+     hints and peer feedback) but tagged `remote` and never shown. Records
+     written before the tag existed cannot be told apart.
+3. **User question**.
+
+The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)
+with the maintainer's 10 real datasources (descriptions written from each
+archive's actual content) and retrieval memory (113 past searches). The set has
+10 labeled questions: 6 naming a datasource, 3 whose topic no description
+mentions (a restaurant tip in KakaoTalk, a birthday in a Discord server, a
+flight booking email), and 1 that only description content can resolve (the
+shared-fund ledger lives in one of two Discord servers). Over 3 runs, 30/30
+passed. Required datasources scored 0.71-0.96, and datasources the question
+excluded scored at most 0.38
+(`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`). With memory, a
+similar past question sharpens the choice: for "dependabot PR 알림", Discord,
+Spotlight, and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
+showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉님
+랄프톤 공지" rose from 0.91 to 0.98.
+
+### Follow-up check after the fast answer
+
+After `emit_fast_answer` on the `local` and `web` branches, Jev answers one more
+`noul` about the question **and** the fast answer together: does the answer need
+correction, clarification from the user, or further research? Below 0.5, the run
+ends there: the fast answer becomes the final response (its numbered results and
+sources are kept), the verification phase does not run, and a
+`follow-up-skipped` diagnostic records the probability. At 0.5 or above, the
+fast answer is published as the preliminary answer and verification continues
+as usual. With Jev enabled, the preliminary is held until this decision, so an
+answer that turns out to be final reaches the caller once, as the complete
+response. If the check fails (missing credential, unreachable backend), the run
+verifies (`follow-up-check-fallback`), because ending on an unchecked answer is
+the costlier mistake.
+
+Decomposition sends a short prompt to an LLM and keeps **at most five** search
+queries. The default model is `openrouter/qwen/qwen3.7-flash`.
+`queryDecomposition.model` takes the same fields and credential rules as the
+top-level `model`; `"queryDecomposition": false` decomposes with the search
+session's own model instead.
+
+The default was picked on a live OpenRouter benchmark: the real decomposition
+prompt, 6 questions (including 2 Korean), and 2 runs each, scored on valid
+JSON, at most five queries, coverage of every sub-question, and language
+preserved:
+
+| Model | Score | p50 latency | Cost per 12 calls |
+| ----- | ----- | ----------- | ----------------- |
+| `qwen/qwen3.7-flash` (default) | 12/12 | 0.92s | $0.00011 |
+| `google/gemini-2.5-flash-lite` (previous) | 12/12 | 0.87s | $0.00039 |
+| `qwen/qwen3.8-flash` | 12/12 | 1.19s | $0.00051 |
+| `upstage/solar-mini4` | 12/12 | 0.86s | $0.00021 (not in the pi catalog) |
+| `openai/gpt-6-luna` | 12/12 | 2.24s | $0.00038 (not in the pi catalog) |
+| `xiaomi/mimo-v2.6-flash` | 12/12 | 5.19s | $0.00030 |
+| `nvidia/nemotron-3.5-lightning` | 11/12 | 0.38s | $0.00021 |
+| `inception/mercury-2.5` | 10/12 | 0.75s | $0.00010 (2 upstream timeouts) |
+| `z-ai/glm-5.3-flash` | 0/12 | — | requires reasoning; rejected with reasoning off |
+
+```json
+{
+  "queryDecomposition": {
+    "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" }
+  }
+}
+```
+
+Failures never block a search. A missing Jev credential, an unreachable Jev
+backend, or an unusable verdict falls back to today's single local search for
+the original question (diagnostic `query-route-fallback`). A `web` verdict with
+web tools disabled also falls back to local search. A failed decomposition
+searches the original question (`query-decomposition-failed`). A failed
+datasource check searches no datasource before the fast answer
+(`datasource-selection-fallback`). Every routed run records its branch and
+queries as a `query-routed` diagnostic, and the datasource check's picks as
+`datasources-selected` (`--debug` shows both). The pipeline never runs for
+remote P2P sessions. Every search is
+two-phase (fast answer, then verification unless Jev ends the run); there is
+no single-phase mode.
+
+## Live verification
+
+The offline suite never calls Jev (it uses the `mock` backend). The live test is
+gated on both an explicit opt-in and a real key:
+
+```bash
+AUTORAG_JEV_LIVE=1 OPENROUTER_API_KEY=... bunx vitest run test/live-e2e/jev.test.ts
+```
+
+## Programmatic usage
+
+```ts
+import { AutoRAGAgent } from "@autorag/librarian";
+
+const agent = new AutoRAGAgent({
+  searchPaths: ["./docs"],
+  jev: { backend: "openrouter" },
+});
+const response = await agent.searchDocuments("summarize the Q3 report");
+```
+
+The tool is registered through pi's extension surface: `createJevExtension`
+builds a pi `ExtensionFactory` that calls `pi.registerTool`, and AutoRAG loads
+it (and allow-lists the `jev` name) only when the config enables it. pi owns
+tool activation and rendering; AutoRAG keeps the prompt line and the reserved
+name. For callers that want the raw engine, import `Jev`, `check`, `pick`, and
+`rate` from `jev-use` directly.

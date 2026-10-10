@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.6.3",
+  "version": "2.8.0",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "MIT",
   "repository": {
@@ -21,7 +21,8 @@
     }
   },
   "bin": {
-    "autorag": "dist/cli/index.js"
+    "autorag": "dist/cli/index.js",
+    "autorag-mcp": "dist/mcp/index.js"
   },
   "files": [
     "dist",
@@ -35,7 +36,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/core.ts src/cli/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "build": "bun build src/index.ts src/core.ts src/cli/index.ts src/mcp/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",
@@ -54,10 +55,12 @@
     "@earendil-works/pi-ai": "^0.86.1",
     "@earendil-works/pi-coding-agent": "0.86.1",
     "@earendil-works/pi-tui": "0.86.1",
+    "@modelcontextprotocol/server": "^2.3.0",
     "@openrouter/sdk": "^1.4.21",
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
     "iconv-lite": "^0.7.3",
+    "jev-use": "^0.8.0",
     "jszip": "^3.10.1",
     "kordoc": "^4.15.7",
     "mailparser": "^3.9.20",
@@ -71,6 +74,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
+    "@modelcontextprotocol/client": "^2.3.0",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^26.4.1",
     "@types/ws": "^8.18.1",

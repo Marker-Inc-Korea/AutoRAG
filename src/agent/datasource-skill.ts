@@ -30,7 +30,7 @@ export function toDatasourceAgentSkill(manifest: DatasourceSkillManifest): Skill
 
 /**
  * Render the Pi `<available_skills>` progressive-disclosure block for the
- * authorized datasource skills using Pi's own formatter, so datasource skills
+ * configured datasource skills using Pi's own formatter, so datasource skills
  * sit on the exact same layer as file-backed agent skills.
  */
 export function buildDatasourceSkillsPrompt(skills: readonly Skill[]): string {
@@ -54,9 +54,8 @@ export interface LoadDatasourceSkillDetails {
 
 export interface DatasourceSkillProvider {
 	/**
-	 * Resolve an authorized datasource skill by model-visible name. Returns
-	 * `undefined` when the name is unknown or not authorized by the trusted,
-	 * server-bound access context (default-deny).
+	 * Resolve a configured datasource skill by model-visible name. Returns
+	 * `undefined` when the name is unknown or not configured.
 	 */
 	loadDatasourceSkill(name: string): Skill | undefined;
 }
@@ -74,14 +73,14 @@ export function createLoadDatasourceSkillTool(
 		name: LOAD_DATASOURCE_SKILL_TOOL_NAME,
 		label: "Load Datasource Skill",
 		description:
-			"Load the full instructions for an authorized datasource skill by name before searching it. Permission is server-bound; unknown or unauthorized skills return not-available.",
+			"Load the full instructions for a configured datasource skill by name before searching it. Unknown skill names return not-available.",
 		parameters: loadDatasourceSkillSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<LoadDatasourceSkillDetails>> {
 			const name = params.name.trim();
 			const skill = name.length === 0 ? undefined : provider.loadDatasourceSkill(name);
 			if (skill === undefined) {
 				return {
-					content: [{ type: "text", text: `Datasource skill "${name}" is not available or not authorized.` }],
+					content: [{ type: "text", text: `Datasource skill "${name}" is not available.` }],
 					details: { skill: name, loaded: false },
 				};
 			}

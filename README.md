@@ -69,16 +69,18 @@ AutoRAG Agent orchestrates five integrated subsystems:
    - **Jikji Find-First Discovery:** Local CLI-backed fast discovery answer packs.
    - **Everything File-Name Search (Windows):** The bundled [voidtools Everything](https://www.voidtools.com/) indexes file and folder names under your search roots so the agent finds files by name, extension, path, size, or date instantly (`everything_search`).
    - **FSearch File-Name Search (macOS/Linux):** [fsearch-cli](https://github.com/NomaDamas/fsearch-mac) (FSearch) keeps a live, per-workspace name index of your search roots so the agent finds files by name, extension, path, size, or date instantly (`fsearch_search`); without fsearch-cli installed it degrades to a slow filesystem walk.
-   - **Datasource Skills:** Server-authorized federated retrieval across external applications.
-3. **Result Merger & Scoped Access Gate:** Cross-method deduplication, score normalization, and default-deny permission checks.
+   - **Datasource Skills:** Federated retrieval across every configured external datasource.
+3. **Result Merger & Scope Narrowing:** Cross-method deduplication, score normalization, and ordinary query-scope narrowing.
 4. **Direct Evidence Reading (`bash`):** The agent directly opens and inspects promising files with `cat`, `grep`, or `find` to verify facts against ground truth.
 5. **Curation & Active Feedback:** Structured findings are returned via `emit_autorag_results`. When callers provide feedback on which items were useful, AutoRAG records this to optimize future queries.
 
 ### Pi host boundary
 
-AutoRAG uses `@earendil-works/pi-coding-agent` as the runtime host for model sessions. Pi owns provider credentials and OAuth storage, model-runtime dispatch, session JSONL persistence/resume, extension loading, lifecycle events, and the built-in `read`/`bash`/`edit`/`write`/`grep`/`find`/`ls` tools. AutoRAG registers only its domain tools and keeps orchestration outside the host: datasource authorization, MinSync/Jikji preparation, memory hints, fast-to-verification two-phase search, structured result emission, and remote-session filtering.
+AutoRAG uses `@earendil-works/pi-coding-agent` as the runtime host for model sessions. Pi owns provider credentials and OAuth storage, model-runtime dispatch, session JSONL persistence/resume, extension loading, lifecycle events, and the built-in `read`/`bash`/`edit`/`write`/`grep`/`find`/`ls` tools. AutoRAG registers only its domain tools and keeps orchestration outside the host: datasource orchestration, MinSync/Jikji preparation, memory hints, fast-to-verification two-phase search, structured result emission, and remote-session filtering.
 
 The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG librarian: there is no separate AutoRAG renderer. Pi owns the terminal UI and its native in-session commands — `/login`/`/logout`, `/model`, `/resume`, `/new`, `/tree`, `/compact`, and `/settings` — so provider sign-in and model selection work on first launch even when no AutoRAG model is configured. AutoRAG registers its retrieval tools and streams progress, preliminary answers, and final results into the same Pi session, so resume and two-phase search keep working together.
+
+Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi update`" banner (Pi is a bundled host, not a separate install) and instead checks the published `@autorag/librarian` release, showing a one-line notice in the session when a newer version exists. Set `AUTORAG_NO_UPDATE_CHECK=1` to skip the lookup; `AUTORAG_UPDATE_CHECK_URL` overrides the registry endpoint.
 
 
 ---
@@ -89,19 +91,20 @@ If you are an AI coding agent or LLM (Claude Code, Cursor, Windsurf, Codex, Senp
 
 | Skill | Directory | When to Use |
 |---|---|---|
-| **`autorag`** | [`skills/autorag/`](skills/autorag/SKILL.md) | Querying, searching, comparing, and summarizing documents with an already configured AutoRAG librarian. |
-| **`autorag-setup`** | [`skills/autorag-setup/`](skills/autorag-setup/SKILL.md) | Installing AutoRAG, configuring models, adding document roots/datasources, running health checks, and repairing indexes. |
-| **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Initializing and maintaining the model-free AutoRAG Lite lifecycle without an LLM. |
-| **`autorag-lite-search`** | [`skills/autorag-lite-search/`](skills/autorag-lite-search/SKILL.md) | Performing model-free retrieval, reporting evidence, and recording feedback without an LLM. |
+| **`autorag`** | [`skills/autorag/`](skills/autorag/SKILL.md) | Model-backed querying, searching, comparing, and summarizing with an already configured AutoRAG librarian. |
+| **`autorag-setup`** | [`skills/autorag-setup/`](skills/autorag-setup/SKILL.md) | Installing AutoRAG, configuring the model-backed librarian, adding roots/datasources, running health checks, and registering Lite MCP when needed. |
+| **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Installing/registering `autorag-mcp`, initializing model-free config, maintaining indexes, and verifying MCP search. |
 
 ### Install the skills into your coding agent
 
-Skills are not auto-discovered — copy the folders you want into the agent's skill directory. For **Claude Code** that directory is `.claude/skills/` in the project (or `~/.claude/skills/` to enable them everywhere). Once `autorag-lite-setup` and `autorag-lite-search` are in place, Claude Code drives `autorag lite retrieve` as a search tool:
+Skills are not auto-discovered — copy only the setup skill when an agent needs
+to bootstrap AutoRAG. **Routine AutoRAG Lite retrieval is provided by MCP
+tools, not by a `autorag-lite-search` skill or shell command.**
 
 ```bash
 # From a clone of this repository
 mkdir -p .claude/skills
-cp -R skills/autorag-lite-setup skills/autorag-lite-search .claude/skills/
+cp -R skills/autorag-lite-setup .claude/skills/
 ```
 
 ```bash
@@ -109,10 +112,19 @@ cp -R skills/autorag-lite-setup skills/autorag-lite-search .claude/skills/
 AUTORAG_SKILLS="$(npm root -g)/@autorag/librarian/skills"
 # Bun global installs live at ~/.bun/install/global/node_modules/@autorag/librarian/skills
 mkdir -p .claude/skills
-cp -R "$AUTORAG_SKILLS/autorag-lite-setup" "$AUTORAG_SKILLS/autorag-lite-search" .claude/skills/
+cp -R "$AUTORAG_SKILLS/autorag-lite-setup" .claude/skills/
 ```
 
-Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent should also drive the model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other agents read their own directories (for example `~/.agents/skills/`) — copy the same folders there and reload the agent session so it picks them up.
+Run the setup skill once to register the stdio server with the host. Reload the
+agent, then discover the actual tool names and schemas with MCP `tools/list`.
+The normal Lite path is `autorag.status` → `autorag.refresh` when needed →
+`autorag.search`; use `autorag.report`, `autorag.evidence`, and
+`autorag.feedback` for the optional curation lifecycle. Copy `skills/autorag`
+and `skills/autorag-setup` only when the agent should also drive the
+model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
+agents read their own skill directories; copy the same setup folder there and
+reload the agent session so it picks up the MCP registration instructions.
+Do not copy or retain the removed `autorag-lite-search` skill.
 
 ### Quick Agent Workflow
 
@@ -136,6 +148,29 @@ Copy `skills/autorag` and `skills/autorag-setup` the same way when the agent sho
 
 ---
 
+## AutoRAG Lite MCP Server
+
+Register the package's stdio server with the host; the host owns the process
+lifecycle and sends MCP tool calls:
+
+```bash
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
+```
+
+For Claude Code and Codex registration commands, use
+[`skills/autorag-lite-setup/SKILL.md`](skills/autorag-lite-setup/SKILL.md).
+The MCP contract source of truth is [`src/mcp/server.ts`](src/mcp/server.ts)
+(tool registration, schemas, handlers) plus [`src/mcp/index.ts`](src/mcp/index.ts)
+(stdio entrypoint). Discover tools and schemas with MCP `tools/list`; do not
+hard-code a tool count.
+
+Core Lite tools include `autorag.status`, `autorag.search`,
+`autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
+`autorag.refresh`, `autorag.report`, `autorag.evidence`, and
+`autorag.feedback`. Configured integrated datasources expose additional scoped
+search tools. Read-only MCP mode omits mutating tools such as refresh, report,
+and feedback.
+
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
 Need blazing fast local search without configuring an LLM or paying for API tokens? Use **AutoRAG Lite**.
@@ -143,8 +178,8 @@ Need blazing fast local search without configuring an LLM or paying for API toke
 AutoRAG Lite provides the exact same high-performance indexing, BM25 ranking, and local MinSync vector/hybrid retrieval engine as the full librarian, but **runs 100% model-free**:
 
 - **Zero LLM Token Usage:** Run purely local BM25 and vector search offline.
-- **Agent Integration Ready:** Use `autorag lite retrieve` inside your own agentic workflows to supply raw context chunks to an external model.
-- **Fast Local CLI:** Instant responses directly from your terminal.
+- **Agent Integration Ready:** Use the AutoRAG Lite MCP server to supply raw context chunks to an external model; the CLI remains a bootstrap and maintenance interface.
+- **Fast Local CLI:** The CLI remains available for terminal-only indexing and repair.
 
 ```bash
 # Initialize a model-free workspace
@@ -152,13 +187,11 @@ autorag lite init --search-paths ./documents
 
 # Index local files and datasources
 autorag lite refresh
-
-# Retrieve ranked document chunks (returns JSON candidates with scores)
-autorag lite retrieve "compliance policy exception process" --top-k 5 --json
-
-# Check index status and freshness
-autorag lite status
 ```
+
+Normal Lite retrieval runs through the MCP tools (`autorag.status`,
+`autorag.search`); the CLI remains the bootstrap and maintenance interface for
+indexing and repair.
 
 ---
 
@@ -179,6 +212,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **Local Mail Export**| `mail-export` | Built-in `.mbox` / `.eml` parser | Local filesystem mailboxes | Lexical |
 | **Obsidian Vaults** | `obsidian` | [`qmd`](https://github.com/tobi/qmd) CLI | Direct markdown vault indexing | BM25, Semantic |
 | **GitHub** | `github` | GitHub REST API | In-memory fetched Issues and Pull Requests | Lexical, Scoped |
+| **GitHub Gists** | `github-gist` | GitHub REST API | Incremental local index of own-account public and permitted secret Gist content/metadata; token not stored | Lexical (BM25), Local Semantic, Scoped |
 | **Cloud Drives** | `cloud-drive` | [`rclone`](https://rclone.org) CLI | Google Drive (Tier-1), OneDrive, Dropbox, etc. | Incremental Mirror + BM25 |
 | **Photos & Shots** | `clawgallery` | `clawgallery` CLI | Local screenshot and photo store | Hybrid OCR/Visual Search |
 | **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
@@ -295,11 +329,12 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 | `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
+| `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
 | `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
-| `autorag lite ...` | Model-free indexing, retrieval, report generation, and status |
-| `autorag feedback <session>` | Record useful / not-useful feedback by item number |
-| `autorag evidence <session>` | Inspect exact underlying document chunks and sources for a past query |
+| `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
+| `autorag feedback <session>` | Record numbered feedback; MCP clients normally use `autorag.feedback`, and the CLI stays available for terminal maintenance |
+| `autorag evidence <session>` | Inspect persisted evidence behind numbered results; MCP clients normally use `autorag.evidence`, and the CLI stays available for terminal maintenance |
 | `autorag serve` | Start the P2P query server over SimpleX (opt-in) |
 | `autorag p2p ...` | Manage peer trust, query approvals, and sharing policies |
 
@@ -312,6 +347,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and EmbeddingGemma verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model cards: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md), [`embeddinggemma-300m`](docs/model-cards/embeddinggemma-300m.md).
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
+- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via OpenRouter: it routes each question to local search, web search, or a direct answer, splits multi-part questions into up to five parallel searches (`openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[P2P SimpleX Sharing & Path Standard](docs/p2p-path-standard.md):** Decentralized peer query sharing with SimpleX, PII redaction, and approval queues.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
@@ -357,12 +393,18 @@ autorag health --json          # model resolution + one live completion probe
 autorag gateway status --format json   # on-demand embedding runtime
 ```
 
-Indexing is not the same thing as searchability, so always confirm retrieval itself — this needs no model:
+Indexing is not the same thing as searchability, so always confirm retrieval
+itself through the connected Lite MCP server:
 
-```bash
-autorag lite retrieve 'a word that certainly appears' --top-k 3 --json
-autorag lite retrieve 'recent topic' --tags discord --top-k 3 --json
+```text
+autorag.status {}
+autorag.refresh {}
+autorag.search {"query":"a word that certainly appears","topK":3}
+autorag.search {"query":"recent topic","scope":"/discord/local/**","topK":3}
 ```
+
+The CLI equivalents remain available for terminal repair, but do not use them
+as the agent's normal Lite search path.
 
 Common failures and their fix:
 
@@ -371,10 +413,11 @@ Common failures and their fix:
 | Results are missing recent files | `stale-index` | `autorag refresh --method parsed,minsync --json` |
 | Semantic search returns nothing after changing the embedder | `embedding-identity-mismatch` | `autorag index rebuild --method minsync` |
 | Gateway will not start, a previous run was killed | `lock-conflict` | `autorag gateway stop`, then retry |
-| A datasource is healthy in its own CLI but absent from results | — | add its tag/scope to `datasourceAccess` |
+| A datasource is healthy in its own CLI but absent from results | — | confirm it is configured under `datasources` and connected through its native CLI |
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync or Jikji missing | `minsync-unavailable`, `jikji-unavailable` | check the Rust toolchain, re-run refresh |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
+| Every search does a full local search and verification, even for small talk | `query-route-fallback` | set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 
 Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, `qmd status`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
 

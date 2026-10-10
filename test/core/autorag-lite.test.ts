@@ -14,6 +14,9 @@ type LiteProbe = {
 	readonly getRefreshStatus: unknown;
 	readonly getRetrievalEngine: unknown;
 	readonly retrieve: unknown;
+	readonly listDatasources: unknown;
+	readonly searchSelected: unknown;
+	readonly searchEverything: unknown;
 	readonly recordStructuredResultsSession: unknown;
 	readonly getResultRegistry: unknown;
 	readonly recordFeedbackByNumbers: unknown;
@@ -31,6 +34,9 @@ function hasLiteSurface(value: unknown): value is LiteProbe {
 		"getRefreshStatus",
 		"getRetrievalEngine",
 		"retrieve",
+		"listDatasources",
+		"searchSelected",
+		"searchEverything",
 		"recordStructuredResultsSession",
 		"getResultRegistry",
 		"recordFeedbackByNumbers",
@@ -149,6 +155,36 @@ describe("public AutoRAG-lite core facade", () => {
 		});
 		const retrieved = await lite.retrieve("pinned");
 		expect(retrieved.results[0]?.source).toBe(docs);
+	});
+
+	it("lists configured datasources and searches a selected empty surface without models", async () => {
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [root],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				minSync: false,
+				jikji: false,
+				everything: false,
+			}),
+		);
+		const lite = createAutoRAGLite({ flags: { config: configPath }, cwd: root });
+
+		expect(lite.listDatasources()).toEqual([]);
+
+		const selected = await lite.searchSelected("anything", { local: false });
+		expect(selected.results).toEqual([]);
+		expect(selected.diagnostics).toEqual([]);
+		expect(selected.unsearched).toEqual([]);
+
+		const everything = await lite.searchEverything({ query: "anything" });
+		expect(everything).toEqual({
+			ok: false,
+			reason: "unsupported-platform",
+			message: "Everything is not enabled on this host.",
+		});
 	});
 
 	it("persists an opaque report and numbered feedback without reading its source", () => {

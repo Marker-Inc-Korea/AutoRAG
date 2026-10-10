@@ -1,5 +1,6 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
+import { assertResultsMappingOneToOne, formatCitationList, stripUnresolvedCitations } from "./citations.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
 import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
 
@@ -25,6 +26,8 @@ export type SearchDocumentDiagnosticCode =
 	| "embedding-identity-mismatch"
 	| "parser-skipped"
 	| "parser-failed"
+	| "source-vanished"
+	| "source-unreadable"
 	| "parser-warning"
 	| "duplicate-excluded"
 	| "unsupported-file"
@@ -45,7 +48,16 @@ export type SearchDocumentDiagnosticCode =
 	| "watch-limited"
 	| "unknown-datasource-skill"
 	| "missing-final-emit"
-	| "model-request-failed";
+	| "model-request-failed"
+	| "search-timeout"
+	| "query-routed"
+	| "query-route-fallback"
+	| "query-decomposition-failed"
+	| "follow-up-skipped"
+	| "follow-up-check-fallback"
+	| "datasources-selected"
+	| "datasource-selection-fallback"
+	| "citation-without-result";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
@@ -159,6 +171,32 @@ function normalizeWarnings(warnings: readonly string[]): SearchDocumentWarning[]
 }
 
 /**
+ * Enforce the response invariant: every `[n]` in `answer` resolves to a
+ * `results[].number` (issue #1788). The emit tools already reject mismatched
+ * calls; this is the boundary guarantee for every other path (text-only fast
+ * fallback, external `lite report` curators). Unmatched markers are dropped and
+ * reported as a `citation-without-result` diagnostic.
+ */
+function reconcileCitations(
+	answer: string,
+	results: readonly { readonly number: number }[],
+): { readonly answer: string; readonly diagnostics: readonly SearchDocumentDiagnostic[] } {
+	const reconciled = stripUnresolvedCitations(answer, results);
+	if (reconciled.unresolved.length === 0) return { answer, diagnostics: [] };
+	return {
+		answer: reconciled.answer,
+		diagnostics: [
+			{
+				code: "citation-without-result",
+				severity: "warning",
+				message: `Removed answer citation(s) ${formatCitationList(reconciled.unresolved)} with no matching result; every remaining citation resolves to results[].number.`,
+				source: "agent",
+			},
+		],
+	};
+}
+
+/**
  * Build the preliminary (fast-phase) search response. Unlike
  * {@link recordStructuredResultsSession} this NEVER touches memory or the
  * feedback session registry — the final response owns those. Feedback ids are
@@ -184,14 +222,15 @@ export function createPreliminarySearchDocumentsResponse(
 		feedbackId: `${sessionId}:preliminary:${result.number}`,
 		source: sourceByNumber.get(result.number),
 	}));
+	const citations = reconcileCitations(details.answer, results);
 	return {
 		sessionId,
 		query,
 		results,
-		answer: details.answer,
+		answer: citations.answer,
 		searched: details.results.length,
 		warnings: [],
-		diagnostics: [...diagnostics],
+		diagnostics: [...citations.diagnostics, ...diagnostics],
 	};
 }
 
@@ -250,16 +289,13 @@ export function recordStructuredResultsSession(
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
-	options: { readonly isolateMemory?: boolean } = {},
+	options: {
+		readonly isolateMemory?: boolean;
+		/** A remote P2P peer's search: recorded, but kept out of local past-search hints. */
+		readonly remote?: boolean;
+	} = {},
 ): SearchDocumentsResponse {
-	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
-	const mappingNumbers = details.mapping.map((entry) => entry.number).sort((a, b) => a - b);
-	const oneToOne =
-		resultNumbers.length === mappingNumbers.length &&
-		resultNumbers.every((number, index) => number === mappingNumbers[index]);
-	if (!oneToOne) {
-		throw new Error("emit_autorag_results: result numbers and mapping numbers must be one-to-one");
-	}
+	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
 
 	const registry = new Map<number, CuratedResult>();
 	const memoryResults = [];
@@ -286,7 +322,12 @@ export function recordStructuredResultsSession(
 	}
 	sessions.set(sessionId, { query, registry, ...(options.isolateMemory ? { transient: true } : {}) });
 	if (!options.isolateMemory) {
-		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
+		memory.recordCuratedResultsSession({
+			sessionId,
+			query,
+			results: memoryResults,
+			...(options.remote === true ? { remote: true } : {}),
+		});
 		memory.save();
 	}
 
@@ -301,11 +342,13 @@ export function recordStructuredResultsSession(
 		),
 		confidence: confidenceFrom(result.confidence),
 		feedbackId: `${sessionId}:${result.number}`,
-		source: registry.get(result.number)?.source,
+		// An empty mapping source means "not reported" (fast answers may omit it).
+		source: registry.get(result.number)?.source || undefined,
 	}));
-	const answer = details.answer;
+	const citations = reconcileCitations(details.answer, results);
+	const answer = citations.answer;
 
-	const diagnostics: SearchDocumentDiagnostic[] = [];
+	const diagnostics: SearchDocumentDiagnostic[] = [...citations.diagnostics];
 	// Never silently drop unknown emitted warnings — route them to diagnostics.
 	for (const warning of details.warnings) {
 		if (warning === "empty-query") continue;
@@ -335,9 +378,9 @@ export function recordNumberedFeedback(
 	sessionId: string,
 	usefulNumbers: readonly number[],
 	notUsefulNumbers: readonly number[],
-): void {
+): boolean {
 	const session = sessions.get(sessionId);
-	if (!session || session.transient) return;
+	if (!session || session.transient) return false;
 	const feedback = [];
 	for (const n of usefulNumbers) {
 		if (session.registry.has(n)) feedback.push({ number: n, useful: true });
@@ -345,8 +388,8 @@ export function recordNumberedFeedback(
 	for (const n of notUsefulNumbers) {
 		if (session.registry.has(n)) feedback.push({ number: n, useful: false });
 	}
-	if (feedback.length === 0) return;
-	if (memory.recordNumberedFeedback({ sessionId, query: session.query, feedback })) {
-		memory.save();
-	}
+	if (feedback.length === 0) return false;
+	if (!memory.recordNumberedFeedback({ sessionId, query: session.query, feedback })) return false;
+	memory.save();
+	return true;
 }

@@ -33,6 +33,17 @@ export interface AutoRAGPiSessionOptions {
 	readonly providerApiKeys?: Readonly<Record<string, string>>;
 	readonly getSystemPrompt: () => string;
 	readonly customTools: readonly AgentTool[];
+	/**
+	 * Extra pi extensions to load alongside AutoRAG's own prompt/context
+	 * extension. Each factory registers its tools, commands, and events with pi.
+	 */
+	readonly extensionFactories?: readonly ExtensionFactory[];
+	/**
+	 * Tool names registered by {@link extensionFactories}. pi's `tools`
+	 * allow-list keeps only named tools active, so every extension tool that
+	 * should be callable must appear here too.
+	 */
+	readonly extensionToolNames?: readonly string[];
 	readonly remoteSession?: boolean;
 	readonly contextTransform?: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
 }
@@ -40,6 +51,13 @@ export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessio
 	readonly model?: Model<Api>;
 	readonly inactiveToolNames?: readonly string[];
 	readonly onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>;
+	/**
+	 * Optional best-effort provider for a startup update notice. Resolves to the
+	 * notice text, or `undefined` when there is nothing to announce. Called once
+	 * per session; failures are swallowed so the check never blocks or fails a
+	 * launch.
+	 */
+	readonly updateNotice?: () => Promise<string | undefined>;
 }
 
 export interface AutoRAGPiSession {
@@ -48,7 +66,8 @@ export interface AutoRAGPiSession {
 	readonly sessionFile: string | undefined;
 }
 
-function toToolDefinition(tool: AgentTool): ToolDefinition {
+/** Adapts a pi-agent-core {@link AgentTool} to pi's extension {@link ToolDefinition}. */
+export function toToolDefinition(tool: AgentTool): ToolDefinition {
 	return {
 		name: tool.name,
 		label: tool.label,
@@ -130,6 +149,7 @@ function createAutoRAGInteractiveExtension(
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 	onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>,
 	initialModel: Model<Api> | undefined,
+	updateNotice: (() => Promise<string | undefined>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
 		let model = initialModel;
@@ -139,6 +159,20 @@ function createAutoRAGInteractiveExtension(
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
 		const transform = createContextTokenGuardedTransform(() => model, contextTransform);
 		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
+		if (updateNotice !== undefined) {
+			pi.on("session_start", () => {
+				void updateNotice()
+					.then((text) => {
+						if (text === undefined) return;
+						pi.sendMessage({
+							customType: "autorag.update",
+							content: [{ type: "text", text }],
+							display: true,
+						});
+					})
+					.catch(() => undefined);
+			});
+		}
 		pi.on("input", async (event) => {
 			const query = event.text.trim();
 			if (event.source !== "interactive" || query.length === 0 || query.startsWith("/")) return undefined;
@@ -169,11 +203,15 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 	});
 	await configureModelRuntime(modelRuntime, options.model, options.apiKey, options.providerApiKeys);
 	const customTools = [...options.customTools];
+	const extensionToolNames = [...(options.extensionToolNames ?? [])];
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: options.cwd,
 		agentDir,
 		settingsManager,
-		extensionFactories: [createAutoRAGExtension(options.getSystemPrompt, options.contextTransform, options.model)],
+		extensionFactories: [
+			createAutoRAGExtension(options.getSystemPrompt, options.contextTransform, options.model),
+			...(options.extensionFactories ?? []),
+		],
 		systemPromptOverride: () => options.getSystemPrompt(),
 		appendSystemPromptOverride: () => [],
 	});
@@ -194,11 +232,11 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		sessionManager,
 		model: options.model,
 		customTools: customToolDefinitions,
-		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames],
+		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames],
 		excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		thinkingLevel: "off",
 	});
-	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames])];
+	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames, ...extensionToolNames])];
 	session.setActiveToolsByName(initialToolNames);
 	return {
 		session,
@@ -246,7 +284,9 @@ export async function createAutoRAGPiInteractiveRuntime(
 						options.contextTransform,
 						options.onQuery,
 						options.model,
+						options.updateNotice,
 					),
+					...(options.extensionFactories ?? []),
 				],
 				systemPrompt: options.getSystemPrompt(),
 				appendSystemPrompt: [],
@@ -257,7 +297,11 @@ export async function createAutoRAGPiInteractiveRuntime(
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
 			customTools: options.customTools.map(toToolDefinition),
-			tools: [...PI_BUILTIN_TOOL_NAMES, ...options.customTools.map((tool) => tool.name)],
+			tools: [
+				...PI_BUILTIN_TOOL_NAMES,
+				...options.customTools.map((tool) => tool.name),
+				...(options.extensionToolNames ?? []),
+			],
 			excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		});
 		if (options.inactiveToolNames !== undefined && options.inactiveToolNames.length > 0) {

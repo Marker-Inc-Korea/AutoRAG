@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Value } from "typebox/value";
 import { type AutoRAGResultsDetails, emitResultsSchema } from "../../agent/emit-results-tool.ts";
+import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { ConfigError } from "../config.ts";
 import { renderError } from "../output.ts";
@@ -81,10 +82,19 @@ export function validateReport(value: unknown): AutoRAGResultsDetails {
 	};
 }
 
-function renderReport(details: AutoRAGResultsDetails, sessionId: string, query: string, json: boolean): string {
-	const envelope = { ok: true, sessionId, query, answer: details.answer, resultCount: details.results.length };
+function renderReport(response: SearchDocumentsResponse, query: string, json: boolean): string {
+	const envelope = {
+		ok: true,
+		sessionId: response.sessionId,
+		query,
+		answer: response.answer,
+		resultCount: response.results.length,
+		...(response.diagnostics !== undefined && response.diagnostics.length > 0
+			? { diagnostics: response.diagnostics }
+			: {}),
+	};
 	if (json) return JSON.stringify(envelope, null, 2);
-	return `report: ok\n  sessionId: ${sessionId}\n  results: ${details.results.length}`;
+	return `report: ok\n  sessionId: ${response.sessionId}\n  results: ${response.results.length}`;
 }
 
 function renderReportError(error: unknown, json: boolean, debug: boolean): string {
@@ -114,7 +124,7 @@ export async function runReport(ctx: CommandContext): Promise<number> {
 	try {
 		const lite = createAutoRAGLite({ flags: ctx.flags, cwd: ctx.cwd });
 		const response = lite.recordReport(query, details);
-		ctx.stdout(renderReport(details, response.sessionId, query, ctx.json));
+		ctx.stdout(renderReport(response, query, ctx.json));
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));

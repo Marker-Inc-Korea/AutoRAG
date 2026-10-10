@@ -72,13 +72,18 @@ export type ParsedMirrorDiagnosticCode =
 	| "unsupported-file"
 	| "parser-skipped"
 	| "parser-failed"
+	| "source-vanished"
+	| "source-unreadable"
 	| "duplicate-excluded"
 	| "deleted-mirror"
 	| "stale-index"
 	| "pdf-extract-thin"
 	| "parser-warning";
 
-/** Path-opaque refresh diagnostic. `source` is an opaque virtual path, never a real fs path. */
+/**
+ * Refresh diagnostic. `source` is an opaque virtual path, never a real filesystem path.
+ * `message` keeps the underlying error text, which may include a filesystem path.
+ */
 export interface ParsedMirrorDiagnostic {
 	readonly code: ParsedMirrorDiagnosticCode;
 	readonly severity: "info" | "warning";
@@ -136,13 +141,15 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		// a crash mid-run does not force a full re-parse of already written mirrors.
 		const merged: Record<string, ParsedMirrorEntry> = { ...previous.entries, ...nextEntries };
 		const mergedSkipped: Record<string, ParsedMirrorSkipEntry> = { ...previous.skipped, ...nextSkipped };
-		// Drop previous records for supported paths we already decided to remove or (re)index in this pass.
+		// Drop previous records for paths this pass already removed or replaced. A handled path keeps
+		// a skip only when this pass recorded one; a transient read failure must not retain an old skip.
 		for (const virtualPath of handledPrevious) {
 			if (virtualPath in nextEntries) {
 				delete mergedSkipped[virtualPath];
 				continue;
 			}
 			delete merged[virtualPath];
+			if (!(virtualPath in nextSkipped)) delete mergedSkipped[virtualPath];
 		}
 		saveMirrorIndex(options.root, { version: 1, entries: merged, skipped: mergedSkipped });
 		sinceCheckpoint = 0;
@@ -205,11 +212,32 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			existsSync(outputPath);
 
 		if (!unchanged) {
+			// Isolate the source read from parser execution and mirror writes. A file that disappears
+			// or cannot be read must not abort the refresh or be cached as a permanent skip.
+			let bytes: Awaited<ReturnType<typeof readFile>>;
+			try {
+				bytes = await readFile(entry.sourcePath);
+			} catch (error) {
+				const failure = sourceReadFailure(error);
+				if (failure === undefined) throw error;
+				deleted += removePrevious(options.root, previous, entry.virtualPath);
+				handledPrevious.add(entry.virtualPath);
+				skipped += 1;
+				diagnostics.push({
+					code: failure.code,
+					severity: failure.severity,
+					message: failure.message,
+					source: entry.virtualPath,
+				});
+				sinceCheckpoint += 1;
+				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
+				continue;
+			}
+
 			let parsed: ParseOutput;
 			try {
 				// Prefer sourcePath streaming into parsers; still pass bytes for parsers that need them,
 				// but only after the size gate above.
-				const bytes = await readFile(entry.sourcePath);
 				parsed = await parser.parse({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes });
 			} catch (error) {
 				if (!(error instanceof ParseError)) throw error;
@@ -336,6 +364,24 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		});
 	}
 	return diagnostics;
+}
+
+function sourceReadFailure(error: unknown):
+	| {
+			readonly code: "source-vanished" | "source-unreadable";
+			readonly severity: "info" | "warning";
+			readonly message: string;
+	  }
+	| undefined {
+	if (!(error instanceof Error)) return undefined;
+	const code = (error as NodeJS.ErrnoException).code;
+	if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") {
+		return { code: "source-vanished", severity: "info", message: error.message };
+	}
+	if (code === "EACCES" || code === "EPERM") {
+		return { code: "source-unreadable", severity: "warning", message: error.message };
+	}
+	return undefined;
 }
 
 function supportedExtensionSet(registry: ParserRegistry): ReadonlySet<string> {

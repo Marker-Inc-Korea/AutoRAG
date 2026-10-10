@@ -2,23 +2,20 @@
  * RetrievalEngine — standalone typed seam for model-free retrieval.
  *
  * Wraps the existing retrieval pipeline (registry, parallel retriever,
- * datasource result filter, and merger) into a single public entry point.
+ * datasource scope filter, and merger) into a single public entry point.
  * Exposes a deterministic, self-contained retrieval API with diagnostics.
  *
- * Security invariants (delegated to {@link DatasourceAccessContext} and
- * {@link DatasourceResultFilter}):
- *  - Access is default-deny: when no trusted allow-tags are configured,
- *    every datasource method result is dropped.
- *  - Deny is always an explicit empty result array, never `undefined`.
- *  - Model/tool arguments (`allowedTags`, `allowedScopes`) cannot widen the
- *    trusted access context constructed during engine creation.
+ * Every configured/connected datasource is searchable without permission
+ * setup. The ordinary query `scope` narrows scope-capable datasource results
+ * after retrieval; local (non-datasource) methods and datasources without
+ * source-scope support pass through untouched.
  */
 
-import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
-import { DatasourceResultFilter } from "../datasource/result-filter.ts";
+import { filterDatasourceScope } from "../datasource/scope.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
-import type { Reranker } from "./rerank.ts";
+import { DEFAULT_RERANK_TOP_N, type Reranker } from "./rerank.ts";
+import { derivedDatasourceIds, type RetrievalSelection, resolveSelectedMethods } from "./selection.ts";
 import { MINSYNC_SURFACE } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
@@ -38,11 +35,6 @@ const DEFAULT_MERGED_EVIDENCE_CEILING = 500;
 /** Options for constructing a standalone {@link RetrievalEngine}. */
 export interface RetrievalEngineOptions {
 	/**
-	 * Datasource access configuration. Default-deny when omitted.
-	 * @default { allowedTags: undefined, allowedScopes: undefined }
-	 */
-	readonly datasourceAccess?: DatasourceAccessContextOptions;
-	/**
 	 * Default `topK` when the caller omits it. This is a safety ceiling on
 	 * merged evidence, not a relevance cut: the merger returns every distinct
 	 * chunk, so the effective size is whatever the registered methods returned.
@@ -60,12 +52,25 @@ export interface RetrievalEngineOptions {
 	 */
 	readonly isMinSyncBinaryMissing?: () => boolean;
 	/**
+	 * Configured datasource ids from the skill catalog, including datasources
+	 * that expose no retrieval methods. {@link retrieveSelected} uses this to
+	 * tell an unknown datasource id from a known one. When omitted, the engine
+	 * derives ids from its registered methods; method-less datasources are then
+	 * treated as unknown.
+	 */
+	readonly datasourceIds?: () => readonly string[];
+	/**
 	 * Optional post-merge reranker. When set, merged results are reordered by
 	 * the reranker after dedup and score normalization. A reranker failure is
 	 * reported as a `rerank-failed` diagnostic and the unranked order is kept —
 	 * the engine never silently drops evidence because a reranker was down.
 	 */
 	readonly reranker?: Reranker;
+	/**
+	 * Number of merged results kept after reranking when the caller omits `topK`.
+	 * Only applies when {@link reranker} is set. @default DEFAULT_RERANK_TOP_N
+	 */
+	readonly rerankTopN?: number;
 }
 
 /**
@@ -75,7 +80,7 @@ export interface RetrievalEngineOptions {
  * ```
  * methods = registry.list()
  * byMethod = retriever.retrieveWithDiagnostics(methods, query, options)
- * filtered = filter.filter(byMethod, methods, ctx, options.scope)
+ * filtered = filterDatasourceScope(byMethod, methods, options.scope)
  * merged = merger.merge(filtered, { topK, dedup: true })  // distinct chunks, pure duplicates dropped
  * → { results: merged, diagnostics }
  * ```
@@ -92,34 +97,29 @@ export interface RetrievalEngineOptions {
 export class RetrievalEngine {
 	private readonly registry: RetrievalMethodRegistry;
 	private readonly retriever: ParallelRetriever;
-	private readonly filter: DatasourceResultFilter;
 	private readonly merger: ResultMerger;
-	private readonly accessContext: DatasourceAccessContext;
 	private readonly defaultTopK: number;
 	private readonly defaultDedup: boolean;
 	private readonly isMinSyncBinaryMissing: (() => boolean) | undefined;
+	private readonly datasourceIdsProvider: (() => readonly string[]) | undefined;
 	private readonly reranker: Reranker | undefined;
+	private readonly rerankTopN: number;
 
 	constructor(options: RetrievalEngineOptions = {}) {
 		this.registry = new RetrievalMethodRegistry();
 		this.retriever = new ParallelRetriever();
-		this.filter = new DatasourceResultFilter();
 		this.merger = new ResultMerger();
-		this.accessContext = new DatasourceAccessContext(options.datasourceAccess);
 		this.defaultTopK = options.defaultTopK ?? DEFAULT_MERGED_EVIDENCE_CEILING;
 		this.defaultDedup = options.defaultDedup ?? true;
 		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
+		this.datasourceIdsProvider = options.datasourceIds;
 		this.reranker = options.reranker;
+		this.rerankTopN = options.rerankTopN ?? DEFAULT_RERANK_TOP_N;
 	}
 
 	/** The underlying method registry. Intentionally public for tooling. */
 	getMethodRegistry(): RetrievalMethodRegistry {
 		return this.registry;
-	}
-
-	/** The underlying datasource access context. Read-only for inspection. */
-	getAccessContext(): DatasourceAccessContext {
-		return this.accessContext;
 	}
 
 	/**
@@ -173,8 +173,7 @@ export class RetrievalEngine {
 			diagnostics,
 			unsearched,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
-		const ctx = this.accessContextFor(options);
-		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
+		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
 		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
 		const merged = this.merger.merge(filtered, { topK, dedup: this.defaultDedup });
 		const results = await this.applyRerank(query, merged, skipped.diagnostics, options);
@@ -198,7 +197,7 @@ export class RetrievalEngine {
 		if (this.reranker === undefined || results.length === 0) return results;
 		try {
 			const reranked = await this.reranker.rerank(query, results, {
-				topN: options.topK,
+				topN: options.topK ?? this.rerankTopN,
 				signal: options.signal,
 			});
 			return reranked;
@@ -235,10 +234,45 @@ export class RetrievalEngine {
 			diagnostics,
 			unsearched,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
-		const ctx = this.accessContextFor(options);
-		const filtered = this.filter.filter(byMethod, methods, ctx, options.scope, options.allowedScopes);
+		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
 		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
 		return { byMethod: filtered, diagnostics: skipped.diagnostics, unsearched: skipped.unsearched };
+	}
+
+	/**
+	 * Run a selected subset of the registered methods — parallel retrieve,
+	 * scope filter, merge — and return merged results with diagnostics.
+	 *
+	 * Unlike {@link retrieve}, selection happens BEFORE any backend is invoked:
+	 * the eligible method list is reduced first, so an unselected datasource
+	 * backend is never spawned. Unknown method or datasource selections throw
+	 * {@link RetrievalSelectionError}. The ordinary query `scope` still narrows
+	 * results after retrieval.
+	 */
+	async retrieveSelected(
+		query: string,
+		selection: RetrievalSelection = {},
+		options: RetrievalOptions = {},
+	): Promise<{
+		results: RetrievalResult[];
+		diagnostics: RetrievalDiagnostic[];
+		unsearched: RetrievalUnsearchedSurface[];
+	}> {
+		const topK = options.topK ?? this.defaultTopK;
+		const datasourceIds = this.datasourceIdsProvider?.() ?? derivedDatasourceIds(this.registry.list());
+		const methods = resolveSelectedMethods(this.registry.list(), selection, datasourceIds);
+		const {
+			results: byMethod,
+			diagnostics,
+			unsearched,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
+		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
+		return {
+			results: this.merger.merge(filtered, { topK, dedup: this.defaultDedup }),
+			diagnostics: skipped.diagnostics,
+			unsearched: skipped.unsearched,
+		};
 	}
 
 	/**
@@ -291,26 +325,5 @@ export class RetrievalEngine {
 				? unsearched
 				: [...unsearched, { surface: MINSYNC_SURFACE, methods: Array.from(new Set(emptyMinsync)).sort(), reason }],
 		};
-	}
-
-	/**
-	 * Build a datasource access context scoped to the caller's options.
-	 * Model/tool arguments (allowedTags, allowedScopes) from options can only
-	 * further restrict the trusted context, never widen it.
-	 */
-	private accessContextFor(options: RetrievalOptions): DatasourceAccessContext {
-		// The engine's base trusted context is the fixed one. Any user-supplied
-		// allowedTags/allowedScopes in options are intersected by narrowing via
-		// the filter's userScope parameter, not by replacing the base context.
-		// For the filter-scope path (userScope), we pass options.scope directly.
-		// If options provides explicit allowedTags/allowedScopes, they narrow
-		// the base context.
-		const baseTags = this.accessContext.allowedTags;
-		const baseScopes = this.accessContext.allowedScopes;
-		const userTags = options.allowedTags;
-		// Intersect: if both sides have tags, only common tags survive.
-		const allowedTags =
-			baseTags.length === 0 ? [] : userTags !== undefined ? baseTags.filter((t) => userTags.includes(t)) : baseTags;
-		return new DatasourceAccessContext({ allowedTags, allowedScopes: baseScopes });
 	}
 }

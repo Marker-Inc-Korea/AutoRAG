@@ -24,8 +24,8 @@ Lark/Feishu v1 is not in this list: it ships as remote search through `lark-cli`
 
 ## Standard acceptance criteria
 
-- Access is default-deny and server-bound.
-- Tool arguments cannot grant `allowedTags` or `allowedScopes`.
-- Results are filtered before merge and use slash-hierarchical source IDs.
+- Connections are server-bound and every configured connection is searchable; there is no access layer.
+- Tool arguments cannot change trusted connector configuration; a query `scope` can only narrow, never widen.
+- Results are narrowed by query scope before merge and use slash-hierarchical source IDs.
 - Diagnostics are non-throwing for expected auth/API failures.
 - README/docs/manual QA are updated for the datasource.

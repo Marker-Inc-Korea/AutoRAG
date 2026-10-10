@@ -43,6 +43,7 @@ type SpawnJikjiRequest = {
 export class JikjiClient {
 	private readonly options: JikjiOptions;
 	private resolvedCommand: string | undefined;
+	private installCommandInFlight: Promise<string> | undefined;
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
@@ -59,31 +60,49 @@ export class JikjiClient {
 	 * 2. PATH lookup for `jikji`
 	 * 3. cached `<root>/.autorag/bin/jikji`
 	 * 4. autoInstall (default true) via `cargo install jikji-cli` into the cache
+	 *    — only for `prepare` (refresh); `find` passes `install: false` so a
+	 *    query never waits on an install
 	 * 5. bare `jikji` (spawn-error degrade preserves the previous behavior)
-	 * The result is cached per client so a failed install is not retried.
+	 * A found binary is cached per client. The bare fallback is cached only after
+	 * an install attempt, so a query-time miss does not block a later refresh
+	 * from installing.
 	 */
-	private async resolveCommand(): Promise<string> {
+	private async resolveCommand(options: { readonly install?: boolean } = {}): Promise<string> {
 		if (this.options.binaryPath !== undefined && this.options.binaryPath !== DEFAULT_BINARY) {
 			return commandFor(this.options.binaryPath);
 		}
 		if (this.resolvedCommand !== undefined) return this.resolvedCommand;
-		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, controlledEnv(this.options.env));
+		const env = controlledEnv(this.options.env);
+		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, env);
 		if (pathCommand !== undefined) {
 			this.resolvedCommand = pathCommand;
 			return this.resolvedCommand;
 		}
 		if (this.options.root !== undefined) {
-			const cached = cachedJikjiBinaryPath(this.options.root);
+			const root = this.options.root;
+			const cached = cachedJikjiBinaryPath(root);
 			if (existsSync(cached)) {
 				this.resolvedCommand = cached;
 				return this.resolvedCommand;
 			}
+			// A query (`find`) passes install:false: never trigger or await an
+			// install, and leave `resolvedCommand` unset so a later refresh can.
+			if (options.install === false) return DEFAULT_BINARY;
 			if (this.options.autoInstall !== false) {
-				const installed = await ensureJikjiBinary({ root: this.options.root });
-				if (installed.ok) {
-					this.resolvedCommand = installed.binaryPath;
-					return this.resolvedCommand;
-				}
+				// Share one cargo install across concurrent prepares — one client
+				// serves multiple roots — instead of racing N compiles.
+				if (this.installCommandInFlight !== undefined) return this.installCommandInFlight;
+				const install = ensureJikjiBinary({ root, env })
+					.then((installed) => {
+						const command = installed.ok ? installed.binaryPath : DEFAULT_BINARY;
+						this.resolvedCommand = command;
+						return command;
+					})
+					.finally(() => {
+						this.installCommandInFlight = undefined;
+					});
+				this.installCommandInFlight = install;
+				return install;
 			}
 		}
 		this.resolvedCommand = DEFAULT_BINARY;
@@ -115,7 +134,7 @@ export class JikjiClient {
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
 		const result = await this.spawn({
-			command: await this.resolveCommand(),
+			command: await this.resolveCommand({ install: false }),
 			args: buildFindArgs(root, query, options),
 			signal: options.signal,
 		});

@@ -1,7 +1,7 @@
 /**
  * Reranker seam — a post-retrieval reordering stage over merged evidence.
  *
- * The retrieval pipeline (registry → ParallelRetriever → DatasourceResultFilter
+ * The retrieval pipeline (registry → ParallelRetriever → filterDatasourceScope
  * → ResultMerger) produces a scored candidate list. A reranker reorders that
  * list with a dedicated relevance model. The default implementation talks to
  * OpenRouter's rerank router through the OpenRouter TypeScript SDK.
@@ -21,6 +21,8 @@ export const DEFAULT_RERANK_MODEL = "voyageai/rerank-3-lite";
 export const DEFAULT_RERANK_PROVIDER = "openrouter";
 /** Default environment variable holding the OpenRouter API key. */
 export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
+/** Default number of merged chunks kept after reranking. */
+export const DEFAULT_RERANK_TOP_N = 25;
 /** Rerank providers {@link createReranker} can build. */
 export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER];
 

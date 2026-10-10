@@ -23,10 +23,6 @@ connection:
         "vdrBackend": "vsplade"
       }
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["clawgallery"],
-    "allowedScopes": ["/screenshots/personal/**"]
   }
 }
 ```
@@ -51,10 +47,6 @@ protected locations. Unavailable on non-macOS hosts.
       "type": "spotlight",
       "instanceId": "local"
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["spotlight"],
-    "allowedScopes": ["/mac-files/local/**"]
   }
 }
 ```
@@ -109,7 +101,7 @@ The methods are registered in the normal AutoRAG pipeline:
 ```text
 RetrievalMethodRegistry
   -> ParallelRetriever
-  -> DatasourceResultFilter
+  -> filterDatasourceScope
   -> ResultMerger
   -> memory / curation
 ```
@@ -202,10 +194,6 @@ wants a different mailcrawl data directory.
         "mailbox": "INBOX"
       }
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["mailcrawl", "email"],
-    "allowedScopes": ["/mailcrawl/personal/**"]
   }
 }
 ```
@@ -246,7 +234,15 @@ Every datasource entry can use a reusable template with a connection alias:
 Each configured connection may include an optional `description`. This text is
 trusted operator context shown in the datasource descriptor and progressive
 disclosure skill manifest. It helps the librarian understand how a connection
-is normally used without changing its access policy.
+is normally used without changing what is searchable. With Jev enabled, it is
+also what the pre-fast-answer datasource check reads to decide whether to
+search the connection (see [Jev Decisions](jev-decisions.md)), so write it from
+what the connection actually holds: channels or rooms, people, topics, and
+time range. Jev is told every description is a short, non-exhaustive summary,
+so name the main content rather than trying to list everything. Without a
+description, Jev sees only the connector's generic text (for example "Discord
+datasource via the external discrawl CLI"), which cannot tell two Discord
+servers apart.
 
 ```json
 {
@@ -264,31 +260,44 @@ is normally used without changing its access policy.
 }
 ```
 
-Descriptions are user-supplied, are not inferred automatically, and cannot
-grant access or widen `datasourceAccess.allowedScopes`.
+Descriptions are user-supplied, are not inferred automatically, and are
+descriptive context only: they never change which connections are searchable
+or widen a query `scope`.
 
 The key is the independent datasource ID and becomes an independently
 loadable `datasource-<alias>` skill. Its source scope, diagnostics, method
-names, local storage/cache namespace, and access policy are rewritten under
-the alias. This supports multiple connections of the same provider as well as
-different providers in one agent.
+names, local storage/cache namespace, and descriptive metadata are rewritten
+under the alias. This supports multiple connections of the same provider as
+well as different providers in one agent.
 
 ## Access model
 
-Datasource access is default-deny. Trusted server/API configuration supplies:
-
-- `datasourceAccess.allowedTags`
-- `datasourceAccess.allowedScopes`
-
-Model-controlled tool arguments cannot grant access. Every authorized connection gets its own generated `search_datasource_<id>` tool, and each one's schema is exactly:
+Every configured or already-connected datasource is searchable without access
+setup: there is no tag/scope authorization layer and no default-deny gate.
+Trusted server/API configuration only decides which connections exist (the
+`datasources` section). Each configured connection gets its own generated
+`search_datasource_<id>` tool, and each one's schema is exactly:
 
 ```ts
 { query: string; topK?: number; scope?: string }
 ```
 
-There is no datasource fan-out tool: a question that spans every datasource (or everything else) uses `search_all_documents`, which already registers every authorized connection's retrieval methods alongside the local ones.
+There is no datasource fan-out tool: a question that spans every datasource (or everything else) uses `search_all_documents`, which already registers every configured connection's retrieval methods alongside the local ones. Skill descriptor `tags` are descriptive metadata only, never authority, and model-controlled tool arguments cannot change which connections exist.
 
-`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, lazykatok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
+`scope` is an ordinary per-query narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method is kept only when its source matches the requested scope, and datasource sources always reject `#` fragments. Datasources without that capability (for example, lazykatok's chat-identity results) own any narrower filtering themselves.
+
+Generated tools, retrieval, and memory provenance reference the datasource IDs of configured connections; provenance is not an authorization decision.
+
+### Migrating from datasource access controls
+
+Datasource authorization was removed. Delete the `datasourceAccess` block; a
+connection is searchable as soon as it is configured under `datasources` and
+authenticated through its native CLI.
+
+- Remove `datasourceAccess` and its `allowedTags` / `allowedScopes` retrieval fields.
+- Remove CLI `--tags` and MCP `tags` filters used for datasource visibility.
+- Query `scope` stays: it narrows a scope-capable datasource's results and can never widen visibility.
+- Skill/descriptor `tags` remain descriptive metadata only.
 
 ## Security responsibility
 
@@ -336,10 +345,6 @@ or DM/MPIM access.
         "timeoutMs": 120000
       }
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["slack", "chat"],
-    "allowedScopes": ["/slack-local/local/**"]
   }
 }
 ```
@@ -406,13 +411,6 @@ its rclone backend is Tier 4 and periodically requires Apple ID/password,
         "dryRun": false
       }
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["cloud-drive"],
-    "allowedScopes": [
-      "/personal-google-drive/personal/**",
-      "/company-onedrive/work/**"
-    ]
   }
 }
 ```
@@ -488,7 +486,7 @@ rclone and the agent never requests them.
 
 Chat/archive datasources (`kakao`, `discord`, `telegram`, `whatsapp`, and
 `slack`) search all channels, rooms, chats, and DMs by default. To expose a
-restricted datasource, create another alias and use trusted configuration:
+subset of channels, create another alias and select them in trusted configuration:
 
 ```json
 {
@@ -505,10 +503,6 @@ restricted datasource, create another alias and use trusted configuration:
         "names": ["release-engineering"]
       }
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["discord"],
-    "allowedScopes": ["/all-discord/**", "/release-channel/**"]
   }
 }
 ```
@@ -547,10 +541,6 @@ import { AutoRAGAgent, LazykatokSkill } from "@autorag/librarian";
 const agent = new AutoRAGAgent({
   searchPaths: ["/docs"],
   datasourceSkills: [new LazykatokSkill({ instanceId: "personal" })],
-  datasourceAccess: {
-    allowedTags: ["kakaotalk"],
-    allowedScopes: ["/kakao/personal/**"],
-  },
 });
 
 await agent.refresh();
@@ -572,10 +562,6 @@ client's private databases and never accepts an app secret.
       "instanceId": "default",
       "channels": { "ids": ["oc_xxx"] }
     }
-  },
-  "datasourceAccess": {
-    "allowedTags": ["lark:chat", "lark:docs"],
-    "allowedScopes": ["/lark/default/**"]
   }
 }
 ```
@@ -592,13 +578,45 @@ scopes `search:message` and `search:docs:read`, and confirm with
 `/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
 coverage of older messages is not guaranteed.
 
+## GitHub Gists
+
+`github-gist` indexes the authenticated account's own Gists through the GitHub
+REST API: public Gists and secret Gists permitted by the token's scopes.
+The local index stores descriptions and file contents (code snippets, notes,
+and design memos), plus Gist IDs, visibility, filenames, URLs, and update times.
+Refresh is incremental: only new or updated Gists need a full content fetch;
+deleted Gists are removed from the index.
+
+```json
+{
+  "datasources": {
+    "github-gist": {
+      "type": "github-gist",
+      "instanceId": "default",
+      "connector": { "tokenEnv": "GITHUB_TOKEN" }
+    }
+  }
+}
+```
+
+Set `GITHUB_TOKEN` (or the environment variable named by `connector.tokenEnv`);
+if it is unavailable, authentication falls back to the `gh` CLI login. The
+token is not stored in the index or configuration. Search supports lexical
+BM25 and semantic retrieval through the local loopback embedding gateway;
+Gist content stays on the machine for embeddings. If embeddings are
+unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
+Result sources are `/github-gist/<instance>/chunks/<chunk-id>` (opaque
+datasource identities, not filesystem paths); metadata retains the Gist ID
+and URL. For the live QA harness, see
+[manual datasource QA](manual-qa-datasources.md).
+
 ## New datasource checklist
 
 - Implement `DatasourceSkill`.
-- Return retrieval methods whose descriptors set `datasourceId` and authorization `tags`.
+- Return retrieval methods whose descriptors set `datasourceId` and descriptive `tags`.
 - Emit slash-hierarchical `source` values.
 - Include polling/cron metadata.
 - Provide source descriptions that explain the data content.
-- Add default-deny and capability-specific scope tests; only scope-capable datasources need multi-scope and user-scope intersection tests.
+- Add capability-specific scope tests for scope-capable datasources; only those need multi-scope and user-scope narrowing tests. `#`-fragment rejection applies to every datasource source.
 - Add no-throw diagnostics for missing credentials/binaries/permissions.
 - Add issue labels `datasource-skill`, `integration`, and a source-specific label.

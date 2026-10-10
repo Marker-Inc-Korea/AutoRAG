@@ -5,14 +5,15 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import type { JevBackendName } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
 	loadLocalAutoRAGModel,
 } from "../agent/local-model.ts";
+import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
-import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
@@ -21,6 +22,7 @@ import {
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	DEFAULT_RERANK_TOP_N,
 	SUPPORTED_RERANK_PROVIDERS,
 } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -87,6 +89,28 @@ export interface WebSearchCliConfig {
 }
 
 /**
+ * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
+ * it explicitly. Secrets never appear here: the `jev-use` engine reads the
+ * backend credential from its own environment variable (`TYPESAFE_API_KEY`,
+ * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
+ */
+export interface JevCliConfig {
+	enabled?: boolean;
+	/** Force one backend; omit to let the first credential present win. */
+	backend?: JevBackendName;
+	/** Model id sent with every call, e.g. `jev-latest`. */
+	model?: string;
+	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
+	confidenceThreshold?: number;
+}
+
+/** Question-decomposition config. Secrets stay in env/pi auth like the main model. */
+export interface QueryDecompositionConfig {
+	/** Dedicated decomposition model; same shape and auth rules as the top-level `model`. */
+	model?: AgentModelConfig;
+}
+
+/**
  * Post-merge reranking config. Routes merged evidence through a dedicated
  * rerank model. `provider` is `openrouter` today; `model` is the OpenRouter
  * wire id (default `voyageai/rerank-3-lite`). Secrets never appear here — only
@@ -103,7 +127,7 @@ export interface RerankConfig {
 	apiKeyEnv?: string;
 	/** Override the provider base URL (e.g. a gateway). */
 	baseUrl?: string;
-	/** Return only the top N merged results. Omitted ⇒ all distinct results are reordered. */
+	/** Return only the top N merged results. @default 25 (DEFAULT_RERANK_TOP_N) */
 	topN?: number;
 	/** Per-request timeout in milliseconds. */
 	timeoutMs?: number;
@@ -180,6 +204,21 @@ export interface CliConfig {
 		  }
 		| false;
 	webSearch?: WebSearchCliConfig;
+	/**
+	 * Jev query routing (local / web / direct), the decomposition check, the
+	 * post-fast-answer follow-up check, and the `jev` tool. On by default with
+	 * the OpenRouter backend; `false` or `enabled: false` disables it. Secrets
+	 * never appear here: `jev-use` reads the backend key from its own
+	 * environment variable.
+	 */
+	jev?: JevCliConfig | false;
+	/**
+	 * Question decomposition for the Jev query pipeline. `model` names the LLM
+	 * that splits one question into at most five search queries; absent or `{}`
+	 * uses {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}, and `false` lets the
+	 * agent's own model decompose.
+	 */
+	queryDecomposition?: QueryDecompositionConfig | false;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -193,10 +232,8 @@ export interface CliConfig {
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
 	limits?: AutoRAGRetrievalLimits;
-	/** Trusted datasource skill configuration (skill name → config). */
+	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
-	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
-	datasourceAccess?: DatasourceAccessContextOptions;
 	/** P2P sharing configuration. Disabled by default. */
 	p2p?: P2pConfig;
 }
@@ -1034,6 +1071,10 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
+	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	if (file.queryDecomposition !== undefined) {
+		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
+	}
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -1051,16 +1092,6 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.datasources = file.datasources as DatasourcesConfig;
 	}
-	if (file.datasourceAccess !== undefined) {
-		if (
-			typeof file.datasourceAccess !== "object" ||
-			file.datasourceAccess === null ||
-			Array.isArray(file.datasourceAccess)
-		) {
-			throw new ConfigError("Config field 'datasourceAccess' must be an object with allowedTags/allowedScopes");
-		}
-		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
-	}
 	config.p2p = normalizeP2pConfig(file.p2p);
 	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
 	return config;
@@ -1073,6 +1104,98 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
  */
 export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 	return resolveConfig({ ...input, readOnly: true });
+}
+
+const JEV_CONFIG_FIELDS: Record<string, true> = {
+	enabled: true,
+	backend: true,
+	model: true,
+	confidenceThreshold: true,
+};
+
+/** Backends the `jev-use` engine can resolve from the environment. */
+const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel"];
+
+/** Validate and normalize the `jev` config section. */
+export function normalizeJevConfig(raw: unknown): JevCliConfig {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'jev' must be an object or false");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (JEV_CONFIG_FIELDS[key] !== true) {
+			throw new ConfigError(`jev.${key} is not a recognized field`);
+		}
+	}
+	const out: JevCliConfig = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError("jev.enabled must be a boolean");
+		out.enabled = record.enabled;
+	}
+	if (record.backend !== undefined) {
+		const backend = record.backend;
+		if (typeof backend !== "string" || !JEV_BACKEND_NAMES.some((known) => known === backend)) {
+			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKEND_NAMES.join(", ")}`);
+		}
+		// Narrowed by the membership check above.
+		out.backend = backend as JevBackendName;
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || record.model.trim().length === 0) {
+			throw new ConfigError("jev.model must be a non-empty string");
+		}
+		out.model = record.model.trim();
+	}
+	if (record.confidenceThreshold !== undefined) {
+		if (
+			typeof record.confidenceThreshold !== "number" ||
+			!Number.isFinite(record.confidenceThreshold) ||
+			record.confidenceThreshold < 0 ||
+			record.confidenceThreshold > 1
+		) {
+			throw new ConfigError("jev.confidenceThreshold must be a number between 0 and 1");
+		}
+		out.confidenceThreshold = record.confidenceThreshold;
+	}
+	return out;
+}
+
+/** Jev backend used when the config names none (absent section or `{}`). */
+export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
+
+/**
+ * Question-decomposition model used when the config names none. Picked from a
+ * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
+ * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
+ * cheaper per call than google/gemini-2.5-flash-lite at equal quality.
+ */
+export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
+
+/** Validate the `queryDecomposition` config section (`false` = decompose with the session model). */
+export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecompositionConfig | false {
+	if (raw === false) return false;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'queryDecomposition' must be an object or false");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (key !== "model") throw new ConfigError(`queryDecomposition.${key} is not a recognized field`);
+	}
+	const model = modelReference(record.model, "queryDecomposition.model");
+	return model === undefined ? {} : { model };
+}
+
+/**
+ * Map the `jev` config section onto the agent option. Jev is on by default:
+ * an absent section or `{}` enables it on {@link DEFAULT_JEV_BACKEND}; `false`
+ * and `enabled: false` are the opt-out.
+ */
+function buildJevAgentOption(raw: JevCliConfig | false | undefined): AutoRAGAgentOptions["jev"] {
+	if (raw === false) return false;
+	const normalized = normalizeJevConfig(raw ?? {});
+	if (normalized.enabled === false) return false;
+	const { enabled: _omitJevEnabled, ...fields } = normalized;
+	return { backend: DEFAULT_JEV_BACKEND, ...fields };
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1148,6 +1271,7 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 		provider: DEFAULT_RERANK_PROVIDER,
 		model: DEFAULT_RERANK_MODEL,
 		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (raw === undefined || raw === null) return out;
 	if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -1226,6 +1350,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	opts.jev = buildJevAgentOption(config.jev);
 	if (config.rerank !== undefined) {
 		opts.rerank =
 			config.rerank === false || config.rerank.enabled === false
@@ -1265,7 +1390,6 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 			opts.startupDiagnostics = [diagnostic];
 		}
 	}
-	if (config.datasourceAccess !== undefined) opts.datasourceAccess = config.datasourceAccess;
 	if (config.p2p?.enabled === true) {
 		opts.peerQuery = {
 			...(config.p2p.port !== undefined ? { port: config.p2p.port } : {}),
@@ -1674,6 +1798,23 @@ export async function resolveAgentModel(
 	};
 }
 
+/**
+ * Resolve the question-decomposition model and its credential through the same
+ * chain as the agent model. An absent section or `{}` uses
+ * {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}; `queryDecomposition: false`
+ * returns undefined so the agent's own model decomposes.
+ */
+export async function resolveQueryDecompositionModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<DecompositionModel | undefined> {
+	if (config.queryDecomposition === false) return undefined;
+	const reference = config.queryDecomposition?.model ?? DEFAULT_QUERY_DECOMPOSITION_MODEL;
+	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
+	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
+	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
+}
+
 function providerApiKeyEnvName(provider: string): string {
 	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }
@@ -1753,7 +1894,20 @@ export function writeConfigObject(path: string, config: unknown): void {
 export function writeDefaultConfig(
 	path: string,
 	partial: Partial<CliConfig>,
-	opts: { force?: boolean; atomicCreate?: boolean; cwd?: string; env?: NodeJS.ProcessEnv } = {},
+	opts: {
+		force?: boolean;
+		atomicCreate?: boolean;
+		cwd?: string;
+		env?: NodeJS.ProcessEnv;
+		/**
+		 * Whether the target path was selected explicitly by the caller
+		 * (`--config` / `AUTORAG_CONFIG`). When `false`, `force` refuses to
+		 * replace an existing file: an implicit home config may only be
+		 * replaced through an explicit config path. `undefined` (callers that
+		 * do not distinguish) keeps the historical force semantics.
+		 */
+		explicit?: boolean;
+	} = {},
 ): void {
 	const cwd = resolve(opts.cwd ?? process.cwd());
 	const workspacePath = resolvePersistedPath(partial.workspacePath ?? ".", cwd);
@@ -1786,15 +1940,31 @@ export function writeDefaultConfig(
 		provider: DEFAULT_RERANK_PROVIDER,
 		model: DEFAULT_RERANK_MODEL,
 		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
+	// Jev routing and question decomposition are on by default; new configs
+	// spell the defaults out so they are visible and editable.
+	full.jev = partial.jev ?? { backend: DEFAULT_JEV_BACKEND };
+	full.queryDecomposition = partial.queryDecomposition ?? { model: { ...DEFAULT_QUERY_DECOMPOSITION_MODEL } };
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);
 	try {
-		if (!opts.force && existsSync(path)) {
+		const exists = existsSync(path);
+		if (!opts.force && exists) {
 			throw new ConfigError(`Config file already exists: ${path}`);
+		}
+		// `--force` must not silently replace an implicit home config: the
+		// caller has to name the config explicitly (--config / AUTORAG_CONFIG).
+		// The check runs inside the write lock so a concurrent first-time
+		// writer still wins over a stale pre-lock existsSync.
+		if (opts.force && opts.explicit === false && exists) {
+			throw new ConfigError(
+				`Refusing to overwrite existing config ${path} without an explicit config path. ` +
+					"Pass --config <path> or set AUTORAG_CONFIG to select the config, or re-run without --force.",
+			);
 		}
 		if (opts.force || opts.atomicCreate) replaceFileAtomically(path, contents, lock.assertOwned);
 		else {

@@ -8,6 +8,7 @@ export {
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	DEFAULT_RERANK_TOP_N,
 	OpenRouterReranker,
 	type OpenRouterRerankerOptions,
 	type Reranker,
@@ -21,6 +22,14 @@ export {
 	normalizeVirtualPathScope,
 	virtualPathScopeToRegExp,
 } from "./scope.ts";
+export {
+	type DatasourceCatalogEntry,
+	derivedDatasourceIds,
+	type RetrievalSelection,
+	RetrievalSelectionError,
+	type RetrievalSelectionErrorCode,
+	resolveSelectedMethods,
+} from "./selection.ts";
 export {
 	describeRetrievalError,
 	groupUnsearchedSurfaces,

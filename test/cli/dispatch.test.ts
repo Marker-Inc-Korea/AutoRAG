@@ -298,7 +298,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	setup: ["--search-paths", "--workspace", "--profile", "--format json"],
 	refresh: ["--method", "--force"],
 	status: ["Usage: autorag status"],
-	search: ["--top-k", "--scope", "--tags", "--fast-thinking", "--final-thinking", "--single-phase"],
+	search: ["--top-k", "--scope", "--fast-thinking", "--final-thinking"],
 	feedback: ["--useful", "--not-useful"],
 	evidence: ["--result"],
 	memory: ["inspect"],
@@ -392,10 +392,9 @@ describe("per-command help", () => {
 });
 
 describe("two-phase thinking flags", () => {
-	it("accepts --single-phase as a boolean flag", () => {
+	it("rejects the removed --single-phase flag", () => {
 		const parsed = parseArgs(["search", "q", "--single-phase"]);
-		if ("error" in parsed) throw new Error(parsed.error);
-		expect(parsed.flags["single-phase"]).toBe(true);
+		expect(parsed).toEqual({ error: "Unknown flag: --single-phase" });
 	});
 
 	it("accepts --fast-thinking and --final-thinking as value flags", () => {
@@ -411,11 +410,11 @@ describe("two-phase thinking flags", () => {
 		expect(parsed.flags["fast-thinking"]).toBe("high");
 	});
 
-	it("routes the flags past argument parsing in main", async () => {
+	it("routes the thinking flags past argument parsing in main", async () => {
 		const io = captureStdio();
 		// No config is present, so the command body fails later; what matters is
-		// that the flag itself is no longer rejected as unknown.
-		await main(["tui", "--single-phase", "--help"]);
+		// that the flag itself is not rejected as unknown.
+		await main(["tui", "--fast-thinking", "low", "--help"]);
 		expect(io.stderr()).not.toContain("Unknown flag");
 	});
 });

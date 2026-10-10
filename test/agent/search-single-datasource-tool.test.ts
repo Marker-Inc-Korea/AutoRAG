@@ -153,7 +153,6 @@ describe("AutoRAGAgent single-datasource retrieval", () => {
 				makeSpySkill("kakao", [result("a", "/kakao/default/chunks/a")], kakaoCalls),
 				makeSpySkill("slack", [result("s", "/slack/default/chunks/s")], slackCalls),
 			],
-			datasourceAccess: { allowedTags: ["kakao", "slack"] },
 		});
 
 		const { results } = await agent.searchSingleDatasourceDocuments("kakao", "message");
@@ -163,7 +162,7 @@ describe("AutoRAGAgent single-datasource retrieval", () => {
 		expect(slackCalls.count).toBe(0);
 	});
 
-	it("returns an empty result set for an unauthorized datasource id", async () => {
+	it("returns an empty result set for an unknown datasource id", async () => {
 		const kakaoCalls = { count: 0 };
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
@@ -171,10 +170,9 @@ describe("AutoRAGAgent single-datasource retrieval", () => {
 			jikji: false,
 			minSync: false,
 			datasourceSkills: [makeSpySkill("kakao", [result("a", "/kakao/default/chunks/a")], kakaoCalls)],
-			datasourceAccess: { allowedTags: [] },
 		});
 
-		const { results, diagnostics } = await agent.searchSingleDatasourceDocuments("kakao", "message");
+		const { results, diagnostics } = await agent.searchSingleDatasourceDocuments("slack", "message");
 
 		expect(results).toEqual([]);
 		expect(diagnostics).toEqual([]);
@@ -201,15 +199,15 @@ describe("buildSystemPrompt per-datasource tools", () => {
  * The fan-out `search_datasource_documents` tool is gone: `search_all_documents`
  * already fans out across every retrieval method (datasources included), so a
  * datasource-only fan-out tool is redundant. Removing it is only safe while
- * EVERY authorized connection keeps its own generated tool — these tests are
+ * EVERY configured connection keeps its own generated tool — these tests are
  * that guarantee.
  */
-describe("every authorized datasource connection stays individually callable", () => {
+describe("every configured datasource connection stays individually callable", () => {
 	function toolsOf(agent: AutoRAGAgent): readonly AgentTool[] {
 		return (agent as unknown as { tools: readonly AgentTool[] }).tools;
 	}
 
-	it("generates one dedicated search tool per authorized connection and no fan-out datasource tool", async () => {
+	it("generates one dedicated search tool per configured connection and no fan-out datasource tool", async () => {
 		const kakaoCalls = { count: 0 };
 		const slackCalls = { count: 0 };
 		const agent = new AutoRAGAgent({
@@ -221,7 +219,6 @@ describe("every authorized datasource connection stays individually callable", (
 				makeSpySkill("kakao", [result("a", "/kakao/default/chunks/a")], kakaoCalls),
 				makeSpySkill("slack", [result("s", "/slack/default/chunks/s")], slackCalls),
 			],
-			datasourceAccess: { allowedTags: ["kakao", "slack"] },
 		});
 
 		const tools = toolsOf(agent);
@@ -237,7 +234,7 @@ describe("every authorized datasource connection stays individually callable", (
 		expect(kakaoCalls.count).toBe(0);
 	});
 
-	it("covers every built-in authorized skill, including an aliased connection", () => {
+	it("covers every built-in configured skill, including an aliased connection", () => {
 		const { skills, unknown } = buildDatasourceSkills({
 			kakao: true,
 			discord: true,
@@ -256,14 +253,12 @@ describe("every authorized datasource connection stays individually callable", (
 			"kakao-work": { type: "kakao" },
 		});
 		expect(unknown).toEqual([]);
-		const allowedTags = [...new Set(skills.flatMap((skill) => skill.describe().tags ?? []))];
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
 			minSync: false,
 			datasourceSkills: skills,
-			datasourceAccess: { allowedTags, allowedScopes: ["/**"] },
 		});
 
 		const names = new Set(toolsOf(agent).map((entry) => entry.name));

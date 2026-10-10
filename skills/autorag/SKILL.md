@@ -1,6 +1,6 @@
 ---
 name: autorag
-description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and authorized datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
+description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and configured datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
 license: MIT
 ---
 
@@ -8,7 +8,7 @@ license: MIT
 
 Use this skill when AutoRAG is already configured and the user asks to search,
 summarize, compare, or answer questions from local PDFs, wikis, notes, research
-papers, knowledge bases, or authorized datasources.
+papers, knowledge bases, or configured datasources.
 
 AutoRAG is the specialized librarian agent. One configured model plans the
 search, calls MinSync, Jikji, datasource, and filesystem tools, reads
@@ -47,15 +47,20 @@ refresh is enabled by default and can be disabled with
 to `workspacePath`) that refresh keeps out of the parsed mirror and MinSync.
 A folder entry excludes everything under it. Removing an entry and running
 `autorag refresh --method minsync` indexes the file again. Excluded sources are
-recorded as `user-excluded` skips, so they are not reported as stale.
+recorded as `user-excluded` skips, so they are not reported as stale. Jikji
+indexes the source folders directly and is not refreshed here, so AutoRAG also
+drops excluded paths from the `jikji_find` answer pack and the baseline prefetch
+at retrieval time; the on-disk `.jikji_agent_map.md` stays complete, and direct
+file reads remain available.
 
 `status` is model-free and path-opaque. `health` resolves the single model,
 checks credential presence, and normally probes one live completion. If the
 model, authentication, configuration, or indexes are unhealthy, use
 `autorag-setup` rather than guessing private provider details.
 
-MinSync and Jikji should normally be healthy. MinSync and Jikji
-auto-install on first use by default. If they are missing or stale, run a full
+MinSync and Jikji should normally be healthy. Answering a question never
+builds or installs them: `autorag refresh` auto-installs both by default and
+builds their indexes incrementally. If they are missing or stale, run a full
 `autorag refresh` or return to setup rather than silently degrading to
 lexical-only search.
 
@@ -71,7 +76,10 @@ autorag search "what were the key findings in the Q3 report" --top-k 5 --json --
 
 `--json --debug` includes `answer`, numbered `results` (`number`, `title`,
 `summary`, optional `source`), and `sessionId`. Use that `sessionId` for
-feedback. `--json` without `--debug` is only `answer` plus `results`.
+feedback. `--json` without `--debug` is only `answer` plus `results`. Every
+bracketed `[n]` citation in `answer` resolves to a `results[].number` of the
+same response; an unmatched citation is removed and reported as a
+`citation-without-result` diagnostic.
 
 To inspect the exact persisted evidence behind numbered results, use:
 
@@ -85,10 +93,8 @@ ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber`,
 the session. Prefer this command whenever the caller wants detailed chunk text
 rather than only the curated summary.
 
-- `--scope` narrows datasource retrieval to a requested sub-path; it cannot
-  grant access.
-- `--tags` further narrows already-authorized datasource results and never
-  grants new access.
+- `--scope` narrows datasource retrieval to a requested sub-path (ordinary
+  per-query filtering).
 - `--json` is required for programmatic consumption.
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.
@@ -98,8 +104,28 @@ AutoRAG. The search loop can use Jikji, MinSync lexical/vector/hybrid retrieval,
 direct source reading as appropriate. If search fails because of model,
 provider, auth, or timeout problems, diagnose with `autorag health --json`.
 
-Record feedback so retrieval memory can learn. Numbers refer to the returned
-knowledge units. Supply at least one feedback list:
+Every search is two-phase: a fast answer, then verification. With Jev on (the
+default, OpenRouter), Jev first routes the question:
+
+- General knowledge or small talk is answered directly.
+- Private-data questions use local search; public current facts use web search.
+- A multi-part question is split into up to five parallel search queries.
+- On local search, Jev also picks which registered datasources (Slack,
+  Discord, KakaoTalk, email, ...) to search before the fast answer, from each
+  datasource's description and where similar past questions were answered;
+  their chunks are reranked together with local file evidence.
+
+After the fast answer, Jev ends the run if the answer is complete and
+evidence-backed. So `results` may come straight from the fast answer, with no
+verification phase. `--debug` diagnostics show the decision: `query-routed`
+(branch and queries), `datasources-selected` (datasources searched or skipped,
+with probabilities), `follow-up-skipped` (fast answer final), or
+`query-route-fallback` (Jev unavailable, single local search).
+
+Record feedback so retrieval memory can learn. Results marked not useful are
+also dropped from the past-question hints Jev reads when picking datasources.
+Numbers refer to the returned knowledge units. Supply at least one feedback
+list:
 
 ```bash
 autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json

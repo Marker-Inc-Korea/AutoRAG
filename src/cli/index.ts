@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { releaseRuntimeHandles } from "../embedding-runtime/index.ts";
 import { commandUsage } from "./command-help.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
+import { readPackageVersion } from "./version.ts";
 
 const BOOLEAN_FLAGS = new Set([
 	"json",
@@ -18,7 +19,6 @@ const BOOLEAN_FLAGS = new Set([
 	"immediate",
 	"skip-probes",
 	"full",
-	"single-phase",
 	"strict",
 	"refresh",
 	"available",
@@ -33,7 +33,6 @@ const VALUE_FLAGS = new Set([
 	"model-id",
 	"top-k",
 	"scope",
-	"tags",
 	"result",
 	"useful",
 	"not-useful",
@@ -88,6 +87,7 @@ const COMMANDS = [
 	"lite",
 	"models",
 	"gateway",
+	"update-check",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -121,7 +121,7 @@ Commands:
                        (lite refresh: --full --force --method; watch: --once)
   lite retrieve <query>
                        Retrieve documents without model curation
-                       (--top-k N  --scope SCOPE  --tags A,B  --json  --debug)
+                       (--top-k N  --scope SCOPE  --json  --debug)
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
@@ -139,6 +139,7 @@ Commands:
   models prefetch|import|verify
                        Manage verified embedding model cache (--profile ID)
   gateway status|stop  Inspect or stop the on-demand embedding gateway (--format json)
+  update-check         Compare the running autorag against the published npm version
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -165,22 +166,6 @@ Global flags:
 
 Run: autorag <command> --help   for command-specific usage.
 `;
-
-/**
- * The installed package version. Read from the manifest next to the entry
- * point: `src/cli/index.ts` and the published `dist/cli/index.js` both resolve
- * `../../package.json` to the package root.
- */
-function readPackageVersion(): string {
-	try {
-		const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
-			version?: unknown;
-		};
-		return typeof manifest.version === "string" && manifest.version.length > 0 ? manifest.version : "0.0.0";
-	} catch {
-		return "0.0.0";
-	}
-}
 
 export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string } {
 	const positionals: string[] = [];
@@ -310,6 +295,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "gateway": {
 			const { runGateway } = await import("./commands/gateway.ts");
 			return runGateway(ctx);
+		}
+		case "update-check": {
+			const { runUpdateCheck } = await import("./commands/update-check.ts");
+			return runUpdateCheck(ctx);
 		}
 	}
 }

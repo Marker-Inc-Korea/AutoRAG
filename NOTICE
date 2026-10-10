@@ -18,6 +18,9 @@ License: MIT
 @earendil-works/pi-tui@0.86.1
 License: MIT
 
+@modelcontextprotocol/server@2.3.0
+License: Apache-2.0
+
 @openrouter/sdk@1.4.21
 License: Apache-2.0
 
@@ -28,6 +31,9 @@ fast-xml-parser@5.11.1
 License: MIT
 
 iconv-lite@0.7.3
+License: MIT
+
+jev-use@0.8.0
 License: MIT
 
 jszip@3.10.1

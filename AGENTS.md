@@ -89,8 +89,39 @@ Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
 5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' gateways and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
 6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
 
-The fixed live-E2E runner below is already isolated (clone-local `.autorag-e2e`), and `make test-linux` runs inside Docker. Prefer those over ad-hoc host runs. Moving live E2E and manual QA fully into Docker is tracked in #1743.
+The fixed live-E2E runner below is clone-local, but host execution still exposes the
+host process and filesystem to ad-hoc mistakes. Use the Docker entry points for the
+supported manual-QA boundary:
 
+```bash
+# Interactive manual-QA shell. Only the repository is mounted; host HOME is not.
+make qa-shell
+
+# Bootstrap the fixture root once, then run the live workflow in Docker.
+export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"
+node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"
+make e2e-live-docker E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT" E2E_DATASOURCES=local
+```
+
+The container sets an ephemeral `HOME`, `AUTORAG_HOME`, and `AUTORAG_CONFIG`,
+bind-mounts this clone at `/workspace`, and does not mount the host `~/.autorag`
+or native datasource stores. Only the model credential allowlist in `QA_MODEL_ENV`
+is forwarded; set it empty (`QA_MODEL_ENV=`) to forward no credentials at all.
+Live E2E defaults to the local native MinSync embedder; set `E2E_EMBEDDER=gateway`
+only when the Docker image has a compatible gateway runtime. Use `QA_PLATFORM`
+and `QA_MODEL_ENV` to select a supported architecture or credential allowlist.
+The live target keeps runner state inside the clone's `.autorag-e2e` directory;
+evidence remains in the mounted clone under `.omo/evidence`.
+
+`autorag init --force` also refuses to replace an existing implicit home config.
+Use `--config <path>` or `AUTORAG_CONFIG=<path>` when replacement is intentional.
+First-time implicit initialization remains allowed.
+
+The QA image is based on Ubuntu 24.04 so current Linux MinSync release assets
+run against the image's glibc; `make test-linux` continues to use the existing
+Java 17 CI image. Native-store lanes are expected to skip inside the isolated
+container unless their stores are deliberately provisioned inside it; never
+mount a real host home to make a lane pass.
 ## Releases
 
 Publishing the GitHub Release is not the announcement. People watching Discussions do not see the release feed. Every release also gets one Discussion in the **Announcements** category, with the same user-facing notes.
@@ -317,7 +348,7 @@ with any of them should be rejected or reshaped:
    stores (lazykatok, discrawl, qmd, msgvault, rclone, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
-   (`/kakao/<instance>/chunks/<chunk>`) and scope-checked access, and secrets
+   (`/kakao/<instance>/chunks/<chunk>`), and secrets
    stay with the tool that owns them.
 2. **Just works — no RAG degree required.** A non-developer installs it and
    it works: minimal configuration, no pipeline tuning, no vector-DB
@@ -402,9 +433,9 @@ The librarian agent owns the full workflow:
 | `fsearch_search` | macOS/Linux only: instant file/folder name, extension, path, size, and date search over the configured search roots through the user's fsearch-cli (FSearch) database + watch daemon; degrades to a slow filesystem walk when fsearch-cli is not installed | Locating files by name before reading them |
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
-| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per authorized connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
+| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per configured connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
 | `check_memory` | Query past search outcomes | Adaptive strategy |
-| `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
+| `load_datasource_skill` | Load instructions for a configured datasource skill | Datasource-specific searches |
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
@@ -447,11 +478,11 @@ The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods ar
 
 Jikji is intentionally not a retrieval method. It is an optional local-discovery layer: AutoRAG calls `jikji find ROOT "query" --json` through `jikji_find`, parses the upstream answer pack, and exposes `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct `bash` reading remains available so Jikji never prevents source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
-Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `DatasourceResultFilter` → `ResultMerger`. Datasource access is default-deny and server-bound: LLM tool arguments cannot grant `allowedTags` or `allowedScopes`, and a generated `search_datasource_<id>` tool exposes only `{ query, topK?, scope? }` where `scope` can only narrow trusted access. There is no datasource fan-out tool: every authorized connection gets its own tool, and `search_all_documents` already spans every retrieval method including datasources. Results are not redacted — traceability is preferred over opacity, so pair AutoRAG with a local LLM when privacy matters.
+Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `filterDatasourceScope` → `ResultMerger`. Every connected datasource is searchable: a generated `search_datasource_<id>` tool exposes `{ query, topK?, scope? }`, where `scope` is ordinary per-query path filtering and `topK` bounds candidates. There is no datasource fan-out tool: every configured connection gets its own tool, and `search_all_documents` already spans every retrieval method including datasources. Results are not redacted — traceability is preferred over opacity, so pair AutoRAG with a local LLM when privacy matters.
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable and datasource access stays default-deny. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
 ## Directory Access
 
@@ -459,15 +490,16 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows, local sessions), `fsearch_search` (macOS/Linux, local sessions), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per authorized datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows, local sessions), `fsearch_search` (macOS/Linux, local sessions), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per configured datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Document parsing** — `kordoc` is the default parser for `.hwp`, `.hwpx`, `.hml`, `.hwpml`, `.pdf`, `.docx`, `.xlsx` and `.xls`; it runs in-process (no Java, no subprocess) and keeps nested tables and per-sheet workbook structure. `.pptx`, `.eml` and plain text keep their own parsers. kordoc failures surface as `ParseError` with kordoc's own code and message verbatim, and kordoc warnings become `parser-warning` diagnostics.
 - **Global language setting** — one `languages` list (config `languages`, `--languages`, or `AUTORAG_LANGUAGES`; default `["ko", "en"]`) describes the corpus. Accepted tags are curated in `src/language.ts` because every tag must map to an OCR engine configuration. Format parsing is language-agnostic; `languages` only selects OCR recognition languages (`ja` → `jpn`, `zh-hans` → `chi_sim`, …) for standalone images and scanned PDF pages. OCR stays opt-in, so a default refresh downloads no recognition model.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
+- **No indexing during inference** — a query (`searchDocuments`, TUI, MCP retrieve) only reads prebuilt indexes. It never runs `jikji prepare`, `minsync sync`/`init`, parsed-mirror sync, fsearch/Everything index builds or instance startup, or a binary auto-install. All of that runs only in `refresh`/`watch` (incremental: MinSync syncs changed mirrors, `jikji prepare` reuses unchanged docs, roots prepare in parallel). A never-refreshed source simply contributes no evidence.
 - **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` opts out). Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). All three degrade gracefully when missing.
 - **Everything (Windows)** — the npm package bundles the unmodified voidtools portable Everything 1.4.1.1032 and ES 1.1.0.38 ZIPs (x64/ARM64) in `vendor/everything`, pinned by SHA-256 in `vendor/everything/manifest.json`, with their MIT (and PCRE BSD) texts in `licenses/` and NOTICE. On Windows only, AutoRAG extracts and verifies them into `<workspace>/.autorag/everything/<version>/<arch>/` and starts a named, user-level instance (`autorag-<hash>`) with its own `Everything.ini`/`Everything.db` that indexes only the configured search roots as folder indexes. It never requests elevation, installs the Everything service, indexes whole NTFS/ReFS volumes, or enables the HTTP/ETP servers, and it does not touch a user's own Everything. `refresh` (all methods, any parsed refresh, or `--method everything`) rewrites the config, restarts the instance, and waits for the index; failures surface as `everything-index-failed` with ES's exit code and stderr verbatim. `everything: false` disables it; on macOS/Linux it is absent. Remote P2P sessions never receive `everything_search`.
 - **FSearch (macOS/Linux)** — the Everything-analog on non-Windows hosts, via the user's [`fsearch-cli`](https://github.com/NomaDamas/fsearch-mac) (GPL-2.0-or-later). fsearch-cli is NOT bundled: the user installs it separately and AutoRAG only spawns it as a separate process over its CLI and Unix-socket daemon protocol — mere aggregation per the FSF GPL FAQ, never a combined work, so AutoRAG keeps its own license. On macOS/Linux only, AutoRAG builds a per-workspace database at `<workspace>/.autorag/fsearch/fsearch.db` that indexes only the configured search roots (excluding `.autorag` state dirs) and keeps a `fsearch-cli watch` daemon (pid file `watch.pid`) live from FSEvents/inotify so `fsearch-cli search` answers over its socket — an explicit short socket at `/tmp/autorag-fsearch-<uid>-<sha12(db realpath)>.sock`, because fsearch-cli's default `<db>.sock` overflows the 104-byte unix sun_path limit for deep workspace paths and daemon/client rendezvous silently breaks; `stopFsearch()` terminates the daemon, and it never touches the user's own FSearch app database (`$XDG_DATA_HOME/fsearch/fsearch.db`). `refresh` (all methods, any parsed refresh, or `--method fsearch`) rebuilds the database and re-verifies the daemon; a missing binary surfaces as a `fsearch-binary-missing` warning (not an error), other failures as `fsearch-index-failed` with the CLI's exit code and stderr verbatim. When fsearch-cli is not installed, `fsearch_search` still answers through a bounded slow filesystem walk (substring/regex name matching) and labels its output as such. `fsearch: false` disables it; on Windows it is absent (Everything covers it). Remote P2P sessions never receive `fsearch_search`.
-- **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by trusted datasource access, and indexed during `refresh()`.
+- **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by per-query scope, and indexed during `refresh()`.
 
 ## Usage
 
@@ -516,6 +548,9 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
+| `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
+| `src/agent/query-routing.ts` | Jev query router: local / web / direct branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
+| `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
@@ -543,7 +578,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/language.ts` | Curated global language tags, normalization, and defaults |
 | `src/parser/kordoc.ts` | Default document parser (kordoc) for HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS |
 | `src/parser/ocr-engines.ts` | Language → tesseract traineddata mapping and the injected OCR provider |
-| `src/datasource/` | Datasource skill contracts, trusted access context, result filtering, polling metadata, diagnostics, and KakaoTalk/lazykatok skill implementation |
+| `src/datasource/` | Datasource skill contracts, scope filtering, polling metadata, diagnostics, and KakaoTalk/lazykatok skill implementation |
 | `src/p2p/` | SimpleX P2P sharing: policy, injection/PII gates, approval store, wire protocol |
 | `src/cli/commands/serve.ts` | `autorag serve` P2P peer query server |
 | `src/cli/commands/p2p.ts` | `autorag p2p` peer trust and request approval |
@@ -552,4 +587,4 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
-| `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per authorized datasource connection with model-safe `{ query, topK?, scope? }` parameters |
+| `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |

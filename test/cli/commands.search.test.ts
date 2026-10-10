@@ -243,20 +243,6 @@ describe("runSearch", () => {
 		expect(received).toEqual({ fast: "low", final: "max" });
 	});
 
-	it("disables the two-phase flow with --single-phase", async () => {
-		let received: unknown;
-		const { ctx } = context(["query"], { "single-phase": true });
-		expect(
-			await runSearch(ctx, {
-				agentFactory: (options) => {
-					received = options.thinking;
-					return completeStream();
-				},
-			}),
-		).toBe(0);
-		expect(received).toBe(false);
-	});
-
 	it("rejects an unknown thinking level", async () => {
 		const { ctx, stderr } = context(["query"], { "final-thinking": "bogus" });
 		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);
@@ -301,8 +287,6 @@ describe("autorag lite retrieve", () => {
 			"3",
 			"--scope",
 			"/docs",
-			"--tags",
-			"trusted",
 			"--json",
 		]);
 

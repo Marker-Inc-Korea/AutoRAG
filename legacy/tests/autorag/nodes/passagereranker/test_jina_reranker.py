@@ -5,6 +5,8 @@ import aiohttp
 import pytest
 from aioresponses import aioresponses
 
+from autorag.utils.util import get_event_loop
+
 import autorag
 from autorag.nodes.passagereranker import JinaReranker
 from autorag.nodes.passagereranker.jina import jina_reranker_pure, JINA_API_URL
@@ -49,6 +51,7 @@ async def test_jina_reranker_pure():
 
         # check if the scores are sorted
         assert score_result[0] >= score_result[1]
+        await session.close()
 
 
 async def mock_jina_reranker_pure(session, query, contents, ids, top_k, **kwargs):
@@ -110,3 +113,27 @@ def test_jina_reranker_node():
         project_dir=project_dir, previous_result=previous_result, top_k=top_k
     )
     base_reranker_node_test(result_df, top_k)
+
+
+def test_jina_session_is_lazy_and_not_loop_pinned(monkeypatch):
+    captured = []
+    real_session = aiohttp.ClientSession
+
+    def spy(*args, **kwargs):
+        captured.append(kwargs)
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(aiohttp, "ClientSession", spy)
+    reranker = JinaReranker(project_dir, "mock_api_key")
+    # A session opened at construction time binds to the constructor loop, which is
+    # not the loop that later runs the requests (aiohttp's loop= kwarg is a no-op).
+    assert captured == []
+
+    async def _open():
+        reranker._ensure_session()
+
+    get_event_loop().run_until_complete(_open())
+    assert len(captured) == 1
+    assert "loop" not in captured[0]
+    if reranker.session is not None and not reranker.session.closed:
+        get_event_loop().run_until_complete(reranker.session.close())

@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/pi-ai";
@@ -129,27 +138,91 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		expect(prompts.join("\n")).toContain(source);
 	});
 
-	it("starts MinSync preparation in the background and marks it ready", async () => {
-		writeFakeJikji(join(root, "fake-jikji.mjs"));
-		writeFakeMinSync(join(root, "fake-minsync.mjs"));
+	it("never indexes or prepares during a query, even on a never-refreshed workspace", async () => {
+		// Inference must only read prebuilt indexes. Index builds belong to
+		// `autorag refresh` / `watch`, never to the turn a user is waiting on.
+		const jikjiLog = join(root, "jikji.log");
+		const minSyncLog = join(root, "minsync.log");
+		writeFileSync(
+			join(root, "fake-jikji.mjs"),
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(jikjiLog)}, process.argv[2] + "\\n");
+console.log(JSON.stringify(process.argv[2] === "find"
+	? { answer_paths: [], paths: [], candidates: [], evidence_pack: [], handoff_action: "raw_fallback_after_retry",
+		tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] }, agent_should_not_rerank: false }
+	: { prepared: true }));
+`,
+		);
+		chmodSync(join(root, "fake-jikji.mjs"), 0o755);
+		writeFakeMinSync(join(root, "fake-minsync.mjs"), minSyncLog);
 		const agent = new AutoRAGAgent({
 			model: emitModel(),
 			searchPaths: [docs],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
-			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
+			jikji: { binaryPath: join(root, "fake-jikji.mjs"), autoInstall: false },
 			everything: false,
 			fsearch: false,
 		});
 
-		const prepare = agent.scheduleMinSyncPrepareForTest();
-		const result = await prepare;
-		expect(result?.ok).toBe(true);
-		const status = await agent.getRefreshStatus();
-		expect(status.components.minsync).toBe("ready");
+		await agent.searchDocuments("refund director approval");
+		await agent.searchDocuments("refund director approval");
+		// Let any detached background work spawn before reading the logs.
+		// (ES2022 target: no Promise.withResolvers.)
+		await new Promise((resolve) => setTimeout(resolve, 300));
+
+		const readLog = (path: string): string[] =>
+			existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean) : [];
+		const minSyncCommands = readLog(minSyncLog).map((line) => (JSON.parse(line) as { args: string[] }).args[0]);
+		expect(readLog(jikjiLog).filter((command) => command !== "find")).toEqual([]);
+		expect(minSyncCommands.filter((command) => command !== "query")).toEqual([]);
 	});
 
+	it("indexes MinSync incrementally and prepares every Jikji root on refresh", async () => {
+		const jikjiLog = join(root, "jikji.log");
+		const minSyncLog = join(root, "minsync.log");
+		writeFileSync(
+			join(root, "fake-jikji.mjs"),
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(jikjiLog)}, process.argv[2] + " " + process.argv[3] + "\\n");
+console.log(JSON.stringify({ prepared: true }));
+`,
+		);
+		chmodSync(join(root, "fake-jikji.mjs"), 0o755);
+		writeFakeMinSync(join(root, "fake-minsync.mjs"), minSyncLog);
+		const second = join(root, "notes");
+		mkdirSync(second, { recursive: true });
+		writeFileSync(join(second, "memo.txt"), "memo\n");
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs, second],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
+			jikji: { binaryPath: join(root, "fake-jikji.mjs"), autoInstall: false },
+			everything: false,
+			fsearch: false,
+		});
+
+		await agent.refresh(false);
+		await agent.refresh(false);
+
+		const syncs = readFileSync(minSyncLog, "utf8")
+			.trim()
+			.split("\n")
+			.map((line) => (JSON.parse(line) as { args: string[] }).args)
+			.filter((args) => args[0] === "sync");
+		expect(syncs).toHaveLength(2);
+		// The first refresh builds the index; the second only syncs changes.
+		expect(syncs[1]).not.toContain("--full");
+		const prepares = readFileSync(jikjiLog, "utf8").trim().split("\n");
+		expect(prepares.filter((line) => line.startsWith("prepare"))).toHaveLength(4);
+		expect(new Set(prepares.map((line) => line.split(" ")[1]))).toEqual(
+			new Set([realpathSync(docs), realpathSync(second)]),
+		);
+	});
 	it("collapses duplicate MinSync chunks without dropping distinct candidates", async () => {
 		// CDC chunking can surface the same (source, content) pair more than once.
 		// Deduplication must drop only the repeat, never the whole candidate set.
@@ -170,7 +243,11 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		];
 		const internals = agent as unknown as {
 			minSyncMethod: unknown;
-			prefetchInitialRetrievalContext: (query: string, options: Record<string, unknown>) => Promise<string>;
+			prefetchInitialRetrievalContext: (
+				query: string,
+				searchQueries: readonly string[],
+				options: Record<string, unknown>,
+			) => Promise<string>;
 		};
 		internals.minSyncMethod = {
 			isReady: () => true,
@@ -178,7 +255,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			retrieve: async () => duplicated,
 		};
 
-		const context = await internals.prefetchInitialRetrievalContext("refund", {});
+		const context = await internals.prefetchInitialRetrievalContext("refund", ["refund"], {});
 
 		expect(context).toContain("shared boilerplate header");
 		expect(context).toContain("unique refund clause");
@@ -208,7 +285,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			retrieve: async () => [{ id: "1", source: "/docs/long.md", content: longContent, score: 0.9, metadata: {} }],
 		};
 
-		const context = await internals.prefetchInitialRetrievalContext("refund", {});
+		const context = await internals.prefetchInitialRetrievalContext("refund", ["refund"], {});
 
 		expect(context).toContain(longContent);
 	});
