@@ -414,7 +414,7 @@ Raw search tools return file paths and matching lines. A human still has to open
 2. **Read** promising source files directly with the built-in bash tool
 3. **Judge and curate** — extract key insights, resolve conflicts, and assess freshness
 4. **Deliver** numbered knowledge units grounded in the sources
-5. **Learn** — remember which methods worked and adapt strategy over time
+5. **Remember** — keep the evidence Jev judged to support the answer, and recall similar past questions next time
 
 The loop exists to serve the three core values above: it searches data where
 it already lives (value 1), hides the retrieval plumbing behind curated
