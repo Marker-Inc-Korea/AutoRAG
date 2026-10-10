@@ -12,7 +12,12 @@ export {
 	KordocParser,
 	type KordocParserOptions,
 } from "./kordoc.ts";
-export { ImageOcrParser, type OcrEngine, type OcrEngineInput, type OcrParserOptions } from "./ocr.ts";
+export {
+	BUILTIN_OCR_LANGUAGES,
+	createTesseractOcrProvider,
+	type OcrOptions,
+	type OcrProvider,
+} from "./ocr-engines.ts";
 export { PptxParser } from "./office.ts";
 export { PlainTextParser } from "./plain-text.ts";
 export { ParserRegistry } from "./registry.ts";

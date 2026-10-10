@@ -793,8 +793,8 @@ export class AutoRAGAgent {
 			this.searchPaths,
 			this.configuredSearchPaths,
 		);
-		// The global language setting drives OCR engine selection inside the registry.
-		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages);
+		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
+		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
 		this.dupeyOptions = options.dupey ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);

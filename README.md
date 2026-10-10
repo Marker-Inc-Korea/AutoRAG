@@ -276,12 +276,38 @@ falling back to `["ko", "en"]`. Supported tags: `ko`, `en`, `ja`, `zh-hans`,
 | `.pptx` | built-in PPTX reader |
 | `.eml` | built-in mail reader |
 | `.txt` `.text` `.md` `.markdown` | plain text (CP949/EUC-KR aware) |
-| `.png` `.jpg` `.jpeg` `.bmp` `.tiff` `.webp` | image OCR (opt-in) |
+| `.png` `.jpg` `.jpeg` `.webp` | `kordoc` image OCR (only when `parserOptions.ocr.enabled` is `true`) |
 
-OCR is opt-in and never runs unless enabled, so indexing downloads no model by
-default. When enabled, `languages` selects the recognition languages
-(`ja` → `jpn`, `zh-hans` → `chi_sim`, …) for both standalone images and scanned
-PDF pages.
+`.bmp` and `.tiff` are not parsed: kordoc rejects both as unsupported.
+
+### Making photos and scans searchable
+
+Image files and scanned PDF pages become searchable through one switch,
+`parserOptions.ocr.enabled` (default `false`). It is off by default so indexing
+downloads no recognition model and never runs OCR over a photo library. With it
+off, image files are not parsed at all and scanned pages stay unrecognized.
+
+```json
+{ "languages": ["ko", "en"], "parserOptions": { "ocr": { "enabled": true } } }
+```
+
+`kordoc` owns both inputs. The configured `languages` pick the engine:
+
+| `languages` | Engine | First-use download |
+|---|---|---|
+| only `ko` and/or `en` | kordoc built-in PP-OCRv5 (local CPU) | ~18 MB from Hugging Face, cached in `~/.cache/kordoc/models` |
+| any other tag (`ja`, `zh-hans`, `fr`, `de`, …) | Tesseract, all configured languages at once (`kor+jpn`) | traineddata per language from the jsDelivr CDN, cached in `<workspace>/.autorag/models/tessdata` |
+
+The built-in model has no kana, han, Cyrillic, Thai, Arabic or Devanagari
+characters and drops diacritics in accented Latin text, so those languages need
+Tesseract. Set `parserOptions.ocr.cachePath` to store the Tesseract models
+elsewhere, or `KORDOC_OFFLINE=1` to block the built-in model download. An
+explicit `parserOptions.kordoc.ocr` overrides the language-based choice.
+
+Photos and videos are also reachable through two other paths that are not part
+of this switch: the `clawgallery` datasource (captions and visual search over its
+own folders) and Jikji's media index (`jikji.enableMediaIndex`, file facts such as
+pixel size and format only, no content). Video content is not searchable yet.
 
 ### 2. Search from CLI
 
