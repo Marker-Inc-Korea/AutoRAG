@@ -296,13 +296,13 @@ describe("DiscrawlSkill retrieval methods", () => {
 		expect(results).toHaveLength(1);
 	});
 });
-
 describe("DiscrawlSkill manifest", () => {
-	it("documents hybrid default and the FTS newline caveat without leaking paths", () => {
+	it("keeps hybrid default, FTS caveat, and time-based commands documented", () => {
 		const manifest = new DiscrawlSkill({ client: asClient(new StubClient()) }).skillManifest();
-		expect(manifest.name).toBe("datasource-discord");
-		expect(manifest.content).toContain("Hybrid retrieval is the default");
-		expect(manifest.content).toContain("line breaks");
+		expect(manifest.content).toContain("discrawl --json messages --since <RFC3339>");
+		expect(manifest.content).toContain("discrawl --json messages --since 1970-01-01T00:00:00Z --last 20");
+		expect(manifest.content).toContain("discrawl --json messages --hours 24");
+		expect(manifest.content).toContain("--dm");
 		expect(manifest.content).not.toContain("/Users/");
 	});
 });

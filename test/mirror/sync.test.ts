@@ -21,7 +21,13 @@ import {
 	saveMirrorIndex,
 	syncParsedMirrors,
 } from "../../src/mirror/index.ts";
-import { createDefaultParserRegistry } from "../../src/parser/index.ts";
+import {
+	createDefaultParserRegistry,
+	type ParseInput,
+	type ParseOutput,
+	ParserRegistry,
+	PlainTextParser,
+} from "../../src/parser/index.ts";
 import { createXlsFixture } from "../fixtures/document-formats.ts";
 
 let root: string;
@@ -44,6 +50,14 @@ function outputPaths(index: ParsedMirrorIndex): string[] {
 function requireValue<T>(value: T | undefined, label: string): T {
 	if (value === undefined) throw new Error(`missing ${label}`);
 	return value;
+}
+
+/** Unlinks the next scanned file while the first text file is parsed. */
+class DeleteNextFileParser extends PlainTextParser {
+	async parse(input: ParseInput): Promise<ParseOutput> {
+		if (input.virtualPath === "/docs/a.txt") unlinkSync(join(source, "b.txt"));
+		return super.parse(input);
+	}
 }
 
 describe("syncParsedMirrors", () => {
@@ -343,6 +357,28 @@ describe("syncParsedMirrors", () => {
 		expect(index.entries["/docs/private/b.txt"]).toBeUndefined();
 		expect(index.skipped?.["/docs/private/a.txt"]?.reason).toBe("user-excluded");
 		expect(index.entries["/docs/keep.txt"]).toBeDefined();
+	});
+
+	it("continues when a scanned source disappears while an earlier file is parsed", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		writeFileSync(join(source, "b.txt"), "Beta\n");
+		writeFileSync(join(source, "c.txt"), "Gamma\n");
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new DeleteNextFileParser()]),
+		});
+		const index = loadMirrorIndex(root);
+		const diag = result.diagnostics.find((d) => d.code === "source-vanished");
+
+		expect(result.scanned).toBe(3);
+		expect(result.written).toBe(2);
+		expect(result.skipped).toBe(1);
+		expect(diag?.severity).toBe("info");
+		expect(diag?.source).toBe("/docs/b.txt");
+		expect(index.entries["/docs/b.txt"]).toBeUndefined();
+		expect(index.entries["/docs/c.txt"]).toBeDefined();
 	});
 });
 

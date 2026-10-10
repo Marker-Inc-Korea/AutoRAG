@@ -225,6 +225,71 @@ describe("single-model CLI config", () => {
 		expect(resolved.apiKey).toBe("sk-stored");
 	});
 
+	describe("no model configured and no usable local Codex runtime", () => {
+		const bareConfig = (): CliConfig => ({
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+		});
+
+		it("explains how to pick a model instead of surfacing a bare ENOENT", async () => {
+			const error = await resolveAgentModel(bareConfig(), {
+				configPath: join(root, "missing.toml"),
+				agentDir: join(root, "agent"),
+				cwd: root,
+				env: {},
+			}).catch((caught: unknown) => caught);
+
+			expect(error).toBeInstanceOf(ConfigError);
+			const message = (error as Error).message;
+			expect(message).toMatch(/^No model configured\./);
+			expect(message).toContain("autorag tui");
+			expect(message).toContain("/login");
+			expect(message).toContain('"model"');
+			expect(message).toContain("autorag models list");
+			expect(message).toContain("ENOENT");
+			expect(message).toContain("missing.toml");
+		});
+
+		it("keeps the local runtime's own reason when its config is incomplete", async () => {
+			const codexConfig = join(root, "codex.toml");
+			writeFileSync(codexConfig, "# No provider configured\n");
+			const error = await resolveAgentModel(bareConfig(), {
+				configPath: codexConfig,
+				agentDir: join(root, "agent"),
+				cwd: root,
+				env: {},
+			}).catch((caught: unknown) => caught);
+
+			expect(error).toBeInstanceOf(ConfigError);
+			expect((error as Error).message).toContain(`AutoRAG requires model_provider in ${codexConfig}`);
+		});
+
+		it("still resolves a complete local Codex runtime", async () => {
+			const codexConfig = join(root, "codex.toml");
+			writeFileSync(
+				codexConfig,
+				[
+					'model_provider = "proxy"',
+					"[model_providers.proxy]",
+					'base_url = "http://127.0.0.1:9/v1"',
+					'wire_api = "responses"',
+					'env_key = "PROXY_KEY"',
+					"",
+				].join("\n"),
+			);
+			const resolved = await resolveAgentModel(bareConfig(), {
+				configPath: codexConfig,
+				agentDir: join(root, "agent"),
+				cwd: root,
+				env: { PROXY_KEY: "sk-local" },
+			});
+
+			expect(resolved.model).toMatchObject({ provider: "proxy", baseUrl: "http://127.0.0.1:9/v1" });
+			expect(resolved.apiKey).toBe("sk-local");
+		});
+	});
+
 	describe("catalog model with a configured endpoint (#1757)", () => {
 		const base = () => ({ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") });
 		const catalogRef = { provider: "openrouter", id: "deepseek/deepseek-v4.1-flash" };

@@ -153,6 +153,60 @@ describe("renderRefresh", () => {
 		expect(humanStr).not.toContain("/secret/");
 	});
 
+	it("keeps ok: true when only the optional fsearch-cli is missing", () => {
+		const result: AutoRAGRefreshResult = {
+			scanned: 4,
+			written: 4,
+			deleted: 0,
+			skipped: 0,
+			indexPath: "/secret/path",
+			diagnostics: [
+				{
+					code: "fsearch-binary-missing",
+					severity: "warning",
+					message:
+						"fsearch-cli is not installed; file-name search uses a slow filesystem walk: spawn fsearch-cli ENOENT",
+					source: "fsearch",
+				},
+			],
+			minsync: { ok: true, synced: 4 },
+			fsearch: { ok: false, reason: "binary-missing", message: "spawn fsearch-cli ENOENT" },
+		};
+
+		const parsed = JSON.parse(renderRefresh(result, { json: true }));
+		expect(parsed.ok).toBe(true);
+		expect(parsed.fsearch.ok).toBe(false);
+		expect(parsed.fsearch.reason).toBe("binary-missing");
+		expect(parsed.diagnostics[0].code).toBe("fsearch-binary-missing");
+
+		const humanStr = renderRefresh(result, { json: false });
+		expect(humanStr).toContain("refresh: ok");
+		expect(humanStr).toContain("fsearch: ok=false reason=binary-missing");
+	});
+
+	it("reports ok: false when an installed fsearch-cli fails to index", () => {
+		const result: AutoRAGRefreshResult = {
+			scanned: 4,
+			written: 4,
+			deleted: 0,
+			skipped: 0,
+			indexPath: "/secret/path",
+			diagnostics: [
+				{
+					code: "fsearch-index-failed",
+					severity: "error",
+					message: "FSearch file-name indexing failed: database locked",
+					source: "fsearch",
+				},
+			],
+			minsync: { ok: true, synced: 4 },
+			fsearch: { ok: false, reason: "index-failed", message: "database locked" },
+		};
+
+		expect(JSON.parse(renderRefresh(result, { json: true })).ok).toBe(false);
+		expect(renderRefresh(result, { json: false })).toContain("refresh: failed");
+	});
+
 	it("reports ok: false when a datasource index fails", () => {
 		const result: AutoRAGRefreshResult = {
 			scanned: 1,

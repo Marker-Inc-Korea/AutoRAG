@@ -1602,6 +1602,15 @@ interface AgentModelCore {
 	readonly auth: ResolvedModelAuth;
 }
 
+function noModelConfiguredMessage(localError: unknown): string {
+	const reason = localError instanceof Error ? localError.message : String(localError);
+	return (
+		"No model configured. Sign in and pick one with `autorag tui` (`/login`, then `/model`), " +
+		'or set "model": { "provider": ..., "id": ... } in the AutoRAG config (`autorag models list` shows the ids). ' +
+		`The local Codex runtime fallback is unavailable: ${reason}`
+	);
+}
+
 function localFallbackOptions(
 	options: ResolveAgentModelOptions,
 	modelId: string | undefined,
@@ -1768,7 +1777,15 @@ async function resolveAgentModelCore(
 				auth: await resolveCatalogAuth(runtime, piDefault, env),
 			};
 		}
-		const local = loadLocalAutoRAGModel(localFallbackOptions(options, undefined));
+		let local: LocalAutoRAGModel;
+		try {
+			local = loadLocalAutoRAGModel(localFallbackOptions(options, undefined));
+		} catch (error) {
+			// The local Codex runtime is only a last-resort fallback; when it is
+			// absent or incomplete, tell a first-run user how to pick a model
+			// instead of surfacing a bare ENOENT for ~/.codex/config.toml.
+			throw new ConfigError(noModelConfiguredMessage(error));
+		}
 		return {
 			model: local.model as Model<Api>,
 			modelRef,
