@@ -90,21 +90,7 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 								"Refund exceptions require director approval before payout, confirmed on the public policy page.",
 							evidence: [{ excerpt: "Refund exceptions require director approval before payout." }],
 							confidence: 0.9,
-						},
-					],
-					mapping: [
-						{
-							number: 1,
-							source: "https://policy.example.com/refunds",
-							method: WEB_FETCH_TOOL_NAME,
-							content: "Refund exceptions require director approval before payout.",
-							evidenceRefs: [
-								{
-									method: WEB_SEARCH_TOOL_NAME,
-									source: "https://policy.example.com/refunds",
-									excerpt: "Refund exceptions require director approval before payout.",
-								},
-							],
+							refs: ["https://policy.example.com/refunds"],
 						},
 					],
 				}),

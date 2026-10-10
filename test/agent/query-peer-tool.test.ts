@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { EvidenceLedger } from "../../src/agent/evidence-ledger.ts";
 import { createQueryPeerAgentTool } from "../../src/agent/query-peer-tool.ts";
 import { loadSimplexQueryState } from "../../src/p2p/simplex-query-store.ts";
 import type { SimplexContact, SimplexIncomingMessage, SimplexTransport } from "../../src/p2p/simplex-transport.ts";
@@ -143,5 +144,50 @@ describe("query_peer_agent", () => {
 		expect(resumed).toEqual(["late peer answer"]);
 		expect(loadSimplexQueryState(root, pendingId as string)?.status).toBe("completed");
 		await secondTool.close();
+	});
+
+	it("registers each peer result as citable evidence carrying the peer's source", async () => {
+		const root = workspace();
+		peerRegistry(root);
+		const transport = new SilentTransport();
+		transport.sendMessage = async (contactId, text) => {
+			const { id } = JSON.parse(text) as { id: string };
+			const payload = {
+				...response,
+				answer: "peer answer",
+				results: [
+					{
+						number: 1,
+						title: "Refund",
+						summary: "Director approval",
+						source: "peer:doc-7",
+						excerpt: "needs approval",
+					},
+				],
+			};
+			queueMicrotask(() =>
+				transport.emit({
+					contactId,
+					contactName: "alice",
+					chatItemId: 3,
+					text: JSON.stringify({ v: 1, kind: "response", id, payload }),
+				}),
+			);
+		};
+		const ledger = new EvidenceLedger();
+		const tool = createQueryPeerAgentTool({
+			workspacePath: root,
+			fastTimeoutMs: 5_000,
+			openTransport: async () => transport,
+			ledger,
+		});
+
+		const result = await tool.execute("call-3", { alias: "alice", query: "refund approval" });
+
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain('"evidenceId":"e1"');
+		const [ref] = ledger.resolve(["e1"], { label: "emit", number: 1, fallbackContent: "", allowLocalFiles: false });
+		expect(ref).toMatchObject({ method: "query_peer_agent", source: "peer:doc-7", content: "needs approval" });
+		await tool.close();
 	});
 });

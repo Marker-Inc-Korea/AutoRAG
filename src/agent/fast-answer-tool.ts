@@ -2,6 +2,8 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import { assertCitationsResolve } from "./citations.ts";
+import type { AutoRAGEvidenceRef } from "./emit-results-tool.ts";
+import type { EvidenceLedger } from "./evidence-ledger.ts";
 
 export const EMIT_FAST_ANSWER_TOOL_NAME = "emit_fast_answer";
 
@@ -25,20 +27,14 @@ const fastAnswerSchema = Type.Object({
 			confidence: Type.Optional(
 				Type.Number({ description: "Confidence in this result, 0..1", minimum: 0, maximum: 1 }),
 			),
+			refs: Type.Optional(
+				Type.Array(Type.String(), {
+					description:
+						"Evidence ids from the baseline evidence that support this result (e.g. e3). The source path is attached for you. Omit only when no baseline evidence backs the result.",
+				}),
+			),
 		}),
 		{ description: "Numbered knowledge units backing the first answer." },
-	),
-	sources: Type.Optional(
-		Type.Array(
-			Type.Object({
-				number: Type.Integer({ description: "Matches the result number this source belongs to" }),
-				source: Type.String({ description: "Source identifier — a real file path or a datasource id" }),
-			}),
-			{
-				description:
-					"Number -> source mapping: one entry per result, with the real file path or datasource id from the baseline evidence. Omit only a result with no source.",
-			},
-		),
 	),
 });
 
@@ -53,26 +49,47 @@ export interface AutoRAGFastAnswerResult {
 export interface AutoRAGFastAnswerDetails {
 	readonly answer: string;
 	readonly results: readonly AutoRAGFastAnswerResult[];
+	/** Number -> primary source, derived from `evidenceRefs`. */
 	readonly sources: readonly { readonly number: number; readonly source: string }[];
+	/** Harness-recorded evidence each result cited; never model-written text. */
+	readonly evidenceRefs: readonly { readonly number: number; readonly refs: readonly AutoRAGEvidenceRef[] }[];
+}
+
+export interface EmitFastAnswerToolOptions {
+	/** Evidence the baseline retrieval produced; `refs` resolve against it. */
+	readonly ledger: EvidenceLedger;
 }
 
 /**
  * Builds the non-terminating fast-answer tool used by the two-phase search
  * flow. The model calls this exactly once during the thinking-off fast phase
  * to deliver an immediate, complete first answer; the run then continues into
- * the verification phase, which ends with emit_autorag_results.
+ * the verification phase, which ends with emit_autorag_results. Sources are
+ * derived from the evidence ids the model cites, never typed by the model.
  */
 export function createEmitFastAnswerTool(
 	capture: (details: AutoRAGFastAnswerDetails) => void,
+	options: EmitFastAnswerToolOptions,
 ): AgentTool<typeof fastAnswerSchema, AutoRAGFastAnswerDetails> {
 	return {
 		name: EMIT_FAST_ANSWER_TOOL_NAME,
 		label: "Emit Fast Answer",
 		description:
-			"Deliver the immediate first answer to the user. Call this exactly once during the fast phase with a complete, self-contained answer built only from the baseline retrieval evidence. Do not call any other tool before this one. The run continues afterwards for verification. A call whose answer cites a number missing from results is rejected; fix the numbering and call again.",
+			"Deliver the immediate first answer to the user. Call this exactly once during the fast phase with a complete, self-contained answer built only from the baseline retrieval evidence. Do not call any other tool before this one. The run continues afterwards for verification. A call whose answer cites a number missing from results, or whose refs name evidence that was not provided, is rejected; fix it and call again.",
 		parameters: fastAnswerSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<AutoRAGFastAnswerDetails>> {
 			assertCitationsResolve(EMIT_FAST_ANSWER_TOOL_NAME, params.answer, params.results);
+			const evidenceRefs: { number: number; refs: AutoRAGEvidenceRef[] }[] = [];
+			for (const result of params.results) {
+				if (result.refs === undefined || result.refs.length === 0) continue;
+				const refs = options.ledger.resolve(result.refs, {
+					label: EMIT_FAST_ANSWER_TOOL_NAME,
+					number: result.number,
+					fallbackContent: result.summary,
+					allowLocalFiles: false,
+				});
+				if (refs.length > 0) evidenceRefs.push({ number: result.number, refs });
+			}
 			const details: AutoRAGFastAnswerDetails = {
 				answer: params.answer,
 				results: params.results.map((result) => ({
@@ -86,7 +103,11 @@ export function createEmitFastAnswerTool(
 					),
 					...(result.confidence !== undefined ? { confidence: result.confidence } : {}),
 				})),
-				sources: (params.sources ?? []).map((entry) => ({ number: entry.number, source: entry.source })),
+				sources: evidenceRefs.flatMap((entry) => {
+					const [primary] = entry.refs;
+					return primary === undefined ? [] : [{ number: entry.number, source: primary.source }];
+				}),
+				evidenceRefs,
 			};
 			capture(details);
 			return {

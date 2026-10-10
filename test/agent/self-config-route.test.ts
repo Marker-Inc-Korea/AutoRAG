@@ -94,7 +94,7 @@ function capture(step: FauxResponseStep, seen: Seen): FauxResponseStep {
 }
 
 function emitConfigReport(answer: string): FauxResponseStep {
-	return fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer, results: [], mapping: [] })], {
+	return fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer, results: [] })], {
 		stopReason: "toolUse",
 	});
 }
@@ -344,9 +344,9 @@ describe("Jev config branch: the agent configures itself", () => {
 								summary: "model.id",
 								evidence: [{ excerpt: setting }],
 								confidence: 0.9,
+								refs: [configPath],
 							},
 						],
-						mapping: [{ number: 1, source: configPath, method: "read", content: setting }],
 					}),
 				],
 				{ stopReason: "toolUse" },
@@ -365,6 +365,7 @@ describe("Jev config branch: the agent configures itself", () => {
 
 	it("falls back to local search with a diagnostic when the setup skill cannot be loaded", async () => {
 		const source = join(docs, "x.txt");
+		writeFileSync(source, "E");
 		const model = fauxModel(
 			fauxAssistantMessage(
 				[
@@ -387,9 +388,9 @@ describe("Jev config branch: the agent configures itself", () => {
 								summary: "S",
 								evidence: [{ excerpt: "E" }],
 								confidence: 0.9,
+								refs: [source],
 							},
 						],
-						mapping: [{ number: 1, source, method: "bash", content: "E" }],
 					}),
 				],
 				{ stopReason: "toolUse" },

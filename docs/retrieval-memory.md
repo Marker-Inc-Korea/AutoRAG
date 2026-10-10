@@ -40,6 +40,13 @@ and sent to Jev. A run Jev routes to the `config` branch (self-configuration)
 reports on AutoRAG's own settings, not retrieved evidence, so it is never
 judged or stored.
 
+Before judgment, each result's `refs` is resolved against the run's
+`EvidenceLedger`: retrieval-issued ids attach the harness-recorded source,
+method, and chunk, not model-written mapping text. The origin index then
+recovers the query that retrieved that chunk. Local files read outside retrieval
+may use an absolute path in the final emit; remote sessions cannot. A config
+report emits `results: []` and does not enter retrieval memory.
+
 - **Questions.** Each cited evidence becomes one `noul` question: *does this
   evidence directly support the sentence it backs, and is it needed to answer
   the user's question?* A sentence that never cites a result is judged against

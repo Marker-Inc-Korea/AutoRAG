@@ -440,8 +440,8 @@ The librarian agent owns the full workflow:
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
 | `recommend_peer_targets` | Rank local SimpleX peer contacts (the profile a peer shared plus your local name and note) by keyword overlap | P2P routing; never contacts peers |
-| `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer | Two-phase progressive answers |
-| `emit_autorag_results` | Terminating tool that returns curated results; `answer` is the complete answer, or only the delta (corrections + newly verified findings) when a fast answer already reached the caller | Final action |
+| `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer; each result cites baseline evidence ids in `refs` | Two-phase progressive answers |
+| `emit_autorag_results` | Terminating tool that returns curated results; each result cites the evidence ids (`refs`) shown next to retrieved results, and the harness attaches the sources; `answer` is the complete answer, or only the delta (corrections + newly verified findings) when a fast answer already reached the caller | Final action |
 
 There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
 
@@ -522,7 +522,7 @@ console.log(response.answer);
 [2] Risk Factors — Three new risk factors added: supply chain, regulatory, talent retention. (pages 12-14)
 ```
 
-Each result maps to an internal entry carrying its `source` (a real file path or datasource id), `method`, and cited evidence for retrieval memory. The curated `answer`/`results` are grounded in the sources; source paths may appear where relevant.
+Each result maps to an internal entry carrying its `source` (a real file path or datasource id), `method`, and cited evidence for retrieval memory. Retrieval tools print an `[eN]` evidence id beside every result they return; the model cites those ids in each result's `refs` and the harness attaches the recorded source, method, and chunk, so a path or chunk is never retyped by the model (an unknown id is rejected and the model re-emits). `autorag report` and the MCP report tool keep the explicit `mapping` input because an external curator has no harness ledger. The curated `answer`/`results` are grounded in the sources; source paths may appear where relevant.
 
 ## Memory System
 
@@ -552,11 +552,12 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 |------|------|
 | `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
-| `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
+| `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer; `sources` are derived from the cited evidence ids |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
 | `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
-| `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
+| `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool: the model supplies `answer` and per-result `refs` (evidence ids); the harness builds the number → source `mapping`. Also the `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
+| `src/agent/evidence-ledger.ts` | Per-run `EvidenceLedger`: every retrieval tool (including `query_peer_agent`) registers what it returned and prints an `[eN]` id; emit tools resolve cited ids back to the recorded source, method, and chunk. Entries are cleared each run but ids are never reissued, so a stale id from an earlier run in the same conversation is rejected instead of aliasing new evidence |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
 | `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |

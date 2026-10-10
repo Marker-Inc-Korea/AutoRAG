@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
@@ -13,14 +13,17 @@ let registration: FauxProviderRegistration;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-lifecycle-"));
+	const source = join(root, "a.txt");
+	writeFileSync(source, "a");
 	registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "single-agent" }] });
 	registration.setResponses([
 		fauxAssistantMessage(
 			[
 				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 					answer: "[1] answer",
-					results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1 }],
-					mapping: [{ number: 1, source: "/data/a.txt", method: "bash", content: "a" }],
+					results: [
+						{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1, refs: [source] },
+					],
 				}),
 			],
 			{ stopReason: "toolUse" },

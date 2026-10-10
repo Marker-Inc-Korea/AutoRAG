@@ -88,9 +88,9 @@ function fastAnswer(answer: string, source?: string): FauxResponseStep {
 									summary: answer,
 									evidence: [{ excerpt: answer }],
 									confidence: 0.7,
+									refs: [source],
 								},
 							],
-				...(source === undefined ? {} : { sources: [{ number: 1, source }] }),
 			}),
 		],
 		{ stopReason: "toolUse" },
@@ -103,9 +103,15 @@ function finalEmit(answer: string, source: string): FauxResponseStep {
 			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 				answer,
 				results: [
-					{ number: 1, title: "Verified", summary: answer, evidence: [{ excerpt: answer }], confidence: 0.9 },
+					{
+						number: 1,
+						title: "Verified",
+						summary: answer,
+						evidence: [{ excerpt: answer }],
+						confidence: 0.9,
+						refs: [source],
+					},
 				],
-				mapping: [{ number: 1, source, method: "bash", content: answer }],
 			}),
 		],
 		{ stopReason: "toolUse" },
@@ -159,9 +165,18 @@ function judgingEvidenceAs(probability: number, inner: JevBackend): JevBackend {
 	};
 }
 
-/** A chat datasource whose single retrieval method records every query it receives. */
-function recordingDatasource(datasourceId: string, description: string) {
+/**
+ * A chat datasource whose single retrieval method records every query it
+ * receives. `resultFor` may override the surfaced source/method/content so a
+ * test can pin the exact evidence string the model will cite in `refs`.
+ */
+function recordingDatasource(
+	datasourceId: string,
+	description: string,
+	resultFor?: (query: string, callIndex: number) => { source?: string; method?: string; content?: string },
+) {
 	const queries: string[] = [];
+	let callIndex = 0;
 	const skill: DatasourceSkill = {
 		describe: () => ({
 			name: datasourceId,
@@ -200,13 +215,14 @@ function recordingDatasource(datasourceId: string, description: string) {
 				}),
 				retrieve: async (query: string) => {
 					queries.push(query);
+					const override = resultFor?.(query, callIndex++) ?? {};
 					return [
 						{
 							id: `${datasourceId}-${query}`,
-							source: `/${datasourceId}/default/${query.replace(/\W+/gu, "-")}`,
-							content: `${datasourceId} evidence for ${query}`,
+							source: override.source ?? `/${datasourceId}/default/${query.replace(/\W+/gu, "-")}`,
+							content: override.content ?? `${datasourceId} evidence for ${query}`,
 							score: 1,
-							metadata: {},
+							metadata: override.method === undefined ? {} : { method: override.method },
 						},
 					];
 				},
@@ -440,7 +456,9 @@ describe("Jev query pipeline before the fast answer", () => {
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
 			finalEmit("Verified: Friday.", source),
 		);
-		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels", () => ({
+			source,
+		}));
 		const discord = recordingDatasource("discord", "Gaming community Discord server");
 		const agent = agentWith({
 			model,
@@ -482,9 +500,11 @@ describe("Jev query pipeline before the fast answer", () => {
 				return routing.judge(request);
 			},
 		};
-		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
-		const discord = recordingDatasource("discord", "Gaming community Discord server");
 		const pastSource = "/slack/default/release-plan";
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels", () => ({
+			source: pastSource,
+		}));
+		const discord = recordingDatasource("discord", "Gaming community Discord server");
 		const model = fauxModel(
 			fastAnswer("The release moved to Friday [1].", pastSource),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -521,7 +541,10 @@ describe("Jev query pipeline before the fast answer", () => {
 			},
 		};
 		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
-		const discord = recordingDatasource("discord", "Gaming community Discord server");
+		const discord = recordingDatasource("discord", "Gaming community Discord server", () => ({
+			source: "chunk_77ab",
+			method: "datasource:discord",
+		}));
 		const verified = fauxAssistantMessage(
 			[
 				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
@@ -533,9 +556,9 @@ describe("Jev query pipeline before the fast answer", () => {
 							summary: "Saturday",
 							evidence: [{ excerpt: "Saturday" }],
 							confidence: 0.9,
+							refs: ["chunk_77ab"],
 						},
 					],
-					mapping: [{ number: 1, source: "chunk_77ab", method: "datasource:discord", content: "Saturday" }],
 				}),
 			],
 			{ stopReason: "toolUse" },
@@ -546,7 +569,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			verified,
 			fastAnswer("Saturday [1].", "chunk_77ab"),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Saturday.", "/discord/default/raid"),
+			finalEmit("Saturday.", "chunk_77ab"),
 		);
 		const agent = agentWith({
 			model,
@@ -576,18 +599,21 @@ describe("Jev query pipeline before the fast answer", () => {
 			},
 		};
 		const memoryPath = join(root, "shared-memory.json");
-		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels", () => ({
+			source: "/slack/default/release-plan",
+		}));
 		const remote = agentWith({
-			model: fauxModel(finalEmit("Peer answer.", "/slack/default/peer")),
+			model: fauxModel(finalEmit("Peer answer.", "e1")),
 			memoryPath,
 			remoteSession: true,
 			datasourceSkills: [slack.skill],
 		});
+		injectMinSync(remote, recordingMinSync().method);
 		await remote.searchDocuments("릴리즈 날짜 언제로 정했지?");
 
 		const local = agentWith({
 			model: fauxModel(
-				fastAnswer("Friday [1].", "/slack/default/release"),
+				fastAnswer("Friday [1].", "/slack/default/release-plan"),
 				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
 			),
 			memoryPath,
@@ -614,16 +640,28 @@ describe("Jev query pipeline before the fast answer", () => {
 			},
 		};
 		const kakao = recordingDatasource("kakao", "Personal KakaoTalk chats");
-		const kakaoWork = recordingDatasource("kakao-work", "Work KakaoTalk chats");
-		const emitFrom = (method: string, chunk: string): FauxResponseStep =>
+		const kakaoWork = recordingDatasource("kakao-work", "Work KakaoTalk chats", (_query, callIndex) =>
+			callIndex === 0
+				? { source: "chunk_9f", method: "search_datasource_kakao_work" }
+				: callIndex === 1
+					? { source: "chunk_a0", method: "kakao-work-lexical" }
+					: { source: "chunk_9f" },
+		);
+		const emitFrom = (chunk: string): FauxResponseStep =>
 			fauxAssistantMessage(
 				[
 					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 						answer: "Standup is at 10 [1].",
 						results: [
-							{ number: 1, title: "Standup", summary: "10am", evidence: [{ excerpt: chunk }], confidence: 0.9 },
+							{
+								number: 1,
+								title: "Standup",
+								summary: "10am",
+								evidence: [{ excerpt: chunk }],
+								confidence: 0.9,
+								refs: [chunk],
+							},
 						],
-						mapping: [{ number: 1, source: chunk, method, content: chunk }],
 					}),
 				],
 				{ stopReason: "toolUse" },
@@ -631,13 +669,13 @@ describe("Jev query pipeline before the fast answer", () => {
 		const model = fauxModel(
 			fastAnswer("Not sure."),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			emitFrom("search_datasource_kakao_work", "chunk_9f"),
+			emitFrom("chunk_9f"),
 			fastAnswer("Not sure."),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			emitFrom("kakao-work-lexical", "chunk_a0"),
+			emitFrom("chunk_a0"),
 			fastAnswer("10 [1].", "chunk_9f"),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("10am.", "/kakao-work/default/standup"),
+			finalEmit("10am.", "chunk_9f"),
 		);
 		const agent = agentWith({
 			model,
@@ -717,7 +755,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				throw new Error("datasource check exploded");
 			},
 		};
-		const source = join(docs, "x.txt");
+		const source = join(docs, "when-is-the-release-.txt");
 		const model = fauxModel(
 			fastAnswer("Fast.", source),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -764,7 +802,7 @@ describe("Jev query pipeline before the fast answer", () => {
 	});
 
 	it("searches the original question once when Jev says decomposition is unnecessary", async () => {
-		const source = join(docs, "x.txt");
+		const source = join(docs, "where-is-the-signed-lease-.txt");
 		const model = fauxModel(
 			fastAnswer("Fast.", source),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -794,7 +832,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			},
 		});
 		const prompts: string[] = [];
-		const source = join(docs, "x.txt");
+		const source = join(docs, "What-is-the-latest-Node-js-LTS-.txt");
 		const model = fauxModel(
 			capture(fastAnswer("Fast local answer.", source), prompts),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -843,7 +881,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				throw new Error("connection refused");
 			},
 		};
-		const source = join(docs, "x.txt");
+		const source = join(docs, "where-is-the-signed-lease-.txt");
 		const model = fauxModel(
 			fastAnswer("Fast.", source),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -865,7 +903,7 @@ describe("Jev query pipeline before the fast answer", () => {
 	});
 
 	it("does not route when Jev is disabled", async () => {
-		const source = join(docs, "x.txt");
+		const source = join(docs, "What-is-the-capital-of-France-.txt");
 		const model = fauxModel(
 			fastAnswer("Fast.", source),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -883,7 +921,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("ends after the fast answer when Jev says no correction, clarification, or further research is needed", async () => {
 		const prompts: string[] = [];
-		const source = join(docs, "budget.txt");
+		const source = join(docs, "who-approved-the-Q3-budget-.txt");
 		const model = fauxModel(
 			capture(fastAnswer("The Q3 budget was approved by Mina Park [1].", source), prompts),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -900,6 +938,13 @@ describe("Jev query pipeline before the fast answer", () => {
 		if (complete?.type !== "complete") throw new Error("expected a complete event");
 		expect(complete.response.answer).toBe("The Q3 budget was approved by Mina Park [1].");
 		expect(complete.response.results.map((result) => result.source)).toEqual([source]);
+		// The stored evidence is what the retrieval step recorded, not the fast
+		// answer's own text: feedback must attach to the real chunk.
+		const stored = agent.getResultRegistry(complete.response.sessionId).get(1);
+		expect(stored?.source).toBe(source);
+		expect(stored?.method).toBe("baseline");
+		expect(stored?.content).toBe("evidence for who approved the Q3 budget?");
+		expect(stored?.evidenceRefs?.[0]?.retrievalResultId).toBe("hit-who approved the Q3 budget?");
 		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
 		expect(
 			complete.response.diagnostics?.some(
@@ -947,7 +992,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("continues to verification when Jev says the fast answer needs follow-up", async () => {
 		const prompts: string[] = [];
-		const source = join(docs, "budget.txt");
+		const source = join(docs, "who-approved-the-Q3-budget-.txt");
 		const model = fauxModel(
 			capture(fastAnswer("The approver is not stated in the evidence.", source), prompts),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -978,6 +1023,7 @@ describe("Jev query pipeline before the fast answer", () => {
 							summary: "Mina Park",
 							evidence: [{ excerpt: "Mina Park approved" }],
 							confidence: 0.9,
+							refs: ["/slack/default/budget"],
 						},
 						{
 							number: 2,
@@ -985,34 +1031,7 @@ describe("Jev query pipeline before the fast answer", () => {
 							summary: "May",
 							evidence: [{ excerpt: "Moved in May" }],
 							confidence: 0.8,
-						},
-					],
-					mapping: [
-						{
-							number: 1,
-							source: "/slack/default/budget",
-							method: "search_datasource_slack",
-							content: "Mina Park approved the Q3 budget",
-							evidenceRefs: [
-								{
-									method: "search_datasource_slack",
-									source: "/slack/default/budget",
-									content: "Mina Park approved the Q3 budget",
-								},
-							],
-						},
-						{
-							number: 2,
-							source: "/slack/default/office",
-							method: "search_datasource_slack",
-							content: "Moved in May",
-							evidenceRefs: [
-								{
-									method: "search_datasource_slack",
-									source: "/slack/default/office",
-									content: "Moved in May",
-								},
-							],
+							refs: ["/slack/default/office"],
 						},
 					],
 				}),
@@ -1021,6 +1040,34 @@ describe("Jev query pipeline before the fast answer", () => {
 		);
 	}
 
+	function evidenceDatasource(): DatasourceSkill {
+		const { skill } = recordingDatasource("slack", "Company Slack");
+		return {
+			...skill,
+			retrievalMethods: () =>
+				skill.retrievalMethods().map((method) => ({
+					...method,
+					async retrieve(): Promise<RetrievalResult[]> {
+						return [
+							{
+								id: "budget",
+								source: "/slack/default/budget",
+								content: "Mina Park approved the Q3 budget",
+								score: 1,
+								metadata: { method: "search_datasource_slack" },
+							},
+							{
+								id: "office",
+								source: "/slack/default/office",
+								content: "Moved in May",
+								score: 0.9,
+								metadata: { method: "search_datasource_slack" },
+							},
+						];
+					},
+				})),
+		};
+	}
 	describe("evidence judgment for retrieval memory", () => {
 		/** Records every evidence question Jev is asked, answering each from `byEvidence` (default 0.9). */
 		function evidenceJudge(
@@ -1060,7 +1107,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			const judge = evidenceJudge(jevRouting("local", 0.1, 0.9, { slack: 0.9 }), (text) =>
 				text.includes("Mina Park approved") ? 0.7 : 0.69,
 			);
-			const slack = recordingDatasource("slack", "Company Slack");
+			const slack = evidenceDatasource();
 			const model = fauxModel(
 				fastAnswer("Not sure."),
 				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -1069,7 +1116,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			const agent = agentWith({
 				model,
 				jev: { backend: judge.backend },
-				datasourceSkills: [slack.skill],
+				datasourceSkills: [slack],
 			});
 			injectMinSync(agent, recordingMinSync().method);
 
@@ -1102,7 +1149,7 @@ describe("Jev query pipeline before the fast answer", () => {
 					return jevRouting("local", 0.1, 0.9, { slack: 0.9 }).judge(request);
 				},
 			};
-			const slack = recordingDatasource("slack", "Company Slack");
+			const slack = evidenceDatasource();
 			const model = fauxModel(
 				fastAnswer("Not sure."),
 				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
@@ -1111,7 +1158,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			const agent = agentWith({
 				model,
 				jev: { backend: failing },
-				datasourceSkills: [slack.skill],
+				datasourceSkills: [slack],
 			});
 			injectMinSync(agent, recordingMinSync().method);
 
@@ -1125,8 +1172,13 @@ describe("Jev query pipeline before the fast answer", () => {
 		});
 
 		it("does not judge or store anything when Jev is disabled", async () => {
-			const model = fauxModel(twoEvidenceEmit());
-			const agent = agentWith({ model });
+			const model = fauxModel(
+				fauxAssistantMessage([fauxToolCall("search_datasource_slack", { query: "who approved the Q3 budget?" })], {
+					stopReason: "toolUse",
+				}),
+				twoEvidenceEmit(),
+			);
+			const agent = agentWith({ model, datasourceSkills: [evidenceDatasource()] });
 			injectMinSync(agent, recordingMinSync().method);
 
 			const response = await agent.searchDocuments("who approved the Q3 budget?");
@@ -1156,21 +1208,13 @@ describe("Jev query pipeline before the fast answer", () => {
 						fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 							answer: "Found it [1].",
 							results: [
-								{ number: 1, title: "Office", summary: "May", evidence: [{ excerpt: "x" }], confidence: 0.9 },
-							],
-							mapping: [
 								{
 									number: 1,
-									source: "/slack/default/office-move-date",
-									method: "search_datasource_slack",
-									content: "slack evidence for office move date",
-									evidenceRefs: [
-										{
-											method: "search_datasource_slack",
-											source: "/slack/default/office-move-date",
-											content: "slack evidence for office move date",
-										},
-									],
+									title: "Office",
+									summary: "May",
+									evidence: [{ excerpt: "x" }],
+									confidence: 0.9,
+									refs: ["/slack/default/office-move-date"],
 								},
 							],
 						}),
@@ -1256,7 +1300,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		it("shows what the current conversation already found, even for an unrelated follow-up", async () => {
 			const memoryPath = seededMemory([]);
 			const contexts: string[] = [];
-			const slack = recordingDatasource("slack", "Company Slack");
+			const slack = evidenceDatasource();
 			const judge = {
 				name: "judge",
 				async judge(request: Parameters<JevBackend["judge"]>[0]) {
@@ -1296,7 +1340,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				model,
 				memoryPath,
 				jev: { backend: judge },
-				datasourceSkills: [slack.skill],
+				datasourceSkills: [slack],
 			});
 			injectMinSync(agent, recordingMinSync().method);
 

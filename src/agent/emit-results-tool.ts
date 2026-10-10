@@ -1,7 +1,8 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
-import { assertCitationsResolve, assertResultsMappingOneToOne } from "./citations.ts";
+import { assertCitationsResolve, assertUniqueResultNumbers } from "./citations.ts";
+import type { EvidenceLedger } from "./evidence-ledger.ts";
 
 export const EMIT_AUTORAG_RESULTS_TOOL_NAME = "emit_autorag_results";
 
@@ -28,25 +29,58 @@ const evidenceRefSchema = Type.Object({
 	confidence: Type.Optional(Type.Number({ description: "Evidence confidence, 0..1", minimum: 0, maximum: 1 })),
 });
 
+const answerSchema = Type.String({
+	description: `Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}`,
+});
+
+const warningsSchema = Type.Optional(
+	Type.Array(Type.String(), { description: "Optional warnings about this result set" }),
+);
+
+const curatedResultFields = {
+	number: Type.Integer({ description: "1-based result number" }),
+	title: Type.String({ description: "Short name of the curated knowledge unit" }),
+	summary: Type.String({ description: "Key insight: purpose, details, and line range" }),
+	evidence: Type.Array(
+		Type.Object({
+			excerpt: Type.String({ description: "Supporting excerpt" }),
+			lineNumber: Type.Optional(Type.Integer({ description: "Line number of the excerpt, if known" })),
+		}),
+	),
+	confidence: Type.Number({ description: "Confidence in this result, 0..1", minimum: 0, maximum: 1 }),
+};
+
+/**
+ * Model-facing schema of `emit_autorag_results`. The model cites evidence by
+ * the short ids retrieval tools print next to each result (`refs`); the
+ * harness resolves them to the recorded source, method, and chunk, so the
+ * model never retypes a path or a chunk.
+ */
 export const emitResultsSchema = Type.Object({
-	answer: Type.String({
-		description: `Answer for the caller. When a first answer was already delivered to the caller during this run, this MUST contain only the corrections and newly verified findings relative to it — never restate the first answer; otherwise it is the complete answer. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}`,
-	}),
+	answer: answerSchema,
 	results: Type.Array(
 		Type.Object({
-			number: Type.Integer({ description: "1-based result number" }),
-			title: Type.String({ description: "Short name of the curated knowledge unit" }),
-			summary: Type.String({ description: "Key insight: purpose, details, and line range" }),
-			evidence: Type.Array(
-				Type.Object({
-					excerpt: Type.String({ description: "Supporting excerpt" }),
-					lineNumber: Type.Optional(Type.Integer({ description: "Line number of the excerpt, if known" })),
-				}),
-			),
-			confidence: Type.Number({ description: "Confidence in this result, 0..1", minimum: 0, maximum: 1 }),
+			...curatedResultFields,
+			refs: Type.Array(Type.String(), {
+				minItems: 1,
+				description:
+					"Evidence ids supporting this result, copied from the ids shown next to retrieved results (e.g. e3). For a local file you opened yourself with bash, give its absolute path instead.",
+			}),
 		}),
 		{ description: "Numbered curated knowledge units." },
 	),
+	warnings: warningsSchema,
+});
+
+/**
+ * Report schema with the explicit number -> source mapping. This is the
+ * persisted/typed shape and the input contract of `autorag report` and the MCP
+ * report tool, where an external agent curated the evidence and no harness
+ * ledger exists.
+ */
+export const reportSchema = Type.Object({
+	answer: answerSchema,
+	results: Type.Array(Type.Object(curatedResultFields), { description: "Numbered curated knowledge units." }),
 	mapping: Type.Array(
 		Type.Object({
 			number: Type.Integer({ description: "Matches the result number this entry maps" }),
@@ -61,7 +95,7 @@ export const emitResultsSchema = Type.Object({
 		}),
 		{ description: "Internal number -> source/method mapping. One entry per result number." },
 	),
-	warnings: Type.Optional(Type.Array(Type.String(), { description: "Optional warnings about this result set" })),
+	warnings: warningsSchema,
 });
 
 export interface AutoRAGEmittedEvidence {
@@ -110,24 +144,54 @@ export interface AutoRAGResultsDetails {
 	readonly warnings: readonly string[];
 }
 
+export interface EmitResultsToolOptions {
+	/** Evidence the run's retrieval tools returned; `refs` resolve against it. */
+	readonly ledger: EvidenceLedger;
+	/** False in remote sessions: only evidence a tool returned this run may be cited. */
+	readonly allowLocalFiles: boolean;
+}
+
 /**
  * Builds the terminating structured-result tool. The model calls this exactly
  * once as its final action; the typed `details` plus `terminate: true` end the
  * Pi Agent run and hand the curated results back through `capture` — no
- * assistant-text parsing involved.
+ * assistant-text parsing involved. The number -> source mapping is built here
+ * from the harness-held evidence the model cited by id, never from model text.
  */
 export function createEmitResultsTool(
 	capture: (details: AutoRAGResultsDetails) => void,
+	options: EmitResultsToolOptions,
 ): AgentTool<typeof emitResultsSchema, AutoRAGResultsDetails> {
 	return {
 		name: EMIT_AUTORAG_RESULTS_TOOL_NAME,
 		label: "Emit AutoRAG Results",
 		description:
-			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Put each result's source (file path or datasource id) in the mapping parameter. A call whose answer cites a number missing from results, or whose results and mapping numbers are not one-to-one, is rejected; fix the numbering and call again.",
+			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Cite each result's supporting evidence in its refs, using the evidence ids shown next to retrieved results (e.g. e3); the source paths are attached for you. A call whose answer cites a number missing from results, whose result numbers repeat, or whose refs name evidence no tool returned is rejected; fix it and call again.",
 		parameters: emitResultsSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<AutoRAGResultsDetails>> {
 			assertCitationsResolve(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.answer, params.results);
-			assertResultsMappingOneToOne(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.results, params.mapping);
+			assertUniqueResultNumbers(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.results);
+			const mapping: AutoRAGMappingEntry[] = params.results.map((result) => {
+				const evidenceRefs = options.ledger.resolve(result.refs, {
+					label: EMIT_AUTORAG_RESULTS_TOOL_NAME,
+					number: result.number,
+					fallbackContent: result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary,
+					allowLocalFiles: options.allowLocalFiles,
+				});
+				const primary = evidenceRefs[0];
+				if (primary === undefined) {
+					throw new Error(
+						`${EMIT_AUTORAG_RESULTS_TOOL_NAME}: result ${result.number} resolved no evidence. Give it at least one valid ref.`,
+					);
+				}
+				return {
+					number: result.number,
+					source: primary.source,
+					method: primary.method,
+					content: primary.content ?? "",
+					evidenceRefs,
+				};
+			});
 			const details: AutoRAGResultsDetails = {
 				answer: params.answer,
 				results: params.results.map((result) => ({
@@ -141,33 +205,7 @@ export function createEmitResultsTool(
 					),
 					confidence: result.confidence,
 				})),
-				mapping: params.mapping.map((entry) => ({
-					number: entry.number,
-					source: entry.source,
-					method: entry.method,
-					content: entry.content,
-					evidenceRefs: (
-						entry.evidenceRefs ?? [{ method: entry.method, source: entry.source, content: entry.content }]
-					).map((evidence) => ({
-						method: evidence.method,
-						source: evidence.source,
-						...(evidence.excerpt !== undefined ? { excerpt: evidence.excerpt } : {}),
-						...(evidence.content !== undefined ? { content: evidence.content } : {}),
-						...(evidence.retrievalResultId !== undefined
-							? { retrievalResultId: evidence.retrievalResultId }
-							: {}),
-						...(evidence.chunkIndex !== undefined ? { chunkIndex: evidence.chunkIndex } : {}),
-						...(evidence.lineNumber !== undefined ? { lineNumber: evidence.lineNumber } : {}),
-						...(evidence.stableEvidenceId !== undefined ? { stableEvidenceId: evidence.stableEvidenceId } : {}),
-						...(evidence.retrieverMix !== undefined ? { retrieverMix: evidence.retrieverMix } : {}),
-						...(evidence.parserType !== undefined ? { parserType: evidence.parserType } : {}),
-						...(evidence.documentType !== undefined ? { documentType: evidence.documentType } : {}),
-						...(evidence.documentArea !== undefined ? { documentArea: evidence.documentArea } : {}),
-						...(evidence.evidenceType !== undefined ? { evidenceType: evidence.evidenceType } : {}),
-						...(evidence.evidenceLocation !== undefined ? { evidenceLocation: evidence.evidenceLocation } : {}),
-						...(evidence.confidence !== undefined ? { confidence: evidence.confidence } : {}),
-					})),
-				})),
+				mapping,
 				warnings: params.warnings ?? [],
 			};
 			capture(details);

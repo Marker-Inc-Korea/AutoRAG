@@ -15,6 +15,7 @@ import { WEB_SEARCH_TOOL_DESCRIPTION } from "../web/search/format.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import type { ModelNativeSearchAuth } from "../web/search/model-auth.ts";
 import type { SearchProviderId } from "../web/search/types.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 
 export const WEB_SEARCH_TOOL_NAME = "web_search";
 
@@ -60,6 +61,7 @@ export interface WebSearchToolDetails {
 
 export function createWebSearchTool(
 	options: WebSearchToolOptions = {},
+	ledger: EvidenceLedger = new EvidenceLedger(),
 ): AgentTool<typeof webSearchSchema, WebSearchToolDetails> {
 	return {
 		name: WEB_SEARCH_TOOL_NAME,
@@ -99,6 +101,14 @@ export function createWebSearchTool(
 					...(options.order !== undefined ? { order: options.order } : {}),
 					...(options.exclude !== undefined ? { exclude: options.exclude } : {}),
 					...(options.modelAuth?.() !== undefined ? { modelAuth: options.modelAuth() } : {}),
+					labelSources: (found) =>
+						found.map((source) =>
+							ledger.register({
+								method: WEB_SEARCH_TOOL_NAME,
+								source: source.url,
+								content: source.snippet ? `${source.title} — ${source.snippet}` : source.title,
+							}),
+						),
 				},
 			);
 			const response = result.details.response;

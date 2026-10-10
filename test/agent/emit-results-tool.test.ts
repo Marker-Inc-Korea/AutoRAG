@@ -1,12 +1,15 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
 import {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
+	emitResultsSchema,
 } from "../../src/agent/emit-results-tool.ts";
+import { EvidenceLedger } from "../../src/agent/evidence-ledger.ts";
 import { main } from "../../src/cli/index.ts";
 import * as publicApi from "../../src/index.ts";
 
@@ -136,16 +139,43 @@ describe("lite report bridge", () => {
 });
 
 describe("createEmitResultsTool", () => {
-	it("returns typed details with terminate and forwards them to the capture sink", async () => {
-		let captured: AutoRAGResultsDetails | undefined;
-		const tool = createEmitResultsTool((details) => {
-			captured = details;
+	function ledgerWith(source = "/data/one.txt", content = "snippet text") {
+		const ledger = new EvidenceLedger();
+		const id = ledger.registerResult("search_all_documents", {
+			id: "bm25:one",
+			source,
+			content,
+			score: 1,
+			metadata: {
+				method: "bm25",
+				parserType: "pdf",
+				chunkIndex: 3,
+				documentArea: "body",
+				evidenceType: "quote",
+				evidenceLocation: "page 3",
+			},
 		});
+		return { ledger, id };
+	}
 
+	it("accepts only answer/results/warnings: the model never writes a mapping", () => {
+		const tool = createEmitResultsTool(() => {}, { ledger: new EvidenceLedger(), allowLocalFiles: false });
+		expect(Object.keys(tool.parameters.properties ?? {}).sort()).toEqual(["answer", "results", "warnings"]);
+	});
+
+	it("builds the mapping from harness-held evidence, terminates, and forwards details", async () => {
+		const { ledger, id } = ledgerWith();
+		let captured: AutoRAGResultsDetails | undefined;
+		const tool = createEmitResultsTool(
+			(details) => {
+				captured = details;
+			},
+			{ ledger, allowLocalFiles: false },
+		);
 		expect(tool.name).toBe(EMIT_AUTORAG_RESULTS_TOOL_NAME);
 
 		const result = await tool.execute("call-1", {
-			answer: "the answer",
+			answer: "the answer [1]",
 			results: [
 				{
 					number: 1,
@@ -153,65 +183,121 @@ describe("createEmitResultsTool", () => {
 					summary: "summary one",
 					evidence: [{ excerpt: "snippet", lineNumber: 12 }],
 					confidence: 0.9,
+					refs: [id],
 				},
 			],
-			mapping: [
-				{
-					number: 1,
-					source: "/data/one.txt",
-					method: "grep",
-					content: "snippet",
-					evidenceRefs: [
-						{
-							method: "grep",
-							source: "/data/one.txt",
-							content: "snippet",
-							retrieverMix: ["bm25", "minsync"],
-							parserType: "pdf",
-							documentType: "manual",
-							documentArea: "billing",
-							evidenceType: "policy",
-							evidenceLocation: "page 12",
-							confidence: 0.88,
-						},
-					],
-				},
-			],
-			warnings: [],
 		});
 
 		expect(result.terminate).toBe(true);
-		expect(result.details.answer).toBe("the answer");
-		expect(result.details.results[0].evidence[0]).toEqual({ excerpt: "snippet", lineNumber: 12 });
-		expect(result.details.mapping[0]).toEqual({
+		expect(result.details.results[0]).toEqual({
 			number: 1,
-			source: "/data/one.txt",
-			method: "grep",
-			content: "snippet",
-			evidenceRefs: [
-				{
-					method: "grep",
-					source: "/data/one.txt",
-					content: "snippet",
-					retrieverMix: ["bm25", "minsync"],
-					parserType: "pdf",
-					documentType: "manual",
-					documentArea: "billing",
-					evidenceType: "policy",
-					evidenceLocation: "page 12",
-					confidence: 0.88,
-				},
-			],
+			title: "Result one",
+			summary: "summary one",
+			evidence: [{ excerpt: "snippet", lineNumber: 12 }],
+			confidence: 0.9,
 		});
+		expect(result.details.mapping).toEqual([
+			{
+				number: 1,
+				source: "/data/one.txt",
+				method: "bm25",
+				content: "snippet text",
+				evidenceRefs: [
+					{
+						method: "bm25",
+						source: "/data/one.txt",
+						content: "snippet text",
+						retrieverMix: ["bm25"],
+						retrievalResultId: "bm25:one",
+						chunkIndex: 3,
+						parserType: "pdf",
+						documentArea: "body",
+						evidenceType: "quote",
+						evidenceLocation: "page 3",
+					},
+				],
+			},
+		]);
+		expect(result.details.warnings).toEqual([]);
 		expect(captured).toBe(result.details);
 	});
 
-	it("omits lineNumber from evidence when not provided", async () => {
-		const tool = createEmitResultsTool(() => {});
+	it("uses the recorded chunk even when the model paraphrases the excerpt", async () => {
+		const { ledger, id } = ledgerWith("/data/one.txt", "the exact chunk text");
+		const tool = createEmitResultsTool(() => {}, { ledger, allowLocalFiles: false });
 		const result = await tool.execute("call-2", {
+			answer: "a [1]",
+			results: [
+				{ number: 1, title: "t", summary: "s", evidence: [{ excerpt: "paraphrase" }], confidence: 1, refs: [id] },
+			],
+		});
+		expect(result.details.mapping[0]?.content).toBe("the exact chunk text");
+		expect(result.details.results[0]?.evidence[0]).toEqual({ excerpt: "paraphrase" });
+	});
+
+	it("rejects a result citing evidence no tool returned, so the model re-emits", async () => {
+		const tool = createEmitResultsTool(() => {}, { ledger: new EvidenceLedger(), allowLocalFiles: false });
+		await expect(
+			tool.execute("call-3", {
+				answer: "a [1]",
+				results: [
+					{ number: 1, title: "t", summary: "s", evidence: [], confidence: 1, refs: ["/docs/invented.txt"] },
+				],
+			}),
+		).rejects.toThrow(/result 1.*invented\.txt/su);
+	});
+
+	it("accepts a real local file the model opened itself when local files are allowed", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-emit-local-"));
+		try {
+			const file = join(root, "opened.txt");
+			writeFileSync(file, "x");
+			const tool = createEmitResultsTool(() => {}, { ledger: new EvidenceLedger(), allowLocalFiles: true });
+			const result = await tool.execute("call-4", {
+				answer: "a [1]",
+				results: [
+					{ number: 1, title: "t", summary: "s", evidence: [{ excerpt: "quoted" }], confidence: 1, refs: [file] },
+				],
+			});
+			expect(result.details.mapping[0]).toMatchObject({ source: file, method: "bash", content: "quoted" });
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("still rejects citations that point at no result and duplicate result numbers", async () => {
+		const { ledger, id } = ledgerWith();
+		const tool = createEmitResultsTool(() => {}, { ledger, allowLocalFiles: false });
+		await expect(
+			tool.execute("call-5", {
+				answer: "see [2]",
+				results: [{ number: 1, title: "t", summary: "s", evidence: [], confidence: 1, refs: [id] }],
+			}),
+		).rejects.toThrow(/\[2\]/u);
+		await expect(
+			tool.execute("call-6", {
+				answer: "a [1]",
+				results: [
+					{ number: 1, title: "a", summary: "s", evidence: [], confidence: 1, refs: [id] },
+					{ number: 1, title: "b", summary: "s", evidence: [], confidence: 1, refs: [id] },
+				],
+			}),
+		).rejects.toThrow(/repeat/u);
+	});
+
+	it("requires at least one evidence ref per result in the schema", () => {
+		const result = { number: 1, title: "t", summary: "s", evidence: [], confidence: 1 };
+		expect(Value.Check(emitResultsSchema, { answer: "a [1]", results: [{ ...result, refs: ["e1"] }] })).toBe(true);
+		expect(Value.Check(emitResultsSchema, { answer: "a [1]", results: [{ ...result, refs: [] }] })).toBe(false);
+		expect(Value.Check(emitResultsSchema, { answer: "a [1]", results: [result] })).toBe(false);
+	});
+
+	it("omits lineNumber from evidence when not provided", async () => {
+		const { ledger, id } = ledgerWith();
+		const tool = createEmitResultsTool(() => {}, { ledger, allowLocalFiles: false });
+		const result = await tool.execute("call-7", {
 			answer: "a",
-			results: [{ number: 1, title: "t", summary: "s", evidence: [{ excerpt: "e" }], confidence: 1 }],
-			mapping: [{ number: 1, source: "/x", method: "grep", content: "e" }],
+			results: [{ number: 1, title: "t", summary: "s", evidence: [{ excerpt: "e" }], confidence: 1, refs: [id] }],
 		});
 		expect(result.details.results[0].evidence[0]).toEqual({ excerpt: "e" });
 		expect(result.details.warnings).toEqual([]);

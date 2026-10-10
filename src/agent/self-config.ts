@@ -118,7 +118,7 @@ export function buildSelfConfigPrompt(input: SelfConfigPromptInput): string {
 		`## autorag-setup skill (full text)\n\n${input.skill}\n\n` +
 		`## User request\n\n${input.query}\n\n` +
 		`When done, call emit_autorag_results exactly once with: \`answer\` = a short report of what you changed (field: old → new), what you verified and how, ` +
-		`and anything that still needs the user (for example an unset API-key environment variable, by name only); \`results\` = []; \`mapping\` = []. ` +
+		`and anything that still needs the user (for example an unset API-key environment variable, by name only); \`results\` = []. ` +
 		`If you changed nothing, say why.`
 	);
 }

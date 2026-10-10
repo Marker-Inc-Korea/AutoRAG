@@ -104,6 +104,7 @@ import {
 } from "./emit-results-tool.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
+import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import {
 	type AutoRAGFastAnswerDetails,
@@ -678,6 +679,8 @@ export class AutoRAGAgent {
 	private interactiveFastAnswerCallback: ((details: AutoRAGFastAnswerDetails) => void) | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
+	/** Evidence every retrieval tool returned this run; emit tools resolve model-cited ids against it. */
+	private readonly evidenceLedger = new EvidenceLedger();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
@@ -869,16 +872,24 @@ export class AutoRAGAgent {
 		// datasource skills, so every connection gets its own tool. These are
 		// the only datasource retrieval tools: cross-datasource fan-out lives in
 		// search_all_documents.
-		const singleDatasourceTools = createSingleDatasourceSearchTools(this, this.singleDatasourceToolSpecs());
+		const singleDatasourceTools = createSingleDatasourceSearchTools(
+			this,
+			this.singleDatasourceToolSpecs(),
+			this.evidenceLedger,
+		);
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
 			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
+			this.evidenceLedger,
 		);
-		const searchAllTool = createSearchAllDocumentsTool(this);
+		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
-		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
+		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details), {
+			ledger: this.evidenceLedger,
+			allowLocalFiles: !this.remoteSession,
+		});
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 		this.jevJudge =
@@ -916,9 +927,10 @@ export class AutoRAGAgent {
 								})),
 						autoStart: true,
 						sessionId: () => this.lastSessionId,
+						ledger: this.evidenceLedger,
 					});
 
-		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
+		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this, this.evidenceLedger) : undefined;
 		// Remote peers never enumerate local file names.
 		const everythingSearchTool =
 			this.everythingClient !== undefined && !this.remoteSession ? createEverythingSearchTool(this) : undefined;
@@ -931,10 +943,12 @@ export class AutoRAGAgent {
 			? { ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth }
 			: undefined;
 		const webSearchTool =
-			this.webSearchOptions !== undefined ? createWebSearchTool(this.webSearchOptions) : undefined;
+			this.webSearchOptions !== undefined
+				? createWebSearchTool(this.webSearchOptions, this.evidenceLedger)
+				: undefined;
 		const webFetchTool =
 			webToolsEnabled && webSearchOption?.fetch !== false
-				? createWebFetchTool(webSearchOption?.fetch ?? {})
+				? createWebFetchTool(webSearchOption?.fetch ?? {}, this.evidenceLedger)
 				: undefined;
 
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
@@ -1411,7 +1425,9 @@ export class AutoRAGAgent {
 				...this.tools.filter(
 					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
 				),
-				createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details)),
+				createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details), {
+					ledger: this.evidenceLedger,
+				}),
 			],
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
 			inactiveToolNames: [EMIT_FAST_ANSWER_TOOL_NAME],
@@ -1523,6 +1539,7 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
+		this.evidenceLedger.clear();
 		this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
@@ -1593,7 +1610,7 @@ export class AutoRAGAgent {
 			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
-				[createEmitFastAnswerTool(emitPreliminary)],
+				[createEmitFastAnswerTool(emitPreliminary, { ledger: this.evidenceLedger })],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
@@ -1713,7 +1730,7 @@ export class AutoRAGAgent {
 						let preliminary = fastCaptured;
 						if (preliminary === undefined) {
 							const text = lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
-							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
+							if (text !== undefined) preliminary = { answer: text, results: [], sources: [], evidenceRefs: [] };
 						}
 						if (preliminary !== undefined) emitPreliminary(preliminary);
 						if (captured !== undefined) return;
@@ -2458,20 +2475,26 @@ export class AutoRAGAgent {
 		// disabled or unavailable.
 		const reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults);
 		if (reranked !== undefined) {
-			const baseline = formatRerankedBaseline(reranked);
+			const baseline = formatRerankedBaseline(
+				reranked,
+				reranked.map((result) => this.evidenceLedger.registerResult("baseline", result)),
+			);
 			return searchQueries.length > 1 ? `${formatSearchQueries(searchQueries)}\n\n${baseline}` : baseline;
 		}
 
-		// One flat numbering across every section (issue #1788): candidate [n]
-		// labels never restart, so no number means two different candidates.
+		// Evidence ids are issued once per candidate and never restart, so a
+		// candidate id never means two different candidates.
 		const sections: string[] = [];
 		if (searchQueries.length > 1) sections.push(formatSearchQueries(searchQueries));
-		let candidateNumber = 0;
+		const idFor = (result: RetrievalResult): string => this.evidenceLedger.registerResult("baseline", result);
 		if (jikjiFound) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikjiPaths
 					.slice(0, this.limits.prefetch.jikjiPathLimit)
-					.map((path) => `[${++candidateNumber}] ${path}`)
+					.map(
+						(path) =>
+							`[${this.evidenceLedger.register({ method: JIKJI_FIND_TOOL_NAME, source: path, content: path })}] ${path}`,
+					)
 					.join("\n")}`,
 			);
 		}
@@ -2479,7 +2502,7 @@ export class AutoRAGAgent {
 			sections.push(
 				`MinSync semantic initial candidates:\n${minSyncResults
 					.slice(0, this.limits.prefetch.sectionLimit)
-					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.map((result) => `[${idFor(result)}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		}
@@ -2487,7 +2510,7 @@ export class AutoRAGAgent {
 			sections.push(
 				`Datasource initial candidates:\n${datasourceResults
 					.slice(0, this.limits.prefetch.sectionLimit)
-					.map((result) => `[${++candidateNumber}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.map((result) => `[${idFor(result)}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		}
@@ -2557,7 +2580,7 @@ export class AutoRAGAgent {
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
-			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and their real source paths, then stop.`
+			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and the evidence ids (e.g. e3) from the baseline evidence that back each unit in refs, then stop.`
 		);
 	}
 
@@ -2633,13 +2656,13 @@ export class AutoRAGAgent {
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
 			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}` +
-			`Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
+			`Cite the evidence ids (e.g. e3) shown next to retrieved results in each result's refs; for a local file you opened yourself with bash, give its absolute path.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
-			`results and the internal number-to-source mapping.`
+			`results, each citing its supporting evidence ids in refs.`
 		);
 	}
 
@@ -2652,7 +2675,7 @@ export class AutoRAGAgent {
 			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not emit final results until its next message arrives.\n\n` +
 			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
 			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
-			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
+			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Cite the evidence ids (e.g. e3) shown next to retrieved results in each result's refs.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
@@ -2666,7 +2689,7 @@ export class AutoRAGAgent {
 			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
-			`results and the internal number-to-source mapping.`
+			`results, each citing its supporting evidence ids in refs.`
 		);
 	}
 
@@ -3535,27 +3558,28 @@ export class AutoRAGAgent {
 }
 
 /**
- * Baseline block for the reranked pre-fast-answer pool. A single numbering
- * sequence replaces the per-section numbering so bracketed citations are
- * unambiguous in the fast-answer prompt.
+ * Baseline block for the reranked pre-fast-answer pool. Each candidate carries
+ * the evidence id the fast answer cites it by, so a source never has to be
+ * retyped and never collides with a result citation number.
  */
-function formatRerankedBaseline(results: readonly RetrievalResult[]): string {
+function formatRerankedBaseline(results: readonly RetrievalResult[], evidenceIds: readonly string[]): string {
 	const lines = results.map(
-		(result, index) => `[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
+		(result, index) => `[${evidenceIds[index]}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
 	);
-	return `Reranked initial candidates (ordered by relevance to the query):\n${lines.join("\n")}`;
+	return `Reranked initial candidates (ordered by relevance to the query; cite evidence by its [eN] id in refs):\n${lines.join("\n")}`;
 }
 
 /**
  * The fast answer as a final emit_autorag_results payload, used when Jev ends
- * the run after the fast phase. Every result the answer cites is kept: the
- * fast-answer `sources` mapping is optional and models routinely omit it, so
- * dropping source-less results would strip the answer's citations. A result
- * with no reported source keeps an empty mapping source (the response then
- * carries no `source` for it) rather than an invented path.
+ * the run after the fast phase. Every result the answer cites is kept: a
+ * result whose refs were omitted still keeps its citation. Cited results carry
+ * the evidence the harness recorded for them (the same source, method, and
+ * chunk a verified emit would carry); a result with no refs keeps an empty
+ * mapping source (the response then carries no `source` for it) rather than an
+ * invented path.
  */
 function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResultsDetails {
-	const sourceByNumber = new Map(fastAnswer.sources.map((entry) => [entry.number, entry.source]));
+	const refsByNumber = new Map(fastAnswer.evidenceRefs.map((entry) => [entry.number, entry.refs]));
 	return {
 		answer: fastAnswer.answer,
 		results: fastAnswer.results.map((result) => ({
@@ -3565,13 +3589,18 @@ function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResults
 			evidence: result.evidence,
 			confidence: result.confidence ?? 0.5,
 		})),
-		mapping: fastAnswer.results.map((result) => ({
-			number: result.number,
-			source: sourceByNumber.get(result.number) ?? "",
-			method: EMIT_FAST_ANSWER_TOOL_NAME,
-			content: result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary,
-			evidenceRefs: [],
-		})),
+		mapping: fastAnswer.results.map((result) => {
+			const refs = refsByNumber.get(result.number) ?? [];
+			const primary = refs[0];
+			return {
+				number: result.number,
+				source: primary?.source ?? "",
+				method: primary?.method ?? EMIT_FAST_ANSWER_TOOL_NAME,
+				content:
+					primary?.content ?? (result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary),
+				evidenceRefs: refs,
+			};
+		}),
 		warnings: [],
 	};
 }
@@ -3658,7 +3687,7 @@ function buildFinalEmitReminder(): string {
 	return (
 		`You ended without calling ${EMIT_AUTORAG_RESULTS_TOOL_NAME}, so the user has not received your verified answer. ` +
 		`Do not search again. Call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} now, exactly once, with the answer you just wrote, ` +
-		`its numbered results, and the number-to-source mapping (use the real file paths or URLs you used). ` +
+		`its numbered results, each with the evidence ids (refs) of the sources you used (a local file you opened yourself: its absolute path). ` +
 		`If verification found nothing usable, call it with an answer that says so and an empty results list.`
 	);
 }

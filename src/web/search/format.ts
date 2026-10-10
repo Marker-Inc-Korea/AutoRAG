@@ -73,8 +73,15 @@ function formatCount(label: string, count: number): string {
 	return `${count} ${label}${count === 1 ? "" : "s"}`;
 }
 
-/** Format response for LLM consumption. `notes` lead the output (e.g. relaxed-constraint warnings). */
-export function formatForLLM(response: SearchResponse, notes: readonly string[] = []): string {
+/**
+ * Format response for LLM consumption. `notes` lead the output (e.g. relaxed-constraint warnings).
+ * `sourceLabels` replaces the positional `[n]` of each source (e.g. `e3`) so the model can cite it by id.
+ */
+export function formatForLLM(
+	response: SearchResponse,
+	notes: readonly string[] = [],
+	sourceLabels: readonly string[] = [],
+): string {
 	const parts: string[] = [];
 	for (const note of notes) {
 		parts.push(`Note: ${note}`);
@@ -91,7 +98,7 @@ export function formatForLLM(response: SearchResponse, notes: readonly string[] 
 	for (const [i, src] of response.sources.entries()) {
 		const age = formatAge(src.ageSeconds) || src.publishedDate;
 		const agePart = age ? ` (${age})` : "";
-		parts.push(`[${i + 1}] ${src.title}${agePart}\n    ${src.url}`);
+		parts.push(`[${sourceLabels[i] ?? i + 1}] ${src.title}${agePart}\n    ${src.url}`);
 		if (src.snippet) {
 			parts.push(`    ${truncateText(src.snippet, 240)}`);
 		}

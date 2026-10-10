@@ -273,10 +273,9 @@ describe("records the retrieval trace for search tools", () => {
 		const { agent, internal, registration } = setup(tool);
 		registration.setResponses([
 			fauxAssistantMessage([fauxToolCall(tool.name, { query: blank ? " " : query })], { stopReason: "toolUse" }),
-			fauxAssistantMessage(
-				[fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [], mapping: [] })],
-				{ stopReason: "toolUse" },
-			),
+			fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
+				stopReason: "toolUse",
+			}),
 			fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 		]);
 		const events: AgentEvent[] = [];
@@ -367,10 +366,9 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 			const aggregate = vi.spyOn(agent, "findJikji");
 			registration.setResponses([
 				fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" }),
-				fauxAssistantMessage(
-					[fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [], mapping: [] })],
-					{ stopReason: "toolUse" },
-				),
+				fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
+					stopReason: "toolUse",
+				}),
 				fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 			]);
 			const ends: Extract<AgentEvent, { type: "tool_execution_end" }>[] = [];
@@ -431,10 +429,9 @@ it("attributes the retrieval trace query to the tool call start args", async () 
 	const attributed = "unique attribution query";
 	registration.setResponses([
 		fauxAssistantMessage([fauxToolCall(tool.name, { query: attributed })], { stopReason: "toolUse" }),
-		fauxAssistantMessage(
-			[fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [], mapping: [] })],
-			{ stopReason: "toolUse" },
-		),
+		fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
+			stopReason: "toolUse",
+		}),
 		fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 	]);
 	await agent.searchDocuments(attributed);

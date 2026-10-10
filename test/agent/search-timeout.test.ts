@@ -56,7 +56,6 @@ const fastAnswer: FauxResponseStep = fauxAssistantMessage(
 					confidence: 0.8,
 				},
 			],
-			sources: [{ number: 1, source: join(tmpdir(), "fromis.txt") }],
 		}),
 	],
 	{ stopReason: "toolUse" },

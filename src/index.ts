@@ -15,6 +15,7 @@ export {
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 	emitResultsSchema,
+	reportSchema,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,
 	type SearchDocumentDiagnosticSeverity,

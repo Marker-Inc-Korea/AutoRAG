@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Value } from "typebox/value";
-import { type AutoRAGResultsDetails, emitResultsSchema } from "../../agent/emit-results-tool.ts";
+import { type AutoRAGResultsDetails, reportSchema } from "../../agent/emit-results-tool.ts";
 import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { ConfigError } from "../config.ts";
@@ -20,7 +20,7 @@ const MAX_REPORTED_SCHEMA_ERRORS = 8;
  * property is missing or malformed instead of only that the report was invalid.
  */
 function describeSchemaErrors(value: unknown): string {
-	const errors = Value.Errors(emitResultsSchema, value);
+	const errors = Value.Errors(reportSchema, value);
 	if (errors.length === 0) return "";
 	const described = errors
 		.slice(0, MAX_REPORTED_SCHEMA_ERRORS)
@@ -29,17 +29,17 @@ function describeSchemaErrors(value: unknown): string {
 	return hidden > 0 ? `${described.join("; ")}; (+${hidden} more)` : described.join("; ");
 }
 
-/** Validate a curated report payload against the `emit_autorag_results` contract. */
+/** Validate a curated report payload against the `autorag report` contract (explicit number -> source mapping). */
 export function validateReport(value: unknown): AutoRAGResultsDetails {
-	if (!Value.Check(emitResultsSchema, value)) {
+	if (!Value.Check(reportSchema, value)) {
 		const details = describeSchemaErrors(value);
 		throw new Error(
 			details.length > 0
-				? `Invalid report: expected the emit_autorag_results JSON schema (${details})`
-				: "Invalid report: expected the emit_autorag_results JSON schema",
+				? `Invalid report: expected the autorag report JSON schema (${details})`
+				: "Invalid report: expected the autorag report JSON schema",
 		);
 	}
-	const parsed = Value.Parse(emitResultsSchema, value);
+	const parsed = Value.Parse(reportSchema, value);
 	const resultNumbers = parsed.results.map((result) => result.number);
 	const mappingNumbers = parsed.mapping.map((entry) => entry.number);
 	const allNumbers = [...resultNumbers, ...mappingNumbers];
