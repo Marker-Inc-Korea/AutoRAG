@@ -49,7 +49,7 @@ describe("peer persona target tool", () => {
 			searchPaths: [FIXTURE_DIR],
 			workspacePath: workspace,
 			memoryPath: join(workspace, "memory.json"),
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		const tool = registeredTools(agent).find((candidate) => candidate.name === "recommend_peer_targets");
@@ -88,7 +88,7 @@ describe("peer persona target tool", () => {
 			workspacePath: workspace,
 			memoryPath: join(workspace, "memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 

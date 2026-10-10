@@ -38,7 +38,7 @@ describe("remote-session retrieval policy", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			memoryPath: join(temp, "memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		agent
@@ -67,7 +67,7 @@ describe("remote-session retrieval policy", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			memoryPath: join(temp, "memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		agent
@@ -97,7 +97,7 @@ describe("remote-session retrieval policy", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			memoryPath: join(temp, "memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		expect((agent as unknown as { searchTimeoutMs: number }).searchTimeoutMs).toBe(120_000);

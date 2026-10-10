@@ -50,7 +50,7 @@ describe("AutoRAGAgent model requests", () => {
 			searchPaths: [FIXTURE_DIR],
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 			webSearch: false,
 		});

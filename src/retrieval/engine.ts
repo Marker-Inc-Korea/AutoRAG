@@ -16,7 +16,6 @@ import { ParallelRetriever, ResultMerger } from "./merger.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
 import { DEFAULT_RERANK_TOP_N, type Reranker } from "./rerank.ts";
 import { derivedDatasourceIds, type RetrievalSelection, resolveSelectedMethods } from "./selection.ts";
-import { MINSYNC_SURFACE } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
 	RetrievalMethod,
@@ -43,14 +42,6 @@ export interface RetrievalEngineOptions {
 	readonly defaultTopK?: number;
 	/** Default deduplication flag. @default true */
 	readonly defaultDedup?: boolean;
-	/**
-	 * Optional predicate that returns `true` when the MinSync binary is missing.
-	 * When set, the engine checks every method named `"minsync"`: if the binary
-	 * is unavailable the method returns empty results without throwing, the engine
-	 * emits a `minsync-unavailable` diagnostic with full method-agnostic path
-	 * preservation — matching the existing {@link AutoRAGAgent} behavior.
-	 */
-	readonly isMinSyncBinaryMissing?: () => boolean;
 	/**
 	 * Configured datasource ids from the skill catalog, including datasources
 	 * that expose no retrieval methods. {@link retrieveSelected} uses this to
@@ -100,7 +91,6 @@ export class RetrievalEngine {
 	private readonly merger: ResultMerger;
 	private readonly defaultTopK: number;
 	private readonly defaultDedup: boolean;
-	private readonly isMinSyncBinaryMissing: (() => boolean) | undefined;
 	private readonly datasourceIdsProvider: (() => readonly string[]) | undefined;
 	private readonly reranker: Reranker | undefined;
 	private readonly rerankTopN: number;
@@ -111,7 +101,6 @@ export class RetrievalEngine {
 		this.merger = new ResultMerger();
 		this.defaultTopK = options.defaultTopK ?? DEFAULT_MERGED_EVIDENCE_CEILING;
 		this.defaultDedup = options.defaultDedup ?? true;
-		this.isMinSyncBinaryMissing = options.isMinSyncBinaryMissing;
 		this.datasourceIdsProvider = options.datasourceIds;
 		this.reranker = options.reranker;
 		this.rerankTopN = options.rerankTopN ?? DEFAULT_RERANK_TOP_N;
@@ -174,14 +163,9 @@ export class RetrievalEngine {
 			unsearched,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
-		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
 		const merged = this.merger.merge(filtered, { topK, dedup: this.defaultDedup });
-		const results = await this.applyRerank(query, merged, skipped.diagnostics, options);
-		return {
-			results,
-			diagnostics: skipped.diagnostics,
-			unsearched: skipped.unsearched,
-		};
+		const results = await this.applyRerank(query, merged, diagnostics, options);
+		return { results, diagnostics, unsearched };
 	}
 
 	/**
@@ -235,8 +219,7 @@ export class RetrievalEngine {
 			unsearched,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
-		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
-		return { byMethod: filtered, diagnostics: skipped.diagnostics, unsearched: skipped.unsearched };
+		return { byMethod: filtered, diagnostics, unsearched };
 	}
 
 	/**
@@ -267,63 +250,10 @@ export class RetrievalEngine {
 			unsearched,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
-		const skipped = this.appendMinSyncUnavailable(methods, filtered, diagnostics, unsearched);
 		return {
 			results: this.merger.merge(filtered, { topK, dedup: this.defaultDedup }),
-			diagnostics: skipped.diagnostics,
-			unsearched: skipped.unsearched,
-		};
-	}
-
-	/**
-	 * Post-check for MinSync binary-missing diagnostic.
-	 *
-	 * When a registered method named `"minsync"` fails to throw (the method returns
-	 * `[]` because the binary is missing), {@link ParallelRetriever} cannot record
-	 * a diagnostic. This method checks whether the minsync binary is unavailable
-	 * and emits a `minsync-unavailable` diagnostic when every minsync method's
-	 * result set is empty, exactly matching the existing {@link AutoRAGAgent}
-	 * behavior (see `agent.src/agent/agent.ts` `retrieveWithDiagnostics`). The
-	 * same check reports the MinSync surface as unsearched, so a caller reading
-	 * only the skip report still learns that local sources were not queried.
-	 */
-	private appendMinSyncUnavailable(
-		methods: readonly RetrievalMethod[],
-		filtered: Map<string, RetrievalResult[]>,
-		diagnostics: RetrievalDiagnostic[],
-		unsearched: RetrievalUnsearchedSurface[],
-	): { diagnostics: RetrievalDiagnostic[]; unsearched: RetrievalUnsearchedSurface[] } {
-		const unchanged = { diagnostics, unsearched };
-		if (this.isMinSyncBinaryMissing === undefined) return unchanged;
-		if (!this.isMinSyncBinaryMissing()) return unchanged;
-		if (diagnostics.some((d) => d.code === "minsync-unavailable")) return unchanged;
-
-		// Did any minsync method return empty results (binary missing, no throw)?
-		const emptyMinsync = methods
-			.map((m) => m.describe().name)
-			.filter((name) => {
-				if (name !== "minsync") return false;
-				const results = filtered.get(name);
-				return results === undefined || results.length === 0;
-			});
-		if (emptyMinsync.length === 0) return unchanged;
-
-		const reason = "the minsync binary could not be resolved; MinSync retrieval did not run";
-		const alreadyReported = unsearched.some((entry) => entry.surface === MINSYNC_SURFACE);
-		return {
-			diagnostics: [
-				...diagnostics,
-				{
-					code: "minsync-unavailable" as const,
-					severity: "warning" as const,
-					message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
-					source: "minsync" as const,
-					reason,
-				},
-			],
-			unsearched: alreadyReported
-				? unsearched
-				: [...unsearched, { surface: MINSYNC_SURFACE, methods: Array.from(new Set(emptyMinsync)).sort(), reason }],
+			diagnostics,
+			unsearched,
 		};
 	}
 }

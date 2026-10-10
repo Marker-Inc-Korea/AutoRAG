@@ -139,13 +139,14 @@ describe("single-model CLI config", () => {
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
 				model: { provider: "openai", id: "gpt-6-luna" },
-				minSync: { enabled: false },
+				minSync: { autoInstall: false },
 			},
 			{ cwd: root },
 		);
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
 		expect(written.model).toEqual({ provider: "openai", id: "gpt-6-luna" });
-		expect(written.minSync?.enabled).toBe(false);
+		expect(written.minSync?.enabled).toBe(true);
+		expect(written.minSync?.autoInstall).toBe(false);
 		expect(JSON.stringify(written)).not.toMatch(/explorer|orchestrator/i);
 	});
 
@@ -154,13 +155,13 @@ describe("single-model CLI config", () => {
 			searchPaths: ["."],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			minSync: { enabled: false },
+			minSync: { autoInstall: false },
 			jikji: {},
 			parserOptions: { pdf: true },
 			dupey: { enabled: false },
 			excludeExactDuplicates: false,
 		});
-		expect(opts.minSync).toBe(false);
+		expect(opts.minSync).toEqual({ autoInstall: false });
 		expect(opts.jikji).toEqual({});
 		expect(opts.parserOptions).toEqual({ pdf: true });
 		expect(opts.dupey).toBe(false);

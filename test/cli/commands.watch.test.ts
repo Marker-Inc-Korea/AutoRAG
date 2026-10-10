@@ -43,7 +43,7 @@ function writeConfig(): void {
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		bm25: { enabled: true },
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		everything: false,
 		fsearch: false,

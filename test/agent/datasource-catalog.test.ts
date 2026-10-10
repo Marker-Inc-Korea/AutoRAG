@@ -94,7 +94,7 @@ function makeAgent(skills: readonly DatasourceSkill[]): AutoRAGAgent {
 		searchPaths: ["test/fixtures/sample-project"],
 		workspacePath: tmpDir,
 		jikji: false,
-		minSync: false,
+		minSync: { autoInstall: false },
 		datasourceSkills: skills,
 	});
 }

@@ -192,7 +192,7 @@ describe("AutoRAGAgent remote-session memory isolation", () => {
 			remoteSession: true,
 			memoryEmbedder: false,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			datasourceSkills: [remoteSkill],
 		});
 		const memory = internals(agent).memory;
@@ -254,7 +254,7 @@ describe("AutoRAGAgent remote-session memory isolation", () => {
 			remoteSession: true,
 			memoryEmbedder: false,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 		});
 		internals(agent).lastQuery = "remote query";
 
@@ -294,7 +294,7 @@ describe("AutoRAGAgent remote-session memory isolation", () => {
 			memoryPath,
 			memoryEmbedder: false as const,
 			jikji: false as const,
-			minSync: false as const,
+			minSync: { autoInstall: false },
 		};
 
 		const local = new AutoRAGAgent(options);

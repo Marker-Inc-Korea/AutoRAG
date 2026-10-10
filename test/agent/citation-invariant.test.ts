@@ -59,7 +59,7 @@ function agentOptions(model: Model<string>): AutoRAGAgentOptions {
 		searchPaths: [docs],
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 	};
 }
@@ -132,7 +132,7 @@ describe("answer citations resolve to results (#1788)", () => {
 				searchPaths: [docs],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				minSync: false,
+				minSync: { autoInstall: false },
 				jikji: false,
 				fsearch: false,
 			}),

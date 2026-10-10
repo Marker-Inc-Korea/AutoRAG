@@ -21,7 +21,6 @@ export interface SearchMinSyncDocumentsDetails {
 	readonly method: "semantic_search_local_docs";
 	readonly resultCount: number;
 	readonly sources: readonly string[];
-	readonly available: boolean;
 	/** Top candidates in traceable shape (additive; used for the run's retrieval trace). */
 	readonly results?: readonly SearchDocumentRetrievalTraceResult[];
 }
@@ -29,12 +28,12 @@ export interface SearchMinSyncDocumentsDetails {
 /**
  * LLM-facing wrapper around the {@link MinSyncVectorMethod} vector
  * retrieval. The model can only supply `query`, `topK`, and an opaque `scope`.
- * When the method is missing, the binary is missing, or retrieval errors, the
- * tool returns a path-free unavailable message with `available: false` and a
- * zero result count — never a real binary or workspace path.
+ * MinSync is required, so a missing binary or a failed query is not turned
+ * into an "unavailable" result: the error propagates with its own message and
+ * the harness reports it as a failed tool call.
  */
 export function createSearchMinSyncDocumentsTool(
-	getMethod: () => MinSyncVectorMethod | undefined,
+	getMethod: () => MinSyncVectorMethod,
 	resolveScope: (scope: string | undefined) => string | undefined = (scope) => scope,
 	ledger: EvidenceLedger = new EvidenceLedger(),
 ): AgentTool<typeof searchMinSyncSchema, SearchMinSyncDocumentsDetails> {
@@ -45,53 +44,27 @@ export function createSearchMinSyncDocumentsTool(
 			"Search parsed document mirrors with MinSync semantic vector retrieval. Use for conceptual and meaning-based search.",
 		parameters: searchMinSyncSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchMinSyncDocumentsDetails>> {
-			const method = getMethod();
-			if (!method) {
-				return unavailableResult("MinSync semantic search is not configured for this AutoRAG agent");
-			}
-			if (method.isBinaryMissing()) {
-				return unavailableResult("MinSync semantic search is unavailable; the configured binary is missing.");
-			}
 			if (params.query.trim().length === 0) {
 				return {
 					content: [{ type: "text", text: "MinSync query was empty; no documents searched." }],
-					details: { method: "semantic_search_local_docs", resultCount: 0, sources: [], available: true },
+					details: { method: "semantic_search_local_docs", resultCount: 0, sources: [] },
 				};
 			}
 			const scope = resolveScope(params.scope);
-			try {
-				const results = await method.retrieve(params.query, {
-					topK: params.topK,
-					scope,
-				});
-				const evidenceIds = results.map((result) =>
-					ledger.registerResult(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, result),
-				);
-				return {
-					content: [{ type: "text", text: formatResults(results, evidenceIds) }],
-					details: {
-						method: "semantic_search_local_docs",
-						resultCount: results.length,
-						sources: [...new Set(results.map((result) => result.source))],
-						available: true,
-						results: toRetrievalTraceResults(results),
-					},
-				};
-			} catch {
-				return unavailableResult("MinSync semantic search is unavailable; the query could not be completed.");
-			}
-		},
-	};
-}
-
-function unavailableResult(message: string): AgentToolResult<SearchMinSyncDocumentsDetails> {
-	return {
-		content: [{ type: "text", text: message }],
-		details: {
-			method: "semantic_search_local_docs",
-			resultCount: 0,
-			sources: [],
-			available: false,
+			const results = await getMethod().retrieve(params.query, {
+				topK: params.topK,
+				scope,
+			});
+			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, result));
+			return {
+				content: [{ type: "text", text: formatResults(results, evidenceIds) }],
+				details: {
+					method: "semantic_search_local_docs",
+					resultCount: results.length,
+					sources: [...new Set(results.map((result) => result.source))],
+					results: toRetrievalTraceResults(results),
+				},
+			};
 		},
 	};
 }

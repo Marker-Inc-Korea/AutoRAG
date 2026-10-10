@@ -70,7 +70,7 @@ function agentFor(model: Model<string>): AutoRAGAgent {
 		searchPaths: [docs],
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		searchTimeoutMs: 1_500,
 	});

@@ -16,7 +16,7 @@ function writeConfig(root: string, configPath: string, model = false): void {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			...(model ? { model: { provider: "invalid-provider", id: "invalid-model" } } : {}),
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 			everything: false,
 			fsearch: false,
@@ -143,7 +143,7 @@ describe("autorag lite lifecycle dispatch", () => {
 				],
 				diagnostics: [
 					{
-						code: "minsync-unavailable",
+						code: "retrieval-method-failed",
 						severity: "warning",
 						message: 'Retrieval method "minsync" failed and was skipped: Error: another sync is in progress',
 						source: "minsync",
@@ -173,7 +173,7 @@ describe("autorag lite lifecycle dispatch", () => {
 			]);
 			expect(envelope.diagnostics).toContainEqual(
 				expect.objectContaining({
-					code: "minsync-unavailable",
+					code: "retrieval-method-failed",
 					reason: "Error: another sync is in progress (/Users/me/corpus/.autorag/minsync)",
 				}),
 			);

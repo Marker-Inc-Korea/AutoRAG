@@ -139,7 +139,7 @@ function agentFor(m: AutoRAGAgentOptions["model"]) {
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		jikji: false,
-		minSync: false,
+		minSync: { autoInstall: false },
 		datasourceSkills: [skill()],
 	});
 }
@@ -226,7 +226,7 @@ describe("evidence refs through the real agent loop", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			datasourceSkills: [{ ...skill(), retrievalMethods: () => [method] }],
 		});
 

@@ -226,9 +226,11 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite index reset -
 Inspect MCP `isError`, `errorCode`, `diagnostics`, and `unsearched` before
 trusting results. `ok: true` with skipped surfaces is partial coverage, not
 proof that the whole corpus was searched. Preserve the underlying error text
-when reporting unavailable components such as `minsync-unavailable` or
-`retrieval-method-failed`. Repair the component rather than silently accepting
-degraded search.
+when reporting unavailable components such as `retrieval-method-failed`.
+MinSync is required: when its binary is missing the call fails with an
+`MinSync is required ...` error rather than returning partial results, so
+install it (`cargo install minsync`) instead of working around it. Repair the
+component rather than silently accepting degraded search.
 
 ## Normal MCP workflow and curation lifecycle
 

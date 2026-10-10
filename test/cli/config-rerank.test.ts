@@ -25,7 +25,7 @@ function baseConfig(rerank?: CliConfig["rerank"]): CliConfig {
 		searchPaths: ["."],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		minSync: { enabled: false },
+		minSync: { autoInstall: false },
 		...(rerank === undefined ? {} : { rerank }),
 	};
 }

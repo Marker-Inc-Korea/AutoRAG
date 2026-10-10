@@ -112,7 +112,7 @@ Search-tool calls earn a weak positive `followup` memory signal only when they
 complete without a tool error and return nonempty evidence. Empty, unavailable,
 failed, or aborted searches earn no signal and no negative penalty. Partial
 multi-source searches retain their results and diagnostics but earn no aggregate
-credit: `retrieval-method-failed`, `minsync-unavailable`, `jikji-find-failed`,
+credit: `retrieval-method-failed`, `jikji-find-failed`,
 and `jikji-unavailable` diagnostics indicate failure even at warning severity.
 Error-severity diagnostics also withhold credit; other informational or warning
 diagnostics do not. There is no reliable per-method attribution for crediting

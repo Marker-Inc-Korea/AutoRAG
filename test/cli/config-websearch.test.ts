@@ -19,7 +19,7 @@ function baseConfig(webSearch?: CliConfig["webSearch"]): CliConfig {
 		searchPaths: ["."],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		minSync: { enabled: false },
+		minSync: { autoInstall: false },
 		...(webSearch === undefined ? {} : { webSearch }),
 	};
 }

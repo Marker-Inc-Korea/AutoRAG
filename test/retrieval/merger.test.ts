@@ -235,7 +235,7 @@ describe("ParallelRetriever", () => {
 		expect(diagnostics.some((d) => d.source === "good")).toBe(false);
 	});
 
-	it("retrieveWithDiagnostics maps a failing minsync method to minsync-unavailable", async () => {
+	it("retrieveWithDiagnostics reports an ordinary minsync failure as retrieval-method-failed", async () => {
 		const retriever = new ParallelRetriever();
 		const minsync: RetrievalMethod = {
 			describe: () => ({
@@ -248,7 +248,7 @@ describe("ParallelRetriever", () => {
 			retrieve: vi.fn().mockRejectedValue(new Error("spawn /opt/minsync ENOENT")),
 		};
 		const { diagnostics } = await retriever.retrieveWithDiagnostics([minsync], "test", {});
-		expect(diagnostics[0]?.code).toBe("minsync-unavailable");
+		expect(diagnostics[0]?.code).toBe("retrieval-method-failed");
 		expect(diagnostics[0]?.message).toContain("spawn /opt/minsync ENOENT");
 	});
 

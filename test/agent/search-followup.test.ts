@@ -99,7 +99,7 @@ function setup(
 		searchPaths,
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		everything: false,
 		webSearch: false,
@@ -139,7 +139,6 @@ function minSyncTool(results: RetrievalResult[], failure = false) {
 	return createSearchMinSyncDocumentsTool(
 		() =>
 			({
-				isBinaryMissing: () => false,
 				retrieve: async () => {
 					if (failure) throw new Error("local MinSync failed");
 					return results;
@@ -203,11 +202,7 @@ const cases: { name: string; tool: () => AgentTool; blank?: boolean; error?: boo
 	{ name: "partial datasource evidence", tool: () => datasourceTool([hit], [diagnostic]) },
 	{ name: "semantic evidence", tool: () => minSyncTool([hit]) },
 	{ name: "empty semantic search", tool: () => minSyncTool([]) },
-	{ name: "failed semantic search", tool: () => minSyncTool([], true) },
-	{
-		name: "unavailable semantic search",
-		tool: () => createSearchMinSyncDocumentsTool(() => undefined),
-	},
+	{ name: "failed semantic search", tool: () => minSyncTool([], true), error: true },
 	{
 		name: "legacy Jikji details without diagnostics",
 		tool: () => ({ ...metadataTool({ answerCount: 1, sources: [hit.source] }), name: "jikji_find" }),
@@ -263,8 +258,8 @@ cases.push(
 		tool: () => metadataTool({ resultCount: 1, diagnostics: [{ code: "other", severity: "error" }] }),
 	},
 	{
-		name: "positive count with unavailable MinSync warning",
-		tool: () => allTool([hit], [{ ...diagnostic, code: "minsync-unavailable" }]),
+		name: "positive count with a failed retrieval method",
+		tool: () => allTool([hit], [{ ...diagnostic, code: "retrieval-method-failed" }]),
 	},
 	{
 		name: "legacy source with failed method",

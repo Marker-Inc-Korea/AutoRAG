@@ -325,7 +325,7 @@ function agentWith(options: Partial<AutoRAGAgentOptions> & Pick<AutoRAGAgentOpti
 		searchPaths: [docs],
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		memoryEmbedder: false,
 		...options,
