@@ -105,6 +105,20 @@ describe("semantic_search_local_docs tool", () => {
 		expect(text).not.toContain(tmpDir);
 	});
 
+	it("renders the full chunk content without a fixed character cut", async () => {
+		const longContent = `semantic ${"detail ".repeat(120)}`.trim();
+		expect(longContent.length).toBeGreaterThan(500);
+		const tool = createSearchMinSyncDocumentsTool(() =>
+			stubMethod([
+				{ id: "long", source: "/docs/long", content: longContent, score: 0.9, metadata: { method: "minsync" } },
+			]),
+		);
+
+		const out = await tool.execute("call-long", { query: "concept", topK: 1 });
+
+		expect(textOf(out)).toContain(longContent);
+	});
+
 	it("normalizes model-supplied physical scopes before MinSync retrieval", async () => {
 		const seenScopes: Array<string | undefined> = [];
 		const method: StubMethod = {

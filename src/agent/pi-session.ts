@@ -19,6 +19,7 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
 export interface AutoRAGPiSessionOptions {
@@ -131,25 +132,33 @@ async function configureModelRuntime(
 function createAutoRAGExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
+	initialModel: Model<Api> | undefined,
 ): ExtensionFactory {
 	return (pi) => {
+		let model = initialModel;
+		pi.on("model_select", (event) => {
+			model = event.model;
+		});
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		const transform = createContextTokenGuardedTransform(() => model, contextTransform);
+		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
 	};
 }
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 	onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>,
+	initialModel: Model<Api> | undefined,
 	updateNotice: (() => Promise<string | undefined>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
+		let model = initialModel;
+		pi.on("model_select", (event) => {
+			model = event.model;
+		});
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		const transform = createContextTokenGuardedTransform(() => model, contextTransform);
+		pi.on("context", async (event) => ({ messages: await transform(event.messages) }));
 		if (updateNotice !== undefined) {
 			pi.on("session_start", () => {
 				void updateNotice()
@@ -200,7 +209,7 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		agentDir,
 		settingsManager,
 		extensionFactories: [
-			createAutoRAGExtension(options.getSystemPrompt, options.contextTransform),
+			createAutoRAGExtension(options.getSystemPrompt, options.contextTransform, options.model),
 			...(options.extensionFactories ?? []),
 		],
 		systemPromptOverride: () => options.getSystemPrompt(),
@@ -274,6 +283,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 						options.getSystemPrompt,
 						options.contextTransform,
 						options.onQuery,
+						options.model,
 						options.updateNotice,
 					),
 					...(options.extensionFactories ?? []),

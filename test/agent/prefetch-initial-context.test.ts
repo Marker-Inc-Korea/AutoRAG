@@ -263,6 +263,33 @@ console.log(JSON.stringify({ prepared: true }));
 		expect(context.match(/shared boilerplate header/gu)).toHaveLength(1);
 	});
 
+	it("keeps a full-length chunk instead of truncating it to a fixed character budget", async () => {
+		const agent = new AutoRAGAgent({
+			model: emitModel(),
+			searchPaths: [docs],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: false,
+			jikji: false,
+			everything: false,
+		});
+		const longContent = `Refund clause ${"detail ".repeat(120)}`.trim();
+		expect(longContent.length).toBeGreaterThan(400);
+		const internals = agent as unknown as {
+			minSyncMethod: unknown;
+			prefetchInitialRetrievalContext: (query: string, options: Record<string, unknown>) => Promise<string>;
+		};
+		internals.minSyncMethod = {
+			isReady: () => true,
+			isBinaryMissing: () => false,
+			retrieve: async () => [{ id: "1", source: "/docs/long.md", content: longContent, score: 0.9, metadata: {} }],
+		};
+
+		const context = await internals.prefetchInitialRetrievalContext("refund", ["refund"], {});
+
+		expect(context).toContain(longContent);
+	});
+
 	it("still emits structured results when Jikji prefetch throws", async () => {
 		const agent = new AutoRAGAgent({
 			model: emitModel(),
