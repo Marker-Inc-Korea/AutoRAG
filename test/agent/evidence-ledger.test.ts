@@ -152,17 +152,39 @@ describe("EvidenceLedger", () => {
 		expect((ledger.resolve([id], resolveOptions)[0]?.content ?? "").length).toBeLessThanOrEqual(2_000);
 	});
 
+	it("keeps same-source chunks with identical stored prefixes distinct", () => {
+		const ledger = new EvidenceLedger();
+		const shared = "a".repeat(2_000);
+		const first = ledger.registerResult("tool", result("/a.txt", `${shared} tail one`, { chunkIndex: 0 }));
+		const second = ledger.registerResult("tool", result("/a.txt", `${shared} tail two`, { chunkIndex: 1 }));
+
+		expect(first).not.toBe(second);
+		expect(ledger.resolve([first], resolveOptions)[0]?.chunkIndex).toBe(0);
+		expect(ledger.resolve([second], resolveOptions)[0]?.chunkIndex).toBe(1);
+	});
+
 	it("carries chunk-level metadata the backend provided", () => {
 		const ledger = new EvidenceLedger();
 		const id = ledger.registerResult(
 			"tool",
-			result("/a.pdf", "x", { chunkIndex: 7, lineNumber: 12, parserType: "kordoc", documentType: "pdf" }),
+			result("/a.pdf", "x", {
+				chunkIndex: 7,
+				lineNumber: 12,
+				parserType: "kordoc",
+				documentType: "pdf",
+				documentArea: "body",
+				evidenceType: "quote",
+				evidenceLocation: "page 3",
+			}),
 		);
 		expect(ledger.resolve([id], resolveOptions)[0]).toMatchObject({
 			chunkIndex: 7,
 			lineNumber: 12,
 			parserType: "kordoc",
 			documentType: "pdf",
+			documentArea: "body",
+			evidenceType: "quote",
+			evidenceLocation: "page 3",
 		});
 	});
 });
