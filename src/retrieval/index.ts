@@ -40,7 +40,6 @@ export {
 } from "./skip.ts";
 export type {
 	CuratedResult,
-	NumberedResult,
 	RetrievalDiagnostic,
 	RetrievalDiagnosticCode,
 	RetrievalMethod,

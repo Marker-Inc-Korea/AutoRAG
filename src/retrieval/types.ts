@@ -66,13 +66,6 @@ export interface RetrievalWithDiagnostics {
 	unsearched: RetrievalUnsearchedSurface[];
 }
 
-export interface NumberedResult {
-	index: number;
-	source: string;
-	content: string;
-	method: string;
-}
-
 export interface EvidenceReference {
 	method: string;
 	source: string;
