@@ -1,4 +1,4 @@
-import type { EvidenceChunkRecord, MemorySchemaV4 } from "../../memory/memory.ts";
+import type { EvidenceChunkRecord, MemorySchema } from "../../memory/memory.ts";
 import { RetrievalMemory } from "../../memory/memory.ts";
 import { resolveConfig } from "../config.ts";
 import { renderError } from "../output.ts";
@@ -22,7 +22,7 @@ function parseResultNumber(value: string | boolean | undefined): number | undefi
 	return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
-export function evidenceFor(schema: MemorySchemaV4, sessionId: string, resultNumber?: number) {
+export function evidenceFor(schema: MemorySchema, sessionId: string, resultNumber?: number) {
 	const results = schema.curatedResults
 		.filter((result) => result.sessionId === sessionId)
 		.filter((result) => resultNumber === undefined || result.number === resultNumber)

@@ -7,7 +7,6 @@ import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 export interface SystemPromptConfig {
 	toolNames: string[];
 	modelId?: string;
-	memorySignalCount?: number;
 	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
@@ -58,7 +57,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"jev",
 			"ask the Jev judgment model for calibrated probabilities — classification, triage, comparison, ranking",
 		),
-		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
+		toolLine(config, "check_memory", "inspect evidence earlier searches found for similar questions"),
 		toolLine(
 			config,
 			"recommend_peer_targets",
@@ -219,7 +218,7 @@ Datasource connections come from trusted server config, and every configured con
 ${datasourceSkills}
 ## Memory & Strategy
 
-${config.memorySignalCount ?? 0} retrieval feedback signal(s) are available. Treat memory as advisory and never let it override current evidence.
+Retrieval memory holds evidence that earlier searches found for similar questions and everything found earlier in this conversation. Treat memory as background reference only: never let it override current evidence, and search normally when it does not cover the question.
 
 ${jikji}
 ${everything}

@@ -9,6 +9,11 @@
  */
 
 import { join } from "node:path";
+import {
+	createGatewayEmbedder,
+	type Embedder,
+	type GatewayEmbedderOptions,
+} from "../../../embedding-runtime/gateway-embedder.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { boundDiagnosticText, sanitizeIdSegment } from "../../connector.ts";
 import {
@@ -18,13 +23,7 @@ import {
 } from "../../connector-skill.ts";
 import type { DatasourceIndexResult } from "../../types.ts";
 import { GitHubGistConnector, type GitHubGistConnectorOptions } from "./connector.ts";
-import {
-	createGatewayGistEmbedder,
-	type GatewayGistEmbedderOptions,
-	type GistEmbedder,
-	GistSemanticIndex,
-	GitHubGistSemanticMethod,
-} from "./semantic.ts";
+import { GistSemanticIndex, GitHubGistSemanticMethod } from "./semantic.ts";
 
 export const GITHUB_GIST_SKILL_DEFINITION: ConnectorSkillDefinition = {
 	skillName: "github-gist",
@@ -49,8 +48,8 @@ export interface GitHubGistSemanticOptions {
 	/** Set false to run lexical-only. Default true. */
 	readonly enabled?: boolean;
 	/** Injected embedder (tests); defaults to the loopback gateway embedder. */
-	readonly embedder?: GistEmbedder;
-	readonly embedderOptions?: GatewayGistEmbedderOptions;
+	readonly embedder?: Embedder;
+	readonly embedderOptions?: GatewayEmbedderOptions;
 	/** Vector sidecar path override; defaults under `.autorag/datasources/…`. */
 	readonly statePath?: string;
 }
@@ -66,7 +65,7 @@ const DEFAULT_INSTANCE_ID = "default";
 
 export class GitHubGistSkill extends ConnectorDatasourceSkill {
 	private readonly semanticIndex: GistSemanticIndex | undefined;
-	private readonly semanticEmbedder: GistEmbedder | undefined;
+	private readonly semanticEmbedder: Embedder | undefined;
 	private readonly semanticMethod: GitHubGistSemanticMethod | undefined;
 
 	constructor(options: GitHubGistSkillOptions = {}) {
@@ -100,7 +99,7 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 								"vectors.json",
 							)),
 			});
-			this.semanticEmbedder = semantic?.embedder ?? createGatewayGistEmbedder(semantic?.embedderOptions ?? {});
+			this.semanticEmbedder = semantic?.embedder ?? createGatewayEmbedder(semantic?.embedderOptions ?? {});
 			this.semanticMethod = new GitHubGistSemanticMethod({
 				skillName: this.describe().name,
 				skillType: GITHUB_GIST_SKILL_DEFINITION.skillType,

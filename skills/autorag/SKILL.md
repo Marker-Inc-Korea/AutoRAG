@@ -66,17 +66,17 @@ lexical-only search.
 
 ## Search
 
-Prefer `--json --debug` when another agent will consume the result or record
-feedback. `--json` alone omits `sessionId`. `--debug` adds session/diagnostics
-fields and does not print filesystem paths.
+Prefer `--json --debug` when another agent will consume the result.
+`--json` alone omits `sessionId`. `--debug` adds session/diagnostics fields and
+does not print filesystem paths.
 
 ```bash
 autorag search "what were the key findings in the Q3 report" --top-k 5 --json --debug
 ```
 
 `--json --debug` includes `answer`, numbered `results` (`number`, `title`,
-`summary`, optional `source`), and `sessionId`. Use that `sessionId` for
-feedback. `--json` without `--debug` is only `answer` plus `results`. Every
+`summary`, optional `source`), and `sessionId`. `--json` without `--debug` is
+only `answer` plus `results`. Every
 bracketed `[n]` citation in `answer` resolves to a `results[].number` of the
 same response; an unmatched citation is removed and reported as a
 `citation-without-result` diagnostic.
@@ -126,15 +126,6 @@ verification phase. `--debug` diagnostics show the decision: `query-routed`
 with probabilities), `follow-up-skipped` (fast answer final), or
 `query-route-fallback` (Jev unavailable, single local search).
 
-Record feedback so retrieval memory can learn. Results marked not useful are
-also dropped from the past-question hints Jev reads when picking datasources.
-Numbers refer to the returned knowledge units. Supply at least one feedback
-list:
-
-```bash
-autorag feedback <sessionId> --useful 1,3 --not-useful 2 --json
-```
-
 ## Maintenance
 
 ```bash
@@ -174,9 +165,8 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 - Never expose provider credentials or authentication payloads.
 - Never invent provider identities or model ids.
 - A Pi-usable subscription is valid; a subscription Pi cannot invoke is not.
-- Preserve real source mapping and numbered feedback identifiers.
-- Prefer `--json --debug` when another agent consumes search output or will
-  call `autorag feedback`.
+- Preserve real source mapping.
+- Prefer `--json --debug` when another agent consumes search output.
 - Do not invent CLI commands. `autorag --help` is the command list of record,
   including the shipped `setup`, `gateway`, `models`, `serve`, `p2p`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and

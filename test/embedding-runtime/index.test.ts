@@ -139,4 +139,60 @@ describe("embedding runtime public API", () => {
 		expect(started).toHaveLength(1);
 		expect(second.baseUrl).toBe(first.baseUrl);
 	});
+
+	it("keeps the live gateway for a later ensureRuntime call of the same profile", async () => {
+		const { supervisor, cache } = deps();
+		const started: string[] = [];
+		const closed: string[] = [];
+		const runtime = createEmbeddingRuntime({
+			supervisor,
+			cache,
+			platform: "darwin-arm64-metal",
+			gatewayFactory: async () => {
+				const url = `http://127.0.0.1:${43100 + started.length}`;
+				started.push(url);
+				return { url, close: async () => void closed.push(url) };
+			},
+		});
+
+		// MinSync persists the first gateway URL into its config, and other
+		// embedders cache it; a later consumer must not close it under them.
+		const first = await runtime.ensureRuntime();
+		const second = await runtime.ensureRuntime();
+
+		expect(second.baseUrl).toBe(first.baseUrl);
+		expect(started).toHaveLength(1);
+		expect(closed).toEqual([]);
+	});
+
+	it("replaces the gateway when the runtime came back on a different port", async () => {
+		const { supervisor, cache } = deps();
+		let port = 43123;
+		vi.mocked(supervisor.ensureRunning).mockImplementation(async () => ({
+			state: "ready",
+			port,
+			backend: "auto",
+			model: "model.gguf",
+		}));
+		const upstreams: string[] = [];
+		const closed: string[] = [];
+		const runtime = createEmbeddingRuntime({
+			supervisor,
+			cache,
+			platform: "darwin-arm64-metal",
+			gatewayFactory: async ({ upstreamUrl }) => {
+				upstreams.push(upstreamUrl);
+				const url = `http://127.0.0.1:${43200 + upstreams.length}`;
+				return { url, close: async () => void closed.push(url) };
+			},
+		});
+
+		const first = await runtime.ensureRuntime();
+		port = 43124;
+		const second = await runtime.ensureRuntime();
+
+		expect(upstreams).toEqual(["http://127.0.0.1:43123", "http://127.0.0.1:43124"]);
+		expect(closed).toEqual([first.baseUrl]);
+		expect(second.baseUrl).not.toBe(first.baseUrl);
+	});
 });

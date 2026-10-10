@@ -29,7 +29,6 @@ function response(
 			source: result.source,
 			evidence: [{ excerpt: result.excerpt ?? "" }],
 			confidence: 0.9,
-			feedbackId: `session-1:${result.number}`,
 		})),
 	};
 }
@@ -256,7 +255,7 @@ describe("buildPeerResponse", () => {
 		const result = buildPeerResponse({
 			response: {
 				answer: "",
-				results: [{ number: 1, title: "bad", summary: "bad", evidence: [], confidence: 0, feedbackId: "bad" }],
+				results: [{ number: 1, title: "bad", summary: "bad", evidence: [], confidence: 0 }],
 				searched: 1,
 				query: "q",
 				sessionId: "s",

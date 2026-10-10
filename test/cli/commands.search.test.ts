@@ -51,7 +51,6 @@ const response: SearchDocumentsResponse = {
 			summary: "answer",
 			evidence: [{ excerpt: "answer" }],
 			confidence: 1,
-			feedbackId: "session:1",
 		},
 	],
 	searched: 1,

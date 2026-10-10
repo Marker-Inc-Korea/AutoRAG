@@ -11,10 +11,11 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
-import { MockBackend } from "jev-use";
+import { type JevBackend, MockBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
+import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
 import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
@@ -23,6 +24,7 @@ import {
 	type QueryRoute,
 } from "../../src/agent/query-routing.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
+import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 
 const SKILL_MARKER = "SETUP-SKILL-FULL-TEXT-MARKER";
@@ -309,6 +311,56 @@ describe("Jev config branch: the agent configures itself", () => {
 
 		expect(seen.prompts[0]).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
 		expect(response.answer).toBe("- Changed the model.");
+	});
+
+	it("never judges or stores a configuration report as retrieval evidence", async () => {
+		const routing = jevRouting("config");
+		const evidenceQuestionIds: string[] = [];
+		// Answers every evidence-support question with p=0.9, so anything judged would be stored.
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				const evidence = request.questions.filter((question) =>
+					question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX),
+				);
+				if (evidence.length === 0) return routing.judge(request);
+				evidenceQuestionIds.push(...evidence.map((question) => question.id));
+				return {
+					...(await routing.judge({ ...request, questions: [] })),
+					answers: evidence.map(() => ({ answer: 0.9 })),
+				};
+			},
+		};
+		const setting = '"id": "new/model"';
+		const model = fauxModel(
+			fauxAssistantMessage(
+				[
+					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+						answer: "The default model is new/model [1].",
+						results: [
+							{
+								number: 1,
+								title: "Config",
+								summary: "model.id",
+								evidence: [{ excerpt: setting }],
+								confidence: 0.9,
+							},
+						],
+						mapping: [{ number: 1, source: configPath, method: "read", content: setting }],
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+		);
+		const agent = agentWith({ model, jev: { backend }, selfConfig: { configPath, skillPath } });
+
+		const response = await agent.searchDocuments("what is the default model now?");
+
+		expect(evidenceQuestionIds).toEqual([]);
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.source === "memory")).toBe(false);
+		const memory = new RetrievalMemory({ storagePath: join(root, "memory.json") });
+		memory.load();
+		expect(memory.getJudgedEvidence()).toEqual([]);
 	});
 
 	it("falls back to local search with a diagnostic when the setup skill cannot be loaded", async () => {

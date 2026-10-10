@@ -254,7 +254,6 @@ describe("AutoRAG Lite MCP server", () => {
 				"autorag.refresh",
 				"autorag.report",
 				"autorag.evidence",
-				"autorag.feedback",
 			].sort(),
 		);
 		await client.close();
@@ -282,7 +281,6 @@ describe("AutoRAG Lite MCP server", () => {
 		const names = tools.map((tool) => tool.name);
 		expect(names).not.toContain("autorag.refresh");
 		expect(names).not.toContain("autorag.report");
-		expect(names).not.toContain("autorag.feedback");
 		expect(names).toContain("autorag.search");
 		expect(names).toContain("autorag.evidence");
 		expect(names).toContain("autorag.search.files");
