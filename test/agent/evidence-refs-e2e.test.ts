@@ -182,12 +182,61 @@ describe("evidence refs through the real agent loop", () => {
 	});
 
 	it("forgets a previous run's ids, so a stale id cannot resolve in the next run", async () => {
-		const agent = agentFor(model(search(), emit(["e1"]), emit(["e1"]), search(), emit(["e1"])));
+		const agent = agentFor(model(search(), emit(["e1"]), emit(["e1"]), search(), emit(["e2"])));
 
 		await agent.searchDocuments("first run");
-		// Second run: the model cites e1 before any tool ran this run -> rejected, then it searches and re-cites.
+		// Second run: the model cites e1 before any tool ran this run -> rejected, then it searches and cites the new id.
 		const second = await agent.searchDocuments("second run");
 
 		expect(agent.getResultRegistry(second.sessionId).get(1)?.source).toBe("/kakao/acct-1/chunks/1");
+	});
+
+	it("never lets a previous run's id alias a different chunk in the next run", async () => {
+		// A hosted (TUI) conversation keeps run 1's tool output in context. If ids
+		// restarted at e1, a model re-citing run 1's e1 in run 2 would silently
+		// resolve to whatever run 2 registered first.
+		let call = 0;
+		const second = "Run two returns a different chunk entirely.";
+		const method: RetrievalMethod = {
+			describe: () => ({
+				name: "kakao.keyword",
+				type: "bm25",
+				description: "test method",
+				status: "active",
+				capabilities: ["keyword"],
+				datasourceId: "kakao",
+				tags: ["kakao"],
+			}),
+			async retrieve(): Promise<RetrievalResult[]> {
+				call += 1;
+				return [
+					{
+						id: `kakao:chunk-${call}`,
+						source: `/kakao/acct-1/chunks/${call}`,
+						content: call === 1 ? CHUNK : second,
+						score: 1,
+						metadata: { method: "kakao-lexical", datasourceId: "kakao" },
+					},
+				];
+			},
+		};
+		const agent = new AutoRAGAgent({
+			model: model(search(), emit(["e1"]), search(), emit(["e1"], "stale citation"), emit(["e2"], "fresh citation")),
+			searchPaths: [join(root, "docs")],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			jikji: false,
+			minSync: false,
+			datasourceSkills: [{ ...skill(), retrievalMethods: () => [method] }],
+		});
+
+		await agent.searchDocuments("first run");
+		const run2 = await agent.searchDocuments("second run");
+
+		const entry = agent.getResultRegistry(run2.sessionId).get(1);
+		// The stale e1 was rejected (not silently mapped to run 2's chunk), so the model re-emitted with e2.
+		expect(run2.results[0]?.evidence[0]?.excerpt).toBe("fresh citation");
+		expect(entry?.source).toBe("/kakao/acct-1/chunks/2");
+		expect(entry?.content).toBe(second);
 	});
 });

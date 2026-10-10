@@ -552,7 +552,7 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/query-routing.ts` | Jev query router: local / web / direct branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool: the model supplies `answer` and per-result `refs` (evidence ids); the harness builds the number → source `mapping`. Also the `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
-| `src/agent/evidence-ledger.ts` | Per-run `EvidenceLedger`: every retrieval tool registers what it returned and prints an `[eN]` id; emit tools resolve cited ids back to the recorded source, method, and chunk |
+| `src/agent/evidence-ledger.ts` | Per-run `EvidenceLedger`: every retrieval tool (including `query_peer_agent`) registers what it returned and prints an `[eN]` id; emit tools resolve cited ids back to the recorded source, method, and chunk. Entries are cleared each run but ids are never reissued, so a stale id from an earlier run in the same conversation is rejected instead of aliasing new evidence |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
 | `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |

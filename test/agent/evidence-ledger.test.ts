@@ -121,13 +121,15 @@ describe("EvidenceLedger", () => {
 		expect(ledger.resolve([id, `[${id}]`, "/a.txt"], resolveOptions)).toHaveLength(1);
 	});
 
-	it("forgets everything on clear so ids restart for the next run", () => {
+	it("forgets everything on clear and never reissues an id, so a stale id cannot alias new evidence", () => {
 		const ledger = new EvidenceLedger();
 		ledger.registerResult("tool", result("/a.txt", "x"));
 		ledger.clear();
 
 		expect(() => ledger.resolve(["e1"], resolveOptions)).toThrow();
-		expect(ledger.registerResult("tool", result("/z.txt", "z"))).toBe("e1");
+		const next = ledger.registerResult("tool", result("/z.txt", "z"));
+		expect(next).toBe("e2");
+		expect(() => ledger.resolve(["e1"], resolveOptions)).toThrow();
 	});
 
 	it("keeps the stable evidence id independent of what the model writes", () => {

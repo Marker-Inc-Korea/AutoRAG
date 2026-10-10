@@ -915,6 +915,7 @@ export class AutoRAGAgent {
 								})),
 						autoStart: true,
 						sessionId: () => this.lastSessionId,
+						ledger: this.evidenceLedger,
 					});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this, this.evidenceLedger) : undefined;

@@ -86,6 +86,12 @@ export class EvidenceLedger {
 	private entries: LedgerEntry[] = [];
 	private readonly byKey = new Map<string, LedgerEntry>();
 	private readonly byId = new Map<string, LedgerEntry>();
+	/**
+	 * Ordinal of the last issued id. Survives {@link clear}: a hosted (TUI)
+	 * conversation keeps earlier runs' tool output in context, so restarting at
+	 * e1 would let a stale id silently resolve to a different chunk.
+	 */
+	private lastOrdinal = 0;
 
 	/** Record evidence and return its id. The same chunk always gets the same id. */
 	register(input: LedgerEvidenceInput): string {
@@ -99,7 +105,7 @@ export class EvidenceLedger {
 		const entry: LedgerEntry = {
 			...input,
 			content,
-			id: `e${this.entries.length + 1}`,
+			id: `e${++this.lastOrdinal}`,
 			retrieverMix: [input.method],
 		};
 		this.entries.push(entry);
@@ -176,7 +182,7 @@ export class EvidenceLedger {
 		return resolved;
 	}
 
-	/** Forget everything; ids restart at e1 for the next run. */
+	/** Forget every recorded entry. Ids are never reissued, so a previous run's id stays unresolvable. */
 	clear(): void {
 		this.entries = [];
 		this.byKey.clear();
