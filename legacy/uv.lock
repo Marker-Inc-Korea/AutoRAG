@@ -584,7 +584,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.51.3" },
     { name = "unstructured", extras = ["pdf"], marker = "python_full_version >= '3.11' and extra == 'parse'", specifier = ">=0.24.0" },
-    { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.11.0,<0.31.0" },
+    { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.11.0,<0.32.0" },
     { name = "voyageai", specifier = ">=0.3.2" },
     { name = "weaviate-client", specifier = ">=4.15.2" },
     { name = "xgrammar", marker = "extra == 'gpu'", specifier = ">=0.1.32,<0.3.0" },
@@ -626,7 +626,7 @@ wheels = [
 
 [[package]]
 name = "banks"
-version = "2.5.0"
+version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -635,10 +635,11 @@ dependencies = [
     { name = "jinja2" },
     { name = "platformdirs" },
     { name = "pydantic" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/f0/ce5b3105a8551fdcedb509ab5340066247b3cd1b28e79f9296be2d6d3bf4/banks-2.5.0.tar.gz", hash = "sha256:fdd4fd54b84dbe31cb51a1173c960697c73d683a52fb0b1d1957a557a8d6fcc8", size = 194585, upload-time = "2026-08-08T15:54:16.548Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/92/0449c32e718c10e4af40a3e040c830a77cdaeec6e9066622ee60e4c93e6e/banks-2.5.1.tar.gz", hash = "sha256:a7ca5c250b605ae90cfd6e4ca5dd6ce2ee377d5d59021b6feba44e345910026d", size = 196398, upload-time = "2026-09-10T10:15:34.569Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/9c/7dc7b15cecc03baa47d413b2599487b1fab270169b00feaa5e74978845f3/banks-2.5.0-py3-none-any.whl", hash = "sha256:8804c58f23e41a5aabe9ecfdf64235cdf1d5f3b16ad95ec2a54b6dc738dc1dfc", size = 38620, upload-time = "2026-08-08T15:54:15.505Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/6f/06c0824ee2611de47a0fc731fa57f6042d3f573025d9f504adfd65e50d51/banks-2.5.1-py3-none-any.whl", hash = "sha256:b7c91365626bab4b46197d24ce04cd69540730ed669a50a399f240318ba3dcfb", size = 39462, upload-time = "2026-09-10T10:15:35.606Z" },
 ]
 
 [[package]]
@@ -3805,7 +3806,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-sdk"
-version = "0.4.3"
+version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -3814,9 +3815,9 @@ dependencies = [
     { name = "orjson" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/0e/3c0347fd517390e807d9772d2037f9cc65c0227af27f07052ba9c8ebdfa2/langgraph_sdk-0.4.3.tar.gz", hash = "sha256:f101cc043ddd7400ceaef66d934c42fa2f0e7d4ea5029754d286260d39038251", size = 344145, upload-time = "2026-08-19T18:05:21.838Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/85/54edf4902c0378510f09a009f64e3d3f5644aeeb51d13cf67ec380a5245b/langgraph_sdk-0.4.6.tar.gz", hash = "sha256:ea5b1749d70987d741c9b9fe2b7e1c5f7da7e4d102f64e390333c1890c9bbd5b", size = 350632, upload-time = "2026-10-06T14:17:53.641Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/a0/f3bc44b46ef730588f66fdf9e9ddc54189db78482a9e914ae6a554a2b2e0/langgraph_sdk-0.4.3-py3-none-any.whl", hash = "sha256:1b7920b39b6dc439843d122a06f04a0cb8b65c02fd086ddf68e18596a230a0e7", size = 161794, upload-time = "2026-08-19T18:05:20.495Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/c7/69d13026db3577c157877dea47a9dc5fffd3dcde2d1ab8009fa8f7e5f6a6/langgraph_sdk-0.4.6-py3-none-any.whl", hash = "sha256:57122b02bda41d37a97a5e09eb018aa8c9b3dc85c433880073779bd9324b7eea", size = 162390, upload-time = "2026-10-06T14:17:52.134Z" },
 ]
 
 [[package]]
