@@ -939,7 +939,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(complete.response.answer).toBe("The Q3 budget was approved by Mina Park [1].");
 		expect(complete.response.results.map((result) => result.source)).toEqual([source]);
 		// The stored evidence is what the retrieval step recorded, not the fast
-		// answer's own text: feedback must attach to the real chunk.
+		// answer's own text: the registry must hold the real chunk.
 		const stored = agent.getResultRegistry(complete.response.sessionId).get(1);
 		expect(stored?.source).toBe(source);
 		expect(stored?.method).toBe("baseline");
