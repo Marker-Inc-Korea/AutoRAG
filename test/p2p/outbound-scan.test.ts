@@ -21,7 +21,6 @@ function makeModel(answer: string) {
 					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
 						answer,
 						results: [],
-						mapping: [],
 					}),
 				],
 				{ stopReason: "toolUse" },
@@ -130,10 +129,8 @@ describe("P2P outbound payload scan", () => {
 									summary: "Retrieved corpus text.",
 									evidence: [{ excerpt: "Retrieved corpus text." }],
 									confidence: 1,
+									refs: ["/docs/shared.md"],
 								},
-							],
-							mapping: [
-								{ number: 1, source: "/docs/shared.md", method: "fixture", content: "Retrieved corpus text." },
 							],
 						}),
 					],

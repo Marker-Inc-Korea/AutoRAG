@@ -740,35 +740,6 @@ describe("Jev query pipeline before the fast answer", () => {
 		}
 	});
 
-	it("does not search datasources on the web route", async () => {
-		registerSearchProvider({
-			id: "duckduckgo",
-			label: "Fake DuckDuckGo",
-			isAvailable: () => true,
-			search: async ({ query }) => ({
-				provider: "duckduckgo",
-				sources: [{ title: query, url: "https://example.com/x", snippet: `web evidence for ${query}` }],
-			}),
-		});
-		const source = "https://example.com/x";
-		const model = fauxModel(
-			fastAnswer("Fast web answer.", source),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified web answer.", source),
-		);
-		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
-		const agent = agentWith({
-			model,
-			jev: { backend: jevRouting("web", 0.1, 0.9, { slack: 0.9 }) },
-			webSearch: { order: ["duckduckgo"], exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "duckduckgo") },
-			datasourceSkills: [slack.skill],
-		});
-
-		await agent.searchDocuments("latest Node.js LTS?");
-
-		expect(slack.queries).toEqual([]);
-	});
-
 	it("searches no datasource and records why when the datasource check fails", async () => {
 		const failing: JevBackend = {
 			name: "partial",
@@ -846,63 +817,61 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(minSync.queries).toEqual(["where is the signed lease?"]);
 	});
 
-	it("routes an internet question to parallel web searches instead of local retrieval", async () => {
+	it("searches locally first for a current-events question and leaves web search to the verification phase", async () => {
 		const webQueries: string[] = [];
-		const web = { inFlight: 0, maxInFlight: 0 };
 		registerSearchProvider({
 			id: "duckduckgo",
 			label: "Fake DuckDuckGo",
 			isAvailable: () => true,
 			search: async ({ query }) => {
 				webQueries.push(query);
-				web.inFlight += 1;
-				web.maxInFlight = Math.max(web.maxInFlight, web.inFlight);
-				// Yield so sibling searches started in the same tick overlap this one.
-				await Promise.resolve();
-				await Promise.resolve();
-				web.inFlight -= 1;
 				return {
 					provider: "duckduckgo",
-					sources: [
-						{
-							title: `Result for ${query}`,
-							url: `https://example.com/${encodeURIComponent(query)}`,
-							snippet: `web evidence for ${query}`,
-						},
-					],
+					sources: [{ title: query, url: "https://example.com/x", snippet: query }],
 				};
 			},
 		});
 		const prompts: string[] = [];
-		const decompositionModel = fauxModel(
-			fauxAssistantMessage('{"queries": ["Node.js latest LTS", "Bun latest release"]}', { stopReason: "stop" }),
-		);
-		const source = "https://example.com/Node.js%20latest%20LTS";
+		const source = join(docs, "What-is-the-latest-Node-js-LTS-.txt");
 		const model = fauxModel(
-			capture(fastAnswer("Fast web answer.", source), prompts),
+			capture(fastAnswer("Fast local answer.", source), prompts),
 			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			capture(finalEmit("Verified web answer.", source), prompts),
+			capture(finalEmit("Verified answer.", source), prompts),
 		);
 		const agent = agentWith({
 			model,
-			jev: { backend: jevRouting("web", 0.9) },
-			queryDecomposition: { model: decompositionModel },
+			jev: { backend: jevRouting("local", 0.1) },
 			webSearch: { order: ["duckduckgo"], exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "duckduckgo") },
 		});
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
 
-		const response = await agent.searchDocuments("What are the latest Node.js LTS and Bun releases?");
+		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
 
-		expect(minSync.queries).toEqual([]);
-		expect([...webQueries].sort()).toEqual(["Bun latest release", "Node.js latest LTS"]);
-		expect(web.maxInFlight).toBe(2);
-		expect(prompts[0]).toContain("web evidence for Node.js latest LTS");
-		expect(prompts[0]).toContain("web evidence for Bun latest release");
-		// The verification phase must verify on the web, not in local files.
+		// Local retrieval ran for the baseline; no web search was prefetched.
+		expect(minSync.queries).toEqual(["What is the latest Node.js LTS?"]);
+		expect(webQueries).toEqual([]);
+		expect(prompts[0]).toContain("evidence for What is the latest Node.js LTS?");
+		// After the fast answer the agent is told it may search the web itself.
 		expect(prompts[1]).toContain("web_search");
-		expect(prompts[1]).toMatch(/internet/iu);
-		expect(response.answer).toBe("Verified web answer.");
+		expect(prompts[1]).toMatch(/outdated|missing|thin/iu);
+		expect(response.answer).toBe("Verified answer.");
+	});
+
+	it("does not mention web search in the verification phase when web tools are disabled", async () => {
+		const prompts: string[] = [];
+		const source = join(docs, "x.txt");
+		const model = fauxModel(
+			fastAnswer("Fast.", source),
+			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			capture(finalEmit("Verified.", source), prompts),
+		);
+		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1) }, webSearch: false });
+		injectMinSync(agent, recordingMinSync().method);
+
+		await agent.searchDocuments("What is the latest Node.js LTS?");
+
+		expect(prompts[0]).not.toContain("web_search");
 	});
 
 	it("keeps today's single-query local search when Jev is unreachable", async () => {

@@ -554,7 +554,7 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer; `sources` are derived from the cited evidence ids |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
-| `src/agent/query-routing.ts` | Jev query router: local / web / direct branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
+| `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool: the model supplies `answer` and per-result `refs` (evidence ids); the harness builds the number → source `mapping`. Also the `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
 | `src/agent/evidence-ledger.ts` | Per-run `EvidenceLedger`: every retrieval tool (including `query_peer_agent`) registers what it returned and prints an `[eN]` id; emit tools resolve cited ids back to the recorded source, method, and chunk. Entries are cleared each run but ids are never reissued, so a stale id from an earlier run in the same conversation is rejected instead of aliasing new evidence |
