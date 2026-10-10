@@ -99,21 +99,11 @@ async function retrieveObsidian(
 	const mapped: RetrievalResult[] = [];
 	for (const hit of result.hits) {
 		const source = datasourceSourcePath(OBSIDIAN_DATASOURCE_ID, instanceId, hit.chunkId);
-		if (!matchesScope(source, options.scope, options.allowedScopes)) continue;
+		if (!matchesDatasourceScope(source, options.scope)) continue;
 		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode));
 		if (mapped.length >= topK) break;
 	}
 	return mapped;
-}
-
-function matchesScope(
-	source: string,
-	scope: string | undefined,
-	allowedScopes: readonly string[] | undefined,
-): boolean {
-	if (!matchesDatasourceScope(source, scope)) return false;
-	if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-	return allowedScopes.some((entry) => matchesDatasourceScope(source, entry));
 }
 
 function toRetrievalResult(

@@ -6,9 +6,8 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
-import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
-import { DatasourceResultFilter } from "../datasource/result-filter.ts";
+import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
 import {
@@ -596,7 +595,6 @@ export interface AutoRAGAgentOptions {
 	 */
 	limits?: AutoRAGRetrievalLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
-	datasourceAccess?: DatasourceAccessContextOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
 	/** Maximum time a model/tool search may run before it is aborted. */
@@ -719,14 +717,12 @@ export class AutoRAGAgent {
 	private readonly merger = new ResultMerger();
 	private readonly reranker: Reranker | undefined;
 	private readonly rerankTopN: number | undefined;
-	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
-	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
@@ -782,9 +778,8 @@ export class AutoRAGAgent {
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
 			normalizeVirtualPath(`/${skill.describe().name}`),
 		);
-		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 		this.startupDiagnostics = options.startupDiagnostics ?? [];
-		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
+		this.datasourceAgentSkills = this.buildDatasourceAgentSkills();
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.languages = options.languages ?? DEFAULT_LANGUAGES;
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
@@ -857,12 +852,12 @@ export class AutoRAGAgent {
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		// One tool per authorized datasource connection, so a question that
+		// One tool per configured datasource connection, so a question that
 		// targets a single connection spawns only that connection's CLIs instead
-		// of fanning out to every datasource. Generated from the same trusted
-		// config + access context as the skill list, so disabled or denied
-		// datasources never appear as tools. These are the only datasource
-		// retrieval tools: cross-datasource fan-out lives in search_all_documents.
+		// of fanning out to every datasource. Generated from the configured
+		// datasource skills, so every connection gets its own tool. These are
+		// the only datasource retrieval tools: cross-datasource fan-out lives in
+		// search_all_documents.
 		const singleDatasourceTools = createSingleDatasourceSearchTools(this, this.singleDatasourceToolSpecs());
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
@@ -1368,8 +1363,13 @@ export class AutoRAGAgent {
 		 */
 		const publishOnCapture = this.jevJudge === undefined;
 		let published = false;
+		// A run's timeout aborts this controller. A slow follow-up check or a
+		// late tool call can outlive the timeout, so publishing is gated on it:
+		// an aborted run must never push a preliminary into the callback a later
+		// run already installed on the instance.
+		const planAbort = new AbortController();
 		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-			if (published) return;
+			if (planAbort.signal.aborted || published) return;
 			published = true;
 			this.preliminaryCallback?.(
 				createPreliminarySearchDocumentsResponse(
@@ -1420,7 +1420,7 @@ export class AutoRAGAgent {
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
 			let timeout: NodeJS.Timeout | undefined;
-			const planAbort = new AbortController();
+			let timedOutAfterFastAnswer = false;
 			try {
 				await Promise.race([
 					(async () => {
@@ -1481,9 +1481,16 @@ export class AutoRAGAgent {
 						if (captured !== undefined) return;
 						// With Jev enabled, a fast answer that needs no correction,
 						// clarification, or further research ends the run here.
-						if (preliminary !== undefined && !(await this.shouldFollowUp(trimmedQuery, preliminary))) {
-							captured = fastAnswerAsFinal(preliminary);
-							return;
+						if (preliminary !== undefined) {
+							const followUp = await this.shouldFollowUp(trimmedQuery, preliminary);
+							// The follow-up check is not tied to the session abort, so it
+							// can resolve after the run's timeout fired; stop here rather
+							// than publishing or prompting on behalf of a dead run.
+							if (planAbort.signal.aborted) return;
+							if (!followUp) {
+								captured = fastAnswerAsFinal(preliminary);
+								return;
+							}
 						}
 						if (preliminary !== undefined) publishPreliminary(preliminary);
 						if (sessionAgent !== undefined) {
@@ -1514,16 +1521,54 @@ export class AutoRAGAgent {
 							await session.prompt(buildFinalEmitReminder());
 						}
 					})(),
-					new Promise<never>((_, reject) => {
+					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
 							planAbort.abort();
 							void Promise.resolve(session?.abort());
+							// A first answer already exists: return it below instead of
+							// failing the whole search and discarding it. Remote sessions
+							// keep failing soft through their outbound-scanned path.
+							if (fastCaptured !== undefined && !this.remoteSession) {
+								timedOutAfterFastAnswer = true;
+								resolve();
+								return;
+							}
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
 					}),
 				]);
 			} finally {
 				if (timeout !== undefined) clearTimeout(timeout);
+			}
+
+			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
+				// The caller receives this as the run's final answer, so record it as
+				// one: the fast-answer-as-final conversion (the same one the Jev direct
+				// route uses) registers the session registry and the memory entry, so
+				// the returned feedback ids resolve and past-search hints stay honest.
+				const response = recordStructuredResultsSession(
+					sessionId,
+					trimmedQuery,
+					fastAnswerAsFinal(fastCaptured),
+					this.sessions,
+					this.memory,
+					[
+						...this.collectComponentDiagnostics(),
+						{
+							code: "search-timeout",
+							severity: "warning",
+							message: `search timed out after ${this.searchTimeoutMs}ms before verification finished; returning the first answer`,
+						},
+					],
+				);
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: response.results.length,
+					degraded: true,
+				});
+				return response;
 			}
 
 			let emittedNoVerifiedResults = false;
@@ -1746,28 +1791,14 @@ export class AutoRAGAgent {
 		}
 	}
 
-	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
-		const effectiveOptions = this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options;
-		const trustedTags = this.datasourceAccessOptions.allowedTags ?? [];
-		const requestedTags = effectiveOptions.allowedTags;
-		const allowedTags =
-			requestedTags === undefined ? trustedTags : trustedTags.filter((tag) => requestedTags.includes(tag));
-		return new DatasourceAccessContext({
-			allowedTags,
-			allowedScopes: this.datasourceAccessOptions.allowedScopes,
-		});
-	}
-
 	/**
-	 * Build the Pi agent-skill list for datasource skills authorized by the
-	 * trusted, server-bound access context. Only authorized skills become
-	 * model-visible; unauthorized skills are omitted entirely (default-deny).
+	 * Build the Pi agent-skill list for every configured datasource skill. All
+	 * configured skills are model-visible; a connection is removed from the
+	 * model surface by removing it from the config, not by a permission layer.
 	 */
-	private buildAuthorizedDatasourceSkills(): Skill[] {
-		const ctx = this.datasourceAccessContext();
+	private buildDatasourceAgentSkills(): Skill[] {
 		const skills: Skill[] = [];
 		for (const skill of this.datasourceSkills) {
-			if (!ctx.isAccessible(skill.describe())) continue;
 			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
 		}
 		return skills;
@@ -1775,18 +1806,15 @@ export class AutoRAGAgent {
 
 	/**
 	 * Per-connection tool specs for the generated `search_datasource_<id>`
-	 * tools, built from the same trusted config and access context as
-	 * {@link buildAuthorizedDatasourceSkills}. One spec per authorized
-	 * datasource skill; duplicate ids collapse to the first registration.
+	 * tools, one per configured datasource skill; duplicate ids collapse to the
+	 * first registration.
 	 */
 	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
-		const ctx = this.datasourceAccessContext();
 		const seen = new Set<string>();
 		const specs: SingleDatasourceToolSpec[] = [];
 		for (const skill of this.datasourceSkills) {
 			const descriptor = skill.describe();
 			if (descriptor.datasourceId === undefined) continue;
-			if (!ctx.isAccessible(descriptor)) continue;
 			if (seen.has(descriptor.datasourceId)) continue;
 			seen.add(descriptor.datasourceId);
 			// Instance roots are two-segment sources like /kakao/personal; deeper
@@ -1806,23 +1834,18 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Authorized configured datasource descriptors for catalog/listing surfaces.
-	 *
-	 * Built from the same trusted, server-bound access context as
-	 * {@link buildAuthorizedDatasourceSkills}: only tag-authorized datasources
-	 * are listed — including ones that expose no retrieval methods — and each
-	 * entry carries only identity, capability tags, and authorized source scope
-	 * strings (never credentials, config paths, or raw instance metadata).
-	 * Duplicate datasource ids collapse to the first registration.
+	 * Configured datasource descriptors for catalog/listing surfaces: every
+	 * configured datasource is listed — including ones that expose no retrieval
+	 * methods — and each entry carries only identity, capability tags, and
+	 * source scope strings (never credentials, config paths, or raw instance
+	 * metadata). Duplicate datasource ids collapse to the first registration.
 	 */
 	listDatasources(): DatasourceCatalogEntry[] {
-		const ctx = this.datasourceAccessContext();
 		const seen = new Set<string>();
 		const entries: DatasourceCatalogEntry[] = [];
 		for (const skill of this.datasourceSkills) {
 			const descriptor = skill.describe();
 			if (descriptor.datasourceId === undefined) continue;
-			if (!ctx.isAccessible(descriptor)) continue;
 			if (seen.has(descriptor.datasourceId)) continue;
 			seen.add(descriptor.datasourceId);
 			entries.push({
@@ -1833,34 +1856,29 @@ export class AutoRAGAgent {
 				tags: [...descriptor.tags],
 				capabilities: [...descriptor.capabilities],
 				status: descriptor.status,
-				sourceScopes: this.authorizedSourceScopes(skill, ctx),
+				sourceScopes: this.datasourceSourceScopes(skill),
 			});
 		}
 		return entries;
 	}
 
 	/**
-	 * Opaque source scope strings for one datasource that the trusted context
-	 * authorizes. Datasources without the `scoped` capability expose their
-	 * sources unfiltered (they are gated only at the tag level).
+	 * Opaque source scope strings for one datasource. Sources containing a `#`
+	 * fragment are invalid and skipped.
 	 */
-	private authorizedSourceScopes(skill: DatasourceSkill, ctx: DatasourceAccessContext): string[] {
-		const scoped = skill.describe().capabilities.includes("scoped");
-		const predicate = scoped ? ctx.allowedSourcesPredicate() : undefined;
+	private datasourceSourceScopes(skill: DatasourceSkill): string[] {
 		const scopes = new Set<string>();
 		for (const source of skill.describeSources()) {
 			const scope = source.source;
 			if (scope.includes("#")) continue;
-			if (predicate !== undefined && !predicate(scope)) continue;
 			scopes.add(scope);
 		}
 		return [...scopes];
 	}
 
 	/**
-	 * Resolve an authorized datasource agent skill by model-visible name for the
-	 * `load_datasource_skill` tool. Returns `undefined` for unknown or
-	 * unauthorized names — model/tool input can never widen authorization.
+	 * Resolve a configured datasource agent skill by model-visible name for the
+	 * `load_datasource_skill` tool. Returns `undefined` for unknown names.
 	 */
 	loadDatasourceSkill(name: string): Skill | undefined {
 		return this.datasourceAgentSkills.find((skill) => skill.name === name);
@@ -1982,7 +2000,7 @@ export class AutoRAGAgent {
 			this.routingDiagnostics.push({
 				code: "query-route-fallback",
 				severity: "warning",
-				message: `Jev query routing was unavailable; searching local sources with the original question. ${decision.fallbackReason}`,
+				message: `Jev query routing fell back to local search. ${decision.fallbackReason}`,
 				source: "jev",
 			});
 			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
@@ -2034,7 +2052,7 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Jev datasource check for the local branch: one `noul` per authorized
+	 * Jev datasource check for the local branch: one `noul` per configured
 	 * datasource that has retrieval methods, with where similar past questions
 	 * were answered (from retrieval memory) in the state. Returns the ids to
 	 * search with every query before the rerank; a failed check searches none.
@@ -2064,10 +2082,10 @@ export class AutoRAGAgent {
 		// are checked first so `kakao-work` wins over `kakao`. Indexed files are
 		// absolute paths under a search path; web evidence is a URL.
 		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
-		// Configured datasources the current trusted context does not authorize.
+		// Configured skills that are not catalog datasources (no datasource id).
 		// Memory is global (shared across workspaces and configs), so a past
-		// result from one of them must never reach the Jev state.
-		const deniedRoots = new Set(
+		// result attributed to one of them must never reach the Jev state.
+		const nonDatasourceRoots = new Set(
 			this.datasourceSkills.map((skill) => skill.describe().name).filter((name) => !datasourceByRoot.has(name)),
 		);
 		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
@@ -2078,15 +2096,15 @@ export class AutoRAGAgent {
 				return "local files";
 			}
 			const root = source.startsWith("/") ? (source.split("/")[1] ?? "") : "";
-			if (deniedRoots.has(root)) return undefined;
+			if (nonDatasourceRoots.has(root)) return undefined;
 			const byRoot = datasourceByRoot.get(root);
 			if (byRoot !== undefined) return byRoot;
 			const tokens = methodToken(method);
 			return idsLongestFirst.find((id) => tokens.includes(methodToken(id)));
 		};
 		// A past result is shown only when every piece of its evidence is
-		// attributed to something this context authorizes (an authorized
-		// datasource, a configured search path, or the web): its title is
+		// attributed to something this run searches (a configured datasource, a
+		// configured search path, or the web): its title is
 		// model-written text about that evidence and leaves the machine.
 		const pastSearches: PastSearchHint[] = [];
 		for (const past of this.memory.findSimilarSearches(query)) {
@@ -3134,13 +3152,7 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
-		const filteredByMethod = this.datasourceFilter.filter(
-			byMethod,
-			methods,
-			this.datasourceAccessContext(options),
-			options.scope,
-			options.allowedScopes,
-		);
+		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) options.observedSources?.add(result.source);
 		}
@@ -3174,10 +3186,9 @@ export class AutoRAGAgent {
 	 * Search one datasource connection only. Only the target connection's
 	 * retrieval methods are registered with the retriever, so no other
 	 * datasource CLI is spawned at all and only that connection's hits are
-	 * returned. Access is still gated by the trusted datasource context: an
-	 * unknown or unauthorized `datasourceId` yields an empty result set.
+	 * returned. An unknown `datasourceId` yields an empty result set.
 	 *
-	 * This backs the generated `search_datasource_<id>` tools; every authorized
+	 * This backs the generated `search_datasource_<id>` tools; every configured
 	 * connection has one. Cross-datasource fan-out is
 	 * {@link searchAllDocuments}, which spans every retrieval method.
 	 */
@@ -3191,10 +3202,9 @@ export class AutoRAGAgent {
 			topK: options.topK,
 			scope: options.scope,
 		};
-		const ctx = this.datasourceAccessContext(retrievalOptions);
 		const methods = this.methodRegistry.list().filter((method) => {
 			const descriptor = method.describe();
-			return descriptor.datasourceId === datasourceId && ctx.isAccessible(descriptor);
+			return descriptor.datasourceId === datasourceId;
 		});
 		if (methods.length === 0) return { results: [], diagnostics: [] };
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
@@ -3202,7 +3212,7 @@ export class AutoRAGAgent {
 			query,
 			retrievalOptions,
 		);
-		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
@@ -3226,19 +3236,18 @@ export class AutoRAGAgent {
 	/**
 	 * The standalone retrieval engine for this agent's method pipeline.
 	 * Built on first access using the agent's registered methods and configured
-	 * datasource access context. Model-free — no agent state required.
+	 * datasource catalog. Model-free — no agent state required.
 	 */
 	private retrievalEngine: RetrievalEngine | undefined;
 	getRetrievalEngine(): RetrievalEngine {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
-				datasourceAccess: this.datasourceAccessOptions,
 				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				isMinSyncBinaryMissing:
 					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
-				authorizedDatasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
+				datasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
 			});
 			for (const method of this.methodRegistry.list()) {
 				this.retrievalEngine.register(method);

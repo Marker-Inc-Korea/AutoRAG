@@ -11,9 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DatasourceAccessContext } from "../../../src/datasource/access-context.ts";
 import { DatasourceCliError } from "../../../src/datasource/errors.ts";
-import { DatasourceResultFilter } from "../../../src/datasource/result-filter.ts";
+import { filterDatasourceScope } from "../../../src/datasource/scope.ts";
 import { buildDatasourceSkills } from "../../../src/datasource/skills/factory.ts";
 import { LarkSkill } from "../../../src/datasource/skills/lark/index.ts";
 
@@ -240,19 +239,13 @@ describe("LarkSkill remote search", () => {
 		expect(calls().every((call) => call.openai === null && call.appSecret === null)).toBe(true);
 	});
 
-	it("is default-deny and splits chat and docs tags", () => {
+	it("exposes chat and docs surfaces with descriptive tags", () => {
 		writeFakeLark();
 		writeSpec({});
 		const target = skill();
-		const denied = new DatasourceAccessContext();
-		const docsOnly = new DatasourceAccessContext({ allowedTags: ["lark:docs"] });
 		const messages = method(target, "lark-messages").describe();
 		const docs = method(target, "lark-docs").describe();
 
-		expect(denied.isAccessible(target.describe())).toBe(false);
-		expect(docsOnly.isAccessible(target.describe())).toBe(true);
-		expect(docsOnly.isAccessible(messages)).toBe(false);
-		expect(docsOnly.isAccessible(docs)).toBe(true);
 		expect(messages.tags).toEqual(["lark:chat"]);
 		expect(docs.tags).toEqual(["lark:docs"]);
 		expect(messages.type).toBe("remote");
@@ -414,7 +407,7 @@ describe("LarkSkill remote search", () => {
 		expect(existsSync(logPath)).toBe(false);
 	});
 
-	it("keeps only docs when the trusted scope intersects a docs user scope", async () => {
+	it("narrows to the docs surface with an ordinary query scope", async () => {
 		writeFakeLark();
 		writeSpec({
 			messagesStdout: messageEnvelope([REFUND_MESSAGE]),
@@ -423,17 +416,12 @@ describe("LarkSkill remote search", () => {
 		const target = skill();
 		const messages = await method(target, "lark-messages").retrieve("refund", { topK: 5 });
 		const docs = await method(target, "lark-docs").retrieve("refund", { topK: 5 });
-		const filter = new DatasourceResultFilter();
-		const filtered = filter.filter(
+		const filtered = filterDatasourceScope(
 			new Map([
 				["lark-messages", messages],
 				["lark-docs", docs],
 			]),
 			target.retrievalMethods(),
-			new DatasourceAccessContext({
-				allowedTags: ["lark:chat", "lark:docs"],
-				allowedScopes: ["/lark/default/**"],
-			}),
 			"/lark/default/docs",
 		);
 

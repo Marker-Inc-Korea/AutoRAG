@@ -65,9 +65,9 @@ differentiator is contract-level, not feature-level:
 
 1. CLI-owned stores stay where they are — no central index copy, no forced
    upload;
-2. results carry human-readable, source-native identities with
-   scope-checked access (default deny; the model can narrow but never widen
-   scopes);
+2. results carry human-readable, source-native identities, and an ordinary
+   query scope can narrow a scope-capable datasource's results but never
+   widen visibility;
 3. secrets never leave the tool that owns them;
 4. per-CLI failure isolation (a missing binary degrades to diagnostics).
 

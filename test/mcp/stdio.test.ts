@@ -55,7 +55,6 @@ function makeFixture() {
 			// Spotlight needs no external install, so a configured skill yields a
 			// dynamic datasource tool without touching the network or a binary.
 			datasources: { spotlight: { enabled: true } },
-			datasourceAccess: { allowedTags: ["spotlight"] },
 		}),
 	);
 	return { root, docs, config, binDir };

@@ -287,8 +287,6 @@ describe("autorag lite retrieve", () => {
 			"3",
 			"--scope",
 			"/docs",
-			"--tags",
-			"trusted",
 			"--json",
 		]);
 

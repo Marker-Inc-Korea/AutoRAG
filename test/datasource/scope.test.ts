@@ -4,9 +4,11 @@ import {
 	buildDatasourceInstanceSource,
 	DATASOURCE_CHUNKS_SEGMENT,
 	datasourceSourceHasFragment,
+	filterDatasourceScope,
 	isDatasourceSource,
 	matchesDatasourceScope,
 } from "../../src/datasource/scope.ts";
+import type { RetrievalMethod, RetrievalMethodDescriptor, RetrievalResult } from "../../src/retrieval/types.ts";
 
 describe("datasource scope helpers", () => {
 	describe("buildDatasourceInstanceSource", () => {
@@ -93,5 +95,111 @@ describe("datasource scope helpers", () => {
 			expect(chunk).toBe("/kakao/acct-1/chunks/c-42");
 			expect(chunk.includes("#")).toBe(false);
 		});
+	});
+});
+
+const result = (source: string): RetrievalResult => ({
+	id: source,
+	source,
+	content: `content@${source}`,
+	score: 1,
+	metadata: {},
+});
+
+const scopedMethod = (name: string, datasourceId: string): RetrievalMethod => ({
+	describe: (): RetrievalMethodDescriptor => ({
+		name,
+		type: "vector",
+		description: "scoped datasource method",
+		status: "active",
+		capabilities: ["scoped"],
+		datasourceId,
+		tags: ["ds"],
+	}),
+	retrieve: async () => [],
+});
+
+const unscopedMethod = (name: string, datasourceId: string): RetrievalMethod => ({
+	describe: (): RetrievalMethodDescriptor => ({
+		name,
+		type: "vector",
+		description: "datasource method without source scopes",
+		status: "active",
+		capabilities: [],
+		datasourceId,
+		tags: ["ds"],
+	}),
+	retrieve: async () => [],
+});
+
+const plainMethod = (name: string): RetrievalMethod => ({
+	describe: (): RetrievalMethodDescriptor => ({
+		name,
+		type: "posix",
+		description: "plain retrieval method",
+		status: "active",
+		capabilities: [],
+	}),
+	retrieve: async () => [],
+});
+
+describe("filterDatasourceScope", () => {
+	it("narrows scoped datasource results by the query scope", () => {
+		const method = scopedMethod("kakao", "kakao");
+		const byMethod = new Map<string, RetrievalResult[]>([
+			["kakao", [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-2/chunks/c-7")]],
+		]);
+		const out = filterDatasourceScope(byMethod, [method], "/kakao/acct-1");
+		expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1"]);
+	});
+
+	it("keeps every valid source when scope is undefined", () => {
+		const method = scopedMethod("kakao", "kakao");
+		const byMethod = new Map<string, RetrievalResult[]>([
+			["kakao", [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-2/chunks/c-7")]],
+		]);
+		const out = filterDatasourceScope(byMethod, [method]);
+		expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1", "/kakao/acct-2/chunks/c-7"]);
+	});
+
+	it("rejects sources containing a '#' fragment regardless of scope", () => {
+		const method = scopedMethod("kakao", "kakao");
+		const byMethod = new Map<string, RetrievalResult[]>([
+			["kakao", [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-1/chunks/c-2#meta")]],
+		]);
+		const out = filterDatasourceScope(byMethod, [method]);
+		expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1"]);
+	});
+
+	it("leaves plain (non-datasource) method results untouched", () => {
+		const method = plainMethod("posix");
+		const original = [result("/docs/a.txt"), result("/docs/b.md")];
+		const byMethod = new Map<string, RetrievalResult[]>([["posix", original]]);
+		const out = filterDatasourceScope(byMethod, [method], "/docs/other");
+		expect(out.get("posix")).toBe(original);
+	});
+
+	it("leaves datasource methods without the scoped capability untouched", () => {
+		const method = unscopedMethod("kakao", "kakao");
+		const original = [result("/kakao/personal/chunks/c-1")];
+		const byMethod = new Map<string, RetrievalResult[]>([["kakao", original]]);
+		const out = filterDatasourceScope(byMethod, [method], "/kakao/other/**");
+		expect(out.get("kakao")).toBe(original);
+	});
+
+	it("passes through entries with no matching method descriptor", () => {
+		const byMethod = new Map<string, RetrievalResult[]>([["mystery", [result("/x/y")]]]);
+		const out = filterDatasourceScope(byMethod, [], "/scope");
+		expect(out.get("mystery")).toBe(byMethod.get("mystery"));
+	});
+
+	it("does not mutate the input map or its result arrays", () => {
+		const method = scopedMethod("kakao", "kakao");
+		const originalResults = [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-9/chunks/c-9")];
+		const byMethod = new Map<string, RetrievalResult[]>([["kakao", originalResults]]);
+		const out = filterDatasourceScope(byMethod, [method], "/kakao/acct-1");
+		expect(out).not.toBe(byMethod);
+		expect(out.get("kakao")).not.toBe(originalResults);
+		expect(originalResults).toHaveLength(2);
 	});
 });
