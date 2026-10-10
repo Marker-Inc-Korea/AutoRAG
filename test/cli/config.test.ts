@@ -29,7 +29,7 @@ describe("single-model CLI config", () => {
 		const config = resolveConfig({
 			flags: {
 				"model-provider": "openai",
-				"model-id": "gpt-4o",
+				"model-id": "gpt-6-luna",
 				"search-paths": "docs,notes",
 				workspace: root,
 				"memory-path": join(root, "memory.json"),
@@ -37,7 +37,7 @@ describe("single-model CLI config", () => {
 			env: { HOME: root },
 			cwd: root,
 		});
-		expect(config.model).toEqual({ provider: "openai", id: "gpt-4o" });
+		expect(config.model).toEqual({ provider: "openai", id: "gpt-6-luna" });
 		expect(config.searchPaths).toEqual(["docs", "notes"]);
 		expect(config.minSync?.enabled).toBe(true);
 		expect(config.minSync?.autoInstall).toBe(true);
@@ -138,13 +138,13 @@ describe("single-model CLI config", () => {
 				searchPaths: ["docs"],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "openai", id: "gpt-4o" },
+				model: { provider: "openai", id: "gpt-6-luna" },
 				minSync: { enabled: false },
 			},
 			{ cwd: root },
 		);
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
-		expect(written.model).toEqual({ provider: "openai", id: "gpt-4o" });
+		expect(written.model).toEqual({ provider: "openai", id: "gpt-6-luna" });
 		expect(written.minSync?.enabled).toBe(false);
 		expect(JSON.stringify(written)).not.toMatch(/explorer|orchestrator/i);
 	});
@@ -184,11 +184,11 @@ describe("single-model CLI config", () => {
 				searchPaths: ["."],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "openai", id: "gpt-4o" },
+				model: { provider: "openai", id: "gpt-6-luna" },
 			},
 			{ configPath: join(root, "missing.toml"), agentDir: join(root, "agent") },
 		);
-		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-4o" });
+		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 	});
 
 	it("uses stored pi credentials for a catalog model", async () => {
@@ -200,11 +200,11 @@ describe("single-model CLI config", () => {
 				searchPaths: ["."],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "openai", id: "gpt-4o" },
+				model: { provider: "openai", id: "gpt-6-luna" },
 			},
 			{ configPath: join(root, "missing.toml"), agentDir },
 		);
-		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-4o" });
+		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 		expect(resolved.apiKey).toBe("sk-stored");
 		expect(resolved.providerApiKeys).toEqual({ openai: "sk-stored" });
 	});
@@ -214,15 +214,80 @@ describe("single-model CLI config", () => {
 		mkdirSync(agentDir, { recursive: true });
 		writeFileSync(
 			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-4o" }),
+			JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }),
 		);
 		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "sk-stored" } }));
 		const resolved = await resolveAgentModel(
 			{ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") },
 			{ configPath: join(root, "missing.toml"), agentDir, cwd: root },
 		);
-		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-4o" });
+		expect(resolved.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 		expect(resolved.apiKey).toBe("sk-stored");
+	});
+
+	describe("no model configured and no usable local Codex runtime", () => {
+		const bareConfig = (): CliConfig => ({
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+		});
+
+		it("explains how to pick a model instead of surfacing a bare ENOENT", async () => {
+			const error = await resolveAgentModel(bareConfig(), {
+				configPath: join(root, "missing.toml"),
+				agentDir: join(root, "agent"),
+				cwd: root,
+				env: {},
+			}).catch((caught: unknown) => caught);
+
+			expect(error).toBeInstanceOf(ConfigError);
+			const message = (error as Error).message;
+			expect(message).toMatch(/^No model configured\./);
+			expect(message).toContain("autorag tui");
+			expect(message).toContain("/login");
+			expect(message).toContain('"model"');
+			expect(message).toContain("autorag models list");
+			expect(message).toContain("ENOENT");
+			expect(message).toContain("missing.toml");
+		});
+
+		it("keeps the local runtime's own reason when its config is incomplete", async () => {
+			const codexConfig = join(root, "codex.toml");
+			writeFileSync(codexConfig, "# No provider configured\n");
+			const error = await resolveAgentModel(bareConfig(), {
+				configPath: codexConfig,
+				agentDir: join(root, "agent"),
+				cwd: root,
+				env: {},
+			}).catch((caught: unknown) => caught);
+
+			expect(error).toBeInstanceOf(ConfigError);
+			expect((error as Error).message).toContain(`AutoRAG requires model_provider in ${codexConfig}`);
+		});
+
+		it("still resolves a complete local Codex runtime", async () => {
+			const codexConfig = join(root, "codex.toml");
+			writeFileSync(
+				codexConfig,
+				[
+					'model_provider = "proxy"',
+					"[model_providers.proxy]",
+					'base_url = "http://127.0.0.1:9/v1"',
+					'wire_api = "responses"',
+					'env_key = "PROXY_KEY"',
+					"",
+				].join("\n"),
+			);
+			const resolved = await resolveAgentModel(bareConfig(), {
+				configPath: codexConfig,
+				agentDir: join(root, "agent"),
+				cwd: root,
+				env: { PROXY_KEY: "sk-local" },
+			});
+
+			expect(resolved.model).toMatchObject({ provider: "proxy", baseUrl: "http://127.0.0.1:9/v1" });
+			expect(resolved.apiKey).toBe("sk-local");
+		});
 	});
 
 	describe("catalog model with a configured endpoint (#1757)", () => {

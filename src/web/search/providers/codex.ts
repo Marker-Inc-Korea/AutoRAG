@@ -29,7 +29,7 @@ export class CodexProvider extends SearchProvider {
 			{
 				providerId: "codex",
 				defaultBaseUrl: "https://api.openai.com/v1",
-				defaultModel: "gpt-5",
+				defaultModel: "gpt-6-luna",
 				modelEnvVar: "CODEX_SEARCH_MODEL",
 				missingCredentialMessage:
 					"OpenAI credentials not found. Configure an OpenAI model for the agent or set OPENAI_API_KEY.",

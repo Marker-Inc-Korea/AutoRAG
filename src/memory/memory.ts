@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { z } from "zod";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import {
 	isPathOpaqueIdentifier,
@@ -8,17 +9,7 @@ import {
 	normalizeEvidenceRef,
 	normalizeEvidenceText,
 } from "../retrieval/evidence-id.ts";
-
-export type FeedbackOutcome = "pending" | "useful" | "not_useful";
-export type FeedbackSentiment = "useful" | "not_useful";
-export type FeedbackSignalSource = "explicit" | "followup" | "retry";
-
-export interface SignalDefaults {
-	readonly explicitWeight: number;
-	readonly followupWeight: number;
-	readonly retryWeight: number;
-	readonly implicitCap: number;
-}
+import type { JudgedEvidenceRecord } from "./judged-evidence.ts";
 
 export interface EvidenceContext {
 	readonly retrieverMix?: readonly string[];
@@ -48,54 +39,9 @@ export interface CuratedResultRecord {
 	readonly evidenceIds: readonly string[];
 	readonly confidence?: number;
 	readonly createdAt: number;
-	/**
-	 * The user's latest explicit verdict on this result. Kept on the record so
-	 * it survives the feedback-signal cap, which evicts signals far faster than
-	 * curated results.
-	 */
-	readonly verdict?: FeedbackSentiment;
-	/** Recorded for a remote P2P peer's search; never fed back into local hints. */
-	readonly remote?: true;
 }
 
-export interface FeedbackSignal {
-	readonly id: string;
-	readonly target:
-		| { readonly type: "curated_result"; readonly resultId: string }
-		| { readonly type: "evidence_chunk"; readonly stableEvidenceId: string }
-		| { readonly type: "method"; readonly method: string };
-	readonly query: string;
-	readonly method?: string;
-	readonly sentiment: FeedbackSentiment;
-	readonly source: FeedbackSignalSource;
-	readonly weight: number;
-	readonly confidenceCap: number;
-	readonly eventId: string;
-	readonly timestamp: number;
-}
-
-export interface MethodHint {
-	readonly method: string;
-	readonly score: number;
-	readonly confidence: number;
-	readonly reason: string;
-}
-
-export interface ContextValueHint {
-	readonly value: string;
-	readonly score: number;
-	readonly confidence: number;
-}
-
-export interface RetrievalContextHints {
-	readonly documentAreas: readonly ContextValueHint[];
-	readonly documentTypes: readonly ContextValueHint[];
-	readonly evidenceTypes: readonly ContextValueHint[];
-	readonly evidenceLocations: readonly ContextValueHint[];
-	readonly parserTypes: readonly ContextValueHint[];
-	readonly retrieverMix: readonly ContextValueHint[];
-}
-
+/** A long-term lesson summarized from a batch of judged evidence about one kind of question. */
 export interface RetrievalInsight {
 	readonly id: string;
 	readonly clusterKey: string;
@@ -103,19 +49,14 @@ export interface RetrievalInsight {
 	readonly recommendedSources: string[];
 	readonly recommendedMethods: string[];
 	readonly rationale: string;
-	supportingSignalCount: number;
+	supportingEvidenceCount: number;
 	confidence: number;
 	readonly createdAt: number;
 	updatedAt: number;
 }
 
-export interface InsightExtractionSignal {
-	readonly signal: FeedbackSignal;
-	readonly method?: string;
-	readonly source?: string;
-}
-
-export type InsightExtractor = (signals: readonly InsightExtractionSignal[], now: number) => RetrievalInsight[];
+/** Summarizes one batch of judged evidence into insights. */
+export type InsightExtractor = (records: readonly JudgedEvidenceRecord[], now: number) => RetrievalInsight[];
 
 export interface MemoryWarning {
 	readonly code: string;
@@ -123,37 +64,21 @@ export interface MemoryWarning {
 	readonly timestamp: number;
 }
 
-export interface MemorySchemaV4 {
-	readonly version: 4;
+export interface MemorySchema {
+	readonly version: 5;
 	curatedResults: CuratedResultRecord[];
 	evidenceChunks: EvidenceChunkRecord[];
-	feedbackSignals: FeedbackSignal[];
-	readonly signalDefaults: SignalDefaults;
+	/** Every piece of evidence Jev judged to support the question it was cited for. Never evicted. */
+	judgedEvidence: JudgedEvidenceRecord[];
 	warnings: MemoryWarning[];
 	insights: RetrievalInsight[];
-	pendingInsightSignals: InsightExtractionSignal[];
+	/** Ids of judged evidence not yet summarized into insights; summarized 100 at a time. */
+	pendingInsightEntries: string[];
 }
 
-export interface MemoryEntry {
-	id: string;
-	query: string;
-	method: string;
-	outcome: FeedbackOutcome;
-	timestamp: number;
-	metadata?: { resultCount?: number };
-}
-
-export interface SearchAttempt {
-	id: string;
-	query: string;
-	method: string;
-	sources: string[];
-	timestamp: number;
-}
-
-export interface ResultFeedback {
-	source: string;
-	useful: boolean;
+export interface RetrievalMemoryOptions {
+	storagePath: string;
+	insightExtractor?: InsightExtractor;
 }
 
 export interface SessionEvidenceRef extends NormalizedEvidenceRef, EvidenceContext {
@@ -175,66 +100,18 @@ export interface SessionRecordInput {
 	readonly sessionId: string;
 	readonly query: string;
 	readonly results: readonly SessionCuratedResultInput[];
-	/** The search came from a remote P2P peer. */
-	readonly remote?: boolean;
 }
 
-export interface NumberedFeedbackInput {
-	readonly sessionId: string;
-	readonly query: string;
-	readonly feedback: readonly { readonly number: number; readonly useful: boolean }[];
-}
-
-export interface FeedbackIdInput {
-	readonly feedbackId: string;
-	readonly useful: boolean;
-}
-
-export interface RetrievalMemoryOptions {
-	storagePath: string;
-	insightExtractor?: InsightExtractor;
-}
-
-/** One result of a past search, with where its evidence came from. */
-export interface SimilarSearchResult {
-	readonly title: string;
-	readonly evidence: readonly { readonly source: string; readonly method: string }[];
-}
-
-/** A past search whose question resembles the current one. */
-export interface SimilarSearch {
-	readonly query: string;
-	/** Character-bigram Dice similarity to the current question, in [0, 1]. */
-	readonly similarity: number;
-	/** When the past search recorded its results (epoch ms). */
-	readonly searchedAt: number;
-	readonly results: readonly SimilarSearchResult[];
-}
-
-/**
- * Bigram Dice at or above this counts as a similar question. Calibrated on
- * the maintainer's 113 recorded searches (Korean and English): rephrasings
- * of one question scored 0.40-0.91, unrelated questions at most 0.29.
- */
-export const SIMILAR_SEARCH_THRESHOLD = 0.35;
-
-const DEFAULT_SIGNAL_DEFAULTS: SignalDefaults = {
-	explicitWeight: 1,
-	followupWeight: 0.25,
-	retryWeight: -0.25,
-	implicitCap: 0.5,
-};
-const MAX_RECORDS = 500;
 const MAX_WARNINGS = 50;
 const INSIGHT_BATCH_SIZE = 100;
-const MAX_INSIGHTS = 200;
+/** A cluster needs this many judged evidence records, from at least {@link MIN_INSIGHT_RUNS} search runs, to become an insight. */
 const MIN_INSIGHT_SUPPORT = 5;
-const MIN_INSIGHT_SCORE = 3;
+const MIN_INSIGHT_RUNS = 2;
 const MAX_CONTEXT_LABEL_LENGTH = 120;
 const MAX_RETRIEVER_LABEL_LENGTH = 64;
 const MAX_RETRIEVER_MIX = 8;
 const INSIGHT_WARNING = "[AutoRAG] Retrieval memory insight extraction failed; continuing without insights";
-const RESET_WARNING = "[AutoRAG] Retrieval memory is not v4-compatible; starting fresh";
+const RESET_WARNING = "[AutoRAG] Retrieval memory is not v4/v5-compatible; starting fresh";
 const LOCK_WAIT_TIMEOUT_MS = 5_000;
 const LOCK_STALE_MS = 30_000;
 const LOCK_RETRY_MS = 10;
@@ -246,24 +123,19 @@ class RetrievalMemoryLockTimeoutError extends Error {
 	}
 }
 
-function emptyMemoryV4(): MemorySchemaV4 {
+function emptyMemory(): MemorySchema {
 	return {
-		version: 4,
+		version: 5,
 		curatedResults: [],
 		evidenceChunks: [],
-		feedbackSignals: [],
-		signalDefaults: DEFAULT_SIGNAL_DEFAULTS,
+		judgedEvidence: [],
 		warnings: [],
 		insights: [],
-		pendingInsightSignals: [],
+		pendingInsightEntries: [],
 	};
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function cloneMemory(data: MemorySchemaV4): MemorySchemaV4 {
+function cloneMemory(data: MemorySchema): MemorySchema {
 	return structuredClone(data);
 }
 
@@ -271,79 +143,110 @@ function recordsEqual(left: unknown, right: unknown): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function feedbackTargetKey(target: FeedbackSignal["target"]): string {
-	if (target.type === "curated_result") return `curated_result:${target.resultId}`;
-	if (target.type === "evidence_chunk") return `evidence_chunk:${target.stableEvidenceId}`;
-	return `method:${target.method}`;
-}
-
-function feedbackSignalKey(signal: FeedbackSignal): string {
-	return `${signal.eventId}\0${feedbackTargetKey(signal.target)}`;
-}
-
 function warningKey(warning: MemoryWarning): string {
 	return `${warning.timestamp}\0${warning.code}\0${warning.message}`;
 }
 
-function isV4(data: unknown): data is Omit<MemorySchemaV4, "insights" | "pendingInsightSignals"> & {
-	insights?: unknown;
-	pendingInsightSignals?: unknown;
-} {
-	return (
-		isRecord(data) &&
-		data.version === 4 &&
-		Array.isArray(data.curatedResults) &&
-		Array.isArray(data.evidenceChunks) &&
-		Array.isArray(data.feedbackSignals) &&
-		isRecord(data.signalDefaults) &&
-		typeof data.signalDefaults.explicitWeight === "number" &&
-		Array.isArray(data.warnings) &&
-		(data.insights === undefined || Array.isArray(data.insights)) &&
-		(data.pendingInsightSignals === undefined || Array.isArray(data.pendingInsightSignals))
-	);
+const warningSchema = z.object({ code: z.string(), message: z.string(), timestamp: z.number() });
+
+// v4 also stored the user's verdict and a remote-peer tag on each result; parsing drops both.
+const curatedResultSchema = z.object({
+	resultId: z.string(),
+	sessionId: z.string(),
+	number: z.number(),
+	query: z.string(),
+	title: z.string(),
+	summary: z.string(),
+	resultHash: z.string(),
+	evidenceIds: z.array(z.string()),
+	confidence: z.number().optional(),
+	createdAt: z.number(),
+});
+
+const evidenceChunkSchema = z
+	.object({
+		stableEvidenceId: z.string(),
+		method: z.string(),
+		source: z.string(),
+		excerptHash: z.string(),
+		firstSeenAt: z.number(),
+		lastSeenAt: z.number(),
+	})
+	.passthrough();
+
+const judgedEvidenceSchema = z.object({
+	id: z.string(),
+	sessionId: z.string(),
+	conversationId: z.string(),
+	question: z.string(),
+	searchQuery: z.string(),
+	method: z.string(),
+	source: z.string(),
+	stableEvidenceId: z.string(),
+	resultNumber: z.number(),
+	title: z.string(),
+	excerpt: z.string(),
+	probability: z.number(),
+	createdAt: z.number(),
+});
+
+// v4 insights counted `supportingSignalCount`; they carry over as evidence counts.
+const insightSchema = z
+	.object({
+		id: z.string(),
+		clusterKey: z.string(),
+		domain: z.string(),
+		recommendedSources: z.array(z.string()),
+		recommendedMethods: z.array(z.string()),
+		rationale: z.string(),
+		supportingEvidenceCount: z.number().optional(),
+		supportingSignalCount: z.number().optional(),
+		confidence: z.number(),
+		createdAt: z.number(),
+		updatedAt: z.number(),
+	})
+	.transform(({ supportingSignalCount, supportingEvidenceCount, ...rest }, ctx): RetrievalInsight => {
+		const count = supportingEvidenceCount ?? supportingSignalCount;
+		if (count === undefined) {
+			ctx.addIssue({ code: "custom", message: "insight has no supporting count" });
+			return z.NEVER;
+		}
+		return { ...rest, supportingEvidenceCount: count };
+	});
+
+const persistedSchema = z.object({
+	version: z.union([z.literal(4), z.literal(5)]),
+	curatedResults: z.array(z.unknown()),
+	evidenceChunks: z.array(z.unknown()),
+	warnings: z.array(z.unknown()),
+	insights: z.array(z.unknown()).optional(),
+	judgedEvidence: z.array(z.unknown()).optional(),
+	pendingInsightEntries: z.array(z.unknown()).optional(),
+});
+
+/** The items of a persisted list that match `schema`; a malformed item is dropped, never the whole file. */
+function parseItems<T>(schema: z.ZodType<T>, items: readonly unknown[] = []): T[] {
+	return items.flatMap((item) => {
+		const parsed = schema.safeParse(item);
+		return parsed.success ? [parsed.data] : [];
+	});
 }
 
-function isV3(data: unknown): data is { readonly version: 3; readonly entries: readonly unknown[] } {
-	return isRecord(data) && data.version === 3 && Array.isArray(data.entries);
-}
-
-function isInsight(value: unknown): value is RetrievalInsight {
-	return (
-		isRecord(value) &&
-		typeof value.id === "string" &&
-		typeof value.clusterKey === "string" &&
-		typeof value.domain === "string" &&
-		Array.isArray(value.recommendedSources) &&
-		Array.isArray(value.recommendedMethods) &&
-		typeof value.rationale === "string" &&
-		typeof value.supportingSignalCount === "number" &&
-		typeof value.confidence === "number" &&
-		typeof value.createdAt === "number" &&
-		typeof value.updatedAt === "number"
-	);
-}
-
-function isInsightExtractionSignal(value: unknown): value is InsightExtractionSignal {
-	return isRecord(value) && isRecord(value.signal) && typeof value.signal.query === "string";
-}
-
-function normalizeV4(
-	data: Omit<MemorySchemaV4, "insights" | "pendingInsightSignals"> & {
-		insights?: unknown;
-		pendingInsightSignals?: unknown;
-	},
-): MemorySchemaV4 {
+/** Parse a memory file of either version into the current schema, or undefined when it is neither. */
+function parsePersisted(raw: unknown): MemorySchema | undefined {
+	const file = persistedSchema.safeParse(raw);
+	if (!file.success) return undefined;
+	const data = file.data;
 	return {
-		version: 4,
-		curatedResults: data.curatedResults,
-		evidenceChunks: data.evidenceChunks.map(normalizeEvidenceChunkRecord),
-		feedbackSignals: data.feedbackSignals,
-		signalDefaults: data.signalDefaults,
-		warnings: data.warnings,
-		insights: Array.isArray(data.insights) ? data.insights.filter(isInsight) : [],
-		pendingInsightSignals: Array.isArray(data.pendingInsightSignals)
-			? data.pendingInsightSignals.filter(isInsightExtractionSignal).slice(-INSIGHT_BATCH_SIZE + 1)
-			: [],
+		version: 5,
+		curatedResults: parseItems(curatedResultSchema, data.curatedResults),
+		evidenceChunks: parseItems(evidenceChunkSchema, data.evidenceChunks).map((chunk) =>
+			normalizeEvidenceChunkRecord(chunk as unknown as EvidenceChunkRecord),
+		),
+		judgedEvidence: parseItems(judgedEvidenceSchema, data.judgedEvidence),
+		warnings: parseItems(warningSchema, data.warnings),
+		insights: parseItems(insightSchema, data.insights),
+		pendingInsightEntries: parseItems(z.string(), data.pendingInsightEntries),
 	};
 }
 
@@ -401,39 +304,6 @@ function normalizeEvidenceChunkRecord(record: EvidenceChunkRecord): EvidenceChun
 	return { ...base, ...normalizeEvidenceContext(record) };
 }
 
-function migrateV3(data: { readonly entries: readonly unknown[] }): MemorySchemaV4 {
-	const migrated = emptyMemoryV4();
-	for (const value of data.entries) {
-		if (
-			!isRecord(value) ||
-			typeof value.query !== "string" ||
-			typeof value.method !== "string" ||
-			(value.outcome !== "useful" && value.outcome !== "not_useful") ||
-			typeof value.timestamp !== "number"
-		) {
-			continue;
-		}
-		const legacyId =
-			typeof value.id === "string"
-				? value.id
-				: hashText(`${value.query}\0${value.method}\0${value.outcome}\0${value.timestamp}`).slice(0, 24);
-		const useful = value.outcome === "useful";
-		migrated.feedbackSignals.push({
-			id: `v3:${legacyId}`,
-			target: { type: "method", method: value.method },
-			query: value.query,
-			method: value.method,
-			sentiment: value.outcome,
-			source: "explicit",
-			weight: useful ? migrated.signalDefaults.explicitWeight : -migrated.signalDefaults.explicitWeight,
-			confidenceCap: 1,
-			eventId: `v3:${legacyId}`,
-			timestamp: value.timestamp,
-		});
-	}
-	return migrated;
-}
-
 function hashText(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
 }
@@ -444,31 +314,6 @@ function resultId(sessionId: string, number: number): string {
 
 function resultHash(query: string, title: string, summary: string, evidenceIds: readonly string[]): string {
 	return hashText([query, title, summary, ...evidenceIds].join("\0"));
-}
-
-type ContextEventScore = {
-	value: string;
-	score: number;
-	signals: number;
-	cap: number;
-};
-
-function contextValues(events: ReadonlyMap<string, ContextEventScore>): ContextValueHint[] {
-	const totals = new Map<string, { score: number; signals: number }>();
-	for (const event of events.values()) {
-		const score = Math.max(-event.cap, Math.min(event.cap, event.score));
-		const current = totals.get(event.value) ?? { score: 0, signals: 0 };
-		current.score += score;
-		current.signals += event.signals;
-		totals.set(event.value, current);
-	}
-	return Array.from(totals.entries())
-		.map(([value, stats]) => ({
-			value,
-			score: stats.score,
-			confidence: Math.min(1, stats.signals / 5),
-		}))
-		.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.value.localeCompare(b.value));
 }
 
 function normalizeInsightDomain(query: string): string {
@@ -494,93 +339,56 @@ function insightMatches(insight: RetrievalInsight, query: string): boolean {
 	return overlap >= Math.min(2, insightTokens.size) && overlap / insightTokens.size >= 0.6;
 }
 
-/** Character bigrams of a question, ignoring case, spaces, and punctuation. */
-function questionBigrams(query: string): Map<string, number> {
-	const text = query.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-	const bigrams = new Map<string, number>();
-	for (let index = 0; index < text.length - 1; index++) {
-		const bigram = text.slice(index, index + 2);
-		bigrams.set(bigram, (bigrams.get(bigram) ?? 0) + 1);
-	}
-	return bigrams;
-}
-
 /**
- * Dice coefficient over character bigrams. Works for Korean and English
- * without a tokenizer: rephrasings share most bigrams even when particles
- * and word endings differ.
+ * Groups a batch of judged evidence by question topic and keeps the topics
+ * that recur: enough evidence, from more than one search run, so one lucky
+ * search does not become a lesson. The lesson names the methods and sources
+ * that keep supplying evidence for that topic; it is advisory only.
  */
-function questionSimilarity(left: ReadonlyMap<string, number>, right: ReadonlyMap<string, number>): number {
-	let shared = 0;
-	let total = 0;
-	for (const [bigram, count] of left) {
-		shared += Math.min(count, right.get(bigram) ?? 0);
-		total += count;
-	}
-	for (const count of right.values()) total += count;
-	return total === 0 ? 0 : (2 * shared) / total;
-}
-
-function defaultInsightExtractor(signals: readonly InsightExtractionSignal[], now: number): RetrievalInsight[] {
+function defaultInsightExtractor(records: readonly JudgedEvidenceRecord[], now: number): RetrievalInsight[] {
 	const clusters = new Map<
 		string,
 		{
-			domain: string;
-			score: number;
 			support: number;
-			explicitSupport: number;
+			probabilitySum: number;
+			runs: Set<string>;
 			methods: Map<string, number>;
 			sources: Map<string, number>;
-			firstSeenAt: number;
-			lastSeenAt: number;
 		}
 	>();
-	for (const item of signals) {
-		const method = item.method;
-		if (!method) continue;
-		const domain = normalizeInsightDomain(item.signal.query);
+	for (const record of records) {
+		const domain = normalizeInsightDomain(record.question);
 		if (domain.length === 0) continue;
-		const current = clusters.get(domain) ?? {
-			domain,
-			score: 0,
+		const cluster = clusters.get(domain) ?? {
 			support: 0,
-			explicitSupport: 0,
+			probabilitySum: 0,
+			runs: new Set<string>(),
 			methods: new Map<string, number>(),
 			sources: new Map<string, number>(),
-			firstSeenAt: item.signal.timestamp,
-			lastSeenAt: item.signal.timestamp,
 		};
-		current.score += item.signal.weight;
-		current.support++;
-		if (item.signal.source === "explicit") current.explicitSupport++;
-		current.methods.set(method, (current.methods.get(method) ?? 0) + 1);
-		if (item.source) current.sources.set(item.source, (current.sources.get(item.source) ?? 0) + 1);
-		current.firstSeenAt = Math.min(current.firstSeenAt, item.signal.timestamp);
-		current.lastSeenAt = Math.max(current.lastSeenAt, item.signal.timestamp);
-		clusters.set(domain, current);
+		cluster.support++;
+		cluster.probabilitySum += record.probability;
+		cluster.runs.add(record.sessionId);
+		cluster.methods.set(record.method, (cluster.methods.get(record.method) ?? 0) + 1);
+		cluster.sources.set(record.source, (cluster.sources.get(record.source) ?? 0) + 1);
+		clusters.set(domain, cluster);
 	}
-	return Array.from(clusters.values())
-		.filter(
-			(cluster) =>
-				cluster.support >= MIN_INSIGHT_SUPPORT &&
-				cluster.explicitSupport > 0 &&
-				cluster.score >= MIN_INSIGHT_SCORE &&
-				cluster.methods.size > 0,
-		)
-		.map((cluster) => {
-			const methods = Array.from(cluster.methods.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-			const sources = Array.from(cluster.sources.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-			const methodConsistency = methods[0][1] / cluster.support;
-			const confidence = Math.min(1, Math.max(0, (cluster.score / cluster.support) * methodConsistency));
+	const byCount = (a: [string, number], b: [string, number]): number => b[1] - a[1] || a[0].localeCompare(b[0]);
+	return Array.from(clusters.entries())
+		.filter(([, cluster]) => cluster.support >= MIN_INSIGHT_SUPPORT && cluster.runs.size >= MIN_INSIGHT_RUNS)
+		.map(([domain, cluster]): RetrievalInsight => {
+			const methods = Array.from(cluster.methods.entries()).sort(byCount);
+			const sources = Array.from(cluster.sources.entries()).sort(byCount);
+			const methodConsistency = (methods[0]?.[1] ?? 0) / cluster.support;
 			return {
-				id: `insight:${hashText(cluster.domain).slice(0, 24)}`,
-				clusterKey: cluster.domain,
-				domain: cluster.domain,
+				id: `insight:${hashText(domain).slice(0, 24)}`,
+				clusterKey: domain,
+				domain,
 				recommendedSources: sources.slice(0, 3).map(([source]) => source),
 				recommendedMethods: methods.slice(0, 3).map(([method]) => method),
-				rationale: `${cluster.support} evicted feedback signal(s) consistently supported ${methods[0][0]}; advisory only, not a method disable rule`,
-				supportingSignalCount: cluster.support,
-				confidence,
+				rationale: `${cluster.support} judged evidence record(s) from ${cluster.runs.size} search run(s) mostly came from ${methods[0]?.[0] ?? "unknown"}; advisory only, not a method disable rule`,
+				supportingEvidenceCount: cluster.support,
+				confidence: Math.min(1, (cluster.probabilitySum / cluster.support) * methodConsistency),
 				createdAt: now,
 				updatedAt: now,
 			};
@@ -588,18 +396,22 @@ function defaultInsightExtractor(signals: readonly InsightExtractionSignal[], no
 		.sort(
 			(a, b) =>
 				b.confidence - a.confidence ||
-				b.supportingSignalCount - a.supportingSignalCount ||
+				b.supportingEvidenceCount - a.supportingEvidenceCount ||
 				a.domain.localeCompare(b.domain),
 		);
 }
 
+/**
+ * Long-term retrieval memory: the evidence Jev judged to genuinely support the
+ * question it was cited for, plus the curated results and evidence chunks of
+ * past searches. Nothing is evicted; every 100 judged records are summarized
+ * into long-term insights.
+ */
 export class RetrievalMemory {
 	private readonly storagePath: string;
 	private readonly insightExtractor: InsightExtractor;
-	private data: MemorySchemaV4 = emptyMemoryV4();
-	private persistedData: MemorySchemaV4 = emptyMemoryV4();
-	private legacyEntries = new Map<string, MemoryEntry>();
-	private legacySourceToAttemptId = new Map<string, string>();
+	private data: MemorySchema = emptyMemory();
+	private persistedData: MemorySchema = emptyMemory();
 
 	constructor(options: RetrievalMemoryOptions) {
 		this.storagePath = options.storagePath;
@@ -607,8 +419,6 @@ export class RetrievalMemory {
 	}
 
 	load(): void {
-		this.legacyEntries = new Map();
-		this.legacySourceToAttemptId = new Map();
 		this.data = this.readPersistedData();
 		this.persistedData = cloneMemory(this.data);
 	}
@@ -621,7 +431,8 @@ export class RetrievalMemory {
 		let tmpPath: string | undefined;
 		try {
 			this.data = this.mergeWithPersisted(this.readPersistedData());
-			this.capData();
+			this.summarizeCompleteBatches();
+			this.data.warnings = this.data.warnings.slice(-MAX_WARNINGS);
 			tmpPath = `${this.storagePath}.${randomUUID()}.tmp`;
 			writeFileSync(tmpPath, `${JSON.stringify(this.data, null, 2)}\n`, "utf-8");
 			lock.assertOwned();
@@ -639,12 +450,19 @@ export class RetrievalMemory {
 		}
 	}
 
-	getSchema(): MemorySchemaV4 {
+	getSchema(): MemorySchema {
 		return this.data;
 	}
 
-	getSignalCount(): number {
-		return this.data.feedbackSignals.length;
+	getJudgedEvidence(): readonly JudgedEvidenceRecord[] {
+		return this.data.judgedEvidence;
+	}
+
+	/** Everything judged during one conversation, oldest first. */
+	getConversationEvidence(conversationId: string): JudgedEvidenceRecord[] {
+		return this.data.judgedEvidence
+			.filter((record) => record.conversationId === conversationId)
+			.sort((a, b) => a.createdAt - b.createdAt);
 	}
 
 	recordCuratedResultsSession(input: SessionRecordInput): void {
@@ -667,7 +485,6 @@ export class RetrievalMemory {
 				evidenceIds,
 				...(result.confidence !== undefined ? { confidence: result.confidence } : {}),
 				createdAt: now,
-				...(input.remote === true ? { remote: true as const } : {}),
 			};
 			const existingIndex = this.data.curatedResults.findIndex((entry) => entry.resultId === id);
 			if (existingIndex >= 0) this.data.curatedResults[existingIndex] = record;
@@ -675,150 +492,15 @@ export class RetrievalMemory {
 		}
 	}
 
-	recordNumberedFeedback(input: NumberedFeedbackInput): boolean {
-		return this.recordFeedbackByIds(
-			input.feedback.map((item) => ({ feedbackId: resultId(input.sessionId, item.number), useful: item.useful })),
-		);
-	}
-
-	recordFeedbackByIds(feedback: readonly FeedbackIdInput[]): boolean {
-		let changed = false;
-		for (const item of feedback) {
-			const curatedIndex = this.data.curatedResults.findIndex((result) => result.resultId === item.feedbackId);
-			const curated = this.data.curatedResults[curatedIndex];
-			if (!curated) continue;
-			const sentiment: FeedbackSentiment = item.useful ? "useful" : "not_useful";
-			if (curated.verdict !== sentiment) {
-				this.data.curatedResults[curatedIndex] = { ...curated, verdict: sentiment };
-				changed = true;
-			}
-			const eventId = `${curated.resultId}:${sentiment}`;
-			if (this.data.feedbackSignals.some((signal) => signal.eventId === eventId)) continue;
-			const sign = item.useful ? 1 : -1;
-			const explicitWeight = this.data.signalDefaults.explicitWeight * sign;
-			this.data.feedbackSignals.push({
-				id: randomUUID(),
-				target: { type: "curated_result", resultId: curated.resultId },
-				query: curated.query,
-				sentiment,
-				source: "explicit",
-				weight: explicitWeight,
-				confidenceCap: 1,
-				eventId,
-				timestamp: Date.now(),
-			});
-			const evidenceWeight = curated.evidenceIds.length > 0 ? explicitWeight / curated.evidenceIds.length : 0;
-			for (const stableEvidenceId of curated.evidenceIds) {
-				const evidence = this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === stableEvidenceId);
-				this.data.feedbackSignals.push({
-					id: randomUUID(),
-					target: { type: "evidence_chunk", stableEvidenceId },
-					query: curated.query,
-					method: evidence?.method,
-					sentiment,
-					source: "explicit",
-					weight: evidenceWeight,
-					confidenceCap: 1,
-					eventId,
-					timestamp: Date.now(),
-				});
-			}
-			changed = true;
+	/** Remember judged evidence. A record already stored under the same id is left as it was. */
+	recordJudgedEvidence(records: readonly JudgedEvidenceRecord[]): void {
+		const known = new Set(this.data.judgedEvidence.map((record) => record.id));
+		for (const record of records) {
+			if (known.has(record.id)) continue;
+			known.add(record.id);
+			this.data.judgedEvidence.push(record);
+			this.data.pendingInsightEntries.push(record.id);
 		}
-		return changed;
-	}
-
-	recordWeakSignal(query: string, method: string, source: "followup" | "retry"): void {
-		const rawWeight =
-			source === "followup" ? this.data.signalDefaults.followupWeight : this.data.signalDefaults.retryWeight;
-		const cap = this.data.signalDefaults.implicitCap;
-		const weight = Math.max(-cap, Math.min(cap, rawWeight));
-		this.data.feedbackSignals.push({
-			id: randomUUID(),
-			target: { type: "method", method },
-			query,
-			method,
-			sentiment: weight >= 0 ? "useful" : "not_useful",
-			source,
-			weight,
-			confidenceCap: cap,
-			eventId: randomUUID(),
-			timestamp: Date.now(),
-		});
-	}
-
-	getMethodHints(_query: string): MethodHint[] {
-		const eventScores = new Map<string, { method: string; score: number; signals: number; cap: number }>();
-		for (const signal of this.data.feedbackSignals) {
-			const method = this.methodForSignal(signal);
-			if (!method) continue;
-			const key = `${signal.eventId}\0${method}`;
-			const current = eventScores.get(key) ?? { method, score: 0, signals: 0, cap: signal.confidenceCap };
-			current.score += signal.weight;
-			current.signals = 1;
-			current.cap = Math.max(current.cap, signal.confidenceCap);
-			eventScores.set(key, current);
-		}
-		const scores = new Map<string, { score: number; signals: number }>();
-		for (const eventScore of eventScores.values()) {
-			const cappedScore = Math.max(-eventScore.cap, Math.min(eventScore.cap, eventScore.score));
-			const current = scores.get(eventScore.method) ?? { score: 0, signals: 0 };
-			current.score += cappedScore;
-			current.signals += eventScore.signals;
-			scores.set(eventScore.method, current);
-		}
-		return Array.from(scores.entries())
-			.map(([method, stats]) => ({
-				method,
-				score: stats.score,
-				confidence: Math.min(1, stats.signals / 5),
-				reason: `${stats.signals} recorded feedback signal(s); advisory only, not a method disable rule`,
-			}))
-			.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.method.localeCompare(b.method));
-	}
-
-	getContextHints(_query: string): RetrievalContextHints {
-		const documentAreas = new Map<string, ContextEventScore>();
-		const documentTypes = new Map<string, ContextEventScore>();
-		const evidenceTypes = new Map<string, ContextEventScore>();
-		const evidenceLocations = new Map<string, ContextEventScore>();
-		const parserTypes = new Map<string, ContextEventScore>();
-		const retrieverMix = new Map<string, ContextEventScore>();
-		const add = (events: Map<string, ContextEventScore>, value: string | undefined, signal: FeedbackSignal): void => {
-			const normalized = value?.trim();
-			if (!normalized) return;
-			const key = `${signal.eventId}\0${normalized}`;
-			const current = events.get(key) ?? {
-				value: normalized,
-				score: 0,
-				signals: 0,
-				cap: signal.confidenceCap,
-			};
-			current.score += signal.weight;
-			current.signals = 1;
-			current.cap = Math.max(current.cap, signal.confidenceCap);
-			events.set(key, current);
-		};
-		for (const signal of this.data.feedbackSignals) {
-			if (signal.target.type !== "evidence_chunk") continue;
-			const stableEvidenceId = signal.target.stableEvidenceId;
-			const evidence = this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === stableEvidenceId);
-			if (!evidence) continue;
-			add(documentAreas, evidence.documentArea, signal);
-			add(documentTypes, evidence.documentType, signal);
-			add(evidenceTypes, evidence.evidenceType, signal);
-			add(evidenceLocations, evidence.evidenceLocation, signal);
-			add(parserTypes, evidence.parserType, signal);
-			for (const retriever of evidence.retrieverMix ?? []) add(retrieverMix, retriever, signal);
-		}
-		return {
-			documentAreas: contextValues(documentAreas),
-			documentTypes: contextValues(documentTypes),
-			evidenceTypes: contextValues(evidenceTypes),
-			evidenceLocations: contextValues(evidenceLocations),
-			parserTypes: contextValues(parserTypes),
-			retrieverMix: contextValues(retrieverMix),
-		};
 	}
 
 	getInsights(query: string): RetrievalInsight[] {
@@ -827,151 +509,30 @@ export class RetrievalMemory {
 			.sort(
 				(a, b) =>
 					b.confidence - a.confidence ||
-					b.supportingSignalCount - a.supportingSignalCount ||
+					b.supportingEvidenceCount - a.supportingEvidenceCount ||
 					b.updatedAt - a.updatedAt ||
 					a.domain.localeCompare(b.domain),
 			);
 	}
 
-	/**
-	 * Past local searches whose question resembles `query` (bigram Dice >=
-	 * {@link SIMILAR_SEARCH_THRESHOLD}), most similar first, newest search per
-	 * question. Each lists its result titles and evidence sources. Results the
-	 * user last marked not useful are dropped, and so is a search left with no
-	 * result. Searches recorded for a remote P2P peer are never returned.
-	 */
-	findSimilarSearches(query: string, options: { readonly limit?: number } = {}): SimilarSearch[] {
-		const target = questionBigrams(query);
-		// Records written before verdicts were persisted only have their verdict
-		// in feedback signals, which the signal cap may already have evicted.
-		const signalVerdict = new Map<string, FeedbackSentiment>();
-		for (const signal of this.data.feedbackSignals) {
-			if (signal.source === "explicit" && signal.target.type === "curated_result") {
-				signalVerdict.set(signal.target.resultId, signal.sentiment);
-			}
-		}
-		const evidenceById = new Map(this.data.evidenceChunks.map((chunk) => [chunk.stableEvidenceId, chunk]));
-		const sessions = new Map<string, { query: string; searchedAt: number; results: SimilarSearchResult[] }>();
-		for (const record of this.data.curatedResults) {
-			if (record.remote === true) continue;
-			if ((record.verdict ?? signalVerdict.get(record.resultId)) === "not_useful") continue;
-			const session = sessions.get(record.sessionId) ?? { query: record.query, searchedAt: 0, results: [] };
-			session.searchedAt = Math.max(session.searchedAt, record.createdAt);
-			const evidence = record.evidenceIds
-				.map((id) => evidenceById.get(id))
-				.filter((chunk) => chunk !== undefined)
-				.map(({ source, method }) => ({ source, method }));
-			session.results.push({ title: record.title, evidence });
-			sessions.set(record.sessionId, session);
-		}
-		const newestPerQuestion = new Map<string, SimilarSearch>();
-		for (const session of sessions.values()) {
-			const similarity = questionSimilarity(target, questionBigrams(session.query));
-			if (similarity < SIMILAR_SEARCH_THRESHOLD) continue;
-			const existing = newestPerQuestion.get(session.query);
-			if (existing !== undefined && existing.searchedAt >= session.searchedAt) continue;
-			newestPerQuestion.set(session.query, { ...session, similarity });
-		}
-		return [...newestPerQuestion.values()]
-			.sort((a, b) => b.similarity - a.similarity || b.searchedAt - a.searchedAt)
-			.slice(0, options.limit);
-	}
-
-	// Compatibility projection for existing callers/tests while product code migrates to MethodHint wording.
-	getMethodPriority(query: string): Array<{ method: string; score: number }> {
-		return this.getMethodHints(query).map((hint) => ({ method: hint.method, score: hint.score }));
-	}
-
-	// Compatibility helpers: not persisted as v3 entries.
-	append(entry: Omit<MemoryEntry, "id" | "timestamp">): MemoryEntry {
-		const full: MemoryEntry = { id: randomUUID(), timestamp: Date.now(), ...entry };
-		this.legacyEntries.set(full.id, full);
-		if (entry.outcome !== "pending") {
-			const sentiment = entry.outcome === "useful" ? "useful" : "not_useful";
-			this.data.feedbackSignals.push({
-				id: full.id,
-				target: { type: "method", method: entry.method },
-				query: entry.query,
-				method: entry.method,
-				sentiment,
-				source: "explicit",
-				weight:
-					sentiment === "useful"
-						? this.data.signalDefaults.explicitWeight
-						: -this.data.signalDefaults.explicitWeight,
-				confidenceCap: 1,
-				eventId: randomUUID(),
-				timestamp: full.timestamp,
-			});
-		}
-		return full;
-	}
-
-	getEntries(): readonly MemoryEntry[] {
-		return Array.from(this.legacyEntries.values());
-	}
-
-	registerAttempt(attempt: SearchAttempt): void {
-		for (const source of attempt.sources) this.legacySourceToAttemptId.set(source, attempt.id);
-	}
-
-	recordResultFeedback(feedback: ResultFeedback[]): void {
-		const bySource = new Map(feedback.map((item) => [item.source, item.useful]));
-		for (const [source, useful] of bySource) {
-			const attemptId = this.legacySourceToAttemptId.get(source);
-			const entry = attemptId ? this.legacyEntries.get(attemptId) : undefined;
-			if (!entry) continue;
-			if (entry.outcome === "pending" || (entry.outcome === "not_useful" && useful)) {
-				entry.outcome = useful ? "useful" : "not_useful";
-				this.recordFeedback(entry.query, entry.method, useful);
-			}
-		}
-	}
-
-	resolvePendingEntries(query: string, method: string | null, outcome: "useful" | "not_useful"): void {
-		for (const entry of this.legacyEntries.values()) {
-			if (entry.outcome !== "pending") continue;
-			if (entry.query !== query) continue;
-			if (method !== null && entry.method !== method) continue;
-			entry.outcome = outcome;
-			this.recordFeedback(entry.query, entry.method, outcome === "useful");
-		}
-	}
-
-	recordFeedback(query: string, methodName: string, satisfied: boolean): void {
-		const sentiment: FeedbackSentiment = satisfied ? "useful" : "not_useful";
-		this.data.feedbackSignals.push({
-			id: randomUUID(),
-			target: { type: "method", method: methodName },
-			query,
-			method: methodName,
-			sentiment,
-			source: "explicit",
-			weight: satisfied ? this.data.signalDefaults.explicitWeight : -this.data.signalDefaults.explicitWeight,
-			confidenceCap: 1,
-			eventId: randomUUID(),
-			timestamp: Date.now(),
-		});
-	}
-
-	private readPersistedData(): MemorySchemaV4 {
-		if (!existsSync(this.storagePath)) return emptyMemoryV4();
+	private readPersistedData(): MemorySchema {
+		if (!existsSync(this.storagePath)) return emptyMemory();
 		try {
 			const parsed: unknown = JSON.parse(readFileSync(this.storagePath, "utf-8"));
-			if (isV4(parsed)) return normalizeV4(parsed);
-			if (isV3(parsed)) return migrateV3(parsed);
+			const persisted = parsePersisted(parsed);
+			if (persisted !== undefined) return persisted;
 		} catch (error) {
 			if (!(error instanceof Error)) throw error;
 		}
 		return this.incompatibleMemory();
 	}
 
-	private incompatibleMemory(): MemorySchemaV4 {
+	private incompatibleMemory(): MemorySchema {
 		console.warn(RESET_WARNING);
-		const data = emptyMemoryV4();
+		const data = emptyMemory();
 		data.warnings.push({
 			code: "memory-reset",
-			message: "Retrieval memory was reset because it was not v4-compatible",
+			message: "Retrieval memory was reset because it was not v4/v5-compatible",
 			timestamp: Date.now(),
 		});
 		return data;
@@ -986,7 +547,11 @@ export class RetrievalMemory {
 		});
 	}
 
-	private mergeWithPersisted(persisted: MemorySchemaV4): MemorySchemaV4 {
+	/**
+	 * Fold what this instance added since it last loaded or saved into the file
+	 * as it is now, so processes saving independently never overwrite each other.
+	 */
+	private mergeWithPersisted(persisted: MemorySchema): MemorySchema {
 		const merged = cloneMemory(persisted);
 		const baselineResults = new Map(this.persistedData.curatedResults.map((record) => [record.resultId, record]));
 		for (const record of this.data.curatedResults) {
@@ -1021,20 +586,20 @@ export class RetrievalMemory {
 			};
 		}
 
-		const baselineSignalIds = new Set(this.persistedData.feedbackSignals.map((signal) => signal.id));
-		const signalKeys = new Set<string>();
-		merged.feedbackSignals = merged.feedbackSignals.filter((signal) => {
-			const key = feedbackSignalKey(signal);
-			if (signalKeys.has(key)) return false;
-			signalKeys.add(key);
-			return true;
-		});
-		for (const signal of this.data.feedbackSignals) {
-			if (baselineSignalIds.has(signal.id)) continue;
-			const key = feedbackSignalKey(signal);
-			if (signalKeys.has(key)) continue;
-			signalKeys.add(key);
-			merged.feedbackSignals.push(signal);
+		const baselineJudgedIds = new Set(this.persistedData.judgedEvidence.map((record) => record.id));
+		const judgedIds = new Set(merged.judgedEvidence.map((record) => record.id));
+		for (const record of this.data.judgedEvidence) {
+			if (baselineJudgedIds.has(record.id) || judgedIds.has(record.id)) continue;
+			judgedIds.add(record.id);
+			merged.judgedEvidence.push(record);
+		}
+
+		const baselinePending = new Set(this.persistedData.pendingInsightEntries);
+		const pending = new Set(merged.pendingInsightEntries);
+		for (const id of this.data.pendingInsightEntries) {
+			if (baselinePending.has(id) || pending.has(id)) continue;
+			pending.add(id);
+			merged.pendingInsightEntries.push(id);
 		}
 
 		const baselineWarningKeys = new Set(this.persistedData.warnings.map(warningKey));
@@ -1044,17 +609,6 @@ export class RetrievalMemory {
 			if (baselineWarningKeys.has(key) || warningKeys.has(key)) continue;
 			warningKeys.add(key);
 			merged.warnings.push(warning);
-		}
-
-		const baselinePendingKeys = new Set(
-			this.persistedData.pendingInsightSignals.map((item) => feedbackSignalKey(item.signal)),
-		);
-		const pendingKeys = new Set(merged.pendingInsightSignals.map((item) => feedbackSignalKey(item.signal)));
-		for (const item of this.data.pendingInsightSignals) {
-			const key = feedbackSignalKey(item.signal);
-			if (baselinePendingKeys.has(key) || pendingKeys.has(key)) continue;
-			pendingKeys.add(key);
-			merged.pendingInsightSignals.push(item);
 		}
 
 		const baselineInsights = new Map(this.persistedData.insights.map((insight) => [insight.clusterKey, insight]));
@@ -1068,9 +622,9 @@ export class RetrievalMemory {
 			}
 			const existing = merged.insights[existingIndex];
 			const supportDelta = baseline
-				? Math.max(0, insight.supportingSignalCount - baseline.supportingSignalCount)
-				: insight.supportingSignalCount;
-			const support = existing.supportingSignalCount + supportDelta;
+				? Math.max(0, insight.supportingEvidenceCount - baseline.supportingEvidenceCount)
+				: insight.supportingEvidenceCount;
+			const support = existing.supportingEvidenceCount + supportDelta;
 			merged.insights[existingIndex] = {
 				...existing,
 				recommendedSources: Array.from(
@@ -1080,7 +634,7 @@ export class RetrievalMemory {
 					new Set([...existing.recommendedMethods, ...insight.recommendedMethods]),
 				).slice(0, 3),
 				rationale: insight.updatedAt >= existing.updatedAt ? insight.rationale : existing.rationale,
-				supportingSignalCount: support,
+				supportingEvidenceCount: support,
 				confidence: Math.max(existing.confidence, insight.confidence, Math.min(1, support / 100)),
 				createdAt: Math.min(existing.createdAt, insight.createdAt),
 				updatedAt: Math.max(existing.updatedAt, insight.updatedAt),
@@ -1090,48 +644,31 @@ export class RetrievalMemory {
 		return merged;
 	}
 
-	private capData(): void {
-		const evictedSignals =
-			this.data.feedbackSignals.length > MAX_RECORDS
-				? this.data.feedbackSignals.slice(0, this.data.feedbackSignals.length - MAX_RECORDS).map((signal) => ({
-						signal,
-						method: this.methodForSignal(signal),
-						source: this.sourceForSignal(signal),
-					}))
-				: [];
-		this.extractInsightsFromEvictedSignals(evictedSignals);
-
-		this.data.curatedResults = this.data.curatedResults.slice(-MAX_RECORDS);
-		this.data.evidenceChunks = this.data.evidenceChunks.slice(-MAX_RECORDS);
-		this.data.feedbackSignals = this.data.feedbackSignals.slice(-MAX_RECORDS);
-		this.data.insights = this.data.insights
-			.sort(
-				(a, b) =>
-					b.confidence - a.confidence ||
-					b.supportingSignalCount - a.supportingSignalCount ||
-					b.updatedAt - a.updatedAt ||
-					a.domain.localeCompare(b.domain),
-			)
-			.slice(0, MAX_INSIGHTS);
-		this.data.warnings = this.data.warnings.slice(-MAX_WARNINGS);
-	}
-
-	private extractInsightsFromEvictedSignals(evictedSignals: readonly InsightExtractionSignal[]): void {
-		const candidates = [...this.data.pendingInsightSignals, ...evictedSignals];
-		const completeBatchCount = Math.floor(candidates.length / INSIGHT_BATCH_SIZE);
-		this.data.pendingInsightSignals = candidates.slice(completeBatchCount * INSIGHT_BATCH_SIZE);
+	/**
+	 * Every full group of 100 pending judged records is summarized into
+	 * insights; the remainder waits for the next batch. A failing extractor never
+	 * blocks the save, and the batch it failed on is not retried.
+	 */
+	private summarizeCompleteBatches(): void {
+		const pending = this.data.pendingInsightEntries;
+		const completeBatchCount = Math.floor(pending.length / INSIGHT_BATCH_SIZE);
 		if (completeBatchCount === 0) return;
+		this.data.pendingInsightEntries = pending.slice(completeBatchCount * INSIGHT_BATCH_SIZE);
+		const recordsById = new Map(this.data.judgedEvidence.map((record) => [record.id, record]));
 		const now = Date.now();
 		try {
-			for (let i = 0; i < completeBatchCount; i++) {
-				const batch = candidates.slice(i * INSIGHT_BATCH_SIZE, (i + 1) * INSIGHT_BATCH_SIZE);
+			for (let index = 0; index < completeBatchCount; index++) {
+				const batch = pending
+					.slice(index * INSIGHT_BATCH_SIZE, (index + 1) * INSIGHT_BATCH_SIZE)
+					.map((id) => recordsById.get(id))
+					.filter((record): record is JudgedEvidenceRecord => record !== undefined);
 				this.mergeInsights(this.insightExtractor(batch, now));
 			}
-		} catch {
+		} catch (error) {
 			console.warn(INSIGHT_WARNING);
 			this.data.warnings.push({
 				code: "insight-extraction-failed",
-				message: "Retrieval insight extraction failed; memory save continued without blocking capping",
+				message: `Retrieval insight extraction failed; memory save continued without insights: ${error instanceof Error ? error.message : String(error)}`,
 				timestamp: now,
 			});
 		}
@@ -1153,13 +690,13 @@ export class RetrievalMemory {
 				0,
 				3,
 			);
-			const support = existing.supportingSignalCount + insight.supportingSignalCount;
+			const support = existing.supportingEvidenceCount + insight.supportingEvidenceCount;
 			this.data.insights[existingIndex] = {
 				...existing,
 				recommendedSources: sources,
 				recommendedMethods: methods,
 				rationale: insight.rationale,
-				supportingSignalCount: support,
+				supportingEvidenceCount: support,
 				confidence: Math.max(existing.confidence, insight.confidence, Math.min(1, support / 100)),
 				updatedAt: Math.max(existing.updatedAt, insight.updatedAt),
 			};
@@ -1187,38 +724,6 @@ export class RetrievalMemory {
 		} else {
 			this.data.evidenceChunks.push(record);
 		}
-	}
-
-	private methodForSignal(signal: FeedbackSignal): string | undefined {
-		if (signal.method) return signal.method;
-		const target = signal.target;
-		if (target.type === "method") return target.method;
-		if (target.type === "evidence_chunk") {
-			return this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === target.stableEvidenceId)?.method;
-		}
-		if (target.type === "curated_result") {
-			const result = this.data.curatedResults.find((entry) => entry.resultId === target.resultId);
-			const firstEvidence = result?.evidenceIds[0];
-			return firstEvidence
-				? this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === firstEvidence)?.method
-				: undefined;
-		}
-		return undefined;
-	}
-
-	private sourceForSignal(signal: FeedbackSignal): string | undefined {
-		const target = signal.target;
-		if (target.type === "evidence_chunk") {
-			return this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === target.stableEvidenceId)?.source;
-		}
-		if (target.type === "curated_result") {
-			const result = this.data.curatedResults.find((entry) => entry.resultId === target.resultId);
-			const firstEvidence = result?.evidenceIds[0];
-			return firstEvidence
-				? this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === firstEvidence)?.source
-				: undefined;
-		}
-		return undefined;
 	}
 }
 

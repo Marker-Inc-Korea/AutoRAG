@@ -112,15 +112,6 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"",
 		"Thinking levels: off, minimal, low, medium, high, xhigh, max.",
 	]),
-	feedback: usage([
-		"autorag feedback - record numbered feedback for a session",
-		"",
-		"Usage: autorag feedback <session> [flags]",
-		"",
-		"Flags:",
-		"  --useful <csv>      Result numbers that were useful (e.g. 1,3)",
-		"  --not-useful <csv>  Result numbers that were not useful (e.g. 2)",
-	]),
 	evidence: usage([
 		"autorag evidence - show persisted source and chunk evidence",
 		"",
@@ -134,8 +125,8 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"",
 		"Usage: autorag memory inspect",
 		"",
-		"Renders a path-opaque snapshot of curated results, feedback signals,",
-		"insights, and signal defaults. Model-free; the storage path is never emitted.",
+		"Renders a path-opaque snapshot of judged evidence, curated results,",
+		"evidence chunks, and insights. Model-free; the storage path is never emitted.",
 	]),
 	index: usage([
 		"autorag index - reset or rebuild local indexes",

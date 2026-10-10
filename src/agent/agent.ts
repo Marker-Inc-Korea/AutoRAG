@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
-import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
+import { basename, dirname, join, resolve } from "node:path";
+import type { Agent, AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
+import { createGatewayEmbedder, type Embedder } from "../embedding-runtime/gateway-embedder.ts";
 import {
 	EverythingClient,
 	type EverythingClientOptions,
@@ -43,9 +45,10 @@ import {
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
-import type { ResultFeedback } from "../memory/memory.ts";
+import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
+import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
-import { renderMemoryContext } from "../memory/renderer.ts";
+import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import {
 	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
@@ -84,6 +87,7 @@ import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../we
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
+	type DatasourceAgentSkill,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
@@ -98,6 +102,8 @@ import {
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
+import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
+import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import {
 	type AutoRAGFastAnswerDetails,
 	createEmitFastAnswerTool,
@@ -152,7 +158,6 @@ import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./
 import {
 	createEmptySearchDocumentsResponse,
 	createPreliminarySearchDocumentsResponse,
-	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,
@@ -162,7 +167,18 @@ import {
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
-import { createSingleDatasourceSearchTools, type SingleDatasourceToolSpec } from "./search-single-datasource-tool.ts";
+import {
+	createSingleDatasourceSearchTools,
+	type SingleDatasourceToolSpec,
+	singleDatasourceToolName,
+} from "./search-single-datasource-tool.ts";
+import {
+	buildSelfConfigPrompt,
+	loadSetupSkill,
+	rollbackIfBroken,
+	type SelfConfigOptions,
+	snapshotConfigFile,
+} from "./self-config.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -175,8 +191,8 @@ import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } 
 
 /**
  * Retrieval datasource tools whose executions count toward the per-search
- * tool budget and weak-signal memory. `bash` is a source-inspection tool,
- * not a search datasource, so it is deliberately excluded from this list.
+ * tool budget and the run's evidence origins. `bash` is a source-inspection
+ * tool, not a search datasource, so it is deliberately excluded from this list.
  */
 const SEARCH_TOOLS = [
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
@@ -185,50 +201,6 @@ const SEARCH_TOOLS = [
 	EVERYTHING_SEARCH_TOOL_NAME,
 	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
-
-/** Only completed searches that returned evidence earn implicit positive feedback. */
-function hasSearchEvidence(toolName: string, details: unknown, isError: boolean): boolean {
-	if (isError || details === null || typeof details !== "object") return false;
-	const outcome = details as Record<string, unknown>;
-	if (outcome.available === false) return false;
-	if (
-		Array.isArray(outcome.diagnostics) &&
-		outcome.diagnostics.some(
-			(diagnostic) =>
-				diagnostic !== null &&
-				typeof diagnostic === "object" &&
-				(diagnostic.severity === "error" ||
-					diagnostic.code === "retrieval-method-failed" ||
-					diagnostic.code === "minsync-unavailable" ||
-					diagnostic.code === "jikji-find-failed" ||
-					diagnostic.code === "jikji-unavailable"),
-		)
-	) {
-		// Pipeline failures are warnings even when healthy methods return hits.
-		// Without per-method attribution, the incomplete aggregate earns no credit.
-		return false;
-	}
-	// Jikji reports answer paths, while the other search tools report resultCount.
-	const countKey = toolName === JIKJI_FIND_TOOL_NAME ? "answerCount" : "resultCount";
-	if (countKey in outcome) {
-		const count = outcome[countKey];
-		return typeof count === "number" && Number.isFinite(count) && count > 0;
-	}
-	// Legacy producers may omit counts. Never override an explicit zero/invalid
-	// count, and require an actual source identity rather than an arbitrary item.
-	return (
-		(Array.isArray(outcome.sources) &&
-			outcome.sources.some((source) => typeof source === "string" && source.trim().length > 0)) ||
-		(Array.isArray(outcome.results) &&
-			outcome.results.some(
-				(result) =>
-					result !== null &&
-					typeof result === "object" &&
-					typeof result.source === "string" &&
-					result.source.trim().length > 0,
-			))
-	);
-}
 
 /**
  * Safety ceiling on merged evidence when the caller names no `topK`.
@@ -243,10 +215,12 @@ function hasSearchEvidence(toolName: string, details: unknown, isError: boolean)
  */
 const MERGED_EVIDENCE_CEILING = 500;
 
-/** Similar past searches shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
+/** Similar past questions shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
 const SIMILAR_PAST_SEARCH_LIMIT = 5;
-/** Results listed per similar past search; a search's leading results carry its answer. */
+/** Results listed per similar past question; the best-judged evidence carries its answer. */
 const SIMILAR_PAST_RESULT_LIMIT = 4;
+/** Evidence cited by one answer is truncated to this many characters when stored in memory. */
+const MEMORY_EXCERPT_CHARACTERS = 1_500;
 
 /**
  * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
@@ -579,6 +553,20 @@ export interface AutoRAGAgentOptions {
 	 */
 	jev?: JevToolOptions | false;
 	/**
+	 * Embedder used to find similar past questions in memory (semantic half of
+	 * the hybrid search). Defaults to the local embedding gateway; `false` keeps
+	 * memory search keyword-only.
+	 */
+	memoryEmbedder?: Embedder | false;
+	/**
+	 * Agent self-configuration. When set (and Jev is on), Jev gains a `config`
+	 * branch for questions about AutoRAG's own settings: the turn skips
+	 * `emit_fast_answer`, receives the full `autorag-setup` skill, edits
+	 * `configPath` with the pi tools, and reports through
+	 * `emit_autorag_results`. Always omitted for remote P2P sessions.
+	 */
+	selfConfig?: SelfConfigOptions;
+	/**
 	 * Question decomposition used by the Jev query pipeline. `model` (with its
 	 * `apiKey`) is the LLM that splits one question into at most five search
 	 * queries; omitted, the search session's own model decomposes. The CLI
@@ -723,13 +711,15 @@ export class AutoRAGAgent {
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
-	private readonly datasourceAgentSkills: readonly Skill[];
+	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
 	private readonly jevJudge: JevJudge | undefined;
+	/** Self-configuration, enabled only with Jev on a local session. */
+	private readonly selfConfig: SelfConfigOptions | undefined;
 	private readonly queryDecompositionModel: DecompositionModel | undefined;
 	/** Web search options for the agent's `web_search` / `web_fetch` tools; undefined when web tools are off. */
 	private readonly webSearchOptions: WebSearchToolOptions | undefined;
@@ -746,6 +736,17 @@ export class AutoRAGAgent {
 	private readonly persistPiSessions: boolean;
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
+	/** Embeds past questions for similar-question search; undefined keeps memory search keyword-only. */
+	private readonly memoryEmbedder: Embedder | undefined;
+	private readonly memoryVectorPath: string;
+	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
+	private readonly evidenceOrigins = new EvidenceOriginIndex();
+	/** Search-tool queries by tool call id, read back when the call ends. */
+	private readonly searchToolQueries = new Map<string, string>();
+	/** Identifies this agent's conversation: everything judged in it is "current" memory. */
+	private readonly conversationId = randomUUID();
+	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
+	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
@@ -848,9 +849,16 @@ export class AutoRAGAgent {
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
+		this.memoryVectorPath = memoryVectorStorePath(memPath);
+		this.memoryEmbedder =
+			options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? createGatewayEmbedder());
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
-		const checkMemoryTool = createCheckMemoryTool(this.memory);
+		// Remote peers never read retrieval memory: past judged evidence may come
+		// from sources outside the peer's sharing policy.
+		const checkMemoryTool = createCheckMemoryTool(this.memory, () =>
+			this.remoteSession ? undefined : this.memoryContextOptions(),
+		);
 		// One tool per configured datasource connection, so a question that
 		// targets a single connection spawns only that connection's CLIs instead
 		// of fanning out to every datasource. Generated from the configured
@@ -874,6 +882,7 @@ export class AutoRAGAgent {
 				? undefined
 				: createJevJudge(options.jev);
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
+		this.selfConfig = this.jevJudge === undefined || this.remoteSession ? undefined : options.selfConfig;
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
 				? undefined
@@ -990,7 +999,6 @@ export class AutoRAGAgent {
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
-			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
@@ -1032,23 +1040,202 @@ export class AutoRAGAgent {
 		return { scans, familyCount, exactDuplicateCount };
 	}
 
+	/**
+	 * Reference memory for the current question: everything judged earlier in
+	 * this conversation, up to 25 similar past questions, and matching
+	 * long-term insights. Computed once per run (the datasource check and every
+	 * model turn share it) so the similar-question search and its embedder call
+	 * are not repeated and a fallback is reported once. Remote peers never read it.
+	 */
+	private loadMemoryContextFor(query: string): Promise<MemoryContext> {
+		if (this.memoryContextCache?.query === query) return this.memoryContextCache.context;
+		const context = loadMemoryContext(this.memory, query, this.memoryContextOptions()).then((loaded) => {
+			if (loaded.fallbackReason !== undefined) {
+				this.routingDiagnostics.push({
+					code: "memory-search-fallback",
+					severity: "warning",
+					message: loaded.fallbackReason,
+					source: "memory",
+				});
+			}
+			return loaded;
+		});
+		this.memoryContextCache = { query, context };
+		return context;
+	}
+
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
-		const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
-		const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
-		const contextHints = this.lastQuery ? this.memory.getContextHints(this.lastQuery) : undefined;
-		const contextHintCount = contextHints
-			? Object.values(contextHints).reduce((count, values) => count + values.length, 0)
-			: 0;
-		if (hints.length === 0 && insights.length === 0 && contextHintCount === 0) return messages;
-		const summary = renderMemoryContext(hints, { insights, contextHints });
+		if (this.lastQuery === undefined || this.remoteSession) return messages;
+		const context = await this.loadMemoryContextFor(this.lastQuery);
+		if (context.empty) return messages;
 		return [
 			{
 				role: "user",
-				content: [{ type: "text", text: `<memory_context>\n${summary}\n</memory_context>` }],
+				content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
 				timestamp: Date.now(),
 			},
 			...messages,
 		];
+	}
+
+	/**
+	 * Where evidence came from, or undefined when this run may not see it.
+	 * Datasource chunks carry a virtual path rooted at the skill name
+	 * (`/kakao/default/...`), but the model sometimes maps a datasource hit to a
+	 * bare chunk id. The evidence method then still names the datasource
+	 * (`search_datasource_kakao_work`, `datasource:kakao`, `kakao-work-lexical`):
+	 * both sides collapse every non-alphanumeric to `_` exactly like generated
+	 * tool names, and a datasource id that appears as a whole token attributes
+	 * it; longer ids are checked first so `kakao-work` wins over `kakao`.
+	 * Indexed files are absolute paths under a search path; web evidence is a URL.
+	 * Memory is global (shared across workspaces and configs), so evidence from
+	 * an unconfigured datasource, and evidence with no recognizable origin, is
+	 * never attributed.
+	 */
+	private evidenceAttribution(
+		catalog: readonly DatasourceCatalogEntry[],
+	): (evidence: { readonly source: string; readonly method: string }) => string | undefined {
+		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
+		const nonDatasourceRoots = new Set(
+			this.datasourceSkills.map((skill) => skill.describe().name).filter((name) => !datasourceByRoot.has(name)),
+		);
+		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
+		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		return ({ source, method }) => {
+			if (/^https?:\/\//u.test(source)) return "web";
+			const normalizedSource = source.replaceAll("\\", "/");
+			for (const configuredRoot of this.configuredSearchPaths) {
+				const normalizedRoot = configuredRoot.replaceAll("\\", "/").replace(/\/+$/u, "");
+				if (normalizedSource === normalizedRoot || normalizedSource.startsWith(`${normalizedRoot}/`))
+					return "local files";
+			}
+			const root = normalizedSource.startsWith("/") ? (normalizedSource.split("/")[1] ?? "") : "";
+			if (nonDatasourceRoots.has(root)) return undefined;
+			const byRoot = datasourceByRoot.get(root);
+			if (byRoot !== undefined) return byRoot;
+			const tokens = methodToken(method);
+			return idsLongestFirst.find((id) => tokens.includes(methodToken(id)));
+		};
+	}
+
+	/** Options shared by the prompt injection and the `check_memory` tool; rebuilt on every call because datasource configuration follows live settings. */
+	private memoryContextOptions(): MemoryContextOptions {
+		const whereFound = this.evidenceAttribution(this.listDatasources());
+		const insightSources = new Set(this.listDatasources().map((entry) => entry.datasourceId));
+		return {
+			conversationId: this.conversationId,
+			isVisible: (record) => whereFound(record) !== undefined,
+			isInsightVisible: (insight) =>
+				insight.recommendedSources.every((source) => whereFound({ source, method: "" }) !== undefined) &&
+				insight.recommendedMethods.every(
+					(method) =>
+						!method.startsWith("search_datasource_") ||
+						[...insightSources].some((id) => method.includes(id.replace(/[^a-zA-Z0-9]+/gu, "_"))),
+				),
+			...(this.memoryEmbedder !== undefined ? { embedder: this.memoryEmbedder } : {}),
+			vectorStorePath: this.memoryVectorPath,
+		};
+	}
+
+	/** Remember which query and method surfaced each retrieval result, so cited evidence can be traced back. */
+	private rememberEvidenceOrigins(
+		query: string | undefined,
+		method: string,
+		results: readonly { readonly source?: string; readonly excerpt: string }[],
+	): void {
+		if (query === undefined) return;
+		for (const result of results) {
+			this.evidenceOrigins.add({ query, method, source: result.source ?? "", content: result.excerpt });
+		}
+	}
+
+	/**
+	 * After the final answer: map every cited evidence back to the search query
+	 * and method that found it, ask Jev (one batched call, evidence judged in
+	 * parallel) whether it really supports the answer sentence it backs, and
+	 * keep only what clears the threshold. Remote peers and runs without Jev
+	 * store nothing; a failed judgment stores nothing and says why.
+	 */
+	private async recordJudgedEvidence(
+		sessionId: string,
+		question: string,
+		details: AutoRAGResultsDetails,
+	): Promise<SearchDocumentDiagnostic | undefined> {
+		if (this.remoteSession || details.mapping.length === 0) return undefined;
+		if (this.jevJudge === undefined) {
+			return {
+				code: "evidence-judgment-fallback",
+				severity: "info",
+				message: "Jev is disabled, so this answer's evidence was not judged and nothing was added to memory.",
+				source: "memory",
+			};
+		}
+		const registry = this.sessions.get(sessionId)?.registry;
+		const resultByNumber = new Map(details.results.map((result) => [result.number, result]));
+		const units: (EvidenceJudgmentUnit & {
+			readonly record: Omit<JudgedEvidenceRecord, "probability" | "createdAt">;
+		})[] = [];
+		for (const entry of details.mapping) {
+			const result = resultByNumber.get(entry.number);
+			const refs = registry?.get(entry.number)?.evidenceRefs ?? [];
+			if (result === undefined || refs.length === 0) continue;
+			for (const ref of refs) {
+				const excerpt = (ref.excerpt ?? ref.content ?? "").slice(0, MEMORY_EXCERPT_CHARACTERS);
+				if (excerpt.length === 0) continue;
+				const origin = this.evidenceOrigins.resolve(ref);
+				const searchQuery = origin?.query ?? question;
+				const method = origin?.method ?? ref.method;
+				const id = `${entry.number}:${ref.stableEvidenceId}`;
+				units.push({
+					id,
+					resultNumber: entry.number,
+					title: result.title,
+					summary: result.summary,
+					searchQuery,
+					method,
+					excerpt,
+					record: {
+						id: `${sessionId}:${ref.stableEvidenceId}`,
+						sessionId,
+						conversationId: this.conversationId,
+						question,
+						searchQuery,
+						method,
+						source: ref.source,
+						stableEvidenceId: ref.stableEvidenceId,
+						resultNumber: entry.number,
+						title: result.title,
+						excerpt,
+					},
+				});
+			}
+		}
+		if (units.length === 0) return undefined;
+		const judgment = await judgeEvidence(this.jevJudge, { question, answer: details.answer, units });
+		const diagnostic: SearchDocumentDiagnostic =
+			judgment.fallbackReason !== undefined
+				? {
+						code: "evidence-judgment-fallback",
+						severity: "warning",
+						message: `Jev evidence judgment was unavailable; nothing was added to memory. ${judgment.fallbackReason}`,
+						source: "memory",
+					}
+				: {
+						code: "evidence-judged",
+						severity: "info",
+						message: `Jev judged ${Object.keys(judgment.probabilities).length} of ${units.length} cited evidence; ${judgment.kept.length} supported the question (p >= ${EVIDENCE_SUPPORT_THRESHOLD}) and were added to memory.`,
+						source: "memory",
+					};
+		if (judgment.kept.length === 0) return diagnostic;
+		const now = Date.now();
+		const keptIds = new Set(judgment.kept);
+		this.memory.recordJudgedEvidence(
+			units
+				.filter((unit) => keptIds.has(unit.id))
+				.map((unit) => ({ ...unit.record, probability: judgment.probabilities[unit.id] ?? 0, createdAt: now })),
+		);
+		this.memory.save();
+		return diagnostic;
 	}
 
 	private async resolveSessionModel(): Promise<{
@@ -1141,6 +1328,11 @@ export class AutoRAGAgent {
 	}
 
 	private recordSearchToolEvent(event: AgentEvent): void {
+		if (event.type === "tool_execution_start" && this.searchToolNames.has(event.toolName)) {
+			const query: unknown = event.args?.query;
+			if (typeof query === "string") this.searchToolQueries.set(event.toolCallId, query);
+			return;
+		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
 		if (!this.searchToolNames.has(event.toolName)) return;
 		this.searchToolCallCount += 1;
@@ -1159,25 +1351,26 @@ export class AutoRAGAgent {
 			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
 		}
 		if (Array.isArray(details?.results)) {
-			const args = (event as { args?: { query?: unknown } }).args;
+			const calledQuery = this.searchToolQueries.get(event.toolCallId);
+			this.searchToolQueries.delete(event.toolCallId);
 			this.retrievalTrace.push({
 				tool: event.toolName,
-				...(typeof args?.query === "string" ? { query: args.query } : {}),
+				...(calledQuery !== undefined ? { query: calledQuery } : {}),
 				resultCount:
 					typeof details?.resultCount === "number" ? details.resultCount : (details?.results?.length ?? 0),
 				results: details?.results ?? [],
 			});
-		}
-		if (hasSearchEvidence(event.toolName, details, event.isError)) {
-			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
-			this.memory.save();
+			this.rememberEvidenceOrigins(
+				calledQuery ?? this.lastQuery,
+				details?.method ?? event.toolName,
+				details?.results ?? [],
+			);
 		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
 		return {
 			...this.baseSystemPromptConfig,
-			memorySignalCount: this.memory.getSignalCount(),
 			...models,
 		};
 	}
@@ -1297,33 +1490,6 @@ export class AutoRAGAgent {
 		}
 	}
 
-	submitFeedback(sessionId: string | undefined, satisfied: boolean): void {
-		const sid = sessionId ?? this.lastSessionId;
-		const session = sid ? this.sessions.get(sid) : undefined;
-		const query = session?.query ?? this.lastQuery;
-		if (query) {
-			this.memory.resolvePendingEntries(query, null, satisfied ? "useful" : "not_useful");
-			this.memory.save();
-		}
-	}
-
-	recordResultFeedback(feedback: ResultFeedback[]): void {
-		this.memory.recordResultFeedback(feedback);
-		this.memory.save();
-	}
-
-	recordFeedbackByNumbers(sessionId: string, usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
-		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
-	}
-
-	recordFeedbackByIds(usefulFeedbackIds: readonly string[], notUsefulFeedbackIds: readonly string[] = []): void {
-		const feedback = [
-			...usefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: true })),
-			...notUsefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: false })),
-		];
-		if (this.memory.recordFeedbackByIds(feedback)) this.memory.save();
-	}
-
 	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
 		const sid = sessionId ?? this.lastSessionId;
 		const session = sid ? this.sessions.get(sid) : undefined;
@@ -1349,11 +1515,16 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
+		this.evidenceOrigins.clear();
+		this.searchToolQueries.clear();
+		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
+		/** True when this run took the Jev `config` branch; its report never feeds retrieval memory. */
+		let selfConfigRun = false;
 		/**
 		 * Without Jev every fast answer goes on to verification, so it is
 		 * published the moment emit_fast_answer runs. With Jev, publishing waits
@@ -1362,8 +1533,13 @@ export class AutoRAGAgent {
 		 */
 		const publishOnCapture = this.jevJudge === undefined;
 		let published = false;
+		// A run's timeout aborts this controller. A slow follow-up check or a
+		// late tool call can outlive the timeout, so publishing is gated on it:
+		// an aborted run must never push a preliminary into the callback a later
+		// run already installed on the instance.
+		const planAbort = new AbortController();
 		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
-			if (published) return;
+			if (planAbort.signal.aborted || published) return;
 			published = true;
 			this.preliminaryCallback?.(
 				createPreliminarySearchDocumentsResponse(
@@ -1414,7 +1590,7 @@ export class AutoRAGAgent {
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
 			let timeout: NodeJS.Timeout | undefined;
-			const planAbort = new AbortController();
+			let timedOutAfterFastAnswer = false;
 			try {
 				await Promise.race([
 					(async () => {
@@ -1443,6 +1619,69 @@ export class AutoRAGAgent {
 								];
 							}
 						};
+						if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
+							// Self-configuration: no retrieval and no emit_fast_answer. The
+							// model gets the full setup skill and edits the config itself,
+							// then reports through emit_autorag_results.
+							selfConfigRun = true;
+							// pi's bash tool refuses to run from a missing cwd, and a freshly
+							// initialised config has not created its workspace yet.
+							mkdirSync(this.workspaceProjectRoot, { recursive: true });
+							const previousTools = sessionAgent?.getActiveToolNames();
+							if (sessionAgent !== undefined) {
+								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+								sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES, EMIT_AUTORAG_RESULTS_TOOL_NAME]);
+							} else {
+								activeSession.agent.state.thinkingLevel = clampThinkingLevel(
+									resolved.model,
+									this.finalThinkingLevel,
+								);
+								activeSession.agent.state.tools = this.tools.filter(
+									(tool) => tool.name === EMIT_AUTORAG_RESULTS_TOOL_NAME,
+								);
+							}
+							const configBefore = snapshotConfigFile(this.selfConfig.configPath);
+							try {
+								await session.prompt(
+									buildSelfConfigPrompt({
+										query: trimmedQuery,
+										configPath: this.selfConfig.configPath,
+										agentDir: this.piAgentDir ?? getAgentDir(),
+										skill: plan.selfConfigSkill,
+									}),
+								);
+								if (
+									captured === undefined &&
+									!planAbort.signal.aborted &&
+									lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) ===
+										undefined
+								) {
+									await session.prompt(buildFinalEmitReminder());
+								}
+								const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
+								if (rolledBack !== undefined) {
+									this.routingDiagnostics.push({
+										code: "self-config-rolled-back",
+										severity: "warning",
+										message: `The edited config did not validate, so the previous config was restored. ${rolledBack}`,
+										source: "self-config",
+									});
+									const emitted = captured;
+									if (emitted !== undefined) {
+										captured = {
+											...emitted,
+											answer: `${emitted.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
+										};
+									}
+								}
+							} finally {
+								// A bound interactive session outlives this run: give it its search tools back.
+								if (sessionAgent !== undefined && previousTools !== undefined) {
+									sessionAgent.setActiveToolsByName(previousTools);
+								}
+							}
+							return;
+						}
 						if (plan.route === "direct") {
 							// Direct answers skip every retrieval step and the verification
 							// phase: the fast answer is the final answer. Only Jev routes
@@ -1472,9 +1711,16 @@ export class AutoRAGAgent {
 						if (captured !== undefined) return;
 						// With Jev enabled, a fast answer that needs no correction,
 						// clarification, or further research ends the run here.
-						if (preliminary !== undefined && !(await this.shouldFollowUp(trimmedQuery, preliminary))) {
-							captured = fastAnswerAsFinal(preliminary);
-							return;
+						if (preliminary !== undefined) {
+							const followUp = await this.shouldFollowUp(trimmedQuery, preliminary);
+							// The follow-up check is not tied to the session abort, so it
+							// can resolve after the run's timeout fired; stop here rather
+							// than publishing or prompting on behalf of a dead run.
+							if (planAbort.signal.aborted) return;
+							if (!followUp) {
+								captured = fastAnswerAsFinal(preliminary);
+								return;
+							}
 						}
 						if (preliminary !== undefined) publishPreliminary(preliminary);
 						if (sessionAgent !== undefined) {
@@ -1505,16 +1751,53 @@ export class AutoRAGAgent {
 							await session.prompt(buildFinalEmitReminder());
 						}
 					})(),
-					new Promise<never>((_, reject) => {
+					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
 							planAbort.abort();
 							void Promise.resolve(session?.abort());
+							// A first answer already exists: return it below instead of
+							// failing the whole search and discarding it. Remote sessions
+							// keep failing soft through their outbound-scanned path.
+							if (fastCaptured !== undefined && !this.remoteSession) {
+								timedOutAfterFastAnswer = true;
+								resolve();
+								return;
+							}
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
 					}),
 				]);
 			} finally {
 				if (timeout !== undefined) clearTimeout(timeout);
+			}
+
+			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
+				// The caller receives this as the run's final answer, so record it as
+				// one: the fast-answer-as-final conversion registers the session
+				// registry and memory entry for the returned response.
+				const response = recordStructuredResultsSession(
+					sessionId,
+					trimmedQuery,
+					fastAnswerAsFinal(fastCaptured),
+					this.sessions,
+					this.memory,
+					[
+						...this.collectComponentDiagnostics(),
+						{
+							code: "search-timeout",
+							severity: "warning",
+							message: `search timed out after ${this.searchTimeoutMs}ms before verification finished; returning the first answer`,
+						},
+					],
+				);
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: response.results.length,
+					degraded: true,
+				});
+				return response;
 			}
 
 			let emittedNoVerifiedResults = false;
@@ -1596,15 +1879,24 @@ export class AutoRAGAgent {
 					source: "agent",
 				});
 			}
-			const response = recordStructuredResultsSession(
+			const recorded = recordStructuredResultsSession(
 				sessionId,
 				trimmedQuery,
 				captured,
 				this.sessions,
 				this.memory,
 				componentDiagnostics,
-				{ remote: this.remoteSession },
+				{ isolateMemory: this.remoteSession || selfConfigRun },
 			);
+			// The session registry now holds the normalized evidence refs the judgment reads.
+			// A self-config report is about AutoRAG's settings, not retrieved evidence.
+			const memoryDiagnostic = selfConfigRun
+				? undefined
+				: await this.recordJudgedEvidence(sessionId, trimmedQuery, captured);
+			const response: SearchDocumentsResponse =
+				memoryDiagnostic === undefined
+					? recorded
+					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), memoryDiagnostic] };
 			this.runLogger.write({
 				event: "search_completed",
 				timestamp: new Date().toISOString(),
@@ -1654,6 +1946,7 @@ export class AutoRAGAgent {
 			this.preliminaryCallback = undefined;
 			if (this.interactiveFastAnswerCallback === emitPreliminary) this.interactiveFastAnswerCallback = undefined;
 			this.activeRun = false;
+			this.memoryContextCache = undefined;
 		}
 	}
 
@@ -1742,8 +2035,8 @@ export class AutoRAGAgent {
 	 * configured skills are model-visible; a connection is removed from the
 	 * model surface by removing it from the config, not by a permission layer.
 	 */
-	private buildDatasourceAgentSkills(): Skill[] {
-		const skills: Skill[] = [];
+	private buildDatasourceAgentSkills(): DatasourceAgentSkill[] {
+		const skills: DatasourceAgentSkill[] = [];
 		for (const skill of this.datasourceSkills) {
 			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
 		}
@@ -1826,7 +2119,7 @@ export class AutoRAGAgent {
 	 * Resolve a configured datasource agent skill by model-visible name for the
 	 * `load_datasource_skill` tool. Returns `undefined` for unknown names.
 	 */
-	loadDatasourceSkill(name: string): Skill | undefined {
+	loadDatasourceSkill(name: string): DatasourceAgentSkill | undefined {
 		return this.datasourceAgentSkills.find((skill) => skill.name === name);
 	}
 
@@ -1939,9 +2232,10 @@ export class AutoRAGAgent {
 		readonly route: QueryRoute;
 		readonly queries: readonly string[];
 		readonly datasources: readonly string[];
+		readonly selfConfigSkill?: string;
 	}> {
 		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
-		const decision = await routeQuery(this.jevJudge, query);
+		const decision = await routeQuery(this.jevJudge, query, { selfConfig: this.selfConfig !== undefined });
 		if (decision.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "query-route-fallback",
@@ -1951,7 +2245,21 @@ export class AutoRAGAgent {
 			});
 			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
 		}
-		const route = decision.route;
+		let route = decision.route;
+		let selfConfigSkill: string | undefined;
+		if (route === "config") {
+			try {
+				selfConfigSkill = loadSetupSkill(this.selfConfig?.skillPath);
+			} catch (error) {
+				this.routingDiagnostics.push({
+					code: "self-config-unavailable",
+					severity: "warning",
+					message: `Jev routed the question to AutoRAG configuration, but the setup skill could not be loaded; searching local sources instead. ${error instanceof Error ? error.message : String(error)}`,
+					source: "self-config",
+				});
+				route = FALLBACK_QUERY_ROUTE;
+			}
+		}
 		const datasourcesPromise = route === "local" ? this.selectSearchDatasources(query) : Promise.resolve([]);
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route !== "direct") {
@@ -1981,10 +2289,12 @@ export class AutoRAGAgent {
 				`Jev routed the question to ${route}${probability}; ` +
 				(route === "direct"
 					? "answering directly without retrieval."
-					: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
+					: route === "config"
+						? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
+						: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
 			source: "jev",
 		});
-		return { route, queries, datasources };
+		return { route, queries, datasources, ...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}) };
 	}
 
 	/**
@@ -2008,50 +2318,25 @@ export class AutoRAGAgent {
 			description,
 		}));
 		if (candidates.length === 0) return [];
-		// Where a past result's evidence came from: datasource chunks carry a
-		// virtual path rooted at the skill name (`/kakao/default/...`), but the
-		// model sometimes maps a datasource hit to a bare chunk id. The evidence
-		// method then still names the datasource (`search_datasource_kakao_work`,
-		// `datasource:kakao`, `kakao-work-lexical`): both sides collapse every
-		// non-alphanumeric to `_` exactly like generated tool names, and a
-		// datasource id that appears as a whole token attributes it; longer ids
-		// are checked first so `kakao-work` wins over `kakao`. Indexed files are
-		// absolute paths under a search path; web evidence is a URL.
-		const datasourceByRoot = new Map(catalog.map((entry) => [entry.name, entry.datasourceId]));
-		// Configured skills that are not catalog datasources (no datasource id).
-		// Memory is global (shared across workspaces and configs), so a past
-		// result attributed to one of them must never reach the Jev state.
-		const nonDatasourceRoots = new Set(
-			this.datasourceSkills.map((skill) => skill.describe().name).filter((name) => !datasourceByRoot.has(name)),
-		);
-		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
-		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
-		const whereFound = ({ source, method }: { source: string; method: string }): string | undefined => {
-			if (/^https?:\/\//u.test(source)) return "web";
-			if (this.configuredSearchPaths.some((root) => source === root || source.startsWith(`${root}${sep}`))) {
-				return "local files";
-			}
-			const root = source.startsWith("/") ? (source.split("/")[1] ?? "") : "";
-			if (nonDatasourceRoots.has(root)) return undefined;
-			const byRoot = datasourceByRoot.get(root);
-			if (byRoot !== undefined) return byRoot;
-			const tokens = methodToken(method);
-			return idsLongestFirst.find((id) => tokens.includes(methodToken(id)));
-		};
-		// A past result is shown only when every piece of its evidence is
-		// attributed to something this run searches (a configured datasource, a
-		// configured search path, or the web): its title is
-		// model-written text about that evidence and leaves the machine.
+		const whereFound = this.evidenceAttribution(catalog);
+		// A past result is shown only when its evidence is attributed to
+		// something this run searches (a configured datasource, a configured
+		// search path, or the web): its title is model-written text about that
+		// evidence and leaves the machine. The memory context the run already
+		// loaded is reused, so similar questions are searched once.
+		const context = await this.loadMemoryContextFor(query);
 		const pastSearches: PastSearchHint[] = [];
-		for (const past of this.memory.findSimilarSearches(query)) {
+		for (const past of context.related) {
 			const results: { title: string; foundIn: string[] }[] = [];
-			for (const result of past.results) {
-				const places = result.evidence.map(whereFound);
-				if (places.length === 0 || places.some((place) => place === undefined)) continue;
-				results.push({ title: result.title, foundIn: [...new Set(places.filter((place) => place !== undefined))] });
+			for (const record of past.records) {
+				const place = whereFound(record);
+				if (place === undefined) continue;
+				const existing = results.find((result) => result.title === record.title);
+				if (existing === undefined) results.push({ title: record.title, foundIn: [place] });
+				else if (!existing.foundIn.includes(place)) existing.foundIn.push(place);
 			}
 			if (results.length === 0) continue;
-			pastSearches.push({ query: past.query, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
+			pastSearches.push({ query: past.question, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
 			if (pastSearches.length === SIMILAR_PAST_SEARCH_LIMIT) break;
 		}
 		const selection = await selectDatasources(this.jevJudge, query, candidates, pastSearches);
@@ -2118,6 +2403,26 @@ export class AutoRAGAgent {
 				]),
 			),
 		);
+		for (const [index, [jikji, vector, perDatasource]] of perQuery.entries()) {
+			const searchQuery = searchQueries[index];
+			if (searchQuery === undefined) continue;
+			for (const path of jikji?.answerPack?.answerPaths ?? []) {
+				this.evidenceOrigins.add({ query: searchQuery, method: JIKJI_FIND_TOOL_NAME, source: path, content: "" });
+			}
+			const labelled = [
+				...vector.map((result) => ({ result, fallback: SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME })),
+				...perDatasource.flatMap((results, datasourceIndex) =>
+					results.map((result) => ({
+						result,
+						fallback: singleDatasourceToolName(datasources[datasourceIndex] ?? ""),
+					})),
+				),
+			];
+			for (const { result, fallback } of labelled) {
+				const method = typeof result.metadata.method === "string" ? result.metadata.method : fallback;
+				this.evidenceOrigins.add({ query: searchQuery, method, source: result.source, content: result.content });
+			}
+		}
 		const interleave = <T>(lists: readonly (readonly T[])[]): T[] => {
 			const merged: T[] = [];
 			const longest = Math.max(0, ...lists.map((list) => list.length));
@@ -3074,13 +3379,10 @@ export class AutoRAGAgent {
 				source: "minsync",
 			});
 		}
-		const merged = this.rerankWithMemory(
-			query,
-			this.merger.merge(filteredByMethod, {
-				topK: options.topK ?? this.limits.mergedEvidenceCeiling,
-				dedup: true,
-			}),
-		);
+		const merged = this.merger.merge(filteredByMethod, {
+			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
+			dedup: true,
+		});
 		const results = await this.applyRerank(query, merged, diagnostics);
 		return { results, diagnostics };
 	}
@@ -3126,13 +3428,10 @@ export class AutoRAGAgent {
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
-		const merged = this.rerankWithMemory(
-			query,
-			this.merger.merge(filteredByMethod, {
-				topK: options.topK ?? this.limits.singleDatasourceTopK,
-				dedup: true,
-			}),
-		);
+		const merged = this.merger.merge(filteredByMethod, {
+			topK: options.topK ?? this.limits.singleDatasourceTopK,
+			dedup: true,
+		});
 		// Single-datasource retrieval is intentionally NOT model-reranked: the
 		// caller already narrowed to one connection, so the merged order is kept.
 		return { results: merged, diagnostics };
@@ -3205,49 +3504,6 @@ export class AutoRAGAgent {
 			});
 			return results;
 		}
-	}
-
-	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {
-		const methodScores = new Map(this.memory.getMethodHints(query).map((hint) => [hint.method, hint.score]));
-		const context = this.memory.getContextHints(query);
-		const scoreMap = (
-			hints: readonly { readonly value: string; readonly score: number }[],
-		): ReadonlyMap<string, number> => new Map(hints.map((hint) => [hint.value, hint.score]));
-		const contextScores = {
-			documentArea: scoreMap(context.documentAreas),
-			documentType: scoreMap(context.documentTypes),
-			evidenceType: scoreMap(context.evidenceTypes),
-			evidenceLocation: scoreMap(context.evidenceLocations),
-			parserType: scoreMap(context.parserTypes),
-			retrieverMix: scoreMap(context.retrieverMix),
-		};
-		return results
-			.map((result, index) => {
-				const method = typeof result.metadata.method === "string" ? result.metadata.method : undefined;
-				let preference = method ? (methodScores.get(method) ?? 0) : 0;
-				for (const key of [
-					"documentArea",
-					"documentType",
-					"evidenceType",
-					"evidenceLocation",
-					"parserType",
-				] as const) {
-					const value = result.metadata[key];
-					if (typeof value === "string") preference += contextScores[key].get(value) ?? 0;
-				}
-				const retrievers = Array.isArray(result.metadata.retrieverMix)
-					? result.metadata.retrieverMix
-					: method
-						? [method]
-						: [];
-				for (const retriever of retrievers) {
-					if (typeof retriever === "string") preference += contextScores.retrieverMix.get(retriever) ?? 0;
-				}
-				const adjustment = Math.max(-0.25, Math.min(0.25, preference * 0.05));
-				return { result, index, rankScore: result.score + adjustment };
-			})
-			.sort((a, b) => b.rankScore - a.rankScore || a.index - b.index)
-			.map(({ result }) => result);
 	}
 
 	private remoteFilteredRetrievalMethod<

@@ -86,7 +86,7 @@ function seedWorkspace(): WorkspaceFixture {
 	const memoryFile = join(autorag, "memory.json");
 	writeFileSync(
 		memoryFile,
-		'{"version":4,"curatedResults":[],"evidenceChunks":[],"feedbackSignals":[],"signalDefaults":{"explicitWeight":1,"followupWeight":0.5,"retryWeight":-0.5,"implicitCap":0.5},"warnings":[],"insights":[],"pendingInsightSignals":[]}',
+		'{"version":5,"curatedResults":[],"evidenceChunks":[],"judgedEvidence":[],"insights":[],"pendingInsightEntries":[],"warnings":[]}',
 	);
 
 	// Files outside .autorag that must never be touched by reset.

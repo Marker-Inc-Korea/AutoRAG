@@ -17,6 +17,7 @@ import { type JevBackend, MockBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
+import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
 import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
@@ -27,6 +28,8 @@ import {
 } from "../../src/agent/query-routing.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
+import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
+import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
@@ -127,6 +130,33 @@ function jevRouting(
 			]),
 		),
 	});
+}
+
+/**
+ * Answers every evidence-support question with a fixed probability and
+ * delegates all other questions, so memory tests control what Jev keeps.
+ */
+function judgingEvidenceAs(probability: number, inner: JevBackend): JevBackend {
+	return {
+		name: inner.name,
+		async judge(request) {
+			const evidenceIndexes = request.questions
+				.map((question, index) => (question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX) ? index : -1))
+				.filter((index) => index >= 0);
+			if (evidenceIndexes.length === 0) return inner.judge(request);
+			const rest = await inner.judge({
+				...request,
+				questions: request.questions.filter((_, index) => !evidenceIndexes.includes(index)),
+			});
+			let next = 0;
+			return {
+				...rest,
+				answers: request.questions.map((_, index) =>
+					evidenceIndexes.includes(index) ? { answer: probability } : (rest.answers[next++] ?? { answer: 0 }),
+				),
+			};
+		},
+	};
 }
 
 /** A chat datasource whose single retrieval method records every query it receives. */
@@ -281,6 +311,7 @@ function agentWith(options: Partial<AutoRAGAgentOptions> & Pick<AutoRAGAgentOpti
 		workspacePath: root,
 		minSync: false,
 		jikji: false,
+		memoryEmbedder: false,
 		...options,
 	});
 }
@@ -441,7 +472,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("tells Jev which datasources answered a similar past question, from retrieval memory", async () => {
 		const states: string[] = [];
-		const routing = jevRouting("local", 0.1, 0.1, { slack: 0.9, discord: 0.1 });
+		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.1, { slack: 0.9, discord: 0.1 }));
 		const recordingJev: JevBackend = {
 			name: "recording",
 			async judge(request) {
@@ -479,7 +510,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("attributes past evidence to the datasource named in its retrieval method, even without a virtual-path source", async () => {
 		const states: string[] = [];
-		const routing = jevRouting("local", 0.1, 0.9, { slack: 0.1, discord: 0.9 });
+		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.9, { slack: 0.1, discord: 0.9 }));
 		const recordingJev: JevBackend = {
 			name: "recording",
 			async judge(request) {
@@ -534,7 +565,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("never shows a remote peer's past searches to the local Jev datasource check", async () => {
 		const states: string[] = [];
-		const routing = jevRouting("local", 0.1, 0.1, { slack: 0.9 });
+		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.1, { slack: 0.9 }));
 		const recordingJev: JevBackend = {
 			name: "recording",
 			async judge(request) {
@@ -572,7 +603,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("attributes evidence from a hyphenated datasource id to that datasource, not a shorter one it contains", async () => {
 		const states: string[] = [];
-		const routing = jevRouting("local", 0.1, 0.9, { "kakao-work": 0.9, kakao: 0.1 });
+		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.9, { "kakao-work": 0.9, kakao: 0.1 }));
 		const recordingJev: JevBackend = {
 			name: "recording",
 			async judge(request) {
@@ -933,5 +964,348 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(complete?.type === "complete" && complete.response.answer).toBe(
 			"Verified: Mina Park approved the Q3 budget.",
 		);
+	});
+
+	function twoEvidenceEmit(): FauxResponseStep {
+		return fauxAssistantMessage(
+			[
+				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+					answer: "Mina Park approved the Q3 budget [1]. The office moved in May [2].",
+					results: [
+						{
+							number: 1,
+							title: "Approver",
+							summary: "Mina Park",
+							evidence: [{ excerpt: "Mina Park approved" }],
+							confidence: 0.9,
+						},
+						{
+							number: 2,
+							title: "Office move",
+							summary: "May",
+							evidence: [{ excerpt: "Moved in May" }],
+							confidence: 0.8,
+						},
+					],
+					mapping: [
+						{
+							number: 1,
+							source: "/slack/default/budget",
+							method: "search_datasource_slack",
+							content: "Mina Park approved the Q3 budget",
+							evidenceRefs: [
+								{
+									method: "search_datasource_slack",
+									source: "/slack/default/budget",
+									content: "Mina Park approved the Q3 budget",
+								},
+							],
+						},
+						{
+							number: 2,
+							source: "/slack/default/office",
+							method: "search_datasource_slack",
+							content: "Moved in May",
+							evidenceRefs: [
+								{
+									method: "search_datasource_slack",
+									source: "/slack/default/office",
+									content: "Moved in May",
+								},
+							],
+						},
+					],
+				}),
+			],
+			{ stopReason: "toolUse" },
+		);
+	}
+
+	describe("evidence judgment for retrieval memory", () => {
+		/** Records every evidence question Jev is asked, answering each from `byEvidence` (default 0.9). */
+		function evidenceJudge(
+			inner: JevBackend,
+			probabilityFor: (questionText: string) => number,
+		): { backend: JevBackend; calls: { state: string; questions: string[] }[] } {
+			const calls: { state: string; questions: string[] }[] = [];
+			const backend: JevBackend = {
+				name: inner.name,
+				async judge(request) {
+					const evidence = request.questions.filter((question) =>
+						question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX),
+					);
+					if (evidence.length === 0) return inner.judge(request);
+					calls.push({ state: String(request.state), questions: evidence.map((question) => question.question) });
+					const rest = await inner.judge({
+						...request,
+						questions: request.questions.filter(
+							(question) => !question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX),
+						),
+					});
+					let next = 0;
+					return {
+						...rest,
+						answers: request.questions.map((question) =>
+							question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX)
+								? { answer: probabilityFor(question.question) }
+								: (rest.answers[next++] ?? { answer: 0 }),
+						),
+					};
+				},
+			};
+			return { backend, calls };
+		}
+
+		it("judges every cited evidence in one Jev call and stores only what supports the question (p >= 0.7)", async () => {
+			const judge = evidenceJudge(jevRouting("local", 0.1, 0.9, { slack: 0.9 }), (text) =>
+				text.includes("Mina Park approved") ? 0.7 : 0.69,
+			);
+			const slack = recordingDatasource("slack", "Company Slack");
+			const model = fauxModel(
+				fastAnswer("Not sure."),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+				twoEvidenceEmit(),
+			);
+			const agent = agentWith({
+				model,
+				jev: { backend: judge.backend },
+				datasourceSkills: [slack.skill],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+			expect(judge.calls).toHaveLength(1);
+			expect(judge.calls[0]?.questions).toHaveLength(2);
+			expect(judge.calls[0]?.state).toContain('"who approved the Q3 budget?"');
+			expect(judge.calls[0]?.state).not.toContain("Moved in May");
+			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
+			stored.load();
+			expect(stored.getJudgedEvidence().map((record) => record.title)).toEqual(["Approver"]);
+			expect(stored.getJudgedEvidence()[0]).toMatchObject({
+				question: "who approved the Q3 budget?",
+				method: "search_datasource_slack",
+				source: "/slack/default/budget",
+				probability: 0.7,
+			});
+			const judged = response.diagnostics?.find((diagnostic) => diagnostic.code === "evidence-judged");
+			expect(judged?.message).toContain("1 supported");
+		});
+
+		it("stores nothing and says why when Jev cannot judge the evidence", async () => {
+			const failing: JevBackend = {
+				name: "flaky",
+				async judge(request) {
+					if (request.questions.some((question) => question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX))) {
+						throw new Error("evidence backend exploded");
+					}
+					return jevRouting("local", 0.1, 0.9, { slack: 0.9 }).judge(request);
+				},
+			};
+			const slack = recordingDatasource("slack", "Company Slack");
+			const model = fauxModel(
+				fastAnswer("Not sure."),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+				twoEvidenceEmit(),
+			);
+			const agent = agentWith({
+				model,
+				jev: { backend: failing },
+				datasourceSkills: [slack.skill],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+			const fallback = response.diagnostics?.find((diagnostic) => diagnostic.code === "evidence-judgment-fallback");
+			expect(fallback?.message).toContain("evidence backend exploded");
+			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
+			stored.load();
+			expect(stored.getJudgedEvidence()).toEqual([]);
+		});
+
+		it("does not judge or store anything when Jev is disabled", async () => {
+			const model = fauxModel(twoEvidenceEmit());
+			const agent = agentWith({ model });
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+			expect(
+				response.diagnostics?.some(
+					(diagnostic) =>
+						diagnostic.code === "evidence-judgment-fallback" && diagnostic.message.includes("Jev is disabled"),
+				),
+			).toBe(true);
+			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
+			stored.load();
+			expect(stored.getJudgedEvidence()).toEqual([]);
+		});
+
+		it("attributes cited evidence to the search query that surfaced it", async () => {
+			const judge = evidenceJudge(jevRouting("local", 0.9, 0.9, { slack: 0.9 }), () => 0.95);
+			const decompositionModel = fauxModel(
+				fauxAssistantMessage('{"queries": ["Q3 budget approver", "office move date"]}', { stopReason: "stop" }),
+			);
+			const slack = recordingDatasource("slack", "Company Slack");
+			const model = fauxModel(
+				fastAnswer("Not sure."),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+				fauxAssistantMessage(
+					[
+						fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+							answer: "Found it [1].",
+							results: [
+								{ number: 1, title: "Office", summary: "May", evidence: [{ excerpt: "x" }], confidence: 0.9 },
+							],
+							mapping: [
+								{
+									number: 1,
+									source: "/slack/default/office-move-date",
+									method: "search_datasource_slack",
+									content: "slack evidence for office move date",
+									evidenceRefs: [
+										{
+											method: "search_datasource_slack",
+											source: "/slack/default/office-move-date",
+											content: "slack evidence for office move date",
+										},
+									],
+								},
+							],
+						}),
+					],
+					{ stopReason: "toolUse" },
+				),
+			);
+			const agent = agentWith({
+				model,
+				jev: { backend: judge.backend },
+				queryDecomposition: { model: decompositionModel },
+				datasourceSkills: [slack.skill],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("When did the office move and who approved the budget?");
+
+			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
+			stored.load();
+			expect(stored.getJudgedEvidence()[0]).toMatchObject({
+				question: "When did the office move and who approved the budget?",
+				searchQuery: "office move date",
+				method: "search_datasource_slack",
+			});
+			expect(judge.calls[0]?.questions[0]).toContain("office move date");
+		});
+	});
+
+	describe("memory as reference context", () => {
+		function seededMemory(records: readonly Partial<JudgedEvidenceRecord>[]): string {
+			const memoryPath = join(root, "memory.json");
+			const memory = new RetrievalMemory({ storagePath: memoryPath });
+			memory.load();
+			memory.recordJudgedEvidence(
+				records.map((partial, index) => ({
+					id: `seed-${index}`,
+					sessionId: `seed-session-${index}`,
+					conversationId: "earlier-conversation",
+					question: "when is the release",
+					searchQuery: "when is the release",
+					method: "search_datasource_slack",
+					source: "/slack/default/release-plan",
+					stableEvidenceId: `slack:seed-${index}`,
+					resultNumber: 1,
+					title: "Release plan",
+					excerpt: "The release moved to Friday.",
+					probability: 0.9,
+					createdAt: 1_000 + index,
+					...partial,
+				})),
+			);
+			memory.save();
+			return memoryPath;
+		}
+
+		it("shows similar past questions in the model's context and never reorders retrieval results", async () => {
+			const memoryPath = seededMemory([{}]);
+			const contexts: string[] = [];
+			const slack = recordingDatasource("slack", "Company Slack");
+			const model = fauxModel(
+				(context) => {
+					contexts.push(context.messages.map((message) => JSON.stringify(message.content)).join("\n"));
+					return fastAnswer("Friday.") as AssistantMessage;
+				},
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			);
+			const agent = agentWith({
+				model,
+				memoryPath,
+				jev: { backend: jevRouting("local", 0.1, 0.1, { slack: 0.9 }) },
+				datasourceSkills: [slack.skill],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("when is the release date?");
+
+			const seen = contexts[0] ?? "";
+			expect(seen).toContain("<memory_context>");
+			expect(seen).toContain("Similar Past Questions");
+			expect(seen).toContain("The release moved to Friday.");
+		});
+
+		it("shows what the current conversation already found, even for an unrelated follow-up", async () => {
+			const memoryPath = seededMemory([]);
+			const contexts: string[] = [];
+			const slack = recordingDatasource("slack", "Company Slack");
+			const judge = {
+				name: "judge",
+				async judge(request: Parameters<JevBackend["judge"]>[0]) {
+					const inner = jevRouting("local", 0.1, 0.9, { slack: 0.9 });
+					const evidence = request.questions.filter((question) =>
+						question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX),
+					);
+					if (evidence.length === 0) return inner.judge(request);
+					const rest = await inner.judge({
+						...request,
+						questions: request.questions.filter(
+							(question) => !question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX),
+						),
+					});
+					let next = 0;
+					return {
+						...rest,
+						answers: request.questions.map((question) =>
+							question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX)
+								? { answer: 0.9 }
+								: (rest.answers[next++] ?? { answer: 0 }),
+						),
+					};
+				},
+			} satisfies JevBackend;
+			const model = fauxModel(
+				fastAnswer("Not sure."),
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+				twoEvidenceEmit(),
+				(context) => {
+					contexts.push(context.messages.map((message) => JSON.stringify(message.content)).join("\n"));
+					return fastAnswer("Something else.") as AssistantMessage;
+				},
+				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+			);
+			const agent = agentWith({
+				model,
+				memoryPath,
+				jev: { backend: judge },
+				datasourceSkills: [slack.skill],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("who approved the Q3 budget?");
+			await agent.searchDocuments("what is the weather on Mars?");
+
+			const seen = contexts[0] ?? "";
+			expect(seen).toContain("Current Conversation Memory");
+			expect(seen).toContain("Approver");
+		});
 	});
 });

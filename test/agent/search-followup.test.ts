@@ -17,7 +17,6 @@ import { createSingleDatasourceSearchTools } from "../../src/agent/search-single
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import { jikjiFindDiagnostic } from "../../src/jikji/diagnostics.ts";
 import type { JikjiAnswerPack, JikjiDiagnostic, JikjiFindResult } from "../../src/jikji/index.ts";
-import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { MinSyncVectorMethod } from "../../src/minsync/method.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../../src/retrieval/types.ts";
 
@@ -81,7 +80,6 @@ const skill: DatasourceSkill = {
 interface Internals {
 	innerAgent: { state: { tools: { name: string }[] } };
 	tools: AgentTool[];
-	memory: RetrievalMemory;
 	searchToolCallCount: number;
 	retrievalTrace: SearchDocumentRetrievalTraceEntry[];
 	activeSession?: { abort(): Promise<void> };
@@ -173,12 +171,12 @@ function jikjiTool(paths: string[] | undefined, diagnostics: readonly JikjiDiagn
 	});
 }
 
-const cases: { name: string; tool: () => AgentTool; positive: boolean; blank?: boolean; error?: boolean }[] = [
-	{ name: "merged evidence", tool: () => allTool([hit]), positive: true },
-	{ name: "empty merged search", tool: () => allTool([]), positive: false },
-	{ name: "blank query", tool: () => allTool([hit]), positive: false, blank: true },
-	{ name: "all methods failed", tool: () => allTool([], [diagnostic]), positive: false },
-	{ name: "partial merged evidence", tool: () => allTool([hit], [diagnostic]), positive: false },
+const cases: { name: string; tool: () => AgentTool; blank?: boolean; error?: boolean }[] = [
+	{ name: "merged evidence", tool: () => allTool([hit]) },
+	{ name: "empty merged search", tool: () => allTool([]) },
+	{ name: "blank query", tool: () => allTool([hit]), blank: true },
+	{ name: "all methods failed", tool: () => allTool([], [diagnostic]) },
+	{ name: "partial merged evidence", tool: () => allTool([hit], [diagnostic]) },
 	{
 		name: "thrown search failure",
 		tool: () =>
@@ -187,7 +185,6 @@ const cases: { name: string; tool: () => AgentTool; positive: boolean; blank?: b
 					throw new Error("local failure");
 				},
 			}),
-		positive: false,
 		error: true,
 	},
 	{
@@ -198,29 +195,26 @@ const cases: { name: string; tool: () => AgentTool; positive: boolean; blank?: b
 					throw new DOMException("cancelled", "AbortError");
 				},
 			}),
-		positive: false,
 		error: true,
 	},
-	{ name: "datasource evidence", tool: () => datasourceTool([hit]), positive: true },
-	{ name: "empty datasource", tool: () => datasourceTool([]), positive: false },
-	{ name: "failed datasource", tool: () => datasourceTool([], [diagnostic]), positive: false },
-	{ name: "partial datasource evidence", tool: () => datasourceTool([hit], [diagnostic]), positive: false },
-	{ name: "semantic evidence", tool: () => minSyncTool([hit]), positive: true },
-	{ name: "empty semantic search", tool: () => minSyncTool([]), positive: false },
-	{ name: "failed semantic search", tool: () => minSyncTool([], true), positive: false },
+	{ name: "datasource evidence", tool: () => datasourceTool([hit]) },
+	{ name: "empty datasource", tool: () => datasourceTool([]) },
+	{ name: "failed datasource", tool: () => datasourceTool([], [diagnostic]) },
+	{ name: "partial datasource evidence", tool: () => datasourceTool([hit], [diagnostic]) },
+	{ name: "semantic evidence", tool: () => minSyncTool([hit]) },
+	{ name: "empty semantic search", tool: () => minSyncTool([]) },
+	{ name: "failed semantic search", tool: () => minSyncTool([], true) },
 	{
 		name: "unavailable semantic search",
 		tool: () => createSearchMinSyncDocumentsTool(() => undefined),
-		positive: false,
 	},
 	{
 		name: "legacy Jikji details without diagnostics",
 		tool: () => ({ ...metadataTool({ answerCount: 1, sources: [hit.source] }), name: "jikji_find" }),
-		positive: true,
 	},
-	{ name: "Jikji answer paths", tool: () => jikjiTool([hit.source]), positive: true },
-	{ name: "empty Jikji answer pack", tool: () => jikjiTool([]), positive: false },
-	{ name: "unavailable Jikji", tool: () => jikjiTool(undefined), positive: false },
+	{ name: "Jikji answer paths", tool: () => jikjiTool([hit.source]) },
+	{ name: "empty Jikji answer pack", tool: () => jikjiTool([]) },
+	{ name: "unavailable Jikji", tool: () => jikjiTool(undefined) },
 	{
 		name: "Everything evidence",
 		tool: () =>
@@ -230,12 +224,10 @@ const cases: { name: string; tool: () => AgentTool; positive: boolean; blank?: b
 					results: [{ path: hit.source, type: "file", size: undefined, dateModified: undefined }],
 				}),
 			}),
-		positive: true,
 	},
 	{
 		name: "empty Everything",
 		tool: () => createEverythingSearchTool({ searchEverything: async () => ({ ok: true, results: [] }) }),
-		positive: false,
 	},
 	{
 		name: "failed Everything",
@@ -243,7 +235,6 @@ const cases: { name: string; tool: () => AgentTool; positive: boolean; blank?: b
 			createEverythingSearchTool({
 				searchEverything: async () => ({ ok: false, reason: "search-failed", message: "local failure" }),
 			}),
-		positive: false,
 	},
 ];
 
@@ -252,43 +243,37 @@ for (const resultCount of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, "1", nul
 	cases.push({
 		name: `explicit invalid/empty count ${String(resultCount)} cannot use legacy evidence`,
 		tool: () => metadataTool({ resultCount, sources: [hit.source], results: [hit] }),
-		positive: false,
 	});
 }
 cases.push(
-	{ name: "legacy source identity", tool: () => metadataTool({ sources: [hit.source] }), positive: true },
-	{ name: "legacy result identity", tool: () => metadataTool({ results: [hit] }), positive: true },
-	{ name: "invalid legacy sources", tool: () => metadataTool({ sources: [null, " ", 1] }), positive: false },
-	{ name: "invalid legacy results", tool: () => metadataTool({ results: [null, {}, 1] }), positive: false },
+	{ name: "legacy source identity", tool: () => metadataTool({ sources: [hit.source] }) },
+	{ name: "legacy result identity", tool: () => metadataTool({ results: [hit] }) },
+	{ name: "invalid legacy sources", tool: () => metadataTool({ sources: [null, " ", 1] }) },
+	{ name: "invalid legacy results", tool: () => metadataTool({ results: [null, {}, 1] }) },
 	{
 		name: "positive count with harmless information",
 		tool: () => metadataTool({ resultCount: 1, diagnostics: [{ code: "cache-hit", severity: "info" }] }),
-		positive: true,
 	},
 	{
 		name: "positive count with harmless warning",
 		tool: () => metadataTool({ resultCount: 1, diagnostics: [{ code: "cache-miss", severity: "warning" }] }),
-		positive: true,
 	},
 	{
 		name: "positive count with explicit diagnostic error",
 		tool: () => metadataTool({ resultCount: 1, diagnostics: [{ code: "other", severity: "error" }] }),
-		positive: false,
 	},
 	{
 		name: "positive count with unavailable MinSync warning",
 		tool: () => allTool([hit], [{ ...diagnostic, code: "minsync-unavailable" }]),
-		positive: false,
 	},
 	{
 		name: "legacy source with failed method",
 		tool: () => metadataTool({ sources: [hit.source], diagnostics: [diagnostic] }),
-		positive: false,
 	},
 );
 
-describe("search followup via recordSearchToolEvent", () => {
-	it.each(cases)("$name", async ({ name, tool: makeTool, positive, blank, error }) => {
+describe("records the retrieval trace for search tools", () => {
+	it.each(cases)("$name", async ({ name, tool: makeTool, blank, error }) => {
 		const tool = makeTool();
 		const { agent, internal, registration } = setup(tool);
 		registration.setResponses([
@@ -316,19 +301,6 @@ describe("search followup via recordSearchToolEvent", () => {
 				result: { details: { resultCount: 1, sources: [hit.source], diagnostics: [diagnostic] } },
 			});
 		}
-		const signals = internal.memory.getSchema().feedbackSignals;
-		expect(signals).toHaveLength(positive ? 1 : 0);
-		if (positive) {
-			expect(signals[0]).toMatchObject({
-				query,
-				method: tool.name.startsWith("search_datasource_") ? "datasource" : tool.name,
-				source: "followup",
-				weight: internal.memory.getSchema().signalDefaults.followupWeight,
-			});
-		}
-		const persisted = new RetrievalMemory({ storagePath: join(root, "memory.json") });
-		persisted.load();
-		expect(persisted.getSchema().feedbackSignals).toEqual(signals);
 		const details = ends[0]?.result.details as
 			| { resultCount?: number; results?: SearchDocumentRetrievalTraceEntry["results"] }
 			| undefined;
@@ -367,7 +339,7 @@ it("preserves Jikji provider diagnostics for empty packs and unavailable provide
 
 // Keep aggregation and the production wrapper in the path: a synthetic details
 // object alone cannot catch a wrapper that discards failed-root diagnostics.
-describe("multi-root Jikji followup via recordSearchToolEvent", () => {
+describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 	it.each(["spawn-error", "nonzero-exit", "aborted", "success"] as const)(
 		"preserves healthy evidence with second root outcome %s",
 		async (outcome) => {
@@ -428,22 +400,14 @@ describe("multi-root Jikji followup via recordSearchToolEvent", () => {
 			expect(details.rawFallbackAllowed).toBe(provider.policy?.rawFallbackAllowed);
 			expect(details.forbiddenTools).toEqual(provider.policy?.forbiddenTools);
 			expect(details.allowedFollowups).toEqual(provider.policy?.allowedFollowups);
-			const signals = internal.memory.getSchema().feedbackSignals;
-			expect(signals).toHaveLength(outcome === "success" ? 1 : 0);
-			if (outcome === "success") {
-				expect(signals[0]).toMatchObject({ query, method: "jikji_find", source: "followup" });
-			}
 			expect(details.diagnostics).toEqual(expectedDiagnostic ? [expectedDiagnostic] : []);
 			expect(details.diagnostics).toBe(provider.diagnostics);
 			if (expectedDiagnostic) expect(details.diagnostics?.[0]).toBe(provider.diagnostics[0]);
-			const persisted = new RetrievalMemory({ storagePath: join(root, "memory.json") });
-			persisted.load();
-			expect(persisted.getSchema().feedbackSignals).toEqual(signals);
 		},
 	);
 });
 
-it("still exhausts the tool budget and preserves the empty trace without rewarding a failed search", async () => {
+it("still exhausts the tool budget and preserves the empty trace", async () => {
 	const tool = allTool([], [diagnostic]);
 	const { agent, internal, registration } = setup(tool, 1);
 	registration.setResponses([
@@ -463,41 +427,23 @@ it("still exhausts the tool budget and preserves the empty trace without rewardi
 	const response = await agent.searchDocuments(query);
 	expect(abortCalls).toBe(1);
 	expect(internal.searchToolCallCount).toBe(1);
-	expect(response.retrievalTrace).toEqual([{ tool: tool.name, resultCount: 0, results: [] }]);
-	expect(internal.memory.getSchema().feedbackSignals).toEqual([]);
+	expect(response.retrievalTrace).toEqual([{ tool: tool.name, query, resultCount: 0, results: [] }]);
 });
 
-it("preserves explicit numbered feedback after an empty search", async () => {
-	const tool = allTool([]);
+it("attributes the retrieval trace query to the tool call start args", async () => {
+	const tool = allTool([hit]);
 	const { agent, internal, registration } = setup(tool);
+	const attributed = "unique attribution query";
 	registration.setResponses([
-		fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" }),
+		fauxAssistantMessage([fauxToolCall(tool.name, { query: attributed })], { stopReason: "toolUse" }),
 		fauxAssistantMessage(
-			[
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: "[1] Director approval is required.",
-					results: [
-						{
-							number: 1,
-							title: "Refund",
-							summary: hit.content,
-							evidence: [{ excerpt: hit.content }],
-							confidence: 1,
-						},
-					],
-					mapping: [{ number: 1, source: hit.source, method: "bash", content: hit.content }],
-				}),
-			],
+			[fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [], mapping: [] })],
 			{ stopReason: "toolUse" },
 		),
+		fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
 	]);
-	const response = await agent.searchDocuments(query);
-	expect(internal.memory.getSchema().feedbackSignals).toEqual([]);
-	agent.recordFeedbackByNumbers(response.sessionId, [1]);
-	const signals = internal.memory.getSchema().feedbackSignals;
-	expect(signals.length).toBeGreaterThan(0);
-	expect(signals.every((signal) => signal.source === "explicit" && signal.weight > 0)).toBe(true);
-	const persisted = new RetrievalMemory({ storagePath: join(root, "memory.json") });
-	persisted.load();
-	expect(persisted.getSchema().feedbackSignals).toEqual(signals);
+	await agent.searchDocuments(attributed);
+	expect(internal.retrievalTrace).toEqual([
+		expect.objectContaining({ tool: tool.name, query: attributed, resultCount: 1 }),
+	]);
 });

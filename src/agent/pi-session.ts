@@ -18,8 +18,20 @@ import {
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
+	type TuiMode,
 } from "@earendil-works/pi-coding-agent";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
+
+/**
+ * Terminal UI mode for AutoRAG's interactive session. pi 1.0 switched its own default to
+ * fullscreen; AutoRAG shipped on pi's scrollback UI, so that stays the default. A `tuiMode` the
+ * user saved in pi's global or project settings still wins, and `InteractiveMode` accepts the
+ * result directly (its constructor otherwise falls back to pi's fullscreen default).
+ */
+export function resolveInteractiveTuiMode(settingsManager: SettingsManager): TuiMode {
+	const saved = settingsManager.getProjectSettings().tuiMode ?? settingsManager.getGlobalSettings().tuiMode;
+	return saved ?? "regular";
+}
 
 export interface AutoRAGPiSessionOptions {
 	readonly cwd: string;

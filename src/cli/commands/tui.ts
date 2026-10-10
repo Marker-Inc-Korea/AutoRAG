@@ -1,5 +1,6 @@
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
+import { resolveInteractiveTuiMode } from "../../agent/pi-session.ts";
 import { buildAgentOptions, resolveAgentModel, resolveConfig, resolveQueryDecompositionModel } from "../config.ts";
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
@@ -75,7 +76,10 @@ export async function runTui(ctx: CommandContext): Promise<number> {
 		const agent = await createTuiAgent(ctx);
 		const hosted = await agent.createPiInteractiveRuntime();
 		try {
-			const interactive = new InteractiveMode(hosted.runtime, { verbose: ctx.debug });
+			const interactive = new InteractiveMode(hosted.runtime, {
+				verbose: ctx.debug,
+				tuiMode: resolveInteractiveTuiMode(hosted.runtime.session.settingsManager),
+			});
 			// Pi is a bundled host for `autorag`, not a separate install users manage:
 			// its startup checks tell them to run `pi update`, which does not apply here.
 			// AutoRAG surfaces its own npm release notice instead (options.updateNotice).

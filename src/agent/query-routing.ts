@@ -8,8 +8,11 @@ import type { JevJudge } from "./jev-extension.ts";
  *   Local retrieval runs first; web search is left to the agent after the fast
  *   answer, when local evidence falls short.
  * - `direct`: intrinsic knowledge or small talk the model answers on its own.
+ * - `config`: the user wants to inspect or change AutoRAG's own settings
+ *   (model, providers, datasources). Offered only when the host enables
+ *   agent self-configuration.
  */
-export type QueryRoute = "local" | "direct";
+export type QueryRoute = "local" | "direct" | "config";
 
 /** Jev question id of the intrinsic-knowledge / local branch. */
 export const QUERY_ROUTE_QUESTION_ID = "route";
@@ -94,15 +97,22 @@ export async function needsFollowUp(judge: JevJudge, query: string, answer: stri
 	return { followUp: verdict.answer >= FOLLOW_UP_PROBABILITY_THRESHOLD, probability: verdict.answer };
 }
 
-const ROUTE_OPTIONS: Record<QueryRoute, string> = {
+const BASE_ROUTE_OPTIONS: Record<Exclude<QueryRoute, "config">, string> = {
 	local: "Answering needs additional information beyond the assistant's intrinsic knowledge: private information only the user can access (files on their computer, their chats such as Discord, KakaoTalk, Slack, their email, notes, calendar, or history), documents, or any fact that may be recent, specific, niche, or changing (current events, recent releases, prices, versions). Prefer local whenever the question refers to the user's own life, situation, plans, or records — questions phrased with words like 'my', 'I', 'we', 'our', a named friend, family member, or colleague, or 'my case/hearing/appointment/routine' — even when a generic answer would also be possible. When unsure whether intrinsic knowledge suffices, choose local.",
 	direct:
 		"The assistant's intrinsic knowledge alone reliably answers it: stable common knowledge, a definition, simple reasoning, or small talk, with no need to look anything up. Never direct when the question refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine'), and never direct for facts that may have changed recently.",
 };
 
-const ROUTE_QUESTION = pick(
+const CONFIG_ROUTE_OPTION =
+	"The user asks to view, change, or test the settings of this AutoRAG agent itself: its model, model providers, API-key environment variables, Jev routing, search roots, or datasource setup. It is about configuring the assistant, not about the content of their documents.";
+
+const BASE_ROUTE_QUESTION = pick(
 	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",
-	ROUTE_OPTIONS,
+	BASE_ROUTE_OPTIONS,
+);
+const SELF_CONFIG_ROUTE_QUESTION = pick(
+	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",
+	{ ...BASE_ROUTE_OPTIONS, config: CONFIG_ROUTE_OPTION },
 );
 
 const DECOMPOSE_QUESTION = check(
@@ -126,20 +136,28 @@ export interface QueryRouteDecision {
 	readonly fallbackReason?: string;
 }
 
-function isQueryRoute(value: unknown): value is QueryRoute {
-	return value === "local" || value === "direct";
+function isQueryRoute(value: unknown, selfConfig: boolean): value is QueryRoute {
+	return value === "local" || value === "direct" || (selfConfig && value === "config");
 }
 
 /** The highest-probability branch, even when Jev escalates the verdict as unsure. */
-function mostProbableRoute(verdict: Verdict | undefined): { route: QueryRoute; probability?: number } | undefined {
+function mostProbableRoute(
+	verdict: Verdict | undefined,
+	selfConfig: boolean,
+): { route: QueryRoute; probability?: number } | undefined {
 	if (verdict === undefined) return undefined;
 	let best: { route: QueryRoute; probability: number } | undefined;
 	for (const [label, probability] of Object.entries(verdict.distribution ?? {})) {
-		if (!isQueryRoute(label) || !Number.isFinite(probability)) continue;
+		if (!isQueryRoute(label, selfConfig) || !Number.isFinite(probability)) continue;
 		if (best === undefined || probability > best.probability) best = { route: label, probability };
 	}
 	if (best !== undefined) return best;
-	return isQueryRoute(verdict.answer) ? { route: verdict.answer } : undefined;
+	return isQueryRoute(verdict.answer, selfConfig) ? { route: verdict.answer } : undefined;
+}
+
+export interface RouteQueryOptions {
+	/** Offer the `config` branch: the agent may change its own settings. */
+	readonly selfConfig?: boolean;
 }
 
 /**
@@ -149,9 +167,14 @@ function mostProbableRoute(verdict: Verdict | undefined): { route: QueryRoute; p
  * not clear {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} falls back to a
  * single local search, with the reason recorded.
  */
-export async function routeQuery(judge: JevJudge, query: string): Promise<QueryRouteDecision> {
+export async function routeQuery(
+	judge: JevJudge,
+	query: string,
+	options: RouteQueryOptions = {},
+): Promise<QueryRouteDecision> {
+	const selfConfig = options.selfConfig === true;
 	const questions: Question[] = [
-		{ ...ROUTE_QUESTION, id: QUERY_ROUTE_QUESTION_ID },
+		{ ...(selfConfig ? SELF_CONFIG_ROUTE_QUESTION : BASE_ROUTE_QUESTION), id: QUERY_ROUTE_QUESTION_ID },
 		{ ...DECOMPOSE_QUESTION, id: DECOMPOSE_QUESTION_ID },
 	];
 	let verdicts: readonly Verdict[];
@@ -165,7 +188,7 @@ export async function routeQuery(judge: JevJudge, query: string): Promise<QueryR
 		};
 	}
 	const routeVerdict = verdicts.find((verdict) => verdict.id === QUERY_ROUTE_QUESTION_ID);
-	const best = mostProbableRoute(routeVerdict);
+	const best = mostProbableRoute(routeVerdict, selfConfig);
 	if (best === undefined) {
 		return {
 			route: FALLBACK_QUERY_ROUTE,
@@ -194,7 +217,7 @@ export async function routeQuery(judge: JevJudge, query: string): Promise<QueryR
 	}
 	return {
 		route: best.route,
-		decompose: best.route !== "direct" && decompose,
+		decompose: best.route !== "direct" && best.route !== "config" && decompose,
 		...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
 		...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
 	};

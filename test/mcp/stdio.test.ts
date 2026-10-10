@@ -169,7 +169,6 @@ function expectRefundEvidence(results: readonly unknown[], docs: string): void {
 interface PersistedMemory {
 	readonly curatedResults: readonly { readonly sessionId: string; readonly number: number; readonly title: string }[];
 	readonly evidenceChunks: readonly { readonly stableEvidenceId: string; readonly source: string }[];
-	readonly feedbackSignals: readonly { readonly eventId: string; readonly sentiment: string }[];
 }
 
 /** Read the persisted memory file the live runtime writes and reloads across a restart. */
@@ -327,7 +326,7 @@ describe("AutoRAG Lite MCP stdio", () => {
 		await second.close();
 	}, 120000);
 
-	it("persists exact curated report evidence and idempotent feedback across a restart", async () => {
+	it("persists exact curated report evidence across a restart", async () => {
 		const { root, docs, config, binDir } = makeFixture();
 		const first = await connect(config, binDir);
 
@@ -390,28 +389,11 @@ describe("AutoRAG Lite MCP stdio", () => {
 		expect(resultsArray(filtered.structuredContent)).toHaveLength(1);
 		expect(field(resultsArray(filtered.structuredContent)[0], "number")).toBe(1);
 
-		// Feedback is applied once, then idempotently reported as not re-applied.
-		const useful = await first.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId, useful: [1] },
-		});
-		expect(useful.isError).not.toBe(true);
-		expectStructuredMatchesText(useful);
-		expect(field(useful.structuredContent, "applied")).toBe(true);
-		const duplicate = await first.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId, useful: [1] },
-		});
-		expect(duplicate.isError).not.toBe(true);
-		expect(field(duplicate.structuredContent, "ok")).toBe(true);
-		expect(field(duplicate.structuredContent, "applied")).toBe(false);
-
-		// The persisted memory file proves the report and feedback actually landed.
-		const afterFeedback = readPersistedMemory(root);
-		expect(afterFeedback.curatedResults).toHaveLength(2);
-		expect(afterFeedback.evidenceChunks).toHaveLength(2);
-		expect(afterFeedback.feedbackSignals.some((signal) => signal.eventId === `${sessionId}:1:useful`)).toBe(true);
-		const curatedCount = afterFeedback.curatedResults.length;
+		// The persisted memory file proves the report actually landed.
+		const persisted = readPersistedMemory(root);
+		expect(persisted.curatedResults).toHaveLength(2);
+		expect(persisted.evidenceChunks).toHaveLength(2);
+		const curatedCount = persisted.curatedResults.length;
 
 		// Malformed reports are rejected before persistence; the connection survives.
 		const malformed: unknown[] = [
@@ -432,32 +414,17 @@ describe("AutoRAG Lite MCP stdio", () => {
 		const alive = await first.client.callTool({ name: "autorag.status", arguments: {} });
 		expect(alive.isError).not.toBe(true);
 
-		// Unknown sessions, unknown result numbers and disjoint feedback all fail.
+		// An unknown session is a stable tool error, not a protocol error.
 		const unknownEvidence = await first.client.callTool({
 			name: "autorag.evidence",
 			arguments: { sessionId: "missing-session" },
 		});
 		expect(unknownEvidence.isError).toBe(true);
 		expect(hasFieldValue(unknownEvidence.structuredContent, "errorCode", "evidence-not-found")).toBe(true);
-		const unknownSession = await first.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId: "missing-session", useful: [1] },
-		});
-		expect(unknownSession.isError).toBe(true);
-		const unknownNumber = await first.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId, useful: [99] },
-		});
-		expect(unknownNumber.isError).toBe(true);
-		const disjoint = await first.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId, useful: [1], notUseful: [1] },
-		});
-		expect(disjoint.isError).toBe(true);
 
 		await first.close();
 
-		// A fresh process must reload evidence and prior feedback from disk.
+		// A fresh process must reload the persisted evidence from disk.
 		const second = await connect(config, binDir);
 		const restartedEvidence = await second.client.callTool({ name: "autorag.evidence", arguments: { sessionId } });
 		expect(restartedEvidence.isError).not.toBe(true);
@@ -468,28 +435,10 @@ describe("AutoRAG Lite MCP stdio", () => {
 		expect(field(restartedChunk, "source")).toBe(source);
 		expect(field(restartedChunk, "content")).toBe(content);
 
-		// Feedback for a new number still works after restart (registry rebuilt from memory).
-		const postRestart = await second.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId, notUseful: [2] },
-		});
-		expect(postRestart.isError).not.toBe(true);
-		expect(field(postRestart.structuredContent, "applied")).toBe(true);
-		// The pre-restart signal persisted, so repeating it is idempotent, not an error.
-		const repeated = await second.client.callTool({
-			name: "autorag.feedback",
-			arguments: { sessionId, useful: [1] },
-		});
-		expect(repeated.isError).not.toBe(true);
-		expect(field(repeated.structuredContent, "ok")).toBe(true);
-		expect(field(repeated.structuredContent, "applied")).toBe(false);
-		const finalSignals = readPersistedMemory(root).feedbackSignals.map((signal) => signal.eventId);
-		expect(finalSignals).toContain(`${sessionId}:1:useful`);
-		expect(finalSignals).toContain(`${sessionId}:2:not_useful`);
 		await second.close();
 	}, 180000);
 
-	it("omits refresh, report and feedback under the read-only env, keeps evidence, and rejects direct calls", async () => {
+	it("omits refresh and report under the read-only env, keeps evidence, and rejects direct calls", async () => {
 		const { config, binDir } = makeFixture();
 		const connection = await connect(config, binDir, { AUTORAG_MCP_READ_ONLY: "1" });
 		const names = (await connection.client.listTools()).tools.map((tool) => tool.name);
@@ -498,7 +447,6 @@ describe("AutoRAG Lite MCP stdio", () => {
 		expect(names).toContain("autorag.evidence");
 		expect(names).not.toContain("autorag.refresh");
 		expect(names).not.toContain("autorag.report");
-		expect(names).not.toContain("autorag.feedback");
 
 		const refreshError = await expectProtocolFailure(
 			connection.client.callTool({ name: "autorag.refresh", arguments: {} }),
@@ -508,10 +456,6 @@ describe("AutoRAG Lite MCP stdio", () => {
 			connection.client.callTool({ name: "autorag.report", arguments: { query: "refund", report: {} } }),
 		);
 		expect(reportError.message).toContain("autorag.report");
-		const feedbackError = await expectProtocolFailure(
-			connection.client.callTool({ name: "autorag.feedback", arguments: { sessionId: "s", useful: [1] } }),
-		);
-		expect(feedbackError.message).toContain("autorag.feedback");
 
 		// The retained evidence tool is live: an unknown session is a tool error, not a protocol error.
 		const unknownEvidence = await connection.client.callTool({
@@ -540,7 +484,7 @@ describe("AutoRAG Lite MCP stdio", () => {
 		);
 		expect(error.message).toContain("autorag.duplicates");
 
-		// The new report/evidence/feedback lifecycle tools honor the same allowlist.
+		// The new report/evidence lifecycle tools honor the same allowlist.
 		const reportError = await expectProtocolFailure(
 			connection.client.callTool({ name: "autorag.report", arguments: { query: "refund", report: {} } }),
 		);
@@ -549,10 +493,6 @@ describe("AutoRAG Lite MCP stdio", () => {
 			connection.client.callTool({ name: "autorag.evidence", arguments: { sessionId: "s" } }),
 		);
 		expect(evidenceError.message).toContain("autorag.evidence");
-		const feedbackError = await expectProtocolFailure(
-			connection.client.callTool({ name: "autorag.feedback", arguments: { sessionId: "s", useful: [1] } }),
-		);
-		expect(feedbackError.message).toContain("autorag.feedback");
 
 		const status = await connection.client.callTool({ name: "autorag.status", arguments: {} });
 		expect(status.isError).not.toBe(true);

@@ -165,7 +165,6 @@ describe("MCP Client contract boundaries", () => {
 	it.each([
 		{ options: { readOnly: true }, name: "autorag.refresh", args: {} },
 		{ options: { readOnly: true }, name: "autorag.report", args: { query: "hello", report: {} } },
-		{ options: { readOnly: true }, name: "autorag.feedback", args: { sessionId: "session", useful: [1] } },
 		{ options: { tools: ["autorag.status"] }, name: "autorag.search", args: { query: "hello" } },
 		{ options: { tools: ["autorag.status"] }, name: "autorag.search_datasource_docs", args: { query: "hello" } },
 		{ options: { tools: ["autorag.status"] }, name: "autorag.evidence", args: { sessionId: "session" } },

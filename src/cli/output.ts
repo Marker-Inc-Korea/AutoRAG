@@ -1,6 +1,6 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
-import type { MemorySchemaV4 } from "../memory/memory.ts";
+import type { MemorySchema } from "../memory/memory.ts";
 import type { HealthReportV1 } from "./commands/health.ts";
 import type { SearchHealthHint } from "./commands/search.ts";
 
@@ -34,13 +34,17 @@ function diagnosticProjection(d: {
  * A refresh is only `ok` when every index it touched succeeded. A failed
  * MinSync sync, a failed datasource index, or any error-severity diagnostic
  * makes the run a failure, so callers cannot read a green envelope over a
- * semantic index that never updated.
+ * semantic index that never updated. A missing optional fsearch-cli is not a
+ * failed index.
  */
 function refreshOk(result: AutoRAGRefreshResult): boolean {
 	const minsyncOk = result.minsync === undefined || result.minsync.ok;
 	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
 	const everythingOk = result.everything === undefined || result.everything.ok;
-	const fsearchOk = result.fsearch === undefined || result.fsearch.ok;
+	// fsearch-cli is an optional user install (#1763): when it is missing,
+	// file-name search falls back to a filesystem walk and refresh reports a
+	// warning, so it must not turn an otherwise successful refresh into a failure.
+	const fsearchOk = result.fsearch === undefined || result.fsearch.ok || result.fsearch.reason === "binary-missing";
 	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
 	return minsyncOk && datasourcesOk && everythingOk && fsearchOk && !hasErrorDiagnostics;
 }
@@ -198,7 +202,6 @@ function searchEnvelope(resp: SearchDocumentsResponse, debug: boolean) {
 				if (e.lineNumber !== undefined) ev.lineNumber = e.lineNumber;
 				return ev;
 			});
-			base.feedbackId = r.feedbackId;
 		}
 		return base;
 	});
@@ -265,42 +268,26 @@ export function renderPreliminary(resp: SearchDocumentsResponse, opts: RenderOpt
 	return `fast answer (still verifying):\n${renderSearchHuman(resp, opts.debug ?? false)}`;
 }
 
-function renderMemoryHuman(schema: MemorySchemaV4, debug: boolean): string {
+function renderMemoryHuman(schema: MemorySchema, debug: boolean): string {
 	const lines: string[] = [];
 	lines.push("memory:");
 	lines.push(
-		`  counts: feedbackSignals=${schema.feedbackSignals.length} curatedResults=${schema.curatedResults.length} insights=${schema.insights.length}`,
-	);
-	const sd = schema.signalDefaults;
-	lines.push(
-		`  signalDefaults: explicitWeight=${sd.explicitWeight} followupWeight=${sd.followupWeight} retryWeight=${sd.retryWeight} implicitCap=${sd.implicitCap}`,
+		`  counts: judgedEvidence=${schema.judgedEvidence.length} curatedResults=${schema.curatedResults.length} evidenceChunks=${schema.evidenceChunks.length} insights=${schema.insights.length}`,
 	);
 	if (debug) {
-		lines.push(`  evidenceChunks: ${schema.evidenceChunks.length}`);
+		lines.push(`  pendingInsightEntries: ${schema.pendingInsightEntries.length}`);
 		lines.push(`  warnings: ${schema.warnings.length}`);
-		lines.push(`  pendingInsightSignals: ${schema.pendingInsightSignals.length}`);
 	}
 	return lines.join("\n");
 }
 
-export function renderMemory(schema: MemorySchemaV4, opts: RenderOptions): string {
+export function renderMemory(schema: MemorySchema, opts: RenderOptions): string {
 	if (opts.json) {
-		// Memory is fully path-opaque (queries, opaque evidence ids, method names,
-		// signal weights) so the whole schema is safe to emit for automation.
+		// Memory is fully path-opaque (queries, opaque evidence ids, method names)
+		// so the whole schema is safe to emit for automation.
 		return JSON.stringify(schema, null, 2);
 	}
 	return renderMemoryHuman(schema, opts.debug ?? false);
-}
-
-export function renderFeedback(result: { applied: boolean; sessionId: string }, opts: RenderOptions): string {
-	const envelope = { ok: true, applied: result.applied, sessionId: result.sessionId };
-	if (opts.json) {
-		return JSON.stringify(envelope);
-	}
-	const lines: string[] = [];
-	lines.push(`feedback: ${result.applied ? "applied" : "not applied"}`);
-	lines.push(`  sessionId: ${result.sessionId}`);
-	return lines.join("\n");
 }
 
 function indexEnvelope(result: { action: "reset" | "rebuild"; removed: string[]; rebuilt?: AutoRAGRefreshResult }) {

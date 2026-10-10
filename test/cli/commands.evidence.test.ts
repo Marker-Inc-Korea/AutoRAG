@@ -43,7 +43,7 @@ describe("autorag evidence", () => {
 		writeFileSync(
 			memoryPath,
 			JSON.stringify({
-				version: 4,
+				version: 5,
 				curatedResults: [
 					{
 						resultId: "session-1:1",
@@ -69,11 +69,10 @@ describe("autorag evidence", () => {
 						chunkIndex: 3,
 					},
 				],
-				feedbackSignals: [],
-				signalDefaults: { explicitWeight: 1, followupWeight: 0.25, retryWeight: -0.25, implicitCap: 0.5 },
-				warnings: [],
+				judgedEvidence: [],
 				insights: [],
-				pendingInsightSignals: [],
+				pendingInsightEntries: [],
+				warnings: [],
 			}),
 		);
 		const { ctx, stdout } = makeCtx(["session-1"], { result: "1" });

@@ -161,6 +161,8 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 	};
 	let supervisor: EmbeddingRuntimeSupervisor = options.supervisor ?? new RuntimeSupervisor({ cacheRoot: root });
 	let gateway: EmbeddingRuntimeGateway | undefined;
+	/** Runtime port the current gateway forwards to; a different port means a restarted runtime. */
+	let gatewayUpstreamPort: number | undefined;
 	let activeProfile: RuntimeProfile | undefined;
 	let stoppedByService = false;
 
@@ -227,13 +229,22 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		}
 		const status = await supervisor.ensureRunning();
 		if (!status.port) throw new Error("Embedding runtime did not expose a loopback port.");
+		// MinSync persists the gateway URL into its config and embedders cache it,
+		// so a later consumer of the same live runtime reuses the gateway instead
+		// of closing it under them.
+		if (gateway && activeProfile?.profileId === profile.profileId && gatewayUpstreamPort === status.port) {
+			return { baseUrl: gateway.url, profile, identity: identity(profile), supervisor: status };
+		}
 		if (gateway) await gateway.close();
+		gateway = undefined;
+		gatewayUpstreamPort = undefined;
 		const factory = input.gatewayFactory ?? options.gatewayFactory ?? startEmbeddingGateway;
 		gateway = await factory({
 			profile,
 			upstreamUrl: `http://127.0.0.1:${status.port}`,
 			fetch: input.fetch ?? options.fetch,
 		});
+		gatewayUpstreamPort = status.port;
 		activeProfile = profile;
 		return { baseUrl: gateway.url, profile, identity: identity(profile), supervisor: status };
 	}
@@ -241,6 +252,7 @@ export function createEmbeddingRuntime(options: EmbeddingRuntimeOptions = {}) {
 		if (gateway) {
 			await gateway.close();
 			gateway = undefined;
+			gatewayUpstreamPort = undefined;
 		}
 	}
 	async function stopRuntime(): Promise<void> {

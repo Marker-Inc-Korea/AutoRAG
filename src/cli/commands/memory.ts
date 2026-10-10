@@ -7,7 +7,7 @@ const USAGE = "Usage: autorag memory inspect";
 
 /**
  * `autorag memory inspect` — render a path-opaque snapshot of the retrieval
- * memory (curated results, feedback signals, insights, signal defaults).
+ * memory (judged evidence, curated results, evidence chunks, insights).
  * Model-free. The memory file is resolved from config and loaded read-only;
  * only the rendered schema is emitted, never the storage path.
  */

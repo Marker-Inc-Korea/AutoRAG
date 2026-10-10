@@ -52,14 +52,14 @@ export const emitResultsSchema = Type.Object({
 			number: Type.Integer({ description: "Matches the result number this entry maps" }),
 			source: Type.String({ description: "Source identifier — a real file path or a datasource id" }),
 			method: Type.String({ description: "Retrieval method or tool that produced the source" }),
-			content: Type.String({ description: "Raw content snippet for feedback tracking" }),
+			content: Type.String({ description: "Raw content snippet of the evidence behind this result" }),
 			evidenceRefs: Type.Optional(
 				Type.Array(evidenceRefSchema, {
 					description: "Hidden evidence chunk references supporting this curated result",
 				}),
 			),
 		}),
-		{ description: "Internal number -> source/method mapping for feedback. One entry per result number." },
+		{ description: "Internal number -> source/method mapping. One entry per result number." },
 	),
 	warnings: Type.Optional(Type.Array(Type.String(), { description: "Optional warnings about this result set" })),
 });
