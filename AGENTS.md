@@ -434,7 +434,7 @@ The librarian agent owns the full workflow:
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_<name>` | Search one datasource connection only; one tool is generated per configured connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
-| `check_memory` | Query past search outcomes | Adaptive strategy |
+| `check_memory` | Look up judged evidence from this conversation, similar past questions (hybrid BM25 + vector), and long-term insights | Advisory reference before searching |
 | `load_datasource_skill` | Load instructions for a configured datasource skill | Datasource-specific searches |
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
@@ -452,14 +452,13 @@ There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some
 ```
 Agent Tools                 AutoRAGAgent (customized Pi agent)
 ┌──────────────────┐       ┌──────────────────────────────────┐
-│ bash / jikji_find │       │ Memory System (query history)     │
+│ bash / jikji_find │       │ Retrieval Memory (judged evidence)│
 │ search_all_docs   │  ───▶ │ Curation Layer (LLM extraction)   │
-│ semantic_search   │       │ check_memory (adaptive strategy)  │
+│ semantic_search   │       │ check_memory (advisory reference) │
 │ search_datasource │       │ Manifest System (indexed stores)  │
 │ scan_duplicates   │       │ Retrieval Registry (pluggable)    │
 │ peer_targets      │       │ Result Merger (cross-method)      │
-└──────────────────┘       │ Feedback Loop (learn from usage)  │
-                           └──────────────────────────────────┘
+└──────────────────┘       └──────────────────────────────────┘
 ```
 
 ## Retrieval Methods
@@ -511,7 +510,6 @@ const agent = new AutoRAGAgent({
 });
 const response = await agent.searchDocuments("summarize the Q3 financial report");
 console.log(response.answer);
-agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
 ```
 
 `searchDocuments()` drives the Pi agent loop and returns a typed `SearchDocumentsResponse`; the caller consumes the structured payload directly, without parsing assistant text.
@@ -524,22 +522,29 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
 [2] Risk Factors — Three new risk factors added: supply chain, regulatory, talent retention. (pages 12-14)
 ```
 
-Each result maps to an internal entry carrying its `source` (a real file path or datasource id), `method`, and evidence for feedback tracking. Retrieval tools print an `[eN]` evidence id beside every result they return; the model cites those ids in each result's `refs` and the harness attaches the recorded source, method, and chunk, so a path or chunk is never retyped by the model (an unknown id is rejected and the model re-emits). `autorag report` and the MCP report tool keep the explicit `mapping` input because an external curator has no harness ledger. The curated `answer`/`results` are grounded in the sources; source paths may appear where relevant.
+Each result maps to an internal entry carrying its `source` (a real file path or datasource id), `method`, and cited evidence for retrieval memory. Retrieval tools print an `[eN]` evidence id beside every result they return; the model cites those ids in each result's `refs` and the harness attaches the recorded source, method, and chunk, so a path or chunk is never retyped by the model (an unknown id is rejected and the model re-emits). `autorag report` and the MCP report tool keep the explicit `mapping` input because an external curator has no harness ledger. The curated `answer`/`results` are grounded in the sources; source paths may appear where relevant.
 
-## Memory System (Self-Evolving)
+## Memory System
 
-AutoRAG remembers past search outcomes across sessions:
-- Tracks which queries + methods succeeded or failed
-- Prioritizes methods that historically work for similar queries
-- `check_memory` tool lets the LLM query this history before searching
-- Feedback loop: callers mark results as useful/not-useful → improves future searches
+Retrieval memory is reference context, never instructions. After the final
+answer (`emit_autorag_results`, or `emit_fast_answer` when Jev ends the run
+early), every cited evidence is mapped back to the search query and method that
+surfaced it and judged by Jev in one batched call: does the evidence really
+support the sentence of the answer it backs? At P(supports) >= 0.7 the evidence
+is stored as `judgedEvidence` in `~/.autorag/memory.json`; below 0.7 it is
+discarded. With Jev disabled or unreachable nothing is judged or stored, and an
+`evidence-judgment-fallback` diagnostic says why. Nothing is capped or evicted;
+every 100 judged records are summarized once into long-term insights.
 
-## Feedback Flow
-
-1. Caller references results by session ID + number (e.g., session "abc", [1,3] useful)
-2. Agent resolves numbers → session registry (populated from `emit_autorag_results` details, whose mapping the harness built from the cited evidence ids) → sources
-3. Sources → memory entries updated (useful/not_useful)
-4. Memory informs future search strategy
+At search time the agent receives (1) everything judged earlier in the current
+conversation, up to the 50 most recent records, (2) up to 25 similar past
+questions found by hybrid BM25 + vector search with reciprocal-rank fusion, with
+their judged evidence, and (3) matching long-term insights — injected as a
+`<memory_context>` user message and offered through the `check_memory` tool.
+Jev's datasource-selection step also receives up to 5 similar past questions as
+hints. Memory never reorders search results. Evidence from datasources not
+configured for the run is never shown, and remote P2P sessions never read or
+write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 
 ## Files
 
@@ -567,9 +572,14 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
 | `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX peer-contact ranking (shared profile + your name/note) |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
-| `src/memory/memory.ts` | Feedback persistence and method priority scoring |
-| `src/memory/renderer.ts` | Memory context renderer for system prompt |
-| `src/memory/check-memory-tool.ts` | check_memory tool (pi-agent-core AgentTool) |
+| `src/memory/memory.ts` | Retrieval memory store: judged evidence, curated results, evidence chunks, insights, and v4→v5 file parsing |
+| `src/memory/similar-queries.ts` | Similar past questions via hybrid BM25 + vector search with reciprocal-rank fusion and the SQLite question-vector cache |
+| `src/memory/judged-evidence.ts` | `JudgedEvidenceRecord` shape and the 0.7 `EVIDENCE_SUPPORT_THRESHOLD` |
+| `src/memory/context.ts` | Assembles current-conversation evidence, similar past questions, and insights into the advisory memory context |
+| `src/memory/renderer.ts` | Renders retrieval memory as JSON-quoted advisory markdown |
+| `src/memory/check-memory-tool.ts` | `check_memory` tool (pi-agent-core AgentTool) |
+| `src/agent/evidence-judgment.ts` | Post-answer Jev step: one batched evidence-support call, the 0.7 threshold, and fallback |
+| `src/agent/evidence-origins.ts` | Maps a cited evidence ref back to the search query and method that surfaced it |
 | `src/manifest/loader.ts` | YAML/JSON manifest loader for indexed data stores |
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |

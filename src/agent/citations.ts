@@ -119,8 +119,8 @@ export function assertUniqueResultNumbers(label: string, results: readonly { rea
 /**
  * Throw a corrective error unless `results` and `mapping` carry the same
  * numbers, exactly one entry each. Duplicates are rejected even when both
- * sides repeat them: a repeated number collapses into a single registry entry
- * and shares one feedback id, so the other entry's evidence would be lost.
+ * sides repeat them: a repeated number collapses into a single registry entry,
+ * so the other entry's evidence would be lost.
  * Emit tools call this at tool time (issue #1807) so the model sees the error
  * and re-emits; checking only after the run ended failed the whole search and
  * discarded an already-delivered answer.

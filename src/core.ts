@@ -17,7 +17,7 @@ import {
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
 import type { EverythingSearchRequest, EverythingSearchResult } from "./everything/index.ts";
 import type { FSearchSearchRequest, FSearchSearchResult } from "./fsearch/index.ts";
-import type { MemorySchemaV4 } from "./memory/memory.ts";
+import type { MemorySchema } from "./memory/memory.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import type { MinSyncSyncResult } from "./minsync/types.ts";
 import type { ParsedMirrorSyncResult } from "./mirror/sync.ts";
@@ -164,7 +164,7 @@ export class AutoRAGLite {
 		return this.retrievalEngine.retrieveByMethod(query, options);
 	}
 
-	/** Persist a typed structured report for later evidence and feedback commands. */
+	/** Persist a typed structured report for later evidence commands. */
 	recordStructuredResultsSession(
 		sessionId: string,
 		query: string,
@@ -183,44 +183,8 @@ export class AutoRAGLite {
 		return this.sessions.get(sessionId)?.registry ?? new Map();
 	}
 
-	/** Record numbered feedback and report whether numbers matched and changed memory. */
-	recordFeedbackByNumbersDetailed(
-		sessionId: string,
-		usefulNumbers: readonly number[],
-		notUsefulNumbers: readonly number[] = [],
-	): { matched: boolean; applied: boolean } {
-		const session = this.sessions.get(sessionId);
-		const persistedResults = this.memory
-			.getSchema()
-			.curatedResults.filter((result) => result.sessionId === sessionId);
-		const validNumbers = new Set(
-			session === undefined ? persistedResults.map((result) => result.number) : [...session.registry.keys()],
-		);
-		const feedback = [
-			...usefulNumbers.filter((number) => validNumbers.has(number)).map((number) => ({ number, useful: true })),
-			...notUsefulNumbers.filter((number) => validNumbers.has(number)).map((number) => ({ number, useful: false })),
-		];
-		if (feedback.length === 0) return { matched: false, applied: false };
-		const applied = this.memory.recordNumberedFeedback({
-			sessionId,
-			query: session?.query ?? persistedResults[0]?.query ?? "",
-			feedback,
-		});
-		if (applied) this.memory.save();
-		return { matched: true, applied };
-	}
-
-	/** Record numbered feedback against a report persisted by this facade. */
-	recordFeedbackByNumbers(
-		sessionId: string,
-		usefulNumbers: readonly number[],
-		notUsefulNumbers: readonly number[] = [],
-	): boolean {
-		return this.recordFeedbackByNumbersDetailed(sessionId, usefulNumbers, notUsefulNumbers).applied;
-	}
-
-	/** Return a detached snapshot of persisted evidence and feedback state. */
-	getMemorySchema(): MemorySchemaV4 {
+	/** Return a detached snapshot of persisted evidence state. */
+	getMemorySchema(): MemorySchema {
 		return structuredClone(this.memory.getSchema());
 	}
 }

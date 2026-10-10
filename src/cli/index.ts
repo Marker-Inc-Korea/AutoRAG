@@ -34,8 +34,6 @@ const VALUE_FLAGS = new Set([
 	"top-k",
 	"scope",
 	"result",
-	"useful",
-	"not-useful",
 	"debounce-ms",
 	"method",
 	"embedder-id",
@@ -74,7 +72,6 @@ const COMMANDS = [
 	"refresh",
 	"status",
 	"search",
-	"feedback",
 	"evidence",
 	"memory",
 	"index",
@@ -110,7 +107,6 @@ Commands:
   watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
   search <query>       Search and curate documents (requires a configured model)
-  feedback <session>   Record numbered feedback (--useful 1,3 --not-useful 2)
   evidence <session>   Show persisted source/chunk evidence (--result N)
   memory inspect       Inspect the retrieval memory snapshot
   index reset          Remove parsed/minsync indexes (--method)
@@ -239,10 +235,6 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "search": {
 			const { runSearch } = await import("./commands/search.ts");
 			return runSearch(ctx);
-		}
-		case "feedback": {
-			const { runFeedback } = await import("./commands/feedback.ts");
-			return runFeedback(ctx);
 		}
 		case "evidence": {
 			const { runEvidence } = await import("./commands/evidence.ts");

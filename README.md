@@ -61,7 +61,7 @@ Three principles drive every design decision in AutoRAG Agent:
 
 AutoRAG Agent orchestrates five integrated subsystems:
 
-1. **Self-Evolving Memory System (`check_memory`):** Before querying, the agent consults historical outcomes stored in `~/.autorag/memory.json` to prioritize retrieval methods that have proven successful for similar queries.
+1. **Retrieval Memory (`check_memory`):** After each answer, cited evidence Jev judges to genuinely support it is stored in `~/.autorag/memory.json`. Later searches receive this conversation's evidence, similar past questions, and long-term insights as **advisory reference** — it never reorders results or overrides current evidence. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 2. **Pluggable Multi-Method Retrieval:**
    - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors.
    - **Semantic Vector Search:** Dense vector retrieval over CDC chunks via the built-in embedding gateway.
@@ -72,7 +72,7 @@ AutoRAG Agent orchestrates five integrated subsystems:
    - **Datasource Skills:** Federated retrieval across every configured external datasource.
 3. **Result Merger & Scope Narrowing:** Cross-method deduplication, score normalization, and ordinary query-scope narrowing.
 4. **Direct Evidence Reading (`bash`):** The agent directly opens and inspects promising files with `cat`, `grep`, or `find` to verify facts against ground truth.
-5. **Curation & Active Feedback:** Structured findings are returned via `emit_autorag_results`. When callers provide feedback on which items were useful, AutoRAG records this to optimize future queries.
+5. **Curation:** Structured findings are returned via `emit_autorag_results`; cited evidence that Jev judges to genuinely support the answer is remembered as reference context for later searches ([docs/retrieval-memory.md](docs/retrieval-memory.md)).
 
 ### Pi host boundary
 
@@ -118,8 +118,8 @@ cp -R "$AUTORAG_SKILLS/autorag-lite-setup" .claude/skills/
 Run the setup skill once to register the stdio server with the host. Reload the
 agent, then discover the actual tool names and schemas with MCP `tools/list`.
 The normal Lite path is `autorag.status` → `autorag.refresh` when needed →
-`autorag.search`; use `autorag.report`, `autorag.evidence`, and
-`autorag.feedback` for the optional curation lifecycle. Copy `skills/autorag`
+`autorag.search`; use `autorag.report` and `autorag.evidence` for the optional
+curation lifecycle. Copy `skills/autorag`
 and `skills/autorag-setup` only when the agent should also drive the
 model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
 agents read their own skill directories; copy the same setup folder there and
@@ -166,10 +166,9 @@ hard-code a tool count.
 
 Core Lite tools include `autorag.status`, `autorag.search`,
 `autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
-`autorag.refresh`, `autorag.report`, `autorag.evidence`, and
-`autorag.feedback`. Configured integrated datasources expose additional scoped
-search tools. Read-only MCP mode omits mutating tools such as refresh, report,
-and feedback.
+`autorag.refresh`, `autorag.report`, and `autorag.evidence`. Configured
+integrated datasources expose additional scoped search tools. Read-only MCP
+mode omits mutating tools such as refresh and report.
 
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
@@ -286,6 +285,24 @@ PDF pages.
 
 ### 2. Search from CLI
 
+`autorag search` needs one chat model. `autorag init` does not pick one, so on
+first run either sign in and choose a model inside the TUI:
+
+```bash
+autorag tui      # then /login (OAuth or API key) and /model
+```
+
+or add the `model` entry to your existing AutoRAG config, preserving its other
+settings. Find provider/model ids with `autorag models list --available`:
+
+```json
+"model": { "provider": "<provider>", "id": "<id>" }
+```
+
+Then run `autorag health`. Do not re-run `autorag init --force` just to select
+a model: it replaces the existing config, including datasource and parser settings.
+Configure the provider's credentials through `/login` or its supported environment variables.
+
 ```bash
 # Perform a curated search (uses your configured reasoning model)
 autorag search "What are our primary Q3 deliverables?"
@@ -312,9 +329,6 @@ for (const result of response.results) {
   console.log(`[${result.number}] ${result.title} (${result.source})`);
   console.log(`    ${result.summary}`);
 }
-
-// Record feedback: Result [1] was useful, [2] was not
-agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 ```
 
 ---
@@ -333,7 +347,7 @@ agent.recordFeedbackByNumbers(response.sessionId, [1], [2]);
 | `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
-| `autorag feedback <session>` | Record numbered feedback; MCP clients normally use `autorag.feedback`, and the CLI stays available for terminal maintenance |
+| `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |
 | `autorag evidence <session>` | Inspect persisted evidence behind numbered results; MCP clients normally use `autorag.evidence`, and the CLI stays available for terminal maintenance |
 | `autorag serve` | Start the P2P query server over SimpleX (opt-in) |
 | `autorag p2p ...` | Manage peer trust, query approvals, and sharing policies |

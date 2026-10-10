@@ -54,7 +54,7 @@ describe("lite report bridge", () => {
 		}
 	});
 
-	it("persists opaque report data for existing evidence and feedback commands", async () => {
+	it("persists opaque report data for existing evidence commands", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-lite-report-valid-"));
 		try {
 			const configPath = join(root, "config.json");
@@ -119,18 +119,6 @@ describe("lite report bridge", () => {
 			]);
 			expect(evidenceCode).toBe(0);
 			expect(String(output.mock.calls.at(-1)?.[0] ?? "")).toContain("file:///definitely-do-not-read");
-
-			const feedbackCode = await main([
-				"feedback",
-				parsed.sessionId,
-				"--useful",
-				"1",
-				"--config",
-				configPath,
-				"--json",
-			]);
-			expect(feedbackCode).toBe(0);
-			expect(String(output.mock.calls.at(-1)?.[0] ?? "")).toContain('"applied":true');
 		} finally {
 			vi.restoreAllMocks();
 			rmSync(root, { recursive: true, force: true });

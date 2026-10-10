@@ -20,7 +20,7 @@ import { SearchProvider } from "./base.ts";
 import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./utils.ts";
 
 const DEFAULT_BASE_URL = "https://api.anthropic.com";
-const DEFAULT_MODEL = "claude-haiku-4-5";
+const DEFAULT_MODEL = "claude-haiku-5-5";
 const DEFAULT_MAX_TOKENS = 4096;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ERROR_BYTES = 8 * 1024;

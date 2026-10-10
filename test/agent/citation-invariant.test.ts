@@ -219,7 +219,7 @@ describe("final emit result numbers must be unique (#1807)", () => {
 		const complete = events.find((event) => event.type === "complete");
 		if (complete?.type !== "complete") throw new Error("missing complete event");
 		expect(complete.response.results.map((result) => result.number)).toEqual([1, 2]);
-		expect(new Set(complete.response.results.map((result) => result.feedbackId)).size).toBe(2);
+		expect(new Set(complete.response.results.map((result) => result.number)).size).toBe(2);
 		expect(complete.response.diagnostics?.some((d) => d.code === "missing-final-emit")).toBe(false);
 	});
 });

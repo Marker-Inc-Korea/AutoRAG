@@ -21,7 +21,7 @@ import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./u
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-3.8-flash";
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ERROR_BYTES = 8 * 1024;
 

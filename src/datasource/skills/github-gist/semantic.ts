@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ProfileId } from "../../../embedding-runtime/types.ts";
+import type { Embedder, EmbeddingIdentity } from "../../../embedding-runtime/gateway-embedder.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -22,18 +22,6 @@ import type {
 } from "../../../retrieval/types.ts";
 import type { DatasourceChunkStore, StoredChunk } from "../../chunk-store.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
-
-export interface GistEmbeddingIdentity {
-	readonly provider: string;
-	readonly model: string;
-	readonly dimension: number;
-}
-
-/** Embedder contract: identity is async because the gateway resolves it lazily. */
-export interface GistEmbedder {
-	identity(): Promise<GistEmbeddingIdentity>;
-	embed(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
-}
 
 export interface GistSemanticSyncOk {
 	readonly ok: true;
@@ -53,7 +41,7 @@ interface VectorEntry {
 
 interface PersistedVectors {
 	readonly version: number;
-	readonly identity: GistEmbeddingIdentity;
+	readonly identity: EmbeddingIdentity;
 	readonly entries: Record<string, VectorEntry>;
 }
 
@@ -65,7 +53,7 @@ function contentHash(chunk: StoredChunk): string {
 		.digest("hex");
 }
 
-function sameIdentity(a: GistEmbeddingIdentity, b: GistEmbeddingIdentity): boolean {
+function sameIdentity(a: EmbeddingIdentity, b: EmbeddingIdentity): boolean {
 	return a.provider === b.provider && a.model === b.model && a.dimension === b.dimension;
 }
 
@@ -88,7 +76,7 @@ function cosine(a: readonly number[], b: readonly number[]): number {
 /** Persisted per-instance vector sidecar mirroring the chunk store. */
 export class GistSemanticIndex {
 	private readonly statePath: string | undefined;
-	private identity: GistEmbeddingIdentity | undefined;
+	private identity: EmbeddingIdentity | undefined;
 	private entries: Record<string, VectorEntry> = {};
 	private loaded = false;
 
@@ -100,12 +88,9 @@ export class GistSemanticIndex {
 	 * Embed new/changed chunks, prune removed ones, and persist. Never throws;
 	 * an embedder failure leaves prior entries intact and reports ok:false.
 	 */
-	async sync(
-		chunks: readonly StoredChunk[],
-		embedder: GistEmbedder,
-	): Promise<GistSemanticSyncOk | GistSemanticSyncFail> {
+	async sync(chunks: readonly StoredChunk[], embedder: Embedder): Promise<GistSemanticSyncOk | GistSemanticSyncFail> {
 		this.ensureLoaded();
-		let identity: GistEmbeddingIdentity;
+		let identity: EmbeddingIdentity;
 		try {
 			identity = await embedder.identity();
 		} catch (error) {
@@ -196,7 +181,7 @@ export interface GitHubGistSemanticMethodOptions {
 	readonly tags: readonly string[];
 	readonly store: DatasourceChunkStore;
 	readonly index: GistSemanticIndex;
-	readonly embedder: GistEmbedder;
+	readonly embedder: Embedder;
 }
 
 const DEFAULT_TOP_K = 20;
@@ -263,79 +248,4 @@ export class GitHubGistSemanticMethod implements RetrievalMethod {
 		}
 		return mapped;
 	}
-}
-
-export interface GatewayGistEmbedderOptions {
-	/** Runtime resolver; defaults to the shared embedding-runtime ensureRuntime. */
-	readonly runtime?: {
-		ensureRuntime(input?: { profileId?: ProfileId; cachedOnly?: boolean }): Promise<{
-			baseUrl: string;
-			identity: { provider: string; model: string; dimension: number };
-		}>;
-	};
-	readonly profileId?: ProfileId;
-	readonly fetchImpl?: typeof fetch;
-}
-
-/**
- * Production embedder backed by the loopback autorag-gateway. The runtime is
- * ensured lazily with `cachedOnly` so semantic retrieval never triggers a
- * model download; an unprimed cache surfaces as a sync/retrieve degrade.
- */
-/**
- * Texts per `/v1/embeddings` call. The llama.cpp upstream rejects very large
- * batches (HTTP 413 on a full-archive sync), so embedding fans out in
- * bounded sequential batches while preserving input order.
- */
-export const GIST_EMBED_BATCH_SIZE = 32;
-
-export function createGatewayGistEmbedder(options: GatewayGistEmbedderOptions = {}): GistEmbedder {
-	let ensured: { baseUrl: string; identity: GistEmbeddingIdentity } | undefined;
-	async function ensure(): Promise<{ baseUrl: string; identity: GistEmbeddingIdentity }> {
-		if (ensured !== undefined) return ensured;
-		let runtime = options.runtime;
-		if (runtime === undefined) {
-			const module = await import("../../../embedding-runtime/index.ts");
-			runtime = { ensureRuntime: module.ensureRuntime };
-		}
-		const result = await runtime.ensureRuntime({ profileId: options.profileId, cachedOnly: true });
-		ensured = {
-			baseUrl: result.baseUrl,
-			identity: {
-				provider: result.identity.provider,
-				model: result.identity.model,
-				dimension: result.identity.dimension,
-			},
-		};
-		return ensured;
-	}
-	return {
-		identity: async () => (await ensure()).identity,
-		async embed(texts) {
-			if (texts.length === 0) return [];
-			const { baseUrl, identity } = await ensure();
-			const fetchImpl = options.fetchImpl ?? fetch;
-			const embeddings: number[][] = [];
-			for (let offset = 0; offset < texts.length; offset += GIST_EMBED_BATCH_SIZE) {
-				const batch = texts.slice(offset, offset + GIST_EMBED_BATCH_SIZE);
-				const response = await fetchImpl(`${baseUrl}/v1/embeddings`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ model: identity.model, input: [...batch] }),
-				});
-				if (!response.ok) throw new Error(`gateway /v1/embeddings returned HTTP ${response.status}`);
-				const json = (await response.json()) as { data?: { index?: number; embedding?: number[] }[] };
-				const rows = [...(json.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-				const batchEmbeddings = rows.map((row) => row.embedding ?? []);
-				if (
-					batchEmbeddings.length !== batch.length ||
-					batchEmbeddings.some((row) => row.length !== identity.dimension)
-				) {
-					throw new Error("gateway /v1/embeddings returned an invalid embedding batch");
-				}
-				embeddings.push(...batchEmbeddings);
-			}
-			return embeddings;
-		},
-	};
 }

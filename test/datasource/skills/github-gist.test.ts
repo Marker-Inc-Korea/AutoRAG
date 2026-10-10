@@ -3,12 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitHubGistConnector } from "../../../src/datasource/skills/github-gist/connector.ts";
-import {
-	createGatewayGistEmbedder,
-	GIST_EMBED_BATCH_SIZE,
-	type GistEmbedder,
-} from "../../../src/datasource/skills/github-gist/semantic.ts";
 import { GitHubGistSkill } from "../../../src/datasource/skills/github-gist/skill.ts";
+import type { Embedder } from "../../../src/embedding-runtime/gateway-embedder.ts";
 import { createMockFetch } from "../../fixtures/mock-fetch.ts";
 
 const GIST_LIST = [
@@ -248,11 +244,7 @@ describe("GitHubGistConnector", () => {
 });
 
 describe("GitHubGistSkill", () => {
-	function skillWithMock(
-		workspace: string,
-		list: unknown,
-		semantic?: { embedder: GistEmbedder } | { enabled: false },
-	) {
+	function skillWithMock(workspace: string, list: unknown, semantic?: { embedder: Embedder } | { enabled: false }) {
 		const mock = listMock(list);
 		return new GitHubGistSkill({
 			workspaceRoot: workspace,
@@ -323,7 +315,7 @@ describe("GitHubGistSkill", () => {
 });
 
 /** Deterministic embedder stub: vector = [count of 'alpha', count of 'beta', 1]. */
-function stubEmbedder(dimension = 3): GistEmbedder & { calls: string[][] } {
+function stubEmbedder(dimension = 3): Embedder & { calls: string[][] } {
 	const calls: string[][] = [];
 	return {
 		calls,
@@ -334,41 +326,6 @@ function stubEmbedder(dimension = 3): GistEmbedder & { calls: string[][] } {
 		},
 	};
 }
-
-describe("createGatewayGistEmbedder", () => {
-	it("batches large embed requests across multiple gateway calls", async () => {
-		const bodies: string[] = [];
-		const fetchImpl = (async (_input: unknown, init?: RequestInit) => {
-			const body = String(init?.body ?? "{}");
-			bodies.push(body);
-			const parsed = JSON.parse(body) as { input: string[] };
-			return new Response(
-				JSON.stringify({ data: parsed.input.map((_, index) => ({ index, embedding: [1, 0, 0] })) }),
-				{ status: 200 },
-			);
-		}) as unknown as typeof fetch;
-		const embedder = createGatewayGistEmbedder({
-			runtime: {
-				ensureRuntime: async () => ({
-					baseUrl: "http://127.0.0.1:9",
-					identity: { provider: "p", model: "m", dimension: 3 },
-				}),
-			},
-			fetchImpl,
-		});
-		const texts = Array.from({ length: GIST_EMBED_BATCH_SIZE * 2 + 6 }, (_, index) => `text-${index}`);
-		const vectors = await embedder.embed(texts);
-		expect(vectors).toHaveLength(texts.length);
-		expect(bodies.length).toBe(3);
-		expect(bodies.map((body) => (JSON.parse(body) as { input: string[] }).input.length)).toEqual([
-			GIST_EMBED_BATCH_SIZE,
-			GIST_EMBED_BATCH_SIZE,
-			6,
-		]);
-		// Order is preserved across batches: first text of batch 3 follows batch 2.
-		expect((JSON.parse(bodies[2] ?? "{}") as { input: string[] }).input[0]).toBe(`text-${GIST_EMBED_BATCH_SIZE * 2}`);
-	});
-});
 
 describe("GitHubGistSkill semantic retrieval", () => {
 	it("adds a semantic method that ranks by cosine similarity", async () => {
@@ -420,7 +377,7 @@ describe("GitHubGistSkill semantic retrieval", () => {
 	it("re-embeds everything when the embedding identity changes", async () => {
 		const workspace = tempWorkspace();
 		const embedderA = stubEmbedder(3);
-		const make = (embedder: GistEmbedder) =>
+		const make = (embedder: Embedder) =>
 			new GitHubGistSkill({
 				workspaceRoot: workspace,
 				semantic: { embedder },
@@ -448,7 +405,7 @@ describe("GitHubGistSkill semantic retrieval", () => {
 
 	it("degrades with a semantic-unavailable diagnostic when embedding fails", async () => {
 		const workspace = tempWorkspace();
-		const failing: GistEmbedder = {
+		const failing: Embedder = {
 			identity: async () => ({ provider: "stub", model: "stub-model", dimension: 3 }),
 			async embed() {
 				throw new Error("gateway down");

@@ -234,15 +234,14 @@ degraded search.
 
 MCP results carry source, method, and content directly. After a search, the
 optional curation lifecycle is also exposed through MCP: `autorag.report`
-records a curated answer, `autorag.evidence` returns the exact chunks behind
-numbered results, and `autorag.feedback` records which numbers were useful or
-not. These accept and return JSON matching the CLI's report/evidence/feedback
-contracts; discover the exact schemas with MCP `tools/list` rather than
-restating them here. Every bracketed `[n]` citation in a report `answer` must
-be a `results[].number`; an unmatched citation is removed from the persisted
-answer and returned as a `citation-without-result` diagnostic. The CLI
-`autorag report`, `autorag evidence`, and `autorag feedback` commands remain
-available for terminal maintenance.
+records a curated answer, and `autorag.evidence` returns the exact chunks behind
+numbered results. These accept and return JSON matching the CLI's
+report/evidence contracts; discover the exact schemas with MCP `tools/list`
+rather than restating them here. Every bracketed `[n]` citation in a report
+`answer` must be a `results[].number`; an unmatched citation is removed from
+the persisted answer and returned as a `citation-without-result` diagnostic.
+The CLI `autorag report` and `autorag evidence` commands remain available for
+terminal maintenance.
 
 ## Completion condition
 

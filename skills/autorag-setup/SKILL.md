@@ -131,7 +131,7 @@ For a custom endpoint, add `api`, `baseUrl`, and `apiKeyEnv` to the single
   "searchPaths": ["/path/to/documents"],
   "model": {
     "provider": "openrouter",
-    "id": "anthropic/claude-sonnet-4",
+    "id": "anthropic/claude-sonnet-5.5",
     "api": "openai-completions",
     "baseUrl": "https://openrouter.ai/api/v1",
     "apiKeyEnv": "OPENROUTER_API_KEY"
@@ -200,16 +200,16 @@ remote, provider:
 
 ```bash
 autorag init \
-  --embedder-id "text-embedding-3-small" \
-  --embedder-base-url "https://api.openai.com/v1" \
-  --embedder-api-key-env "OPENAI_API_KEY" \
-  --embedder-dimension 1536 \
+  --embedder-id "voyageai/voyage-4-lite" \
+  --embedder-base-url "https://openrouter.ai/api/v1" \
+  --embedder-api-key-env "OPENROUTER_API_KEY" \
+  --embedder-dimension 1024 \
   --embedder-batch-size 64
 ```
 
 Only store the environment-variable name, never its value. Dimension and batch
 size must be positive integers, and the dimension must match the embedder
-(default Qwen3 is 1024; legacy EmbeddingGemma is 768; text-embedding-3-small is 1536).
+(default Qwen3 is 1024; legacy EmbeddingGemma is 768; `voyageai/voyage-4-lite` via OpenRouter is 1024).
 
 ### Jev routing and question decomposition (on by default)
 
@@ -218,8 +218,9 @@ fast and multi-part questions thorough.
 
 - **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
   `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
-  local search, web search, or a direct answer (general knowledge or small
-  talk skips retrieval entirely), and decides whether to decompose it. On
+  local search, web search, a direct answer (general knowledge or small
+  talk skips retrieval entirely), or the `config` branch, and decides whether
+  to decompose it. On
   local search it also decides, per registered datasource, whether to search
   it before the fast answer, using each datasource's `description` and where
   similar past questions were answered (retrieval memory). When setting up a
@@ -257,6 +258,14 @@ always verifies, so searches still work. A `query-route-fallback` diagnostic
 - `"jev": false` turns routing off entirely. Do this only when the user
   explicitly opts out, for example because questions must never leave the
   machine (Jev and decomposition send the question text to OpenRouter).
+
+When a user asks the running agent itself to change its settings (switch the
+default model, add a provider, check that a provider works), Jev's `config`
+branch loads this whole skill into that turn. The agent edits only the active
+config file (and `models.json` for a custom provider), verifies with
+`autorag health --json` and `autorag models list --available`, and reports each
+change as old → new through `emit_autorag_results`. It never prints a
+credential value and never uses `init --force`.
 
 ### Retrieval and ingest caps
 
@@ -408,7 +417,7 @@ reload/reconnect, discover schemas with `tools/list`, and exercise
 `autorag.search` through MCP. Restart the MCP server after config changes.
 The MCP server returns model-free source chunks; the calling agent curates
 them. It does not invoke the configured librarian model. The same server also
-exposes `autorag.report`, `autorag.evidence`, and `autorag.feedback` for the
+exposes `autorag.report` and `autorag.evidence` for the
 curation lifecycle; the matching CLI commands remain a maintenance path.
 Discover the exact schemas with MCP `tools/list`. Keep the full `autorag` skill
 only when model-backed curated search is also wanted. For MCP-only setup, use

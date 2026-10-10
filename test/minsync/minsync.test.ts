@@ -1104,7 +1104,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			binaryPath: minsyncBinary,
 			root,
 			workspacePath: minsyncWorkspace,
-			embedder: { id: "openai:text-embedding-3-large" },
+			embedder: { id: "openai:voyageai/voyage-4-large" },
 		});
 
 		const result = await method.sync();
@@ -1115,7 +1115,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			.find((call) => call.args[0] === "init");
 		expect(initCall?.args).toContain("--embedder");
 		const embedderIdx = initCall?.args.indexOf("--embedder");
-		expect(initCall?.args[embedderIdx! + 1]).toBe("openai:text-embedding-3-large");
+		expect(initCall?.args[embedderIdx! + 1]).toBe("openai:voyageai/voyage-4-large");
 	});
 
 	it("does not pass --embedder when no embedder.id is set", async () => {
@@ -1317,12 +1317,12 @@ if (args[0] === "sync") process.stdout.write('{"synced":1}');
 		writeFileSync(
 			minSyncConfigPath(minsyncWorkspace),
 			`[embedder]
-id = "openai:text-embedding-3-small"
+id = "openai:voyageai/voyage-4-lite"
 base_url = "https://api.openai.com/v1"
 
 [vectorstore]
 [vectorstore.options]
-dimension = 1536
+dimension = 1024
 `,
 		);
 
@@ -1333,9 +1333,9 @@ dimension = 1536
 			root,
 			workspacePath: minsyncWorkspace,
 			embedder: {
-				id: "openai:text-embedding-3-large",
+				id: "openai:voyageai/voyage-4-large",
 				baseUrl: "https://embed.example.com/v1",
-				dimension: 3072,
+				dimension: 2048,
 				queryPrefix: "query:",
 				passagePrefix: "passage:",
 				batchSize: 64,
@@ -1354,7 +1354,7 @@ dimension = 1536
 			string,
 			Record<string, unknown>
 		>;
-		expect(rewritten.embedder?.id).toBe("openai:text-embedding-3-large");
+		expect(rewritten.embedder?.id).toBe("openai:voyageai/voyage-4-large");
 		expect(rewritten.embedder?.base_url).toBe("https://embed.example.com/v1");
 		expect(rewritten.embedder?.query_prefix).toBe("query:");
 		expect(rewritten.embedder?.passage_prefix).toBe("passage:");
@@ -1362,7 +1362,7 @@ dimension = 1536
 		expect(rewritten.embedder?.max_retries).toBe(5);
 		expect(rewritten.embedder?.max_concurrent).toBe(4);
 		expect(rewritten.embedder?.timeout_seconds).toBe(30);
-		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(3072);
+		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(2048);
 		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
 	});
 

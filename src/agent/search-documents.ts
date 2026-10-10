@@ -26,6 +26,8 @@ export type SearchDocumentDiagnosticCode =
 	| "embedding-identity-mismatch"
 	| "parser-skipped"
 	| "parser-failed"
+	| "source-vanished"
+	| "source-unreadable"
 	| "parser-warning"
 	| "duplicate-excluded"
 	| "unsupported-file"
@@ -47,6 +49,7 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-datasource-skill"
 	| "missing-final-emit"
 	| "model-request-failed"
+	| "search-timeout"
 	| "query-routed"
 	| "query-route-fallback"
 	| "query-decomposition-failed"
@@ -54,7 +57,12 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-check-fallback"
 	| "datasources-selected"
 	| "datasource-selection-fallback"
-	| "citation-without-result";
+	| "citation-without-result"
+	| "evidence-judged"
+	| "evidence-judgment-fallback"
+	| "memory-search-fallback"
+	| "self-config-unavailable"
+	| "self-config-rolled-back";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
@@ -75,7 +83,6 @@ export interface SearchDocumentResult {
 	readonly summary: string;
 	readonly evidence: readonly SearchDocumentEvidence[];
 	readonly confidence: number;
-	readonly feedbackId: string;
 	readonly source?: string;
 }
 
@@ -151,12 +158,8 @@ export type SearchDocumentsStreamEvent =
 			readonly response: SearchDocumentsResponse;
 	  };
 
-type SearchSession = { query: string; registry: Map<number, CuratedResult>; transient?: boolean };
+type SearchSession = { query: string; registry: Map<number, CuratedResult> };
 type SearchSessions = Map<string, SearchSession>;
-type ReadonlySearchSessions = ReadonlyMap<
-	string,
-	{ query: string; registry: ReadonlyMap<number, CuratedResult>; transient?: boolean }
->;
 
 function confidenceFrom(score: number): number {
 	if (!Number.isFinite(score)) return 0;
@@ -196,8 +199,7 @@ function reconcileCitations(
 /**
  * Build the preliminary (fast-phase) search response. Unlike
  * {@link recordStructuredResultsSession} this NEVER touches memory or the
- * feedback session registry — the final response owns those. Feedback ids are
- * namespaced with `:preliminary:` so they can never collide with final ids.
+ * session registry — the final response owns those.
  */
 export function createPreliminarySearchDocumentsResponse(
 	sessionId: string,
@@ -216,7 +218,6 @@ export function createPreliminarySearchDocumentsResponse(
 				: { excerpt: evidence.excerpt },
 		),
 		confidence: confidenceFrom(result.confidence ?? 0.5),
-		feedbackId: `${sessionId}:preliminary:${result.number}`,
 		source: sourceByNumber.get(result.number),
 	}));
 	const citations = reconcileCitations(details.answer, results);
@@ -287,9 +288,8 @@ export function recordStructuredResultsSession(
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
 	options: {
+		/** Record the session registry only, skipping the retrieval-memory write. */
 		readonly isolateMemory?: boolean;
-		/** A remote P2P peer's search: recorded, but kept out of local past-search hints. */
-		readonly remote?: boolean;
 	} = {},
 ): SearchDocumentsResponse {
 	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
@@ -317,14 +317,9 @@ export function recordStructuredResultsSession(
 			evidenceRefs,
 		});
 	}
-	sessions.set(sessionId, { query, registry, ...(options.isolateMemory ? { transient: true } : {}) });
+	sessions.set(sessionId, { query, registry });
 	if (!options.isolateMemory) {
-		memory.recordCuratedResultsSession({
-			sessionId,
-			query,
-			results: memoryResults,
-			...(options.remote === true ? { remote: true } : {}),
-		});
+		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
 		memory.save();
 	}
 
@@ -338,7 +333,6 @@ export function recordStructuredResultsSession(
 				: { excerpt: evidence.excerpt },
 		),
 		confidence: confidenceFrom(result.confidence),
-		feedbackId: `${sessionId}:${result.number}`,
 		// An empty mapping source means "not reported" (fast answers may omit it).
 		source: registry.get(result.number)?.source || undefined,
 	}));
@@ -367,26 +361,4 @@ export function recordStructuredResultsSession(
 		warnings: normalizeWarnings(details.warnings),
 		diagnostics,
 	};
-}
-
-export function recordNumberedFeedback(
-	sessions: ReadonlySearchSessions,
-	memory: RetrievalMemory,
-	sessionId: string,
-	usefulNumbers: readonly number[],
-	notUsefulNumbers: readonly number[],
-): boolean {
-	const session = sessions.get(sessionId);
-	if (!session || session.transient) return false;
-	const feedback = [];
-	for (const n of usefulNumbers) {
-		if (session.registry.has(n)) feedback.push({ number: n, useful: true });
-	}
-	for (const n of notUsefulNumbers) {
-		if (session.registry.has(n)) feedback.push({ number: n, useful: false });
-	}
-	if (feedback.length === 0) return false;
-	if (!memory.recordNumberedFeedback({ sessionId, query: session.query, feedback })) return false;
-	memory.save();
-	return true;
 }

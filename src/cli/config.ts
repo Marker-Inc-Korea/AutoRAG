@@ -183,6 +183,8 @@ export interface AgentModelConfig {
 }
 
 export interface CliConfig {
+	/** Absolute path of the config file this config was resolved from (it may not exist yet). */
+	configPath?: string;
 	searchPaths: string[];
 	workspacePath: string;
 	memoryPath: string;
@@ -1040,6 +1042,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const model = applyRoleFlagOverrides(fileModel, flagModelProvider, flagModelId, "model");
 
 	const config: CliConfig = {
+		configPath: resolve(configPath),
 		searchPaths,
 		workspacePath,
 		memoryPath,
@@ -1167,7 +1170,7 @@ export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
  * Question-decomposition model used when the config names none. Picked from a
  * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
  * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
- * cheaper per call than google/gemini-2.5-flash-lite at equal quality.
+ * cheaper per call than the previous default (a 2025 Gemini flash-lite) at equal quality.
  */
 export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
 
@@ -1351,6 +1354,14 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	opts.jev = buildJevAgentOption(config.jev);
+	// The Jev `config` branch edits the very file this process resolved; it only
+	// takes effect when Jev is on, so the option is always safe to pass.
+	if (config.configPath !== undefined) {
+		opts.selfConfig = {
+			configPath: config.configPath,
+			validate: (path: string) => validateAgentConfigFile(path),
+		};
+	}
 	if (config.rerank !== undefined) {
 		opts.rerank =
 			config.rerank === false || config.rerank.enabled === false
@@ -1591,6 +1602,15 @@ interface AgentModelCore {
 	readonly auth: ResolvedModelAuth;
 }
 
+function noModelConfiguredMessage(localError: unknown): string {
+	const reason = localError instanceof Error ? localError.message : String(localError);
+	return (
+		"No model configured. Sign in and pick one with `autorag tui` (`/login`, then `/model`), " +
+		'or set "model": { "provider": ..., "id": ... } in the AutoRAG config (`autorag models list` shows the ids). ' +
+		`The local Codex runtime fallback is unavailable: ${reason}`
+	);
+}
+
 function localFallbackOptions(
 	options: ResolveAgentModelOptions,
 	modelId: string | undefined,
@@ -1757,7 +1777,15 @@ async function resolveAgentModelCore(
 				auth: await resolveCatalogAuth(runtime, piDefault, env),
 			};
 		}
-		const local = loadLocalAutoRAGModel(localFallbackOptions(options, undefined));
+		let local: LocalAutoRAGModel;
+		try {
+			local = loadLocalAutoRAGModel(localFallbackOptions(options, undefined));
+		} catch (error) {
+			// The local Codex runtime is only a last-resort fallback; when it is
+			// absent or incomplete, tell a first-run user how to pick a model
+			// instead of surfacing a bare ENOENT for ~/.codex/config.toml.
+			throw new ConfigError(noModelConfiguredMessage(error));
+		}
 		return {
 			model: local.model as Model<Api>,
 			modelRef,
@@ -1796,6 +1824,28 @@ export async function resolveAgentModel(
 		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
 		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
 	};
+}
+
+/**
+ * Check that a config file still resolves to a callable model, the way the
+ * next `autorag` launch will read it: invalid JSON, a schema error, or a model
+ * id that neither the pi catalog nor a declared endpoint knows is a problem.
+ * A missing credential is not (that is `autorag health`'s `auth_missing`).
+ * Resolves to a problem description, or `undefined` when the config is fine.
+ */
+export async function validateAgentConfigFile(
+	configPath: string,
+	options: ResolveAgentModelOptions = {},
+): Promise<string | undefined> {
+	// A launch-time model override would mask a broken file model; validate the file itself.
+	const { AUTORAG_MODEL_PROVIDER: _provider, AUTORAG_MODEL_ID: _id, ...fileEnv } = options.env ?? process.env;
+	try {
+		const config = resolveConfig({ flags: { config: configPath }, env: fileEnv, readOnly: true });
+		await resolveAgentModel(config, { ...options, env: fileEnv });
+		return undefined;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
 }
 
 /**

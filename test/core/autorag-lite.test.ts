@@ -19,7 +19,6 @@ type LiteProbe = {
 	readonly searchEverything: unknown;
 	readonly recordStructuredResultsSession: unknown;
 	readonly getResultRegistry: unknown;
-	readonly recordFeedbackByNumbers: unknown;
 };
 
 function isLiteFactory(value: unknown): value is LiteFactoryProbe {
@@ -39,7 +38,6 @@ function hasLiteSurface(value: unknown): value is LiteProbe {
 		"searchEverything",
 		"recordStructuredResultsSession",
 		"getResultRegistry",
-		"recordFeedbackByNumbers",
 	].every((key) => key in value);
 }
 
@@ -187,7 +185,7 @@ describe("public AutoRAG-lite core facade", () => {
 		});
 	});
 
-	it("persists an opaque report and numbered feedback without reading its source", () => {
+	it("persists an opaque report without reading its source", () => {
 		const configPath = join(root, "config.json");
 		writeFileSync(
 			configPath,
@@ -224,12 +222,10 @@ describe("public AutoRAG-lite core facade", () => {
 			warnings: [],
 		};
 		const response = lite.recordReport("opaque query", details);
-		lite.recordFeedbackByNumbers(response.sessionId, [1]);
 		const memory = lite.getMemorySchema();
 		expect(response.results[0]?.source).toBe("file:///do-not-read");
 		expect(memory.curatedResults[0]?.sessionId).toBe(response.sessionId);
 		expect(memory.evidenceChunks[0]?.source).toBe("file:///do-not-read");
-		expect(memory.feedbackSignals.length).toBeGreaterThan(0);
 	});
 
 	it("resolves trusted config without persisting credentials", () => {

@@ -75,7 +75,7 @@ AutoRAG-lite retrieval and indexing behavior.
 ## Project Context
 
 The AutoRAG-lite module is a loop-free facade that reuses existing
-refresh, retrieval, datasource, MinSync, Jikji, evidence, and feedback
+refresh, retrieval, datasource, MinSync, Jikji, and evidence
 contracts without requiring a model or agent loop.
 
 ## Notes
