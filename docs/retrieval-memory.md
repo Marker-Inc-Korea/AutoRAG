@@ -100,7 +100,8 @@ rule.
   path, or the web contributes a past result. Evidence with no recognizable
   origin is dropped, and a search left with no result is not shown at all.
 - **Remote P2P sessions never read or write judged memory.** A remote peer's
-  run neither consults nor stores it.
+  run neither consults nor stores it; its `check_memory` answers as if memory
+  were empty.
 - **Evidence text leaves the machine.** The question wording is judged against
   evidence excerpts and titles, so those go to Jev's backend (OpenRouter by
   default). Warming the vector cache also sends the past question texts to the

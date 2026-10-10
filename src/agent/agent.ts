@@ -836,7 +836,11 @@ export class AutoRAGAgent {
 			options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? createGatewayEmbedder());
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
-		const checkMemoryTool = createCheckMemoryTool(this.memory, () => this.memoryContextOptions());
+		// Remote peers never read retrieval memory: past judged evidence may come
+		// from sources outside the peer's sharing policy.
+		const checkMemoryTool = createCheckMemoryTool(this.memory, () =>
+			this.remoteSession ? undefined : this.memoryContextOptions(),
+		);
 		// One tool per configured datasource connection, so a question that
 		// targets a single connection spawns only that connection's CLIs instead
 		// of fanning out to every datasource. Generated from the configured
