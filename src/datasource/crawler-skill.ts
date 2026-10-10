@@ -253,8 +253,7 @@ class CrawlerLexicalMethod implements RetrievalMethod {
 		const mapped: RetrievalResult[] = [];
 		for (const hit of result.hits) {
 			const source = datasourceSourcePath(this.options.datasourceId, this.options.instanceId, hit.id);
-			if (!matchesScope(source, options.scope, options.allowedScopes) || !matchesChannel(hit, this.options))
-				continue;
+			if (!matchesDatasourceScope(source, options.scope) || !matchesChannel(hit, this.options)) continue;
 			mapped.push({
 				id: `${this.options.datasourceId}:${this.options.instanceId}:${hit.id}`,
 				content: hit.content,
@@ -285,16 +284,6 @@ function matchesChannel(
 	const id = [metadata.channelId, metadata.chatId].find((value): value is string => typeof value === "string");
 	const name = [metadata.channelName, metadata.chatName].find((value): value is string => typeof value === "string");
 	return (id !== undefined && options.channelIds.has(id)) || (name !== undefined && options.channelNames.has(name));
-}
-
-function matchesScope(
-	source: string,
-	scope: string | undefined,
-	allowedScopes: readonly string[] | undefined,
-): boolean {
-	if (!matchesDatasourceScope(source, scope)) return false;
-	if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-	return allowedScopes.some((entry) => matchesDatasourceScope(source, entry));
 }
 
 function failureCode(reason: string): DatasourceDiagnosticCode {

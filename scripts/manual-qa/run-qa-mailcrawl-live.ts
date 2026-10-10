@@ -130,7 +130,7 @@ try {
 	if (!indexed.ok) throw new Error(`skill index failed: ${indexed.error ?? "unknown"}`);
 	const retrieved = await skill
 		.retrievalMethods()[0]
-		?.retrieve("refund", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
+		?.retrieve("refund", { topK: 5, scope: "/mailcrawl/personal/**" });
 	if (retrieved?.[0]?.source === undefined || !retrieved[0].source.startsWith("/mailcrawl/personal/chunks/")) {
 		throw new Error(`skill source mapping failed: ${retrieved?.[0]?.source ?? "none"}`);
 	}

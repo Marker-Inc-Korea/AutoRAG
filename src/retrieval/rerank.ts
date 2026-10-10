@@ -1,7 +1,7 @@
 /**
  * Reranker seam — a post-retrieval reordering stage over merged evidence.
  *
- * The retrieval pipeline (registry → ParallelRetriever → DatasourceResultFilter
+ * The retrieval pipeline (registry → ParallelRetriever → filterDatasourceScope
  * → ResultMerger) produces a scored candidate list. A reranker reorders that
  * list with a dedicated relevance model. The default implementation talks to
  * OpenRouter's rerank router through the OpenRouter TypeScript SDK.

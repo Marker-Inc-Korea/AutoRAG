@@ -69,7 +69,6 @@ describe("remote-session retrieval policy", () => {
 			remoteSession: true,
 			minSync: false,
 			jikji: false,
-			datasourceAccess: { allowedTags: ["kakao"] },
 		});
 		agent
 			.getMethodRegistry()

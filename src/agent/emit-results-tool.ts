@@ -1,7 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
-import { assertCitationsResolve } from "./citations.ts";
+import { assertCitationsResolve, assertResultsMappingOneToOne } from "./citations.ts";
 
 export const EMIT_AUTORAG_RESULTS_TOOL_NAME = "emit_autorag_results";
 
@@ -123,10 +123,11 @@ export function createEmitResultsTool(
 		name: EMIT_AUTORAG_RESULTS_TOOL_NAME,
 		label: "Emit AutoRAG Results",
 		description:
-			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Put each result's source (file path or datasource id) in the mapping parameter. A call whose answer cites a number missing from results is rejected; fix the numbering and call again.",
+			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Put each result's source (file path or datasource id) in the mapping parameter. A call whose answer cites a number missing from results, or whose results and mapping numbers are not one-to-one, is rejected; fix the numbering and call again.",
 		parameters: emitResultsSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<AutoRAGResultsDetails>> {
 			assertCitationsResolve(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.answer, params.results);
+			assertResultsMappingOneToOne(EMIT_AUTORAG_RESULTS_TOOL_NAME, params.results, params.mapping);
 			const details: AutoRAGResultsDetails = {
 				answer: params.answer,
 				results: params.results.map((result) => ({

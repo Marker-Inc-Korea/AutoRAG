@@ -298,7 +298,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	setup: ["--search-paths", "--workspace", "--profile", "--format json"],
 	refresh: ["--method", "--force"],
 	status: ["Usage: autorag status"],
-	search: ["--top-k", "--scope", "--tags", "--fast-thinking", "--final-thinking"],
+	search: ["--top-k", "--scope", "--fast-thinking", "--final-thinking"],
 	feedback: ["--useful", "--not-useful"],
 	evidence: ["--result"],
 	memory: ["inspect"],

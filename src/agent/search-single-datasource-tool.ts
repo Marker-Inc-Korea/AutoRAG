@@ -7,7 +7,7 @@ import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from
 /**
  * Per-datasource search tools.
  *
- * One tool is generated per authorized datasource connection (e.g.
+ * One tool is generated per configured datasource connection (e.g.
  * `search_datasource_discord`, or `search_datasource_kakao_work` for a
  * `kakao-work` account alias). Its execution registers only that connection's
  * retrieval methods with the retriever, so no other datasource CLI is spawned
@@ -16,13 +16,13 @@ import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from
  * These generated tools are the only model-facing datasource retrieval
  * surface. Cross-datasource fan-out belongs to `search_all_documents`, which
  * already spans every configured retrieval method — including datasources — so
- * a datasource-only fan-out tool would be redundant. Every authorized
+ * a datasource-only fan-out tool would be redundant. Every configured
  * connection must therefore appear here; a datasource with no generated tool
  * would become unreachable except through the full fan-out.
  *
- * Tools are generated from the configured, access-authorized datasource skills
- * at agent construction, so a datasource that is disabled in config or denied
- * by the trusted access context never appears in the tool list.
+ * Tools are generated from the configured datasource skills at agent
+ * construction; a connection not present in the config never appears in the
+ * tool list.
  */
 
 export const SEARCH_SINGLE_DATASOURCE_TOOL_PREFIX = "search_datasource_";
@@ -36,7 +36,7 @@ export interface SingleDatasourceToolSpec {
 	readonly datasourceId: string;
 	/** Operator/descriptor-authored context shown in the tool description. */
 	readonly description: string;
-	/** Authorized instance roots (e.g. `/kakao/personal`) for the description. */
+	/** Instance roots (e.g. `/kakao/personal`) for the description. */
 	readonly instanceScopes: readonly string[];
 }
 
@@ -77,7 +77,7 @@ function createTool(
 	provider: SingleDatasourceSearchProvider,
 	spec: SingleDatasourceToolSpec,
 ): AgentTool<typeof searchSingleDatasourceSchema, SearchSingleDatasourceDetails> {
-	const scopeLine = spec.instanceScopes.length > 0 ? ` Authorized scopes: ${spec.instanceScopes.join(", ")}.` : "";
+	const scopeLine = spec.instanceScopes.length > 0 ? ` Instance scopes: ${spec.instanceScopes.join(", ")}.` : "";
 	return {
 		name: singleDatasourceToolName(spec.datasourceId),
 		label: `Search ${spec.datasourceId}`,

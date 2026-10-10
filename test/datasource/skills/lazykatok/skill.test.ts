@@ -82,7 +82,7 @@ describe("LazykatokSkill descriptor", () => {
 });
 
 describe("LazykatokSkill skillManifest (Pi agent-skill layer)", () => {
-	it("exposes a progressive-disclosure manifest with path-opaque authorized scopes in content", () => {
+	it("exposes a progressive-disclosure manifest with path-opaque source scopes in content", () => {
 		const skill = new LazykatokSkill({ client: asClient(new StubSkillClient()), instanceId: "work" });
 		const manifest = skill.skillManifest();
 

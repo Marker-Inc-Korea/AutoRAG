@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { DatasourceAccessContext } from "../../src/datasource/access-context.ts";
 import { DatasourceSkillRegistry, type RegisteredDatasourceSkill } from "../../src/datasource/registry.ts";
 import type {
 	DatasourceIndexResult,
@@ -90,54 +89,33 @@ describe("DatasourceSkillRegistry", () => {
 	});
 
 	describe("resolveInstances", () => {
-		it("resolves only instances accessible under the context", () => {
+		it("resolves every configured instance across all registered skills", () => {
 			const registry = new DatasourceSkillRegistry();
 			registry.register(makeSkill({ name: "kakao", tags: ["kakao"], instances: ["acct-1", "acct-2"] }));
 			registry.register(makeSkill({ name: "slack", tags: ["slack"], instances: ["ws-1"] }));
-			const ctx = new DatasourceAccessContext({
-				allowedTags: ["kakao"],
-				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
-			});
-			const instances = registry.resolveInstances(ctx);
-			expect(instances.map((i) => i.id)).toEqual(["acct-1", "acct-2"]);
-			expect(instances.every((i) => i.skill.describe().name === "kakao")).toBe(true);
+			const instances = registry.resolveInstances();
+			expect(instances.map((i) => i.id)).toEqual(["acct-1", "acct-2", "ws-1"]);
+			expect(instances.map((i) => i.skill.describe().name)).toEqual(["kakao", "kakao", "slack"]);
 		});
 
-		it("builds opaque slash-hierarchical sourcePaths from trusted skill name + id", () => {
+		it("builds opaque slash-hierarchical sourcePaths from skill name + id", () => {
 			const registry = new DatasourceSkillRegistry();
 			registry.register(makeSkill({ name: "kakao", tags: ["kakao"], instances: ["acct-1"] }));
-			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] });
-			const [instance] = registry.resolveInstances(ctx);
+			const [instance] = registry.resolveInstances();
 			expect(instance.sourcePath).toBe("/kakao/acct-1");
 			expect(instance.descriptor.name).toBe("kakao");
 			expect(instance.polling).toBe(polling);
 		});
 
-		it("resolves instances when tags match (no scope requirement)", () => {
-			const registry = new DatasourceSkillRegistry();
-			registry.register(makeSkill({ name: "kakao", tags: ["kakao"], instances: ["acct-1"] }));
-			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
-			const instances = registry.resolveInstances(ctx);
-			expect(instances.map((instance) => instance.descriptor.name)).toEqual(["kakao"]);
-		});
-
-		it("resolves nothing under a deny-all context", () => {
-			const registry = new DatasourceSkillRegistry();
-			registry.register(makeSkill({ instances: ["acct-1"] }));
-			const ctx = new DatasourceAccessContext(); // deny-all
-			expect(registry.resolveInstances(ctx)).toEqual([]);
-		});
-
 		it("resolves nothing for a skill with no declared instances", () => {
 			const registry = new DatasourceSkillRegistry();
 			registry.register(makeSkill({ instances: [] }));
-			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] });
-			expect(registry.resolveInstances(ctx)).toEqual([]);
+			expect(registry.resolveInstances()).toEqual([]);
 		});
 	});
 
-	describe("accessibleMethods", () => {
-		it("exposes retrieval methods only from accessible skills", () => {
+	describe("retrievalMethods", () => {
+		it("exposes retrieval methods from every registered skill", () => {
 			const kakaoMethod: RetrievalMethod = {
 				describe: () => ({
 					name: "kakao-vector",
@@ -165,9 +143,8 @@ describe("DatasourceSkillRegistry", () => {
 			const registry = new DatasourceSkillRegistry();
 			registry.register(makeSkill({ name: "kakao", tags: ["kakao"], instances: ["acct-1"] }, [kakaoMethod]));
 			registry.register(makeSkill({ name: "slack", tags: ["slack"], instances: ["ws-1"] }, [slackMethod]));
-			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
-			const methods = registry.accessibleMethods(ctx);
-			expect(methods.map((m) => m.describe().name)).toEqual(["kakao-vector"]);
+			const methods = registry.retrievalMethods();
+			expect(methods.map((m) => m.describe().name)).toEqual(["kakao-vector", "slack-vector"]);
 		});
 	});
 });

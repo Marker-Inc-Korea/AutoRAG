@@ -254,11 +254,10 @@ describe("runInit", () => {
 		expect(config.existing).toBe(true);
 	});
 
-	it("refuses implicit --force and preserves existing datasources and access bytes", async () => {
+	it("refuses implicit --force and preserves existing datasources bytes", async () => {
 		mkdirSync(join(process.env.HOME as string, ".autorag"), { recursive: true });
 		const existing = {
 			datasources: { notion: { enabled: true } },
-			datasourceAccess: { allowTags: ["public"] },
 			workspacePath: "/keep/me",
 		};
 		const originalBytes = `${JSON.stringify(existing, null, 2)}\n`;

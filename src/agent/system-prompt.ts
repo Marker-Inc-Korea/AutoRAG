@@ -45,7 +45,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
 		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
-		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
+		toolLine(config, "load_datasource_skill", "load instructions for a configured datasource"),
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(
 			config,
@@ -193,7 +193,7 @@ ${noSearchTools}
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop. In local sessions, \`bash\` may also carry out user-requested file organization (see File Organization).
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
-- Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every authorized connection has its own tool, and \`search_all_documents\` still spans all of them at once.
+- Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every configured connection has its own tool, and \`search_all_documents\` still spans all of them at once.
 ${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization.` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization."}
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
 - Cross-check important claims against the original source and preserve real source paths.
@@ -214,7 +214,7 @@ Use \`recommend_peer_targets\` first, then ask one trusted alias with \`query_pe
 ${webResearch}
 ## External Datasource Skills
 
-Datasource access is default-deny and server-bound. Model arguments cannot grant \`allowedTags\` or \`allowedScopes\`; a requested scope can only narrow trusted access.
+Datasource connections come from trusted server config, and every configured connection is searchable. Model arguments cannot add or remove connections; a requested \`scope\` only narrows results within a datasource for the current query.
 
 ${datasourceSkills}
 ## Memory & Strategy

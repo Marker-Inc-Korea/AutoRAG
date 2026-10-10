@@ -1,4 +1,3 @@
-export { DatasourceAccessContext, type DatasourceAccessContextOptions } from "./access-context.ts";
 export { type AliasDatasourceSkillOptions, AliasedDatasourceSkill } from "./aliased-skill.ts";
 export {
 	DatasourceChunkStore,
@@ -27,17 +26,18 @@ export {
 export { mapDatasourceDiagnostic, mapDatasourceDiagnostics } from "./diagnostics.ts";
 export { type CronParseResult, isDue, parseCronExpr } from "./polling.ts";
 export { DatasourceSkillRegistry, type RegisteredDatasourceSkill } from "./registry.ts";
-export { DatasourceResultFilter, type ResultsByMethod } from "./result-filter.ts";
 export {
 	buildDatasourceChunkSource,
 	buildDatasourceInstanceSource,
 	DATASOURCE_CHUNKS_SEGMENT,
 	datasourceSourceHasFragment,
 	datasourceSourcePath,
+	filterDatasourceScope,
 	isDatasourceSource,
 	matchesDatasourceScope,
 	matchesVirtualPathScope,
 	normalizeVirtualPath,
+	type ResultsByMethod,
 } from "./scope.ts";
 export {
 	CLOUD_DRIVE_SKILL_DEFINITION,
@@ -162,7 +162,6 @@ export {
 } from "./skills/telecrawl/index.ts";
 export { WacrawlClient, type WacrawlOptions, WacrawlSkill, type WacrawlSkillOptions } from "./skills/wacrawl/index.ts";
 export type {
-	DatasourceAccessible,
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
 	DatasourceIndexFail,
