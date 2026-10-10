@@ -6,16 +6,16 @@ legacy/ package license: Apache-2.0
 
 Third-party production dependencies:
 
-@earendil-works/pi-agent-core@0.86.1
+@earendil-works/pi-agent-core@1.1.0
 License: MIT
 
-@earendil-works/pi-ai@0.86.1
+@earendil-works/pi-ai@1.1.0
 License: MIT
 
-@earendil-works/pi-coding-agent@0.86.1
+@earendil-works/pi-coding-agent@1.1.0
 License: MIT
 
-@earendil-works/pi-tui@0.86.1
+@earendil-works/pi-tui@1.1.0
 License: MIT
 
 @modelcontextprotocol/server@2.3.0
