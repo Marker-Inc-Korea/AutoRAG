@@ -22,9 +22,9 @@ function configWith(section: unknown) {
 
 describe("queryDecomposition config", () => {
 	it("reads a dedicated decomposition model", () => {
-		const config = configWith({ model: { provider: "openrouter", id: "google/gemini-2.5-flash-lite" } });
+		const config = configWith({ model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite" } });
 		expect(config.queryDecomposition).toEqual({
-			model: { provider: "openrouter", id: "google/gemini-2.5-flash-lite" },
+			model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite" },
 		});
 	});
 
@@ -59,12 +59,12 @@ describe("queryDecomposition config", () => {
 				searchPaths: ["."],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				model: { provider: "anthropic", id: "claude-sonnet-4-5" },
-				queryDecomposition: { model: { provider: "openai", id: "gpt-4o-mini" } },
+				model: { provider: "anthropic", id: "claude-sonnet-5-5" },
+				queryDecomposition: { model: { provider: "openai", id: "gpt-6-luna" } },
 			},
 			{ configPath: join(root, "missing.toml"), agentDir },
 		);
-		expect(resolved?.model).toMatchObject({ provider: "openai", id: "gpt-4o-mini" });
+		expect(resolved?.model).toMatchObject({ provider: "openai", id: "gpt-6-luna" });
 		expect(resolved?.apiKey).toBe("sk-decompose");
 	});
 });

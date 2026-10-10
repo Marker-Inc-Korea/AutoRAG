@@ -191,7 +191,7 @@ describe("runInit", () => {
 					workspace: root,
 					"memory-path": join(root, "memory.json"),
 					"model-provider": "openai",
-					"model-id": "gpt-4o",
+					"model-id": "gpt-6-luna",
 					languages: "ja,en",
 				},
 				stdout: (line) => stdout.push(line),
@@ -206,7 +206,7 @@ describe("runInit", () => {
 		expect(config.searchPaths).toEqual([join(root, "docs"), join(root, "notes")]);
 		expect(config.workspacePath).toBe(root);
 		expect(config.memoryPath).toBe(join(root, "memory.json"));
-		expect(config.model).toEqual({ provider: "openai", id: "gpt-4o" });
+		expect(config.model).toEqual({ provider: "openai", id: "gpt-6-luna" });
 		expect(config.languages).toEqual(["ja", "en"]);
 	});
 
@@ -383,10 +383,10 @@ describe("runInit embedder flags", () => {
 			makeCtx({
 				flags: {
 					"search-paths": "docs",
-					"embedder-id": "text-embedding-3-small",
-					"embedder-base-url": "https://api.openai.com/v1",
-					"embedder-api-key-env": "OPENAI_API_KEY",
-					"embedder-dimension": "1536",
+					"embedder-id": "voyageai/voyage-4-lite",
+					"embedder-base-url": "https://openrouter.ai/api/v1",
+					"embedder-api-key-env": "OPENROUTER_API_KEY",
+					"embedder-dimension": "1024",
 					"embedder-query-prefix": "",
 					"embedder-passage-prefix": "passage: ",
 					"embedder-timeout-ms": "30000",
@@ -400,10 +400,10 @@ describe("runInit embedder flags", () => {
 		expect(config.minSync.enabled).toBe(true);
 		expect(config.minSync.autoInstall).toBe(true);
 		expect(config.minSync.embedder).toEqual({
-			id: "text-embedding-3-small",
-			baseUrl: "https://api.openai.com/v1",
-			apiKeyEnv: "OPENAI_API_KEY",
-			dimension: 1536,
+			id: "voyageai/voyage-4-lite",
+			baseUrl: "https://openrouter.ai/api/v1",
+			apiKeyEnv: "OPENROUTER_API_KEY",
+			dimension: 1024,
 			queryPrefix: "",
 			passagePrefix: "passage: ",
 			timeoutMs: 30000,
@@ -416,7 +416,7 @@ describe("runInit embedder flags", () => {
 			makeCtx({
 				flags: {
 					"search-paths": "docs",
-					"embedder-id": "bge-m3",
+					"embedder-id": "voyageai/voyage-4",
 					"embedder-dimension": "1024",
 				},
 			}),
@@ -424,7 +424,7 @@ describe("runInit embedder flags", () => {
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.minSync.embedder).toEqual({
-			id: "bge-m3",
+			id: "voyageai/voyage-4",
 			dimension: 1024,
 		});
 	});

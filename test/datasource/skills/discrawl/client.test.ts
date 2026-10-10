@@ -299,7 +299,7 @@ describe("DiscrawlClient sync", () => {
 describe("DiscrawlClient doctor and embed", () => {
 	it("parses key=value doctor output", async () => {
 		const binaryPath = stubBinary(
-			"printf 'config=ok\\ndatabase=ok\\nfts=ok\\nembeddings=ok\\nembeddings_model=bge-m3\\n'",
+			"printf 'config=ok\\ndatabase=ok\\nfts=ok\\nembeddings=ok\\nembeddings_model=qwen3-embedding-0.6b\\n'",
 		);
 		const result = await new DiscrawlClient({ binaryPath }).doctor();
 		expect(result.ok).toBe(true);
@@ -308,7 +308,7 @@ describe("DiscrawlClient doctor and embed", () => {
 				ready: true,
 				databaseOk: true,
 				embeddingsOk: true,
-				embeddingModel: "bge-m3",
+				embeddingModel: "qwen3-embedding-0.6b",
 			});
 		}
 	});
@@ -324,7 +324,7 @@ describe("DiscrawlClient doctor and embed", () => {
 
 	it("parses key=value embed output", async () => {
 		const binaryPath = stubBinary(
-			"printf 'processed=1276\\nsucceeded=1271\\nfailed=0\\nremaining_backlog=0\\nmodel=bge-m3\\n'",
+			"printf 'processed=1276\\nsucceeded=1271\\nfailed=0\\nremaining_backlog=0\\nmodel=qwen3-embedding-0.6b\\n'",
 		);
 		const result = await new DiscrawlClient({ binaryPath }).embed(1500);
 		expect(result.ok).toBe(true);

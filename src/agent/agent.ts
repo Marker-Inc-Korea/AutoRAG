@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendil-works/pi-agent-core";
+import type { Agent, AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
@@ -88,6 +88,7 @@ import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../we
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
+	type DatasourceAgentSkill,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
@@ -172,7 +173,13 @@ import {
 	type SingleDatasourceToolSpec,
 	singleDatasourceToolName,
 } from "./search-single-datasource-tool.ts";
-import { buildSelfConfigPrompt, loadSetupSkill, type SelfConfigOptions } from "./self-config.ts";
+import {
+	buildSelfConfigPrompt,
+	loadSetupSkill,
+	rollbackIfBroken,
+	type SelfConfigOptions,
+	snapshotConfigFile,
+} from "./self-config.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -705,7 +712,7 @@ export class AutoRAGAgent {
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
-	private readonly datasourceAgentSkills: readonly Skill[];
+	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
@@ -1618,6 +1625,9 @@ export class AutoRAGAgent {
 							// model gets the full setup skill and edits the config itself,
 							// then reports through emit_autorag_results.
 							selfConfigRun = true;
+							// pi's bash tool refuses to run from a missing cwd, and a freshly
+							// initialised config has not created its workspace yet.
+							mkdirSync(this.workspaceProjectRoot, { recursive: true });
 							const previousTools = sessionAgent?.getActiveToolNames();
 							if (sessionAgent !== undefined) {
 								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
@@ -1631,6 +1641,7 @@ export class AutoRAGAgent {
 									(tool) => tool.name === EMIT_AUTORAG_RESULTS_TOOL_NAME,
 								);
 							}
+							const configBefore = snapshotConfigFile(this.selfConfig.configPath);
 							try {
 								await session.prompt(
 									buildSelfConfigPrompt({
@@ -1647,6 +1658,22 @@ export class AutoRAGAgent {
 										undefined
 								) {
 									await session.prompt(buildFinalEmitReminder());
+								}
+								const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
+								if (rolledBack !== undefined) {
+									this.routingDiagnostics.push({
+										code: "self-config-rolled-back",
+										severity: "warning",
+										message: `The edited config did not validate, so the previous config was restored. ${rolledBack}`,
+										source: "self-config",
+									});
+									const emitted = captured;
+									if (emitted !== undefined) {
+										captured = {
+											...emitted,
+											answer: `${emitted.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
+										};
+									}
 								}
 							} finally {
 								// A bound interactive session outlives this run: give it its search tools back.
@@ -2012,8 +2039,8 @@ export class AutoRAGAgent {
 	 * configured skills are model-visible; a connection is removed from the
 	 * model surface by removing it from the config, not by a permission layer.
 	 */
-	private buildDatasourceAgentSkills(): Skill[] {
-		const skills: Skill[] = [];
+	private buildDatasourceAgentSkills(): DatasourceAgentSkill[] {
+		const skills: DatasourceAgentSkill[] = [];
 		for (const skill of this.datasourceSkills) {
 			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
 		}
@@ -2096,7 +2123,7 @@ export class AutoRAGAgent {
 	 * Resolve a configured datasource agent skill by model-visible name for the
 	 * `load_datasource_skill` tool. Returns `undefined` for unknown names.
 	 */
-	loadDatasourceSkill(name: string): Skill | undefined {
+	loadDatasourceSkill(name: string): DatasourceAgentSkill | undefined {
 		return this.datasourceAgentSkills.find((skill) => skill.name === name);
 	}
 

@@ -141,6 +141,8 @@ What happens next:
 | `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
 
+After a `config` turn that changed the config file, the host re-resolves it the way the next launch will (JSON, schema, and that the model id exists in the pi catalog or a declared endpoint). If it no longer resolves, the pre-turn file is restored, a warning is appended to the report, and a `self-config-rolled-back` diagnostic is recorded, so a bad model id can never leave the agent unable to start. A missing credential is not a rollback reason; that is reported by `autorag health` as `auth_missing`. An unchanged file is never touched.
+
 ### Datasource check before the fast answer
 
 On the `local` branch, Jev answers one more batched call: one `noul` per
@@ -229,7 +231,7 @@ preserved:
 | Model | Score | p50 latency | Cost per 12 calls |
 | ----- | ----- | ----------- | ----------------- |
 | `qwen/qwen3.7-flash` (default) | 12/12 | 0.92s | $0.00011 |
-| `google/gemini-2.5-flash-lite` (previous) | 12/12 | 0.87s | $0.00039 |
+| previous default (retired 2025 Gemini flash-lite) | 12/12 | 0.87s | $0.00039 |
 | `qwen/qwen3.8-flash` | 12/12 | 1.19s | $0.00051 |
 | `upstage/solar-mini4` | 12/12 | 0.86s | $0.00021 (not in the pi catalog) |
 | `openai/gpt-6-luna` | 12/12 | 2.24s | $0.00038 (not in the pi catalog) |

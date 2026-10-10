@@ -92,16 +92,16 @@ describe("parseArgs", () => {
 		const parsed = parseArgs([
 			"init",
 			"--embedder-id",
-			"text-embedding-3-small",
+			"voyageai/voyage-4-lite",
 			"--embedder-dimension",
-			"1536",
+			"1024",
 			"--embedder-api-key-env",
-			"OPENAI_API_KEY",
+			"OPENROUTER_API_KEY",
 		]);
 		if ("error" in parsed) throw new Error(parsed.error);
-		expect(parsed.flags["embedder-id"]).toBe("text-embedding-3-small");
-		expect(parsed.flags["embedder-dimension"]).toBe("1536");
-		expect(parsed.flags["embedder-api-key-env"]).toBe("OPENAI_API_KEY");
+		expect(parsed.flags["embedder-id"]).toBe("voyageai/voyage-4-lite");
+		expect(parsed.flags["embedder-dimension"]).toBe("1024");
+		expect(parsed.flags["embedder-api-key-env"]).toBe("OPENROUTER_API_KEY");
 	});
 
 	it("accepts the lite full-refresh and report-input flags", () => {

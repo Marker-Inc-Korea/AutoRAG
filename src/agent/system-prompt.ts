@@ -1,7 +1,7 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
 import type { StoreManifest } from "../manifest/types.ts";
 import { FENCING_GUARD_LINE } from "../p2p/injection-classifier.ts";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
 export interface SystemPromptConfig {
@@ -10,7 +10,7 @@ export interface SystemPromptConfig {
 	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
-	datasourceSkills?: readonly Skill[];
+	datasourceSkills?: readonly DatasourceAgentSkill[];
 	retrievedContentGuard?: boolean;
 	remoteSession?: boolean;
 }

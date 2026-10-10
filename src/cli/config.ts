@@ -1170,7 +1170,7 @@ export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
  * Question-decomposition model used when the config names none. Picked from a
  * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
  * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
- * cheaper per call than google/gemini-2.5-flash-lite at equal quality.
+ * cheaper per call than the previous default (a 2025 Gemini flash-lite) at equal quality.
  */
 export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
 
@@ -1356,7 +1356,12 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	opts.jev = buildJevAgentOption(config.jev);
 	// The Jev `config` branch edits the very file this process resolved; it only
 	// takes effect when Jev is on, so the option is always safe to pass.
-	if (config.configPath !== undefined) opts.selfConfig = { configPath: config.configPath };
+	if (config.configPath !== undefined) {
+		opts.selfConfig = {
+			configPath: config.configPath,
+			validate: (path: string) => validateAgentConfigFile(path),
+		};
+	}
 	if (config.rerank !== undefined) {
 		opts.rerank =
 			config.rerank === false || config.rerank.enabled === false
@@ -1819,6 +1824,28 @@ export async function resolveAgentModel(
 		...(core.auth.apiKey !== undefined ? { apiKey: core.auth.apiKey } : {}),
 		...(core.auth.providerApiKeys !== undefined ? { providerApiKeys: core.auth.providerApiKeys } : {}),
 	};
+}
+
+/**
+ * Check that a config file still resolves to a callable model, the way the
+ * next `autorag` launch will read it: invalid JSON, a schema error, or a model
+ * id that neither the pi catalog nor a declared endpoint knows is a problem.
+ * A missing credential is not (that is `autorag health`'s `auth_missing`).
+ * Resolves to a problem description, or `undefined` when the config is fine.
+ */
+export async function validateAgentConfigFile(
+	configPath: string,
+	options: ResolveAgentModelOptions = {},
+): Promise<string | undefined> {
+	// A launch-time model override would mask a broken file model; validate the file itself.
+	const { AUTORAG_MODEL_PROVIDER: _provider, AUTORAG_MODEL_ID: _id, ...fileEnv } = options.env ?? process.env;
+	try {
+		const config = resolveConfig({ flags: { config: configPath }, env: fileEnv, readOnly: true });
+		await resolveAgentModel(config, { ...options, env: fileEnv });
+		return undefined;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
 }
 
 /**
