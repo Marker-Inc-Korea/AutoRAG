@@ -114,7 +114,7 @@ function agentWith(options: Partial<AutoRAGAgentOptions> & Pick<AutoRAGAgentOpti
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
 		piAgentDir: join(root, "pi-agent"),
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		webSearch: false,
 		...options,

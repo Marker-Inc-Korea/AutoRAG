@@ -11,10 +11,13 @@ workspace, MinSync starts the local gateway on demand and uses the
 `qwen3-embedding-0.6b` profile (1024 dimensions). No Ollama installation, TEI
 adapter, API key, endpoint, or model selection is required.
 
-MinSync still auto-installs its own binary when no usable executable is found
-on `PATH` or in the workspace cache. If the MinSync binary is missing or its
-auto-install fails, AutoRAG reports a degraded result; it does not claim the
-index is ready.
+MinSync is required. AutoRAG auto-installs its binary when no usable executable
+is found on `PATH` or in the workspace cache. If the binary is missing or its
+auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`,
+and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
+AutoRAG never answers from the other retrieval paths instead. `minSync: false`
+and `minSync.enabled: false` are rejected as config errors. Install the binary
+yourself with `cargo install minsync` when auto-install cannot run.
 
 A normal setup is:
 

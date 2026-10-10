@@ -240,7 +240,7 @@ function refreshFailureDiagnostic(result: AutoRAGRefreshResult): LiteRetrieveDia
 	if (result.minsync === undefined || result.minsync.ok !== false) return undefined;
 	const reason = result.minsync.reason;
 	return {
-		code: "minsync-unavailable",
+		code: "minsync-sync-failed",
 		severity: "warning",
 		message:
 			reason === undefined

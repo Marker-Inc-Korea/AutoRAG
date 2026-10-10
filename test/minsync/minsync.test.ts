@@ -25,6 +25,7 @@ import {
 	MinSyncClient,
 	MinSyncQueryError,
 	MinSyncReleaseError,
+	MinSyncRequiredError,
 	MinSyncVectorMethod,
 	minSyncConfigPath,
 	rewriteEmbedderConfig,
@@ -782,7 +783,7 @@ process.exit(0);
 		);
 	});
 
-	it("never auto-installs during retrieval; a missing binary yields no results", async () => {
+	it("never auto-installs during retrieval; a missing binary fails with MinSyncRequiredError", async () => {
 		// Given: no binary anywhere, and an installer that records any attempt.
 		const originalPath = process.env.PATH;
 		process.env.PATH = join(root, "empty-path");
@@ -802,15 +803,12 @@ process.exit(0);
 			},
 			autoInstall: true,
 		});
-		const engine = new RetrievalEngine({ isMinSyncBinaryMissing: () => method.isBinaryMissing() });
+		const engine = new RetrievalEngine();
 		engine.register(method);
 
 		try {
-			// When
-			const { results } = await engine.retrieve("renewal cancellation");
-
-			// Then: the query turn contributes nothing and never waits on an install.
-			expect(results).toEqual([]);
+			// When / Then: the query fails loudly and never waits on an install.
+			await expect(engine.retrieve("renewal cancellation")).rejects.toBeInstanceOf(MinSyncRequiredError);
 			expect(installAttempts).toEqual([]);
 		} finally {
 			process.env.PATH = originalPath;
@@ -845,7 +843,7 @@ process.exit(0);
 		expect(result.content).toBe("Relative path hit from MinSync.");
 	});
 
-	it("returns empty vector results when the minsync binary is missing", async () => {
+	it("fails retrieval with MinSyncRequiredError when the minsync binary is missing", async () => {
 		// Given
 		const method = new MinSyncVectorMethod({
 			binaryPath: join(root, "missing-minsync"),
@@ -853,11 +851,8 @@ process.exit(0);
 			workspacePath: minsyncWorkspace,
 		});
 
-		// When
-		const results = await method.retrieve("renewal cancellation", { topK: 2 });
-
-		// Then
-		expect(results).toEqual([]);
+		// When / Then: no empty result stands in for the missing binary.
+		await expect(method.retrieve("renewal cancellation", { topK: 2 })).rejects.toBeInstanceOf(MinSyncRequiredError);
 	});
 
 	it("returns empty vector results when minsync query emits malformed JSON", async () => {
@@ -1134,7 +1129,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 		expect(initCall?.args).not.toContain("--embedder");
 	});
 
-	it("degrades with missing-binary when no binary is available and autoInstall is false", async () => {
+	it("fails with MinSyncRequiredError when no binary is available and autoInstall is false", async () => {
 		const savedPath = process.env.PATH;
 		process.env.PATH = "/nonexistent";
 		try {
@@ -1145,9 +1140,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 				autoInstall: false,
 			});
 
-			const result = await method.sync();
-
-			expect(result).toMatchObject({ ok: false, synced: 0, reason: "missing-binary" });
+			await expect(method.sync()).rejects.toBeInstanceOf(MinSyncRequiredError);
 		} finally {
 			process.env.PATH = savedPath;
 		}
@@ -1475,7 +1468,7 @@ if (args[0] === "sync") process.exit(1);
 		});
 	});
 
-	it("does not throw on missing binary during sync; returns ok:false degrade result", async () => {
+	it("throws MinSyncRequiredError on a missing binary during sync instead of returning ok:false", async () => {
 		const savedPath = process.env.PATH;
 		process.env.PATH = "/nonexistent";
 		try {
@@ -1486,10 +1479,7 @@ if (args[0] === "sync") process.exit(1);
 				autoInstall: false,
 			});
 
-			const result = await method.sync();
-
-			expect(result.ok).toBe(false);
-			expect(result.reason).toBe("missing-binary");
+			await expect(method.sync()).rejects.toBeInstanceOf(MinSyncRequiredError);
 		} finally {
 			process.env.PATH = savedPath;
 		}

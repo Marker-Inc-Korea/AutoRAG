@@ -1,7 +1,7 @@
+import { MinSyncRequiredError } from "../minsync/errors.ts";
 import { describeRetrievalError, groupUnsearchedSurfaces, type RetrievalSkip, retrievalSurfaceFor } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
-	RetrievalDiagnosticCode,
 	RetrievalMethod,
 	RetrievalOptions,
 	RetrievalResult,
@@ -167,6 +167,12 @@ function collateDistinctEvidence(results: readonly MethodResult[]): RetrievalRes
 	}));
 }
 
+/**
+ * Runs every method in parallel. A method that throws is skipped and the
+ * others still answer, with one exception: {@link MinSyncRequiredError} means
+ * the required MinSync is absent, so the whole retrieval fails instead of
+ * returning an answer that silently lacks its content search.
+ */
 export class ParallelRetriever {
 	async retrieve(
 		methods: RetrievalMethod[],
@@ -180,7 +186,8 @@ export class ParallelRetriever {
 				const name = method.describe().name;
 				try {
 					results.set(name, await method.retrieve(query, options));
-				} catch {
+				} catch (error) {
+					if (error instanceof MinSyncRequiredError) throw error;
 					results.set(name, []);
 				}
 			}),
@@ -212,11 +219,12 @@ export class ParallelRetriever {
 				try {
 					results.set(name, await method.retrieve(query, options));
 				} catch (error) {
+					if (error instanceof MinSyncRequiredError) throw error;
 					results.set(name, []);
 					const reason = describeRetrievalError(error);
 					skips.push({ method: name, surface: retrievalSurfaceFor(descriptor), reason });
 					diagnostics.push({
-						code: methodFailureCode(name),
+						code: "retrieval-method-failed",
 						severity: "warning",
 						message: `Retrieval method "${name}" failed and was skipped; partial results from other methods were used: ${reason}`,
 						source: name,
@@ -227,9 +235,4 @@ export class ParallelRetriever {
 		);
 		return { results, diagnostics, unsearched: groupUnsearchedSurfaces(skips) };
 	}
-}
-
-function methodFailureCode(name: string): RetrievalDiagnosticCode {
-	if (name === "minsync") return "minsync-unavailable";
-	return "retrieval-method-failed";
 }

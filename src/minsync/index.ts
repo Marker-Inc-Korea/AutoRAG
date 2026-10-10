@@ -17,6 +17,7 @@ export {
 	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
 } from "./embedder-config.ts";
+export { MinSyncRequiredError } from "./errors.ts";
 export {
 	type EnsureMinSyncBinaryOptions,
 	ensureMinSyncBinary,

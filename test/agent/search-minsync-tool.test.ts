@@ -6,6 +6,7 @@ import {
 	createSearchMinSyncDocumentsTool,
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 } from "../../src/agent/search-minsync-tool.ts";
+import { MinSyncRequiredError } from "../../src/minsync/errors.ts";
 import { MinSyncVectorMethod } from "../../src/minsync/method.ts";
 import { RetrievalScopeError } from "../../src/retrieval/scope.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
@@ -20,15 +21,13 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
-/** Minimal stub satisfying the surface the tool touches (`isBinaryMissing`, `retrieve`). */
+/** Minimal stub satisfying the surface the tool touches (`retrieve`). */
 interface StubMethod {
-	isBinaryMissing(): boolean;
 	retrieve(query: string, options: { topK?: number; scope?: string }): Promise<RetrievalResult[]>;
 }
 
-function stubMethod(rows: readonly RetrievalResult[], opts: { binaryMissing?: boolean } = {}): MinSyncVectorMethod {
+function stubMethod(rows: readonly RetrievalResult[]): MinSyncVectorMethod {
 	return {
-		isBinaryMissing: () => opts.binaryMissing ?? false,
 		retrieve: async (_query: string, options: { topK?: number; scope?: string }) =>
 			rows.slice(0, options.topK ?? rows.length),
 	} as unknown as MinSyncVectorMethod;
@@ -40,52 +39,35 @@ function result(id: string, source: string): RetrievalResult {
 
 describe("semantic_search_local_docs tool", () => {
 	it("exposes the tool name and path-opaque-only schema fields", () => {
-		const tool = createSearchMinSyncDocumentsTool(() => undefined);
+		const tool = createSearchMinSyncDocumentsTool(() => stubMethod([]));
 		expect(tool.name).toBe(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME);
 		const keys = Object.keys(tool.parameters.properties ?? {});
 		expect(keys.sort()).toEqual(["query", "scope", "topK"]);
 	});
 
-	it("returns a path-free unavailable message when the method is missing", async () => {
-		const tool = createSearchMinSyncDocumentsTool(() => undefined);
-		const out = await tool.execute("call-1", { query: "meaning" });
-
-		expect(out.details.method).toBe("semantic_search_local_docs");
-		expect(out.details.resultCount).toBe(0);
-		expect(out.details.available).toBe(false);
-		const text = textOf(out);
-		expect(text).toContain("not configured");
-		expect(text).not.toContain(tmpDir);
-	});
-
-	it("returns a path-free unavailable message when the binary is missing", async () => {
+	it("fails with MinSyncRequiredError when the binary is missing, without leaking the machine's paths", async () => {
 		// Real MinSyncVectorMethod with a binaryPath that does not exist.
-		const method = new MinSyncVectorMethod({
-			root: tmpDir,
-			binaryPath: join(tmpDir, "does-not-exist", "minsync"),
-		});
+		const missing = join(tmpDir, "does-not-exist", "minsync");
+		const method = new MinSyncVectorMethod({ root: tmpDir, binaryPath: missing });
 		expect(method.isBinaryMissing()).toBe(true);
-		expect(existsSync(join(tmpDir, "does-not-exist", "minsync"))).toBe(false);
+		expect(existsSync(missing)).toBe(false);
 
 		const tool = createSearchMinSyncDocumentsTool(() => method);
-		const out = await tool.execute("call-2", { query: "meaning" });
+		const failure = await tool.execute("call-2", { query: "meaning" }).catch((error: unknown) => error);
 
-		expect(out.details.method).toBe("semantic_search_local_docs");
-		expect(out.details.resultCount).toBe(0);
-		expect(out.details.available).toBe(false);
-		const text = textOf(out);
-		expect(text).toContain("unavailable");
-		// No binary path leaks into the model-facing message.
-		expect(text).not.toContain(tmpDir);
+		expect(failure).toBeInstanceOf(MinSyncRequiredError);
+		expect((failure as Error).message).toContain("cargo install minsync");
+		expect((failure as Error).message).not.toContain(tmpDir);
 	});
 
-	it("returns a path-free zero-result message for an empty query when available", async () => {
-		const tool = createSearchMinSyncDocumentsTool(() => stubMethod([]));
+	it("returns a zero-result message for an empty query without calling MinSync", async () => {
+		const tool = createSearchMinSyncDocumentsTool(() => {
+			throw new Error("MinSync must not be resolved for an empty query");
+		});
 		const out = await tool.execute("call-3", { query: "  " });
 
 		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(0);
-		expect(out.details.available).toBe(true);
 		expect(textOf(out)).toContain("empty");
 	});
 
@@ -98,7 +80,6 @@ describe("semantic_search_local_docs tool", () => {
 		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(2);
 		expect(out.details.sources).toEqual(["/docs/notes", "/docs/guide"]);
-		expect(out.details.available).toBe(true);
 		const text = textOf(out);
 		expect(text).toContain("/docs/notes");
 		expect(text).toContain("/docs/guide");
@@ -108,18 +89,15 @@ describe("semantic_search_local_docs tool", () => {
 	it("normalizes model-supplied physical scopes before MinSync retrieval", async () => {
 		const seenScopes: Array<string | undefined> = [];
 		const method: StubMethod = {
-			isBinaryMissing: () => false,
 			retrieve(_query, options) {
 				seenScopes.push(options.scope);
 				return Promise.resolve([result("a", "/docs/notes")]);
 			},
 		};
-		const normalizeScope = () => "/docs";
-		const factory = createSearchMinSyncDocumentsTool as unknown as (
-			getMethod: () => MinSyncVectorMethod,
-			resolveScope: typeof normalizeScope,
-		) => ReturnType<typeof createSearchMinSyncDocumentsTool>;
-		const tool = factory(() => method as never, normalizeScope);
+		const tool = createSearchMinSyncDocumentsTool(
+			() => method as never,
+			() => "/docs",
+		);
 
 		await tool.execute("call-scope", { query: "concept", scope: join(tmpDir, "docs") });
 
@@ -128,7 +106,6 @@ describe("semantic_search_local_docs tool", () => {
 
 	it("preserves coded scope errors at the MinSync tool boundary", async () => {
 		const method: StubMethod = {
-			isBinaryMissing: () => false,
 			retrieve: () => Promise.resolve([]),
 		};
 		const tool = createSearchMinSyncDocumentsTool(
@@ -143,23 +120,15 @@ describe("semantic_search_local_docs tool", () => {
 		});
 	});
 
-	it("reports a path-free unavailable message when retrieval throws", async () => {
+	it("lets a retrieval failure surface with its real message", async () => {
 		const throwing: StubMethod = {
-			isBinaryMissing: () => false,
 			retrieve(): Promise<never> {
-				return Promise.reject(new Error(`workspace ${tmpDir}/.minsync blew up`));
+				return Promise.reject(new Error("minsync query exited with code 3: index is corrupt"));
 			},
 		};
 		const tool = createSearchMinSyncDocumentsTool(() => throwing as never);
-		const out = await tool.execute("call-5", { query: "concept" });
 
-		expect(out.details.method).toBe("semantic_search_local_docs");
-		expect(out.details.resultCount).toBe(0);
-		expect(out.details.available).toBe(false);
-		const text = textOf(out);
-		expect(text).toContain("unavailable");
-		expect(text).not.toContain(tmpDir);
-		expect(text).not.toContain("blew up");
+		await expect(tool.execute("call-5", { query: "concept" })).rejects.toThrow("index is corrupt");
 	});
 });
 

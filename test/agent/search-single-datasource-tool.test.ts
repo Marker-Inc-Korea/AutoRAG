@@ -147,7 +147,7 @@ describe("AutoRAGAgent single-datasource retrieval", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			datasourceSkills: [
 				makeSpySkill("kakao", [result("a", "/kakao/default/chunks/a")], kakaoCalls),
 				makeSpySkill("slack", [result("s", "/slack/default/chunks/s")], slackCalls),
@@ -167,7 +167,7 @@ describe("AutoRAGAgent single-datasource retrieval", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			datasourceSkills: [makeSpySkill("kakao", [result("a", "/kakao/default/chunks/a")], kakaoCalls)],
 		});
 
@@ -213,7 +213,7 @@ describe("every configured datasource connection stays individually callable", (
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			datasourceSkills: [
 				makeSpySkill("kakao", [result("a", "/kakao/default/chunks/a")], kakaoCalls),
 				makeSpySkill("slack", [result("s", "/slack/default/chunks/s")], slackCalls),
@@ -256,7 +256,7 @@ describe("every configured datasource connection stays individually callable", (
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			datasourceSkills: skills,
 		});
 

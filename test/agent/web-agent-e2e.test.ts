@@ -116,7 +116,7 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 			searchPaths: [root],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 			// Routing belongs to this agent instance: only the stubbed engine runs.
 			webSearch: {

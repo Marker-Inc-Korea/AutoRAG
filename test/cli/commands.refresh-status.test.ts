@@ -24,7 +24,9 @@ beforeEach(() => {
 	previousHome = process.env.HOME;
 	previousPath = process.env.PATH;
 	process.env.HOME = join(root, "home");
-	process.env.PATH = pathWithoutMinsync(previousPath);
+	// The suite-wide setup file puts an inert `minsync` on PATH, so the default
+	// fixture resolves one; the absent-binary test strips it explicitly.
+	process.env.PATH = previousPath;
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
 	writeFileSync(join(docs, "alpha.md"), "# Alpha\n\nAlpha document body content.\n");
@@ -119,31 +121,25 @@ describe("runRefresh + runStatus (cli)", () => {
 		expect(status.components).toBeDefined();
 	});
 
-	it("surfaces minsync-unavailable without throwing when the minsync binary is absent", async () => {
+	it("fails refresh with a non-zero exit and a path-free fix hint when the minsync binary is absent", async () => {
 		writeConfig({
 			workspacePath: join(root, ".autorag", "minsync"),
 			autoInstall: false,
 		});
+		process.env.PATH = pathWithoutMinsync(previousPath);
 
 		const refreshOut: string[] = [];
-		const refreshCode = await runRefresh(makeCtx({ stdout: (line) => refreshOut.push(line) }));
-		expect(refreshCode).toBe(0);
-		// Refresh must not leak paths even when minsync is unavailable.
-		const refreshBlob = refreshOut[0];
-		expect(refreshBlob).not.toContain(root);
-		expect(refreshBlob).not.toContain("indexPath");
+		const refreshErr: string[] = [];
+		const refreshCode = await runRefresh(
+			makeCtx({ stdout: (line) => refreshOut.push(line), stderr: (line) => refreshErr.push(line) }),
+		);
 
-		const statusOut: string[] = [];
-		const statusCode = await runStatus(makeCtx({ stdout: (line) => statusOut.push(line) }));
-		expect(statusCode).toBe(0);
-
-		const status = JSON.parse(statusOut[0]);
-		// MinSync absence surfaces as a configured component state, not a throw.
-		expect(status.components).toBeDefined();
-		expect(status.components.minsync).toBe("configured");
-		// Path opacity holds on the status path too.
-		expect(statusOut[0]).not.toContain(root);
-		expect(statusOut[0]).not.toContain("indexPath");
+		expect(refreshCode).toBe(1);
+		expect(refreshOut).toEqual([]);
+		const message = refreshErr.join("\n");
+		expect(message).toContain("MinSync is required");
+		expect(message).toContain("cargo install minsync");
+		expect(message).not.toContain(root);
 	});
 
 	it("skips unknown datasource entries and reports a non-fatal diagnostic", async () => {
@@ -157,7 +153,7 @@ describe("runRefresh + runStatus (cli)", () => {
 					workspacePath: root,
 					memoryPath: join(root, "memory.json"),
 					bm25: { forceEngine: "typescript-fallback" },
-					minSync: false,
+					minSync: { autoInstall: false },
 					everything: false,
 					fsearch: false,
 					datasources: {

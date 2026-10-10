@@ -26,7 +26,13 @@ describe("lite report bridge", () => {
 			const reportPath = join(root, "report.json");
 			writeFileSync(
 				configPath,
-				JSON.stringify({ searchPaths: [root], workspacePath: root, memoryPath, minSync: false, jikji: false }),
+				JSON.stringify({
+					searchPaths: [root],
+					workspacePath: root,
+					memoryPath,
+					minSync: { autoInstall: false },
+					jikji: false,
+				}),
 			);
 			writeFileSync(reportPath, "{not-json");
 			const error = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -59,7 +65,13 @@ describe("lite report bridge", () => {
 			const reportPath = join(root, "report.json");
 			writeFileSync(
 				configPath,
-				JSON.stringify({ searchPaths: [root], workspacePath: root, memoryPath, minSync: false, jikji: false }),
+				JSON.stringify({
+					searchPaths: [root],
+					workspacePath: root,
+					memoryPath,
+					minSync: { autoInstall: false },
+					jikji: false,
+				}),
 			);
 			writeFileSync(
 				reportPath,

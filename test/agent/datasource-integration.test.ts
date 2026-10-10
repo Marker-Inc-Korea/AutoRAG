@@ -186,7 +186,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 			everything: false,
 			fsearch: false,

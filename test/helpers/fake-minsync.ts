@@ -85,6 +85,26 @@ export function writeFakeMinSyncExecutable(directory: string, logPath?: string):
 	return binaryPath;
 }
 
+/**
+ * An inert `minsync` for the suite-wide PATH stand-in: every command succeeds
+ * and a query never finds anything. It exists so an agent can resolve a binary
+ * without a test's result depending on a real install or on whatever corpus a
+ * `.autorag/` directory next to the test happens to hold.
+ */
+export function writeInertMinSyncExecutable(directory: string): string {
+	const binaryPath = join(directory, fakeMinSyncExecutableName());
+	const script = `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "check") console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+else if (args[0] === "query") console.log(JSON.stringify({ results: [] }));
+else if (args[0] === "sync") console.log(JSON.stringify({ files_processed: 0 }));
+else console.log(JSON.stringify({ initialized: true }));
+`;
+	writeFileSync(binaryPath, script);
+	chmodSync(binaryPath, 0o755);
+	return binaryPath;
+}
+
 export function fakeMinSyncLoggedModes(logPath: string): string[] {
 	if (!existsSync(logPath)) return [];
 	return readFileSync(logPath, "utf8")

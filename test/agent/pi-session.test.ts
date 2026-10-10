@@ -228,7 +228,7 @@ describe("AutoRAG pi coding-agent host", () => {
 			searchPaths: [root],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 			piAgentDir: agentDir,
 			piSessionDir: join(root, "sessions"),

@@ -82,7 +82,7 @@ function writeConfig(): void {
 			searchPaths: [root],
 			workspacePath: root,
 			memoryPath,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		}),
 	);

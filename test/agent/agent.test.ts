@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -154,7 +154,7 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 			maxSearchToolCalls: 1,
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 		});
 		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
@@ -170,11 +170,15 @@ describe("AutoRAGAgent", () => {
 	});
 
 	it("does not cap retrieval tools at three executions per source", async () => {
+		// A prior sync creates the MinSync workspace; without it the query's spawn
+		// fails on the missing working directory, and CI has no repo-local one.
+		mkdirSync(join(tmpDir, ".autorag", "minsync"), { recursive: true });
 		const agent = new AutoRAGAgent({
 			model: fakeModel(),
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
-			minSync: false,
+			workspacePath: tmpDir,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		const tool = internals(agent).tools.find((entry) => entry.name === "semantic_search_local_docs");
@@ -452,16 +456,6 @@ describe("AutoRAGAgent default method registration", () => {
 		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
 	});
 
-	it("does not register MinSync when minSync: false is passed", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			minSync: false,
-		});
-		expect(internals(agent).minSyncMethod).toBeUndefined();
-		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(0);
-	});
-
 	it("defaults MinSync autoInstall to true when undefined", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
@@ -472,33 +466,6 @@ describe("AutoRAGAgent default method registration", () => {
 });
 
 describe("AutoRAGAgent.getRetrievalEngine delegation", () => {
-	it("passes isMinSyncBinaryMissing hook when minSync is configured", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const internal = internals(agent);
-		const engine = agent.getRetrievalEngine();
-		// The engine's internal isMinSyncBinaryMissing should be set when
-		// minSyncMethod is present.
-		const engineInternals = engine as unknown as { isMinSyncBinaryMissing: (() => boolean) | undefined };
-		expect(engineInternals.isMinSyncBinaryMissing).toBeDefined();
-		// The predicate should match the agent's binary-missing state.
-		const binaryMissing = internal.minSyncMethod?.isBinaryMissing?.() ?? true;
-		expect(engineInternals.isMinSyncBinaryMissing!()).toBe(binaryMissing);
-	});
-
-	it("omits isMinSyncBinaryMissing hook when minSync: false", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			minSync: false,
-		});
-		const engine = agent.getRetrievalEngine();
-		const engineInternals = engine as unknown as { isMinSyncBinaryMissing: (() => boolean) | undefined };
-		expect(engineInternals.isMinSyncBinaryMissing).toBeUndefined();
-	});
-
 	it("getRetrievalEngine() registers all agent methods", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
