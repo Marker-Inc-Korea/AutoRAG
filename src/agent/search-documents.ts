@@ -60,7 +60,9 @@ export type SearchDocumentDiagnosticCode =
 	| "citation-without-result"
 	| "evidence-judged"
 	| "evidence-judgment-fallback"
-	| "memory-search-fallback";
+	| "memory-search-fallback"
+	| "self-config-unavailable"
+	| "self-config-rolled-back";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

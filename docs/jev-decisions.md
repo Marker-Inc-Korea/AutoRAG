@@ -108,12 +108,13 @@ Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
 user question in one batched call:
 
-1. **Branch** (`choice`): `local`, `web`, or `direct`. The highest-probability
-   branch wins, but leaving local search needs confidence: a `direct` or `web`
-   branch **at or below 0.75** (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one
-   Jev reports without a probability — falls back to `local` search with a
-   `query-route-fallback` diagnostic, so a weak verdict never silently drops the
-   corpus evidence the question depends on.
+1. **Branch** (`choice`): `local`, `web`, `direct`, or `config`. The
+   highest-probability branch wins, but leaving local search needs confidence: a
+   `direct`, `web`, or `config` branch **at or below 0.75**
+   (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without a
+   probability — falls back to `local` search with a `query-route-fallback`
+   diagnostic, so a weak verdict never silently drops the corpus evidence the
+   question depends on (and never edits settings on a guess).
    - `local`: answering needs information only the user can reach (files on
      their computer, Discord/KakaoTalk/Slack chats, email, notes, calendar,
      history). Jev is told to prefer `local` whenever the question refers to the
@@ -124,6 +125,9 @@ user question in one batched call:
      information either, but one public internet search would answer it.
    - `direct`: general knowledge, simple reasoning, or small talk. Never chosen
      for a question that refers to the user's own life, files, or records.
+   - `config`: the user wants to view, change, or test AutoRAG's own settings
+     (model, providers, API-key environment variables, Jev, search roots,
+     datasources). Offered only to local sessions, never to remote P2P peers.
 2. **Decomposition** (`noul`): does the question need several search queries
    (multiple sub-questions, comparisons, several facts to confirm)? A
    probability of 0.5 or more means yes.
@@ -133,6 +137,7 @@ What happens next:
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
+| `config` | Skips retrieval, decomposition, `emit_fast_answer`, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new through `emit_autorag_results` (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
 | `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 | `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
 

@@ -34,13 +34,17 @@ function diagnosticProjection(d: {
  * A refresh is only `ok` when every index it touched succeeded. A failed
  * MinSync sync, a failed datasource index, or any error-severity diagnostic
  * makes the run a failure, so callers cannot read a green envelope over a
- * semantic index that never updated.
+ * semantic index that never updated. A missing optional fsearch-cli is not a
+ * failed index.
  */
 function refreshOk(result: AutoRAGRefreshResult): boolean {
 	const minsyncOk = result.minsync === undefined || result.minsync.ok;
 	const datasourcesOk = !result.datasources || result.datasources.every((ds) => ds.ok);
 	const everythingOk = result.everything === undefined || result.everything.ok;
-	const fsearchOk = result.fsearch === undefined || result.fsearch.ok;
+	// fsearch-cli is an optional user install (#1763): when it is missing,
+	// file-name search falls back to a filesystem walk and refresh reports a
+	// warning, so it must not turn an otherwise successful refresh into a failure.
+	const fsearchOk = result.fsearch === undefined || result.fsearch.ok || result.fsearch.reason === "binary-missing";
 	const hasErrorDiagnostics = (result.diagnostics ?? []).some((d) => d.severity === "error");
 	return minsyncOk && datasourcesOk && everythingOk && fsearchOk && !hasErrorDiagnostics;
 }
