@@ -30,7 +30,7 @@ function agentAnswering(respond: () => ReturnType<typeof fauxAssistantMessage>):
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		jikji: false,
-		minSync: false,
+		minSync: { autoInstall: false },
 	});
 }
 

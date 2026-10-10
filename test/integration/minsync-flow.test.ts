@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { MinSyncRequiredError } from "../../src/minsync/errors.ts";
 
 let root: string;
 let docs: string;
@@ -186,7 +187,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 		expect(results[0]?.source).toBe(realpathSync(join(docs, "sub", "inside.txt")));
 		expect(results[0]?.content).toContain("Scoped semantic hit");
 	});
-	it("surfaces a path-free minsync-unavailable diagnostic when the binary is missing (#21)", async () => {
+	it("fails the search with a path-free MinSyncRequiredError when the binary is missing (#21)", async () => {
 		writeFileSync(join(docs, "handbook.txt"), "Refund decisions require manager review.\n");
 		const missingBinary = join(root, "missing-minsync");
 		const agent = new AutoRAGAgent({
@@ -199,12 +200,10 @@ describe("AutoRAGAgent MinSync integration", () => {
 			minSync: { binaryPath: missingBinary, workspacePath: minsyncWorkspace },
 		});
 
-		const { results, diagnostics } = await agent.retrieveWithDiagnostics("manager", { topK: 5 });
+		const failure = await agent.retrieveWithDiagnostics("manager", { topK: 5 }).catch((error: unknown) => error);
 
-		expect(results).toEqual([]);
-		const minsync = diagnostics.find((d) => d.source === "minsync");
-		expect(minsync?.code).toBe("minsync-unavailable");
-		expect(minsync?.message).not.toContain(missingBinary);
-		expect(minsync?.message).not.toContain(root);
+		expect(failure).toBeInstanceOf(MinSyncRequiredError);
+		expect((failure as Error).message).not.toContain(missingBinary);
+		expect((failure as Error).message).not.toContain(root);
 	});
 });

@@ -49,7 +49,7 @@ describe("getRefreshStatus", () => {
 		vi.spyOn(agent, "syncMinSync").mockImplementation(async () => {
 			minSyncStarted.resolve();
 			await releaseMinSync.promise;
-			return undefined;
+			return { ok: true, synced: 0, workspacePath: "" };
 		});
 
 		const refresh = agent.refresh(true, { methods: ["minsync"] });
@@ -166,11 +166,12 @@ describe("getRefreshStatus", () => {
 		expect(status.diagnostics.some((d) => d.code === "stale-index")).toBe(false);
 	});
 
-	it("reports component status for MinSync without leaking paths", async () => {
+	it("reports an unavailable MinSync component in status without leaking paths", async () => {
 		const agent = makeAgent({
 			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },
 		});
-		await agent.refresh(true);
+		// Refreshing the other indexes still works; only the MinSync step needs the binary.
+		await agent.refresh(true, { methods: ["parsed"] });
 		const status = await agent.getRefreshStatus();
 
 		expect(status.components.minsync).toBe("unavailable");

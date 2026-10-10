@@ -49,6 +49,7 @@ import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
+import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
 	type MinSyncDiagnostic,
 	MinSyncHybridMethod,
@@ -497,7 +498,7 @@ export interface AutoRAGAgentOptions {
 	memoryPath?: string;
 	workspacePath?: string;
 	tools?: AgentTool[];
-	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
+	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
 	jikji?: JikjiOptions | false;
 	/**
 	 * Windows-only instant file/folder name search through the bundled
@@ -705,7 +706,7 @@ export class AutoRAGAgent {
 	private readonly reranker: Reranker | undefined;
 	private readonly rerankTopN: number | undefined;
 
-	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
+	private readonly minSyncMethod: MinSyncVectorMethod;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
@@ -801,18 +802,21 @@ export class AutoRAGAgent {
 				? undefined
 				: (options.rerank.topN ?? DEFAULT_RERANK_TOP_N);
 
-		if (options.minSync !== false) {
-			const minSyncOpts = options.minSync ?? { autoInstall: true };
-			const minSyncDefaults = {
-				...minSyncOpts,
-				root: this.workspaceProjectRoot,
-				defaultTopK: this.limits.minSyncTopK,
-				scopedTopK: this.limits.minSyncScopedQueryTopK,
-			};
-			this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
-			this.methodRegistry.register(this.minSyncMethod);
-			this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
+		// MinSync is required: there is no option to turn it off and no degraded mode.
+		if ((options.minSync as unknown) === false) {
+			throw new MinSyncRequiredError(
+				"MinSync is required and cannot be disabled; remove `minSync: false` and install the `minsync` binary.",
+			);
 		}
+		const minSyncDefaults = {
+			...(options.minSync ?? { autoInstall: true }),
+			root: this.workspaceProjectRoot,
+			defaultTopK: this.limits.minSyncTopK,
+			scopedTopK: this.limits.minSyncScopedQueryTopK,
+		};
+		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
+		this.methodRegistry.register(this.minSyncMethod);
+		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
 			const datasourceId = skill.describe().datasourceId;
@@ -1501,6 +1505,10 @@ export class AutoRAGAgent {
 			throw new Error("AutoRAG agent is busy; await the in-flight searchDocuments() call before starting another");
 		}
 
+		// MinSync is required: a run that cannot reach it fails here, before any
+		// model call, instead of answering from the retrieval paths that remain.
+		if (this.minSyncMethod.isBinaryMissing()) throw minSyncBinaryMissingError();
+
 		const sessionId = randomUUID();
 		const trimmedQuery = query.trim();
 		if (trimmedQuery.length === 0) {
@@ -2165,14 +2173,6 @@ export class AutoRAGAgent {
 				source: "tools",
 			});
 		}
-		if (this.minSyncMethod?.isBinaryMissing()) {
-			diagnostics.push({
-				code: "minsync-unavailable",
-				severity: "warning",
-				message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
-				source: "minsync",
-			});
-		}
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
 		}
@@ -2387,9 +2387,11 @@ export class AutoRAGAgent {
 					this.jikjiClient === undefined
 						? Promise.resolve(undefined)
 						: this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK }).catch(() => undefined),
-					this.minSyncMethod === undefined
-						? Promise.resolve([])
-						: this.minSyncMethod.retrieve(searchQuery, retrieveOptions).catch(() => []),
+					this.minSyncMethod.retrieve(searchQuery, retrieveOptions).catch((error: unknown) => {
+						// MinSync is required: its absence fails the run, anything else is one empty source.
+						if (error instanceof MinSyncRequiredError) throw error;
+						return [];
+					}),
 					Promise.all(
 						datasources.map((datasourceId) =>
 							this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
@@ -2955,15 +2957,13 @@ export class AutoRAGAgent {
 	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
 		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string; fsearch?: string } =
 			{};
-		if (this.minSyncMethod !== undefined) {
-			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
-				? "unavailable"
-				: this.refreshState.minsync?.ok === false
-					? "degraded"
-					: this.minSyncMethod.isReady()
-						? "ready"
-						: "configured";
-		}
+		status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
+			? "unavailable"
+			: this.refreshState.minsync?.ok === false
+				? "degraded"
+				: this.minSyncMethod.isReady()
+					? "ready"
+					: "configured";
 		if (this.jikjiClient !== undefined) {
 			status.jikji = this.refreshState.jikjiDiagnostics.length > 0 ? "degraded" : "configured";
 		}
@@ -3087,8 +3087,8 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncMinSync(force = false): Promise<MinSyncSyncResult | undefined> {
-		const result = await this.minSyncMethod?.sync(force);
+	async syncMinSync(force = false): Promise<MinSyncSyncResult> {
+		const result = await this.minSyncMethod.sync(force);
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
@@ -3371,14 +3371,6 @@ export class AutoRAGAgent {
 		for (const results of filteredByMethod.values()) {
 			for (const result of results) options.observedSources?.add(result.source);
 		}
-		if (this.minSyncMethod?.isBinaryMissing() && !diagnostics.some((d) => d.source === "minsync")) {
-			diagnostics.push({
-				code: "minsync-unavailable",
-				severity: "warning",
-				message: "MinSync semantic search is unavailable; results rely on other retrieval paths.",
-				source: "minsync",
-			});
-		}
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
 			dedup: true,
@@ -3454,8 +3446,6 @@ export class AutoRAGAgent {
 				defaultTopK: this.limits.mergedEvidenceCeiling,
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
-				isMinSyncBinaryMissing:
-					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
 				datasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
 			});
 			for (const method of this.methodRegistry.list()) {
@@ -3511,8 +3501,7 @@ export class AutoRAGAgent {
 			retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 			describe(): { name: string };
 		},
-	>(method: T | undefined): T | undefined {
-		if (!method) return method;
+	>(method: T): T {
 		return new Proxy(method, {
 			get: (target, property, receiver) => {
 				if (property !== "retrieve") return Reflect.get(target, property, receiver);
@@ -3792,12 +3781,9 @@ function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocume
 
 function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
 	return {
-		code: reason === "missing-binary" ? "minsync-unavailable" : "minsync-sync-failed",
-		severity: reason === "missing-binary" ? "warning" : "error",
-		message:
-			reason === "missing-binary"
-				? "MinSync binary is not available and auto-install was skipped."
-				: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
+		code: "minsync-sync-failed",
+		severity: "error",
+		message: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
 		source: "minsync",
 	};
 }

@@ -48,13 +48,17 @@ export class ConfigError extends Error {
  * the MinSync vector embedder settings validated by {@link normalizeEmbedder}.
  */
 export interface MinSyncMethodConfig {
-	enabled?: boolean;
+	/** Accepted as `true` so existing configs load; `false` is rejected, MinSync is required. */
+	enabled?: true;
 	autoInstall?: boolean;
 	workspacePath?: string;
 	maxChunkSize?: number;
 	installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	embedder?: MinSyncEmbedderConfig;
 }
+
+const MINSYNC_REQUIRED_MESSAGE =
+	"MinSync is required and cannot be disabled; remove `minSync: false` / `minSync.enabled: false` from the config.";
 
 /** Indexing method config as it appears in a raw config file (before normalization). */
 export interface RawIndexingMethods {
@@ -853,10 +857,10 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 }
 
 function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): MinSyncMethodConfig {
-	if (raw === false) return { enabled: false };
+	if (raw === false) throw new ConfigError(MINSYNC_REQUIRED_MESSAGE);
 	if (raw === undefined || raw === null) return { enabled: true, autoInstall: true };
 	if (typeof raw !== "object" || Array.isArray(raw)) {
-		throw new ConfigError("minSync must be an object or false");
+		throw new ConfigError("minSync must be an object");
 	}
 	const record = raw as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
@@ -865,8 +869,8 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 			throw new ConfigError(`minSync.${key} is not a recognized field`);
 		}
 	}
-	const enabled = record.enabled !== false;
-	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall !== false };
+	if (record.enabled === false) throw new ConfigError(MINSYNC_REQUIRED_MESSAGE);
+	const out: MinSyncMethodConfig = { enabled: true, autoInstall: record.autoInstall !== false };
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
 		out.workspacePath = record.workspacePath;
 	}
@@ -896,8 +900,8 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
  * Normalize raw indexing method config into a fully-populated shape.
  *
  * - `undefined` / missing key => `{ enabled: true, autoInstall: true }`
- * - `false` => `{ enabled: false }` (disabled marker)
  * - object merges with `enabled: true` default and is validated
+ * - `false` and `enabled: false` throw: MinSync is required
  *
  * Unknown fields, invalid embedder settings, and bad numeric values throw
  * {@link ConfigError}.
@@ -1333,12 +1337,9 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;
-	if (config.minSync && config.minSync.enabled !== false) {
-		const { enabled: _omitMinSyncEnabled, ...minSyncFields } = config.minSync;
-		opts.minSync = minSyncFields;
-	} else {
-		opts.minSync = false;
-	}
+	// MinSync is required, so options are always passed; `enabled` is config-only.
+	const { enabled: _omitMinSyncEnabled, ...minSyncFields } = config.minSync ?? {};
+	opts.minSync = minSyncFields;
 	opts.jikji = config.jikji === false ? false : (config.jikji ?? {});
 	if (config.everything === false || config.everything?.enabled === false) {
 		opts.everything = false;
@@ -1972,7 +1973,7 @@ export function writeDefaultConfig(
 		languages: normalizeConfigLanguages(partial.languages),
 	};
 	if (partial.model) full.model = partial.model;
-	// Indexing method defaults: enabled when not explicitly provided.
+	// MinSync is always on; the normalizer rejects an attempt to disable it.
 	// Never inject embedder id defaults; preserve partial embedder config as-is.
 	const normalizedMethods = normalizeIndexingConfig({
 		minSync: partial.minSync as MinSyncMethodConfig | false | undefined,

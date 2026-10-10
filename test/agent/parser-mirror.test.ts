@@ -67,7 +67,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			jikji: false,
 			everything: false,
 			fsearch: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			dupey: {
 				run: async () =>
 					JSON.stringify({
@@ -107,7 +107,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			jikji: false,
 			everything: false,
 			fsearch: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			dupey: {
 				run: async (args) => {
 					// Real dupey emits absolute paths under the directory it scanned, which
@@ -165,7 +165,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			jikji: false,
 			everything: false,
 			fsearch: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 			excludeExactDuplicates: false,
 		});
 

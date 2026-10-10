@@ -292,7 +292,7 @@ export async function runSetup(options: {
 				...raw,
 				minSync: {
 					...minSync,
-					enabled: minSync.enabled !== false,
+					enabled: true,
 					autoInstall: minSync.autoInstall !== false,
 					embedder: nextEmbedder,
 				},

@@ -11,6 +11,7 @@ import {
 	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
 } from "./embedder-config.ts";
+import { minSyncBinaryMissingError } from "./errors.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
@@ -171,9 +172,7 @@ export class MinSyncClient {
 	}
 
 	async sync(force = false): Promise<MinSyncSyncResult> {
-		if (!existsSync(this.binaryPath)) {
-			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "missing-binary" };
-		}
+		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		let effective: {
 			config: MinSyncEmbedderConfig;
 			identity?: MinSyncEmbeddingIdentity;
@@ -331,7 +330,7 @@ export class MinSyncClient {
 	}
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
-		if (!existsSync(this.binaryPath)) return [];
+		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
 		if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
 		return parseQueryHits(result.stdout);

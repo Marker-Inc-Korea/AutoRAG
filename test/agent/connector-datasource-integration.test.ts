@@ -92,7 +92,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
-			minSync: false,
+			minSync: { autoInstall: false },
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [slackSkill(), githubSkill()],
@@ -122,7 +122,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
-			minSync: false,
+			minSync: { autoInstall: false },
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [slackSkill(), githubSkill()],
@@ -147,7 +147,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
-			minSync: false,
+			minSync: { autoInstall: false },
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [failing],
@@ -229,7 +229,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
-			minSync: false,
+			minSync: { autoInstall: false },
 			everything: false,
 			fsearch: false,
 			datasourceSkills: [skill],

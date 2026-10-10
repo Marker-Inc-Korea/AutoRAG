@@ -72,7 +72,7 @@ describe("provider transcript", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
-			minSync: false,
+			minSync: { autoInstall: false },
 		});
 
 		const response = await agent.searchDocuments("find the grounded answer");

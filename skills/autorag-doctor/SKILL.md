@@ -103,8 +103,8 @@ autorag search "summarize the collection" --top-k 3 --json --debug
 
 - **Always read the `diagnostics` returned by MCP `autorag.search`.** A run
   that silently dropped a whole retrieval method still looks successful, just
-  with fewer results; only the diagnostics name it (`minsync-unavailable`,
-  `retrieval-method-failed`). The model-backed CLI `autorag search --json`
+  with fewer results; only the diagnostics name it (`retrieval-method-failed`).
+  The model-backed CLI `autorag search --json`
   hides `diagnostics`, `sessionId`, and per-result evidence unless `--debug` is
   set, so pass `--debug` when diagnosing that path.
 - A method missing from the returned `method` values means that method
@@ -198,9 +198,11 @@ timer, or Task Scheduler).
   no `"type"`. It is skipped, not fatal — fix the name or add `"type"`.
 - `datasource-index-failed` / `sync-failed`: the backing CLI errored. Run that
   CLI's own check from the table above and fix it there.
-- `minsync-unavailable` / `jikji-unavailable`: the binary is missing and
-  auto-install failed. Both install through cargo; verify the Rust toolchain,
-  then `autorag refresh --method minsync` to retry.
+- A missing MinSync binary is not a diagnostic: `autorag search`, `autorag refresh`
+  and MCP tools fail with `MinSync is required ...` and a non-zero exit. Install it
+  (`cargo install minsync`) or leave `minSync.autoInstall` on, then retry.
+- `jikji-unavailable`: the binary is missing and auto-install failed. It
+  installs through cargo; verify the Rust toolchain, then `autorag refresh --method jikji` to retry.
 - `auth-error` / `rate-limited`: model or datasource credentials. Report the
   missing environment-variable **name** and let the user supply it.
 - A configured datasource that returns nothing is a native store, connector, or
@@ -213,7 +215,7 @@ timer, or Task Scheduler).
 |---|---|---|
 | `stale-index` | Sources changed since last refresh | `autorag refresh --method parsed,minsync` |
 | `index-not-ready` | Index missing or never built | `autorag refresh --json` |
-| `minsync-unavailable` | MinSync binary missing or install failed | Check cargo, retry refresh |
+| `minsync-sync-failed` | MinSync indexing failed; the message carries MinSync's own reason | Fix the reported cause, then `autorag refresh --method minsync` |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check cargo, retry refresh |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |

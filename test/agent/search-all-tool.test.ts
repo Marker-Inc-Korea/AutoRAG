@@ -45,7 +45,7 @@ describe("search_all_documents tool", () => {
 			async searchAllDocuments() {
 				return {
 					results: [result("a", "/docs/notes"), result("b", "/src/index")],
-					diagnostics: [diagnostic("minsync-unavailable")],
+					diagnostics: [diagnostic("retrieval-method-failed", "minsync")],
 					perMethodCounts: { posix: 1, bm25: 1 },
 				};
 			},
@@ -61,7 +61,7 @@ describe("search_all_documents tool", () => {
 		expect(out.details.perMethodCounts).toEqual({ posix: 1, bm25: 1 });
 		const text = textOf(out);
 		expect(text).toContain("/docs/notes");
-		expect(text).toContain("minsync:minsync-unavailable");
+		expect(text).toContain("minsync:retrieval-method-failed");
 		// Diagnostics summary must not contain real paths.
 		expect(text).not.toMatch(/[A-Z]:[\\/]/u);
 	});
@@ -80,7 +80,7 @@ describe("search_all_documents tool", () => {
 	it("formats a path-free diagnostics-only message when there are no results", async () => {
 		const provider: SearchAllDocumentsProvider = {
 			async searchAllDocuments() {
-				return { results: [], diagnostics: [diagnostic("minsync-unavailable", "minsync")] };
+				return { results: [], diagnostics: [diagnostic("retrieval-method-failed", "minsync")] };
 			},
 		};
 		const tool = createSearchAllDocumentsTool(provider);
@@ -88,7 +88,7 @@ describe("search_all_documents tool", () => {
 
 		const text = textOf(out);
 		expect(text).toContain("No results.");
-		expect(text).toContain("minsync:minsync-unavailable");
+		expect(text).toContain("minsync:retrieval-method-failed");
 	});
 });
 

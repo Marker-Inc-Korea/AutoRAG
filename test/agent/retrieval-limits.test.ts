@@ -56,7 +56,7 @@ function agentWith(limits?: AutoRAGRetrievalLimits, extra: Partial<AutoRAGAgentO
 		searchPaths: [root],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		...(limits === undefined ? {} : { limits }),
 		...extra,

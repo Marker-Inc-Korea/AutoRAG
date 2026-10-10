@@ -429,7 +429,8 @@ Common failures and their fix:
 | Gateway will not start, a previous run was killed | `lock-conflict` | `autorag gateway stop`, then retry |
 | A datasource is healthy in its own CLI but absent from results | — | confirm it is configured under `datasources` and connected through its native CLI |
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
-| MinSync or Jikji missing | `minsync-unavailable`, `jikji-unavailable` | check the Rust toolchain, re-run refresh |
+| MinSync binary missing (search and refresh fail with `MinSync is required ...`) | — | `cargo install minsync`, or leave `minSync.autoInstall` on and re-run refresh |
+| Jikji missing | `jikji-unavailable` | check the Rust toolchain, re-run refresh |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
 | Every search does a full local search and verification, even for small talk | `query-route-fallback` | set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 

@@ -19,7 +19,7 @@ function baseConfig(jev?: CliConfig["jev"]): CliConfig {
 		searchPaths: ["."],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		minSync: { enabled: false },
+		minSync: { autoInstall: false },
 		...(jev === undefined ? {} : { jev }),
 	};
 }

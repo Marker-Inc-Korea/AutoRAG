@@ -72,7 +72,7 @@ function agentOptions(model: ReturnType<typeof fauxModel>): AutoRAGAgentOptions 
 		searchPaths: [docs],
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 	};
 }

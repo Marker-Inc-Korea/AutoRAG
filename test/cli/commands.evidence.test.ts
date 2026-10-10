@@ -15,7 +15,13 @@ beforeEach(() => {
 	memoryPath = join(root, "memory.json");
 	writeFileSync(
 		configPath,
-		JSON.stringify({ searchPaths: [root], workspacePath: root, memoryPath, minSync: false, jikji: false }),
+		JSON.stringify({
+			searchPaths: [root],
+			workspacePath: root,
+			memoryPath,
+			minSync: { autoInstall: false },
+			jikji: false,
+		}),
 	);
 });
 

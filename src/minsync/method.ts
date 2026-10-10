@@ -10,6 +10,7 @@ import type {
 } from "../retrieval/types.ts";
 import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
+import { minSyncBinaryMissingError, minSyncInstallFailedError } from "./errors.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
@@ -33,11 +34,6 @@ export interface MinSyncVectorMethodOptions {
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
-
-/** Degrade result returned when no binary can be resolved. */
-function degrade(workspacePath: string, reason: string): MinSyncSyncResult {
-	return { ok: false, synced: 0, workspacePath, reason };
-}
 
 /** Resolve the `minsync` executable from PATH directories. Returns the first match or undefined. */
 function lookupInPath(env: NodeJS.ProcessEnv): string | undefined {
@@ -144,22 +140,15 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
-		const binaryResult = await this.resolveBinary();
-		if (binaryResult === undefined) {
-			return withExcluded(degrade(this.workspacePath, "missing-binary"));
-		}
-		if (typeof binaryResult === "string") {
-			const client = new MinSyncClient({
-				binaryPath: binaryResult,
-				workspacePath: this.workspacePath,
-				embedder: this.embedder,
-				maxChunkSize: this.maxChunkSize,
-				runtime: this.runtime,
-			});
-			return withExcluded(await client.sync(force));
-		}
-		// install-failed degrade result
-		return withExcluded(binaryResult);
+		const binaryPath = await this.resolveBinary();
+		const client = new MinSyncClient({
+			binaryPath,
+			workspacePath: this.workspacePath,
+			embedder: this.embedder,
+			maxChunkSize: this.maxChunkSize,
+			runtime: this.runtime,
+		});
+		return withExcluded(await client.sync(force));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
@@ -192,11 +181,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const topK = options.topK ?? this.defaultTopK;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
-		// Queries never install: they use an existing binary or contribute nothing.
-		const binaryResult = await this.resolveBinary({ install: false });
-		if (binaryResult === undefined || typeof binaryResult !== "string") return [];
+		// Queries never install: they use an existing binary or fail loudly.
+		const binaryPath = await this.resolveBinary({ install: false });
 		const client = new MinSyncClient({
-			binaryPath: binaryResult,
+			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
@@ -242,14 +230,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	 * auto-install runs only for `sync` (refresh); queries pass
 	 * `install: false` so a user's turn never waits on `cargo install`.
 	 *
-	 * Returns: string path on success, undefined for missing-binary, or a MinSyncSyncResult
-	 * for install-failed.
+	 * Returns the executable path, or throws {@link MinSyncRequiredError}:
+	 * MinSync is required, so there is no "no binary" value to degrade on.
 	 */
-	protected async resolveBinary(
-		options: { readonly install?: boolean } = {},
-	): Promise<string | undefined | MinSyncSyncResult> {
+	protected async resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
 		if (this.binaryPath && existsSync(this.binaryPath)) return this.binaryPath;
-		if (this.binaryPath !== undefined) return undefined;
+		if (this.binaryPath !== undefined) throw minSyncBinaryMissingError();
 		const pathBinary = lookupInPath(process.env);
 		if (pathBinary) return pathBinary;
 		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
@@ -258,11 +244,11 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			try {
 				const installed = await ensureMinSyncBinary({ ...this.installer, root: this.root });
 				return installed.binaryPath;
-			} catch {
-				return degrade(this.workspacePath, "install-failed");
+			} catch (error) {
+				throw minSyncInstallFailedError(error);
 			}
 		}
-		return undefined;
+		throw minSyncBinaryMissingError();
 	}
 }
 

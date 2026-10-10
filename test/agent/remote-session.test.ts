@@ -66,7 +66,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 
@@ -84,7 +84,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 			searchPaths: [FIXTURE_DIR],
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 

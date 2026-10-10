@@ -38,7 +38,7 @@ function remoteAgent(root: string, answer: string): AutoRAGAgent {
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		remoteSession: true,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 	});
 }
@@ -71,14 +71,14 @@ describe("P2P outbound payload scan", () => {
 			workspacePath: root,
 			memoryPath: join(root, "remote-memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		const local = new AutoRAGAgent({
 			searchPaths: [root],
 			workspacePath: root,
 			memoryPath: join(root, "local-memory.json"),
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		const remoteInternals = remote as unknown as {
@@ -148,7 +148,7 @@ describe("P2P outbound payload scan", () => {
 			workspacePath: root,
 			memoryPath: join(root, "tool-memory.json"),
 			remoteSession: true,
-			minSync: false,
+			minSync: { autoInstall: false },
 			jikji: false,
 		});
 		toolAgent.getMethodRegistry().register({
