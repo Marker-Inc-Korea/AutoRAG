@@ -26,6 +26,8 @@ export type SearchDocumentDiagnosticCode =
 	| "embedding-identity-mismatch"
 	| "parser-skipped"
 	| "parser-failed"
+	| "source-vanished"
+	| "source-unreadable"
 	| "parser-warning"
 	| "duplicate-excluded"
 	| "unsupported-file"
@@ -47,6 +49,7 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-datasource-skill"
 	| "missing-final-emit"
 	| "model-request-failed"
+	| "search-timeout"
 	| "query-routed"
 	| "query-route-fallback"
 	| "query-decomposition-failed"
@@ -54,7 +57,9 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-check-fallback"
 	| "datasources-selected"
 	| "datasource-selection-fallback"
-	| "citation-without-result";
+	| "citation-without-result"
+	| "self-config-unavailable"
+	| "self-config-rolled-back";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
