@@ -57,7 +57,9 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-check-fallback"
 	| "datasources-selected"
 	| "datasource-selection-fallback"
-	| "citation-without-result";
+	| "citation-without-result"
+	| "self-config-unavailable"
+	| "self-config-rolled-back";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

@@ -183,6 +183,8 @@ export interface AgentModelConfig {
 }
 
 export interface CliConfig {
+	/** Absolute path of the config file this config was resolved from (it may not exist yet). */
+	configPath?: string;
 	searchPaths: string[];
 	workspacePath: string;
 	memoryPath: string;
@@ -1040,6 +1042,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const model = applyRoleFlagOverrides(fileModel, flagModelProvider, flagModelId, "model");
 
 	const config: CliConfig = {
+		configPath: resolve(configPath),
 		searchPaths,
 		workspacePath,
 		memoryPath,
@@ -1351,6 +1354,9 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	opts.jev = buildJevAgentOption(config.jev);
+	// The Jev `config` branch edits the very file this process resolved; it only
+	// takes effect when Jev is on, so the option is always safe to pass.
+	if (config.configPath !== undefined) opts.selfConfig = { configPath: config.configPath };
 	if (config.rerank !== undefined) {
 		opts.rerank =
 			config.rerank === false || config.rerank.enabled === false

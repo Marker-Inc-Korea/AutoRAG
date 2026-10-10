@@ -5,6 +5,7 @@ import type { Agent, AgentEvent, AgentMessage, AgentTool, Skill } from "@earendi
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
@@ -164,6 +165,7 @@ import {
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
 import { createSingleDatasourceSearchTools, type SingleDatasourceToolSpec } from "./search-single-datasource-tool.ts";
+import { buildSelfConfigPrompt, loadSetupSkill, type SelfConfigOptions } from "./self-config.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -580,6 +582,14 @@ export interface AutoRAGAgentOptions {
 	 */
 	jev?: JevToolOptions | false;
 	/**
+	 * Agent self-configuration. When set (and Jev is on), Jev gains a `config`
+	 * branch for questions about AutoRAG's own settings: the turn skips
+	 * `emit_fast_answer`, receives the full `autorag-setup` skill, edits
+	 * `configPath` with the pi tools, and reports through
+	 * `emit_autorag_results`. Always omitted for remote P2P sessions.
+	 */
+	selfConfig?: SelfConfigOptions;
+	/**
 	 * Question decomposition used by the Jev query pipeline. `model` (with its
 	 * `apiKey`) is the LLM that splits one question into at most five search
 	 * queries; omitted, the search session's own model decomposes. The CLI
@@ -731,6 +741,8 @@ export class AutoRAGAgent {
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
 	private readonly jevJudge: JevJudge | undefined;
+	/** Self-configuration, enabled only with Jev on a local session. */
+	private readonly selfConfig: SelfConfigOptions | undefined;
 	private readonly queryDecompositionModel: DecompositionModel | undefined;
 	/** Web search routing for the pipeline's web branch; undefined when web tools are off. */
 	private readonly webSearchOptions: WebSearchToolOptions | undefined;
@@ -875,6 +887,7 @@ export class AutoRAGAgent {
 				? undefined
 				: createJevJudge(options.jev);
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
+		this.selfConfig = this.jevJudge === undefined || this.remoteSession ? undefined : options.selfConfig;
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
 				? undefined
@@ -1355,6 +1368,8 @@ export class AutoRAGAgent {
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
+		/** True when this run took the Jev `config` branch; its report never feeds retrieval memory. */
+		let selfConfigRun = false;
 		/**
 		 * Without Jev every fast answer goes on to verification, so it is
 		 * published the moment emit_fast_answer runs. With Jev, publishing waits
@@ -1449,6 +1464,49 @@ export class AutoRAGAgent {
 								];
 							}
 						};
+						if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
+							// Self-configuration: no retrieval and no emit_fast_answer. The
+							// model gets the full setup skill and edits the config itself,
+							// then reports through emit_autorag_results.
+							selfConfigRun = true;
+							const previousTools = sessionAgent?.getActiveToolNames();
+							if (sessionAgent !== undefined) {
+								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
+								sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES, EMIT_AUTORAG_RESULTS_TOOL_NAME]);
+							} else {
+								activeSession.agent.state.thinkingLevel = clampThinkingLevel(
+									resolved.model,
+									this.finalThinkingLevel,
+								);
+								activeSession.agent.state.tools = this.tools.filter(
+									(tool) => tool.name === EMIT_AUTORAG_RESULTS_TOOL_NAME,
+								);
+							}
+							try {
+								await session.prompt(
+									buildSelfConfigPrompt({
+										query: trimmedQuery,
+										configPath: this.selfConfig.configPath,
+										agentDir: this.piAgentDir ?? getAgentDir(),
+										skill: plan.selfConfigSkill,
+									}),
+								);
+								if (
+									captured === undefined &&
+									!planAbort.signal.aborted &&
+									lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) ===
+										undefined
+								) {
+									await session.prompt(buildFinalEmitReminder());
+								}
+							} finally {
+								// A bound interactive session outlives this run: give it its search tools back.
+								if (sessionAgent !== undefined && previousTools !== undefined) {
+									sessionAgent.setActiveToolsByName(previousTools);
+								}
+							}
+							return;
+						}
 						if (plan.route === "direct") {
 							// Direct answers skip every retrieval step and the verification
 							// phase: the fast answer is the final answer. Only Jev routes
@@ -1657,7 +1715,7 @@ export class AutoRAGAgent {
 				this.sessions,
 				this.memory,
 				componentDiagnostics,
-				{ remote: this.remoteSession },
+				{ isolateMemory: selfConfigRun, remote: this.remoteSession },
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -1993,9 +2051,10 @@ export class AutoRAGAgent {
 		readonly route: QueryRoute;
 		readonly queries: readonly string[];
 		readonly datasources: readonly string[];
+		readonly selfConfigSkill?: string;
 	}> {
 		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
-		const decision = await routeQuery(this.jevJudge, query);
+		const decision = await routeQuery(this.jevJudge, query, { selfConfig: this.selfConfig !== undefined });
 		if (decision.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "query-route-fallback",
@@ -2015,6 +2074,20 @@ export class AutoRAGAgent {
 				source: "jev",
 			});
 			route = FALLBACK_QUERY_ROUTE;
+		}
+		let selfConfigSkill: string | undefined;
+		if (route === "config") {
+			try {
+				selfConfigSkill = loadSetupSkill(this.selfConfig?.skillPath);
+			} catch (error) {
+				this.routingDiagnostics.push({
+					code: "self-config-unavailable",
+					severity: "warning",
+					message: `Jev routed the question to AutoRAG configuration, but the setup skill could not be loaded; searching local sources instead. ${error instanceof Error ? error.message : String(error)}`,
+					source: "self-config",
+				});
+				route = FALLBACK_QUERY_ROUTE;
+			}
 		}
 		const datasourcesPromise = route === "local" ? this.selectSearchDatasources(query) : Promise.resolve([]);
 		let queries: readonly string[] = [query];
@@ -2045,10 +2118,12 @@ export class AutoRAGAgent {
 				`Jev routed the question to ${route}${probability}; ` +
 				(route === "direct"
 					? "answering directly without retrieval."
-					: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
+					: route === "config"
+						? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
+						: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
 			source: "jev",
 		});
-		return { route, queries, datasources };
+		return { route, queries, datasources, ...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}) };
 	}
 
 	/**

@@ -143,6 +143,76 @@ describe("routeQuery (Jev three-way branch + decomposition check)", () => {
 		expect(decision.route).toBe("local");
 		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
 	});
+
+	it("offers the config branch only when the host enables agent self-configuration", async () => {
+		const offered: string[][] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				const route = request.questions.find((question) => question.id === QUERY_ROUTE_QUESTION_ID);
+				const options = route?.options;
+				offered.push(options === undefined ? [] : Array.isArray(options) ? options : Object.keys(options));
+				return { answers: [{ answer: "local", confidence: 0.9 }, { answer: 0.1 }] };
+			},
+		};
+		await routeQuery(judgeWith(backend), "switch the default model to gpt-5");
+		await routeQuery(judgeWith(backend), "switch the default model to gpt-5", { selfConfig: true });
+		expect(offered[0]).not.toContain("config");
+		expect(offered[1]).toContain("config");
+	});
+
+	it("routes to the config branch when self-configuration is enabled and Jev picks it", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: "config",
+						distribution: { local: 0.05, web: 0.05, direct: 0.1, config: 0.8 },
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.99 },
+				}),
+			),
+			"add an anthropic provider to autorag",
+			{ selfConfig: true },
+		);
+		expect(decision.route).toBe("config");
+		expect(decision.decompose).toBe(false);
+	});
+
+	it("keeps local search when Jev's config verdict does not clear the confidence floor", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: "config",
+						distribution: { local: 0.3, web: 0.02, direct: 0.03, config: 0.65 },
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			),
+			"which model does the agent use for my budget notes?",
+			{ selfConfig: true },
+		);
+		expect(decision.route).toBe("local");
+		expect(decision.routeProbability).toBe(0.65);
+		expect(decision.fallbackReason).toContain("config");
+	});
+
+	it("ignores a config verdict when self-configuration is disabled", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: "config",
+						distribution: { local: 0.2, web: 0.05, direct: 0.1, config: 0.65 },
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			),
+			"add an anthropic provider to autorag",
+		);
+		expect(decision.route).toBe("local");
+	});
 });
 
 describe("needsFollowUp (Jev check after emit_fast_answer)", () => {
