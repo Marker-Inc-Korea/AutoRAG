@@ -490,6 +490,34 @@ describe("single-model CLI config", () => {
 			expect(resolved.model.contextWindow).toBe(200_000);
 		});
 
+		it("resolves the explicit-endpoint shape on a fresh agent home with only AUTORAG_API_KEY set", async () => {
+			// A brand-new home with no `auth.json`, `models.json`, or catalog
+			// snapshot: offline resolution has nothing to restore, so the headless
+			// configuration must spell out the endpoint itself.
+			const agentDir = join(root, "fresh-agent");
+			const resolved = await resolveAgentModel(
+				{
+					...base(),
+					model: {
+						provider: "autorag",
+						id: MODEL_ID,
+						baseUrl: "https://api.dazziapp.com/v1",
+						api: "openai-responses",
+						apiKeyEnv: "AUTORAG_API_KEY",
+					},
+				},
+				options(agentDir, { AUTORAG_API_KEY: "dz_fresh" }),
+			);
+
+			expect(resolved.model).toMatchObject({
+				provider: "autorag",
+				id: MODEL_ID,
+				api: "openai-responses",
+				baseUrl: "https://api.dazziapp.com/v1",
+			});
+			expect(resolved.apiKey).toBe("dz_fresh");
+		});
+
 		it("fails clearly when the plan is unknown (not signed in, no catalog snapshot)", async () => {
 			const agentDir = join(root, "agent");
 			const error = await resolveAgentModel(

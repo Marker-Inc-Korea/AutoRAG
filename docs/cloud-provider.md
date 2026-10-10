@@ -56,7 +56,25 @@ variable; log out from the Pi UI to fall back to it.
 
 After login (or with `AUTORAG_API_KEY` set), the models the server returns for your
 plan appear in the model selector (`/model`) and in `autorag models list`. Select one
-as `autorag/<model-id>`, or pin it in `config.json`:
+as `autorag/<model-id>`.
+
+On a fresh agent home there is no catalog snapshot yet, so pin the model with an
+explicit endpoint — this is the headless configuration:
+
+```json
+{
+  "model": {
+    "provider": "autorag",
+    "id": "anthropic/claude-haiku-5.5",
+    "baseUrl": "https://api.dazziapp.com/v1",
+    "api": "openai-responses",
+    "apiKeyEnv": "AUTORAG_API_KEY"
+  }
+}
+```
+
+Once a TUI `/login` or a model refresh has persisted the snapshot, the
+`provider`/`id` shorthand resolves as well:
 
 ```json
 {
@@ -81,7 +99,12 @@ The catalog is persisted after any refresh (a `/login`, or a normal interactive
 startup). Model resolution for the CLI and library paths runs with
 `allowModelNetwork: false`, so it restores the persisted snapshot instead of
 calling the server. That keeps `model: { provider: "autorag", id }` resolvable
-offline.
+offline **once a snapshot exists**.
+
+A brand-new agent home has no snapshot to restore, and offline resolution never
+reaches the network, so the shorthand alone fails with
+`Unknown configured model: autorag/<id>`. Use the explicit-endpoint shape above
+until a `/login` or refresh has populated the snapshot.
 
 ### When you are not signed in
 
@@ -91,26 +114,15 @@ entries.
 
 ### Explicit configured endpoint
 
-An app may write the same provider as an explicit OpenAI-compatible endpoint:
-
-```json
-{
-  "model": {
-    "provider": "autorag",
-    "id": "anthropic/claude-haiku-5.5",
-    "baseUrl": "https://api.dazziapp.com/v1",
-    "api": "openai-responses",
-    "apiKeyEnv": "AUTORAG_API_KEY"
-  }
-}
-```
-
-This shape keeps resolving exactly as before: the explicit `baseUrl` wins over the
-registered provider's endpoint, and the key is read from the named environment
-variable.
+The fresh-headless shape above is an explicit OpenAI-compatible endpoint:
+`baseUrl`, `api`, and the environment-variable name are spelled out, so the model
+resolves without a catalog snapshot. It keeps resolving exactly as before: the
+explicit `baseUrl` wins over the registered provider's endpoint, and the key is
+read from the named environment variable.
 
 ## Implementation
 
 The provider lives in `src/cloud/`. A single registration point,
 `registerAutoRAGProvider(runtime)`, is called where each Pi `ModelRuntime` is
-created (`src/cli/config.ts` and `src/agent/pi-session.ts`).
+created (`src/cli/config.ts`, `src/agent/pi-session.ts`, and
+`src/cli/commands/models.ts` for `autorag models list`).

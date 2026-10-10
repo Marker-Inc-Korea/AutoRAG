@@ -108,14 +108,35 @@ describe("loginAutorag", () => {
 
 	it("rejects a state mismatch", async () => {
 		tokenServer = await startFakeServer(() => ({ body: { access_token: "nope" } }));
+		const probe = createProbe({
+			onPrompt: async () => {
+				const authorizeUrl = new URL(probe.urls[0]!);
+				const redirectUri = authorizeUrl.searchParams.get("redirect_uri")!;
+				return `${redirectUri}?code=dz-code&state=tampered`;
+			},
+		});
+
+		await expect(loginAutorag(probe.callbacks, { baseUrl: tokenServer.url })).rejects.toThrow(/state mismatch/);
+		expect(tokenServer.requests).toHaveLength(0);
+	});
+
+	it("ignores a forged loopback callback and still completes on the genuine one", async () => {
+		tokenServer = await startFakeServer(() => ({ body: { access_token: "dz_token" } }));
 		const probe = createProbe();
 		const login = loginAutorag(probe.callbacks, { baseUrl: tokenServer.url });
-		const rejection = expect(login).rejects.toThrow(/state mismatch/);
+		const authorizeUrl = new URL(await probe.authorized);
+		const redirectUri = redirectUriOf(authorizeUrl.toString());
+		const state = authorizeUrl.searchParams.get("state")!;
 
-		await fetch(`${redirectUriOf(await probe.authorized)}?code=dz-code&state=tampered`);
+		const forged = await fetch(`${redirectUri}?code=dz-code&state=tampered`);
+		expect(forged.status).toBe(400);
 
-		await rejection;
-		expect(tokenServer.requests).toHaveLength(0);
+		const genuine = await fetch(`${redirectUri}?code=dz-code&state=${state}`);
+		expect(genuine.status).toBe(200);
+
+		await expect(login).resolves.toMatchObject({ access: "dz_token" });
+		expect(tokenServer.requests[0]!.json).toMatchObject({ code: "dz-code" });
+		await expectConnectionRefused(redirectUri);
 	});
 
 	it("rejects an access_denied callback", async () => {

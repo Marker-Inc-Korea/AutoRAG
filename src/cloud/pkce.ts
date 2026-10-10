@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 /** RFC 7636 base64url encoding (unpadded, `-`/`_` alphabet). */
 export function base64UrlEncode(bytes: Uint8Array): string {
-	return Buffer.from(bytes).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+	return Buffer.from(bytes).toString("base64url");
 }
 
 /**

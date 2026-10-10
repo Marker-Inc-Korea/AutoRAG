@@ -19,6 +19,11 @@ export interface CallbackServer {
 export interface CallbackServerOptions {
 	/** Loopback interface to bind. Defaults to `127.0.0.1`. */
 	host?: string;
+	/**
+	 * Expected OAuth `state`. A browser callback is only accepted when it
+	 * echoes this value, so a stray or forged request cannot win the race.
+	 */
+	state: string;
 	timeoutMs?: number;
 	signal?: AbortSignal;
 	onListening?: (redirectUri: string) => void;
@@ -62,10 +67,12 @@ function renderCallbackPage(failed: boolean): string {
 /**
  * Start a loopback HTTP listener for the OAuth redirect.
  *
- * The server closes itself as soon as the first callback (success or error)
- * arrives, on abort, and on timeout. Requests to other paths are ignored.
+ * The server closes itself as soon as the first valid callback — a request
+ * that echoes {@link CallbackServerOptions.state} and carries a `code` or
+ * `error` — arrives; malformed or forged requests get a `400` and are ignored.
+ * It also closes on abort and on timeout. Requests to other paths are ignored.
  */
-export function startCallbackServer(options: CallbackServerOptions = {}): Promise<CallbackServer> {
+export function startCallbackServer(options: CallbackServerOptions): Promise<CallbackServer> {
 	const host = options.host ?? "127.0.0.1";
 	const timeoutMs = options.timeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS;
 
@@ -109,11 +116,24 @@ export function startCallbackServer(options: CallbackServerOptions = {}): Promis
 			res.end("Callback already handled");
 			return;
 		}
+		// Only a well-formed authorization response that echoes the state we
+		// started with may consume the pending callback: a stray request, a
+		// forged response, or a missing/empty `code`/`error` must leave the
+		// listener open for the genuine redirect.
+		const params = url.searchParams;
+		const code = params.get("code");
+		const oauthError = params.get("error");
+		const hasResponse = (code !== null && code !== "") || (oauthError !== null && oauthError !== "");
+		if (params.get("state") !== options.state || !hasResponse) {
+			res.writeHead(400, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+			res.end(renderCallbackPage(true));
+			return;
+		}
 		finished = true;
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-		res.end(renderCallbackPage(url.searchParams.has("error")));
+		res.end(renderCallbackPage(params.has("error")));
 		cleanup();
-		callback.resolve(url.searchParams);
+		callback.resolve(params);
 	});
 
 	server.on("error", (error) => {

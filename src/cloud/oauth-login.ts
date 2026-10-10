@@ -33,6 +33,7 @@ export async function loginAutorag(callbacks: OAuthLoginCallbacks, options: Logi
 	const { verifier, challenge } = createPkcePair();
 	const state = createState();
 	const server = await startCallbackServer({
+		state,
 		timeoutMs: options.timeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS,
 		signal: callbacks.signal,
 	});

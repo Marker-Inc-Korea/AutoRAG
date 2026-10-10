@@ -380,21 +380,33 @@ Headless (no browser) with a long-lived API key:
 export AUTORAG_API_KEY=dz_...
 ```
 
-Then pick a model from the live catalog (for example `anthropic/claude-haiku-5.5`),
-either in `/model` or in `~/.autorag/config.json`:
+On a fresh agent home, pin the model with an explicit endpoint so it resolves
+offline without a catalog snapshot — this is the headless configuration:
 
 ```json
 {
-  "model": { "provider": "autorag", "id": "anthropic/claude-haiku-5.5" }
+  "model": {
+    "provider": "autorag",
+    "id": "anthropic/claude-haiku-5.5",
+    "baseUrl": "https://api.dazziapp.com/v1",
+    "api": "openai-responses",
+    "apiKeyEnv": "AUTORAG_API_KEY"
+  }
 }
 ```
+
+The `provider`/`id`-only shorthand (`{ "provider": "autorag", "id": "anthropic/claude-haiku-5.5" }`)
+only resolves once a TUI `/login` or a model refresh has persisted the catalog
+snapshot; with no snapshot there is nothing to restore offline, and resolution
+fails with `Unknown configured model: autorag/<id>`.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `AUTORAG_BASE_URL` | `https://api.dazziapp.com` | Server **root** (not the `/v1` path); the API base is `<root>/v1`. |
 | `AUTORAG_API_KEY` | – | Headless API key. A stored `/login` credential takes precedence. |
 
-The catalog is persisted after a `/login` (or any model refresh), so `model: { provider: "autorag", id }`
+The catalog is persisted after a `/login` (or any model refresh), so the
+`provider`/`id` shorthand `model: { provider: "autorag", id }`
 keeps resolving offline. When you are not signed in the provider still registers — it appears under
 `/login`, contributes no models, and makes no network call. See
 [Hosted AutoRAG provider](docs/cloud-provider.md) for the full flow.

@@ -26,7 +26,10 @@ export const API_KEY_CONFIG_VALUE = `$${AUTORAG_API_KEY_ENV}`;
 
 /** Trim whitespace and trailing slashes so path concatenation is unambiguous. */
 export function normalizeBaseUrl(value: string): string {
-	return value.trim().replace(/\/+$/, "");
+	const trimmed = value.trim();
+	let end = trimmed.length;
+	while (end > 0 && trimmed.charCodeAt(end - 1) === 0x2f /* "/" */) end--;
+	return trimmed.slice(0, end);
 }
 
 /** Server root from `AUTORAG_BASE_URL`, falling back to {@link DEFAULT_BASE_URL}. */
