@@ -12,6 +12,7 @@ import {
 	resolveConfig,
 	writeDefaultConfig,
 } from "../../src/cli/config.ts";
+import { buildStoreEntry, mapServerModels } from "../../src/cloud/models.ts";
 import { DEFAULT_LANGUAGES } from "../../src/language.ts";
 
 let root: string;
@@ -367,6 +368,137 @@ describe("single-model CLI config", () => {
 				maxTokens: 16_384,
 			});
 			expect(model.compat).toBeUndefined();
+		});
+	});
+
+	describe("hosted autorag provider", () => {
+		const MODEL_ID = "anthropic/claude-haiku-5.5";
+		const base = () => ({ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") });
+		const options = (agentDir: string, env: NodeJS.ProcessEnv = {}) => ({
+			configPath: join(root, "missing.toml"),
+			agentDir,
+			env,
+		});
+
+		/** Persist a catalog snapshot the way a prior /v1/models refresh would. */
+		function seedSnapshot(agentDir: string): void {
+			mkdirSync(agentDir, { recursive: true });
+			const models = mapServerModels({
+				object: "list",
+				data: [
+					{
+						id: MODEL_ID,
+						name: "Claude Haiku 5.5",
+						context_window: 200_000,
+						max_output_tokens: 8_192,
+						input_modalities: ["text", "image"],
+						reasoning: true,
+						pricing: { input: 1, output: 2 },
+					},
+				],
+			});
+			writeFileSync(
+				join(agentDir, "models-store.json"),
+				JSON.stringify({ autorag: buildStoreEntry(models, "autorag", "https://api.dazziapp.com/v1") }),
+			);
+		}
+
+		it("resolves the model from the persisted catalog with a stored OAuth credential", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			writeFileSync(
+				join(agentDir, "auth.json"),
+				JSON.stringify({
+					autorag: { type: "oauth", access: "dz_stored", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+				}),
+			);
+
+			const resolved = await resolveAgentModel(
+				{ ...base(), model: { provider: "autorag", id: MODEL_ID } },
+				options(agentDir),
+			);
+
+			expect(resolved.model).toMatchObject({
+				provider: "autorag",
+				id: MODEL_ID,
+				api: "openai-responses",
+			});
+			expect(resolved.apiKey).toBe("dz_stored");
+			expect(resolved.providerApiKeys).toEqual({ autorag: "dz_stored" });
+		});
+
+		it("resolves the model from the persisted catalog with AUTORAG_API_KEY", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			const previous = process.env.AUTORAG_API_KEY;
+			process.env.AUTORAG_API_KEY = "dz_env_key";
+			try {
+				const resolved = await resolveAgentModel(
+					{ ...base(), model: { provider: "autorag", id: MODEL_ID } },
+					options(agentDir),
+				);
+				expect(resolved.model).toMatchObject({ provider: "autorag", id: MODEL_ID });
+				expect(resolved.apiKey).toBe("dz_env_key");
+			} finally {
+				if (previous === undefined) delete process.env.AUTORAG_API_KEY;
+				else process.env.AUTORAG_API_KEY = previous;
+			}
+		});
+
+		it("keeps an explicit configured endpoint resolving as before, with baseUrl winning", async () => {
+			const agentDir = join(root, "agent");
+			const resolved = await resolveAgentModel(
+				{
+					...base(),
+					model: {
+						provider: "autorag",
+						id: MODEL_ID,
+						baseUrl: "https://api.dazziapp.com/v1",
+						api: "openai-responses",
+						apiKeyEnv: "AUTORAG_API_KEY",
+					},
+				},
+				options(agentDir, { AUTORAG_API_KEY: "dz_app" }),
+			);
+
+			expect(resolved.model).toMatchObject({
+				provider: "autorag",
+				id: MODEL_ID,
+				api: "openai-responses",
+				baseUrl: "https://api.dazziapp.com/v1",
+			});
+			expect(resolved.apiKey).toBe("dz_app");
+		});
+
+		it("keeps the explicit baseUrl when a catalog snapshot also knows the model", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			const resolved = await resolveAgentModel(
+				{
+					...base(),
+					model: {
+						provider: "autorag",
+						id: MODEL_ID,
+						baseUrl: "https://staging.example.com/v1",
+						apiKeyEnv: "AUTORAG_API_KEY",
+					},
+				},
+				options(agentDir, { AUTORAG_API_KEY: "dz_app" }),
+			);
+
+			expect(resolved.model.baseUrl).toBe("https://staging.example.com/v1");
+			expect(resolved.model.contextWindow).toBe(200_000);
+		});
+
+		it("fails clearly when the plan is unknown (not signed in, no catalog snapshot)", async () => {
+			const agentDir = join(root, "agent");
+			const error = await resolveAgentModel(
+				{ ...base(), model: { provider: "autorag", id: MODEL_ID } },
+				options(agentDir),
+			).catch((caught: unknown) => caught);
+
+			expect(error).toBeInstanceOf(ConfigError);
+			expect((error as Error).message).toContain(`Unknown configured model: autorag/${MODEL_ID}`);
 		});
 	});
 

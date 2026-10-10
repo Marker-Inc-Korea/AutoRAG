@@ -13,6 +13,7 @@ import {
 } from "../agent/local-model.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
+import { registerAutoRAGProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
@@ -1521,11 +1522,18 @@ function resolveAgentDir(options: ResolveAgentModelOptions): string {
 function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
 	const cached = modelRuntimeCache.get(agentDir);
 	if (cached !== undefined) return cached;
-	const created = ModelRuntime.create({
-		authPath: join(agentDir, "auth.json"),
-		modelsPath: join(agentDir, "models.json"),
-		allowModelNetwork: false,
-	});
+	const created = (async () => {
+		const runtime = await ModelRuntime.create({
+			authPath: join(agentDir, "auth.json"),
+			modelsPath: join(agentDir, "models.json"),
+			allowModelNetwork: false,
+		});
+		// Register the hosted AutoRAG plan so `model: { provider: "autorag", id }`
+		// resolves; the cache-only refresh below loads the persisted catalog
+		// snapshot and never touches the network.
+		await registerAutoRAGProvider(runtime);
+		return runtime;
+	})();
 	modelRuntimeCache.set(agentDir, created);
 	created.catch(() => {
 		modelRuntimeCache.delete(agentDir);

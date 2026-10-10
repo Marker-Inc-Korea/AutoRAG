@@ -258,4 +258,24 @@ describe("AutoRAG pi coding-agent host", () => {
 			registration.unregister();
 		}
 	});
+
+	it("registers the hosted autorag provider on the session model runtime", async () => {
+		const registration = registerFauxProvider({ api: `faux-${Date.now()}`, models: [{ id: "pi-provider-test" }] });
+		try {
+			const session = await createAutoRAGPiSession({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				model: registration.getModel(),
+				getSystemPrompt: () => "AutoRAG system prompt",
+				customTools: [],
+			});
+			const provider = session.session.modelRuntime.getProvider("autorag");
+			expect(provider?.name).toBe("AutoRAG");
+			expect(provider?.baseUrl).toMatch(/\/v1$/);
+			expect(provider?.auth.oauth?.name).toBe("AutoRAG");
+			session.session.dispose();
+		} finally {
+			registration.unregister();
+		}
+	});
 });
