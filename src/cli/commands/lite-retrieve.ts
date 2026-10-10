@@ -332,7 +332,11 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const staleDiagnostics = await detectMirrorStaleness({
 		root: workspacePath,
 		searchPaths: lite.config.searchPaths,
-		parserOptions: resolveParserOptions(lite.config.parserOptions, normalizeLanguages(lite.config.languages)),
+		parserOptions: resolveParserOptions(
+			lite.config.parserOptions,
+			normalizeLanguages(lite.config.languages),
+			workspacePath,
+		),
 		userExcludedSourcePaths: new Set(lite.config.excludePaths ?? []),
 	});
 	if (staleDiagnostics.length > 0 && ctx.flags.strict === true) {

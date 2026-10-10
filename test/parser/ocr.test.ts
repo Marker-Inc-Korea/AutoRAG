@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultParserRegistry, ImageOcrParser, ParseError } from "../../src/parser/index.ts";
+import { createTesseractOcrProvider } from "../../src/parser/ocr-engines.ts";
 
 const tesseractMock = vi.hoisted(() => ({
 	createWorker: vi.fn(),
@@ -7,9 +7,12 @@ const tesseractMock = vi.hoisted(() => ({
 
 vi.mock("tesseract.js", () => tesseractMock);
 
-describe("ImageOcrParser", () => {
+const PNG_HEADER = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+describe("Tesseract OCR provider lifecycle", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		tesseractMock.createWorker.mockReset();
 	});
 
 	afterEach(() => {
@@ -17,76 +20,22 @@ describe("ImageOcrParser", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("is opt-in and enforces timeout and maxBytes budgets", async () => {
-		// Given: the default registry and explicitly enabled OCR registries with budget controls.
-		let abortObserved = false;
-		const disabled = createDefaultParserRegistry();
-		const timed = createDefaultParserRegistry({
-			ocr: {
-				enabled: true,
-				timeoutMs: 1,
-				engine: (input) =>
-					new Promise<string>(() => {
-						input.signal.addEventListener("abort", () => {
-							abortObserved = true;
-						});
-					}),
-			},
+	it("returns the recognized text and terminates the worker", async () => {
+		const terminate = vi.fn(async () => undefined);
+		tesseractMock.createWorker.mockResolvedValueOnce({
+			recognize: async () => ({ data: { text: "recognized" } }),
+			terminate,
 		});
-		const budgeted = createDefaultParserRegistry({
-			ocr: {
-				enabled: true,
-				maxBytes: 3,
-				engine: async () => "OCR marker",
-			},
-		});
+		const provider = createTesseractOcrProvider({ languages: ["ko", "en"] });
 
-		// When/Then: images are invisible by default but become routed when OCR is explicitly enabled.
-		expect(disabled.getForVirtualPath("/docs/scan.png")).toBeUndefined();
-		const imageParser = timed.getForVirtualPath("/docs/scan.png");
-		expect(imageParser).toBeDefined();
-		const timeoutResult = imageParser?.parse({
-			virtualPath: "/docs/scan.png",
-			bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
-		});
-		const timeoutAssertion = expect(timeoutResult).rejects.toThrow(/timed out/i);
-		await vi.advanceTimersByTimeAsync(1);
-		await timeoutAssertion;
-		expect(abortObserved).toBe(true);
-		await expect(
-			budgeted.getForVirtualPath("/docs/large.png")?.parse({
-				virtualPath: "/docs/large.png",
-				bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
-			}),
-		).rejects.toBeInstanceOf(ParseError);
+		await expect(provider(PNG_HEADER, 1, "image/png")).resolves.toBe("recognized");
+
+		expect(tesseractMock.createWorker).toHaveBeenCalledWith("kor+eng", undefined, {});
+		expect(terminate).toHaveBeenCalledOnce();
 	});
 
-	it("waits for injected engine cleanup before returning on timeout", async () => {
-		// Given: an OCR engine that starts cleanup only after the abort signal.
-		let cleanupCompleted = false;
-		const parser = new ImageOcrParser({
-			enabled: true,
-			timeoutMs: 1,
-			engine: (input) =>
-				new Promise<string>(() => {
-					input.signal.addEventListener("abort", () => {
-						cleanupCompleted = true;
-					});
-				}),
-		});
-
-		// When: parsing times out.
-		const result = parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) });
-		const assertion = expect(result).rejects.toBeInstanceOf(ParseError);
-		await vi.advanceTimersByTimeAsync(1);
-		await assertion;
-
-		// Then: cleanup has completed before parse() resolves/rejects.
-		expect(cleanupCompleted).toBe(true);
-	});
-
-	it("waits for Tesseract worker termination before returning on timeout", async () => {
-		// Given: the real OCR adapter observes a timeout while Tesseract termination is still pending.
+	it("waits for Tesseract worker termination before rejecting on timeout", async () => {
+		// Given: recognition never finishes and worker termination is still pending when the timeout fires.
 		let finishTermination: () => void = () => undefined;
 		tesseractMock.createWorker.mockResolvedValueOnce({
 			recognize: () => new Promise<never>(() => undefined),
@@ -95,26 +44,24 @@ describe("ImageOcrParser", () => {
 					finishTermination = resolve;
 				}),
 		});
-		const parser = new ImageOcrParser({ enabled: true, timeoutMs: 1 });
-		const result = observeSettlement(
-			parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) }),
-		);
+		const provider = createTesseractOcrProvider({ languages: ["en"], timeoutMs: 1 });
+		const result = observeSettlement(provider(PNG_HEADER, 1, "image/png"));
 		await Promise.resolve();
 
-		// When: timeout fires but worker termination has not completed.
+		// When: the timeout fires but termination has not completed.
 		await vi.advanceTimersByTimeAsync(1);
 		await Promise.resolve();
 		expect(result.settled()).toBe(false);
 
-		// Then: parse() rejects only after terminate() completes.
+		// Then: the call rejects only after terminate() completes.
 		finishTermination();
-		await expect(result.promise).rejects.toBeInstanceOf(ParseError);
+		await expect(result.promise).rejects.toThrow(/timed out/i);
 		expect(result.settled()).toBe(true);
 	});
 
 	it("waits for pending Tesseract worker creation cleanup", async () => {
-		// Given: Tesseract worker creation is still pending when the OCR timeout fires.
-		let resolveWorker: (worker: { recognize: () => Promise<string>; terminate: () => Promise<void> }) => void = () =>
+		// Given: worker creation is still pending when the timeout fires.
+		let resolveWorker: (worker: { recognize: () => Promise<never>; terminate: () => Promise<void> }) => void = () =>
 			undefined;
 		let finishTermination: () => void = () => undefined;
 		tesseractMock.createWorker.mockReturnValueOnce(
@@ -122,19 +69,17 @@ describe("ImageOcrParser", () => {
 				resolveWorker = resolve;
 			}),
 		);
-		const parser = new ImageOcrParser({ enabled: true, timeoutMs: 1 });
-		const result = observeSettlement(
-			parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) }),
-		);
+		const provider = createTesseractOcrProvider({ languages: ["en"], timeoutMs: 1 });
+		const result = observeSettlement(provider(PNG_HEADER, 1, "image/png"));
 
-		// When: timeout fires before createWorker resolves.
+		// When: the timeout fires before createWorker resolves.
 		await vi.advanceTimersByTimeAsync(1);
 		await Promise.resolve();
 		expect(result.settled()).toBe(false);
 
-		// Then: parse() rejects only after the late-created worker is terminated.
+		// Then: the call rejects only after the late-created worker is terminated.
 		resolveWorker({
-			recognize: async () => "late text",
+			recognize: () => new Promise<never>(() => undefined),
 			terminate: () =>
 				new Promise<void>((resolve) => {
 					finishTermination = resolve;
@@ -143,7 +88,7 @@ describe("ImageOcrParser", () => {
 		await Promise.resolve();
 		expect(result.settled()).toBe(false);
 		finishTermination();
-		await expect(result.promise).rejects.toBeInstanceOf(ParseError);
+		await expect(result.promise).rejects.toThrow(/timed out/i);
 		expect(result.settled()).toBe(true);
 	});
 });

@@ -2,7 +2,8 @@
  * Global language configuration for AutoRAG.
  *
  * The tag set is curated rather than free-form BCP-47: every accepted tag must
- * map to a concrete OCR engine configuration (see src/parser/ocr-engines.ts).
+ * map to a Tesseract traineddata code (see src/parser/ocr-engines.ts), which
+ * is the OCR engine for every language kordoc's built-in model cannot read.
  * A tag we cannot map would be a promise the parser stack cannot keep.
  */
 

@@ -48,11 +48,19 @@ export type KordocParseFn = (bytes: Uint8Array, options: KordocParseCallOptions)
 export interface KordocParserOptions {
 	/** OCR mode handed to kordoc: off, built-in engine, or an injected provider. */
 	readonly ocr?: boolean | "force" | KordocOcrProvider;
+	/** Also claim standalone image files; kordoc OCRs them whenever it parses them, so this follows the OCR switch. */
+	readonly images?: boolean;
 	readonly parse?: KordocParseFn;
 }
 
 /** Document extensions kordoc parses. `.pptx` and `.eml` stay on their own parsers. */
 export const KORDOC_EXTENSIONS = [".hwp", ".hwpx", ".hml", ".hwpml", ".pdf", ".docx", ".xlsx", ".xls"] as const;
+
+/**
+ * Standalone image formats kordoc OCRs directly. `.bmp` and `.tiff` return
+ * `UNSUPPORTED_FORMAT` from kordoc, so they are deliberately not claimed.
+ */
+export const KORDOC_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"] as const;
 
 /** kordoc accepts Buffer/ArrayBuffer/string; wrap without copying when possible. */
 function toKordocInput(bytes: Uint8Array): Buffer {
@@ -86,7 +94,7 @@ const defaultParse: KordocParseFn = async (bytes, options) => {
  */
 export class KordocParser extends Parser {
 	readonly name = "kordoc";
-	readonly extensions = KORDOC_EXTENSIONS;
+	readonly extensions: readonly string[];
 
 	readonly #parse: KordocParseFn;
 	readonly #ocr: KordocParserOptions["ocr"];
@@ -95,6 +103,8 @@ export class KordocParser extends Parser {
 		super();
 		this.#parse = options.parse ?? defaultParse;
 		this.#ocr = options.ocr;
+		this.extensions =
+			options.images === true ? [...KORDOC_EXTENSIONS, ...KORDOC_IMAGE_EXTENSIONS] : KORDOC_EXTENSIONS;
 	}
 
 	async parse(input: ParseInput): Promise<ParseOutput> {

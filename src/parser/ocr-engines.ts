@@ -1,5 +1,6 @@
+import { mkdir } from "node:fs/promises";
+import { createWorker, type Worker } from "tesseract.js";
 import type { LanguageTag } from "../language.ts";
-import { createTesseractOcrOperation, withTimeout } from "./ocr.ts";
 
 const TESSERACT_LANGUAGES: Record<LanguageTag, string> = {
 	ko: "kor",
@@ -19,6 +20,26 @@ const TESSERACT_LANGUAGES: Record<LanguageTag, string> = {
 	hi: "hin",
 };
 
+/**
+ * Languages kordoc's built-in PP-OCRv5 model reads reliably. Its recognizer
+ * dictionary is Korean plus basic Latin: it has no kana, han, Cyrillic, Thai,
+ * Arabic or Devanagari, and on rendered text it drops diacritics (accented
+ * character recall fr 0.64, de 0.82, es 0.45 versus Tesseract 1.00, 0.91, 1.00).
+ * Any configured language outside this set switches OCR to Tesseract.
+ */
+export const BUILTIN_OCR_LANGUAGES: ReadonlySet<LanguageTag> = new Set<LanguageTag>(["ko", "en"]);
+
+/** OCR switch and Tesseract settings. `enabled` is the single opt-in for image files and scanned pages. */
+export interface OcrOptions {
+	readonly enabled: boolean;
+	readonly timeoutMs?: number;
+	/**
+	 * Directory where Tesseract stores downloaded traineddata. tesseract.js
+	 * falls back to the process working directory when unset.
+	 */
+	readonly cachePath?: string;
+}
+
 export type OcrProvider = (
 	pageImage: Uint8Array,
 	pageNumber: number,
@@ -35,6 +56,7 @@ export type TesseractOcrEngine = (
 export interface TesseractOcrProviderOptions {
 	readonly languages: readonly LanguageTag[];
 	readonly timeoutMs?: number;
+	readonly cachePath?: string;
 	readonly engine?: TesseractOcrEngine;
 }
 
@@ -58,24 +80,98 @@ export function createTesseractOcrProvider(options: TesseractOcrProviderOptions)
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TESSERACT_TIMEOUT_MS;
 	const engine =
 		options.engine ??
-		((resolvedLanguage, pageImage, pageNumber, mimeType) =>
-			defaultTesseractEngine(resolvedLanguage, pageImage, pageNumber, mimeType, timeoutMs));
+		((resolvedLanguage, pageImage) =>
+			recognizeWithTesseract({
+				language: resolvedLanguage,
+				bytes: pageImage,
+				timeoutMs,
+				cachePath: options.cachePath,
+			}));
 	return (pageImage, pageNumber, mimeType) => engine(language, pageImage, pageNumber, mimeType);
 }
 
-async function defaultTesseractEngine(
-	language: string,
-	pageImage: Uint8Array,
-	_pageNumber: number,
-	_mimeType: "image/png" | "image/jpeg" | "image/webp",
-	timeoutMs: number,
-): Promise<string> {
+interface TesseractRecognition {
+	readonly language: string;
+	readonly bytes: Uint8Array;
+	readonly timeoutMs: number;
+	readonly cachePath: string | undefined;
+}
+
+interface OcrOperation {
+	readonly result: Promise<string>;
+	/** Settles once the worker is terminated, so a timeout never leaks a live worker. */
+	readonly cleanup: Promise<void>;
+}
+
+function recognizeWithTesseract(recognition: TesseractRecognition): Promise<string> {
 	const controller = new AbortController();
-	const operation = createTesseractOcrOperation({
-		bytes: pageImage,
-		languages: [language],
-		timeoutMs,
-		signal: controller.signal,
+	const operation = startTesseract(recognition, controller.signal);
+	return withTimeout(operation, recognition.timeoutMs, () => controller.abort());
+}
+
+function startTesseract(recognition: TesseractRecognition, signal: AbortSignal): OcrOperation {
+	let cleanupResolve: () => void = () => undefined;
+	let cleanupReject: (reason: unknown) => void = () => undefined;
+	// tsconfig lib is ES2022, which predates Promise.withResolvers.
+	const cleanup = new Promise<void>((resolve, reject) => {
+		cleanupResolve = resolve;
+		cleanupReject = reject;
 	});
-	return withTimeout(operation, timeoutMs, () => controller.abort());
+	const result = runTesseract(recognition, signal, cleanupResolve, cleanupReject);
+	return { result, cleanup };
+}
+
+async function runTesseract(
+	recognition: TesseractRecognition,
+	signal: AbortSignal,
+	cleanupResolve: () => void,
+	cleanupReject: (reason: unknown) => void,
+): Promise<string> {
+	let worker: Worker | undefined;
+	let termination: Promise<void> | undefined;
+	const terminate = async (): Promise<void> => {
+		if (worker === undefined) return;
+		termination ??= worker.terminate().then(() => undefined);
+		await termination;
+	};
+	const abort = () => {
+		if (worker !== undefined) {
+			void terminate().then(cleanupResolve, cleanupReject);
+		}
+	};
+	signal.addEventListener("abort", abort, { once: true });
+	try {
+		const { cachePath } = recognition;
+		if (cachePath !== undefined) await mkdir(cachePath, { recursive: true });
+		worker = await createWorker(recognition.language, undefined, cachePath === undefined ? {} : { cachePath });
+		if (signal.aborted) throw new Error("OCR aborted before worker was ready");
+		const result = await worker.recognize(Buffer.from(recognition.bytes));
+		return result.data.text;
+	} finally {
+		signal.removeEventListener("abort", abort);
+		await terminate().then(cleanupResolve, cleanupReject);
+	}
+}
+
+function withTimeout(operation: OcrOperation, timeoutMs: number, onTimeout: () => void): Promise<string> {
+	// tsconfig lib is ES2022, which predates Promise.withResolvers.
+	return new Promise((resolve, reject) => {
+		const timeout = setTimeout(() => {
+			onTimeout();
+			operation.cleanup.finally(() => reject(new Error(`OCR timed out after ${timeoutMs}ms`)));
+		}, timeoutMs);
+		operation.result.then(
+			(value) => {
+				clearTimeout(timeout);
+				resolve(value);
+			},
+			(error: unknown) => {
+				clearTimeout(timeout);
+				operation.cleanup.then(
+					() => reject(error),
+					(cleanupError: unknown) => reject(cleanupError),
+				);
+			},
+		);
+	});
 }
