@@ -554,7 +554,7 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
-| `src/agent/query-routing.ts` | Jev query router: local / web / direct branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
+| `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |

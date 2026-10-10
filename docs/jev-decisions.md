@@ -108,23 +108,26 @@ Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** `emit_fast_answer`. Jev answers two typed questions about the
 user question in one batched call:
 
-1. **Branch** (`choice`): `local`, `web`, `direct`, or `config`. The
-   highest-probability branch wins, but leaving local search needs confidence: a
-   `direct`, `web`, or `config` branch **at or below 0.75**
+1. **Branch** (`choice`): can the assistant answer from its **intrinsic
+   knowledge** alone (`direct`), or does it need additional information
+   (`local`)? There is no web branch. A `config` branch is also offered to local
+   sessions. The highest-probability branch wins, but leaving local search needs
+   confidence: a `direct` or `config` branch **at or below 0.75**
    (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without a
    probability — falls back to `local` search with a `query-route-fallback`
    diagnostic, so a weak verdict never silently drops the corpus evidence the
    question depends on (and never edits settings on a guess).
-   - `local`: answering needs information only the user can reach (files on
-     their computer, Discord/KakaoTalk/Slack chats, email, notes, calendar,
-     history). Jev is told to prefer `local` whenever the question refers to the
-     user's own life, situation, plans, or records — "my/I/our", a named friend,
-     family member, or colleague, or "my case/hearing/appointment/routine" — even
-     when a generic answer would also be possible.
-   - `web`: not answerable from general knowledge and not from the user's private
-     information either, but one public internet search would answer it.
-   - `direct`: general knowledge, simple reasoning, or small talk. Never chosen
-     for a question that refers to the user's own life, files, or records.
+   - `local`: answering needs anything beyond intrinsic knowledge — information
+     only the user can reach (files on their computer, Discord/KakaoTalk/Slack
+     chats, email, notes, calendar, history) or facts that may be recent,
+     specific, or changing. Jev is told to prefer `local` whenever the question
+     refers to the user's own life, situation, plans, or records — "my/I/our", a
+     named friend, family member, or colleague, or
+     "my case/hearing/appointment/routine" — and whenever it is unsure.
+   - `direct`: stable common knowledge, a definition, simple reasoning, or small
+     talk answerable without looking anything up. Never chosen for a question
+     that refers to the user's own life, files, or records, nor for facts that
+     may have changed recently.
    - `config`: the user wants to view, change, or test AutoRAG's own settings
      (model, providers, API-key environment variables, Jev, search roots,
      datasources). Offered only to local sessions, never to remote P2P peers.
@@ -139,7 +142,11 @@ What happens next:
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
 | `config` | Skips retrieval, decomposition, `emit_fast_answer`, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new through `emit_autorag_results` (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
 | `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
-| `web`    | Decompose (if needed) → `web_search` per query, in parallel → merged evidence → fast answer → follow-up check → verification (only if needed). |
+
+Web search is not part of routing. When verification runs after the fast answer,
+the agent decides on its own whether to call `web_search` / `web_fetch` (when web
+tools are enabled) — for example when local evidence is missing, thin, or
+possibly outdated.
 
 After a `config` turn that changed the config file, the host re-resolves it the way the next launch will (JSON, schema, and that the model id exists in the pi catalog or a declared endpoint). If it no longer resolves, the pre-turn file is restored, a warning is appended to the report, and a `self-config-rolled-back` diagnostic is recorded, so a bad model id can never leave the agent unable to start. A missing credential is not a rollback reason; that is reported by `autorag health` as `auth_missing`. An unchanged file is never touched.
 
@@ -204,7 +211,7 @@ showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉�
 
 ### Follow-up check after the fast answer
 
-After `emit_fast_answer` on the `local` and `web` branches, Jev answers one more
+After `emit_fast_answer` on the `local` branch, Jev answers one more
 `noul` about the question **and** the fast answer together: does the answer need
 correction, clarification from the user, or further research? Below 0.5, the run
 ends there: the fast answer becomes the final response (its numbered results and
@@ -250,8 +257,7 @@ preserved:
 
 Failures never block a search. A missing Jev credential, an unreachable Jev
 backend, or an unusable verdict falls back to today's single local search for
-the original question (diagnostic `query-route-fallback`). A `web` verdict with
-web tools disabled also falls back to local search. A failed decomposition
+the original question (diagnostic `query-route-fallback`). A failed decomposition
 searches the original question (`query-decomposition-failed`). A failed
 datasource check searches no datasource before the fast answer
 (`datasource-selection-fallback`). Every routed run records its branch and
