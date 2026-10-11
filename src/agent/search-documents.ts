@@ -1,5 +1,5 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
-import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
+import type { RetrievalResult } from "../retrieval/types.ts";
 import { assertResultsMappingOneToOne, formatCitationList, stripUnresolvedCitations } from "./citations.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
 import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
@@ -157,9 +157,6 @@ export type SearchDocumentsStreamEvent =
 			readonly response: SearchDocumentsResponse;
 	  };
 
-type SearchSession = { query: string; registry: Map<number, CuratedResult> };
-type SearchSessions = Map<string, SearchSession>;
-
 function confidenceFrom(score: number): number {
 	if (!Number.isFinite(score)) return 0;
 	return Math.max(0, Math.min(1, score));
@@ -197,8 +194,8 @@ function reconcileCitations(
 
 /**
  * Build the preliminary (fast-phase) search response. Unlike
- * {@link recordStructuredResultsSession} this NEVER touches memory or the
- * session registry — the final response owns those.
+ * {@link recordStructuredResultsSession} this NEVER touches memory — the final
+ * response owns that.
  */
 export function createPreliminarySearchDocumentsResponse(
 	sessionId: string,
@@ -234,10 +231,8 @@ export function createPreliminarySearchDocumentsResponse(
 export function createEmptySearchDocumentsResponse(
 	sessionId: string,
 	query: string,
-	sessions: SearchSessions,
 	diagnostics: readonly SearchDocumentDiagnostic[] = [],
 ): SearchDocumentsResponse {
-	sessions.set(sessionId, { query, registry: new Map() });
 	return {
 		sessionId,
 		query,
@@ -249,7 +244,7 @@ export function createEmptySearchDocumentsResponse(
 	};
 }
 
-function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionEvidenceRef[] {
+export function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionEvidenceRef[] {
 	const rawRefs =
 		entry.evidenceRefs.length > 0
 			? entry.evidenceRefs
@@ -283,27 +278,18 @@ export function recordStructuredResultsSession(
 	sessionId: string,
 	query: string,
 	details: AutoRAGResultsDetails,
-	sessions: SearchSessions,
 	memory: RetrievalMemory,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
 	options: {
-		/** Record the session registry only, skipping the retrieval-memory write. */
+		/** Skip the retrieval-memory write. */
 		readonly isolateMemory?: boolean;
 	} = {},
 ): SearchDocumentsResponse {
 	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
 
-	const registry = new Map<number, CuratedResult>();
 	const memoryResults = [];
 	for (const entry of details.mapping) {
 		const evidenceRefs = normalizeEntryEvidenceRefs(entry);
-		registry.set(entry.number, {
-			index: entry.number,
-			content: entry.content,
-			source: entry.source,
-			method: entry.method,
-			evidenceRefs,
-		});
 		const emittedResult = details.results.find((result) => result.number === entry.number);
 		memoryResults.push({
 			number: entry.number,
@@ -316,7 +302,6 @@ export function recordStructuredResultsSession(
 			evidenceRefs,
 		});
 	}
-	sessions.set(sessionId, { query, registry });
 	if (!options.isolateMemory) {
 		memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
 		memory.save();
@@ -333,7 +318,7 @@ export function recordStructuredResultsSession(
 		),
 		confidence: confidenceFrom(result.confidence),
 		// An empty mapping source means "not reported" (fast answers may omit it).
-		source: registry.get(result.number)?.source || undefined,
+		source: details.mapping.find((entry) => entry.number === result.number)?.source || undefined,
 	}));
 	const citations = reconcileCitations(details.answer, results);
 	const answer = citations.answer;

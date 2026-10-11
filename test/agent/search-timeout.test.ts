@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
+import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 // A search that times out during verification must not throw away the first
 // answer it already produced.
@@ -104,7 +105,7 @@ describe("search timeout after a first answer", () => {
 		expect(complete.response.diagnostics?.some((d) => d.code === "search-timeout")).toBe(true);
 	});
 
-	it("records the timeout answer so its result registry still resolves", async () => {
+	it("records the timeout answer in memory so its evidence still resolves", async () => {
 		const agent = agentFor(
 			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
 		);
@@ -114,8 +115,7 @@ describe("search timeout after a first answer", () => {
 			expect.objectContaining({ code: "search-timeout", severity: "warning" }),
 		);
 
-		const registry = agent.getResultRegistry(response.sessionId);
-		expect(registry.get(1)?.content).toBe("now has five");
+		expect(storedEvidence(join(root, "memory.json"), response.sessionId, 1)[0]?.content).toBe("now has five");
 	});
 
 	it("does not leak a timed-out run's preliminary into a later search", async () => {

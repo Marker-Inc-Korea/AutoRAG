@@ -33,6 +33,7 @@ import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
+import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
 let docs: string;
@@ -939,12 +940,12 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(complete.response.answer).toBe("The Q3 budget was approved by Mina Park [1].");
 		expect(complete.response.results.map((result) => result.source)).toEqual([source]);
 		// The stored evidence is what the retrieval step recorded, not the fast
-		// answer's own text: feedback must attach to the real chunk.
-		const stored = agent.getResultRegistry(complete.response.sessionId).get(1);
+		// answer's own text: the memory must hold the real chunk.
+		const [stored] = storedEvidence(join(root, "memory.json"), complete.response.sessionId, 1);
 		expect(stored?.source).toBe(source);
 		expect(stored?.method).toBe("baseline");
 		expect(stored?.content).toBe("evidence for who approved the Q3 budget?");
-		expect(stored?.evidenceRefs?.[0]?.retrievalResultId).toBe("hit-who approved the Q3 budget?");
+		expect(stored?.retrievalResultId).toBe("hit-who approved the Q3 budget?");
 		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
 		expect(
 			complete.response.diagnostics?.some(

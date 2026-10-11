@@ -83,7 +83,7 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
-import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
@@ -160,6 +160,7 @@ import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./
 import {
 	createEmptySearchDocumentsResponse,
 	createPreliminarySearchDocumentsResponse,
+	normalizeEntryEvidenceRefs,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,
@@ -673,7 +674,6 @@ export class AutoRAGAgent {
 	private readonly runLogger: AutoRAGRunLogger;
 	private lastQuery: string | undefined;
 	private lastSessionId: string | undefined;
-	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
 	private interactiveFastAnswerCallback: ((details: AutoRAGFastAnswerDetails) => void) | undefined;
@@ -1188,14 +1188,13 @@ export class AutoRAGAgent {
 				source: "memory",
 			};
 		}
-		const registry = this.sessions.get(sessionId)?.registry;
 		const resultByNumber = new Map(details.results.map((result) => [result.number, result]));
 		const units: (EvidenceJudgmentUnit & {
 			readonly record: Omit<JudgedEvidenceRecord, "probability" | "createdAt">;
 		})[] = [];
 		for (const entry of details.mapping) {
 			const result = resultByNumber.get(entry.number);
-			const refs = registry?.get(entry.number)?.evidenceRefs ?? [];
+			const refs = normalizeEntryEvidenceRefs(entry);
 			if (result === undefined || refs.length === 0) continue;
 			for (const ref of refs) {
 				const excerpt = (ref.excerpt ?? ref.content ?? "").slice(0, MEMORY_EXCERPT_CHARACTERS);
@@ -1510,12 +1509,6 @@ export class AutoRAGAgent {
 		}
 	}
 
-	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
-		const sid = sessionId ?? this.lastSessionId;
-		const session = sid ? this.sessions.get(sid) : undefined;
-		return session?.registry ?? new Map();
-	}
-
 	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
 		if (this.activeRun) {
 			throw new Error("AutoRAG agent is busy; await the in-flight searchDocuments() call before starting another");
@@ -1530,7 +1523,7 @@ export class AutoRAGAgent {
 		if (trimmedQuery.length === 0) {
 			this.lastQuery = trimmedQuery;
 			this.lastSessionId = sessionId;
-			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions, this.startupDiagnostics);
+			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.startupDiagnostics);
 		}
 		options = this.normalizeRetrievalOptions(options);
 		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
@@ -1798,13 +1791,12 @@ export class AutoRAGAgent {
 
 			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
 				// The caller receives this as the run's final answer, so record it as
-				// one: the fast-answer-as-final conversion registers the session
-				// registry and memory entry for the returned response.
+				// one: the fast-answer-as-final conversion writes the memory entry for
+				// the returned response.
 				const response = recordStructuredResultsSession(
 					sessionId,
 					trimmedQuery,
 					fastAnswerAsFinal(fastCaptured),
-					this.sessions,
 					this.memory,
 					[
 						...this.collectComponentDiagnostics(),
@@ -1908,12 +1900,10 @@ export class AutoRAGAgent {
 				sessionId,
 				trimmedQuery,
 				captured,
-				this.sessions,
 				this.memory,
 				componentDiagnostics,
 				{ isolateMemory: this.remoteSession || selfConfigRun },
 			);
-			// The session registry now holds the normalized evidence refs the judgment reads.
 			// A self-config report is about AutoRAG's settings, not retrieved evidence.
 			const memoryDiagnostic = selfConfigRun
 				? undefined

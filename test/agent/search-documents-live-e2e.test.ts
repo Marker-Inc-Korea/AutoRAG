@@ -27,6 +27,7 @@ import type {
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
 import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
+import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
 let docs: string;
@@ -274,10 +275,10 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		expect(refresh.minsync?.ok).toBe(true);
 		expect(serialized).toContain("Refund exceptions now require director approval");
 		// path opacity is gone: the curated source path is retained verbatim in
-		// the internal registry (below); the public response is not scrubbed.
+		// the stored evidence (below); the public response is not scrubbed.
 
-		const registry = agent.getResultRegistry(response.sessionId);
-		expect(registry.get(1)?.source).toBe(realpathSync(join(docs, "q3.txt")));
-		expect(registry.get(2)?.source).toBe("/kakao/acct-1/chunks/refund-policy");
+		const memoryPath = join(root, "memory.json");
+		expect(storedEvidence(memoryPath, response.sessionId, 1)[0]?.source).toBe(realpathSync(join(docs, "q3.txt")));
+		expect(storedEvidence(memoryPath, response.sessionId, 2)[0]?.source).toBe("/kakao/acct-1/chunks/refund-policy");
 	});
 });

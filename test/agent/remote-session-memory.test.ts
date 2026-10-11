@@ -125,7 +125,6 @@ type TestMessage = { role: "user"; content: { type: "text"; text: string }[]; ti
 interface AgentInternals {
 	memory: RetrievalMemory;
 	lastQuery: string | undefined;
-	sessions: Map<string, { transient?: boolean }>;
 	withMemoryContext(messages: TestMessage[]): Promise<TestMessage[]>;
 	tools: AgentTool[];
 }
@@ -199,9 +198,8 @@ describe("AutoRAGAgent remote-session memory isolation", () => {
 		const recordCuratedResultsSession = vi.spyOn(memory, "recordCuratedResultsSession");
 		const save = vi.spyOn(memory, "save");
 
-		const response = await agent.searchDocuments("remote query");
+		await agent.searchDocuments("remote query");
 
-		expect(internals(agent).sessions.get(response.sessionId)?.transient).not.toBe(true);
 		expect(recordCuratedResultsSession).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
 		expect(readFileSync(memoryPath)).toEqual(before);

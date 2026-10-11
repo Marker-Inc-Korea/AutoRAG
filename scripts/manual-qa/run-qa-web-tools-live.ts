@@ -93,10 +93,7 @@ try {
 	const searchRequests = outbound.filter((request) =>
 		SEARCH_PROVIDER_HOSTS.some((host) => request.url.includes(host)),
 	);
-	const registrySources: string[] = [];
-	for (const entry of agent.getResultRegistry(final.sessionId).values()) {
-		registrySources.push(entry.source);
-	}
+	const registrySources = final.results.flatMap((result) => (result.source === undefined ? [] : [result.source]));
 	const publicSources = registrySources.filter((source) => /^https?:\/\//.test(source));
 
 	const pass = searchRequests.length > 0 && final.results.length > 0 && publicSources.length > 0;
