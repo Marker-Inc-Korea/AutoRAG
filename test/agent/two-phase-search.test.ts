@@ -12,8 +12,6 @@ import {
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
-import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import type {
 	DatasourceIndexResult,
@@ -83,45 +81,16 @@ function capturePromptStep(step: FauxResponseStep, prompts: string[]): FauxRespo
 	};
 }
 
+/** The fast phase now ends in a plain assistant message: no tool call. */
 function fastAnswerCall(): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
-				answer: "Fast answer: refund exceptions require director approval before payout.",
-				results: [
-					{
-						number: 1,
-						title: "Refund approval rule",
-						summary: "Refund exceptions now require director approval before payout.",
-						evidence: [{ excerpt: "Refund exceptions require director approval before payout.", lineNumber: 1 }],
-						confidence: 0.6,
-					},
-				],
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
+	return fauxAssistantMessage("Fast answer: refund exceptions require director approval before payout.", {
+		stopReason: "stop",
+	});
 }
 
-function finalEmitCall(answer: string): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-				answer,
-				results: [
-					{
-						number: 1,
-						title: "Verified refund approval rule",
-						summary: "Verified: refund exceptions require director approval before payout.",
-						evidence: [{ excerpt: "Refund exceptions require director approval before payout.", lineNumber: 1 }],
-						confidence: 0.95,
-						refs: [join(docs, "refund-policy.txt")],
-					},
-				],
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
+/** The verification phase ends in a plain assistant message citing the file it opened. */
+function finalAnswer(answer: string): FauxResponseStep {
+	return fauxAssistantMessage(`${answer} [file:${join(docs, "refund-policy.txt")}]`, { stopReason: "stop" });
 }
 
 class StaticMethod implements RetrievalMethod {
@@ -224,8 +193,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			true,
 			fastAnswerCall(),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmitCall("Final answer: refund exceptions require director approval before payout."),
+			finalAnswer("Final answer: refund exceptions require director approval before payout."),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 
@@ -241,50 +209,51 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		if (preliminary.type !== "preliminary") throw new Error("unreachable");
 		expect(preliminary.response.answer).toContain("Fast answer");
 		expect(preliminary.response.answer).toContain("director approval");
-		expect(preliminary.response.results).toHaveLength(1);
-		// The fast phase can only cite baseline evidence, and this test arranges
-		// none, so the preliminary result legitimately carries no source.
-		expect(preliminary.response.results[0]?.source).toBeUndefined();
+		// The fast phase cited nothing, so it derives no results.
+		expect(preliminary.response.results).toEqual([]);
 
 		const complete = events[completeIndex];
 		if (complete.type !== "complete") throw new Error("unreachable");
 		expect(complete.response.answer).toContain("Final answer");
+		// The model's `[file:<path>]` marker became a numbered citation backed by a result.
+		expect(complete.response.answer).toContain("[1]");
+		expect(complete.response.answer).not.toContain("[file:");
+		expect(complete.response.results[0]?.source).toBe(join(docs, "refund-policy.txt"));
 	});
 
-	it("delivers the preliminary event before the fast phase prompt continues", async () => {
-		// Given a provider that pauses after the fast-answer tool has executed.
-		let markContinuationReady: (() => void) | undefined;
-		const continuationReady = new Promise<void>((resolve) => {
-			markContinuationReady = resolve;
-		});
-		let releaseContinuation: ((message: ReturnType<typeof fauxAssistantMessage>) => void) | undefined;
-		const continuation: FauxResponseStep = () => {
-			const result = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
-				releaseContinuation = resolve;
-			});
-			markContinuationReady?.();
-			return result;
-		};
-		const model = fauxModel(true, fastAnswerCall(), continuation, finalEmitCall("Verified final answer."));
+	it("publishes the preliminary answer exactly once", async () => {
+		const model = fauxModel(true, fastAnswerCall(), finalAnswer("Verified final answer."));
 		const agent = new AutoRAGAgent(agentOptions(model));
-		const events: SearchDocumentsStreamEvent[] = [];
-		const collecting = (async () => {
-			for await (const event of agent.searchDocumentsStream("refund approval?")) events.push(event);
-		})();
 
-		// When the post-tool model turn is still blocked, the answer must be visible.
-		try {
-			await continuationReady;
-			expect(events.some((event) => event.type === "preliminary")).toBe(true);
-		} finally {
-			releaseContinuation?.(fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }));
-			await collecting;
-		}
-		// Then finishing the prompt must not publish the same answer twice.
+		const events = await collectEvents(agent, "refund approval?");
+
 		expect(events.filter((event) => event.type === "preliminary")).toHaveLength(1);
 	});
 
-	it("returns a degraded fallback with reason and retrieval trace when the final emit never happens", async () => {
+	it("never reports an answer message as progress, only the text written before a tool call", async () => {
+		const model = fauxModel(
+			true,
+			fastAnswerCall(),
+			fauxAssistantMessage(
+				[
+					{ type: "text", text: "Checking the datasource for the July review." },
+					fauxToolCall("search_datasource_kakao", { query: "refund approval", topK: 5 }),
+				],
+				{ stopReason: "toolUse" },
+			),
+			finalAnswer("Final answer."),
+		);
+		const agent = new AutoRAGAgent({ ...agentOptions(model), datasourceSkills: [makeSkill([])] });
+
+		const events = await collectEvents(agent, "refund approval?");
+
+		const progress = events.flatMap((event) => (event.type === "progress" ? [event.text] : []));
+		expect(progress).toContain("Checking the datasource for the July review.");
+		expect(progress.some((text) => text.includes("Fast answer"))).toBe(false);
+		expect(progress.some((text) => text.includes("Final answer"))).toBe(false);
+	});
+
+	it("returns a degraded fallback with reason and retrieval trace when the model request fails", async () => {
 		const rows: RetrievalResult[] = [
 			{
 				id: "msg-1",
@@ -297,19 +266,15 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			true,
 			fastAnswerCall(),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "refund approval", topK: 5 })], {
-				stopReason: "toolUse",
-			}),
 			fauxAssistantMessage(
-				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
-				{ stopReason: "stop" },
+				[
+					{ type: "text", text: "Searching the kakao datasource." },
+					fauxToolCall("search_datasource_kakao", { query: "refund approval", topK: 5 }),
+				],
+				{ stopReason: "toolUse" },
 			),
-			// The single final-emit reminder is ignored too.
-			fauxAssistantMessage(
-				"I searched the configured datasources but could not find enough evidence to finalize an answer.",
-				{ stopReason: "stop" },
-			),
+			// The faux provider reports a drained script as a failed model request.
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "provider request failed" }),
 		);
 		const agent = new AutoRAGAgent({
 			...agentOptions(model),
@@ -321,12 +286,12 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(response.results).toEqual([]);
 		expect(
 			response.diagnostics?.some(
-				(diagnostic) => diagnostic.code === "missing-final-emit" && diagnostic.severity === "warning",
+				(diagnostic) => diagnostic.code === "no-final-answer" && diagnostic.severity === "warning",
 			),
 		).toBe(true);
-		expect(response.answer).toContain("without calling emit_autorag_results");
-		expect(response.answer).toContain("could not find enough evidence");
-		expect(response.answer).toContain("searchPaths");
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "model-request-failed")).toBe(true);
+		expect(response.answer).toContain("The model request failed");
+		expect(response.answer).toContain("fix the model provider error");
 		expect(response.searched).toBe(1);
 		expect(response.retrievalTrace).toHaveLength(1);
 		const entry = response.retrievalTrace?.[0];
@@ -336,36 +301,33 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(entry?.results[0]?.excerpt).toContain("Director approval");
 	});
 
-	it("asks once more for the final emit when verification ends with a prose answer instead", async () => {
-		// Live runs (web route) ended verification with the full answer as plain
-		// text and no emit_autorag_results call; one reminder turn recovers it.
+	it("takes a prose answer as the final answer instead of asking the model to emit it", async () => {
 		const prompts: string[] = [];
 		const model = fauxModel(
 			true,
 			fastAnswerCall(),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			fauxAssistantMessage("- Refund exceptions require director approval before payout [1].", {
-				stopReason: "stop",
-			}),
-			capturePromptStep(finalEmitCall("Verified: refund exceptions require director approval."), prompts),
+			capturePromptStep(
+				fauxAssistantMessage("- Refund exceptions require director approval before payout.", {
+					stopReason: "stop",
+				}),
+				prompts,
+			),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 
 		const response = await agent.searchDocuments("refund approval");
 
 		expect(prompts).toHaveLength(1);
-		expect(prompts[0]).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
-		expect(response.answer).toBe("Verified: refund exceptions require director approval.");
-		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
+		expect(response.answer).toBe("- Refund exceptions require director approval before payout.");
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "no-final-answer")).toBe(false);
 	});
 
-	it("ends the run without a preliminary event when the model emits final results immediately", async () => {
-		const model = fauxModel(true, finalEmitCall("Immediate final answer."));
+	it("ends the run without a preliminary event when the first reply is already the final answer", async () => {
+		const model = fauxModel(true, finalAnswer("Immediate final answer."));
 		const agent = new AutoRAGAgent(agentOptions(model));
 
 		const events = await collectEvents(agent, "refund approval?");
 
-		expect(events.some((event) => event.type === "preliminary")).toBe(false);
 		const complete = events.find((event) => event.type === "complete");
 		expect(complete?.type === "complete" && complete.response.answer).toContain("Immediate final answer");
 	});
@@ -375,15 +337,14 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			true,
 			recordStep(fastAnswerCall(), reasoningLog),
-			recordStep(fauxAssistantMessage("done", { stopReason: "stop" }), reasoningLog),
-			recordStep(finalEmitCall("Final answer."), reasoningLog),
+			recordStep(finalAnswer("Final answer."), reasoningLog),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 
 		const response = await agent.searchDocuments("refund approval?");
 
 		expect(response.answer).toContain("Final answer");
-		expect(reasoningLog).toEqual([undefined, undefined, "high"]);
+		expect(reasoningLog).toEqual([undefined, "high"]);
 	});
 
 	it("honours explicit thinking-level overrides for both phases", async () => {
@@ -391,8 +352,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			true,
 			recordStep(fastAnswerCall(), reasoningLog),
-			recordStep(fauxAssistantMessage("done", { stopReason: "stop" }), reasoningLog),
-			recordStep(finalEmitCall("Final answer."), reasoningLog),
+			recordStep(finalAnswer("Final answer."), reasoningLog),
 		);
 		const agent = new AutoRAGAgent({
 			...agentOptions(model),
@@ -401,7 +361,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 
 		await agent.searchDocuments("refund approval?");
 
-		expect(reasoningLog).toEqual(["low", "low", "medium"]);
+		expect(reasoningLog).toEqual(["low", "medium"]);
 	});
 
 	it("clamps thinking levels to off for models without reasoning support", async () => {
@@ -409,29 +369,30 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			false,
 			recordStep(fastAnswerCall(), reasoningLog),
-			recordStep(fauxAssistantMessage("done", { stopReason: "stop" }), reasoningLog),
-			recordStep(finalEmitCall("Final answer."), reasoningLog),
+			recordStep(finalAnswer("Final answer."), reasoningLog),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 
 		await agent.searchDocuments("refund approval?");
 
-		expect(reasoningLog).toEqual([undefined, undefined, undefined]);
+		expect(reasoningLog).toEqual([undefined, undefined]);
 	});
 
-	it("still yields a preliminary answer when the fast phase responds with text only", async () => {
+	it("drops a citation id no tool returned instead of attaching a source to it", async () => {
 		const model = fauxModel(
 			true,
-			fauxAssistantMessage("Quick take: refund exceptions need director approval.", { stopReason: "stop" }),
-			finalEmitCall("Final answer."),
+			fastAnswerCall(),
+			fauxAssistantMessage("Refund exceptions need director approval [e99].", { stopReason: "stop" }),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 
-		const events = await collectEvents(agent, "refund approval?");
+		const response = await agent.searchDocuments("refund approval?");
 
-		const preliminary = events.find((event) => event.type === "preliminary");
-		expect(preliminary?.type === "preliminary" && preliminary.response.answer).toContain("Quick take");
-		expect(preliminary?.type === "preliminary" && preliminary.response.results).toEqual([]);
+		expect(response.answer).toBe("Refund exceptions need director approval.");
+		expect(response.results).toEqual([]);
+		expect(
+			response.diagnostics?.find((diagnostic) => diagnostic.code === "citation-without-result")?.message,
+		).toContain("e99");
 	});
 
 	it("asks for a delta-only final answer when the fast answer was already delivered", () => {
@@ -441,25 +402,11 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const delta = agent.buildRefinementPrompt(
 			"what approval do refund exceptions need?",
 			{},
-			{
-				answer: "Fast: refund exceptions need director approval before payout.",
-				results: [
-					{
-						number: 1,
-						title: "Refund approval rule",
-						summary: "Refund exceptions need director approval before payout.",
-						evidence: [{ excerpt: "Refund exceptions require director approval before payout.", lineNumber: 1 }],
-					},
-				],
-				sources: [{ number: 1, source: join(docs, "refund-policy.txt") }],
-				evidenceRefs: [],
-			},
+			"Fast: refund exceptions need director approval before payout [e1].",
 			true,
 		);
 		// The model must be able to see the exact first answer it is diffing against.
-		expect(delta).toContain("Fast: refund exceptions need director approval before payout.");
-		expect(delta).toContain("Refund exceptions need director approval before payout.");
-		expect(delta).toContain(join(docs, "refund-policy.txt"));
+		expect(delta).toContain("Fast: refund exceptions need director approval before payout [e1].");
 		expect(delta).toMatch(/MUST contain only/i);
 		expect(delta).toMatch(/never restate/i);
 
@@ -473,8 +420,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			true,
 			capturePromptStep(fastAnswerCall(), prompts),
-			capturePromptStep(fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), prompts),
-			capturePromptStep(finalEmitCall("Correction: exceptions also need finance sign-off."), prompts),
+			capturePromptStep(finalAnswer("Correction: exceptions also need finance sign-off."), prompts),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 
@@ -492,8 +438,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const model = fauxModel(
 			true,
 			capturePromptStep(fastAnswerCall(), prompts),
-			capturePromptStep(fauxAssistantMessage("Fast answer drafted.", { stopReason: "stop" }), prompts),
-			capturePromptStep(finalEmitCall("Complete verified answer."), prompts),
+			capturePromptStep(finalAnswer("Complete verified answer."), prompts),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 

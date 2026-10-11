@@ -162,7 +162,7 @@ describe("AutoRAGAgent", () => {
 		expect(response.results).toEqual([]);
 		expect(
 			response.diagnostics?.some(
-				(diagnostic) => diagnostic.code === "missing-final-emit" && diagnostic.severity === "warning",
+				(diagnostic) => diagnostic.code === "no-final-answer" && diagnostic.severity === "warning",
 			),
 		).toBe(true);
 		expect(response.retrievalTrace).toEqual([]);
@@ -325,15 +325,16 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).not.toContain("Fallback Chain");
 	});
 
-	it("system prompt routes output through emit_autorag_results without an internal_mapping channel", () => {
+	it("system prompt routes output through a plain reply with inline evidence ids, not an emit tool", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("emit_autorag_results");
-		expect(prompt).toContain("[1]");
+		expect(prompt).toContain("End with the final answer as a plain reply");
+		expect(prompt).toContain("[e3]");
 		expect(prompt).toContain("curate");
+		expect(prompt).not.toContain("emit_autorag_results");
 		expect(prompt).not.toContain("<internal_mapping>");
 		expect(prompt).not.toContain("internal_mapping");
 	});

@@ -10,7 +10,6 @@ function prompt(
 		"semantic_search_local_docs",
 		"semantic_search_local_docs",
 		"check_memory",
-		"emit_autorag_results",
 	],
 ) {
 	return buildSystemPrompt({ toolNames, manifests: [], jikjiIndexingEnabled: true, modelId: "test-model" });
@@ -22,7 +21,8 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("retrieve candidates");
 		expect(text).toContain("read the relevant source material directly");
 		expect(text).toContain("judge the evidence");
-		expect(text).toContain("emit_autorag_results");
+		expect(text).toContain("End with the final answer as a plain reply");
+		expect(text).toContain("[e3]");
 		expect(text).toContain("generic, stable question");
 		expect(text).toContain("baseline retrieval is already running in parallel");
 		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");

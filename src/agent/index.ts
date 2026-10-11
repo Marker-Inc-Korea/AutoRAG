@@ -16,17 +16,6 @@ export {
 	type ScanDuplicateDocumentsDetails,
 	type ScanDuplicateDocumentsProvider,
 } from "./dupey-tool.ts";
-export type {
-	AutoRAGEmittedResult,
-	AutoRAGMappingEntry,
-	AutoRAGResultsDetails,
-} from "./emit-results-tool.ts";
-export {
-	createEmitResultsTool,
-	EMIT_AUTORAG_RESULTS_TOOL_NAME,
-	emitResultsSchema,
-	reportSchema,
-} from "./emit-results-tool.ts";
 export {
 	createJevExtension,
 	JEV_TOOL_NAME,
@@ -49,6 +38,12 @@ export {
 	type QueryPeerAgentResult,
 	type QueryPeerAgentToolOptions,
 } from "./query-peer-tool.ts";
+export type {
+	AutoRAGEmittedResult,
+	AutoRAGMappingEntry,
+	AutoRAGResultsDetails,
+} from "./results.ts";
+export { reportSchema } from "./results.ts";
 export {
 	createSearchAllDocumentsTool,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,

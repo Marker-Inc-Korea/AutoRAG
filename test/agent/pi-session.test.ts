@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { MockBackend } from "jev-use";
@@ -200,21 +200,14 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
-	it("finishes a TUI query without feeding its own progress messages back into the model", async () => {
+	it("finishes a TUI query on the direct route without a progress feedback loop", async () => {
 		// Progress/preliminary messages are display-only. Sent while the search
 		// turn streams, pi's default steer delivery injects each one as a user
-		// message, the model answers it, which emits more progress: the TUI
-		// query never finishes (seen live on the Jev direct route).
+		// message and the model answers it, which emits more progress: the TUI
+		// query never finishes (seen live on the Jev direct route). The direct
+		// route now ends in one plain answer, so no extra turn is triggered.
 		const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
-		registration.setResponses([
-			fauxAssistantMessage([fauxToolCall("emit_fast_answer", { answer: "Paris.", results: [] })], {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			...Array.from({ length: 20 }, () =>
-				fauxAssistantMessage("Replying to a progress note.", { stopReason: "stop" }),
-			),
-		]);
+		registration.setResponses([fauxAssistantMessage("Paris.", { stopReason: "stop" })]);
 		const agentDir = join(root, "agent");
 		mkdirSync(agentDir, { recursive: true });
 		const model = registration.getModel();
@@ -247,8 +240,8 @@ describe("AutoRAG pi coding-agent host", () => {
 		try {
 			const session = hosted.runtime.session;
 			await session.prompt("What is the capital of France?", { source: "interactive" });
-			// Two model calls: the direct fast answer and its tool-result turn.
-			expect(registration.state.callCount).toBe(2);
+			// One model call: the direct route ends in a single plain answer.
+			expect(registration.state.callCount).toBe(1);
 			const complete = session.messages.filter(
 				(message) => message.role === "custom" && message.customType === "autorag.complete",
 			);

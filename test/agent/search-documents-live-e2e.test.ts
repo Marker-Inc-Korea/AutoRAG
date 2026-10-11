@@ -12,7 +12,6 @@ import {
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { JIKJI_FIND_TOOL_NAME } from "../../src/agent/jikji-find-tool.ts";
 import type {
 	DatasourceIndexResult,
@@ -61,37 +60,28 @@ function fauxModel(...responses: FauxResponseStep[]) {
 	return reg.getModel();
 }
 
-function emitResults(localSource: string, datasourceSource: string): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-				answer:
-					"[1] Refund exceptions require director approval. [2] KakaoTalk confirms finance acknowledged the policy.",
-				results: [
-					{
-						number: 1,
-						title: "Refund approval rule",
-						summary: "Refund exceptions now require director approval before payout.",
-						evidence: [
-							{ excerpt: "Refund exceptions now require director approval before payout.", lineNumber: 2 },
-						],
-						confidence: 0.95,
-						refs: [localSource],
-					},
-					{
-						number: 2,
-						title: "KakaoTalk finance acknowledgement",
-						summary: "Finance acknowledged the director-approval refund policy in KakaoTalk.",
-						evidence: [{ excerpt: "Finance acknowledged director approval for refunds." }],
-						confidence: 0.9,
-						refs: [datasourceSource],
-					},
-				],
-				warnings: ["MinSync semantic search unavailable; fallback retrieval paths were used."],
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
+/**
+ * The verified final answer: cite the local file by path and the datasource by
+ * the evidence id its tool printed, which this step reads back from the
+ * tool-result message the model received.
+ */
+function finalAnswerStep(localSource: string, datasourceSource: string): FauxResponseStep {
+	return (context) => {
+		let datasourceId: string | undefined;
+		for (const message of context.messages) {
+			if (message.role !== "toolResult") continue;
+			const text = message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+			const line = text.split("\n").find((candidate) => candidate.includes(`] ${datasourceSource} `));
+			datasourceId = line?.match(/\[(e\d+)\]/)?.[1];
+			if (datasourceId !== undefined) break;
+		}
+		if (datasourceId === undefined) throw new Error(`no evidence id for ${datasourceSource} in tool results`);
+		return fauxAssistantMessage(
+			`Refund exceptions require director approval. [file:${localSource}] ` +
+				`KakaoTalk confirms finance acknowledged the policy. [${datasourceId}]`,
+			{ stopReason: "stop" },
+		);
+	};
 }
 
 class StaticDatasourceMethod implements RetrievalMethod {
@@ -213,6 +203,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			},
 		];
 		const model = fauxModel(
+			fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
 			fauxAssistantMessage(
 				[
 					fauxToolCall(JIKJI_FIND_TOOL_NAME, { query: "refund director approval" }),
@@ -223,7 +214,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 				],
 				{ stopReason: "toolUse" },
 			),
-			emitResults(realpathSync(join(docs, "q3.txt")), "/kakao/acct-1/chunks/refund-policy"),
+			finalAnswerStep(realpathSync(join(docs, "q3.txt")), "/kakao/acct-1/chunks/refund-policy"),
 		);
 		const agent = new AutoRAGAgent({
 			model,
@@ -248,7 +239,6 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			"search_all_documents",
 			"search_datasource_kakao",
 			"jikji_find",
-			"emit_autorag_results",
 		]) {
 			expect(toolNames(agent)).toContain(name);
 		}

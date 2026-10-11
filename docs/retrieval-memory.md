@@ -32,20 +32,20 @@ searches, the long-term insights, and warnings.
 
 ## How evidence is judged
 
-Judgment runs **after the final answer**: after `emit_autorag_results`, or
-after `emit_fast_answer` when Jev ends the run early on the fast answer. At
+Judgment runs **after the final answer**: after the final reply, or
+after the fast reply when Jev ends the run early on the fast answer. At
 that point every evidence the answer cites is mapped back to its origin — the
 search query and retrieval method that surfaced it (`EvidenceOriginIndex`) —
 and sent to Jev. A run Jev routes to the `config` branch (self-configuration)
 reports on AutoRAG's own settings, not retrieved evidence, so it is never
 judged or stored.
 
-Before judgment, each result's `refs` is resolved against the run's
-`EvidenceLedger`: retrieval-issued ids attach the harness-recorded source,
-method, and chunk, not model-written mapping text. The origin index then
-recovers the query that retrieved that chunk. Local files read outside retrieval
-may use an absolute path in the final emit; remote sessions cannot. A config
-report emits `results: []` and does not enter retrieval memory.
+Before judgment, each inline citation in the answer (`[e3]`, `[file:<path>]`) is
+resolved against the run's `EvidenceLedger`: retrieval-issued ids attach the
+harness-recorded source, method, and chunk, not model-written text. The origin
+index then recovers the query that retrieved that chunk. Local files read
+outside retrieval may be cited by absolute path; remote sessions cannot. A
+config report has no citations and does not enter retrieval memory.
 
 - **Questions.** Each cited evidence becomes one `noul` question: *does this
   evidence directly support the sentence it backs, and is it needed to answer

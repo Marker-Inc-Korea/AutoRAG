@@ -95,7 +95,7 @@ export async function rollbackIfBroken(
 /**
  * The turn prompt for the `config` branch: the whole setup skill, where this
  * run's config lives, the safety rules for editing it, and the user's request.
- * The turn ends with `emit_autorag_results`; there is no fast answer.
+ * The turn ends with the model's plain final message; there is no fast answer.
  */
 export function buildSelfConfigPrompt(input: SelfConfigPromptInput): string {
 	return (
@@ -117,8 +117,8 @@ export function buildSelfConfigPrompt(input: SelfConfigPromptInput): string {
 		`- The running agent keeps the model and settings it started with; changes apply to the next \`autorag\` launch. Say so in the report.\n\n` +
 		`## autorag-setup skill (full text)\n\n${input.skill}\n\n` +
 		`## User request\n\n${input.query}\n\n` +
-		`When done, call emit_autorag_results exactly once with: \`answer\` = a short report of what you changed (field: old → new), what you verified and how, ` +
-		`and anything that still needs the user (for example an unset API-key environment variable, by name only); \`results\` = []. ` +
+		`When done, reply with a short report as your final message, with no tool call: what you changed (field: old → new), what you verified and how, ` +
+		`and anything that still needs the user (for example an unset API-key environment variable, by name only). ` +
 		`If you changed nothing, say why.`
 	);
 }

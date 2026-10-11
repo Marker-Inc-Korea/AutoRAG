@@ -6,7 +6,6 @@ import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } fro
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -27,27 +26,13 @@ function groundedSource(answer: string): string {
 	return source;
 }
 
+/** Two-phase script: a fast plain answer, then a verified answer citing the local file it grounded on. */
 function modelFor(answer = "grounded answer") {
+	const source = groundedSource(answer);
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "single-agent" }] });
 	registration.setResponses([
-		fauxAssistantMessage(
-			[
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: `[1] ${answer}`,
-					results: [
-						{
-							number: 1,
-							title: "Result",
-							summary: answer,
-							evidence: [{ excerpt: answer }],
-							confidence: 0.9,
-							refs: [groundedSource(answer)],
-						},
-					],
-				}),
-			],
-			{ stopReason: "toolUse" },
-		),
+		fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+		fauxAssistantMessage(`${answer} [file:${source}]`, { stopReason: "stop" }),
 	]);
 	registrations.push(registration);
 	return registration.getModel();
@@ -65,7 +50,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		const response = await agent.searchDocuments("find the grounded answer");
 
-		expect(response.answer).toBe("[1] grounded answer");
+		expect(response.answer).toBe("grounded answer [1]");
 		expect(response.results).toHaveLength(1);
 		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe(join(root, "grounded-answer.txt"));
 	});
@@ -80,26 +65,10 @@ describe("AutoRAGAgent searchDocuments", () => {
 			models: [{ id: "credential-model" }],
 		});
 		registration.setResponses([
+			fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
 			(_context, options) => {
 				expect(options?.apiKey).toBe(apiKey);
-				return fauxAssistantMessage(
-					[
-						fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-							answer: "[1] authenticated",
-							results: [
-								{
-									number: 1,
-									title: "Authenticated result",
-									summary: "authenticated",
-									evidence: [{ excerpt: "authenticated" }],
-									confidence: 1,
-									refs: [authSource],
-								},
-							],
-						}),
-					],
-					{ stopReason: "toolUse" },
-				);
+				return fauxAssistantMessage(`authenticated [file:${authSource}]`, { stopReason: "stop" });
 			},
 		]);
 		registrations.push(registration);
@@ -115,7 +84,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 		});
 
 		await expect(agent.searchDocuments("authenticated search")).resolves.toMatchObject({
-			answer: "[1] authenticated",
+			answer: "authenticated [1]",
 		});
 	});
 
@@ -130,7 +99,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		const first = agent.searchDocuments("first");
 		await expect(agent.searchDocuments("second")).rejects.toThrow(/busy/i);
-		await expect(first).resolves.toMatchObject({ answer: "[1] first" });
+		await expect(first).resolves.toMatchObject({ answer: "first [1]" });
 	});
 
 	it("returns an empty structured response for blank queries", async () => {
@@ -174,32 +143,20 @@ describe("AutoRAGAgent searchDocuments", () => {
 	});
 
 	it("yields assistant progress before the structured completion", async () => {
+		const source = groundedSource("확인된 답변");
 		const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "streaming-agent" }] });
 		registration.setResponses([
-			fauxAssistantMessage(
-				[{ type: "text", text: "류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다." }],
-				{
-					stopReason: "stop",
-				},
-			),
+			// The fast phase ends in a plain answer (never progress).
+			fauxAssistantMessage("초기 확인 중입니다.", { stopReason: "stop" }),
+			// A message that ends on a tool call is a progress note, not an answer.
 			fauxAssistantMessage(
 				[
-					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-						answer: "[1] 확인된 답변",
-						results: [
-							{
-								number: 1,
-								title: "확인된 결과",
-								summary: "확인된 답변",
-								evidence: [{ excerpt: "확인된 답변" }],
-								confidence: 1,
-								refs: [groundedSource("확인된 답변")],
-							},
-						],
-					}),
+					{ type: "text", text: "류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다." },
+					fauxToolCall("check_memory", { query: "류동현 선임" }),
 				],
 				{ stopReason: "toolUse" },
 			),
+			fauxAssistantMessage(`확인된 답변 [file:${source}]`, { stopReason: "stop" }),
 		]);
 		registrations.push(registration);
 		const agent = new AutoRAGAgent({
@@ -214,6 +171,8 @@ describe("AutoRAGAgent searchDocuments", () => {
 		for await (const event of agent.searchDocumentsStream("류동현 선임 전화번호")) events.push(event);
 
 		expect(events[0]).toMatchObject({ type: "progress", text: "Reviewing the query." });
-		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "[1] 확인된 답변" } });
+		const progress = events.flatMap((event) => (event.type === "progress" ? [event.text] : []));
+		expect(progress).toContain("류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다.");
+		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "확인된 답변 [1]" } });
 	});
 });

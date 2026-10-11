@@ -107,7 +107,7 @@ describe("fsearch_search tool", () => {
 describe("system prompt FSearch guidance", () => {
 	it("documents FSearch only when the tool is available", () => {
 		const withTool = buildSystemPrompt({
-			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME, "emit_autorag_results"],
+			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME],
 			manifests: [],
 		});
 		expect(withTool).toContain(`- **${FSEARCH_SEARCH_TOOL_NAME}**:`);
@@ -115,13 +115,13 @@ describe("system prompt FSearch guidance", () => {
 		expect(withTool).toContain("ext:");
 		expect(withTool).not.toContain(`- **${FSEARCH_SEARCH_TOOL_NAME}**: caller-provided tool`);
 
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash", "emit_autorag_results"], manifests: [] });
+		const withoutTool = buildSystemPrompt({ toolNames: ["bash"], manifests: [] });
 		expect(withoutTool).not.toContain("FSearch");
 	});
 
 	it("routes file discovery to fsearch_search when it is the only discovery tool", () => {
 		const prompt = buildSystemPrompt({
-			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME, "search_all_documents", "emit_autorag_results"],
+			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME, "search_all_documents"],
 			manifests: [],
 		});
 		expect(prompt).toContain("use `fsearch_search` actively to locate relevant files and folders");
@@ -129,7 +129,7 @@ describe("system prompt FSearch guidance", () => {
 
 	it("names fsearch_search alongside the other registered discovery tools", () => {
 		const prompt = buildSystemPrompt({
-			toolNames: ["bash", "jikji_find", FSEARCH_SEARCH_TOOL_NAME, "emit_autorag_results"],
+			toolNames: ["bash", "jikji_find", FSEARCH_SEARCH_TOOL_NAME],
 			manifests: [],
 			jikjiIndexingEnabled: true,
 		});

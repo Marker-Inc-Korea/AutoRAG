@@ -12,7 +12,6 @@ import {
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { WEB_FETCH_TOOL_NAME } from "../../src/agent/web-fetch-tool.ts";
 import { WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
@@ -73,28 +72,16 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 		});
 
 		const model = fauxModel(
+			fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
 			fauxAssistantMessage([fauxToolCall(WEB_SEARCH_TOOL_NAME, { query: "refund director approval policy 2026" })], {
 				stopReason: "toolUse",
 			}),
 			fauxAssistantMessage([fauxToolCall(WEB_FETCH_TOOL_NAME, { url: "https://policy.example.com/refunds" })], {
 				stopReason: "toolUse",
 			}),
-			fauxAssistantMessage([
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: "[1] Refund exceptions require director approval before payout.",
-					results: [
-						{
-							number: 1,
-							title: "Refund approval rule",
-							summary:
-								"Refund exceptions require director approval before payout, confirmed on the public policy page.",
-							evidence: [{ excerpt: "Refund exceptions require director approval before payout." }],
-							confidence: 0.9,
-							refs: ["https://policy.example.com/refunds"],
-						},
-					],
-				}),
-			]),
+			fauxAssistantMessage("Refund exceptions require director approval before payout. [e1]", {
+				stopReason: "stop",
+			}),
 		);
 
 		const agent = new AutoRAGAgent({

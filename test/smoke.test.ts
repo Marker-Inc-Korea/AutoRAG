@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { AutoRAGAgent, buildSystemPrompt, createEmitResultsTool } from "../src/index.ts";
+import { AutoRAGAgent, buildSystemPrompt, reportSchema } from "../src/index.ts";
 
 describe("dependency hygiene", () => {
 	it("declares no required Python or pip dependency", () => {
@@ -24,7 +24,7 @@ describe("test fixtures", () => {
 	it("exports the public library API", () => {
 		expect(AutoRAGAgent).toBeDefined();
 		expect(typeof buildSystemPrompt).toBe("function");
-		expect(typeof createEmitResultsTool).toBe("function");
+		expect(reportSchema).toBeDefined();
 	});
 
 	it("sample-project/src/main.ts exists", () => {

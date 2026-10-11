@@ -16,9 +16,7 @@ import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { type JevBackend, MockBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
-import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
 	datasourceQuestionId,
@@ -73,49 +71,14 @@ function capture(step: FauxResponseStep, prompts: string[]): FauxResponseStep {
 	};
 }
 
-function fastAnswer(answer: string, source?: string): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
-				answer,
-				results:
-					source === undefined
-						? []
-						: [
-								{
-									number: 1,
-									title: "Evidence",
-									summary: answer,
-									evidence: [{ excerpt: answer }],
-									confidence: 0.7,
-									refs: [source],
-								},
-							],
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
+/** The fast phase ends with a plain message; cite `[eN]` for evidence the tools returned. */
+function fastAnswer(answer: string): FauxResponseStep {
+	return fauxAssistantMessage(answer, { stopReason: "stop" });
 }
 
-function finalEmit(answer: string, source: string): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-				answer,
-				results: [
-					{
-						number: 1,
-						title: "Verified",
-						summary: answer,
-						evidence: [{ excerpt: answer }],
-						confidence: 0.9,
-						refs: [source],
-					},
-				],
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
+/** The verification phase also ends with a plain message. */
+function finalAnswer(answer: string): FauxResponseStep {
+	return fauxAssistantMessage(answer, { stopReason: "stop" });
 }
 
 function jevRouting(
@@ -347,10 +310,7 @@ async function collect(agent: AutoRAGAgent, query: string): Promise<SearchDocume
 describe("Jev query pipeline before the fast answer", () => {
 	it("answers a direct question immediately without any retrieval or verification phase", async () => {
 		const prompts: string[] = [];
-		const model = fauxModel(
-			capture(fastAnswer("Paris is the capital of France."), prompts),
-			fauxAssistantMessage("done", { stopReason: "stop" }),
-		);
+		const model = fauxModel(capture(fastAnswer("Paris is the capital of France."), prompts));
 		const agent = agentWith({ model, jev: { backend: jevRouting("direct", 0.9) } });
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
@@ -366,7 +326,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		if (complete?.type !== "complete") throw new Error("expected a complete event");
 		expect(complete.response.answer).toBe("Paris is the capital of France.");
 		expect(complete.response.results).toEqual([]);
-		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
+		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "no-final-answer")).toBe(false);
 	});
 
 	it("decomposes a local question with the configured model and searches every sub-query in parallel", async () => {
@@ -378,11 +338,9 @@ describe("Jev query pipeline before the fast answer", () => {
 				decompositionPrompts,
 			),
 		);
-		const source = join(docs, "Q3-budget-approver.txt");
 		const model = fauxModel(
-			capture(fastAnswer("Fast: Q3 and Q4 approvers found.", source), prompts),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			capture(finalEmit("Verified approvers.", source), prompts),
+			capture(fastAnswer("Fast: Q3 and Q4 approvers found."), prompts),
+			capture(finalAnswer("Verified approvers."), prompts),
 		);
 		const agent = agentWith({
 			model,
@@ -415,11 +373,9 @@ describe("Jev query pipeline before the fast answer", () => {
 			const decompositionModel = fauxModel(
 				fauxAssistantMessage('{"queries": ["Q3 budget approver", "Q4 budget approver"]}', { stopReason: "stop" }),
 			);
-			const source = join(docs, "Q3-budget-approver.txt");
 			const model = fauxModel(
-				capture(fastAnswer("Fast: approvers found.", source), prompts),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-				finalEmit("Verified approvers.", source),
+				capture(fastAnswer("Fast: approvers found."), prompts),
+				finalAnswer("Verified approvers."),
 			);
 			const agent = agentWith({
 				model,
@@ -452,9 +408,8 @@ describe("Jev query pipeline before the fast answer", () => {
 		const prompts: string[] = [];
 		const source = "/slack/default/release-date";
 		const model = fauxModel(
-			capture(fastAnswer("Fast: the release moved to Friday [1].", source), prompts),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified: Friday.", source),
+			capture(fastAnswer("Fast: the release moved to Friday."), prompts),
+			finalAnswer("Verified: Friday."),
 		);
 		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels", () => ({
 			source,
@@ -505,12 +460,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			source: pastSource,
 		}));
 		const discord = recordingDatasource("discord", "Gaming community Discord server");
-		const model = fauxModel(
-			fastAnswer("The release moved to Friday [1].", pastSource),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			fastAnswer("Still Friday [1].", pastSource),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-		);
+		const model = fauxModel(fastAnswer("The release moved to Friday [e2]."), fastAnswer("Still Friday [e4]."));
 		const agent = agentWith({
 			model,
 			jev: { backend: recordingJev },
@@ -524,7 +474,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(states).toHaveLength(2);
 		expect(states[0]).not.toContain("Similar past questions");
 		expect(states[1]).toContain("Similar past questions");
-		expect(states[1]).toMatch(/"팀에서 릴리즈 날짜 언제로 정했지\?"\n {2}- "Evidence" \[slack\]/u);
+		expect(states[1]).toMatch(/"팀에서 릴리즈 날짜 언제로 정했지\?"\n {2}- "release-plan" \[slack\]/u);
 		expect(states[1]).not.toContain("[discord]");
 	});
 
@@ -545,31 +495,11 @@ describe("Jev query pipeline before the fast answer", () => {
 			source: "chunk_77ab",
 			method: "datasource:discord",
 		}));
-		const verified = fauxAssistantMessage(
-			[
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: "The raid is on Saturday [1].",
-					results: [
-						{
-							number: 1,
-							title: "Raid",
-							summary: "Saturday",
-							evidence: [{ excerpt: "Saturday" }],
-							confidence: 0.9,
-							refs: ["chunk_77ab"],
-						},
-					],
-				}),
-			],
-			{ stopReason: "toolUse" },
-		);
 		const model = fauxModel(
 			fastAnswer("Not sure yet."),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			verified,
-			fastAnswer("Saturday [1].", "chunk_77ab"),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Saturday.", "chunk_77ab"),
+			finalAnswer("The raid is on Saturday [e2]."),
+			fastAnswer("Saturday [e4]."),
+			finalAnswer("Saturday [e4]."),
 		);
 		const agent = agentWith({
 			model,
@@ -582,7 +512,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		await agent.searchDocuments("레이드 언제 하기로 했어?");
 
 		expect(states[1]).toContain('"길드 레이드 언제 하기로 했지?"');
-		expect(states[1]).toContain('"Raid" [discord]');
+		expect(states[1]).toContain('"chunk_77ab" [discord]');
 		expect(states[1]).not.toContain("[slack]");
 	});
 
@@ -603,7 +533,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			source: "/slack/default/release-plan",
 		}));
 		const remote = agentWith({
-			model: fauxModel(finalEmit("Peer answer.", "e1")),
+			model: fauxModel(fastAnswer("Peer answer."), finalAnswer("Peer answer.")),
 			memoryPath,
 			remoteSession: true,
 			datasourceSkills: [slack.skill],
@@ -612,10 +542,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		await remote.searchDocuments("릴리즈 날짜 언제로 정했지?");
 
 		const local = agentWith({
-			model: fauxModel(
-				fastAnswer("Friday [1].", "/slack/default/release-plan"),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			),
+			model: fauxModel(fastAnswer("Friday [e2].")),
 			memoryPath,
 			jev: { backend: recordingJev },
 			datasourceSkills: [slack.skill],
@@ -647,35 +574,15 @@ describe("Jev query pipeline before the fast answer", () => {
 					? { source: "chunk_a0", method: "kakao-work-lexical" }
 					: { source: "chunk_9f" },
 		);
-		const emitFrom = (chunk: string): FauxResponseStep =>
-			fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-						answer: "Standup is at 10 [1].",
-						results: [
-							{
-								number: 1,
-								title: "Standup",
-								summary: "10am",
-								evidence: [{ excerpt: chunk }],
-								confidence: 0.9,
-								refs: [chunk],
-							},
-						],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			);
+		// The evidence ledger keeps issuing ids across runs, so each run's
+		// baseline chunk is two ordinals past the previous run's.
 		const model = fauxModel(
 			fastAnswer("Not sure."),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			emitFrom("chunk_9f"),
+			finalAnswer("Standup is at 10 [e2]."),
 			fastAnswer("Not sure."),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			emitFrom("chunk_a0"),
-			fastAnswer("10 [1].", "chunk_9f"),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("10am.", "chunk_9f"),
+			finalAnswer("Standup is at 10 [e4]."),
+			fastAnswer("10 [e6]."),
+			finalAnswer("10am [e6]."),
 		);
 		const agent = agentWith({
 			model,
@@ -690,8 +597,8 @@ describe("Jev query pipeline before the fast answer", () => {
 
 		const state = states[2] ?? "";
 		// Two distinct past searches (one per method form), both attributed to kakao-work.
-		expect(state.match(/"Standup" \[kakao-work\]/gu)).toHaveLength(2);
-		expect(state).not.toContain('"Standup" [kakao]');
+		expect(state.match(/\[kakao-work\]/gu)).toHaveLength(2);
+		expect(state).not.toContain("[kakao]");
 	});
 
 	it("searches a selected datasource with every decomposed query and reranks its chunks in the same pool", async () => {
@@ -701,11 +608,9 @@ describe("Jev query pipeline before the fast answer", () => {
 			const decompositionModel = fauxModel(
 				fauxAssistantMessage('{"queries": ["release date", "release owner"]}', { stopReason: "stop" }),
 			);
-			const source = "/slack/default/release-date";
 			const model = fauxModel(
-				capture(fastAnswer("Fast release answer [1].", source), prompts),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-				finalEmit("Verified release answer.", source),
+				capture(fastAnswer("Fast release answer."), prompts),
+				finalAnswer("Verified release answer."),
 			);
 			const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
 			const agent = agentWith({
@@ -755,12 +660,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				throw new Error("datasource check exploded");
 			},
 		};
-		const source = join(docs, "when-is-the-release-.txt");
-		const model = fauxModel(
-			fastAnswer("Fast.", source),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified.", source),
-		);
+		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
 		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
 		const agent = agentWith({
 			model,
@@ -783,12 +683,10 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("defaults the decomposition model to the session model", async () => {
 		const prompts: string[] = [];
-		const source = join(docs, "lease-signer.txt");
 		const model = fauxModel(
 			fauxAssistantMessage('["lease signer", "lease start date"]', { stopReason: "stop" }),
-			capture(fastAnswer("Fast lease answer.", source), prompts),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified lease answer.", source),
+			capture(fastAnswer("Fast lease answer."), prompts),
+			finalAnswer("Verified lease answer."),
 		);
 		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.8) } });
 		const minSync = recordingMinSync();
@@ -802,12 +700,7 @@ describe("Jev query pipeline before the fast answer", () => {
 	});
 
 	it("searches the original question once when Jev says decomposition is unnecessary", async () => {
-		const source = join(docs, "where-is-the-signed-lease-.txt");
-		const model = fauxModel(
-			fastAnswer("Fast.", source),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified.", source),
-		);
+		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
 		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1) } });
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
@@ -832,11 +725,9 @@ describe("Jev query pipeline before the fast answer", () => {
 			},
 		});
 		const prompts: string[] = [];
-		const source = join(docs, "What-is-the-latest-Node-js-LTS-.txt");
 		const model = fauxModel(
-			capture(fastAnswer("Fast local answer.", source), prompts),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			capture(finalEmit("Verified answer.", source), prompts),
+			capture(fastAnswer("Fast local answer."), prompts),
+			capture(finalAnswer("Verified answer."), prompts),
 		);
 		const agent = agentWith({
 			model,
@@ -860,12 +751,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 	it("does not mention web search in the verification phase when web tools are disabled", async () => {
 		const prompts: string[] = [];
-		const source = join(docs, "x.txt");
-		const model = fauxModel(
-			fastAnswer("Fast.", source),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			capture(finalEmit("Verified.", source), prompts),
-		);
+		const model = fauxModel(fastAnswer("Fast."), capture(finalAnswer("Verified."), prompts));
 		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1) }, webSearch: false });
 		injectMinSync(agent, recordingMinSync().method);
 
@@ -881,12 +767,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				throw new Error("connection refused");
 			},
 		};
-		const source = join(docs, "where-is-the-signed-lease-.txt");
-		const model = fauxModel(
-			fastAnswer("Fast.", source),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified.", source),
-		);
+		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
 		const agent = agentWith({ model, jev: { backend: down } });
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
@@ -903,12 +784,7 @@ describe("Jev query pipeline before the fast answer", () => {
 	});
 
 	it("does not route when Jev is disabled", async () => {
-		const source = join(docs, "What-is-the-capital-of-France-.txt");
-		const model = fauxModel(
-			fastAnswer("Fast.", source),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalEmit("Verified.", source),
-		);
+		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
 		const agent = agentWith({ model });
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
@@ -922,10 +798,7 @@ describe("Jev query pipeline before the fast answer", () => {
 	it("ends after the fast answer when Jev says no correction, clarification, or further research is needed", async () => {
 		const prompts: string[] = [];
 		const source = join(docs, "who-approved-the-Q3-budget-.txt");
-		const model = fauxModel(
-			capture(fastAnswer("The Q3 budget was approved by Mina Park [1].", source), prompts),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-		);
+		const model = fauxModel(capture(fastAnswer("The Q3 budget was approved by Mina Park [e1]."), prompts));
 		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1, 0.1) } });
 		injectMinSync(agent, recordingMinSync().method);
 
@@ -945,7 +818,7 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(stored?.method).toBe("baseline");
 		expect(stored?.content).toBe("evidence for who approved the Q3 budget?");
 		expect(stored?.evidenceRefs?.[0]?.retrievalResultId).toBe("hit-who approved the Q3 budget?");
-		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
+		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "no-final-answer")).toBe(false);
 		expect(
 			complete.response.diagnostics?.some(
 				(diagnostic) => diagnostic.code === "follow-up-skipped" && diagnostic.message.includes("0.10"),
@@ -953,50 +826,11 @@ describe("Jev query pipeline before the fast answer", () => {
 		).toBe(true);
 	});
 
-	it("keeps a fast answer's results and citations when the model omits the sources mapping", async () => {
-		// Live models routinely leave the optional `sources` field out; the
-		// final response must still carry every result the answer cites.
-		const model = fauxModel(
-			fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
-						answer: "The Q3 budget was approved by Mina Park [1].",
-						results: [
-							{
-								number: 1,
-								title: "Q3 budget approval",
-								summary: "Mina Park approved the Q3 budget.",
-								evidence: [{ excerpt: "The Q3 2026 budget was approved by Mina Park." }],
-								confidence: 0.8,
-							},
-						],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-		);
-		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1, 0.1) } });
-		injectMinSync(agent, recordingMinSync().method);
-
-		const response = await agent.searchDocuments("who approved the Q3 budget?");
-
-		expect(response.answer).toBe("The Q3 budget was approved by Mina Park [1].");
-		expect(response.results).toHaveLength(1);
-		expect(response.results[0]).toMatchObject({ number: 1, title: "Q3 budget approval" });
-		expect(response.results[0]?.evidence[0]?.excerpt).toBe("The Q3 2026 budget was approved by Mina Park.");
-		// No source was reported, so none is invented.
-		expect(response.results[0]?.source).toBeUndefined();
-		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "citation-without-result")).toBe(false);
-	});
-
 	it("continues to verification when Jev says the fast answer needs follow-up", async () => {
 		const prompts: string[] = [];
-		const source = join(docs, "who-approved-the-Q3-budget-.txt");
 		const model = fauxModel(
-			capture(fastAnswer("The approver is not stated in the evidence.", source), prompts),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			capture(finalEmit("Verified: Mina Park approved the Q3 budget.", source), prompts),
+			capture(fastAnswer("The approver is not stated in the evidence."), prompts),
+			capture(finalAnswer("Verified: Mina Park approved the Q3 budget."), prompts),
 		);
 		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1, 0.8) } });
 		injectMinSync(agent, recordingMinSync().method);
@@ -1011,33 +845,9 @@ describe("Jev query pipeline before the fast answer", () => {
 		);
 	});
 
-	function twoEvidenceEmit(): FauxResponseStep {
-		return fauxAssistantMessage(
-			[
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: "Mina Park approved the Q3 budget [1]. The office moved in May [2].",
-					results: [
-						{
-							number: 1,
-							title: "Approver",
-							summary: "Mina Park",
-							evidence: [{ excerpt: "Mina Park approved" }],
-							confidence: 0.9,
-							refs: ["/slack/default/budget"],
-						},
-						{
-							number: 2,
-							title: "Office move",
-							summary: "May",
-							evidence: [{ excerpt: "Moved in May" }],
-							confidence: 0.8,
-							refs: ["/slack/default/office"],
-						},
-					],
-				}),
-			],
-			{ stopReason: "toolUse" },
-		);
+	/** Cites the two baseline slack chunks: budget is `e2`, office is `e3`. */
+	function twoEvidenceAnswer(): FauxResponseStep {
+		return finalAnswer("Mina Park approved the Q3 budget [e2]. The office moved in May [e3].");
 	}
 
 	function evidenceDatasource(): DatasourceSkill {
@@ -1108,11 +918,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				text.includes("Mina Park approved") ? 0.7 : 0.69,
 			);
 			const slack = evidenceDatasource();
-			const model = fauxModel(
-				fastAnswer("Not sure."),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-				twoEvidenceEmit(),
-			);
+			const model = fauxModel(fastAnswer("Not sure."), twoEvidenceAnswer());
 			const agent = agentWith({
 				model,
 				jev: { backend: judge.backend },
@@ -1128,7 +934,7 @@ describe("Jev query pipeline before the fast answer", () => {
 			expect(judge.calls[0]?.state).not.toContain("Moved in May");
 			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
 			stored.load();
-			expect(stored.getJudgedEvidence().map((record) => record.title)).toEqual(["Approver"]);
+			expect(stored.getJudgedEvidence().map((record) => record.title)).toEqual(["budget"]);
 			expect(stored.getJudgedEvidence()[0]).toMatchObject({
 				question: "who approved the Q3 budget?",
 				method: "search_datasource_slack",
@@ -1150,11 +956,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				},
 			};
 			const slack = evidenceDatasource();
-			const model = fauxModel(
-				fastAnswer("Not sure."),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-				twoEvidenceEmit(),
-			);
+			const model = fauxModel(fastAnswer("Not sure."), twoEvidenceAnswer());
 			const agent = agentWith({
 				model,
 				jev: { backend: failing },
@@ -1176,7 +978,8 @@ describe("Jev query pipeline before the fast answer", () => {
 				fauxAssistantMessage([fauxToolCall("search_datasource_slack", { query: "who approved the Q3 budget?" })], {
 					stopReason: "toolUse",
 				}),
-				twoEvidenceEmit(),
+				twoEvidenceAnswer(),
+				twoEvidenceAnswer(),
 			);
 			const agent = agentWith({ model, datasourceSkills: [evidenceDatasource()] });
 			injectMinSync(agent, recordingMinSync().method);
@@ -1200,28 +1003,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				fauxAssistantMessage('{"queries": ["Q3 budget approver", "office move date"]}', { stopReason: "stop" }),
 			);
 			const slack = recordingDatasource("slack", "Company Slack");
-			const model = fauxModel(
-				fastAnswer("Not sure."),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-				fauxAssistantMessage(
-					[
-						fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-							answer: "Found it [1].",
-							results: [
-								{
-									number: 1,
-									title: "Office",
-									summary: "May",
-									evidence: [{ excerpt: "x" }],
-									confidence: 0.9,
-									refs: ["/slack/default/office-move-date"],
-								},
-							],
-						}),
-					],
-					{ stopReason: "toolUse" },
-				),
-			);
+			const model = fauxModel(fastAnswer("Not sure."), finalAnswer("Found it [e4]."));
 			const agent = agentWith({
 				model,
 				jev: { backend: judge.backend },
@@ -1274,13 +1056,10 @@ describe("Jev query pipeline before the fast answer", () => {
 			const memoryPath = seededMemory([{}]);
 			const contexts: string[] = [];
 			const slack = recordingDatasource("slack", "Company Slack");
-			const model = fauxModel(
-				(context) => {
-					contexts.push(context.messages.map((message) => JSON.stringify(message.content)).join("\n"));
-					return fastAnswer("Friday.") as AssistantMessage;
-				},
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			);
+			const model = fauxModel((context) => {
+				contexts.push(context.messages.map((message) => JSON.stringify(message.content)).join("\n"));
+				return fastAnswer("Friday.") as AssistantMessage;
+			});
 			const agent = agentWith({
 				model,
 				memoryPath,
@@ -1328,13 +1107,12 @@ describe("Jev query pipeline before the fast answer", () => {
 			} satisfies JevBackend;
 			const model = fauxModel(
 				fastAnswer("Not sure."),
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-				twoEvidenceEmit(),
+				twoEvidenceAnswer(),
 				(context) => {
 					contexts.push(context.messages.map((message) => JSON.stringify(message.content)).join("\n"));
 					return fastAnswer("Something else.") as AssistantMessage;
 				},
-				fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
+				finalAnswer("Something else."),
 			);
 			const agent = agentWith({
 				model,
@@ -1349,7 +1127,7 @@ describe("Jev query pipeline before the fast answer", () => {
 
 			const seen = contexts[0] ?? "";
 			expect(seen).toContain("Current Conversation Memory");
-			expect(seen).toContain("Approver");
+			expect(seen).toContain("budget");
 		});
 	});
 });

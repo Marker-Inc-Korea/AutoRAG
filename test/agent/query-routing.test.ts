@@ -231,7 +231,7 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 	});
 });
 
-describe("needsFollowUp (Jev check after emit_fast_answer)", () => {
+describe("needsFollowUp (Jev check after the fast answer)", () => {
 	const fastAnswer = "- The Q3 budget was approved by Mina Park on 2026-07-02 [1].";
 
 	it("ends the run when Jev says the fast answer needs no correction, clarification, or further research", async () => {

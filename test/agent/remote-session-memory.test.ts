@@ -7,7 +7,6 @@ import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } fro
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import type {
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -91,27 +90,11 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-remote-memory-"));
 	registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "remote-memory" }] });
 	registration.setResponses([
+		fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
 		fauxAssistantMessage([fauxToolCall("search_datasource_remote", { query: "remote result" })], {
 			stopReason: "toolUse",
 		}),
-		fauxAssistantMessage(
-			[
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: "[1] remote result",
-					results: [
-						{
-							number: 1,
-							title: "Remote result",
-							summary: "remote result",
-							evidence: [{ excerpt: "remote result" }],
-							confidence: 1,
-							refs: [remoteRow.source],
-						},
-					],
-				}),
-			],
-			{ stopReason: "toolUse" },
-		),
+		fauxAssistantMessage("remote result [e1]", { stopReason: "stop" }),
 	]);
 });
 

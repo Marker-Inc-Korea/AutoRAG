@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutoRAGResultsDetails } from "../../src/agent/emit-results-tool.ts";
+import type { AutoRAGResultsDetails } from "../../src/agent/results.ts";
 import { runReport } from "../../src/cli/commands/report.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { normalizeSessionEvidenceRef } from "../../src/memory/memory.ts";
