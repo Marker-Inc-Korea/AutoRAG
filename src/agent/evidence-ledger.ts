@@ -1,13 +1,11 @@
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { RetrievalResult } from "../retrieval/types.ts";
-import type { AutoRAGEvidenceRef } from "./emit-results-tool.ts";
+import type { AutoRAGEvidenceRef } from "./results.ts";
 
 /** Stored content per evidence entry; a huge chunk must not bloat the run or the memory file. */
 const MAX_CONTENT_CHARS = 2_000;
-
-const EVIDENCE_ID_PATTERN = /^e\d+$/u;
 
 export interface LedgerEvidenceInput {
 	readonly method: string;
@@ -28,13 +26,7 @@ interface LedgerEntry extends LedgerEvidenceInput {
 	readonly retrieverMix: string[];
 }
 
-export interface ResolveEvidenceOptions {
-	/** Tool name used to prefix corrective errors. */
-	readonly label: string;
-	/** Result number the refs belong to; named in corrective errors. */
-	readonly number: number;
-	/** Excerpt recorded for a local file the model opened itself (no search returned it). */
-	readonly fallbackContent: string;
+export interface LookupEvidenceOptions {
 	/** False in remote sessions: only evidence a tool returned this run may be cited. */
 	readonly allowLocalFiles: boolean;
 }
@@ -49,11 +41,27 @@ function metadataNumber(metadata: Record<string, unknown>, key: string): number 
 	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function isRegularFile(path: string): boolean {
+export function isRegularFile(path: string): boolean {
 	try {
 		return statSync(path).isFile();
 	} catch {
 		return false;
+	}
+}
+
+/** First chars of a local file the model opened itself; the path when it is not readable text. */
+function readFileExcerpt(path: string): string {
+	let descriptor: number | undefined;
+	try {
+		descriptor = openSync(path, "r");
+		const buffer = Buffer.alloc(MAX_CONTENT_CHARS * 4);
+		const bytes = readSync(descriptor, buffer, 0, buffer.length, 0);
+		const head = buffer.subarray(0, bytes);
+		return head.includes(0) ? path : head.toString("utf8").slice(0, MAX_CONTENT_CHARS);
+	} catch {
+		return path;
+	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
 	}
 }
 
@@ -145,46 +153,23 @@ export class EvidenceLedger {
 	}
 
 	/**
-	 * Resolve model-supplied refs to recorded evidence. A ref is an evidence id
+	 * Resolve one cited reference to recorded evidence. A ref is an evidence id
 	 * (`e3` or `[e3]`), the exact source a tool returned (a URL, a datasource
 	 * id, a path), or the absolute path of a real local file the model opened
-	 * itself. Anything else throws a corrective error naming the result.
+	 * itself. Returns an empty list when nothing matches: the caller drops the
+	 * citation instead of failing the run.
 	 */
-	resolve(refs: readonly string[], options: ResolveEvidenceOptions): AutoRAGEvidenceRef[] {
-		const resolved: AutoRAGEvidenceRef[] = [];
-		const seen = new Set<string>();
-		const push = (entry: LedgerEntry): void => {
-			if (seen.has(entry.id)) return;
-			seen.add(entry.id);
-			resolved.push(toEvidenceRef(entry));
-		};
-		for (const raw of refs) {
-			const trimmed = raw.trim();
-			const ref = trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1).trim() : trimmed;
-			const byId = this.byId.get(ref);
-			if (byId !== undefined) {
-				push(byId);
-				continue;
-			}
-			const bySource = this.entries.filter((entry) => entry.source === ref);
-			if (bySource.length > 0) {
-				for (const entry of bySource) push(entry);
-				continue;
-			}
-			if (options.allowLocalFiles && isAbsolute(ref) && isRegularFile(ref)) {
-				const key = `file\0${ref}`;
-				if (seen.has(key)) continue;
-				seen.add(key);
-				resolved.push({
-					method: "bash",
-					source: ref,
-					content: (options.fallbackContent.trim() || ref).slice(0, MAX_CONTENT_CHARS),
-				});
-				continue;
-			}
-			throw new Error(this.unresolvedMessage(ref, EVIDENCE_ID_PATTERN.test(ref), options));
+	lookup(raw: string, options: LookupEvidenceOptions): AutoRAGEvidenceRef[] {
+		const trimmed = raw.trim();
+		const ref = trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1).trim() : trimmed;
+		const byId = this.byId.get(ref);
+		if (byId !== undefined) return [toEvidenceRef(byId)];
+		const bySource = this.entries.filter((entry) => entry.source === ref);
+		if (bySource.length > 0) return bySource.map(toEvidenceRef);
+		if (options.allowLocalFiles && isAbsolute(ref) && isRegularFile(ref)) {
+			return [{ method: "bash", source: ref, content: readFileExcerpt(ref) }];
 		}
-		return resolved;
+		return [];
 	}
 
 	/** Forget every recorded entry. Ids are never reissued, so a previous run's id stays unresolvable. */
@@ -192,18 +177,5 @@ export class EvidenceLedger {
 		this.entries = [];
 		this.byKey.clear();
 		this.byId.clear();
-	}
-
-	private unresolvedMessage(ref: string, looksLikeId: boolean, options: ResolveEvidenceOptions): string {
-		const known =
-			this.entries.length === 0
-				? "No search or fetch has returned evidence in this run yet."
-				: `Evidence ids issued in this run: ${this.entries[0]?.id}${this.entries.length > 1 ? `..${this.entries[this.entries.length - 1]?.id}` : ""}.`;
-		const local = options.allowLocalFiles ? " For a file you opened yourself with bash, pass its absolute path." : "";
-		return (
-			`${options.label}: result ${options.number} cites evidence "${ref}" that no tool returned in this run` +
-			`${looksLikeId ? " (unknown evidence id)" : ""}. ${known} ` +
-			`Cite only the evidence ids shown next to retrieved results (e.g. e3).${local} Re-emit with valid refs.`
-		);
 	}
 }

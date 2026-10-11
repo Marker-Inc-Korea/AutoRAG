@@ -7,13 +7,11 @@ import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
 	fauxAssistantMessage,
-	fauxToolCall,
 	type Model,
 } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
@@ -44,23 +42,11 @@ function fauxModel(...responses: FauxResponseStep[]): Model<string> {
 	return reg.getModel();
 }
 
-const fastAnswer: FauxResponseStep = fauxAssistantMessage(
-	[
-		fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
-			answer: "- fromis_9 has five members [1]",
-			results: [
-				{
-					number: 1,
-					title: "Members",
-					summary: "fromis_9 now has five members.",
-					evidence: [{ excerpt: "now has five", lineNumber: 1 }],
-					confidence: 0.8,
-				},
-			],
-		}),
-	],
-	{ stopReason: "toolUse" },
-);
+/** The fast answer cites the file it read; the harness derives the numbered result from it. */
+const fastAnswer = (): FauxResponseStep =>
+	fauxAssistantMessage(`- fromis_9 has five members [file:${join(docs, "fromis.txt")}]`, {
+		stopReason: "stop",
+	});
 
 /** A model turn that never completes, so verification outlives the timeout. */
 const hang: FauxResponseStep = () => new Promise<AssistantMessage>(() => undefined);
@@ -79,9 +65,7 @@ function agentFor(model: Model<string>): AutoRAGAgent {
 
 describe("search timeout after a first answer", () => {
 	it("returns the first answer with a search-timeout diagnostic instead of rejecting", async () => {
-		const agent = agentFor(
-			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
-		);
+		const agent = agentFor(fauxModel(fastAnswer(), hang));
 
 		const response = await agent.searchDocuments("프로미스 나인 총 몇명이지.");
 
@@ -93,9 +77,7 @@ describe("search timeout after a first answer", () => {
 	});
 
 	it("streams the preliminary and then a complete event carrying the same answer", async () => {
-		const agent = agentFor(
-			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
-		);
+		const agent = agentFor(fauxModel(fastAnswer(), hang));
 		const events: SearchDocumentsStreamEvent[] = [];
 		for await (const event of agent.searchDocumentsStream("프로미스 나인 총 몇명이지.")) events.push(event);
 
@@ -106,25 +88,24 @@ describe("search timeout after a first answer", () => {
 	});
 
 	it("records the timeout answer in memory so its evidence still resolves", async () => {
-		const agent = agentFor(
-			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
-		);
+		const agent = agentFor(fauxModel(fastAnswer(), hang));
 
 		const response = await agent.searchDocuments("프로미스 나인 총 몇명이지.");
 		expect(response.diagnostics).toContainEqual(
 			expect.objectContaining({ code: "search-timeout", severity: "warning" }),
 		);
 
-		expect(storedEvidence(join(root, "memory.json"), response.sessionId, 1)[0]?.content).toBe("now has five");
+		// The stored evidence is the recorded file content, not the model's sentence.
+		expect(storedEvidence(join(root, "memory.json"), response.sessionId, 1)[0]?.content).toBe(
+			"fromis_9 debuted with nine members and now has five.\n",
+		);
 	});
 
 	it("does not leak a timed-out run's preliminary into a later search", async () => {
-		const agent = agentFor(
-			fauxModel(fastAnswer, fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }), hang),
-		);
+		const agent = agentFor(fauxModel(fastAnswer(), hang));
 		await agent.searchDocuments("프로미스 나인 총 몇명이지.");
 
-		const second = agentFor(fauxModel(fastAnswer, fauxAssistantMessage("done", { stopReason: "stop" })));
+		const second = agentFor(fauxModel(fastAnswer(), fauxAssistantMessage("done", { stopReason: "stop" })));
 		const settled: SearchDocumentsStreamEvent[] = [];
 		for await (const event of second.searchDocumentsStream("두번째 검색")) {
 			if (event.type === "preliminary" || event.type === "complete") settled.push(event);

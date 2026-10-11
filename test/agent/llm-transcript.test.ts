@@ -2,11 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall, type Message } from "@earendil-works/pi-ai";
+import { type FauxProviderRegistration, fauxAssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -21,22 +20,11 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function groundedEmit(answer: string) {
+/** A grounded final answer: plain text citing the local file the harness resolves. */
+function groundedAnswer(answer: string) {
 	const source = join(root, "grounded.txt");
 	writeFileSync(source, answer);
-	return fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-		answer: `[1] ${answer}`,
-		results: [
-			{
-				number: 1,
-				title: "Result",
-				summary: answer,
-				evidence: [{ excerpt: answer }],
-				confidence: 0.9,
-				refs: [source],
-			},
-		],
-	});
+	return fauxAssistantMessage(`${answer} [file:${source}]`, { stopReason: "stop" });
 }
 
 function toolNamesDeclaredToModel(messages: readonly Message[]): string[] {
@@ -48,22 +36,23 @@ function toolNamesDeclaredToModel(messages: readonly Message[]): string[] {
 	return names;
 }
 
-const isMissingFinalEmit = (diagnostic: { code: string }): boolean => diagnostic.code === "missing-final-emit";
+const isNoFinalAnswer = (diagnostic: { code: string }): boolean => diagnostic.code === "no-final-answer";
 
 describe("provider transcript", () => {
-	it("declares the system prompt and the tools the agent needs to emit curated results", async () => {
+	it("declares the system prompt and the retrieval tools, no emit tool", async () => {
 		const registration = registerFauxProvider({
 			api: `faux-${randomUUID()}`,
 			models: [{ id: "transcript-model" }],
 		});
 		const providerTranscripts: { roles: string[]; declaredTools: string[] }[] = [];
 		registration.setResponses([
+			fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
 			(context) => {
 				providerTranscripts.push({
 					roles: context.messages.map((message) => message.role),
 					declaredTools: toolNamesDeclaredToModel(context.messages),
 				});
-				return fauxAssistantMessage([groundedEmit("grounded answer")], { stopReason: "toolUse" });
+				return groundedAnswer("grounded answer");
 			},
 		]);
 		registrations.push(registration);
@@ -82,10 +71,12 @@ describe("provider transcript", () => {
 		expect(providerTranscripts.length).toBeGreaterThan(0);
 		for (const transcript of providerTranscripts) {
 			expect(transcript.roles).toContain("system");
-			expect(transcript.declaredTools).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
+			expect(transcript.declaredTools).toContain("search_all_documents");
+			expect(transcript.declaredTools).not.toContain("emit_autorag_results");
 		}
-		expect(response.answer).toBe("[1] grounded answer");
+		expect(response.answer).toBe("grounded answer [1]");
 		expect(response.results).toHaveLength(1);
-		expect(response.diagnostics?.some(isMissingFinalEmit) ?? false).toBe(false);
+		expect(response.results[0]?.source).toBe(join(root, "grounded.txt"));
+		expect(response.diagnostics?.some(isNoFinalAnswer) ?? false).toBe(false);
 	});
 });

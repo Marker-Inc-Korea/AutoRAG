@@ -25,12 +25,10 @@ afterEach(() => {
 	tmpDir = undefined;
 });
 
-function textOnlyModel() {
-	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "text-only" }] });
-	registration.setResponses([
-		() =>
-			fauxAssistantMessage([{ type: "text", text: "I could not find anything relevant." }], { stopReason: "stop" }),
-	]);
+/** A model that never writes a final answer: each turn ends on the length limit, not `stop`. */
+function silentModel() {
+	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "silent" }] });
+	registration.setResponses(Array.from({ length: 4 }, () => () => fauxAssistantMessage([], { stopReason: "length" })));
 	registrations.push(registration);
 	return registration.getModel();
 }
@@ -48,7 +46,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 		for (const name of ["bash", "jikji_find", "check_memory"]) {
 			expect(names, name).toContain(name);
 		}
-		for (const name of ["semantic_search_local_docs", "search_all_documents", "emit_autorag_results"]) {
+		for (const name of ["semantic_search_local_docs", "search_all_documents"]) {
 			expect(names, name).toContain(name);
 		}
 
@@ -61,7 +59,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 	it("returns a structured no-verified-results response when a remote session emits nothing", async () => {
 		tmpDir = mkdtempSync(join(tmpdir(), "autorag-remote-empty-"));
 		const agent = new AutoRAGAgent({
-			model: textOnlyModel(),
+			model: silentModel(),
 			searchPaths: [FIXTURE_DIR],
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
@@ -80,7 +78,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 	it("resolves a degraded response when a local session emits nothing", async () => {
 		tmpDir = mkdtempSync(join(tmpdir(), "autorag-local-empty-"));
 		const agent = new AutoRAGAgent({
-			model: textOnlyModel(),
+			model: silentModel(),
 			searchPaths: [FIXTURE_DIR],
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
@@ -92,7 +90,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 
 		expect(response.results).toEqual([]);
 		expect(response.diagnostics).toContainEqual(
-			expect.objectContaining({ code: "missing-final-emit", severity: "warning" }),
+			expect.objectContaining({ code: "no-final-answer", severity: "warning" }),
 		);
 	});
 });

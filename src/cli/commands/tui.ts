@@ -66,8 +66,9 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
  * Pi owns the terminal UI, `read`/`bash`/`edit`/`write`/`grep`/`find`/`ls`
  * tools, provider credentials/OAuth, model selection, session persistence and
  * resume/fork/compaction, settings, and extension loading. AutoRAG registers
- * its domain tools and streams progress, preliminary answers, and final results
- * into the same session through the agent's interactive runtime. The native
+ * its domain tools and runs the two-phase search in the same session through
+ * the agent's interactive runtime; the model's progress notes, first answer, and
+ * final answer are ordinary assistant messages there. The native
  * `/login`, `/model`, `/resume`, `/new`, `/tree`, `/compact`, and `/settings`
  * commands are therefore always available.
  */

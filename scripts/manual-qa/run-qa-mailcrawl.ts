@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { MailcrawlClient, MailcrawlSkill } from "../../src/datasource/skills/mailcrawl/index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "autorag-mailcrawl-live-"));
@@ -34,11 +33,17 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 	registration.setResponses([
 		fauxAssistantMessage([fauxToolCall("load_datasource_skill", { name: "datasource-mailcrawl" })], { stopReason: "toolUse" }),
 		fauxAssistantMessage([fauxToolCall("search_datasource_mailcrawl", { query: "refund approval", topK: 5, scope: "/mailcrawl/personal/**" })], { stopReason: "toolUse" }),
-		fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-			answer: "[1] Director approval is required before payout.",
-			results: [{ number: 1, title: "Refund approval", summary: "Director approval is required before payout.", evidence: [{ excerpt: "Director approval is required before payout." }], confidence: 0.99 }],
-			mapping: [{ number: 1, source: "/mailcrawl/personal/chunks/msg-1:latest:0", method: "mailcrawl-bm25", content: "Director approval is required before payout.", evidenceRefs: [{ method: "mailcrawl-bm25", source: "/mailcrawl/personal/chunks/msg-1:latest:0", content: "Director approval is required before payout." }] }],
-		})], { stopReason: "toolUse" }),
+		// Cite the evidence id the search tool printed, read back from its tool result.
+		(context) => {
+			let evidenceId: string | undefined;
+			for (const message of context.messages) {
+				if (message.role !== "toolResult") continue;
+				const text = message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+				evidenceId ??= text.match(/\[(e\d+)\] \/mailcrawl\/personal\/chunks\/msg-1:latest:0/)?.[1];
+			}
+			if (evidenceId === undefined) throw new Error("mailcrawl search printed no evidence id");
+			return fauxAssistantMessage(`Director approval is required before payout. [${evidenceId}]`, { stopReason: "stop" });
+		},
 	]);
 	try {
 		const agent = new AutoRAGAgent({

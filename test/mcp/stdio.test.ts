@@ -178,7 +178,7 @@ function readPersistedMemory(root: string): PersistedMemory {
 
 const REFUND_EXCERPT = "Refund exceptions require director approval before payout.";
 
-/** The `emit_autorag_results` payload an external curator submits for the fixture corpus. */
+/** The `autorag report` payload an external curator submits for the fixture corpus. */
 function refundReport(source: string, content: string, method: string) {
 	return {
 		answer: "Refund exceptions need director approval before payout [1], confirmed by a second captured result [2].",

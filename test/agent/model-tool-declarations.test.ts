@@ -57,6 +57,6 @@ describe("AutoRAGAgent model requests", () => {
 		await agent.searchDocuments("where is the report?");
 
 		expect(seen.length).toBeGreaterThan(0);
-		expect(seen[0]).toEqual(expect.arrayContaining(["bash", "search_all_documents", "emit_autorag_results"]));
+		expect(seen[0]).toEqual(expect.arrayContaining(["bash", "search_all_documents"]));
 	});
 });

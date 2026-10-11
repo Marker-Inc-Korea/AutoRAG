@@ -6,7 +6,6 @@ import { type Context, type FauxProviderRegistration, fauxAssistantMessage, faux
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { FENCING_GUARD_LINE, scanOutboundPayload } from "../../src/p2p/injection-classifier.ts";
 
 const registrations: FauxProviderRegistration[] = [];
@@ -15,16 +14,8 @@ const tempRoots: string[] = [];
 function makeModel(answer: string) {
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "outbound-scan" }] });
 	registration.setResponses([
-		() =>
-			fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-						answer,
-						results: [],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			),
+		fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+		fauxAssistantMessage(answer, { stopReason: "stop" }),
 	]);
 	registrations.push(registration);
 	return registration.getModel();
@@ -110,6 +101,7 @@ describe("P2P outbound payload scan", () => {
 		const contexts: Context[] = [];
 		const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "tool-fencing" }] });
 		registration.setResponses([
+			fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
 			(context) => {
 				contexts.push(context);
 				return fauxAssistantMessage([fauxToolCall("search_all_documents", { query: "fixture" })], {
@@ -118,24 +110,7 @@ describe("P2P outbound payload scan", () => {
 			},
 			(context) => {
 				contexts.push(context);
-				return fauxAssistantMessage(
-					[
-						fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-							answer: "The shared result is available.",
-							results: [
-								{
-									number: 1,
-									title: "Shared result",
-									summary: "Retrieved corpus text.",
-									evidence: [{ excerpt: "Retrieved corpus text." }],
-									confidence: 1,
-									refs: ["/docs/shared.md"],
-								},
-							],
-						}),
-					],
-					{ stopReason: "toolUse" },
-				);
+				return fauxAssistantMessage("The shared result is available. [e1]", { stopReason: "stop" });
 			},
 		]);
 		registrations.push(registration);

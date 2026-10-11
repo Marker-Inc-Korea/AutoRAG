@@ -7,9 +7,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
-import { createEmitResultsTool } from "../../src/agent/emit-results-tool.ts";
-import { EvidenceLedger } from "../../src/agent/evidence-ledger.ts";
-import { createEmitFastAnswerTool } from "../../src/agent/fast-answer-tool.ts";
+import { reportSchema } from "../../src/agent/results.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 
 // The acceptance criteria for issue #1790: every prompt/tool that shapes
@@ -19,7 +17,7 @@ import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 const REQUIRED_PHRASES = [
 	"when a retrieved result is itself an image file (png, jpg, jpeg, gif, webp, svg, bmp, avif, heic, tiff)",
 	"`![short description](<absolute source path>)`",
-	"Use only the real source path of a result in `results`/`mapping`",
+	"Use only the real source path of retrieved evidence",
 	"Never invent a path, use relative paths, or embed remote URLs",
 	"Apart from these image embeds, the no-file-paths rule stands",
 ] as const;
@@ -80,7 +78,7 @@ function agentOptions(model: ReturnType<typeof fauxModel>): AutoRAGAgentOptions 
 
 describe("answer image-embed exception (#1790)", () => {
 	it("states the image-embed exception in the system prompt while keeping the no-path rule", () => {
-		const prompt = buildSystemPrompt({ toolNames: ["emit_autorag_results"], manifests: [], modelId: "test-model" });
+		const prompt = buildSystemPrompt({ toolNames: [], manifests: [], modelId: "test-model" });
 		expectImageEmbedRule(prompt);
 		// The original ban must survive the exception.
 		expect(prompt).toContain("Never include specific file paths");
@@ -98,19 +96,7 @@ describe("answer image-embed exception (#1790)", () => {
 		const delta = agent.buildRefinementPrompt(
 			"Q3 매출 차트 이미지 보여줘",
 			{},
-			{
-				answer: `![Q3 revenue chart](<${join(docs, "q3-chart.png")}>) [1]`,
-				results: [
-					{
-						number: 1,
-						title: "Q3 revenue chart",
-						summary: "Q3 revenue chart image.",
-						evidence: [{ excerpt: "chart", lineNumber: 1 }],
-					},
-				],
-				sources: [{ number: 1, source: join(docs, "q3-chart.png") }],
-				evidenceRefs: [],
-			},
+			`![Q3 revenue chart](<${join(docs, "q3-chart.png")}>) [1]`,
 			true,
 		);
 		expectImageEmbedRule(delta);
@@ -118,11 +104,7 @@ describe("answer image-embed exception (#1790)", () => {
 		expect(delta).toContain("must not be embedded again");
 	});
 
-	it("states the image-embed exception in both answer tool descriptions", () => {
-		const ledger = new EvidenceLedger();
-		expectImageEmbedRule(
-			answerDescription(createEmitResultsTool(() => {}, { ledger, allowLocalFiles: false }).parameters),
-		);
-		expectImageEmbedRule(answerDescription(createEmitFastAnswerTool(() => {}, { ledger }).parameters));
+	it("states the image-embed exception in the report answer schema", () => {
+		expectImageEmbedRule(answerDescription(reportSchema));
 	});
 });
