@@ -658,7 +658,7 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 		out.passagePrefix = record.passagePrefix;
 	}
 	if (record.profile !== undefined) {
-		if (record.profile !== "qwen3-embedding-0.6b" && record.profile !== "embeddinggemma-300m") {
+		if (record.profile !== "qwen3-embedding-0.6b") {
 			throw new ConfigError(`${path}.profile must be a supported runtime profile`);
 		}
 		out.profile = record.profile;

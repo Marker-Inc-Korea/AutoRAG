@@ -17,19 +17,6 @@ const profiles: Readonly<Record<ProfileId, RuntimeProfile>> = {
 		backend: "auto",
 		protocolCapabilities,
 	},
-	"embeddinggemma-300m": {
-		profileId: "embeddinggemma-300m",
-		provider: "google",
-		model: "embeddinggemma-300M-Q8_0.gguf",
-		dimension: 768,
-		queryPrefix: "task: search result | query: ",
-		passagePrefix: "title: none | text: ",
-		runtimeBuild: RUNTIME_BUILD,
-		modelRevision: "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
-		artifactSha256: "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
-		backend: "auto",
-		protocolCapabilities,
-	},
 };
 
 const runtimeAssets: Readonly<Record<PlatformId, RuntimeAsset>> = {
@@ -97,23 +84,8 @@ export const MODEL_ASSETS = {
 		upstreamCardUrl: "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
 		modelCard: "docs/model-cards/qwen3-embedding-0.6b.md",
 	},
-	embeddinggemma: {
-		url: "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf",
-		revision: "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
-		sha256: "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
-		license: "Gemma Terms of Use",
-		noticeReference: "Google EmbeddingGemma model card and Gemma Terms of Use",
-		intendedUse:
-			"Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
-		unsuitableUse:
-			"Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256, uses restricted by the Gemma Prohibited Use Policy.",
-		upstreamCardUrl: "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
-		modelCard: "docs/model-cards/embeddinggemma-300m.md",
-	},
 } as const;
 
 export const MODEL_ASSET_URLS = {
 	qwen3: "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/370f27d7550e0def9b39c1f16d3fbaa13aa67728/Qwen3-Embedding-0.6B-Q8_0.gguf",
-	embeddinggemma:
-		"https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf",
 } as const;

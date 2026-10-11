@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type EmbeddingGateway, GatewayError, startEmbeddingGateway } from "../../src/embedding-runtime/gateway.ts";
 import { resolveProfile } from "../../src/embedding-runtime/manifest.ts";
 
-const profile = resolveProfile("embeddinggemma-300m");
+const profile = resolveProfile("qwen3-embedding-0.6b");
 const gateways: EmbeddingGateway[] = [];
 
 afterEach(async () => {
