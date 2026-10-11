@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -120,8 +120,9 @@ import {
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
 import {
+	type AutoRAGInputDisposition,
+	type AutoRAGInteractiveInput,
 	type AutoRAGPiInteractiveRuntime,
-	type AutoRAGPiInteractiveRuntimeOptions,
 	type AutoRAGPiSession,
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
@@ -667,6 +668,29 @@ export class AutoRAGAgent {
 	private lastQuery: string | undefined;
 	private lastSessionId: string | undefined;
 	private activeRun = false;
+	/**
+	 * TUI search state. pi's TUI reads the next input only after its input handler
+	 * returns, so a TUI query runs detached: input typed meanwhile steers this run
+	 * (Enter) or waits behind it (Alt+Enter), the way pi steers its own turns.
+	 */
+	private readonly interactive: {
+		/** The detached TUI search in flight, if any. */
+		run: Promise<void> | undefined;
+		/** Queries asked in order once the running search answers: Alt+Enter follow-ups, unanswered steers. */
+		readonly followUps: string[];
+		/** Steers this run received; any steer forces verification and is restated to it. */
+		readonly steers: string[];
+		/**
+		 * Steers typed while no pi turn streamed. They wait on the bound agent's steering
+		 * queue, which the next phase's model request drains; any left when the search
+		 * ends become follow-up queries instead of leaking into the next prompt.
+		 */
+		readonly queuedSteers: string[];
+		/** AutoRAG itself aborted the turn (tool-call limit, timeout): not the user stopping the search. */
+		harnessAbort: boolean;
+		/** The user interrupted a phase (Esc): stop the search instead of running its next phase. */
+		userAborted: boolean;
+	} = { run: undefined, followUps: [], steers: [], queuedSteers: [], harnessAbort: false, userAborted: false };
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	/** Evidence every retrieval tool returned this run; the answer's inline `[eN]` citations resolve against it. */
@@ -1333,6 +1357,7 @@ export class AutoRAGAgent {
 		if (!this.searchToolNames.has(event.toolName)) return;
 		this.searchToolCallCount += 1;
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
+			this.interactive.harnessAbort = true;
 			void this.activeSession?.abort();
 		}
 		const details = event.result.details as
@@ -1402,7 +1427,7 @@ export class AutoRAGAgent {
 			customTools: this.tools.filter(
 				(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
 			),
-			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
+			onInput: (input, pi) => this.routeInteractiveInput(input, pi),
 			...(this.jevExtension !== undefined
 				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
 				: {}),
@@ -1427,22 +1452,99 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Routes one TUI input the way pi routes typed input for its own turns. With
+	 * no search running it starts one. During a search, Enter steers it (the
+	 * user is correcting a search that is going wrong) and Alt+Enter queues a
+	 * follow-up question that runs once this search answers.
+	 */
+	private routeInteractiveInput(input: AutoRAGInteractiveInput, pi: ExtensionAPI): AutoRAGInputDisposition {
+		const state = this.interactive;
+		if (state.run === undefined) {
+			this.startInteractiveQuery(input.text, pi);
+			return { kind: "handled" };
+		}
+		if (input.streamingBehavior === "followUp") {
+			state.followUps.push(input.text);
+			return { kind: "handled" };
+		}
+		state.steers.push(input.text);
+		const steer = buildSteerMessage(input.text);
+		// A turn is streaming: pi queues the transformed text as steering for that turn.
+		if (input.streamingBehavior === "steer") return { kind: "steer", text: steer };
+		// Between phases no turn streams, so pi would start a new prompt. Queue the
+		// steer on the bound agent instead: the next phase's model request takes it.
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text: steer }, ...(input.images ?? [])];
+		this.boundPiRuntime?.session.agent.steer({ role: "user", content, timestamp: Date.now() });
+		state.queuedSteers.push(input.text);
+		return { kind: "handled" };
+	}
+
+	/** Runs one TUI query detached from pi's input loop, then any follow-ups queued behind it. */
+	private startInteractiveQuery(query: string, pi: ExtensionAPI): void {
+		const state = this.interactive;
+		const run = (async () => {
+			let next: string | undefined = query;
+			while (next !== undefined) {
+				try {
+					await this.runInteractivePiQuery(next, pi);
+				} catch (error) {
+					pi.sendMessage(
+						{
+							customType: "autorag.error",
+							content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+							display: true,
+						},
+						{ triggerTurn: false },
+					);
+				}
+				next = state.followUps.shift();
+			}
+		})().finally(() => {
+			state.run = undefined;
+		});
+		state.run = run;
+	}
+
+	/**
 	 * Drives one TUI query through the two-phase search. The model's own
 	 * assistant messages (progress notes before a tool call, the fast answer,
 	 * the final answer) are already recorded and rendered by the bound pi
 	 * session, so nothing is re-sent here: a second copy would show every answer
 	 * twice and put it in the model's context twice.
 	 */
-	private async runInteractivePiQuery(
-		query: string,
-		pi: Parameters<NonNullable<AutoRAGPiInteractiveRuntimeOptions["onQuery"]>>[1],
-	): Promise<void> {
-		// A query rejected as busy must not rename the running query's session.
-		this.assertIdle();
+	private async runInteractivePiQuery(query: string, pi: ExtensionAPI): Promise<void> {
 		pi.setSessionName(query.slice(0, 80));
-		for await (const _event of this.searchDocumentsStream(query)) {
-			// Drained for its side effects: the search turn runs while it is consumed.
+		const state = this.interactive;
+		state.steers.length = 0;
+		state.queuedSteers.length = 0;
+		state.harnessAbort = false;
+		state.userAborted = false;
+		const session = this.boundPiRuntime?.session;
+		const unsubscribe = session?.subscribe((event) => {
+			// The next model request took the queued steers into the transcript.
+			if (event.type === "message_start" && event.message.role === "user") state.queuedSteers.length = 0;
+			// An Esc that aborted a phase ends the search: no later phase may run as if it had finished.
+			if (event.type === "agent_settled" && event.aborted && !state.harnessAbort) state.userAborted = true;
+		});
+		try {
+			for await (const _event of this.searchDocumentsStream(query)) {
+				// Drained for its side effects: the search turn runs while it is consumed.
+			}
+		} finally {
+			unsubscribe?.();
+			// Steers no model request took would land in the next prompt as if typed
+			// there; the user still wants them answered, so they run as the next queries.
+			if (state.queuedSteers.length > 0) {
+				session?.agent.clearSteeringQueue();
+				if (!state.userAborted) state.followUps.unshift(...state.queuedSteers);
+				state.queuedSteers.length = 0;
+			}
 		}
+	}
+
+	/** Resolves once the TUI search and every follow-up queued behind it finished. */
+	async waitForIdle(): Promise<void> {
+		while (this.interactive.run !== undefined) await this.interactive.run;
 	}
 
 	abort(): void {
@@ -1481,15 +1583,10 @@ export class AutoRAGAgent {
 		}
 	}
 
-	/** Throws when a {@link searchDocuments} run is already in flight: runs are single-flight. */
-	private assertIdle(): void {
+	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
 		if (this.activeRun) {
 			throw new Error("AutoRAG agent is busy; await the in-flight searchDocuments() call before starting another");
 		}
-	}
-
-	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
-		this.assertIdle();
 
 		// MinSync is required: a run that cannot reach it fails here, before any
 		// model call, instead of answering from the retrieval paths that remain.
@@ -1647,36 +1744,54 @@ export class AutoRAGAgent {
 							}
 							return;
 						}
-						if (plan.route === "direct") {
+						const steered = (): boolean => this.interactive.steers.length > 0;
+						// Esc aborted the phase that just ran: the user stopped the search.
+						const stopped = (): boolean => this.interactive.userAborted;
+						if (plan.route === "direct" && !steered()) {
 							// Direct answers skip every retrieval step and the verification
 							// phase: the fast answer is the final answer. Only Jev routes
 							// here, so the preliminary was never published.
 							setThinking(this.fastThinkingLevel);
 							await activeSession.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
+							if (stopped()) return;
 							const answer = finalAnswerText(transcript());
-							if (answer !== undefined) captured = this.deriveAnswer(answer);
-							return;
+							// A steer typed while the direct answer streamed questions it: verify instead.
+							if (!steered()) {
+								if (answer !== undefined) captured = this.deriveAnswer(answer);
+								return;
+							}
 						}
-						const baseline = await this.prefetchInitialRetrievalContext(
-							trimmedQuery,
-							plan.queries,
-							options,
-							plan.datasources,
-						);
-						setThinking(this.fastThinkingLevel);
-						await activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
-						const fastText = finalAnswerText(transcript());
-						const preliminary = fastText === undefined ? undefined : this.deriveAnswer(fastText);
+						const baseline =
+							plan.route === "direct"
+								? ""
+								: await this.prefetchInitialRetrievalContext(
+										trimmedQuery,
+										plan.queries,
+										options,
+										plan.datasources,
+									);
+						let fastText: string | undefined;
+						let preliminary: AutoRAGResultsDetails | undefined;
+						if (plan.route !== "direct") {
+							setThinking(this.fastThinkingLevel);
+							await activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
+							if (stopped()) return;
+							fastText = finalAnswerText(transcript());
+							preliminary = fastText === undefined ? undefined : this.deriveAnswer(fastText);
+						} else {
+							fastText = finalAnswerText(transcript());
+						}
 						if (preliminary !== undefined) {
 							emitPreliminary(preliminary);
 							// With Jev enabled, a fast answer that needs no correction,
-							// clarification, or further research ends the run here.
-							const followUp = await this.shouldFollowUp(trimmedQuery, preliminary);
+							// clarification, or further research ends the run here. A steer
+							// means the search is going wrong, so it always verifies.
+							const followUp = steered() || (await this.shouldFollowUp(trimmedQuery, preliminary));
 							// The follow-up check is not tied to the session abort, so it
 							// can resolve after the run's timeout fired; stop here rather
 							// than publishing or prompting on behalf of a dead run.
 							if (planAbort.signal.aborted) return;
-							if (!followUp) {
+							if (!followUp && !steered()) {
 								captured = preliminary;
 								return;
 							}
@@ -1689,14 +1804,27 @@ export class AutoRAGAgent {
 						// wrote: the caller's copy was renumbered to [n], and the prompt tells
 						// the model its [eN] ids are still valid.
 						await activeSession.prompt(
-							this.buildRefinementPrompt(trimmedQuery, options, fastText, fastAnswerDelivered),
+							this.buildRefinementPrompt(
+								trimmedQuery,
+								options,
+								fastText,
+								fastAnswerDelivered,
+								this.interactive.steers,
+							),
 						);
+						// A steer typed after verification's last model request is still owed an
+						// answer within this search: pi holds it queued, so verify once more.
+						while (!stopped() && !planAbort.signal.aborted && this.interactive.queuedSteers.length > 0) {
+							await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+						}
+						if (stopped()) return;
 						const finalText = finalAnswerText(transcript());
 						if (finalText !== undefined) captured = this.deriveAnswer(finalText);
 					})(),
 					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
 							planAbort.abort();
+							this.interactive.harnessAbort = true;
 							void Promise.resolve(session?.abort());
 							// A first answer already exists: return it below instead of
 							// failing the whole search and discarding it. Remote sessions
@@ -2522,6 +2650,7 @@ export class AutoRAGAgent {
 		options: RetrievalOptions,
 		fastAnswer: string | undefined,
 		fastAnswerDelivered: boolean,
+		steers: readonly string[] = [],
 	): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
@@ -2546,6 +2675,7 @@ export class AutoRAGAgent {
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
+			formatSteerContext(steers) +
 			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
@@ -3454,6 +3584,37 @@ function formatRerankedBaseline(results: readonly RetrievalResult[], evidenceIds
 		(result, index) => `[${evidenceIds[index]}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
 	);
 	return `Reranked initial candidates (ordered by relevance to the query; cite evidence by its [eN] id):\n${lines.join("\n")}`;
+}
+
+/**
+ * The user message a TUI steer becomes. The user typed it while the search
+ * ran, to correct a search that is going wrong, so it is framed as a
+ * correction of the running search rather than a new question; the final
+ * reply stays the answer to the original question.
+ */
+function buildSteerMessage(text: string): string {
+	return (
+		`The user interrupted the running search with this correction:\n\n${text}\n\n` +
+		`Treat it as direction for the search in progress, not as a new question: adjust which sources, queries, or claims you pursue, then continue. ` +
+		`When finished, reply with the final answer to the original question, updated for this correction, and no tool call.`
+	);
+}
+
+/** Restates the run's steers for a verification phase that starts after them. */
+function formatSteerContext(steers: readonly string[]): string {
+	if (steers.length === 0) return "";
+	return (
+		`While the search ran, the user corrected it:\n${steers.map((steer) => `- ${steer}`).join("\n")}\n` +
+		`The first answer predates these corrections; follow them over it.\n\n`
+	);
+}
+
+/** One more verification turn for steers that arrived after the last phase's final model request. */
+function buildSteerContinuationPrompt(steers: readonly string[]): string {
+	return (
+		`${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ` +
+		`then reply with the complete final answer to the original question and no tool call.`
+	);
 }
 
 /**
