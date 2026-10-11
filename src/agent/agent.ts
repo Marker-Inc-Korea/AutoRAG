@@ -1574,6 +1574,8 @@ export class AutoRAGAgent {
 		state.queuedSteers.length = 0;
 		state.harnessAbort = false;
 		state.userAborted = false;
+		// A steer aimed at the previous query must not cut this one's retrieval short.
+		state.steerInterrupt = new AbortController();
 		const session = this.boundPiRuntime?.session;
 		const unsubscribe = session?.subscribe((event) => {
 			if (event.type === "message_start" && event.message.role === "user") {
@@ -2475,7 +2477,10 @@ export class AutoRAGAgent {
 		options: RetrievalOptions,
 		datasources: readonly string[] = [],
 	): Promise<string> {
-		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope };
+		// A steer typed during the prefetch stops it: the fast phase then starts with
+		// whatever already returned plus the steer, instead of waiting on a slow source.
+		const signal = this.interactive.steerInterrupt.signal;
+		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope, signal };
 		// Queries only read the prebuilt MinSync index; an unbuilt workspace makes
 		// `minsync query` fail fast and this source contributes nothing.
 		const formatSearchQueries = (list: readonly string[]): string =>
@@ -2496,6 +2501,7 @@ export class AutoRAGAgent {
 							this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
 								topK: this.limits.singleDatasourceTopK,
 								scope: options.scope,
+								signal,
 							})
 								.then((outcome) => outcome.results)
 								.catch((): RetrievalResult[] => []),

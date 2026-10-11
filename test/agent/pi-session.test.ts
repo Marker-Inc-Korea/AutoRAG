@@ -17,6 +17,7 @@ import {
 } from "../../src/agent/pi-session.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
+	datasourceQuestionId,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
@@ -557,6 +558,42 @@ describe("AutoRAG pi coding-agent host", () => {
 
 			expect(datasource.aborted()).toBe(true);
 			expect(toolResults.some((text) => text.includes("Skipped due to the user's steering message"))).toBe(true);
+			expect(seen[0]).toContain("Check Lyon too.");
+		} finally {
+			datasource.release();
+			await tui.dispose();
+		}
+	});
+
+	it("cuts the baseline prefetch short when the user steers before the first model request", async () => {
+		// Jev selects the datasource, so the harness searches it before the fast
+		// phase. A slow datasource there held the steer until it returned: the
+		// steer now stops the prefetch and the fast phase starts with the steer.
+		const datasource = slowDatasource("kakao");
+		const seen: string[] = [];
+		const routing = new MockBackend({
+			[QUERY_ROUTE_QUESTION_ID]: {
+				answer: "local",
+				distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+				confidence: 0.8,
+			},
+			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+			[datasourceQuestionId("kakao")]: { answer: 0.9 },
+		});
+		const tui = await tuiAgent(
+			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris.", seen)],
+			routing,
+			{ datasourceSkills: [datasource.skill] },
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await datasource.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive" });
+			// No release: only the steer may end the prefetch.
+			await tui.agent.waitForIdle();
+
+			expect(datasource.aborted()).toBe(true);
 			expect(seen[0]).toContain("Check Lyon too.");
 		} finally {
 			datasource.release();
