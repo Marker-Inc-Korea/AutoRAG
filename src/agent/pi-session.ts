@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import { streamSimple as compatStreamSimple } from "@earendil-works/pi-ai/compat";
 import {
 	type AgentSession,
@@ -59,10 +59,29 @@ export interface AutoRAGPiSessionOptions {
 	readonly remoteSession?: boolean;
 	readonly contextTransform?: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
 }
+/**
+ * How AutoRAG takes one interactive input. `steer` while a pi turn streams
+ * returns the text pi should queue as steering (pi delivers it before the
+ * turn's next model request); every other outcome is fully handled by AutoRAG.
+ */
+export type AutoRAGInputDisposition = { readonly kind: "handled" } | { readonly kind: "steer"; readonly text: string };
+
+export interface AutoRAGInteractiveInput {
+	readonly text: string;
+	readonly images: readonly ImageContent[] | undefined;
+	/** pi's delivery for input typed while a turn streams; undefined when no turn streams. */
+	readonly streamingBehavior: "steer" | "followUp" | undefined;
+}
+
 export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessionOptions, "model"> {
 	readonly model?: Model<Api>;
 	readonly inactiveToolNames?: readonly string[];
-	readonly onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>;
+	/**
+	 * Routes one interactive input: a new query, a steer of the running search,
+	 * or a follow-up queued behind it. Must not wait for a search to finish:
+	 * pi's TUI reads the next input only after this returns.
+	 */
+	readonly onInput: (input: AutoRAGInteractiveInput, pi: ExtensionAPI) => AutoRAGInputDisposition;
 	/**
 	 * Optional best-effort provider for a startup update notice. Resolves to the
 	 * notice text, or `undefined` when there is nothing to announce. Called once
@@ -155,7 +174,7 @@ function createAutoRAGExtension(
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
-	onQuery: (query: string, pi: ExtensionAPI) => void | Promise<void>,
+	onInput: AutoRAGPiInteractiveRuntimeOptions["onInput"],
 	updateNotice: (() => Promise<string | undefined>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
@@ -177,15 +196,16 @@ function createAutoRAGInteractiveExtension(
 					.catch(() => undefined);
 			});
 		}
-		pi.on("input", async (event) => {
-			const query = event.text.trim();
-			if (event.source !== "interactive" || query.length === 0 || query.startsWith("/")) return undefined;
+		pi.on("input", (event) => {
+			const text = event.text.trim();
+			if (event.source !== "interactive" || text.length === 0 || text.startsWith("/")) return undefined;
+			let disposition: AutoRAGInputDisposition;
 			try {
-				await onQuery(query, pi);
+				disposition = onInput({ text, images: event.images, streamingBehavior: event.streamingBehavior }, pi);
 			} catch (error) {
-				// Display-only: while another query's turn streams, pi's default
-				// delivery steers a custom message into it as a user message, and the
-				// model would answer this notice instead of the user.
+				// Display-only: while a turn streams, pi's default delivery steers a
+				// custom message into it as a user message, and the model would
+				// answer this notice instead of the user.
 				pi.sendMessage(
 					{
 						customType: "autorag.error",
@@ -194,8 +214,15 @@ function createAutoRAGInteractiveExtension(
 					},
 					{ triggerTurn: false },
 				);
+				return { action: "handled" };
 			}
-			return { action: "handled" };
+			return disposition.kind === "steer"
+				? {
+						action: "transform",
+						text: disposition.text,
+						...(event.images === undefined ? {} : { images: event.images }),
+					}
+				: { action: "handled" };
 		});
 	};
 }
@@ -294,7 +321,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,
 						options.contextTransform,
-						options.onQuery,
+						options.onInput,
 						options.updateNotice,
 					),
 					...(options.extensionFactories ?? []),
