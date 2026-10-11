@@ -8,8 +8,11 @@ import { connectorSyncTimeoutHint } from "./connector-timeouts.ts";
 import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
 import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
+import { CrawlerSidecar, type CrawlerSidecarOptions } from "./sidecar/index.ts";
+import { SidecarRetrievalMethod } from "./sidecar/methods.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
+	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -47,6 +50,12 @@ export interface CrawlerDatasourceSkillOptions {
 	/** Omitted/empty means search every chat/channel. */
 	readonly channelIds?: readonly string[];
 	readonly channelNames?: readonly string[];
+	/**
+	 * Opt-in read-only sidecar over the crawler's own SQLite archive: adds BM25-ranked,
+	 * semantic and hybrid methods next to the CLI-backed FTS method. The crawler database
+	 * is never written; sidecar state lives in `sidecarDbPath`.
+	 */
+	readonly sidecar?: CrawlerSidecarOptions;
 }
 
 const DEFAULT_INSTANCE_ID = "default";
@@ -61,6 +70,7 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	private readonly tags: readonly string[];
 	private readonly channelIds: ReadonlySet<string>;
 	private readonly channelNames: ReadonlySet<string>;
+	private readonly sidecar: CrawlerSidecar | undefined;
 	private lastIndexedAt: number | undefined;
 
 	constructor(definition: CrawlerDatasourceDefinition, options: CrawlerDatasourceSkillOptions) {
@@ -81,6 +91,7 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.channelIds = new Set(options.channelIds ?? []);
 		this.channelNames = new Set(options.channelNames ?? []);
+		this.sidecar = options.sidecar === undefined ? undefined : new CrawlerSidecar(options.sidecar);
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -118,26 +129,62 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				skill: this.definition.datasourceId,
 				chunkCount: result.count,
 				indexedAt: this.lastIndexedAt,
-				diagnostics: [],
+				diagnostics: await this.syncSidecar(),
 			};
 		} catch {
 			return this.fail("datasource-unavailable", "spawn-error");
 		}
 	}
 
-	retrievalMethods(): readonly RetrievalMethod[] {
+	/** Embed new crawler messages into the sidecar. Failure never fails the index: lexical search stays available. */
+	private async syncSidecar(): Promise<DatasourceDiagnostic[]> {
+		if (this.sidecar === undefined) return [];
+		const result = await this.sidecar.sync();
+		if (result.ok) return [];
 		return [
-			new CrawlerLexicalMethod({
-				client: this.client,
-				datasourceId: this.definition.datasourceId,
-				skillType: this.definition.skillType,
+			{
+				code: "datasource-index-failed",
+				severity: "warning",
+				message: `semantic-unavailable: ${result.message}`.slice(0, 300),
 				instanceId: this.instanceId,
-				tags: this.tags,
-				backendName: this.definition.backendName,
-				channelIds: this.channelIds,
-				channelNames: this.channelNames,
-			}),
+				source: this.definition.datasourceId,
+			},
 		];
+	}
+
+	retrievalMethods(): readonly RetrievalMethod[] {
+		const cli = this.cliMethod();
+		const { sidecar } = this;
+		if (sidecar === undefined) return [cli];
+		const shared = {
+			sidecar,
+			descriptor: sidecar.descriptor,
+			datasourceId: this.definition.datasourceId,
+			skillType: this.definition.skillType,
+			instanceId: this.instanceId,
+			tags: this.tags,
+			channelIds: this.channelIds,
+			channelNames: this.channelNames,
+		};
+		return [
+			cli,
+			new SidecarRetrievalMethod({ ...shared, mode: "bm25" }),
+			new SidecarRetrievalMethod({ ...shared, mode: "semantic" }),
+			new SidecarRetrievalMethod({ ...shared, mode: "hybrid" }),
+		];
+	}
+
+	private cliMethod(): RetrievalMethod {
+		return new CrawlerLexicalMethod({
+			client: this.client,
+			datasourceId: this.definition.datasourceId,
+			skillType: this.definition.skillType,
+			instanceId: this.instanceId,
+			tags: this.tags,
+			backendName: this.definition.backendName,
+			channelIds: this.channelIds,
+			channelNames: this.channelNames,
+		});
 	}
 
 	describeSources(): readonly SourceDescription[] {

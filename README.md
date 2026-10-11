@@ -205,9 +205,9 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | BM25, Semantic, Hybrid |
 | **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
 | **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25, Semantic, Hybrid |
-| **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5 |
-| **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5 |
-| **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5 |
+| **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; opt-in BM25 + Semantic + Hybrid via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5; opt-in BM25 + Semantic + Hybrid via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5; opt-in BM25 + Semantic + Hybrid via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
 | **Notion** | `notion` | [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | Local page/database/block archive + FTS5 | Lexical FTS5 |
 | **Email Archives** | `mailcrawl` | [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | Local Gmail, IMAP, and Maildir storage | BM25, Semantic, Hybrid |
 | **Local Mail Export**| `mail-export` | Built-in `.mbox` / `.eml` parser | Local filesystem mailboxes | Lexical |

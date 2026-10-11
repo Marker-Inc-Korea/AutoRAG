@@ -1,0 +1,241 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CrawlerSkillClient } from "../../../src/datasource/crawler-skill.ts";
+import type { CrawlerSearchResult, CrawlerSyncResult } from "../../../src/datasource/crawler-types.ts";
+import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
+import { SlackSkill } from "../../../src/datasource/skills/slack/index.ts";
+import { TelecrawlSkill } from "../../../src/datasource/skills/telecrawl/index.ts";
+import { WacrawlSkill } from "../../../src/datasource/skills/wacrawl/index.ts";
+import type { Embedder } from "../../../src/embedding-runtime/gateway-embedder.ts";
+
+let root: string;
+let crawlerDb: string;
+
+beforeEach(() => {
+	root = mkdtempSync(join(tmpdir(), "autorag-sidecar-skill-"));
+	crawlerDb = join(root, "slacrawl.db");
+	const db = new DatabaseSync(crawlerDb);
+	db.exec(`
+		create table channels (id text primary key, workspace_id text, name text);
+		create table users (id text primary key, name text, real_name text);
+		create table messages (
+			channel_id text not null, ts text not null, workspace_id text not null, user_id text,
+			text text not null, normalized_text text not null, deleted_ts text, primary key (channel_id, ts)
+		);
+		create virtual table message_fts using fts5(message_key unindexed, content);
+		insert into channels values ('C1', 'T1', 'eng');
+		insert into messages values ('C1', '10.000001', 'T1', null, 'we ship the release friday', 'we ship the release friday', null);
+		insert into messages values ('C1', '20.000001', 'T1', null, 'pizza for lunch', 'pizza for lunch', null);
+		insert into message_fts values ('C1|10.000001', 'we ship the release friday'), ('C1|20.000001', 'pizza for lunch');
+	`);
+	db.close();
+});
+
+afterEach(() => {
+	rmSync(root, { recursive: true, force: true });
+});
+
+const VOCAB = ["ship", "release", "pizza", "lunch", "deploy"];
+const embedder: Embedder = {
+	identity: async () => ({ provider: "t", model: "bow", dimension: VOCAB.length }),
+	embed: async (texts) =>
+		texts.map((text) => {
+			const words = new Set(text.toLowerCase().match(/[a-z]+/g) ?? []);
+			return VOCAB.map((word) => (words.has(word) ? 1 : 0));
+		}),
+};
+
+/** A CLI client that proves the sidecar is what answered: any call to it fails the test. */
+const cliMustNotSearch: CrawlerSkillClient = {
+	sync: async (): Promise<CrawlerSyncResult> => ({ ok: true, count: 7, stdout: "", stderr: "", code: 0 }),
+	search: async (): Promise<CrawlerSearchResult> => {
+		throw new Error("CLI search must not be used when the sidecar is enabled");
+	},
+};
+
+function slackWithSidecar(extra: Record<string, unknown> = {}): SlackSkill {
+	return new SlackSkill({
+		client: cliMustNotSearch,
+		datasourceId: "slack",
+		instanceId: "main",
+		sidecar: {
+			descriptor: CRAWLER_DESCRIPTORS.slack,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: join(root, "sidecar.sqlite"),
+			workspaceId: "T1",
+			embedder,
+			...extra,
+		},
+	});
+}
+
+describe("crawler skills with a sidecar", () => {
+	it("keeps the CLI-backed FTS method and adds BM25-ranked, semantic and hybrid methods", () => {
+		const methods = slackWithSidecar()
+			.retrievalMethods()
+			.map((method) => method.describe());
+		expect(methods.map((method) => method.name)).toEqual([
+			"slack-fts",
+			"slack-sidecar-bm25",
+			"slack-semantic",
+			"slack-hybrid",
+		]);
+		expect(methods.map((method) => method.type)).toEqual(["bm25", "bm25", "vector", "hybrid"]);
+		expect(methods.every((method) => method.datasourceId === "slack")).toBe(true);
+	});
+
+	it("indexes through the CLI first, then embeds new messages into the sidecar and reports the count", async () => {
+		const skill = slackWithSidecar();
+		const result = await skill.index();
+		expect(result).toMatchObject({ ok: true, chunkCount: 7 });
+		expect(result.diagnostics).toEqual([]);
+		const hybrid = skill.retrievalMethods().find((method) => method.describe().name === "slack-hybrid");
+		const hits = await hybrid?.retrieve("release deploy", { topK: 3 });
+		expect(hits?.[0]?.content).toBe("we ship the release friday");
+	});
+
+	it("maps sidecar hits to path-opaque sources and honors the datasource scope", async () => {
+		const skill = slackWithSidecar();
+		await skill.index();
+		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "slack-sidecar-bm25");
+		const [hit] = (await bm25?.retrieve("release", { topK: 3 })) ?? [];
+		expect(hit?.source).toBe("/slack/main/chunks/C1-10-000001");
+		expect(hit?.source).not.toContain(root);
+		expect(hit?.metadata).toMatchObject({
+			method: "slack-sidecar-bm25",
+			datasourceId: "slack",
+			instanceId: "main",
+			channelName: "eng",
+		});
+		expect(await bm25?.retrieve("release", { topK: 3, scope: "/slack/other" })).toEqual([]);
+		expect(await bm25?.retrieve("release", { topK: 3, scope: "/slack/main" })).toHaveLength(1);
+	});
+
+	it("names a message exactly like the CLI-backed method does, so the merger can deduplicate across methods", async () => {
+		const cli: CrawlerSkillClient = {
+			sync: cliMustNotSearch.sync,
+			search: async () => ({
+				ok: true,
+				hits: [
+					{ id: "C1-10-000001", content: "we ship the release friday", score: 1, metadata: { channelId: "C1" } },
+				],
+				stdout: "",
+				stderr: "",
+				code: 0,
+			}),
+		};
+		const skill = new SlackSkill({
+			client: cli,
+			datasourceId: "slack",
+			instanceId: "main",
+			sidecar: {
+				descriptor: CRAWLER_DESCRIPTORS.slack,
+				crawlerDbPath: crawlerDb,
+				sidecarDbPath: join(root, "same.sqlite"),
+				workspaceId: "T1",
+			},
+		});
+		const [cliMethod, bm25] = skill.retrievalMethods();
+		const fromCli = (await cliMethod?.retrieve("release", { topK: 3 }))?.[0];
+		const fromSidecar = (await bm25?.retrieve("release", { topK: 3 }))?.[0];
+		expect(fromSidecar?.source).toBe(fromCli?.source);
+		expect(fromSidecar?.id).toBe(fromCli?.id);
+	});
+
+	it("honors the channel allowlist for sidecar hits", async () => {
+		const skill = new SlackSkill({
+			client: cliMustNotSearch,
+			datasourceId: "slack",
+			channelNames: ["not-eng"],
+			sidecar: {
+				descriptor: CRAWLER_DESCRIPTORS.slack,
+				crawlerDbPath: crawlerDb,
+				sidecarDbPath: join(root, "s.sqlite"),
+				workspaceId: "T1",
+			},
+		});
+		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "slack-sidecar-bm25");
+		expect(await bm25?.retrieve("release", { topK: 3 })).toEqual([]);
+	});
+
+	it("still succeeds when embedding fails, and reports a warning instead of an error", async () => {
+		const down: Embedder = {
+			identity: async () => {
+				throw new Error("gateway down");
+			},
+			embed: async () => [],
+		};
+		const skill = slackWithSidecar({ embedder: down });
+		const result = await skill.index();
+		expect(result.ok).toBe(true);
+		expect(result.diagnostics).toEqual([
+			expect.objectContaining({
+				code: "datasource-index-failed",
+				severity: "warning",
+				message: expect.stringContaining("semantic-unavailable: gateway down"),
+			}),
+		]);
+		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "slack-sidecar-bm25");
+		expect(await bm25?.retrieve("release", { topK: 3 })).toHaveLength(1);
+	});
+
+	it("does not touch the sidecar when the CLI sync itself failed", async () => {
+		const failing: CrawlerSkillClient = {
+			sync: async () => ({ ok: false, reason: "binary-missing", stdout: "", stderr: "", code: null }),
+			search: cliMustNotSearch.search,
+		};
+		const skill = new SlackSkill({
+			client: failing,
+			sidecar: {
+				descriptor: CRAWLER_DESCRIPTORS.slack,
+				crawlerDbPath: crawlerDb,
+				sidecarDbPath: join(root, "s.sqlite"),
+				workspaceId: "T1",
+				embedder,
+			},
+		});
+		expect((await skill.index()).ok).toBe(false);
+	});
+
+	it("is inert without a sidecar option: only the CLI-backed method exists", () => {
+		const skill = new SlackSkill({ client: cliMustNotSearch });
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual(["slack-fts"]);
+	});
+
+	it("shares the same wiring across telegram and whatsapp", () => {
+		for (const [skill, id] of [
+			[
+				new TelecrawlSkill({
+					client: cliMustNotSearch,
+					sidecar: {
+						descriptor: CRAWLER_DESCRIPTORS.telegram,
+						crawlerDbPath: crawlerDb,
+						sidecarDbPath: join(root, "t.sqlite"),
+					},
+				}),
+				"telegram",
+			],
+			[
+				new WacrawlSkill({
+					client: cliMustNotSearch,
+					sidecar: {
+						descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+						crawlerDbPath: crawlerDb,
+						sidecarDbPath: join(root, "w.sqlite"),
+					},
+				}),
+				"whatsapp",
+			],
+		] as const) {
+			expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
+				`${id}-fts`,
+				`${id}-sidecar-bm25`,
+				`${id}-semantic`,
+				`${id}-hybrid`,
+			]);
+		}
+	});
+});

@@ -362,6 +362,57 @@ slacrawl search -workspace T0123456789 <term>   # must print rows before wiring 
 autorag refresh --method datasources
 ```
 
+## Hybrid search for chat crawlers (sidecar)
+
+`slack`, `telegram`, and `whatsapp` normally search through their CLI's plain FTS5 query. slacrawl returns
+the *newest* matches and ANDs every term, so a natural-language question often matches nothing. Opt in to a
+**read-only sidecar** to add BM25-ranked, semantic, and hybrid retrieval over the same archive:
+
+```json
+{
+  "datasources": {
+    "slack-work": {
+      "type": "slack",
+      "connector": {
+        "configPath": "~/.slacrawl/config.toml",
+        "workspace": "T0123456789",
+        "sidecar": true
+      }
+    },
+    "telegram": { "connector": { "sidecar": { "semantic": false } } }
+  }
+}
+```
+
+| `connector.sidecar` | Meaning |
+|---|---|
+| `true` / `{}` | BM25 + semantic + hybrid over the crawler's default archive |
+| `false` (default) | unchanged: CLI-backed FTS only |
+| `crawlerDbPath` | archive to read; falls back to `connector.databasePath`, then the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
+| `semantic: false` | BM25 only; no embedding calls |
+| `enabled: false` | switch off without deleting the block |
+
+How it works and what it never does:
+
+- The crawler archive is opened **read-only** (`ATTACH ... mode=ro`). AutoRAG never writes to it, so a crawler
+  that migrates, purges, vacuums, or rebuilds its file cannot lose sidecar state.
+- The sidecar owns its own file, `<workspace>/.autorag/datasources/<name>/<instance>/sidecar.sqlite`. It stores
+  only `message key -> vector`. Message text is always read from the crawler archive at query time.
+- Methods added next to the CLI-backed `<name>-fts`: `<name>-sidecar-bm25`, `<name>-semantic`, `<name>-hybrid`
+  (reciprocal rank fusion, k=60). Natural-language queries are OR-ed term by term; FTS operators in user text are
+  quoted away.
+- `autorag refresh --method datasources` runs the CLI sync first, then embeds new or edited messages with the
+  local embedding gateway (same Qwen3 model as MinSync), prunes vectors of purged or deleted messages, and
+  re-embeds everything if the embedding identity changes. An embedding failure is a `semantic-unavailable`
+  **warning**; BM25 stays available.
+- If the crawler has not created its archive yet, sidecar methods return nothing and attach on first use.
+- Semantic search is a linear scan over stored vectors. It is fine for personal archives; measure before
+  pointing it at a multi-million-message archive.
+- Message text is sent only to the local loopback gateway. Vectors of private chats are derived data: treat the
+  sidecar file with the same care as the archive itself.
+
+Not covered: `notion` (notcrawl) keeps its two-table page/comment FTS and is unchanged.
+
 ## Cloud drives via rclone
 
 The `cloud-drive` datasource uses the external [`rclone`](https://rclone.org)
