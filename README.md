@@ -359,6 +359,60 @@ for (const result of response.results) {
 
 ---
 
+## Hosted AutoRAG Plan (Dazzi)
+
+AutoRAG can run on the hosted **AutoRAG** plan as a first-class model provider named
+`autorag`. The provider speaks the server's OpenAI Responses API surface (`<root>/v1`),
+so streaming, tool calls, and usage are handled by Pi's built-in `openai-responses`
+implementation, and the model catalog is discovered live from the server — no model id
+is baked into AutoRAG.
+
+Sign in from the interactive TUI:
+
+```text
+autorag tui
+/login          # choose "AutoRAG"; the browser completes a PKCE login
+```
+
+Headless (no browser) with a long-lived API key:
+
+```bash
+export AUTORAG_API_KEY=dz_...
+```
+
+On a fresh agent home, pin the model with an explicit endpoint so it resolves
+offline without a catalog snapshot — this is the headless configuration:
+
+```json
+{
+  "model": {
+    "provider": "autorag",
+    "id": "anthropic/claude-haiku-5.5",
+    "baseUrl": "https://api.dazziapp.com/v1",
+    "api": "openai-responses",
+    "apiKeyEnv": "AUTORAG_API_KEY"
+  }
+}
+```
+
+The `provider`/`id`-only shorthand (`{ "provider": "autorag", "id": "anthropic/claude-haiku-5.5" }`)
+only resolves once a TUI `/login` or a model refresh has persisted the catalog
+snapshot; with no snapshot there is nothing to restore offline, and resolution
+fails with `Unknown configured model: autorag/<id>`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTORAG_BASE_URL` | `https://api.dazziapp.com` | Server **root** (not the `/v1` path); the API base is `<root>/v1`. |
+| `AUTORAG_API_KEY` | – | Headless API key. A stored `/login` credential takes precedence. |
+
+The catalog is persisted after a `/login` (or any model refresh), so the
+`provider`/`id` shorthand `model: { provider: "autorag", id }`
+keeps resolving offline. When you are not signed in the provider still registers — it appears under
+`/login`, contributes no models, and makes no network call. See
+[Hosted AutoRAG provider](docs/cloud-provider.md) for the full flow.
+
+---
+
 ## CLI Command Reference
 
 | Command | Description |
@@ -386,6 +440,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and EmbeddingGemma verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model cards: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md), [`embeddinggemma-300m`](docs/model-cards/embeddinggemma-300m.md).
+- **[Hosted AutoRAG Provider](docs/cloud-provider.md):** The `autorag` (Dazzi) model provider — PKCE `/login`, `AUTORAG_API_KEY`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via OpenRouter: it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
