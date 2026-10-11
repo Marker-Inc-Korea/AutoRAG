@@ -104,7 +104,7 @@ function duplicateNumbers(sortedNumbers: readonly number[]): number[] {
 
 /**
  * Throw a corrective error when two results share a number. A repeated number
- * collapses into one registry entry and one feedback id, so the other result's
+ * collapses into one registry entry, so the other result's
  * evidence would be lost. Emit tools call this at tool time so the model sees
  * the error and re-emits.
  */
