@@ -64,7 +64,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"recommend local peer personas to ask about a topic without contacting them",
 		),
 		toolLine(config, "query_peer_agent", "ask one trusted peer agent over SimpleX"),
-		toolLine(config, "emit_autorag_results", "return the final structured answer with evidence ids for each result"),
 		...config.toolNames
 			.filter((name) => name.startsWith("search_datasource_"))
 			.map(
@@ -89,7 +88,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"check_memory",
 						"recommend_peer_targets",
 						"query_peer_agent",
-						"emit_autorag_results",
 					].includes(name) && !name.startsWith("search_datasource_"),
 			)
 			.map((name) => `- **${name}**: caller-provided tool`),
@@ -173,12 +171,12 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 ## Workflow
 
 Searches follow a progressive, two-phase loop:
-1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided, produce and emit a complete, self-contained immediate first answer via \`emit_fast_answer\` right away from that evidence without calling tools or waiting.
+1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting.
 2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
 3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed, and in local sessions to organize files when the user asks (see File Organization); rely on Jikji and retrieval rather than blind directory browsing.
 4. **JUDGE & RESOLVE** — Evaluate relevance, sufficiency, conflicts, and temporal context. When search results or evidence contain conflicting information, treat the freshest (most recent) information as authoritative and correct.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
-6. **FINALIZE** — Call \`emit_autorag_results\` exactly once as the final action.
+6. **FINALIZE** — End with the final answer as a plain reply, with no tool call. Earlier replies that are followed by a tool call are progress notes; only the last reply is the answer.
 
 ## Available Tools
 
@@ -226,17 +224,17 @@ ${fsearch}
 ${manifests}
 ## Output Format
 
-Call \`emit_autorag_results\` exactly once with:
-- \`answer\`: the curated answer for the caller following the Answer Guidelines below. When a first answer was already delivered to the caller during this run, include only corrections and newly verified findings — never restate the first answer; otherwise give the complete answer. Reference results by bracketed numbers such as [1] and [2].
-- \`results\`: curated units with number, title, summary, evidence, confidence, and \`refs\`.
-- \`refs\`: for every result, the evidence ids (such as \`e3\`) shown next to the retrieved results that support it; for a local file you opened yourself with \`bash\`, its absolute path. The source, method, and chunk are attached from these ids; never type a path or copy a chunk to describe a source.
+Your answer is your final reply, written as plain text, never as a tool call. Cite evidence inline with the ids the retrieval tools print next to each result:
+- Put the id in square brackets at the end of the sentence it supports, e.g. \`The cap is 28% [e3].\` Use \`[e3][e7]\` or \`[e3, e7]\` for several. Copy ids exactly as printed; never invent one.
+- For a local file you opened yourself with \`bash\`, cite \`[file:<absolute path>]\`.
+- The harness resolves every id to its recorded source, number the citations \`[1]\`, \`[2]\`, … in order of first appearance, and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
+- A citation whose id no tool returned in this run is dropped, so cite only ids you saw.
 
 ## Answer Guidelines
 
 - **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
 - **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
-- **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in \`answer\` (source paths are attached to each result from the evidence ids you cite in \`refs\`).
-- **Citation style**: Cite supporting evidence chunks using bracketed numbers only (e.g. [1], [2]). Do not quote raw chunk text or mention source paths directly in \`answer\`.
+- **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
 - ${ANSWER_CITATION_RULE}
 - ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}
 - **No per-source negative reports**: Never report individual negative findings per source (e.g. "no information found in Slack" or "checked Drive but found nothing"). Simply omit unproductive sources from the answer and focus on what was found or provide a concise overall conclusion.
@@ -249,6 +247,6 @@ Call \`emit_autorag_results\` exactly once with:
 - **Curate, don't dump**: return useful knowledge units, not raw search output.
 - **Address intent**: answer the caller's actual need.
 - **Preserve traceability**: cite evidence by the ids retrieval tools show, so source paths and excerpts are attached for you.
-- **Finalize once**: the structured result tool is the final action.
+- **Finalize once**: the last reply, with no tool call, is the final answer.
 `;
 }

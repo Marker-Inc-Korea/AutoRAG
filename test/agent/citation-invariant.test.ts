@@ -6,15 +6,12 @@ import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
 	fauxAssistantMessage,
-	fauxToolCall,
 	type Model,
 } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { assertResultsMappingOneToOne } from "../../src/agent/citations.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
-import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import { createAutoRAGLite } from "../../src/core.ts";
 
@@ -72,43 +69,16 @@ const unit = (number: number) => ({
 	confidence: 0.8,
 });
 
-function fastCall(answer: string, numbers: readonly number[]): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
-				answer,
-				results: numbers.map(unit),
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
-}
-
-function finalCallWithRefs(
-	answer: string,
-	numbers: readonly number[],
-	refs: readonly string[] = [join(docs, "fromis.txt")],
-): FauxResponseStep {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-				answer,
-				results: numbers.map((number) => ({ ...unit(number), refs: [...refs] })),
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
-}
-
 describe("answer citations resolve to results (#1788)", () => {
-	it("rejects mismatched emits in both phases so the model re-emits one numbering", async () => {
-		// The issue's real run: fast cites [6] with results [1]; deep cites [1]..[6] with results [1][2].
+	it("derives results from cited evidence so every remaining number resolves", async () => {
+		// The model cites a real file it read plus ids no tool returned; the
+		// derivation keeps [1] and drops the rest, so no [n] is left dangling.
 		const model = fauxModel(
-			fastCall("- fromis_9 has five members [6]", [1]),
-			fastCall("- fromis_9 has five members [1]", [1]),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithRefs("- Correction: debuted with nine [1][2][3][4][5][6]", [1, 2]),
-			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2]),
+			fauxAssistantMessage(
+				`- fromis_9 has five members [file:${join(docs, "fromis.txt")}] and also [e99] and [7].`,
+				{ stopReason: "stop" },
+			),
+			fauxAssistantMessage(`- verified: five members [file:${join(docs, "fromis.txt")}].`, { stopReason: "stop" }),
 		);
 		const agent = new AutoRAGAgent(agentOptions(model));
 		const events: SearchDocumentsStreamEvent[] = [];
@@ -117,11 +87,15 @@ describe("answer citations resolve to results (#1788)", () => {
 		const preliminary = events.find((event) => event.type === "preliminary");
 		const complete = events.find((event) => event.type === "complete");
 		if (preliminary?.type !== "preliminary" || complete?.type !== "complete") throw new Error("missing events");
-		expect(preliminary.response.answer).toBe("- fromis_9 has five members [1]");
-		expect(complete.response.answer).toBe("- Correction: debuted with nine [1][2]");
-		expectCitationsResolve(preliminary.response);
-		expectCitationsResolve(complete.response);
-		expect(complete.response.diagnostics?.some((d) => d.code === "citation-without-result")).toBe(false);
+		for (const response of [preliminary.response, complete.response]) {
+			expectCitationsResolve(response);
+			expect(response.diagnostics).toContainEqual(
+				expect.objectContaining({ code: "citation-without-result", severity: "warning" }),
+			);
+		}
+		expect(complete.response.results.map((result) => result.number)).toEqual([1]);
+		expect(complete.response.answer).not.toContain("[e99]");
+		expect(complete.response.answer).not.toContain("[7]");
 	});
 
 	it("strips unmatched citations from externally curated reports and reports a diagnostic", () => {
@@ -160,71 +134,9 @@ describe("answer citations resolve to results (#1788)", () => {
 	});
 });
 
-// Issue #1807: a final emit with inconsistent numbering — repeated result
-// numbers, or refs naming evidence no tool returned — used to be accepted by
-// the tool and then fail the whole search after the run ended, discarding the
-// preliminary answer already delivered to the caller.
-describe("final emit result numbers must be unique (#1807)", () => {
-	it("rejects a final emit whose refs cite evidence no tool returned, so the model re-emits instead of the search failing", async () => {
-		const model = fauxModel(
-			fastCall("- fromis_9 has five members [1]", [1]),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2], ["e99"]),
-			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2]),
-		);
-		const agent = new AutoRAGAgent(agentOptions(model));
-		const events: SearchDocumentsStreamEvent[] = [];
-		for await (const event of agent.searchDocumentsStream("프로미스 나인 총 몇명이지.")) events.push(event);
-
-		const complete = events.find((event) => event.type === "complete");
-		if (complete?.type !== "complete") throw new Error("missing complete event");
-		expect(complete.response.answer).toBe("- Correction: debuted with nine [1][2]");
-		expect(complete.response.results.map((result) => result.number)).toEqual([1, 2]);
-		expect(complete.response.diagnostics?.some((d) => d.code === "missing-final-emit")).toBe(false);
-	});
-
-	it("degrades instead of throwing when the model never makes the result numbers unique", async () => {
-		const model = fauxModel(
-			fastCall("- fromis_9 has five members [1]", [1]),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithRefs("- Correction: debuted with nine [1]", [1, 1]),
-			fauxAssistantMessage("Done.", { stopReason: "stop" }),
-			finalCallWithRefs("- Correction: debuted with nine [1]", [1, 1]),
-			fauxAssistantMessage("Done.", { stopReason: "stop" }),
-		);
-		const agent = new AutoRAGAgent(agentOptions(model));
-		const events: SearchDocumentsStreamEvent[] = [];
-		for await (const event of agent.searchDocumentsStream("프로미스 나인 총 몇명이지.")) events.push(event);
-
-		const preliminary = events.find((event) => event.type === "preliminary");
-		const complete = events.find((event) => event.type === "complete");
-		if (preliminary?.type !== "preliminary" || complete?.type !== "complete") throw new Error("missing events");
-		expect(preliminary.response.answer).toBe("- fromis_9 has five members [1]");
-		expect(complete.response.diagnostics).toContainEqual(
-			expect.objectContaining({ code: "missing-final-emit", severity: "warning" }),
-		);
-	});
-
-	it("rejects duplicate result numbers, then accepts the re-emit with unique numbers", async () => {
-		const model = fauxModel(
-			fastCall("- fromis_9 has five members [1]", [1]),
-			fauxAssistantMessage("Fast answer delivered.", { stopReason: "stop" }),
-			finalCallWithRefs("- Correction: debuted with nine [1]", [1, 1]),
-			finalCallWithRefs("- Correction: debuted with nine [1][2]", [1, 2]),
-		);
-		const agent = new AutoRAGAgent(agentOptions(model));
-		const events: SearchDocumentsStreamEvent[] = [];
-		for await (const event of agent.searchDocumentsStream("프로미스 나인 총 몇명이지.")) events.push(event);
-
-		const complete = events.find((event) => event.type === "complete");
-		if (complete?.type !== "complete") throw new Error("missing complete event");
-		expect(complete.response.results.map((result) => result.number)).toEqual([1, 2]);
-		expect(new Set(complete.response.results.map((result) => result.number)).size).toBe(2);
-		expect(complete.response.diagnostics?.some((d) => d.code === "missing-final-emit")).toBe(false);
-	});
-});
-
-describe("assertResultsMappingOneToOne duplicates (#1807)", () => {
+// The structured report path (`recordStructuredResultsSession`) still rejects
+// a report whose result numbers and mapping numbers are not one-to-one.
+describe("assertResultsMappingOneToOne duplicates", () => {
 	const entries = (...numbers: number[]) => numbers.map((number) => ({ number }));
 
 	it("accepts unique, equal number sets in any order", () => {

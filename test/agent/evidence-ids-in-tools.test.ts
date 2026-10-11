@@ -23,7 +23,7 @@ function textOf(result: { content: ReadonlyArray<{ type: string; text?: string }
 }
 
 function resolve(ledger: EvidenceLedger, ref: string) {
-	return ledger.resolve([ref], { label: "t", number: 1, fallbackContent: "", allowLocalFiles: false })[0];
+	return ledger.lookup(ref, { allowLocalFiles: false })[0];
 }
 
 let ledger: EvidenceLedger;
@@ -107,7 +107,7 @@ describe("retrieval tools issue evidence ids", () => {
 			ledger,
 		);
 		await tool.execute("c1", { query: "q" });
-		expect(() => resolve(ledger, "e1")).toThrow();
+		expect(resolve(ledger, "e1")).toBeUndefined();
 	});
 
 	it("jikji_find registers each answer path so it can be cited", async () => {
@@ -164,7 +164,7 @@ describe("retrieval tools issue evidence ids", () => {
 	it("web_fetch rejects non-http urls without registering evidence", async () => {
 		const tool = createWebFetchTool({}, ledger);
 		await tool.execute("c1", { url: "/etc/passwd" });
-		expect(() => resolve(ledger, "e1")).toThrow();
+		expect(resolve(ledger, "e1")).toBeUndefined();
 	});
 });
 
@@ -184,6 +184,6 @@ describe("ledger scoping", () => {
 		);
 		await tool.execute("c1", { query: "q" });
 		ledger.clear();
-		expect(() => resolve(ledger, "e1")).toThrow();
+		expect(resolve(ledger, "e1")).toBeUndefined();
 	});
 });

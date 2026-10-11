@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutoRAGResultsDetails } from "../../src/agent/emit-results-tool.ts";
+import type { AutoRAGResultsDetails } from "../../src/agent/results.ts";
 import { createAutoRAGLite } from "../../src/core.ts";
 import * as publicApi from "../../src/index.ts";
 

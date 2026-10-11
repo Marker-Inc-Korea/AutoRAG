@@ -12,11 +12,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/pi-ai";
-import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { type FauxProviderRegistration, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
 
 let root: string;
@@ -93,24 +92,9 @@ function emitModel(onPrompt?: (text: string) => void) {
 		},
 		(context) => {
 			onPrompt?.(extractUserText(context));
-			return fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-						answer: "[1] Refund exceptions require director approval.",
-						results: [
-							{
-								number: 1,
-								title: "Refund approval",
-								summary: "Refund exceptions require director approval before payout.",
-								evidence: [{ excerpt: "director approval" }],
-								confidence: 0.9,
-								refs: [refundRef],
-							},
-						],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			);
+			return fauxAssistantMessage(`Refund exceptions require director approval. [file:${refundRef}]`, {
+				stopReason: "stop",
+			});
 		},
 	]);
 	registrations.push(registration);

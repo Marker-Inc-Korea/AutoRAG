@@ -21,7 +21,8 @@ import { randomUUID } from "node:crypto";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
+import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata, SourceDescription } from "../../src/datasource/types.ts";
+import type { RetrievalMethod, RetrievalMethodDescriptor, RetrievalResult } from "../../src/retrieval/types.ts";
 import { runServe } from "../../src/cli/commands/serve.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { planSourceRoots } from "../../src/filesystem/source-paths.ts";
@@ -222,33 +223,78 @@ async function gateC(root: string, registrations: FauxProviderRegistration[]): P
 	);
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "emit-abs" }] });
 	registration.setResponses([
-		fauxAssistantMessage(
-			[
-				fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-					answer: "[1] Refund exceptions require director approval.",
-					results: [
-						{
-							number: 1,
-							title: "Refund policy",
-							summary: "Refund exceptions require director approval.",
-							evidence: [{ excerpt: "Refund exceptions require director approval before payout." }],
-							confidence: 0.95,
-						},
-					],
-					mapping: [
-						{
-							number: 1,
-							source: sourceFile,
-							method: "bash",
-							content: "Refund exceptions require director approval before payout.",
-						},
-					],
-				}),
-			],
-			{ stopReason: "toolUse" },
-		),
+		fauxAssistantMessage([fauxToolCall("search_datasource_abs", { query: "refund approval" })], { stopReason: "toolUse" }),
+		// Cite the evidence id the search tool printed for the absolute-path source.
+		(context) => {
+			let evidenceId: string | undefined;
+			for (const message of context.messages) {
+				if (message.role !== "toolResult") continue;
+				const text = message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+				evidenceId ??= text.match(/\[(e\d+)\]/)?.[1];
+			}
+			if (evidenceId === undefined) throw new Error("datasource search printed no evidence id");
+			return fauxAssistantMessage(`Refund exceptions require director approval. [${evidenceId}]`, { stopReason: "stop" });
+		},
 	]);
 	registrations.push(registration);
+	const absMethod: RetrievalMethod = {
+		describe: (): RetrievalMethodDescriptor => ({
+			name: "abs.keyword",
+			type: "bm25",
+			description: "Absolute-path QA method",
+			status: "active",
+			capabilities: ["keyword"],
+			datasourceId: "abs",
+			tags: ["abs"],
+		}),
+		retrieve: async (): Promise<RetrievalResult[]> => [
+			{
+				id: "abs-1",
+				source: sourceFile,
+				content: "Refund exceptions require director approval before payout.",
+				score: 1,
+				metadata: { method: "abs.keyword" },
+			},
+		],
+	};
+	const absSkill: DatasourceSkill = {
+		describe: () => ({
+			name: "abs",
+			type: "doc",
+			description: "Absolute-path QA fixture",
+			capabilities: ["keyword", "polling"],
+			tags: ["abs"],
+			status: "active",
+			datasourceId: "abs",
+			instanceId: "default",
+			instances: ["default"],
+		}),
+		polling: (): PollingMetadata => ({ mode: "poll", intervalMs: 60_000 }),
+		skillManifest: () => ({
+			name: "datasource-abs",
+			description: "Absolute-path QA fixture",
+			content: "Search with search_datasource_abs.",
+		}),
+		index: async (): Promise<DatasourceIndexResult> => ({
+			ok: true,
+			instanceId: "default",
+			skill: "abs",
+			chunkCount: 1,
+			indexedAt: 1,
+			diagnostics: [],
+		}),
+		retrievalMethods: () => [absMethod],
+		describeSources: (): readonly SourceDescription[] => [
+			{
+				source: "/abs/default",
+				datasourceId: "abs",
+				skill: "abs",
+				instanceId: "default",
+				contentType: "doc",
+				metadata: { description: "Absolute-path QA fixture" },
+			},
+		],
+	};
 	const agent = new AutoRAGAgent({
 		model: registration.getModel(),
 		searchPaths: [docsDir],
@@ -257,6 +303,7 @@ async function gateC(root: string, registrations: FauxProviderRegistration[]): P
 		remoteSession: true,
 		minSync: false,
 		jikji: false,
+		datasourceSkills: [absSkill],
 	});
 	const policyStore = new PolicyStore({
 		workspacePath: root,

@@ -105,7 +105,7 @@ Guidance:
 ## Query pipeline (routing, decomposition, datasource check, follow-up check)
 
 Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
-search **before** `emit_fast_answer`. Jev answers two typed questions about the
+search **before** the fast answer. Jev answers two typed questions about the
 user question in one batched call:
 
 1. **Branch** (`choice`): can the assistant answer from its **intrinsic
@@ -139,8 +139,8 @@ What happens next:
 
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
-| `direct` | Skips Jikji, MinSync, web search, and the verification phase; `emit_fast_answer` is final. |
-| `config` | Skips retrieval, decomposition, `emit_fast_answer`, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new through `emit_autorag_results` (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
+| `direct` | Skips Jikji, MinSync, web search, and the verification phase; the fast answer is final. |
+| `config` | Skips retrieval, decomposition, the fast answer, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new as its final message (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
 | `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 
 Web search is not part of routing. When verification runs after the fast answer,
@@ -211,7 +211,7 @@ showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉�
 
 ### Follow-up check after the fast answer
 
-After `emit_fast_answer` on the `local` branch, Jev answers one more
+After the fast answer on the `local` branch, Jev answers one more
 `noul` about the question **and** the fast answer together: does the answer need
 correction, clarification from the user, or further research? Below 0.5, the run
 ends there: the fast answer becomes the final response (its numbered results and
@@ -270,7 +270,7 @@ no single-phase mode.
 ## Evidence judgment for memory
 
 Retrieval memory stores only evidence that survived judgment, so after the
-final answer (`emit_autorag_results`, or `emit_fast_answer` when Jev ends the
+final answer (the final reply, or the fast reply when Jev ends the
 run early) every cited evidence is put back to Jev. Each evidence is mapped to
 the search query and retrieval method that surfaced it, then judged as one
 `noul` question: *does the evidence directly support the sentence of the answer

@@ -56,12 +56,14 @@ describe("degraded answer when the model request fails", () => {
 		);
 	});
 
-	it("keeps the old wording when the model stopped normally without emitting", async () => {
+	it("takes a normal stop message with prose as the final answer instead of degrading", async () => {
 		const agent = agentAnswering(() => fauxAssistantMessage("Still looking.", { stopReason: "stop" }));
 
 		const response = await agent.searchDocuments("refund approval");
 
-		expect(response.answer).toContain("broaden the configured searchPaths");
+		// A plain `stop` reply is the answer now; no degraded fallback, no diagnostic.
+		expect(response.answer).toBe("Still looking.");
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "no-final-answer")).toBe(false);
 		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "model-request-failed")).toBe(false);
 	});
 });
