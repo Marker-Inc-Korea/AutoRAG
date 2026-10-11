@@ -18,7 +18,6 @@ type LiteProbe = {
 	readonly searchSelected: unknown;
 	readonly searchEverything: unknown;
 	readonly recordStructuredResultsSession: unknown;
-	readonly getResultRegistry: unknown;
 };
 
 function isLiteFactory(value: unknown): value is LiteFactoryProbe {
@@ -37,7 +36,6 @@ function hasLiteSurface(value: unknown): value is LiteProbe {
 		"searchSelected",
 		"searchEverything",
 		"recordStructuredResultsSession",
-		"getResultRegistry",
 	].every((key) => key in value);
 }
 

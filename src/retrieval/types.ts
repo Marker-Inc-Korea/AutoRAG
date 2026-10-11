@@ -65,29 +65,3 @@ export interface RetrievalWithDiagnostics {
 	/** Surfaces that were not searched for this query. Empty when every method ran. */
 	unsearched: RetrievalUnsearchedSurface[];
 }
-
-export interface NumberedResult {
-	index: number;
-	source: string;
-	content: string;
-	method: string;
-}
-
-export interface EvidenceReference {
-	method: string;
-	source: string;
-	excerpt?: string;
-	content?: string;
-	retrievalResultId?: string;
-	chunkIndex?: number;
-	lineNumber?: number;
-	stableEvidenceId: string;
-}
-
-export interface CuratedResult {
-	index: number;
-	content: string;
-	source: string;
-	method: string;
-	evidenceRefs?: readonly EvidenceReference[];
-}
