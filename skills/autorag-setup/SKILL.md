@@ -184,7 +184,7 @@ told duplicate exclusion is off. Set `"excludeExactDuplicates": false` to
 index every copy.
 
 MinSync's default embedder is in-process native Qwen3 embeddings
-(`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.5+). The
+(`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.6). The
 default needs no embedder flags, no API key, and no external daemon (such as
 Ollama) — all embeddings run in-process locally and privately. For workspaces
 using the loopback llama-server gateway, prefetch the verified model with

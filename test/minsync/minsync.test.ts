@@ -135,7 +135,7 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("MinSyncClient", () => {
-	it("uses the official v0.4.5 query command with its selected mode", async () => {
+	it("uses the official v0.4.6 query command with its selected mode", async () => {
 		// Given
 		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
 		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
