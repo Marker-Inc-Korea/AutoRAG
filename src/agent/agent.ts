@@ -85,6 +85,7 @@ import {
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
+import { deriveResultsFromAnswer } from "./answer-citations.ts";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -97,20 +98,10 @@ import {
 	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 	type ScanDuplicateDocumentsDetails,
 } from "./dupey-tool.ts";
-import {
-	type AutoRAGResultsDetails,
-	createEmitResultsTool,
-	EMIT_AUTORAG_RESULTS_TOOL_NAME,
-} from "./emit-results-tool.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
-import {
-	type AutoRAGFastAnswerDetails,
-	createEmitFastAnswerTool,
-	EMIT_FAST_ANSWER_TOOL_NAME,
-} from "./fast-answer-tool.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import {
 	createJevExtension,
@@ -156,6 +147,7 @@ import {
 	updateRefreshProgress,
 	writeRefreshProgress,
 } from "./refresh-progress.ts";
+import type { AutoRAGResultsDetails } from "./results.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -562,10 +554,10 @@ export interface AutoRAGAgentOptions {
 	memoryEmbedder?: Embedder | false;
 	/**
 	 * Agent self-configuration. When set (and Jev is on), Jev gains a `config`
-	 * branch for questions about AutoRAG's own settings: the turn skips
-	 * `emit_fast_answer`, receives the full `autorag-setup` skill, edits
-	 * `configPath` with the pi tools, and reports through
-	 * `emit_autorag_results`. Always omitted for remote P2P sessions.
+	 * branch for questions about AutoRAG's own settings: the turn skips the
+	 * fast answer, receives the full `autorag-setup` skill, edits
+	 * `configPath` with the pi tools, and reports what it changed as its final
+	 * message. Always omitted for remote P2P sessions.
 	 */
 	selfConfig?: SelfConfigOptions;
 	/**
@@ -675,11 +667,9 @@ export class AutoRAGAgent {
 	private lastSessionId: string | undefined;
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
-	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
-	private interactiveFastAnswerCallback: ((details: AutoRAGFastAnswerDetails) => void) | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
-	/** Evidence every retrieval tool returned this run; emit tools resolve model-cited ids against it. */
+	/** Evidence every retrieval tool returned this run; the answer's inline `[eN]` citations resolve against it. */
 	private readonly evidenceLedger = new EvidenceLedger();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
@@ -886,10 +876,6 @@ export class AutoRAGAgent {
 		);
 		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
-		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details), {
-			ledger: this.evidenceLedger,
-			allowLocalFiles: !this.remoteSession,
-		});
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 		this.jevJudge =
@@ -958,8 +944,6 @@ export class AutoRAGAgent {
 			"check_memory",
 			...singleDatasourceTools.map((tool) => tool.name),
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
-			EMIT_AUTORAG_RESULTS_TOOL_NAME,
-			EMIT_FAST_ANSWER_TOOL_NAME,
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
@@ -992,7 +976,6 @@ export class AutoRAGAgent {
 			loadDatasourceSkillTool,
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
-			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
@@ -1292,7 +1275,6 @@ export class AutoRAGAgent {
 			readonly providerApiKeys?: Readonly<Record<string, string>>;
 		},
 		systemPrompt: string,
-		extraTools: readonly AgentTool[] = [],
 	): Promise<AutoRAGSearchSession> {
 		if (this.boundPiRuntime !== undefined) {
 			const session = this.boundPiRuntime.session;
@@ -1313,12 +1295,9 @@ export class AutoRAGAgent {
 			apiKey: resolved.apiKey,
 			providerApiKeys: resolved.providerApiKeys,
 			getSystemPrompt: () => systemPrompt,
-			customTools: [
-				...this.tools.filter(
-					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
-				),
-				...extraTools,
-			],
+			customTools: this.tools.filter(
+				(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
+			),
 			remoteSession: this.remoteSession,
 			contextTransform: (messages) => this.withMemoryContext(messages),
 			...(this.jevExtension !== undefined
@@ -1421,25 +1400,16 @@ export class AutoRAGAgent {
 					}),
 				),
 			contextTransform: (messages) => this.withMemoryContext(messages),
-			customTools: [
-				...this.tools.filter(
-					(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
-				),
-				createEmitFastAnswerTool((details) => this.interactiveFastAnswerCallback?.(details), {
-					ledger: this.evidenceLedger,
-				}),
-			],
+			customTools: this.tools.filter(
+				(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
+			),
 			onQuery: (query, pi) => this.runInteractivePiQuery(query, pi),
-			inactiveToolNames: [EMIT_FAST_ANSWER_TOOL_NAME],
 			...(this.jevExtension !== undefined
 				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
 				: {}),
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
-		runtime.runtime.session.setActiveToolsByName(
-			runtime.runtime.session.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-		);
 		const dispose = runtime.dispose;
 		return {
 			...runtime,
@@ -1448,6 +1418,13 @@ export class AutoRAGAgent {
 				await dispose();
 			},
 		};
+	}
+
+	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
+	private deriveAnswer(text: string): AutoRAGResultsDetails {
+		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, { allowLocalFiles: !this.remoteSession });
+		this.routingDiagnostics.push(...derived.diagnostics);
+		return derived.details;
 	}
 
 	private async runInteractivePiQuery(
@@ -1547,12 +1524,12 @@ export class AutoRAGAgent {
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
-		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
+		let fastCaptured: AutoRAGResultsDetails | undefined;
 		/** True when this run took the Jev `config` branch; its report never feeds retrieval memory. */
 		let selfConfigRun = false;
 		/**
 		 * Without Jev every fast answer goes on to verification, so it is
-		 * published the moment emit_fast_answer runs. With Jev, publishing waits
+		 * published as soon as it is written. With Jev, publishing waits
 		 * for the direct route and the follow-up check: an answer that turns out
 		 * to be final reaches the caller once, as the complete response.
 		 */
@@ -1563,7 +1540,7 @@ export class AutoRAGAgent {
 		// an aborted run must never push a preliminary into the callback a later
 		// run already installed on the instance.
 		const planAbort = new AbortController();
-		const publishPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+		const publishPreliminary = (details: AutoRAGResultsDetails): void => {
 			if (planAbort.signal.aborted || published) return;
 			published = true;
 			this.preliminaryCallback?.(
@@ -1575,17 +1552,13 @@ export class AutoRAGAgent {
 				),
 			);
 		};
-		const emitPreliminary = (details: AutoRAGFastAnswerDetails): void => {
+		const emitPreliminary = (details: AutoRAGResultsDetails): void => {
 			if (fastCaptured !== undefined) return;
 			fastCaptured = details;
 			if (publishOnCapture) publishPreliminary(details);
 		};
 		let session: AutoRAGSearchSession | undefined;
-		this.interactiveFastAnswerCallback = emitPreliminary;
 		let unsubscribers: readonly (() => void)[] = [];
-		this.resultCapture = (details) => {
-			captured = details;
-		};
 		let searchStarted = false;
 		try {
 			const resolved = await this.resolveSessionModel();
@@ -1610,7 +1583,6 @@ export class AutoRAGAgent {
 			session = await this.createSearchSession(
 				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
-				[createEmitFastAnswerTool(emitPreliminary, { ledger: this.evidenceLedger })],
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
@@ -1619,55 +1591,37 @@ export class AutoRAGAgent {
 			try {
 				await Promise.race([
 					(async () => {
-						// Two-phase flow: fast thinking-off answer first, then a
-						// thinking-on verification pass that finalizes the results.
+						// Two-phase flow: a fast thinking-off answer from the baseline
+						// evidence, then a thinking-on verification pass. Each phase ends in
+						// plain assistant text; the harness resolves its inline [eN]
+						// citations against the evidence ledger.
 						// With Jev enabled, Jev first picks a direct answer (intrinsic knowledge)
 						// or local search, and whether the question needs decomposition.
 						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
-						const sessionAgent = session.piSession;
 						const activeSession = session;
-						const activateFastPhase = (): void => {
-							if (sessionAgent !== undefined) {
-								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.fastThinkingLevel));
-								sessionAgent.setActiveToolsByName([
-									...sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-									EMIT_FAST_ANSWER_TOOL_NAME,
-								]);
-							} else {
-								activeSession.agent.state.thinkingLevel = clampThinkingLevel(
-									resolved.model,
-									this.fastThinkingLevel,
-								);
-								activeSession.agent.state.tools = [
-									...this.tools,
-									{ name: EMIT_FAST_ANSWER_TOOL_NAME } as AgentTool,
-								];
-							}
+						const sessionAgent = activeSession.piSession;
+						const transcript = (): readonly AgentMessage[] =>
+							sessionAgent?.messages ?? activeSession.agent.state.messages;
+						const setThinking = (level: AutoRAGThinkingLevel): void => {
+							const clamped = clampThinkingLevel(resolved.model, level);
+							if (sessionAgent !== undefined) sessionAgent.setThinkingLevel(clamped);
+							else activeSession.agent.state.thinkingLevel = clamped;
 						};
 						if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
-							// Self-configuration: no retrieval and no emit_fast_answer. The
-							// model gets the full setup skill and edits the config itself,
-							// then reports through emit_autorag_results.
+							// Self-configuration: no retrieval and no fast answer. The model
+							// gets the full setup skill and edits the config itself, then
+							// reports what it changed as its final message.
 							selfConfigRun = true;
 							// pi's bash tool refuses to run from a missing cwd, and a freshly
 							// initialised config has not created its workspace yet.
 							mkdirSync(this.workspaceProjectRoot, { recursive: true });
 							const previousTools = sessionAgent?.getActiveToolNames();
-							if (sessionAgent !== undefined) {
-								sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
-								sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES, EMIT_AUTORAG_RESULTS_TOOL_NAME]);
-							} else {
-								activeSession.agent.state.thinkingLevel = clampThinkingLevel(
-									resolved.model,
-									this.finalThinkingLevel,
-								);
-								activeSession.agent.state.tools = this.tools.filter(
-									(tool) => tool.name === EMIT_AUTORAG_RESULTS_TOOL_NAME,
-								);
-							}
+							setThinking(this.finalThinkingLevel);
+							if (sessionAgent !== undefined) sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES]);
+							else activeSession.agent.state.tools = [];
 							const configBefore = snapshotConfigFile(this.selfConfig.configPath);
 							try {
-								await session.prompt(
+								await activeSession.prompt(
 									buildSelfConfigPrompt({
 										query: trimmedQuery,
 										configPath: this.selfConfig.configPath,
@@ -1675,14 +1629,8 @@ export class AutoRAGAgent {
 										skill: plan.selfConfigSkill,
 									}),
 								);
-								if (
-									captured === undefined &&
-									!planAbort.signal.aborted &&
-									lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) ===
-										undefined
-								) {
-									await session.prompt(buildFinalEmitReminder());
-								}
+								const report = finalAnswerText(transcript());
+								if (report !== undefined) captured = this.deriveAnswer(report);
 								const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
 								if (rolledBack !== undefined) {
 									this.routingDiagnostics.push({
@@ -1691,11 +1639,10 @@ export class AutoRAGAgent {
 										message: `The edited config did not validate, so the previous config was restored. ${rolledBack}`,
 										source: "self-config",
 									});
-									const emitted = captured;
-									if (emitted !== undefined) {
+									if (captured !== undefined) {
 										captured = {
-											...emitted,
-											answer: `${emitted.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
+											...captured,
+											answer: `${captured.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
 										};
 									}
 								}
@@ -1711,12 +1658,10 @@ export class AutoRAGAgent {
 							// Direct answers skip every retrieval step and the verification
 							// phase: the fast answer is the final answer. Only Jev routes
 							// here, so the preliminary was never published.
-							activateFastPhase();
-							await session.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
-							const answer =
-								fastCaptured?.answer ??
-								lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
-							if (answer !== undefined) captured = { answer, results: [], mapping: [], warnings: [] };
+							setThinking(this.fastThinkingLevel);
+							await activeSession.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
+							const answer = finalAnswerText(transcript());
+							if (answer !== undefined) captured = this.deriveAnswer(answer);
 							return;
 						}
 						const baseline = await this.prefetchInitialRetrievalContext(
@@ -1725,56 +1670,33 @@ export class AutoRAGAgent {
 							options,
 							plan.datasources,
 						);
-						activateFastPhase();
-						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
-						let preliminary = fastCaptured;
-						if (preliminary === undefined) {
-							const text = lastAssistantText(session.piSession?.messages ?? session.agent.state.messages);
-							if (text !== undefined) preliminary = { answer: text, results: [], sources: [], evidenceRefs: [] };
-						}
-						if (preliminary !== undefined) emitPreliminary(preliminary);
-						if (captured !== undefined) return;
-						// With Jev enabled, a fast answer that needs no correction,
-						// clarification, or further research ends the run here.
+						setThinking(this.fastThinkingLevel);
+						await activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
+						const fastText = finalAnswerText(transcript());
+						const preliminary = fastText === undefined ? undefined : this.deriveAnswer(fastText);
 						if (preliminary !== undefined) {
+							emitPreliminary(preliminary);
+							// With Jev enabled, a fast answer that needs no correction,
+							// clarification, or further research ends the run here.
 							const followUp = await this.shouldFollowUp(trimmedQuery, preliminary);
 							// The follow-up check is not tied to the session abort, so it
 							// can resolve after the run's timeout fired; stop here rather
 							// than publishing or prompting on behalf of a dead run.
 							if (planAbort.signal.aborted) return;
 							if (!followUp) {
-								captured = fastAnswerAsFinal(preliminary);
+								captured = preliminary;
 								return;
 							}
+							publishPreliminary(preliminary);
 						}
-						if (preliminary !== undefined) publishPreliminary(preliminary);
-						if (sessionAgent !== undefined) {
-							sessionAgent.setThinkingLevel(clampThinkingLevel(resolved.model, this.finalThinkingLevel));
-							sessionAgent.setActiveToolsByName(
-								sessionAgent.getActiveToolNames().filter((name) => name !== EMIT_FAST_ANSWER_TOOL_NAME),
-							);
-						} else {
-							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
-							session.agent.state.tools = [...this.tools];
-						}
+						setThinking(this.finalThinkingLevel);
 						// Only a preliminary consumer actually received may turn the final answer into a delta.
 						const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
-						await session.prompt(
-							this.buildRefinementPrompt(trimmedQuery, options, preliminary, fastAnswerDelivered),
+						await activeSession.prompt(
+							this.buildRefinementPrompt(trimmedQuery, options, preliminary?.answer, fastAnswerDelivered),
 						);
-						// Models sometimes end verification by writing the final answer as
-						// prose instead of calling emit_autorag_results (seen on the web
-						// route). One reminder turn lets them emit what they already have;
-						// a second miss, a provider error, or an abort (tool-call limit,
-						// timeout) falls through to the degraded response.
-						if (
-							captured === undefined &&
-							!planAbort.signal.aborted &&
-							this.searchToolCallCount < this.maxSearchToolCalls &&
-							lastModelRequestError(session.piSession?.messages ?? session.agent.state.messages) === undefined
-						) {
-							await session.prompt(buildFinalEmitReminder());
-						}
+						const finalText = finalAnswerText(transcript());
+						if (finalText !== undefined) captured = this.deriveAnswer(finalText);
 					})(),
 					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
@@ -1798,12 +1720,12 @@ export class AutoRAGAgent {
 
 			if (captured === undefined && timedOutAfterFastAnswer && fastCaptured !== undefined) {
 				// The caller receives this as the run's final answer, so record it as
-				// one: the fast-answer-as-final conversion registers the session
-				// registry and memory entry for the returned response.
+				// one: that registers the session registry and memory entry for the
+				// returned response.
 				const response = recordStructuredResultsSession(
 					sessionId,
 					trimmedQuery,
-					fastAnswerAsFinal(fastCaptured),
+					fastCaptured,
 					this.sessions,
 					this.memory,
 					[
@@ -1846,16 +1768,16 @@ export class AutoRAGAgent {
 						sessionId,
 						query: trimmedQuery,
 						results: [],
-						answer: buildMissingFinalEmitAnswer(trimmedQuery, reason, this.retrievalTrace, modelError),
+						answer: buildMissingFinalAnswer(trimmedQuery, reason, this.retrievalTrace, modelError),
 						searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
 						warnings: [],
 						diagnostics: [
 							...this.collectComponentDiagnostics(),
 							{
-								code: "missing-final-emit",
+								code: "no-final-answer",
 								severity: "warning",
 								message:
-									"The agent ended its run without calling emit_autorag_results; returning a degraded response that carries the run's retrieval trace.",
+									"The agent ended its run without a final answer message; returning a degraded response that carries the run's retrieval trace.",
 							},
 							...(modelError === undefined
 								? []
@@ -1966,10 +1888,8 @@ export class AutoRAGAgent {
 				});
 			}
 			this.activeSession = undefined;
-			this.resultCapture = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
-			if (this.interactiveFastAnswerCallback === emitPreliminary) this.interactiveFastAnswerCallback = undefined;
 			this.activeRun = false;
 			this.memoryContextCache = undefined;
 		}
@@ -1977,31 +1897,29 @@ export class AutoRAGAgent {
 
 	/**
 	 * Stream bounded progress updates while retaining the stable
-	 * {@link searchDocuments} promise API. Progress is sourced from model text
-	 * deltas, so callers can render it in a TUI, CLI, or parent agent and can
-	 * stop by calling {@link abort}.
+	 * {@link searchDocuments} promise API. Progress is the text an assistant
+	 * message wrote before calling a tool (`stopReason: "toolUse"`); a message
+	 * that ends its turn is an answer, delivered as `preliminary` or
+	 * `complete`, never as progress. Callers can render it in a TUI, CLI, or
+	 * parent agent and can stop by calling {@link abort}.
 	 */
 	async *searchDocumentsStream(
 		query: string,
 		options: RetrievalOptions = {},
 	): AsyncGenerator<SearchDocumentsStreamEvent, void, void> {
 		const queue: SearchDocumentsStreamEvent[] = [];
-		let progressBuffer = "";
 		let wake: (() => void) | undefined;
 		let settled = false;
 		const unsubscribe = this.subscribe((event) => {
-			if (event.type !== "message_update" || event.assistantMessageEvent.type !== "text_delta") return;
-			const text = event.assistantMessageEvent.delta;
-			if (text.trim().length === 0) return;
-			progressBuffer += text;
-			if (!/[.!?。！？]\s*$/u.test(progressBuffer)) return;
-			queue.push({
-				type: "progress",
-				sessionId: this.lastSessionId ?? "",
-				query: query.trim(),
-				text: progressBuffer,
-			});
-			progressBuffer = "";
+			if (event.type !== "message_end" || event.message.role !== "assistant") return;
+			if (event.message.stopReason !== "toolUse") return;
+			const text = event.message.content
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("")
+				.trim();
+			if (text === "") return;
+			queue.push({ type: "progress", sessionId: this.lastSessionId ?? "", query: query.trim(), text });
 			wake?.();
 			wake = undefined;
 		});
@@ -2018,15 +1936,6 @@ export class AutoRAGAgent {
 		};
 		const run = this.searchDocuments(query, options)
 			.then((response) => {
-				if (progressBuffer.trim() !== "") {
-					queue.push({
-						type: "progress",
-						sessionId: this.lastSessionId ?? "",
-						query: query.trim(),
-						text: progressBuffer,
-					});
-					progressBuffer = "";
-				}
 				queue.push({ type: "complete", response });
 			})
 			.catch((error) => {
@@ -2198,12 +2107,12 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Jev check run after emit_fast_answer: does the answer need correction,
+	 * Jev check run after the fast answer: does the answer need correction,
 	 * clarification, or further research? "No" ends the run with the fast
 	 * answer as the final answer. Without Jev, or when the check fails, the run
 	 * always continues into verification.
 	 */
-	private async shouldFollowUp(query: string, fastAnswer: AutoRAGFastAnswerDetails): Promise<boolean> {
+	private async shouldFollowUp(query: string, fastAnswer: AutoRAGResultsDetails): Promise<boolean> {
 		if (this.jevJudge === undefined) return true;
 		const decision = await needsFollowUp(this.jevJudge, query, fastAnswer.answer);
 		if (decision.fallbackReason !== undefined) {
@@ -2560,11 +2469,11 @@ export class AutoRAGAgent {
 
 	/**
 	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
-	 * is already gathered, so the model answers immediately with thinking off
-	 * via emit_fast_answer, without any further tool calls.
+	 * is already gathered, so the model answers immediately with thinking off,
+	 * as plain text, without any further tool calls.
 	 */
 	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {
-		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} knowledge units.` : "";
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		return (
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
@@ -2574,27 +2483,25 @@ export class AutoRAGAgent {
 			`Formatting and content rules for the answer:\n` +
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
-			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and the evidence ids (e.g. e3) from the baseline evidence that back each unit in refs, then stop.`
+			`Write the answer as your reply, then stop.`
 		);
 	}
 
 	/**
 	 * Prompt for a question Jev routed to a direct answer: general knowledge or
 	 * small talk. No retrieval ran and no verification phase follows, so the
-	 * answer emitted here is final.
+	 * reply is the final answer.
 	 */
 	buildDirectAnswerPrompt(query: string): string {
 		return (
 			`Answer this query directly from your own general knowledge: ${query}\n\n` +
 			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ` +
-			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.\n\n` +
-			`Call emit_fast_answer exactly once with the answer and an empty results list, then stop.`
+			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.`
 		);
 	}
 
@@ -2621,33 +2528,31 @@ export class AutoRAGAgent {
 	/**
 	 * Verification-phase prompt for two-phase searches. The fast answer, when a
 	 * consumer already received it, is embedded verbatim so the model can diff
-	 * against it; the model then verifies with thinking on and finalizes with
-	 * emit_autorag_results exactly once, returning only the delta.
+	 * against it; the model then verifies with thinking on and ends with the
+	 * final answer as a plain reply, returning only the delta.
 	 */
 	buildRefinementPrompt(
 		query: string,
 		options: RetrievalOptions,
-		fastAnswer: AutoRAGFastAnswerDetails | undefined,
+		fastAnswer: string | undefined,
 		fastAnswerDelivered: boolean,
 	): string {
-		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
 		const answerRules = fastAnswerDelivered
-			? `Formatting and content rules for the final \`answer\` (DELTA ONLY):\n` +
-				`- The user already has the first answer above. \`answer\` MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer.\n` +
+			? `Formatting and content rules for your final answer (DELTA ONLY):\n` +
+				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer.\n` +
 				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list.\n` +
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
-				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
-				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on a first-answer unit must re-emit that evidence as a result of this call and cite its new number.\n` +
+				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
 				`- ${ANSWER_CITATION_RULE}\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
@@ -2655,31 +2560,28 @@ export class AutoRAGAgent {
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}` +
-			`Cite the evidence ids (e.g. e3) shown next to retrieved results in each result's refs; for a local file you opened yourself with bash, give its absolute path.\n\n` +
+			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
-			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
-			`results, each citing its supporting evidence ids in refs.`
+			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);
 	}
 
 	buildSearchPrompt(query: string, options: RetrievalOptions, initialRetrievalContext?: string): string {
-		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
-			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval and emit the structured result. ` +
-			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not emit final results until its next message arrives.\n\n` +
+			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval. ` +
+			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not give the final answer until its next message arrives.\n\n` +
 			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
 			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
-			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Cite the evidence ids (e.g. e3) shown next to retrieved results in each result's refs.\n\n` +
+			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- Cite evidence with bracketed numbers only (e.g. [1], [2]); do not quote raw chunks or mention source paths directly in the answer.\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
@@ -2688,8 +2590,7 @@ export class AutoRAGAgent {
 			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
-			`results, each citing its supporting evidence ids in refs.`
+			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);
 	}
 
@@ -3566,86 +3467,39 @@ function formatRerankedBaseline(results: readonly RetrievalResult[], evidenceIds
 	const lines = results.map(
 		(result, index) => `[${evidenceIds[index]}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
 	);
-	return `Reranked initial candidates (ordered by relevance to the query; cite evidence by its [eN] id in refs):\n${lines.join("\n")}`;
+	return `Reranked initial candidates (ordered by relevance to the query; cite evidence by its [eN] id):\n${lines.join("\n")}`;
 }
 
 /**
- * The fast answer as a final emit_autorag_results payload, used when Jev ends
- * the run after the fast phase. Every result the answer cites is kept: a
- * result whose refs were omitted still keeps its citation. Cited results carry
- * the evidence the harness recorded for them (the same source, method, and
- * chunk a verified emit would carry); a result with no refs keeps an empty
- * mapping source (the response then carries no `source` for it) rather than an
- * invented path.
+ * The first answer rendered for the verification prompt. When a consumer
+ * already received it, the model must diff against it and return only the
+ * delta; otherwise the draft is internal context only and the final answer
+ * must stay complete. The text is the model's own, still carrying its `[eN]`
+ * ids, which stay valid for the whole run.
  */
-function fastAnswerAsFinal(fastAnswer: AutoRAGFastAnswerDetails): AutoRAGResultsDetails {
-	const refsByNumber = new Map(fastAnswer.evidenceRefs.map((entry) => [entry.number, entry.refs]));
-	return {
-		answer: fastAnswer.answer,
-		results: fastAnswer.results.map((result) => ({
-			number: result.number,
-			title: result.title,
-			summary: result.summary,
-			evidence: result.evidence,
-			confidence: result.confidence ?? 0.5,
-		})),
-		mapping: fastAnswer.results.map((result) => {
-			const refs = refsByNumber.get(result.number) ?? [];
-			const primary = refs[0];
-			return {
-				number: result.number,
-				source: primary?.source ?? "",
-				method: primary?.method ?? EMIT_FAST_ANSWER_TOOL_NAME,
-				content:
-					primary?.content ?? (result.evidence.map((evidence) => evidence.excerpt).join("\n") || result.summary),
-				evidenceRefs: refs,
-			};
-		}),
-		warnings: [],
-	};
-}
-
-/**
- * Render the fast-phase first answer for the verification prompt. When a
- * consumer already received it, the model must diff against it and return only
- * the delta; otherwise the draft is internal context only and the final answer
- * must stay complete.
- */
-function formatFirstAnswerContext(fastAnswer: AutoRAGFastAnswerDetails | undefined, delivered: boolean): string {
+function formatFirstAnswerContext(fastAnswer: string | undefined, delivered: boolean): string {
 	if (fastAnswer === undefined) {
 		return "(the fast phase produced no answer — write the complete answer)";
 	}
 	const header = delivered
-		? "The user has ALREADY received this immediate first answer:"
+		? "The user has ALREADY received this immediate first answer (its citations were renumbered for the user; the [eN] ids below are still valid for you):"
 		: "An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:";
-	const units =
-		fastAnswer.results.length === 0
-			? ""
-			: `\n\nNumbered units of that first answer (its own numbering — NOT citation numbers for your final answer; cite only the results you emit):\n${fastAnswer.results
-					.map((result) => `[${result.number}] ${result.title} — ${result.summary}`)
-					.join("\n")}`;
-	const sources =
-		fastAnswer.sources.length === 0
-			? ""
-			: `\n\nSources of that first answer:\n${fastAnswer.sources
-					.map((entry) => `[${entry.number}] -> ${entry.source}`)
-					.join("\n")}`;
-	return `${header}\n${fastAnswer.answer}${units}${sources}`;
+	return `${header}\n${fastAnswer}`;
 }
 
 /**
- * Degraded fallback answer for a run that ended without emit_autorag_results:
+ * Degraded fallback answer for a run that ended without a final answer message:
  * states the search-range failure, carries the agent's own last note as the
  * reason, suggests next steps, and points at the attached retrieval trace.
  */
-function buildMissingFinalEmitAnswer(
+function buildMissingFinalAnswer(
 	query: string,
 	reason: string | undefined,
 	trace: readonly SearchDocumentRetrievalTraceEntry[],
 	modelError?: string,
 ): string {
 	const lines = [
-		`The search run for "${query}" ended without finalized results: the agent ended its run without calling emit_autorag_results, so no curated answer is available within the configured search range.`,
+		`The search run for "${query}" ended without a final answer: the agent stopped before writing one, so no curated answer is available within the configured search range.`,
 		...(modelError === undefined ? [] : [`The model request failed: ${modelError}`]),
 		...(reason === undefined
 			? modelError === undefined
@@ -3679,19 +3533,27 @@ function lastModelRequestError(messages: readonly AgentMessage[]): string | unde
 }
 
 /**
- * One-turn reminder sent when the verification phase stops without calling
- * emit_autorag_results. It asks only for the structured emit of the answer the
- * model already reached, never for more searching.
+ * The run's answer: the text of the last assistant message, when that message
+ * ended its turn (`stop`) without calling a tool. A message that stopped on a
+ * tool call is a progress note, one that errored, aborted, or hit the length
+ * limit never finished its answer, so none of those count.
  */
-function buildFinalEmitReminder(): string {
-	return (
-		`You ended without calling ${EMIT_AUTORAG_RESULTS_TOOL_NAME}, so the user has not received your verified answer. ` +
-		`Do not search again. Call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} now, exactly once, with the answer you just wrote, ` +
-		`its numbered results, each with the evidence ids (refs) of the sources you used (a local file you opened yourself: its absolute path). ` +
-		`If verification found nothing usable, call it with an answer that says so and an empty results list.`
-	);
+function finalAnswerText(messages: readonly AgentMessage[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason !== "stop") return undefined;
+		const text = message.content
+			.filter((block) => block.type === "text")
+			.map((block) => block.text)
+			.join("")
+			.trim();
+		return text === "" ? undefined : text;
+	}
+	return undefined;
 }
 
+/** The last text the agent wrote, whatever stopped it: the reason a run ended without an answer. */
 function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];

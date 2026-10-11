@@ -264,7 +264,7 @@ default model, add a provider, check that a provider works), Jev's `config`
 branch loads this whole skill into that turn. The agent edits only the active
 config file (and `models.json` for a custom provider), verifies with
 `autorag health --json` and `autorag models list --available`, and reports each
-change as old → new through `emit_autorag_results`. It never prints a
+change as old → new in its final message. It never prints a
 credential value and never uses `init --force`.
 
 ### Retrieval and ingest caps

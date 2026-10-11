@@ -53,7 +53,7 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 			expect(names.filter((entry) => entry === name)).toHaveLength(1);
 		}
 		for (const name of ["stat", "search_posix_documents"]) expect(names).not.toContain(name);
-		for (const name of ["check_memory", "semantic_search_local_docs", "search_all_documents", "emit_autorag_results"])
+		for (const name of ["check_memory", "semantic_search_local_docs", "search_all_documents"])
 			expect(names).toContain(name);
 	});
 
@@ -111,7 +111,6 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 				makeTool("bash"),
 				makeTool("read_file"),
 				makeTool("check_memory"),
-				makeTool("emit_autorag_results"),
 				makeTool("search_all_documents"),
 				makeTool("semantic_search_local_docs"),
 				makeTool("search_custom"),
@@ -124,13 +123,7 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 		// read_file is now preserved alongside the reserved AutoRAG tools
 		expect(names).toContain("read_file");
 		// reserved names appear exactly once (AutoRAG-owned wins over any caller copy)
-		for (const reserved of [
-			"bash",
-			"check_memory",
-			"emit_autorag_results",
-			"search_all_documents",
-			"semantic_search_local_docs",
-		]) {
+		for (const reserved of ["bash", "check_memory", "search_all_documents", "semantic_search_local_docs"]) {
 			expect(names.filter((n) => n === reserved)).toHaveLength(1);
 		}
 	});

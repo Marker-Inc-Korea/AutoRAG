@@ -72,7 +72,7 @@ AutoRAG Agent orchestrates five integrated subsystems:
    - **Datasource Skills:** Federated retrieval across every configured external datasource.
 3. **Result Merger & Scope Narrowing:** Cross-method deduplication, score normalization, and ordinary query-scope narrowing.
 4. **Direct Evidence Reading (`bash`):** The agent directly opens and inspects promising files with `cat`, `grep`, or `find` to verify facts against ground truth.
-5. **Curation:** Structured findings are returned via `emit_autorag_results`; cited evidence that Jev judges to genuinely support the answer is remembered as reference context for later searches ([docs/retrieval-memory.md](docs/retrieval-memory.md)).
+5. **Curation:** The final answer is the model's plain reply; the harness resolves its inline `[eN]` citations into numbered, source-backed results; cited evidence that Jev judges to genuinely support the answer is remembered as reference context for later searches ([docs/retrieval-memory.md](docs/retrieval-memory.md)).
 
 ### Pi host boundary
 

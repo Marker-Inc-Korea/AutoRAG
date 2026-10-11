@@ -196,7 +196,7 @@ function searchEnvelope(resp: SearchDocumentsResponse, debug: boolean) {
 		};
 		if (r.source !== undefined) base.source = r.source;
 		if (debug) {
-			base.confidence = r.confidence;
+			if (r.confidence !== undefined) base.confidence = r.confidence;
 			base.evidence = r.evidence.map((e) => {
 				const ev: Record<string, unknown> = { excerpt: e.excerpt };
 				if (e.lineNumber !== undefined) ev.lineNumber = e.lineNumber;
@@ -231,7 +231,7 @@ function renderSearchHuman(resp: SearchDocumentsResponse, debug: boolean): strin
 		if (r.source !== undefined) lines.push(`   source: ${r.source}`);
 		if (r.summary) lines.push(`   ${r.summary}`);
 		if (debug) {
-			lines.push(`   confidence: ${r.confidence}`);
+			if (r.confidence !== undefined) lines.push(`   confidence: ${r.confidence}`);
 			for (const ev of r.evidence) {
 				const ln = ev.lineNumber !== undefined ? ` (line ${ev.lineNumber})` : "";
 				lines.push(`   evidence${ln}: ${ev.excerpt}`);

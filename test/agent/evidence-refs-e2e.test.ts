@@ -11,7 +11,6 @@ import {
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "../../src/agent/search-all-tool.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
 import type {
@@ -105,27 +104,6 @@ function model(...steps: FauxResponseStep[]) {
 	return registration.getModel();
 }
 
-function emit(refs: string[], excerpt = "a loose paraphrase the model wrote") {
-	return fauxAssistantMessage(
-		[
-			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-				answer: "- Director approval is required [1]",
-				results: [
-					{
-						number: 1,
-						title: "Refund rule",
-						summary: "Director approval",
-						evidence: [{ excerpt }],
-						confidence: 0.9,
-						refs,
-					},
-				],
-			}),
-		],
-		{ stopReason: "toolUse" },
-	);
-}
-
 function search() {
 	return fauxAssistantMessage([fauxToolCall(SEARCH_ALL_DOCUMENTS_TOOL_NAME, { query: "refund approval" })], {
 		stopReason: "toolUse",
@@ -146,7 +124,13 @@ function agentFor(m: AutoRAGAgentOptions["model"]) {
 
 describe("evidence refs through the real agent loop", () => {
 	it("stores the harness-recorded source and chunk, not what the model wrote", async () => {
-		const agent = agentFor(model(search(), emit(["e1"])));
+		const agent = agentFor(
+			model(
+				fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+				search(),
+				fauxAssistantMessage("Director approval is required [e1].", { stopReason: "stop" }),
+			),
+		);
 
 		const response = await agent.searchDocuments("refund approval");
 
@@ -156,39 +140,51 @@ describe("evidence refs through the real agent loop", () => {
 		expect(entry?.method).toBe("kakao-lexical");
 		expect(entry?.content).toBe(CHUNK);
 		expect(entry?.evidenceRefs?.[0]?.retrievalResultId).toBe("kakao:chunk-1");
-		// The paraphrase stays the user-facing evidence excerpt only.
-		expect(response.results[0]?.evidence[0]?.excerpt).toBe("a loose paraphrase the model wrote");
+		// The model only wrote a claim sentence; the evidence excerpt is the recorded chunk.
+		expect(response.results[0]?.summary).toContain("Director approval is required");
+		expect(response.results[0]?.evidence[0]?.excerpt).toContain("director approval before payout");
 	});
 
-	it("makes the model re-emit when it cites an id no tool issued, instead of storing a guess", async () => {
-		const agent = agentFor(model(search(), emit(["e99"]), emit(["e1"])));
-
-		const response = await agent.searchDocuments("refund approval");
-
-		expect(response.diagnostics?.some((d) => d.code === ("missing-final-emit" as never))).toBe(false);
-		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/kakao/acct-1/chunks/1");
-	});
-
-	it("rejects an invented local path and accepts a real file the model opened itself", async () => {
+	it("accepts a real file the model opened itself and ignores an invented local path", async () => {
 		const real = join(root, "docs", "real.txt");
 		writeFileSync(real, CHUNK);
-		const agent = agentFor(model(emit([join(root, "docs", "invented.txt")]), emit([real])));
+		const invented = join(root, "docs", "invented.txt");
+		const agent = agentFor(
+			model(
+				fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+				fauxAssistantMessage(`Note [file:${invented}] and [file:${real}].`, { stopReason: "stop" }),
+			),
+		);
 
 		const response = await agent.searchDocuments("refund approval");
 
+		expect(response.results).toHaveLength(1);
 		const entry = agent.getResultRegistry(response.sessionId).get(1);
 		expect(entry?.source).toBe(real);
 		expect(entry?.method).toBe("bash");
+		expect(response.results.some((result) => result.source === invented)).toBe(false);
 	});
 
 	it("forgets a previous run's ids, so a stale id cannot resolve in the next run", async () => {
-		const agent = agentFor(model(search(), emit(["e1"]), emit(["e1"]), search(), emit(["e2"])));
+		const agent = agentFor(
+			model(
+				fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+				search(),
+				fauxAssistantMessage("First run [e1].", { stopReason: "stop" }),
+				fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+				fauxAssistantMessage("Second run [e1].", { stopReason: "stop" }),
+			),
+		);
 
-		await agent.searchDocuments("first run");
-		// Second run: the model cites e1 before any tool ran this run -> rejected, then it searches and cites the new id.
+		const first = await agent.searchDocuments("first run");
+		expect(first.results).toHaveLength(1);
+		// Second run: e1 belonged to run 1 and is never reissued, so the citation is dropped.
 		const second = await agent.searchDocuments("second run");
 
-		expect(agent.getResultRegistry(second.sessionId).get(1)?.source).toBe("/kakao/acct-1/chunks/1");
+		expect(second.results).toEqual([]);
+		expect(
+			second.diagnostics?.find((diagnostic) => diagnostic.code === "citation-without-result")?.message,
+		).toContain("e1");
 	});
 
 	it("never lets a previous run's id alias a different chunk in the next run", async () => {
@@ -221,7 +217,14 @@ describe("evidence refs through the real agent loop", () => {
 			},
 		};
 		const agent = new AutoRAGAgent({
-			model: model(search(), emit(["e1"]), search(), emit(["e1"], "stale citation"), emit(["e2"], "fresh citation")),
+			model: model(
+				fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+				search(),
+				fauxAssistantMessage("Run one [e1].", { stopReason: "stop" }),
+				fauxAssistantMessage("Initial pass.", { stopReason: "stop" }),
+				search(),
+				fauxAssistantMessage("Stale [e1]. Fresh [e2].", { stopReason: "stop" }),
+			),
 			searchPaths: [join(root, "docs")],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
@@ -233,9 +236,13 @@ describe("evidence refs through the real agent loop", () => {
 		await agent.searchDocuments("first run");
 		const run2 = await agent.searchDocuments("second run");
 
+		// The stale e1 was rejected (not silently mapped to run 2's chunk); only e2 resolves.
+		expect(run2.results).toHaveLength(1);
+		expect(run2.results[0]?.summary).toContain("Fresh");
+		expect(run2.diagnostics?.find((diagnostic) => diagnostic.code === "citation-without-result")?.message).toContain(
+			"e1",
+		);
 		const entry = agent.getResultRegistry(run2.sessionId).get(1);
-		// The stale e1 was rejected (not silently mapped to run 2's chunk), so the model re-emitted with e2.
-		expect(run2.results[0]?.evidence[0]?.excerpt).toBe("fresh citation");
 		expect(entry?.source).toBe("/kakao/acct-1/chunks/2");
 		expect(entry?.content).toBe(second);
 	});

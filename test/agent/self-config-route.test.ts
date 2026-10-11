@@ -14,9 +14,7 @@ import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { type JevBackend, MockBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
-import { EMIT_FAST_ANSWER_TOOL_NAME } from "../../src/agent/fast-answer-tool.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
@@ -93,10 +91,9 @@ function capture(step: FauxResponseStep, seen: Seen): FauxResponseStep {
 	};
 }
 
-function emitConfigReport(answer: string): FauxResponseStep {
-	return fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer, results: [] })], {
-		stopReason: "toolUse",
-	});
+/** The config branch reports through the model's plain final message. */
+function configReport(answer: string): FauxResponseStep {
+	return fauxAssistantMessage(answer, { stopReason: "stop" });
 }
 
 function jevRouting(route: QueryRoute | "config"): MockBackend {
@@ -143,9 +140,9 @@ async function collect(agent: AutoRAGAgent, query: string): Promise<SearchDocume
 }
 
 describe("Jev config branch: the agent configures itself", () => {
-	it("loads the full setup skill, skips emit_fast_answer, and reports through emit_autorag_results", async () => {
+	it("loads the full setup skill and reports through the final message", async () => {
 		const seen: Seen = { prompts: [], toolNames: [] };
-		const model = fauxModel(capture(emitConfigReport("- Default model is now `new/model`."), seen));
+		const model = fauxModel(capture(configReport("- Default model is now `new/model`."), seen));
 		const agent = agentWith({
 			model,
 			jev: { backend: jevRouting("config") },
@@ -163,8 +160,8 @@ describe("Jev config branch: the agent configures itself", () => {
 		expect(seen.prompts[0]).not.toContain("description: test");
 		expect(seen.prompts[0]).toContain(configPath);
 		expect(seen.prompts[0]).toContain("change the default model to new/model");
-		expect(seen.toolNames[0]).not.toContain(EMIT_FAST_ANSWER_TOOL_NAME);
-		expect(seen.toolNames[0]).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
+		// The emit tools are gone: no tool the model sees is an emit tool.
+		expect(seen.toolNames[0]?.some((name) => name.includes("emit"))).toBe(false);
 		expect(seen.toolNames[0]).toEqual(expect.arrayContaining(["bash", "read", "edit", "write"]));
 		expect(minSync.queries).toEqual([]);
 		expect(events.some((event) => event.type === "preliminary")).toBe(false);
@@ -172,7 +169,7 @@ describe("Jev config branch: the agent configures itself", () => {
 		if (complete?.type !== "complete") throw new Error("expected a complete event");
 		expect(complete.response.answer).toBe("- Default model is now `new/model`.");
 		expect(complete.response.results).toEqual([]);
-		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "missing-final-emit")).toBe(false);
+		expect(complete.response.diagnostics?.some((diagnostic) => diagnostic.code === "no-final-answer")).toBe(false);
 		expect(
 			complete.response.diagnostics?.some(
 				(diagnostic) => diagnostic.code === "query-routed" && diagnostic.message.includes("config"),
@@ -187,7 +184,7 @@ describe("Jev config branch: the agent configures itself", () => {
 			const last = context.messages.at(-1);
 			if (last?.role === "toolResult") {
 				bashResults.push(last.isError === true);
-				return emitConfigReport("- checked.") as AssistantMessage;
+				return configReport("- checked.") as AssistantMessage;
 			}
 			return fauxAssistantMessage([fauxToolCall("bash", { command: "echo ok" })], {
 				stopReason: "toolUse",
@@ -214,7 +211,7 @@ describe("Jev config branch: the agent configures itself", () => {
 			fauxAssistantMessage([fauxToolCall("write", { path: configPath, content: next })], {
 				stopReason: "toolUse",
 			}),
-			emitConfigReport("- model.id: old/model → new/model"),
+			configReport("- model.id: old/model → new/model"),
 		);
 		const agent = agentWith({
 			model,
@@ -235,7 +232,7 @@ describe("Jev config branch: the agent configures itself", () => {
 			fauxAssistantMessage([fauxToolCall("write", { path: configPath, content: broken })], {
 				stopReason: "toolUse",
 			}),
-			emitConfigReport("- model.id: old/model → glm-5.3-flash"),
+			configReport("- model.id: old/model → glm-5.3-flash"),
 		);
 		const agent = agentWith({
 			model,
@@ -264,7 +261,7 @@ describe("Jev config branch: the agent configures itself", () => {
 			fauxAssistantMessage([fauxToolCall("write", { path: configPath, content: next })], {
 				stopReason: "toolUse",
 			}),
-			emitConfigReport("- model.id: old/model → new/model"),
+			configReport("- model.id: old/model → new/model"),
 		);
 		const agent = agentWith({
 			model,
@@ -281,7 +278,7 @@ describe("Jev config branch: the agent configures itself", () => {
 
 	it("does not roll back when the config was left unchanged, even if it was already invalid", async () => {
 		const before = readFileSync(configPath, "utf8");
-		const model = fauxModel(emitConfigReport("- Nothing changed."));
+		const model = fauxModel(configReport("- Nothing changed."));
 		const agent = agentWith({
 			model,
 			jev: { backend: jevRouting("config") },
@@ -293,24 +290,6 @@ describe("Jev config branch: the agent configures itself", () => {
 		expect(readFileSync(configPath, "utf8")).toBe(before);
 		expect(response.answer).toBe("- Nothing changed.");
 		expect(response.diagnostics?.some((d) => d.code === "self-config-rolled-back")).toBe(false);
-	});
-
-	it("reminds the model to emit when it ends the configuration turn with prose", async () => {
-		const seen: Seen = { prompts: [], toolNames: [] };
-		const model = fauxModel(
-			fauxAssistantMessage("I changed the model.", { stopReason: "stop" }),
-			capture(emitConfigReport("- Changed the model."), seen),
-		);
-		const agent = agentWith({
-			model,
-			jev: { backend: jevRouting("config") },
-			selfConfig: { configPath, skillPath },
-		});
-
-		const response = await agent.searchDocuments("switch the agent model");
-
-		expect(seen.prompts[0]).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
-		expect(response.answer).toBe("- Changed the model.");
 	});
 
 	it("never judges or stores a configuration report as retrieval evidence", async () => {
@@ -331,26 +310,10 @@ describe("Jev config branch: the agent configures itself", () => {
 				};
 			},
 		};
-		const setting = '"id": "new/model"';
+		// The report cites the config file it read; the derived result would be
+		// judged and stored if the config branch did not isolate its memory.
 		const model = fauxModel(
-			fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-						answer: "The default model is new/model [1].",
-						results: [
-							{
-								number: 1,
-								title: "Config",
-								summary: "model.id",
-								evidence: [{ excerpt: setting }],
-								confidence: 0.9,
-								refs: [configPath],
-							},
-						],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			),
+			fauxAssistantMessage(`The default model is new/model [file:${configPath}].`, { stopReason: "stop" }),
 		);
 		const agent = agentWith({ model, jev: { backend }, selfConfig: { configPath, skillPath } });
 
@@ -364,41 +327,15 @@ describe("Jev config branch: the agent configures itself", () => {
 	});
 
 	it("falls back to local search with a diagnostic when the setup skill cannot be loaded", async () => {
-		const source = join(docs, "x.txt");
-		writeFileSync(source, "E");
+		const decompositionModel = fauxModel(fauxAssistantMessage('["switch the agent model"]', { stopReason: "stop" }));
 		const model = fauxModel(
-			fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_FAST_ANSWER_TOOL_NAME, {
-						answer: "Fast.",
-						results: [],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			),
-			fauxAssistantMessage("done", { stopReason: "stop" }),
-			fauxAssistantMessage(
-				[
-					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
-						answer: "Verified.",
-						results: [
-							{
-								number: 1,
-								title: "T",
-								summary: "S",
-								evidence: [{ excerpt: "E" }],
-								confidence: 0.9,
-								refs: [source],
-							},
-						],
-					}),
-				],
-				{ stopReason: "toolUse" },
-			),
+			fauxAssistantMessage("Fast.", { stopReason: "stop" }),
+			fauxAssistantMessage("Verified.", { stopReason: "stop" }),
 		);
 		const agent = agentWith({
 			model,
 			jev: { backend: jevRouting("config") },
+			queryDecomposition: { model: decompositionModel },
 			selfConfig: { configPath, skillPath: join(root, "missing", "SKILL.md") },
 		});
 

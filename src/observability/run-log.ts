@@ -14,7 +14,7 @@ export type AutoRAGRunEvent =
 			timestamp: string;
 			sessionId: string;
 			resultCount: number;
-			/** True when the run ended without emit_autorag_results and fell back to a degraded response. */
+			/** True when the run ended without a final answer message and fell back to a degraded response. */
 			degraded?: boolean;
 	  }
 	| {

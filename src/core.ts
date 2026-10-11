@@ -9,7 +9,7 @@ import type {
 	AutoRAGWatchRefreshOptions,
 } from "./agent/agent.ts";
 import { AutoRAGAgent } from "./agent/agent.ts";
-import type { AutoRAGResultsDetails } from "./agent/emit-results-tool.ts";
+import type { AutoRAGResultsDetails } from "./agent/results.ts";
 import {
 	recordStructuredResultsSession as persistStructuredResultsSession,
 	type SearchDocumentsResponse,

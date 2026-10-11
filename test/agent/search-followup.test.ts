@@ -7,7 +7,6 @@ import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } fro
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { createEverythingSearchTool } from "../../src/agent/everything-search-tool.ts";
 import { createJikjiFindTool, type JikjiFindDetails } from "../../src/agent/jikji-find-tool.ts";
 import { createSearchAllDocumentsTool } from "../../src/agent/search-all-tool.ts";
@@ -273,10 +272,8 @@ describe("records the retrieval trace for search tools", () => {
 		const { agent, internal, registration } = setup(tool);
 		registration.setResponses([
 			fauxAssistantMessage([fauxToolCall(tool.name, { query: blank ? " " : query })], { stopReason: "toolUse" }),
-			fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
+			fauxAssistantMessage("Done", { stopReason: "stop" }),
+			fauxAssistantMessage("Done", { stopReason: "stop" }),
 		]);
 		const events: AgentEvent[] = [];
 		agent.subscribe((event) => {
@@ -366,10 +363,8 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 			const aggregate = vi.spyOn(agent, "findJikji");
 			registration.setResponses([
 				fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" }),
-				fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
-					stopReason: "toolUse",
-				}),
-				fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
+				fauxAssistantMessage("Done", { stopReason: "stop" }),
+				fauxAssistantMessage("Done", { stopReason: "stop" }),
 			]);
 			const ends: Extract<AgentEvent, { type: "tool_execution_end" }>[] = [];
 			const collect = (event: AgentEvent) => {
@@ -403,10 +398,9 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 it("still exhausts the tool budget and preserves the empty trace", async () => {
 	const tool = allTool([], [diagnostic]);
 	const { agent, internal, registration } = setup(tool, 1);
-	registration.setResponses([
-		fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" }),
-		fauxAssistantMessage([{ type: "text", text: "No evidence" }], { stopReason: "stop" }),
-	]);
+	// The budget aborts the run after the one tool call; with no answer message
+	// the run resolves degraded and keeps the retrieval trace.
+	registration.setResponses([fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" })]);
 	let abortCalls = 0;
 	agent.subscribe((event) => {
 		if (event.type !== "tool_execution_start" || !internal.activeSession) return;
@@ -429,10 +423,8 @@ it("attributes the retrieval trace query to the tool call start args", async () 
 	const attributed = "unique attribution query";
 	registration.setResponses([
 		fauxAssistantMessage([fauxToolCall(tool.name, { query: attributed })], { stopReason: "toolUse" }),
-		fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, { answer: "Done", results: [] })], {
-			stopReason: "toolUse",
-		}),
-		fauxAssistantMessage([{ type: "text", text: "Done" }], { stopReason: "stop" }),
+		fauxAssistantMessage("Done", { stopReason: "stop" }),
+		fauxAssistantMessage("Done", { stopReason: "stop" }),
 	]);
 	await agent.searchDocuments(attributed);
 	expect(internal.retrievalTrace).toEqual([

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Value } from "typebox/value";
-import { type AutoRAGResultsDetails, reportSchema } from "../../agent/emit-results-tool.ts";
+import { type AutoRAGResultsDetails, reportSchema } from "../../agent/results.ts";
 import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { ConfigError } from "../config.ts";

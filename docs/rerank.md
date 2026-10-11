@@ -54,7 +54,7 @@ export OPENROUTER_API_KEY=sk-or-...
 - The reranker runs **after** merge/dedup, so it reorders the distinct evidence
   pool and keeps the top `topN` (default **25**). `search_all_documents` merges
   up to 500 chunks; `AutoRAGLite.retrieve` uses the same ceiling.
-- The **pre-fast-answer baseline** (`emit_fast_answer`) is reranked too: the
+- The **pre-fast-answer baseline** is reranked too: the
   prefetch pool (Jikji answer paths ≤100 + MinSync chunks ≤100 + chunks from
   datasources the Jev datasource check selected ≤100) is reranked down to
   `topN` (default 25) and injected as a single relevance-ordered section, so

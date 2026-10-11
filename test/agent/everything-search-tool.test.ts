@@ -78,7 +78,7 @@ describe("everything_search tool", () => {
 describe("system prompt Everything guidance", () => {
 	it("documents Everything only when the tool is available", () => {
 		const withTool = buildSystemPrompt({
-			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME, "emit_autorag_results"],
+			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME],
 			manifests: [],
 		});
 		expect(withTool).toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**:`);
@@ -86,13 +86,13 @@ describe("system prompt Everything guidance", () => {
 		expect(withTool).toContain("ext:");
 		expect(withTool).not.toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**: caller-provided tool`);
 
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash", "emit_autorag_results"], manifests: [] });
+		const withoutTool = buildSystemPrompt({ toolNames: ["bash"], manifests: [] });
 		expect(withoutTool).not.toContain("Everything");
 	});
 
 	it("routes file discovery to everything_search instead of a jikji_find tool that is not registered", () => {
 		const prompt = buildSystemPrompt({
-			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME, "search_all_documents", "emit_autorag_results"],
+			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME, "search_all_documents"],
 			manifests: [],
 		});
 		expect(prompt).not.toContain("jikji_find");
@@ -101,7 +101,7 @@ describe("system prompt Everything guidance", () => {
 
 	it("names both discovery tools when Jikji and Everything are registered", () => {
 		const prompt = buildSystemPrompt({
-			toolNames: ["bash", "jikji_find", EVERYTHING_SEARCH_TOOL_NAME, "emit_autorag_results"],
+			toolNames: ["bash", "jikji_find", EVERYTHING_SEARCH_TOOL_NAME],
 			manifests: [],
 			jikjiIndexingEnabled: true,
 		});

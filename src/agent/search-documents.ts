@@ -1,8 +1,7 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
 import { assertResultsMappingOneToOne, formatCitationList, stripUnresolvedCitations } from "./citations.ts";
-import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
-import type { AutoRAGFastAnswerDetails } from "./fast-answer-tool.ts";
+import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./results.ts";
 
 export type SearchDocumentWarning = "empty-query";
 
@@ -46,7 +45,7 @@ export type SearchDocumentDiagnosticCode =
 	| "watch-failed"
 	| "watch-limited"
 	| "unknown-datasource-skill"
-	| "missing-final-emit"
+	| "no-final-answer"
 	| "model-request-failed"
 	| "search-timeout"
 	| "query-routed"
@@ -81,7 +80,8 @@ export interface SearchDocumentResult {
 	readonly title: string;
 	readonly summary: string;
 	readonly evidence: readonly SearchDocumentEvidence[];
-	readonly confidence: number;
+	/** Absent when nothing measured one: derived results carry no model-reported confidence. */
+	readonly confidence?: number;
 	readonly source?: string;
 }
 
@@ -94,7 +94,7 @@ export interface SearchDocumentRetrievalTraceResult {
 
 /**
  * What one retrieval tool execution found during a search run. Attached to the
- * degraded fallback response when the agent never called emit_autorag_results,
+ * degraded fallback response when the agent never wrote a final answer,
  * so an upstream agent can still inspect the raw candidates.
  */
 export interface SearchDocumentRetrievalTraceEntry {
@@ -171,10 +171,10 @@ function normalizeWarnings(warnings: readonly string[]): SearchDocumentWarning[]
 
 /**
  * Enforce the response invariant: every `[n]` in `answer` resolves to a
- * `results[].number` (issue #1788). The emit tools already reject mismatched
- * calls; this is the boundary guarantee for every other path (text-only fast
- * fallback, external `lite report` curators). Unmatched markers are dropped and
- * reported as a `citation-without-result` diagnostic.
+ * `results[].number` (issue #1788). Answers the librarian derives from cited
+ * evidence already satisfy it; this is the boundary guarantee for external
+ * `lite report` curators. Unmatched markers are dropped and reported as a
+ * `citation-without-result` diagnostic.
  */
 function reconcileCitations(
 	answer: string,
@@ -195,19 +195,11 @@ function reconcileCitations(
 	};
 }
 
-/**
- * Build the preliminary (fast-phase) search response. Unlike
- * {@link recordStructuredResultsSession} this NEVER touches memory or the
- * session registry — the final response owns those.
- */
-export function createPreliminarySearchDocumentsResponse(
-	sessionId: string,
-	query: string,
-	details: AutoRAGFastAnswerDetails,
-	diagnostics: readonly SearchDocumentDiagnostic[] = [],
-): SearchDocumentsResponse {
-	const sourceByNumber = new Map(details.sources.map((entry) => [entry.number, entry.source]));
-	const results: SearchDocumentResult[] = details.results.map((result) => ({
+function toSearchResults(
+	details: AutoRAGResultsDetails,
+	sourceByNumber: ReadonlyMap<number, string | undefined>,
+): SearchDocumentResult[] {
+	return details.results.map((result) => ({
 		number: result.number,
 		title: result.title,
 		summary: result.summary,
@@ -216,18 +208,31 @@ export function createPreliminarySearchDocumentsResponse(
 				? { excerpt: evidence.excerpt, lineNumber: evidence.lineNumber }
 				: { excerpt: evidence.excerpt },
 		),
-		confidence: confidenceFrom(result.confidence ?? 0.5),
+		...(result.confidence !== undefined ? { confidence: confidenceFrom(result.confidence) } : {}),
 		source: sourceByNumber.get(result.number),
 	}));
-	const citations = reconcileCitations(details.answer, results);
+}
+
+/**
+ * Build the preliminary (fast-phase) search response. Unlike
+ * {@link recordStructuredResultsSession} this NEVER touches memory or the
+ * session registry — the final response owns those.
+ */
+export function createPreliminarySearchDocumentsResponse(
+	sessionId: string,
+	query: string,
+	details: AutoRAGResultsDetails,
+	diagnostics: readonly SearchDocumentDiagnostic[] = [],
+): SearchDocumentsResponse {
+	const sourceByNumber = new Map(details.mapping.map((entry) => [entry.number, entry.source]));
 	return {
 		sessionId,
 		query,
-		results,
-		answer: citations.answer,
+		results: toSearchResults(details, sourceByNumber),
+		answer: details.answer,
 		searched: details.results.length,
 		warnings: [],
-		diagnostics: [...citations.diagnostics, ...diagnostics],
+		diagnostics: [...diagnostics],
 	};
 }
 
@@ -257,7 +262,7 @@ function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionEvidence
 	const derivedRetrieverMix = Array.from(new Set(rawRefs.map((ref) => ref.method)));
 	return rawRefs.map((ref) => {
 		if (ref.excerpt === undefined && ref.content === undefined) {
-			throw new Error("emit_autorag_results: every evidenceRef must include excerpt or content");
+			throw new Error("results: every evidenceRef must include excerpt or content");
 		}
 		return normalizeSessionEvidenceRef({
 			method: ref.method,
@@ -291,7 +296,7 @@ export function recordStructuredResultsSession(
 		readonly isolateMemory?: boolean;
 	} = {},
 ): SearchDocumentsResponse {
-	assertResultsMappingOneToOne("emit_autorag_results", details.results, details.mapping);
+	assertResultsMappingOneToOne("results", details.results, details.mapping);
 
 	const registry = new Map<number, CuratedResult>();
 	const memoryResults = [];
@@ -312,7 +317,7 @@ export function recordStructuredResultsSession(
 			content: entry.content,
 			method: entry.method,
 			source: entry.source,
-			...(emittedResult !== undefined ? { confidence: confidenceFrom(emittedResult.confidence) } : {}),
+			...(emittedResult?.confidence !== undefined ? { confidence: confidenceFrom(emittedResult.confidence) } : {}),
 			evidenceRefs,
 		});
 	}
@@ -322,19 +327,11 @@ export function recordStructuredResultsSession(
 		memory.save();
 	}
 
-	const results: SearchDocumentResult[] = details.results.map((result) => ({
-		number: result.number,
-		title: result.title,
-		summary: result.summary,
-		evidence: result.evidence.map((evidence) =>
-			evidence.lineNumber !== undefined
-				? { excerpt: evidence.excerpt, lineNumber: evidence.lineNumber }
-				: { excerpt: evidence.excerpt },
-		),
-		confidence: confidenceFrom(result.confidence),
-		// An empty mapping source means "not reported" (fast answers may omit it).
-		source: registry.get(result.number)?.source || undefined,
-	}));
+	const results = toSearchResults(
+		details,
+		// An empty mapping source means "not reported".
+		new Map(details.mapping.map((entry) => [entry.number, entry.source || undefined])),
+	);
 	const citations = reconcileCitations(details.answer, results);
 	const answer = citations.answer;
 

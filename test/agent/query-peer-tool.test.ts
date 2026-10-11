@@ -186,7 +186,7 @@ describe("query_peer_agent", () => {
 
 		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 		expect(text).toContain('"evidenceId":"e1"');
-		const [ref] = ledger.resolve(["e1"], { label: "emit", number: 1, fallbackContent: "", allowLocalFiles: false });
+		const [ref] = ledger.lookup("e1", { allowLocalFiles: false });
 		expect(ref).toMatchObject({ method: "query_peer_agent", source: "peer:doc-7", content: "needs approval" });
 		await tool.close();
 	});

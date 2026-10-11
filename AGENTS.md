@@ -440,8 +440,6 @@ The librarian agent owns the full workflow:
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
 | `recommend_peer_targets` | Rank local SimpleX peer contacts (the profile a peer shared plus your local name and note) by keyword overlap | P2P routing; never contacts peers |
-| `emit_fast_answer` | Internal non-terminating tool that delivers the fast-phase first answer; each result cites baseline evidence ids in `refs` | Two-phase progressive answers |
-| `emit_autorag_results` | Terminating tool that returns curated results; each result cites the evidence ids (`refs`) shown next to retrieved results, and the harness attaches the sources; `answer` is the complete answer, or only the delta (corrections + newly verified findings) when a fast answer already reached the caller | Final action |
 
 There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
 
@@ -485,11 +483,11 @@ External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telec
 
 ## Directory Access
 
-The AutoRAG librarian navigates document collections directly with `bash`, using real paths for discovery and reading. Retrieval tools return bounded candidates; the librarian opens the source material, assesses sufficiency and freshness, resolves conflicts, and finalizes with `emit_autorag_results`.
+The AutoRAG librarian navigates document collections directly with `bash`, using real paths for discovery and reading. Retrieval tools return bounded candidates; the librarian opens the source material, assesses sufficiency and freshness, resolves conflicts, and ends with its final answer as a plain assistant reply.
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows, local sessions), `fsearch_search` (macOS/Linux, local sessions), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per configured datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, `recommend_peer_targets` (local sessions), `emit_fast_answer`, and `emit_autorag_results`.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows, local sessions), `fsearch_search` (macOS/Linux, local sessions), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per configured datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, and `recommend_peer_targets` (local sessions). There is no answer-emitting tool: the fast first answer and the final answer are ordinary assistant messages.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Document parsing** — `kordoc` is the default parser for `.hwp`, `.hwpx`, `.hml`, `.hwpml`, `.pdf`, `.docx`, `.xlsx` and `.xls`; it runs in-process (no Java, no subprocess) and keeps nested tables and per-sheet workbook structure. `.pptx`, `.eml` and plain text keep their own parsers. kordoc failures surface as `ParseError` with kordoc's own code and message verbatim, and kordoc warnings become `parser-warning` diagnostics.
 - **Global language setting** — one `languages` list (config `languages`, `--languages`, or `AUTORAG_LANGUAGES`; default `["ko", "en"]`) describes the corpus. Accepted tags are curated in `src/language.ts` because every tag must map to a Tesseract traineddata code. Format parsing is language-agnostic; `languages` only selects the OCR engine when `parserOptions.ocr.enabled` is true: all-`ko`/`en` uses kordoc's built-in PP-OCRv5, any other tag injects Tesseract (all languages joined, e.g. `kor+jpn`) as kordoc's OCR provider. kordoc is the single owner of scanned PDF pages and `.png .jpg .jpeg .webp` images; image extensions are registered only while OCR is enabled, because kordoc OCRs every image it is handed. `.bmp`/`.tiff` are unsupported by kordoc and not claimed. OCR stays opt-in, so a default refresh downloads no recognition model. Tesseract traineddata is cached under `<workspace>/.autorag/models/tessdata` (`ocr.cachePath` overrides), never the working directory.
@@ -522,12 +520,12 @@ console.log(response.answer);
 [2] Risk Factors — Three new risk factors added: supply chain, regulatory, talent retention. (pages 12-14)
 ```
 
-Each result maps to an internal entry carrying its `source` (a real file path or datasource id), `method`, and cited evidence for retrieval memory. Retrieval tools print an `[eN]` evidence id beside every result they return; the model cites those ids in each result's `refs` and the harness attaches the recorded source, method, and chunk, so a path or chunk is never retyped by the model (an unknown id is rejected and the model re-emits). `autorag report` and the MCP report tool keep the explicit `mapping` input because an external curator has no harness ledger. The curated `answer`/`results` are grounded in the sources; source paths may appear where relevant.
+The answer is the model's last assistant message when it ends its turn (`stopReason: "stop"`) without a tool call; text written before a tool call is a progress note, never the answer. Retrieval tools print an `[eN]` evidence id beside every result they return. The model cites inline, `[e3]` / `[e3, e7]`, or `[file:<absolute path>]` for a local file it opened itself, and the harness resolves each id against the run's `EvidenceLedger`, rewrites the markers to `[1]`, `[2]`, … in order of first appearance, and derives one result per cited source (title from the source name, summary from the cited sentence, excerpts and `mapping` from the recorded evidence). A path or chunk is therefore never retyped by the model; a citation matching no recorded evidence, and any bare `[n]` the model typed itself, is dropped and reported as a `citation-without-result` diagnostic instead of failing the run. Derived results carry no `confidence`. A run that ends without a final `stop` message (provider error, abort, tool-call limit) returns a degraded response with a `no-final-answer` diagnostic and the retrieval trace. `autorag report` and the MCP report tool keep the explicit `mapping` input (`reportSchema`) because an external curator has no harness ledger. The `answer`/`results` are grounded in the sources; source paths may appear where relevant.
 
 ## Memory System
 
 Retrieval memory is reference context, never instructions. After the final
-answer (`emit_autorag_results`, or `emit_fast_answer` when Jev ends the run
+answer (the final reply, or the fast reply when Jev ends the run
 early), every cited evidence is mapped back to the search query and method that
 surfaced it and judged by Jev in one batched call: does the evidence really
 support the sentence of the answer it backs? At P(supports) >= 0.7 the evidence
@@ -552,12 +550,12 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 |------|------|
 | `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
-| `src/agent/fast-answer-tool.ts` | `emit_fast_answer` non-terminating tool for the fast-phase first answer; `sources` are derived from the cited evidence ids |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
 | `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
-| `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool: the model supplies `answer` and per-result `refs` (evidence ids); the harness builds the number → source `mapping`. Also the `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
-| `src/agent/evidence-ledger.ts` | Per-run `EvidenceLedger`: every retrieval tool (including `query_peer_agent`) registers what it returned and prints an `[eN]` id; emit tools resolve cited ids back to the recorded source, method, and chunk. Entries are cleared each run but ids are never reissued, so a stale id from an earlier run in the same conversation is rejected instead of aliasing new evidence |
+| `src/agent/results.ts` | Result types (`AutoRAGResultsDetails`) and `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
+| `src/agent/answer-citations.ts` | `deriveResultsFromAnswer`: resolves the model's inline `[eN]` / `[file:<path>]` citations against the evidence ledger and derives the numbered results, mapping, and `citation-without-result` diagnostics from the plain answer |
+| `src/agent/evidence-ledger.ts` | Per-run `EvidenceLedger`: every retrieval tool (including `query_peer_agent`) registers what it returned and prints an `[eN]` id; `lookup` resolves a cited id back to the recorded source, method, and chunk without throwing. Entries are cleared each run but ids are never reissued, so a stale id from an earlier run in the same conversation resolves to nothing instead of aliasing new evidence |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
 | `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |
