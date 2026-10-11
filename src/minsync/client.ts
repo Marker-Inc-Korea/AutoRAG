@@ -17,7 +17,7 @@ import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
 export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
-	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit profile config before using the new default runtime.";
+	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.";
 
 export interface MinSyncRuntime {
 	ensureRuntime(options?: {

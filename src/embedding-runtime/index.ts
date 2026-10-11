@@ -109,9 +109,7 @@ export interface RuntimeStatus {
 }
 
 function modelAsset(profile: RuntimeProfile) {
-	return profile.profileId === "qwen3-embedding-0.6b"
-		? { id: profile.profileId, filename: basename(profile.model), ...MODEL_ASSETS.qwen3 }
-		: { id: profile.profileId, filename: basename(profile.model), ...MODEL_ASSETS.embeddinggemma };
+	return { id: profile.profileId, filename: basename(profile.model), ...MODEL_ASSETS.qwen3 };
 }
 function runtimeAsset(platform: EmbeddingRuntimeOptions["platform"] | undefined, backend: BackendKind) {
 	const selected = platform ?? "darwin-arm64-metal";

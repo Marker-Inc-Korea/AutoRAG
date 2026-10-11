@@ -25,9 +25,7 @@ export async function runSetupCommand(ctx: CommandContext): Promise<number> {
 		const report = await runSetup({
 			configPath: resolved.configPath,
 			workspacePath: resolvedConfig.workspacePath,
-			...(typeof ctx.flags.profile === "string"
-				? { profileId: ctx.flags.profile as "qwen3-embedding-0.6b" | "embeddinggemma-300m" }
-				: {}),
+			...(typeof ctx.flags.profile === "string" ? { profileId: ctx.flags.profile as "qwen3-embedding-0.6b" } : {}),
 		});
 		ctx.stdout(ctx.json || ctx.flags.format === "json" ? JSON.stringify(report, null, 2) : renderSetup(report));
 		return report.ok ? 0 : 1;

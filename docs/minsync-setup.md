@@ -41,25 +41,12 @@ the owned child process and removes its pid/lock state.
 
 ## Selecting a profile
 
-The default profile is Qwen3-Embedding-0.6B at 1024 dimensions. To keep a
-768-dimensional workspace, set a profile in trusted `config.json` rather than
-pointing the product path at an implicit Ollama model:
-
-```json
-{
-  "minSync": {
-    "embedder": {
-      "profile": "embeddinggemma-300m"
-    },
-    "maxChunkSize": 1000
-  }
-}
-```
-
-EmbeddingGemma uses the prefixes `task: search result | query: ` for queries
-and `title: none | text: ` for passages. Its 2048-token context makes a
-smaller `maxChunkSize` useful. AutoRAG writes only the supported MinSync
-embedder fields and does not write secrets.
+The default profile is Qwen3-Embedding-0.6B at 1024 dimensions; it is the only
+bundled runtime profile. A 768-dimensional workspace cannot be kept by profile
+selection anymore: reindex for the default profile, or pin an explicit legacy
+Ollama/TEI embedder endpoint (`minSync.embedder.id` and `baseUrl`, or the
+`--embedder-id`/`--embedder-base-url` init flags documented below). AutoRAG
+writes only the supported MinSync embedder fields and does not write secrets.
 
 ## Model cache and offline operation
 
@@ -179,7 +166,7 @@ by either:
 
 - an explicit `autorag index reset --method minsync --yes` followed by
   `autorag refresh --method minsync`; or
-- an explicit `minSync.embedder.profile` of `embeddinggemma-300m`, followed by
+- an explicit Ollama/TEI `minSync.embedder.id` and `baseUrl`, followed by
   refresh and identity validation.
 
 A dimension mismatch is detected before vector reuse. MinSync reports a typed
@@ -190,5 +177,5 @@ retrieval can fall back to BM25 and reports the degraded semantic diagnostic.
 The legacy migration diagnostic is:
 
 ```text
-This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit profile config before using the new default runtime.
+This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.
 ```

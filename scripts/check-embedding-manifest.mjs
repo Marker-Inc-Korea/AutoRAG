@@ -12,13 +12,9 @@ const source = await import(join(repoRoot, "src", "embedding-runtime", "manifest
 
 const modelNotices = {
 	qwen3: "licenses/qwen3-embedding-notice.txt",
-	embeddinggemma: "licenses/gemma-notice.txt",
 };
 if (source.MODEL_ASSET_URLS.qwen3 !== source.MODEL_ASSETS.qwen3.url) {
 	throw new Error("MODEL_ASSET_URLS.qwen3 differs from MODEL_ASSETS.qwen3.url");
-}
-if (source.MODEL_ASSET_URLS.embeddinggemma !== source.MODEL_ASSETS.embeddinggemma.url) {
-	throw new Error("MODEL_ASSET_URLS.embeddinggemma differs from MODEL_ASSETS.embeddinggemma.url");
 }
 const profileDefinitions = [
 	{
@@ -26,12 +22,6 @@ const profileDefinitions = [
 		model: source.MODEL_ASSETS.qwen3,
 		notice: modelNotices.qwen3,
 		assetId: "qwen3-embedding-0.6b",
-	},
-	{
-		profile: source.resolveProfile("embeddinggemma-300m"),
-		model: source.MODEL_ASSETS.embeddinggemma,
-		notice: modelNotices.embeddinggemma,
-		assetId: "embeddinggemma-300m",
 	},
 ];
 for (const { profile, model } of profileDefinitions) {
