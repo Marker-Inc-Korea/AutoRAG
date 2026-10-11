@@ -13,6 +13,7 @@
  */
 
 import { OpenRouter } from "@openrouter/sdk";
+import { API_PATH, PROVIDER_ID as AUTORAG_PROVIDER_ID, resolveBaseUrl } from "../cloud/config.ts";
 import type { RetrievalResult } from "./types.ts";
 
 /** Default rerank model routed through OpenRouter. */
@@ -21,10 +22,24 @@ export const DEFAULT_RERANK_MODEL = "voyageai/rerank-3-lite";
 export const DEFAULT_RERANK_PROVIDER = "openrouter";
 /** Default environment variable holding the OpenRouter API key. */
 export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
+/** Default rerank model for the hosted AutoRAG (Dazzi) provider. */
+export const DEFAULT_AUTORAG_RERANK_MODEL = "qwen/qwen3-reranker-8b";
+/** Environment variable holding the AutoRAG account key for the `autorag` rerank provider. */
+export const DEFAULT_AUTORAG_RERANK_API_KEY_ENV = "AUTORAG_API_KEY";
 /** Default number of merged chunks kept after reranking. */
 export const DEFAULT_RERANK_TOP_N = 25;
 /** Rerank providers {@link createReranker} can build. */
-export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER];
+export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER, AUTORAG_PROVIDER_ID];
+
+/** Default wire model for a rerank provider. */
+export function defaultRerankModel(provider: string): string {
+	return provider === AUTORAG_PROVIDER_ID ? DEFAULT_AUTORAG_RERANK_MODEL : DEFAULT_RERANK_MODEL;
+}
+
+/** Default API-key environment variable for a rerank provider. */
+export function defaultRerankApiKeyEnv(provider: string): string {
+	return provider === AUTORAG_PROVIDER_ID ? DEFAULT_AUTORAG_RERANK_API_KEY_ENV : DEFAULT_RERANK_API_KEY_ENV;
+}
 
 /** Static description of a reranker, used for diagnostics and inspection. */
 export interface RerankerDescriptor {
@@ -86,6 +101,8 @@ export interface RerankResponse {
 
 /** Options for {@link OpenRouterReranker}. */
 export interface OpenRouterRerankerOptions {
+	/** Provider id reported by `describe()` and stamped on metadata. @default DEFAULT_RERANK_PROVIDER */
+	readonly provider?: string;
 	/** Wire model id. @default DEFAULT_RERANK_MODEL */
 	readonly model?: string;
 	/** API key. When omitted, read from `apiKeyEnv` in the environment. */
@@ -121,23 +138,45 @@ export function createReranker(config: CreateRerankerOptions | false | undefined
 			`Unsupported rerank provider "${provider}"; supported providers: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`,
 		);
 	}
+	if (provider === AUTORAG_PROVIDER_ID) return new OpenRouterReranker(withAutoragRerankDefaults(config));
 	return new OpenRouterReranker(config);
 }
 
 /**
- * Reranker backed by OpenRouter's rerank router.
+ * Fill the hosted AutoRAG provider's defaults while letting explicit config win:
+ * the API base is `<root>/v1`, the key env is `AUTORAG_API_KEY`, and the model
+ * is the hosted reranker. The server speaks the same rerank wire shape the
+ * OpenRouter SDK sends, so the same client path is reused.
+ */
+function withAutoragRerankDefaults(config: CreateRerankerOptions): OpenRouterRerankerOptions {
+	const env = config.env ?? process.env;
+	return {
+		...config,
+		provider: AUTORAG_PROVIDER_ID,
+		model: config.model ?? DEFAULT_AUTORAG_RERANK_MODEL,
+		apiKeyEnv: config.apiKeyEnv ?? DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
+		baseUrl: config.baseUrl ?? `${resolveBaseUrl(env)}${API_PATH}`,
+	};
+}
+
+/**
+ * Reranker backed by an OpenRouter-compatible rerank router.
  *
- * Documents are sent as their `content`; the original `RetrievalResult` for each
- * returned index is preserved and re-scored with the provider's relevance score.
+ * OpenRouter is the default provider; the hosted AutoRAG (Dazzi) plan serves the
+ * same wire shape at `<root>/v1/rerank`, so {@link createReranker} reuses this
+ * client with that base URL and key env. Documents are sent as their `content`;
+ * the original `RetrievalResult` for each returned index is preserved and
+ * re-scored with the provider's relevance score.
  */
 export class OpenRouterReranker implements Reranker {
 	private readonly model: string;
-	private readonly provider = DEFAULT_RERANK_PROVIDER;
+	private readonly provider: string;
 	private readonly client: RerankClient | undefined;
 	private readonly unavailableReason: string | undefined;
 
 	constructor(options: OpenRouterRerankerOptions = {}) {
-		this.model = options.model ?? DEFAULT_RERANK_MODEL;
+		this.provider = options.provider ?? DEFAULT_RERANK_PROVIDER;
+		this.model = options.model ?? defaultRerankModel(this.provider);
 		if (options.client !== undefined) {
 			this.client = options.client;
 			return;
