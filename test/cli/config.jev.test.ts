@@ -36,6 +36,13 @@ describe("jev CLI config", () => {
 		expect(opts.jev).toEqual({ backend: "openrouter", model: "jev-1.13", confidenceThreshold: 0.7 });
 	});
 
+	it("accepts the hosted AutoRAG backend", () => {
+		expect(buildAgentOptions(baseConfig({ backend: "autorag", model: "jev-1.13" })).jev).toEqual({
+			backend: "autorag",
+			model: "jev-1.13",
+		});
+	});
+
 	it("maps false and enabled:false to the agent opt-out", () => {
 		expect(buildAgentOptions(baseConfig(false)).jev).toBe(false);
 		expect(buildAgentOptions(baseConfig({ enabled: false })).jev).toBe(false);

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildAgentOptions, type CliConfig, ConfigError, normalizeRerankConfig } from "../../src/cli/config.ts";
 import {
+	DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
+	DEFAULT_AUTORAG_RERANK_MODEL,
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
@@ -45,6 +47,15 @@ describe("normalizeRerankConfig", () => {
 			provider: "openrouter",
 			model: "voyageai/rerank-3",
 			apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+			topN: DEFAULT_RERANK_TOP_N,
+		});
+	});
+
+	it("fills the autorag provider's own model and key env, not OpenRouter's", () => {
+		expect(normalizeRerankConfig({ provider: "autorag" }, "rerank")).toEqual({
+			provider: "autorag",
+			model: DEFAULT_AUTORAG_RERANK_MODEL,
+			apiKeyEnv: DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
 			topN: DEFAULT_RERANK_TOP_N,
 		});
 	});

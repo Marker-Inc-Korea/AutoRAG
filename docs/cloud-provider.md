@@ -120,6 +120,28 @@ resolves without a catalog snapshot. It keeps resolving exactly as before: the
 explicit `baseUrl` wins over the registered provider's endpoint, and the key is
 read from the named environment variable.
 
+## Jev and rerank on the hosted plan
+
+The same account key serves Jev and the rerank stage, so a hosted setup needs no
+other credential:
+
+```json
+{
+  "jev": { "backend": "autorag", "model": "jev-1.13" },
+  "rerank": { "provider": "autorag", "model": "qwen/qwen3-reranker-8b" }
+}
+```
+
+| Capability | Endpoint | Default model | Key env |
+|---|---|---|---|
+| Jev (`jev.backend: "autorag"`) | `POST <root>/v1/jev` (Jev's native dialect) | `jev-1.13` | `AUTORAG_API_KEY` |
+| Rerank (`rerank.provider: "autorag"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | `qwen/qwen3-reranker-8b` | `AUTORAG_API_KEY` |
+
+Both read `AUTORAG_BASE_URL` for the server root. An explicit
+`rerank.baseUrl`, `rerank.apiKeyEnv`, or `rerank.model` (and `jev.model`)
+overrides the defaults; with no `AUTORAG_API_KEY` the backend reports a named,
+non-silent unavailability instead of silently degrading.
+
 ## Implementation
 
 The provider lives in `src/cloud/`. A single registration point,

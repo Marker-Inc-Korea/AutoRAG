@@ -411,6 +411,22 @@ keeps resolving offline. When you are not signed in the provider still registers
 `/login`, contributes no models, and makes no network call. See
 [Hosted AutoRAG provider](docs/cloud-provider.md) for the full flow.
 
+The same plan can also serve the **Jev** judgment model and **rerank** stage, so
+the whole librarian loop runs on the hosted account:
+
+```json
+{
+  "jev": { "backend": "autorag", "model": "jev-1.13" },
+  "rerank": { "provider": "autorag", "model": "qwen/qwen3-reranker-8b" }
+}
+```
+
+`jev.backend: "autorag"` posts Jev's native dialect to `<root>/v1/jev`
+(default model `jev-1.13`); `rerank.provider: "autorag"` reranks against
+`<root>/v1/rerank` (default model `qwen/qwen3-reranker-8b`). Both read the
+account key from `AUTORAG_API_KEY`, and an explicit `rerank.baseUrl`,
+`rerank.apiKeyEnv`, or `rerank.model` still overrides the defaults.
+
 ---
 
 ## CLI Command Reference

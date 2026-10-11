@@ -2,6 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Jev, type JevBackend, type Judgment, type Question, type State } from "jev-use";
 import { type Static, Type } from "typebox";
+import { AUTORAG_DEFAULT_JEV_MODEL, AutoragJevBackend } from "../cloud/jev-backend.ts";
 import { toToolDefinition } from "./pi-session.ts";
 
 /** `jev` tool name, kept in AutoRAG's reserved set and system prompt. */
@@ -9,9 +10,10 @@ export const JEV_TOOL_NAME = "jev";
 
 /**
  * Jev backends the `jev-use` engine resolves from the environment, in
- * auto-select order: TypeSafe -> OpenRouter -> Vercel AI Gateway.
+ * auto-select order: TypeSafe -> OpenRouter -> Vercel AI Gateway. `autorag` is
+ * the hosted AutoRAG (Dazzi) plan, built here rather than resolved by jev-use.
  */
-export type JevBackendName = "typesafe" | "openrouter" | "vercel";
+export type JevBackendName = "typesafe" | "openrouter" | "vercel" | "autorag";
 
 /**
  * OpenRouter's live Jev model id. `jev-use` 0.8.0 ships `typesafe/jev-latest`,
@@ -21,7 +23,10 @@ export type JevBackendName = "typesafe" | "openrouter" | "vercel";
 export const OPENROUTER_DEFAULT_MODEL = "typesafe/jev-1.13";
 
 /** Per-backend model overrides applied when the caller names none. */
-const BACKEND_DEFAULT_MODEL: Record<string, string> = { openrouter: OPENROUTER_DEFAULT_MODEL };
+const BACKEND_DEFAULT_MODEL: Record<string, string> = {
+	openrouter: OPENROUTER_DEFAULT_MODEL,
+	autorag: AUTORAG_DEFAULT_JEV_MODEL,
+};
 
 /**
  * Options for the `jev` decision tool. Secrets never appear here: `jev-use`
@@ -66,18 +71,27 @@ export type JevJudge = (
 /**
  * Builds the Jev judge shared by the `jev` tool and the query router. The
  * `jev-use` client is created lazily on the first call, so no credential
- * resolves at construction time, and the OpenRouter model pin applies to
- * every caller.
+ * resolves at construction time, and the per-backend model default (the
+ * OpenRouter pin, or `jev-1.13` on the hosted plan) applies to every caller.
  */
 export function createJevJudge(options: JevJudgeOptions = {}): JevJudge {
 	let client: Jev | undefined;
 	return async (state, questions, callOptions = {}) => {
-		client ??= new Jev({
-			...(options.backend !== undefined ? { backend: options.backend } : {}),
-			...(options.env !== undefined ? { env: options.env } : {}),
-			...(options.model !== undefined ? { model: options.model } : {}),
-			...(options.confidenceThreshold !== undefined ? { confidenceThreshold: options.confidenceThreshold } : {}),
-		});
+		if (client === undefined) {
+			// `autorag` is built here (not by jev-use): the hosted plan needs its
+			// own bearer key and native endpoint. A missing key throws the same
+			// named error the other backends give, on the first call.
+			const backend: JevBackendName | JevBackend | undefined =
+				options.backend === "autorag"
+					? new AutoragJevBackend({ env: options.env ?? process.env })
+					: options.backend;
+			client = new Jev({
+				...(backend !== undefined ? { backend } : {}),
+				...(options.env !== undefined ? { env: options.env } : {}),
+				...(options.model !== undefined ? { model: options.model } : {}),
+				...(options.confidenceThreshold !== undefined ? { confidenceThreshold: options.confidenceThreshold } : {}),
+			});
+		}
 		const model = options.model ?? BACKEND_DEFAULT_MODEL[client.backend.name];
 		return client.judge(state, questions, {
 			...(model !== undefined ? { model } : {}),

@@ -24,6 +24,8 @@ import {
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
+	defaultRerankApiKeyEnv,
+	defaultRerankModel,
 	SUPPORTED_RERANK_PROVIDERS,
 } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -1121,8 +1123,8 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 	confidenceThreshold: true,
 };
 
-/** Backends the `jev-use` engine can resolve from the environment. */
-const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel"];
+/** Jev backends AutoRAG can build: jev-use's own plus the hosted AutoRAG plan. */
+const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "autorag"];
 
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
@@ -1275,32 +1277,36 @@ const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKe
 /** Normalize and validate the `rerank` config section, filling in defaults. */
 export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig | false {
 	if (raw === false) return false;
-	const out: RerankConfig = {
-		provider: DEFAULT_RERANK_PROVIDER,
-		model: DEFAULT_RERANK_MODEL,
-		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
-		topN: DEFAULT_RERANK_TOP_N,
-	};
-	if (raw === undefined || raw === null) return out;
-	if (typeof raw !== "object" || Array.isArray(raw)) {
-		throw new ConfigError(`${path} must be an object or false`);
+	let record: Record<string, unknown> = {};
+	if (raw !== undefined && raw !== null) {
+		if (typeof raw !== "object" || Array.isArray(raw)) {
+			throw new ConfigError(`${path} must be an object or false`);
+		}
+		record = raw as Record<string, unknown>;
+		for (const key of Object.keys(record)) {
+			if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
+		}
 	}
-	const record = raw as Record<string, unknown>;
-	for (const key of Object.keys(record)) {
-		if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
-	}
-	if (record.enabled !== undefined) {
-		if (typeof record.enabled !== "boolean") throw new ConfigError(`${path}.enabled must be a boolean`);
-		out.enabled = record.enabled;
-	}
+	// The provider decides the model and key-env defaults, so resolve it first.
+	let provider = DEFAULT_RERANK_PROVIDER;
 	if (record.provider !== undefined) {
 		if (typeof record.provider !== "string" || record.provider.trim() === "") {
 			throw new ConfigError(`${path}.provider must be a non-empty string`);
 		}
-		out.provider = record.provider.trim();
+		provider = record.provider.trim();
 	}
-	if (!SUPPORTED_RERANK_PROVIDERS.includes(out.provider ?? "")) {
+	if (!SUPPORTED_RERANK_PROVIDERS.includes(provider)) {
 		throw new ConfigError(`${path}.provider must be one of: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`);
+	}
+	const out: RerankConfig = {
+		provider,
+		model: defaultRerankModel(provider),
+		apiKeyEnv: defaultRerankApiKeyEnv(provider),
+		topN: DEFAULT_RERANK_TOP_N,
+	};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError(`${path}.enabled must be a boolean`);
+		out.enabled = record.enabled;
 	}
 	if (record.model !== undefined) {
 		if (typeof record.model !== "string" || record.model.trim() === "") {
