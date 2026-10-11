@@ -24,6 +24,7 @@ export {
 	type SearchDocumentWarning,
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
+export * from "./cloud/index.ts";
 export {
 	AutoRAGLite,
 	type AutoRAGLiteOptions,

@@ -434,14 +434,6 @@ describe("AutoRAGAgent", () => {
 		expect(transformed).toEqual(messages);
 		expect(transformed?.[0].content[0].text).not.toContain("<memory_context>");
 	});
-
-	it("getResultRegistry returns empty map initially", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(agent.getResultRegistry().size).toBe(0);
-	});
 });
 
 describe("AutoRAGAgent default method registration", () => {

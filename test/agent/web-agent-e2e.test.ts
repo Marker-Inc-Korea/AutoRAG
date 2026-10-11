@@ -17,6 +17,7 @@ import { WEB_FETCH_TOOL_NAME } from "../../src/agent/web-fetch-tool.ts";
 import { WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
+import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -120,7 +121,8 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 		const response = await agent.searchDocuments("What is the current refund approval policy?", { topK: 2 });
 		expect(response.results).toHaveLength(1);
 		expect(response.answer).toContain("[1]");
-		const registry = agent.getResultRegistry(response.sessionId);
-		expect(registry.get(1)?.source).toBe("https://policy.example.com/refunds");
+		expect(storedEvidence(join(root, "memory.json"), response.sessionId, 1)[0]?.source).toBe(
+			"https://policy.example.com/refunds",
+		);
 	});
 });

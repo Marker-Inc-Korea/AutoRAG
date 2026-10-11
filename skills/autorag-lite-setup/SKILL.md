@@ -169,7 +169,7 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --jso
   are missing or broken, run a full refresh or return to setup rather than
   silently degrading to lexical-only search.
 - MinSync's default embedder is in-process native Qwen3 embeddings
-  (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.5+): no
+  (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.6): no
   embedder flags, no API key, and no external daemon (such as Ollama) are
   needed, and no corpus text leaves the machine. For gateway-profiled
   embeddings, prefetch with `autorag models prefetch --profile qwen3-embedding-0.6b`.

@@ -34,7 +34,7 @@ export interface MinSyncClientOptions {
 	readonly runtime?: MinSyncRuntime;
 }
 
-/** MinSync v0.4.5 supports native vector, BM25, and hybrid query modes. */
+/** MinSync v0.4.6 supports native vector, BM25, and hybrid query modes. */
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
