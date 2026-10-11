@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { type FauxResponseStep, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { MockBackend } from "jev-use";
@@ -37,6 +37,67 @@ function customTool(): AgentTool {
 			return { content: [{ type: "text", text: "custom" }], details: {} };
 		},
 	};
+}
+
+/** A TUI-hosted agent whose Jev router sends every query down the direct route. */
+async function directRouteTui(responses: FauxResponseStep[]) {
+	const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
+	registration.setResponses(responses);
+	const agentDir = join(root, "agent");
+	mkdirSync(agentDir, { recursive: true });
+	const model = registration.getModel();
+	writeFileSync(
+		join(agentDir, "settings.json"),
+		JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
+	);
+	const agent = new AutoRAGAgent({
+		model,
+		apiKey: "test-key",
+		searchPaths: [root],
+		workspacePath: root,
+		memoryPath: join(root, "memory.json"),
+		minSync: { autoInstall: false },
+		jikji: false,
+		piAgentDir: agentDir,
+		piSessionDir: join(root, "sessions"),
+		jev: {
+			backend: new MockBackend({
+				[QUERY_ROUTE_QUESTION_ID]: {
+					answer: "direct",
+					distribution: { local: 0.1, web: 0.1, direct: 0.8 },
+					confidence: 0.8,
+				},
+				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+			}),
+		},
+	});
+	const hosted = await agent.createPiInteractiveRuntime();
+	return {
+		registration,
+		session: hosted.runtime.session,
+		dispose: async () => {
+			await hosted.dispose();
+			registration.unregister();
+		},
+	};
+}
+
+/** A faux model step that stays in flight until the returned `release` is called. */
+function heldStep(step: FauxResponseStep) {
+	let markEntered = (): void => {};
+	let release = (): void => {};
+	const entered = new Promise<void>((resolve) => {
+		markEntered = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const held: FauxResponseStep = async (...args) => {
+		markEntered();
+		await gate;
+		return typeof step === "function" ? step(...args) : step;
+	};
+	return { held, entered, release: () => release() };
 }
 
 describe("AutoRAG pi coding-agent host", () => {
@@ -252,6 +313,42 @@ describe("AutoRAG pi coding-agent host", () => {
 		} finally {
 			await hosted.dispose();
 			registration.unregister();
+		}
+	});
+
+	it("rejects a query typed while one is running without feeding the rejection to the running model", async () => {
+		// The rejection notice must be display-only: delivered by default while the
+		// first query's turn streams, pi steers it into that turn as a user message
+		// and the model answers the harness's own error instead of the user.
+		const first = heldStep(fauxAssistantMessage("Paris.", { stopReason: "stop" }));
+		const tui = await directRouteTui([
+			first.held,
+			...Array.from({ length: 5 }, () =>
+				fauxAssistantMessage("Replying to the busy notice.", { stopReason: "stop" }),
+			),
+		]);
+		try {
+			const running = tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await first.entered;
+			// What pi's TUI does with Enter while the session streams.
+			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive", streamingBehavior: "steer" });
+			first.release();
+			await running;
+			await tui.session.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(1);
+			// The rejected query never named the session after itself.
+			expect(tui.session.sessionName).toBe("What is the capital of France?");
+			const userTexts = tui.session.messages.flatMap((message) =>
+				message.role === "user"
+					? (typeof message.content === "string" ? [message.content] : message.content).flatMap((block) =>
+							typeof block === "string" ? [block] : block.type === "text" ? [block.text] : [],
+						)
+					: [],
+			);
+			expect(userTexts.some((text) => text.includes("busy"))).toBe(false);
+		} finally {
+			await tui.dispose();
 		}
 	});
 

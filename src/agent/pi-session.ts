@@ -183,11 +183,17 @@ function createAutoRAGInteractiveExtension(
 			try {
 				await onQuery(query, pi);
 			} catch (error) {
-				pi.sendMessage({
-					customType: "autorag.error",
-					content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-					display: true,
-				});
+				// Display-only: while another query's turn streams, pi's default
+				// delivery steers a custom message into it as a user message, and the
+				// model would answer this notice instead of the user.
+				pi.sendMessage(
+					{
+						customType: "autorag.error",
+						content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
 			}
 			return { action: "handled" };
 		});

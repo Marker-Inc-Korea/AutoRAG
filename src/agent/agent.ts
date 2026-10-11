@@ -1437,6 +1437,8 @@ export class AutoRAGAgent {
 		query: string,
 		pi: Parameters<NonNullable<AutoRAGPiInteractiveRuntimeOptions["onQuery"]>>[1],
 	): Promise<void> {
+		// A query rejected as busy must not rename the running query's session.
+		this.assertIdle();
 		pi.setSessionName(query.slice(0, 80));
 		for await (const _event of this.searchDocumentsStream(query)) {
 			// Drained for its side effects: the search turn runs while it is consumed.
@@ -1479,10 +1481,15 @@ export class AutoRAGAgent {
 		}
 	}
 
-	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
+	/** Throws when a {@link searchDocuments} run is already in flight: runs are single-flight. */
+	private assertIdle(): void {
 		if (this.activeRun) {
 			throw new Error("AutoRAG agent is busy; await the in-flight searchDocuments() call before starting another");
 		}
+	}
+
+	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
+		this.assertIdle();
 
 		// MinSync is required: a run that cannot reach it fails here, before any
 		// model call, instead of answering from the retrieval paths that remain.
