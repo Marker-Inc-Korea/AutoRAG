@@ -45,7 +45,7 @@ export interface SingleDatasourceSearchProvider {
 	searchSingleDatasourceDocuments(
 		datasourceId: string,
 		query: string,
-		options?: { readonly topK?: number; readonly scope?: string },
+		options?: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal },
 	): Promise<{ readonly results: readonly RetrievalResult[]; readonly diagnostics: readonly RetrievalDiagnostic[] }>;
 }
 
@@ -89,7 +89,7 @@ function createTool(
 			`This tool spawns only this connection's CLIs and returns only this connection's hits.${scopeLine} ` +
 			`Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.`,
 		parameters: searchSingleDatasourceSchema,
-		async execute(_toolCallId, params): Promise<AgentToolResult<SearchSingleDatasourceDetails>> {
+		async execute(_toolCallId, params, signal): Promise<AgentToolResult<SearchSingleDatasourceDetails>> {
 			const query = params.query.trim();
 			if (query.length === 0) {
 				return {
@@ -106,6 +106,7 @@ function createTool(
 			const { results, diagnostics } = await provider.searchSingleDatasourceDocuments(spec.datasourceId, query, {
 				topK: params.topK,
 				scope: params.scope,
+				...(signal === undefined ? {} : { signal }),
 			});
 			const evidenceIds = results.map((result) =>
 				ledger.registerResult(`search_datasource_${spec.datasourceId}`, result),

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Agent, AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
@@ -690,7 +690,21 @@ export class AutoRAGAgent {
 		harnessAbort: boolean;
 		/** The user interrupted a phase (Esc): stop the search instead of running its next phase. */
 		userAborted: boolean;
-	} = { run: undefined, followUps: [], steers: [], queuedSteers: [], harnessAbort: false, userAborted: false };
+		/**
+		 * Aborted when a steer arrives and replaced once the steer reaches the model:
+		 * in-flight retrieval tools watch it, so a steer cuts a slow search short
+		 * instead of waiting for it, like an interruptible wait in pi.
+		 */
+		steerInterrupt: AbortController;
+	} = {
+		run: undefined,
+		followUps: [],
+		steers: [],
+		queuedSteers: [],
+		harnessAbort: false,
+		userAborted: false,
+		steerInterrupt: new AbortController(),
+	};
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	/** Evidence every retrieval tool returned this run; the answer's inline `[eN]` citations resolve against it. */
@@ -1424,9 +1438,16 @@ export class AutoRAGAgent {
 					}),
 				),
 			contextTransform: (messages) => this.withMemoryContext(messages),
-			customTools: this.tools.filter(
-				(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
-			),
+			// Retrieval and web reads are safe to cut short: stopping them loses no side effect.
+			customTools: this.tools
+				.filter((tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]))
+				.map((tool) =>
+					this.searchToolNames.has(tool.name) ||
+					tool.name === WEB_SEARCH_TOOL_NAME ||
+					tool.name === WEB_FETCH_TOOL_NAME
+						? this.interruptibleBySteer(tool)
+						: tool,
+				),
 			onInput: (input, pi) => this.routeInteractiveInput(input, pi),
 			...(this.jevExtension !== undefined
 				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
@@ -1440,6 +1461,38 @@ export class AutoRAGAgent {
 			dispose: async () => {
 				if (this.boundPiRuntime === runtime.runtime) this.boundPiRuntime = undefined;
 				await dispose();
+			},
+		};
+	}
+
+	/**
+	 * Lets a steer cut a retrieval tool short, like an interruptible wait in pi:
+	 * the tool's signal also aborts on the steer, and the call resolves at once
+	 * with a skipped result telling the model to retry if the search still
+	 * matters, so the steer reaches the model before the next request.
+	 */
+	private interruptibleBySteer(tool: AgentTool): AgentTool {
+		return {
+			...tool,
+			execute: async (toolCallId, params, signal, onUpdate) => {
+				const steer = this.interactive.steerInterrupt.signal;
+				if (steer.aborted) return skippedBySteer(tool.name);
+				const combined = signal === undefined ? steer : AbortSignal.any([signal, steer]);
+				let onSteer = (): void => {};
+				const steered = new Promise<"steered">((resolve) => {
+					onSteer = () => resolve("steered");
+					steer.addEventListener("abort", onSteer, { once: true });
+				});
+				try {
+					const outcome = await Promise.race([tool.execute(toolCallId, params, combined, onUpdate), steered]);
+					return outcome === "steered" ? skippedBySteer(tool.name) : outcome;
+				} catch (error) {
+					// The steer's abort surfaced as the tool's own error: report the skip, not a failure.
+					if (steer.aborted && signal?.aborted !== true) return skippedBySteer(tool.name);
+					throw error;
+				} finally {
+					steer.removeEventListener("abort", onSteer);
+				}
 			},
 		};
 	}
@@ -1468,6 +1521,8 @@ export class AutoRAGAgent {
 			return { kind: "handled" };
 		}
 		state.steers.push(input.text);
+		// Cut any in-flight retrieval short so the steer reaches the model promptly.
+		state.steerInterrupt.abort();
 		const steer = buildSteerMessage(input.text);
 		// A turn is streaming: pi queues the transformed text as steering for that turn.
 		if (input.streamingBehavior === "steer") return { kind: "steer", text: steer };
@@ -1521,8 +1576,12 @@ export class AutoRAGAgent {
 		state.userAborted = false;
 		const session = this.boundPiRuntime?.session;
 		const unsubscribe = session?.subscribe((event) => {
-			// The next model request took the queued steers into the transcript.
-			if (event.type === "message_start" && event.message.role === "user") state.queuedSteers.length = 0;
+			if (event.type === "message_start" && event.message.role === "user") {
+				// The next model request took the queued steers into the transcript,
+				// so later retrieval runs uninterrupted until the next steer.
+				state.queuedSteers.length = 0;
+				if (state.steerInterrupt.signal.aborted) state.steerInterrupt = new AbortController();
+			}
 			// An Esc that aborted a phase ends the search: no later phase may run as if it had finished.
 			if (event.type === "agent_settled" && event.aborted && !state.harnessAbort) state.userAborted = true;
 		});
@@ -3421,9 +3480,13 @@ export class AutoRAGAgent {
 
 	async searchAllDocuments(
 		query: string,
-		options: { readonly topK?: number; readonly scope?: string } = {},
+		options: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal } = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
-		return this.retrieveWithDiagnostics(query, { topK: options.topK, scope: options.scope });
+		return this.retrieveWithDiagnostics(query, {
+			topK: options.topK,
+			scope: options.scope,
+			...(options.signal === undefined ? {} : { signal: options.signal }),
+		});
 	}
 
 	/**
@@ -3439,12 +3502,13 @@ export class AutoRAGAgent {
 	async searchSingleDatasourceDocuments(
 		datasourceId: string,
 		query: string,
-		options: { readonly topK?: number; readonly scope?: string } = {},
+		options: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal } = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
 		const retrievalOptions: RetrievalOptions = {
 			...this.activeRetrievalOptions,
 			topK: options.topK,
 			scope: options.scope,
+			...(options.signal === undefined ? {} : { signal: options.signal }),
 		};
 		const methods = this.methodRegistry.list().filter((method) => {
 			const descriptor = method.describe();
@@ -3584,6 +3648,19 @@ function formatRerankedBaseline(results: readonly RetrievalResult[], evidenceIds
 		(result, index) => `[${evidenceIds[index]}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`,
 	);
 	return `Reranked initial candidates (ordered by relevance to the query; cite evidence by its [eN] id):\n${lines.join("\n")}`;
+}
+
+/** The result of a retrieval tool a steer cut short, worded like pi's skipped-tool results. */
+function skippedBySteer(toolName: string): AgentToolResult<{ readonly method: string; readonly skipped: "steer" }> {
+	return {
+		content: [
+			{
+				type: "text",
+				text: `Skipped due to the user's steering message. ${toolName} was stopped before it returned; do not count it as completed work. Apply the steering message, then retry the search if it is still needed.`,
+			},
+		],
+		details: { method: toolName, skipped: "steer" },
+	};
 }
 
 /**

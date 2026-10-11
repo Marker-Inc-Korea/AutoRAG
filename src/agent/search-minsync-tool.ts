@@ -43,7 +43,7 @@ export function createSearchMinSyncDocumentsTool(
 		description:
 			"Search parsed document mirrors with MinSync semantic vector retrieval. Use for conceptual and meaning-based search.",
 		parameters: searchMinSyncSchema,
-		async execute(_toolCallId, params): Promise<AgentToolResult<SearchMinSyncDocumentsDetails>> {
+		async execute(_toolCallId, params, signal): Promise<AgentToolResult<SearchMinSyncDocumentsDetails>> {
 			if (params.query.trim().length === 0) {
 				return {
 					content: [{ type: "text", text: "MinSync query was empty; no documents searched." }],
@@ -54,6 +54,7 @@ export function createSearchMinSyncDocumentsTool(
 			const results = await getMethod().retrieve(params.query, {
 				topK: params.topK,
 				scope,
+				...(signal === undefined ? {} : { signal }),
 			});
 			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, result));
 			return {
