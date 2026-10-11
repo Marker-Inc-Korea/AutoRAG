@@ -22,7 +22,11 @@ export const DEFAULT_RERANK_MODEL = "voyageai/rerank-3-lite";
 export const DEFAULT_RERANK_PROVIDER = "openrouter";
 /** Default environment variable holding the OpenRouter API key. */
 export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
-/** Default rerank model for the hosted AutoRAG (Dazzi) provider. */
+/**
+ * Default rerank model for the hosted AutoRAG (Dazzi) provider — the id the
+ * server lists under `GET <root>/v1/models?operation=rerank`. Rerankers are not
+ * chat LLMs, so the project's 2026+ model rule does not cover them.
+ */
 export const DEFAULT_AUTORAG_RERANK_MODEL = "qwen/qwen3-reranker-8b";
 /** Environment variable holding the AutoRAG account key for the `autorag` rerank provider. */
 export const DEFAULT_AUTORAG_RERANK_API_KEY_ENV = "AUTORAG_API_KEY";
@@ -138,25 +142,13 @@ export function createReranker(config: CreateRerankerOptions | false | undefined
 			`Unsupported rerank provider "${provider}"; supported providers: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`,
 		);
 	}
-	if (provider === AUTORAG_PROVIDER_ID) return new OpenRouterReranker(withAutoragRerankDefaults(config));
-	return new OpenRouterReranker(config);
+	return new OpenRouterReranker({ ...config, provider });
 }
 
-/**
- * Fill the hosted AutoRAG provider's defaults while letting explicit config win:
- * the API base is `<root>/v1`, the key env is `AUTORAG_API_KEY`, and the model
- * is the hosted reranker. The server speaks the same rerank wire shape the
- * OpenRouter SDK sends, so the same client path is reused.
- */
-function withAutoragRerankDefaults(config: CreateRerankerOptions): OpenRouterRerankerOptions {
-	const env = config.env ?? process.env;
-	return {
-		...config,
-		provider: AUTORAG_PROVIDER_ID,
-		model: config.model ?? DEFAULT_AUTORAG_RERANK_MODEL,
-		apiKeyEnv: config.apiKeyEnv ?? DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
-		baseUrl: config.baseUrl ?? `${resolveBaseUrl(env)}${API_PATH}`,
-	};
+/** `<root>/v1`, tolerating an `AUTORAG_BASE_URL` that already carries the API path. */
+function autoragApiBaseUrl(env: NodeJS.ProcessEnv): string {
+	const root = resolveBaseUrl(env);
+	return root.endsWith(API_PATH) ? root : `${root}${API_PATH}`;
 }
 
 /**
@@ -181,15 +173,16 @@ export class OpenRouterReranker implements Reranker {
 			this.client = options.client;
 			return;
 		}
-		const apiKeyEnv = options.apiKeyEnv ?? DEFAULT_RERANK_API_KEY_ENV;
 		const env = options.env ?? process.env;
+		const apiKeyEnv = options.apiKeyEnv ?? defaultRerankApiKeyEnv(this.provider);
 		const apiKey = options.apiKey ?? env[apiKeyEnv];
 		if (apiKey === undefined || apiKey.length === 0) {
 			this.unavailableReason = `no API key: set ${apiKeyEnv} or configure rerank.apiKeyEnv`;
 			return;
 		}
+		const baseUrl = options.baseUrl ?? (this.provider === AUTORAG_PROVIDER_ID ? autoragApiBaseUrl(env) : undefined);
 		const sdkOptions: ConstructorParameters<typeof OpenRouter>[0] = { apiKey };
-		if (options.baseUrl !== undefined) sdkOptions.serverURL = options.baseUrl;
+		if (baseUrl !== undefined) sdkOptions.serverURL = baseUrl;
 		if (options.timeoutMs !== undefined) sdkOptions.timeoutMs = options.timeoutMs;
 		const sdk = new OpenRouter(sdkOptions);
 		this.client = {

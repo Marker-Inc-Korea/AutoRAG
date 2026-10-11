@@ -79,12 +79,24 @@ export function createJevJudge(options: JevJudgeOptions = {}): JevJudge {
 	return async (state, questions, callOptions = {}) => {
 		if (client === undefined) {
 			// `autorag` is built here (not by jev-use): the hosted plan needs its
-			// own bearer key and native endpoint. A missing key throws the same
+			// own bearer key and native endpoint. That covers both the explicit
+			// option and the `JEV_BACKEND=autorag` env route, which jev-use would
+			// otherwise reject as an unknown backend. A missing key throws the same
 			// named error the other backends give, on the first call.
-			const backend: JevBackendName | JevBackend | undefined =
-				options.backend === "autorag"
-					? new AutoragJevBackend({ env: options.env ?? process.env })
-					: options.backend;
+			const env = options.env ?? process.env;
+			const explicit = options.backend;
+			let backend: JevBackend | "typesafe" | "openrouter" | "vercel" | undefined;
+			if (typeof explicit === "string") {
+				backend = explicit === "autorag" ? new AutoragJevBackend({ env }) : explicit;
+			} else if (explicit !== undefined) {
+				backend = explicit;
+			} else if (env.JEV_BACKEND?.toLowerCase() === "autorag") {
+				backend = new AutoragJevBackend({ env });
+			} else {
+				// Leave it unset: jev-use resolves its own backends from `env`
+				// (including `JEV_BACKEND`), which is why only `autorag` is special.
+				backend = undefined;
+			}
 			client = new Jev({
 				...(backend !== undefined ? { backend } : {}),
 				...(options.env !== undefined ? { env: options.env } : {}),
