@@ -31,10 +31,10 @@ explicit, trusted-config opt-in. Nothing falls back between providers silently.
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `enabled` | boolean | `true` when the block is present | `false` disables reranking |
-| `provider` | string | `openrouter` | Rerank provider id (`openrouter` is the only supported id; any other value is a config error) |
-| `model` | string | `voyageai/rerank-3-lite` | OpenRouter wire model id |
-| `apiKeyEnv` | string | `OPENROUTER_API_KEY` | Env var holding the provider API key (never the secret itself) |
-| `baseUrl` | string | OpenRouter default | Override the provider base URL (e.g. a gateway or self-hosted endpoint) |
+| `provider` | string | `openrouter` | Rerank provider id — `openrouter` or `autorag` (any other value is a config error) |
+| `model` | string | `voyageai/rerank-3-lite` (`openrouter`) / `qwen/qwen3-reranker-8b` (`autorag`) | Provider wire model id |
+| `apiKeyEnv` | string | `OPENROUTER_API_KEY` (`openrouter`) / `AUTORAG_API_KEY` (`autorag`) | Env var holding the provider API key (never the secret itself) |
+| `baseUrl` | string | provider default | Override the provider base URL (e.g. a gateway or self-hosted endpoint); for `autorag` this is the API base **including** `/v1` |
 | `topN` | positive integer | `25` | Keep only the top N merged results after reranking |
 | `timeoutMs` | positive integer | SDK default | Per-request timeout |
 
@@ -48,6 +48,24 @@ before starting AutoRAG:
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 ```
+
+Alternatively, `provider: "autorag"` reranks through the hosted AutoRAG (Dazzi)
+plan using the account key at `AUTORAG_API_KEY` and the server root at
+`AUTORAG_BASE_URL` (default `https://api.dazziapp.com`):
+
+```json
+{
+  "rerank": {
+    "provider": "autorag",
+    "model": "qwen/qwen3-reranker-8b"
+  }
+}
+```
+
+The rerank client appends `/rerank` to the base URL, so an explicit
+`rerank.baseUrl` for `autorag` is the API base **including** `/v1`
+(`https://api.dazziapp.com/v1`); the base derived from `AUTORAG_BASE_URL` gets
+`/v1` appended unless it already ends in `/v1`.
 
 ## Behavior
 
