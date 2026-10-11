@@ -102,7 +102,7 @@ export class AutoragJevBackend implements JevBackend {
 		const env = options.env ?? process.env;
 		const apiKey = options.apiKey ?? env[AUTORAG_API_KEY_ENV];
 		if (apiKey === undefined || apiKey.trim() === "") {
-			throw new Error(`JEV_BACKEND=autorag needs ${AUTORAG_API_KEY_ENV}.`);
+			throw new Error(`jev.backend "autorag" needs ${AUTORAG_API_KEY_ENV}.`);
 		}
 		this.apiKey = apiKey;
 		this.baseUrl = options.baseUrl ?? resolveBaseUrl(env);

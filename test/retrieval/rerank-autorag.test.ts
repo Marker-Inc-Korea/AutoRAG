@@ -5,6 +5,7 @@ import {
 	DEFAULT_AUTORAG_RERANK_MODEL,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
+	OpenRouterReranker,
 } from "../../src/retrieval/rerank.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
 import { startFakeServer } from "../cloud/helpers/fake-server.ts";
@@ -107,5 +108,58 @@ describe("autorag rerank provider", () => {
 		});
 		expect(reranker?.describe().provider).toBe(DEFAULT_RERANK_PROVIDER);
 		expect(reranker?.describe().model).toBe(DEFAULT_RERANK_MODEL);
+	});
+});
+
+describe("OpenRouterReranker provider-dependent defaults", () => {
+	it("uses the autorag key env and <root>/v1 base directly from the constructor", async () => {
+		const server = await startFakeServer(() => ({
+			body: {
+				model: DEFAULT_AUTORAG_RERANK_MODEL,
+				results: [{ index: 0, relevance_score: 1, document: { text: "alpha" } }],
+			},
+		}));
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "autorag",
+				env: { AUTORAG_BASE_URL: server.url, AUTORAG_API_KEY: "dz_test" },
+			});
+			expect(reranker.describe()).toMatchObject({
+				provider: "autorag",
+				model: DEFAULT_AUTORAG_RERANK_MODEL,
+				available: true,
+			});
+			const out = await reranker.rerank("q", [result("a", "alpha")]);
+			expect(server.requests[0]?.url).toBe("/v1/rerank");
+			expect(server.requests[0]?.headers.authorization).toBe("Bearer dz_test");
+			expect(out.map((entry) => entry.id)).toEqual(["a"]);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("does not double /v1 when AUTORAG_BASE_URL already carries it", async () => {
+		const server = await startFakeServer(() => ({
+			body: {
+				model: DEFAULT_AUTORAG_RERANK_MODEL,
+				results: [{ index: 0, relevance_score: 1, document: { text: "alpha" } }],
+			},
+		}));
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "autorag",
+				env: { AUTORAG_BASE_URL: `${server.url}/v1`, AUTORAG_API_KEY: "dz_test" },
+			});
+			await reranker.rerank("q", [result("a", "alpha")]);
+			expect(server.requests[0]?.url).toBe("/v1/rerank");
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("reports the autorag key env when the key is missing on the direct constructor", () => {
+		expect(new OpenRouterReranker({ provider: "autorag", env: {} }).describe().reason).toContain(
+			DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
+		);
 	});
 });

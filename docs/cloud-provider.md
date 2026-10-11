@@ -12,7 +12,7 @@ The server exposes an OpenAI Responses API surface under `<root>/v1`:
 | Streaming, tools, usage | Pi's built-in `openai-responses` API (`api: "openai-responses"`, `baseUrl: "<root>/v1"`). No custom stream code. |
 | Login | OAuth2 authorization code + PKCE (S256) against `<root>/desktop/authorize?client=agent`, with a loopback redirect on `127.0.0.1`. Token exchange at `POST <root>/api/desktop/token`. |
 | Headless auth | `AUTORAG_API_KEY` is used as the bearer key; no login required. |
-| Model catalog | Discovered live from `GET <root>/v1/models`. **No model ids are hardcoded.** |
+| Model catalog | The **chat** catalog is discovered live from `GET <root>/v1/models` — no chat model id is hardcoded. The Jev id (`jev-1.13`) and the default reranker are the ids the server lists under `GET <root>/v1/models?operation=jev\|rerank`; Jev and rerankers are not chat LLMs (the 2026+ model rule covers chat LLMs only). |
 
 ## Sign in
 
@@ -141,6 +141,12 @@ Both read `AUTORAG_BASE_URL` for the server root. An explicit
 `rerank.baseUrl`, `rerank.apiKeyEnv`, or `rerank.model` (and `jev.model`)
 overrides the defaults; with no `AUTORAG_API_KEY` the backend reports a named,
 non-silent unavailability instead of silently degrading.
+
+A `rerank.baseUrl` for `provider: "autorag"` is the API base **including**
+`/v1`, e.g. `https://api.dazziapp.com/v1`, because the rerank client appends
+`/rerank`. `AUTORAG_BASE_URL` stays the server **root** without `/v1`
+(`https://api.dazziapp.com`), and the derived rerank base is `<root>/v1` — a root
+that already ends in `/v1` is not doubled.
 
 ## Implementation
 
