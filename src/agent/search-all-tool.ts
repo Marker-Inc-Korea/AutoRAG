@@ -26,7 +26,7 @@ export interface SearchAllDocumentsResult {
 export interface SearchAllDocumentsProvider {
 	searchAllDocuments(
 		query: string,
-		options?: { readonly topK?: number; readonly scope?: string },
+		options?: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal },
 	): Promise<SearchAllDocumentsResult>;
 }
 
@@ -56,7 +56,7 @@ export function createSearchAllDocumentsTool(
 		description:
 			"Search across all configured retrieval methods (posix, MinSync, datasources) and return every distinct chunk they found, with only pure duplicates removed. This is the exhaustive retrieval surface: one call can return many candidates, including several passages of the same document, so judge the evidence yourself rather than assuming it was pre-filtered. Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchAllSchema,
-		async execute(_toolCallId, params): Promise<AgentToolResult<SearchAllDocumentsDetails>> {
+		async execute(_toolCallId, params, signal): Promise<AgentToolResult<SearchAllDocumentsDetails>> {
 			const query = params.query.trim();
 			if (query.length === 0) {
 				return {
@@ -68,6 +68,7 @@ export function createSearchAllDocumentsTool(
 			const { results, diagnostics, perMethodCounts } = await provider.searchAllDocuments(query, {
 				topK: params.topK,
 				scope: params.scope,
+				...(signal === undefined ? {} : { signal }),
 			});
 			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_ALL_DOCUMENTS_TOOL_NAME, result));
 			return {

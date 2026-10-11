@@ -9,7 +9,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { type JevBackend, MockBackend } from "jev-use";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import {
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
@@ -17,10 +17,13 @@ import {
 } from "../../src/agent/pi-session.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
+	datasourceQuestionId,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
 } from "../../src/agent/query-routing.ts";
+import type { DatasourceSkill } from "../../src/datasource/types.ts";
+import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 
 let root: string;
 
@@ -58,7 +61,11 @@ function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
 }
 
 /** A TUI-hosted agent on the faux model, routed by `jev` (direct route by default). */
-async function tuiAgent(responses: FauxResponseStep[], jev: JevBackend = jevRoute("direct")) {
+async function tuiAgent(
+	responses: FauxResponseStep[],
+	jev: JevBackend = jevRoute("direct"),
+	extra: Pick<AutoRAGAgentOptions, "datasourceSkills"> = {},
+) {
 	const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
 	registration.setResponses(responses);
 	const agentDir = join(root, "agent");
@@ -79,6 +86,7 @@ async function tuiAgent(responses: FauxResponseStep[], jev: JevBackend = jevRout
 		piAgentDir: agentDir,
 		piSessionDir: join(root, "sessions"),
 		jev: { backend: jev },
+		...extra,
 	});
 	const hosted = await agent.createPiInteractiveRuntime();
 	return {
@@ -148,6 +156,69 @@ function heldStep(step: FauxResponseStep) {
 		return typeof step === "function" ? step(...args) : step;
 	};
 	return { held, entered, release: () => release() };
+}
+
+/** A datasource whose retrieval stays in flight until released or aborted through its signal. */
+function slowDatasource(datasourceId: string) {
+	let markEntered = (): void => {};
+	let release = (): void => {};
+	const entered = new Promise<void>((resolve) => {
+		markEntered = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let aborted = false;
+	const method: RetrievalMethod = {
+		describe: () => ({
+			name: `${datasourceId}.keyword`,
+			type: "bm25",
+			description: `${datasourceId} test method`,
+			status: "active",
+			capabilities: ["keyword"],
+			datasourceId,
+		}),
+		async retrieve(_query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+			markEntered();
+			const signal = options.signal;
+			await Promise.race([
+				gate,
+				new Promise<void>((resolve) => {
+					signal?.addEventListener("abort", () => resolve(), { once: true });
+				}),
+			]);
+			if (signal?.aborted) aborted = true;
+			return [];
+		},
+	};
+	const skill: DatasourceSkill = {
+		describe: () => ({
+			name: datasourceId,
+			type: "chat",
+			description: `${datasourceId} test datasource`,
+			capabilities: ["keyword"],
+			status: "active",
+			datasourceId,
+			tags: [datasourceId],
+		}),
+		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
+		skillManifest: () => ({
+			name: `datasource-${datasourceId}`,
+			description: `Search ${datasourceId}.`,
+			content: `# ${datasourceId}`,
+		}),
+		index: async () => ({
+			ok: true,
+			instanceId: "default",
+			skill: datasourceId,
+			chunkCount: 0,
+			indexedAt: 1,
+			diagnostics: [],
+		}),
+		retrievalMethods: () => [method],
+		describeSources: () => [],
+	};
+	return { skill, entered, aborted: () => aborted, release: () => release() };
 }
 
 describe("AutoRAG pi coding-agent host", () => {
@@ -449,6 +520,83 @@ describe("AutoRAG pi coding-agent host", () => {
 			expect(answers).toEqual(["Paris.", "Leonardo da Vinci."]);
 			expect(tui.session.sessionName).toBe("Who painted the Mona Lisa?");
 		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("cuts a running retrieval tool short when the user steers, so the steer lands promptly", async () => {
+		// A slow datasource search would otherwise hold the steer until it returns.
+		// Like an interruptible wait in pi, the steer stops the search and the
+		// model gets a skipped-tool result telling it to retry if still needed.
+		const datasource = slowDatasource("kakao");
+		const toolResults: string[] = [];
+		const seen: string[] = [];
+		const tui = await tuiAgent(
+			[
+				fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "capital of france" })], {
+					stopReason: "toolUse",
+				}),
+				(context) => {
+					for (const message of context.messages) {
+						if (message.role === "toolResult") toolResults.push(textOf(message.content));
+					}
+					const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
+					seen.push(lastUser === undefined ? "" : textOf(lastUser.content));
+					return fauxAssistantMessage("Checked Lyon: not the capital.", { stopReason: "stop" });
+				},
+				fauxAssistantMessage("Verified: Paris.", { stopReason: "stop" }),
+			],
+			jevRoute("direct"),
+			{ datasourceSkills: [datasource.skill] },
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await datasource.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive", streamingBehavior: "steer" });
+			// No release: only the steer may end the retrieval.
+			await tui.agent.waitForIdle();
+
+			expect(datasource.aborted()).toBe(true);
+			expect(toolResults.some((text) => text.includes("Skipped due to the user's steering message"))).toBe(true);
+			expect(seen[0]).toContain("Check Lyon too.");
+		} finally {
+			datasource.release();
+			await tui.dispose();
+		}
+	});
+
+	it("cuts the baseline prefetch short when the user steers before the first model request", async () => {
+		// Jev selects the datasource, so the harness searches it before the fast
+		// phase. A slow datasource there held the steer until it returned: the
+		// steer now stops the prefetch and the fast phase starts with the steer.
+		const datasource = slowDatasource("kakao");
+		const seen: string[] = [];
+		const routing = new MockBackend({
+			[QUERY_ROUTE_QUESTION_ID]: {
+				answer: "local",
+				distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+				confidence: 0.8,
+			},
+			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+			[datasourceQuestionId("kakao")]: { answer: 0.9 },
+		});
+		const tui = await tuiAgent(
+			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris.", seen)],
+			routing,
+			{ datasourceSkills: [datasource.skill] },
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await datasource.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive" });
+			// No release: only the steer may end the prefetch.
+			await tui.agent.waitForIdle();
+
+			expect(datasource.aborted()).toBe(true);
+			expect(seen[0]).toContain("Check Lyon too.");
+		} finally {
+			datasource.release();
 			await tui.dispose();
 		}
 	});
