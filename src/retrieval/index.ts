@@ -39,7 +39,6 @@ export {
 	retrievalSurfaceFor,
 } from "./skip.ts";
 export type {
-	CuratedResult,
 	RetrievalDiagnostic,
 	RetrievalDiagnosticCode,
 	RetrievalMethod,

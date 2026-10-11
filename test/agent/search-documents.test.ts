@@ -7,6 +7,7 @@ import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
+import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -67,7 +68,9 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		expect(response.answer).toBe("[1] grounded answer");
 		expect(response.results).toHaveLength(1);
-		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe(join(root, "grounded-answer.txt"));
+		expect(storedEvidence(join(root, "memory.json"), response.sessionId, 1)[0]?.source).toBe(
+			join(root, "grounded-answer.txt"),
+		);
 	});
 
 	it("passes programmatic provider credentials to the model request", async () => {

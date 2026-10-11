@@ -20,6 +20,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
+import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -151,11 +152,11 @@ describe("evidence refs through the real agent loop", () => {
 		const response = await agent.searchDocuments("refund approval");
 
 		expect(response.results).toHaveLength(1);
-		const entry = agent.getResultRegistry(response.sessionId).get(1);
+		const [entry] = storedEvidence(join(root, "memory.json"), response.sessionId, 1);
 		expect(entry?.source).toBe("/kakao/acct-1/chunks/1");
 		expect(entry?.method).toBe("kakao-lexical");
 		expect(entry?.content).toBe(CHUNK);
-		expect(entry?.evidenceRefs?.[0]?.retrievalResultId).toBe("kakao:chunk-1");
+		expect(entry?.retrievalResultId).toBe("kakao:chunk-1");
 		// The paraphrase stays the user-facing evidence excerpt only.
 		expect(response.results[0]?.evidence[0]?.excerpt).toBe("a loose paraphrase the model wrote");
 	});
@@ -166,7 +167,9 @@ describe("evidence refs through the real agent loop", () => {
 		const response = await agent.searchDocuments("refund approval");
 
 		expect(response.diagnostics?.some((d) => d.code === ("missing-final-emit" as never))).toBe(false);
-		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/kakao/acct-1/chunks/1");
+		expect(storedEvidence(join(root, "memory.json"), response.sessionId, 1)[0]?.source).toBe(
+			"/kakao/acct-1/chunks/1",
+		);
 	});
 
 	it("rejects an invented local path and accepts a real file the model opened itself", async () => {
@@ -176,7 +179,7 @@ describe("evidence refs through the real agent loop", () => {
 
 		const response = await agent.searchDocuments("refund approval");
 
-		const entry = agent.getResultRegistry(response.sessionId).get(1);
+		const [entry] = storedEvidence(join(root, "memory.json"), response.sessionId, 1);
 		expect(entry?.source).toBe(real);
 		expect(entry?.method).toBe("bash");
 	});
@@ -188,7 +191,7 @@ describe("evidence refs through the real agent loop", () => {
 		// Second run: the model cites e1 before any tool ran this run -> rejected, then it searches and cites the new id.
 		const second = await agent.searchDocuments("second run");
 
-		expect(agent.getResultRegistry(second.sessionId).get(1)?.source).toBe("/kakao/acct-1/chunks/1");
+		expect(storedEvidence(join(root, "memory.json"), second.sessionId, 1)[0]?.source).toBe("/kakao/acct-1/chunks/1");
 	});
 
 	it("never lets a previous run's id alias a different chunk in the next run", async () => {
@@ -233,7 +236,7 @@ describe("evidence refs through the real agent loop", () => {
 		await agent.searchDocuments("first run");
 		const run2 = await agent.searchDocuments("second run");
 
-		const entry = agent.getResultRegistry(run2.sessionId).get(1);
+		const [entry] = storedEvidence(join(root, "memory.json"), run2.sessionId, 1);
 		// The stale e1 was rejected (not silently mapped to run 2's chunk), so the model re-emitted with e2.
 		expect(run2.results[0]?.evidence[0]?.excerpt).toBe("fresh citation");
 		expect(entry?.source).toBe("/kakao/acct-1/chunks/2");

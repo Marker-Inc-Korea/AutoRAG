@@ -24,7 +24,6 @@ import type { ParsedMirrorSyncResult } from "./mirror/sync.ts";
 import type { RetrievalEngine } from "./retrieval/engine.ts";
 import type { DatasourceCatalogEntry, RetrievalSelection } from "./retrieval/selection.ts";
 import type {
-	CuratedResult,
 	RetrievalDiagnostic,
 	RetrievalOptions,
 	RetrievalResult,
@@ -45,7 +44,6 @@ export class AutoRAGLite {
 	private readonly agent: AutoRAGAgent;
 	private readonly retrievalEngine: RetrievalEngine;
 	private readonly memory: RetrievalMemory;
-	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 
 	constructor(config: CliConfig) {
 		this.config = config;
@@ -170,17 +168,12 @@ export class AutoRAGLite {
 		query: string,
 		details: AutoRAGResultsDetails,
 	): SearchDocumentsResponse {
-		return persistStructuredResultsSession(sessionId, query, details, this.sessions, this.memory);
+		return persistStructuredResultsSession(sessionId, query, details, this.memory);
 	}
 
 	/** Generate a session id and persist a typed structured report. */
 	recordReport(query: string, details: AutoRAGResultsDetails): SearchDocumentsResponse {
 		return this.recordStructuredResultsSession(randomUUID(), query, details);
-	}
-
-	/** Return the opaque result registry associated with a persisted report. */
-	getResultRegistry(sessionId: string): ReadonlyMap<number, CuratedResult> {
-		return this.sessions.get(sessionId)?.registry ?? new Map();
 	}
 
 	/** Return a detached snapshot of persisted evidence state. */
