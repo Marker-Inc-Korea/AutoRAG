@@ -45,7 +45,7 @@ function writeFixture(opts: {
 		join(root, "package.json"),
 		JSON.stringify({ name: "fixture-pkg", version: "1.2.3", files: ["dist"] }, null, 2),
 	);
-	writeFileSync(join(root, "LICENSE"), "MIT License\n");
+	writeFileSync(join(root, "LICENSE"), "Apache License\n");
 	writeFileSync(join(root, "NOTICE"), "NOTICE\n");
 	writeFileSync(join(root, "GOVERNANCE.md"), "# Governance\n");
 	if (opts.withDist) {

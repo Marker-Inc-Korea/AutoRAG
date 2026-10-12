@@ -43,7 +43,7 @@ describe("NOTICE and CycloneDX tokens", () => {
 			projectName: "AutoRAG",
 			year: "2025",
 			holder: "NomaDamas / Marker Inc.",
-			rootLicense: "MIT",
+			rootLicense: "Apache-2.0",
 			legacyLicense: "Apache-2.0",
 			components,
 		});

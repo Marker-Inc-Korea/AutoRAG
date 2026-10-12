@@ -20,7 +20,7 @@ describe("loadSetupSkill", () => {
 		expect(skill.startsWith("# AutoRAG setup")).toBe(true);
 		expect(skill).toContain("## Configure one search model");
 		expect(skill).not.toMatch(/^---/u);
-		expect(skill).not.toContain("license: MIT");
+		expect(skill).not.toContain("license: Apache-2.0");
 	});
 
 	it("reads an explicit skill path and keeps a body that has no front matter intact", () => {

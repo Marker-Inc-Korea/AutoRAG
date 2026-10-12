@@ -1,7 +1,7 @@
 ---
 name: autorag-lite-setup
 description: Install and register the model-free AutoRAG Lite MCP server, configure approved roots and datasources, build indexes, and verify MCP discovery and search. Use when autorag-mcp is missing, MCP connection fails, indexes are stale, or the user wants document search without configuring a search model.
-license: MIT
+license: Apache-2.0
 ---
 
 # AutoRAG Lite setup

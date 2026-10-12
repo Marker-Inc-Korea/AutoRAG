@@ -78,7 +78,7 @@ These decisions are made by Marker Inc., represented by the project lead.
 - Contributions are made via pull requests against `main` and are reviewed
   by the maintainers.
 - All contributions are licensed under the project's
-  [MIT License](LICENSE).
+  [Apache License 2.0](LICENSE).
 - All participants are expected to follow the
   [Code of Conduct](CODE_OF_CONDUCT.md).
 

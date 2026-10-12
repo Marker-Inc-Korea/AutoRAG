@@ -1,7 +1,7 @@
 ---
 name: autorag-setup
 description: Install and configure AutoRAG, register its Lite MCP server for external agents, or repair its single search model, approved roots, indexes, datasources, and health checks without exposing credentials. Use when AutoRAG or MCP is missing, init/refresh/health fails, indexes are stale, or the user wants to add folders or datasources.
-license: MIT
+license: Apache-2.0
 ---
 
 # AutoRAG setup

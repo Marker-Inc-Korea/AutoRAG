@@ -1,7 +1,7 @@
 AutoRAG
 Copyright (c) 2025 NomaDamas / Marker Inc.
 
-Root package license: MIT
+Root package license: Apache-2.0
 legacy/ package license: Apache-2.0
 
 Third-party production dependencies:
