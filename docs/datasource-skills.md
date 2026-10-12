@@ -313,6 +313,12 @@ A skill can publish `instances`, for example:
 
 Every instance maps to a slash-hierarchical datasource root like `/kakao/personal` or `/slack/local`. Chunks hang under `/<skill>/<instance>/chunks/<id>`.
 
+For Obsidian vaults indexed through qmd, chunk IDs include a passage locator
+after the note's qmd `docid`: `-L<line>` when qmd reports a line number, or
+`-S<16 hex characters>` from the snippet's SHA-256 when line metadata is
+missing. This keeps multiple search passages from one note as distinct source
+identities.
+
 ## Slack via slacrawl
 
 Slack can use the local Slack Desktop cache through `slacrawl`'s `wiretap`

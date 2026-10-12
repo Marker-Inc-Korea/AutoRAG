@@ -15,6 +15,7 @@ import type {
 	QmdSearchResult,
 	QmdUpdateResult,
 } from "../../../src/datasource/skills/obsidian/types.ts";
+import { ResultMerger } from "../../../src/retrieval/merger.ts";
 
 let root: string;
 
@@ -198,6 +199,58 @@ describe("Obsidian retrieval methods", () => {
 });
 
 describe("QmdClient", () => {
+	it("keeps multiple passages from one note distinct through retrieval and merging", async () => {
+		const binaryPath = join(root, "qmd-multiple-passages");
+		const hits: Array<Record<string, unknown>> = [1, 12, 24].map((line) => ({
+			docid: "#a13360",
+			file: "qmd://vault/long.md",
+			line,
+			score: 1,
+			title: `Chapter at line ${line}`,
+			snippet: `passage ${line}`,
+		}));
+		hits.push({
+			docid: "#a13360",
+			file: "qmd://vault/long.md",
+			score: 1,
+			title: "Passage without line metadata",
+			snippet: "passage without line metadata",
+		});
+		hits.push({
+			docid: "#a13360",
+			file: "qmd://vault/long.md",
+			score: 1,
+			title: "Another passage without line metadata",
+			snippet: "another passage without line metadata",
+		});
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(hits))});\n`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const client = new QmdClient({ binaryPath, collectionName: "vault" });
+		const search = await client.search("search", "passage", { topK: 5 });
+		expect(search.ok).toBe(true);
+		if (!search.ok) return;
+		expect(search.hits.slice(0, 3).map((hit) => hit.chunkId)).toEqual(["a13360-L1", "a13360-L12", "a13360-L24"]);
+		expect(search.hits[3]?.chunkId).toMatch(/^a13360-S[a-f0-9]{16}$/);
+		expect(search.hits[4]?.chunkId).toMatch(/^a13360-S[a-f0-9]{16}$/);
+		expect(search.hits[3]?.chunkId).not.toBe(search.hits[4]?.chunkId);
+
+		const method = new ObsidianBm25Method({ client, instanceId: "vault" });
+		const retrieved = await method.retrieve("passage", { topK: 5 });
+		expect(new Set(retrieved.map((hit) => hit.source)).size).toBe(5);
+		const merged = new ResultMerger().merge(new Map([["obsidian-bm25", retrieved]]), { topK: 5, dedup: true });
+		expect(merged.map((hit) => hit.content)).toEqual([
+			"passage 1",
+			"passage 12",
+			"passage 24",
+			"passage without line metadata",
+			"another passage without line metadata",
+		]);
+	});
+
 	it("writes isolated index.yml and parses search JSON from a fake binary", async () => {
 		const binDir = join(root, "bin");
 		const binaryPath = join(binDir, "qmd");
@@ -249,7 +302,11 @@ process.exit(0);
 		const search = await client.search("search", "hello", { topK: 5 });
 		expect(search.ok).toBe(true);
 		if (search.ok) {
-			expect(search.hits[0]).toMatchObject({ chunkId: "deadbe", content: "hello vault", score: 0.8 });
+			expect(search.hits[0]).toMatchObject({
+				chunkId: expect.stringMatching(/^deadbe-S[a-f0-9]{16}$/),
+				content: "hello vault",
+				score: 0.8,
+			});
 		}
 
 		const calls = readFileSync(logPath, "utf8")
@@ -387,7 +444,7 @@ descendant.on("spawn", () => {
 
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		expect(result.hits[0]?.chunkId).toBe("descendant");
+		expect(result.hits[0]?.chunkId).toMatch(/^descendant-S[a-f0-9]{16}$/);
 		const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
 		const pidText = pidMatch?.[1];
 		if (pidText === undefined) throw new Error("qmd fixture did not report its descendant PID");
