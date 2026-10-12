@@ -159,7 +159,10 @@ describe("createDefaultParserRegistry Tesseract cache", () => {
 			.getForVirtualPath("/docs/a.png")
 			?.parse({ virtualPath: "/docs/a.png", bytes: new Uint8Array([1]) });
 
-		expect(tesseractMock.createWorker).toHaveBeenCalledWith("jpn", undefined, { cachePath });
+		expect(tesseractMock.createWorker).toHaveBeenCalledWith("jpn", undefined, {
+			cachePath,
+			errorHandler: expect.any(Function),
+		});
 	});
 });
 

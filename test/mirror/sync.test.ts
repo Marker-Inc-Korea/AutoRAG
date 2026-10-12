@@ -302,6 +302,35 @@ describe("syncParsedMirrors", () => {
 		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		expect(result.diagnostics).toEqual([]);
 	});
+	it("skips a standalone image below 3 pixels and still indexes a sibling text file", async () => {
+		// PNG signature + IHDR width 2, height 36.
+		writeFileSync(
+			join(source, "tiny.png"),
+			Buffer.from([
+				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
+				0x00, 0x02, 0x00, 0x00, 0x00, 0x24,
+			]),
+		);
+		writeFileSync(join(source, "note.txt"), "Alpha\n");
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry({ ocr: { enabled: true } }),
+		});
+		const diagnostic = result.diagnostics.find((entry) => entry.code === "parser-skipped");
+		const index = loadMirrorIndex(root);
+
+		expect(result).toMatchObject({ written: 1, skipped: 1 });
+		expect(diagnostic?.source).toBe("/docs/tiny.png");
+		expect(diagnostic?.message).toContain("2");
+		expect(diagnostic?.message).toContain("36");
+		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+		expect(index.entries["/docs/note.txt"]).toBeDefined();
+		expect(index.entries["/docs/tiny.png"]).toBeUndefined();
+		expect(index.skipped?.["/docs/tiny.png"]?.reason).toBe("parser-skipped");
+	});
+
 	it("skips sources larger than maxSourceBytes without writing a mirror", async () => {
 		const file = join(source, "huge.txt");
 		writeFileSync(file, "x".repeat(1024));
