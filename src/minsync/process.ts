@@ -13,9 +13,15 @@ export function spawnProcess(
 	command: string,
 	args: readonly string[],
 	cwd: string,
-	options: { readonly timeoutMs?: number } = {},
+	options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
 ): Promise<ProcessResult> {
-	return new Promise((resolve) => {
+	// Executor form: the ES2022 lib this package targets has no Promise.withResolvers.
+	return new Promise((resolve, reject) => {
+		const { signal } = options;
+		if (signal?.aborted) {
+			reject(abortError(signal));
+			return;
+		}
 		const portable = portableSpawnCommand(command, args);
 		const child = spawn(portable.command, [...portable.args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
 		let stdout = "";
@@ -36,17 +42,34 @@ export function spawnProcess(
 						child.kill("SIGTERM");
 					}, options.timeoutMs)
 				: undefined;
+		// The caller gave up on the result: stop the process instead of letting it run on.
+		const onAbort = (): void => {
+			child.kill("SIGTERM");
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+		const settle = (): void => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+		};
 		child.on("error", (error) => {
-			if (timer) clearTimeout(timer);
-			resolve({ ok: false, stdout, stderr: error.message, code: null });
+			settle();
+			if (signal?.aborted) reject(abortError(signal));
+			else resolve({ ok: false, stdout, stderr: error.message, code: null });
 		});
 		child.on("close", (code) => {
-			if (timer) clearTimeout(timer);
-			if (timedOut) {
+			settle();
+			if (signal?.aborted) {
+				reject(abortError(signal));
+			} else if (timedOut) {
 				resolve({ ok: false, stdout, stderr: "process timed out", code: null, timedOut: true });
 			} else {
 				resolve({ ok: code === 0, stdout, stderr, code });
 			}
 		});
 	});
+}
+
+/** The rejection for a process its caller aborted: the signal's reason when it is an error. */
+function abortError(signal: AbortSignal): Error {
+	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
 }

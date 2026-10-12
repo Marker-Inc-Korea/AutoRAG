@@ -3,19 +3,27 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { type FauxResponseStep, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { MockBackend } from "jev-use";
+import type { ExtensionFactory, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { type JevBackend, MockBackend } from "jev-use";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import {
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "../../src/agent/pi-session.ts";
-import { DECOMPOSE_QUESTION_ID, QUERY_ROUTE_QUESTION_ID } from "../../src/agent/query-routing.ts";
+import {
+	DECOMPOSE_QUESTION_ID,
+	datasourceQuestionId,
+	FOLLOW_UP_QUESTION_ID,
+	QUERY_ROUTE_QUESTION_ID,
+	type QueryRoute,
+} from "../../src/agent/query-routing.ts";
+import type { DatasourceSkill } from "../../src/datasource/types.ts";
+import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 
 let root: string;
 
@@ -37,6 +45,226 @@ function customTool(): AgentTool {
 			return { content: [{ type: "text", text: "custom" }], details: {} };
 		},
 	};
+}
+
+/** Jev routing every query to `route`; `followUp` is the post-fast-answer "verify?" probability. */
+function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
+	return new MockBackend({
+		[QUERY_ROUTE_QUESTION_ID]: {
+			answer: route,
+			distribution: { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 },
+			confidence: 0.8,
+		},
+		[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+		[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
+	});
+}
+
+/** A TUI-hosted agent on the faux model, routed by `jev` (direct route by default). */
+async function tuiAgent(
+	responses: FauxResponseStep[],
+	jev: JevBackend = jevRoute("direct"),
+	extra: Pick<AutoRAGAgentOptions, "datasourceSkills"> = {},
+) {
+	const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
+	registration.setResponses(responses);
+	const agentDir = join(root, "agent");
+	mkdirSync(agentDir, { recursive: true });
+	const model = registration.getModel();
+	writeFileSync(
+		join(agentDir, "settings.json"),
+		JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
+	);
+	const agent = new AutoRAGAgent({
+		model,
+		apiKey: "test-key",
+		searchPaths: [root],
+		workspacePath: root,
+		memoryPath: join(root, "memory.json"),
+		minSync: { autoInstall: false },
+		jikji: false,
+		piAgentDir: agentDir,
+		piSessionDir: join(root, "sessions"),
+		jev: { backend: jev },
+		...extra,
+	});
+	const hosted = await agent.createPiInteractiveRuntime();
+	// What InteractiveMode does on init: bind a UI whose terminal-key listeners the test can drive.
+	const keyListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
+	await hosted.runtime.session.bindExtensions({
+		uiContext: {
+			...noUi(),
+			onTerminalInput: (handler) => {
+				keyListeners.add(handler);
+				return () => keyListeners.delete(handler);
+			},
+		},
+	});
+	return {
+		agent,
+		registration,
+		session: hosted.runtime.session,
+		/** Feeds one terminal key sequence through the bound listeners, as the TUI does before the editor sees it. */
+		pressKey: (data: string): boolean => [...keyListeners].some((listener) => listener(data)?.consume === true),
+		dispose: async () => {
+			await hosted.dispose();
+			registration.unregister();
+		},
+	};
+}
+
+/** The interactive UI surface the TUI binds, with no visible effect. */
+function noUi(): ExtensionUIContext {
+	return {
+		select: async () => undefined,
+		confirm: async () => false,
+		input: async () => undefined,
+		notify: () => undefined,
+		onTerminalInput: () => () => undefined,
+		setStatus: () => undefined,
+		setWorkingMessage: () => undefined,
+		setWorkingVisible: () => undefined,
+		setWorkingIndicator: () => undefined,
+		setHiddenThinkingLabel: () => undefined,
+		setWidget: () => undefined,
+		setFooter: () => undefined,
+		setHeader: () => undefined,
+		setTitle: () => undefined,
+		custom: async () => undefined as never,
+		pasteToEditor: () => undefined,
+		setEditorText: () => undefined,
+		getEditorText: () => "",
+		editor: async () => undefined,
+		addAutocompleteProvider: () => undefined,
+		setEditorComponent: () => undefined,
+		getEditorComponent: () => undefined,
+		theme: undefined as never,
+		getAllThemes: () => [],
+		getTheme: () => undefined,
+		setTheme: () => ({ success: false, error: "UI not available" }),
+		getToolsExpanded: () => false,
+		setToolsExpanded: () => undefined,
+	} as ExtensionUIContext;
+}
+
+/** Wraps a Jev backend so the `nth` (1-based) batch asking `questionId` stays in flight until released. */
+function holdingJev(inner: JevBackend, questionId: string, nth = 1) {
+	let markEntered = (): void => {};
+	let release = (): void => {};
+	const entered = new Promise<void>((resolve) => {
+		markEntered = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let seenCalls = 0;
+	const backend: JevBackend = {
+		name: inner.name,
+		async judge(request) {
+			if (request.questions.some((question) => question.id === questionId) && ++seenCalls === nth) {
+				markEntered();
+				await gate;
+			}
+			return inner.judge(request);
+		},
+	};
+	return { backend, entered, release: () => release() };
+}
+
+function textOf(content: string | readonly { type: string; text?: string }[]): string {
+	return typeof content === "string"
+		? content
+		: content.map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("");
+}
+
+/** A faux step that records the latest user message the model saw, then answers. */
+function seeingStep(answer: string, seen: string[]): FauxResponseStep {
+	return (context) => {
+		const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
+		seen.push(lastUser === undefined ? "" : textOf(lastUser.content));
+		return fauxAssistantMessage(answer, { stopReason: "stop" });
+	};
+}
+
+/** A faux model step that stays in flight until the returned `release` is called. */
+function heldStep(step: FauxResponseStep) {
+	let markEntered = (): void => {};
+	let release = (): void => {};
+	const entered = new Promise<void>((resolve) => {
+		markEntered = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const held: FauxResponseStep = async (...args) => {
+		markEntered();
+		await gate;
+		return typeof step === "function" ? step(...args) : step;
+	};
+	return { held, entered, release: () => release() };
+}
+
+/** A datasource whose retrieval stays in flight until released or aborted through its signal. */
+function slowDatasource(datasourceId: string) {
+	let markEntered = (): void => {};
+	let release = (): void => {};
+	const entered = new Promise<void>((resolve) => {
+		markEntered = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let aborted = false;
+	const method: RetrievalMethod = {
+		describe: () => ({
+			name: `${datasourceId}.keyword`,
+			type: "bm25",
+			description: `${datasourceId} test method`,
+			status: "active",
+			capabilities: ["keyword"],
+			datasourceId,
+		}),
+		async retrieve(_query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+			markEntered();
+			const signal = options.signal;
+			await Promise.race([
+				gate,
+				new Promise<void>((resolve) => {
+					signal?.addEventListener("abort", () => resolve(), { once: true });
+				}),
+			]);
+			if (signal?.aborted) aborted = true;
+			return [];
+		},
+	};
+	const skill: DatasourceSkill = {
+		describe: () => ({
+			name: datasourceId,
+			type: "chat",
+			description: `${datasourceId} test datasource`,
+			capabilities: ["keyword"],
+			status: "active",
+			datasourceId,
+			tags: [datasourceId],
+		}),
+		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
+		skillManifest: () => ({
+			name: `datasource-${datasourceId}`,
+			description: `Search ${datasourceId}.`,
+			content: `# ${datasourceId}`,
+		}),
+		index: async () => ({
+			ok: true,
+			instanceId: "default",
+			skill: datasourceId,
+			chunkCount: 0,
+			indexedAt: 1,
+			diagnostics: [],
+		}),
+		retrievalMethods: () => [method],
+		describeSources: () => [],
+	};
+	return { skill, entered, aborted: () => aborted, release: () => release() };
 }
 
 describe("AutoRAG pi coding-agent host", () => {
@@ -94,7 +322,7 @@ describe("AutoRAG pi coding-agent host", () => {
 				model: registration.getModel(),
 				getSystemPrompt: () => "interactive prompt",
 				customTools: [],
-				onQuery: async () => undefined,
+				onInput: () => ({ kind: "handled" }),
 			});
 			expect(runtime.runtime.session.sessionFile).toBeTypeOf("string");
 			await runtime.dispose();
@@ -110,7 +338,7 @@ describe("AutoRAG pi coding-agent host", () => {
 			sessionDir: join(root, "sessions"),
 			getSystemPrompt: () => "interactive prompt",
 			customTools: [],
-			onQuery: async () => undefined,
+			onInput: () => ({ kind: "handled" }),
 		});
 		try {
 			// Undefined options leave model discovery and selection to pi.
@@ -179,7 +407,7 @@ describe("AutoRAG pi coding-agent host", () => {
 				model: registration.getModel(),
 				getSystemPrompt: () => "interactive prompt",
 				customTools: [],
-				onQuery: async () => undefined,
+				onInput: () => ({ kind: "handled" }),
 				updateNotice: async () => "AutoRAG v9.9.9 is available (you have v1.0.0).",
 			});
 			try {
@@ -205,53 +433,409 @@ describe("AutoRAG pi coding-agent host", () => {
 		// assistant message. Re-sending the answer as a custom message would show
 		// it twice and put it in the model's context twice (as a user message).
 		// The direct route ends in one plain answer, so no extra turn runs either.
-		const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
-		registration.setResponses([fauxAssistantMessage("Paris.", { stopReason: "stop" })]);
-		const agentDir = join(root, "agent");
-		mkdirSync(agentDir, { recursive: true });
-		const model = registration.getModel();
-		writeFileSync(
-			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
-		);
-		const agent = new AutoRAGAgent({
-			model,
-			apiKey: "test-key",
-			searchPaths: [root],
-			workspacePath: root,
-			memoryPath: join(root, "memory.json"),
-			minSync: { autoInstall: false },
-			jikji: false,
-			piAgentDir: agentDir,
-			piSessionDir: join(root, "sessions"),
-			jev: {
-				backend: new MockBackend({
-					[QUERY_ROUTE_QUESTION_ID]: {
-						answer: "direct",
-						distribution: { local: 0.1, web: 0.1, direct: 0.8 },
-						confidence: 0.8,
-					},
-					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
-				}),
-			},
-		});
-		const hosted = await agent.createPiInteractiveRuntime();
+		const tui = await tuiAgent([fauxAssistantMessage("Paris.", { stopReason: "stop" })]);
 		try {
-			const session = hosted.runtime.session;
-			await session.prompt("What is the capital of France?", { source: "interactive" });
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await tui.agent.waitForIdle();
 			// One model call: the direct route ends in a single plain answer.
-			expect(registration.state.callCount).toBe(1);
-			const copies = session.messages.filter((message) => message.role === "custom");
+			expect(tui.registration.state.callCount).toBe(1);
+			const copies = tui.session.messages.filter((message) => message.role === "custom");
 			expect(copies).toEqual([]);
-			const answers = session.messages.flatMap((message) =>
-				message.role === "assistant"
-					? message.content.flatMap((block) => (block.type === "text" ? [block.text] : []))
-					: [],
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" ? [textOf(message.content)] : [],
 			);
 			expect(answers).toEqual(["Paris."]);
 		} finally {
-			await hosted.dispose();
-			registration.unregister();
+			await tui.dispose();
+		}
+	});
+
+	it("steers a running TUI search with a message typed during a model turn", async () => {
+		// Enter while the search streams is a correction of the running search, not
+		// a new query: the model sees it in the same run, before its next request,
+		// and the steered direct answer goes on to verification.
+		const seen: string[] = [];
+		const first = heldStep(
+			fauxAssistantMessage([fauxToolCall("search_custom", { query: "capital of france" })], {
+				stopReason: "toolUse",
+			}),
+		);
+		const tui = await tuiAgent([
+			first.held,
+			seeingStep("Lyon is not the capital.", seen),
+			seeingStep("Verified: Paris, not Lyon.", seen),
+		]);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await first.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive", streamingBehavior: "steer" });
+			first.release();
+			await tui.agent.waitForIdle();
+
+			// The very next model request carried the steer, inside the same run.
+			expect(seen[0]).toContain("Check Lyon too.");
+			// Verification restates the correction and the run ends on its answer.
+			expect(seen[1]).toContain("Check Lyon too.");
+			expect(tui.registration.state.callCount).toBe(3);
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" ? [textOf(message.content)] : [],
+			);
+			expect(answers.at(-1)).toBe("Verified: Paris, not Lyon.");
+			expect(tui.session.sessionName).toBe("What is the capital of France?");
+			const userTexts = tui.session.messages.flatMap((message) =>
+				message.role === "user" ? [textOf(message.content)] : [],
+			);
+			expect(userTexts.some((text) => text.includes("busy"))).toBe(false);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("delivers a message typed between search phases to the next phase's model request", async () => {
+		// While Jev routes the query no model turn streams, so pi hands Enter to the
+		// input handler as an idle prompt. It still belongs to the running search:
+		// the fast phase's own request must carry it, not a new search.
+		const seen: string[] = [];
+		const routing = holdingJev(jevRoute("local", 0.9), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent(
+			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris, not Lyon.", seen)],
+			routing.backend,
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await routing.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(seen[0]).toContain("Check Lyon too.");
+			expect(tui.registration.state.callCount).toBe(2);
+			expect(tui.session.sessionName).toBe("What is the capital of France?");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("verifies a fast answer that Jev would accept once the user steered the search", async () => {
+		// A steer says the search is going wrong: even a fast answer Jev would
+		// accept as final goes on to verification, which restates the correction.
+		const seen: string[] = [];
+		const fast = heldStep(fauxAssistantMessage("Fast answer: Lyon.", { stopReason: "stop" }));
+		const tui = await tuiAgent(
+			[fast.held, seeingStep("Corrected: Paris.", seen), seeingStep("Verified: Paris.", seen)],
+			jevRoute("local", 0.05),
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await fast.entered;
+			await tui.session.prompt("Lyon is wrong.", { source: "interactive", streamingBehavior: "steer" });
+			fast.release();
+			await tui.agent.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(3);
+			// The verification prompt, not the steer itself, and it restates the steer.
+			expect(seen[1]).toContain("Original query: What is the capital of France?");
+			expect(seen[1]).toContain("Lyon is wrong.");
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" ? [textOf(message.content)] : [],
+			);
+			expect(answers.at(-1)).toBe("Verified: Paris.");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("runs a follow-up typed during a search as the next query after it answers", async () => {
+		// Alt+Enter queues a follow-up: a new question, answered after this one.
+		const first = heldStep(fauxAssistantMessage("Paris.", { stopReason: "stop" }));
+		const tui = await tuiAgent([first.held, fauxAssistantMessage("Leonardo da Vinci.", { stopReason: "stop" })]);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await first.entered;
+			await tui.session.prompt("Who painted the Mona Lisa?", {
+				source: "interactive",
+				streamingBehavior: "followUp",
+			});
+			first.release();
+			await tui.agent.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(2);
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" ? [textOf(message.content)] : [],
+			);
+			expect(answers).toEqual(["Paris.", "Leonardo da Vinci."]);
+			expect(tui.session.sessionName).toBe("Who painted the Mona Lisa?");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("cuts a running retrieval tool short when the user steers, so the steer lands promptly", async () => {
+		// A slow datasource search would otherwise hold the steer until it returns.
+		// Like an interruptible wait in pi, the steer stops the search and the
+		// model gets a skipped-tool result telling it to retry if still needed.
+		const datasource = slowDatasource("kakao");
+		const toolResults: string[] = [];
+		const seen: string[] = [];
+		const tui = await tuiAgent(
+			[
+				fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "capital of france" })], {
+					stopReason: "toolUse",
+				}),
+				(context) => {
+					for (const message of context.messages) {
+						if (message.role === "toolResult") toolResults.push(textOf(message.content));
+					}
+					const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
+					seen.push(lastUser === undefined ? "" : textOf(lastUser.content));
+					return fauxAssistantMessage("Checked Lyon: not the capital.", { stopReason: "stop" });
+				},
+				fauxAssistantMessage("Verified: Paris.", { stopReason: "stop" }),
+			],
+			jevRoute("direct"),
+			{ datasourceSkills: [datasource.skill] },
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await datasource.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive", streamingBehavior: "steer" });
+			// No release: only the steer may end the retrieval.
+			await tui.agent.waitForIdle();
+
+			expect(datasource.aborted()).toBe(true);
+			expect(toolResults.some((text) => text.includes("Skipped due to the user's steering message"))).toBe(true);
+			expect(seen[0]).toContain("Check Lyon too.");
+		} finally {
+			datasource.release();
+			await tui.dispose();
+		}
+	});
+
+	it("cuts the baseline prefetch short when the user steers before the first model request", async () => {
+		// Jev selects the datasource, so the harness searches it before the fast
+		// phase. A slow datasource there held the steer until it returned: the
+		// steer now stops the prefetch and the fast phase starts with the steer.
+		const datasource = slowDatasource("kakao");
+		const seen: string[] = [];
+		const routing = new MockBackend({
+			[QUERY_ROUTE_QUESTION_ID]: {
+				answer: "local",
+				distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+				confidence: 0.8,
+			},
+			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+			[datasourceQuestionId("kakao")]: { answer: 0.9 },
+		});
+		const tui = await tuiAgent(
+			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris.", seen)],
+			routing,
+			{ datasourceSkills: [datasource.skill] },
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await datasource.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive" });
+			// No release: only the steer may end the prefetch.
+			await tui.agent.waitForIdle();
+
+			expect(datasource.aborted()).toBe(true);
+			expect(seen[0]).toContain("Check Lyon too.");
+		} finally {
+			datasource.release();
+			await tui.dispose();
+		}
+	});
+
+	it("answers a steer that arrives after verification's final request within the same search", async () => {
+		// The steer lands after the last phase's model request settled and before
+		// the search ends: one more verification turn answers it in this search
+		// instead of it running later as an unrelated query.
+		const seen: string[] = [];
+		const tui = await tuiAgent(
+			[
+				fauxAssistantMessage("Fast answer: Paris.", { stopReason: "stop" }),
+				fauxAssistantMessage("Verified: Paris.", { stopReason: "stop" }),
+				seeingStep("Paris, about 2.1 million people.", seen),
+			],
+			jevRoute("local", 0.9),
+		);
+		try {
+			// Typed the moment verification's turn settles (the second settle of the run).
+			let settles = 0;
+			const unsubscribe = tui.session.subscribe((event) => {
+				if (event.type !== "agent_settled" || ++settles < 2) return;
+				unsubscribe();
+				void tui.session.prompt("Also give the population.", { source: "interactive" });
+			});
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await tui.agent.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(3);
+			expect(seen[0]).toContain("Also give the population.");
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" ? [textOf(message.content)] : [],
+			);
+			expect(answers.at(-1)).toBe("Paris, about 2.1 million people.");
+			// Answered within the search it corrected, not as a new query.
+			expect(tui.session.sessionName).toBe("What is the capital of France?");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("stops the whole search when the user interrupts it, with no later phase running", async () => {
+		// Esc aborts the streaming turn. The search must end there instead of
+		// moving on to its next phase as if the phase had finished.
+		const fast = heldStep(fauxAssistantMessage("Fast answer: Paris.", { stopReason: "stop" }));
+		const tui = await tuiAgent(
+			[fast.held, fauxAssistantMessage("Verification that must not run.", { stopReason: "stop" })],
+			jevRoute("local", 0.9),
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await fast.entered;
+			const aborting = tui.session.abort();
+			fast.release();
+			await aborting;
+			await tui.agent.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(1);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("verifies a steered direct question without the previous query's answer as its draft", async () => {
+		// A steer typed while Jev routes a direct question skips the direct
+		// prompt. The bound session still ends on the previous query's answer,
+		// which must never be presented as this question's first draft.
+		const verificationPrompts: string[] = [];
+		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID, 2);
+		const tui = await tuiAgent(
+			[
+				fauxAssistantMessage("FIRST QUERY ANSWER.", { stopReason: "stop" }),
+				(context) => {
+					for (const message of context.messages) {
+						if (message.role === "user" && textOf(message.content).startsWith("Original query:"))
+							verificationPrompts.push(textOf(message.content));
+					}
+					return fauxAssistantMessage("Leonardo da Vinci.", { stopReason: "stop" });
+				},
+			],
+			routing.backend,
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await tui.agent.waitForIdle();
+			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
+			await routing.entered;
+			await tui.session.prompt("Answer in one name.", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(verificationPrompts).toHaveLength(1);
+			expect(verificationPrompts[0]).toContain("Original query: Who painted the Mona Lisa?");
+			expect(verificationPrompts[0]).not.toContain("FIRST QUERY ANSWER");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("keeps a slash-prefixed message typed during a search inside the search", async () => {
+		// pi's input loop runs while the search is detached. A "/..." line that is
+		// no command used to start pi's own prompt on the bound session between
+		// phases, outside the harness, and the next phase then failed as busy.
+		const seen: string[] = [];
+		const routing = holdingJev(jevRoute("local", 0.9), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent([seeingStep("Fast answer.", seen), seeingStep("Verified.", seen)], routing.backend);
+		try {
+			await tui.session.prompt("What does my hosts file say?", { source: "interactive" });
+			await routing.entered;
+			await tui.session.prompt("/etc/hosts is the file I mean.", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			const errors = tui.session.messages.filter(
+				(message) => message.role === "custom" && message.customType === "autorag.error",
+			);
+			expect(errors).toEqual([]);
+			expect(seen[0]).toContain("/etc/hosts is the file I mean.");
+			expect(tui.registration.state.callCount).toBe(2);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("queues Alt+Enter between phases as the next question, not a steer", async () => {
+		// With no turn streaming, pi submits Alt+Enter like Enter. AutoRAG reads
+		// the key itself, so it still queues a new question rather than a correction.
+		const seen: string[] = [];
+		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent([seeingStep("Paris.", seen), seeingStep("Leonardo da Vinci.", seen)], routing.backend);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await routing.entered;
+			// The follow-up key (Alt+Enter; Ctrl+Q where pi defaults to Windows bindings)
+			// reaches AutoRAG's listener, then pi submits the editor text.
+			const windowsBindings =
+				process.platform === "win32" ||
+				(process.platform === "linux" && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP));
+			tui.pressKey(windowsBindings ? "\x11" : "\x1b\r");
+			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(seen).toHaveLength(2);
+			expect(seen[0]).not.toContain("Mona Lisa");
+			expect(seen[1]).toContain("Who painted the Mona Lisa?");
+			expect(seen[1]).not.toContain("interrupted the running search");
+			expect(tui.session.sessionName).toBe("Who painted the Mona Lisa?");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("stops the search on Esc between phases, before its next phase runs", async () => {
+		// pi's Esc only aborts a streaming turn. Between phases AutoRAG reads
+		// the key itself and ends the search.
+		const routing = holdingJev(jevRoute("local", 0.9), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent([fauxAssistantMessage("Must not run.", { stopReason: "stop" })], routing.backend);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await routing.entered;
+			expect(tui.pressKey("\x1b")).toBe(true);
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(0);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("lists and restores a steer as the user's own words, and keeps queued steers on dequeue", async () => {
+		// pi shows queued steering, puts it back in the editor on Esc, and Alt+Up
+		// clears both queues. It must see what the user typed, not AutoRAG's framing,
+		// while the model still receives the framed correction.
+		const seen: string[] = [];
+		const first = heldStep(
+			fauxAssistantMessage([fauxToolCall("search_custom", { query: "capital" })], { stopReason: "toolUse" }),
+		);
+		const tui = await tuiAgent([first.held, seeingStep("Checked Lyon.", seen), seeingStep("Verified.", seen)]);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await first.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive", streamingBehavior: "steer" });
+			expect(tui.session.getSteeringMessages()).toEqual(["Check Lyon too."]);
+			first.release();
+			await tui.agent.waitForIdle();
+
+			expect(seen[0]).toContain("The user interrupted the running search with this correction");
+			expect(seen[0]).toContain("Check Lyon too.");
+			expect(tui.session.getSteeringMessages()).toEqual([]);
+		} finally {
+			await tui.dispose();
 		}
 	});
 
