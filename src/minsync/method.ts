@@ -192,10 +192,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		});
 		let hits: readonly MinSyncQueryHit[];
 		try {
-			hits = await client.query(query, queryK, this.mode);
+			hits = await client.query(query, queryK, this.mode, options.signal);
 		} catch (error) {
-			if (this.mode !== "hybrid") throw error;
-			hits = await client.query(query, queryK, "bm25");
+			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
+			hits = await client.query(query, queryK, "bm25", options.signal);
 		}
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
