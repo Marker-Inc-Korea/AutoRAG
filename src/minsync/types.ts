@@ -2,7 +2,7 @@
 
 export interface MinSyncEmbedderConfig {
 	/** Select an AutoRAG-owned embedding runtime profile. */
-	readonly profile?: "qwen3-embedding-0.6b" | "embeddinggemma-300m";
+	readonly profile?: "qwen3-embedding-0.6b";
 	readonly id?: string;
 	readonly baseUrl?: string;
 	/** Environment variable name whose value holds the embedder API key. /^[A-Za-z_][A-Za-z0-9_]*$/ */

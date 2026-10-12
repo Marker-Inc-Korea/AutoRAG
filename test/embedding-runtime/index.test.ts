@@ -44,7 +44,7 @@ describe("embedding runtime public API", () => {
 		const { supervisor, cache } = deps();
 		const runtime = createEmbeddingRuntime({ supervisor, cache, platform: "darwin-arm64-metal" });
 		await runtime.prefetchModel();
-		await runtime.importModel("embeddinggemma-300m", "/tmp/model.gguf");
+		await runtime.importModel("qwen3-embedding-0.6b", "/tmp/model.gguf");
 		await runtime.verifyModel();
 		expect(cache.importAsset).toHaveBeenCalledTimes(1);
 		expect(cache.verifyCacheEntry).toHaveBeenCalledTimes(1);

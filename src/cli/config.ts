@@ -97,13 +97,14 @@ export interface WebSearchCliConfig {
 
 /**
  * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
- * it explicitly. Secrets never appear here: the `jev-use` engine reads the
- * backend credential from its own environment variable (`TYPESAFE_API_KEY`,
- * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
+ * it explicitly. Secrets never appear here: `jev-use` reads the backend
+ * credential from its own environment variable (`TYPESAFE_API_KEY`,
+ * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted AutoRAG
+ * `autorag` backend reads `AUTORAG_API_KEY`.
  */
 export interface JevCliConfig {
 	enabled?: boolean;
-	/** Force one backend; omit to let the first credential present win. */
+	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `autorag`); omit to let the first credential present win. */
 	backend?: JevBackendName;
 	/** Model id sent with every call, e.g. `jev-latest`. */
 	model?: string;
@@ -119,20 +120,21 @@ export interface QueryDecompositionConfig {
 
 /**
  * Post-merge reranking config. Routes merged evidence through a dedicated
- * rerank model. `provider` is `openrouter` today; `model` is the OpenRouter
- * wire id (default `voyageai/rerank-3-lite`). Secrets never appear here — only
- * the environment-variable name that holds the provider API key.
+ * rerank model. `provider` is `openrouter` (default) or the hosted AutoRAG
+ * plan (`autorag`); each provider supplies its own default `model` and
+ * `apiKeyEnv`. Secrets never appear here — only the environment-variable name
+ * that holds the provider API key.
  */
 export interface RerankConfig {
 	/** `false` disables reranking. Missing means enabled when the block is present. */
 	enabled?: boolean;
-	/** Provider id. @default "openrouter" */
+	/** Provider id (`openrouter` or `autorag`). @default "openrouter" */
 	provider?: string;
-	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`autorag`) */
 	model?: string;
-	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" */
+	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" (`openrouter`) / "AUTORAG_API_KEY" (`autorag`) */
 	apiKeyEnv?: string;
-	/** Override the provider base URL (e.g. a gateway). */
+	/** Override the provider base URL (e.g. a gateway); for `autorag`, the API base including `/v1`. */
 	baseUrl?: string;
 	/** Return only the top N merged results. @default 25 (DEFAULT_RERANK_TOP_N) */
 	topN?: number;
@@ -658,7 +660,7 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 		out.passagePrefix = record.passagePrefix;
 	}
 	if (record.profile !== undefined) {
-		if (record.profile !== "qwen3-embedding-0.6b" && record.profile !== "embeddinggemma-300m") {
+		if (record.profile !== "qwen3-embedding-0.6b") {
 			throw new ConfigError(`${path}.profile must be a supported runtime profile`);
 		}
 		out.profile = record.profile;

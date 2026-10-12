@@ -1,6 +1,6 @@
 export type BackendKind = "auto" | "cpu" | "vulkan";
 export type PlatformId = "darwin-arm64-metal" | "win-x64-cpu" | "win-x64-vulkan";
-export type ProfileId = "qwen3-embedding-0.6b" | "embeddinggemma-300m";
+export type ProfileId = "qwen3-embedding-0.6b";
 
 export interface ProtocolCapabilities {
 	readonly healthz: boolean;

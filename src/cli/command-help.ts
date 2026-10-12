@@ -68,7 +68,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --search-paths <csv>  Folders to index/search when writing a missing config",
 		"  --workspace <dir>     Workspace for the config written when none exists",
-		"  --profile <id>        Embedding profile to verify (qwen3-embedding-0.6b | embeddinggemma-300m)",
+		"  --profile <id>        Embedding profile to verify (qwen3-embedding-0.6b)",
 		"  --format json         Emit machine-readable JSON",
 		"",
 		"Exit codes: 0 when every probe is ready, 1 when something is blocked.",

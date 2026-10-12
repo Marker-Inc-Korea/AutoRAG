@@ -18,26 +18,20 @@ The default profile is `qwen3-embedding-0.6b`:
 | Profile | Provider | Model asset | Dimension | Query prefix | Passage prefix | License |
 |---|---|---|---:|---|---|---|
 | `qwen3-embedding-0.6b` (default) | Qwen | `Qwen3-Embedding-0.6B-Q8_0.gguf` | 1024 | empty | empty | Apache-2.0 |
-| `embeddinggemma-300m` | Google | `embeddinggemma-300M-Q8_0.gguf` | 768 | `task: search result \| query: ` | `title: none \| text: ` | Gemma Terms of Use |
 
 Profile identity includes the provider, model, immutable model revision,
 dimension, query prefix, passage prefix, and llama.cpp runtime build. A profile
 change is an embedding identity change, not an in-place vector-store setting
 change.
 
-EmbeddingGemma is available as a selectable profile. Its terms and required
-flow-down text are in [`licenses/`](../licenses/), and legal approval remains a
-release gate.
-
-Each bundled embedding profile has a model card covering intended use,
-unsuitable use, limitations, license, and the pinned GGUF hash:
+The bundled profile has a model card covering intended use, unsuitable use,
+limitations, license, and the pinned GGUF hash:
 
 - [`docs/model-cards/qwen3-embedding-0.6b.md`](model-cards/qwen3-embedding-0.6b.md)
-- [`docs/model-cards/embeddinggemma-300m.md`](model-cards/embeddinggemma-300m.md)
 
-These cards are documentation for the two GGUF embedding assets. They are not a
-generative-model catalog, and they do not replace the software CycloneDX/SPDX
-SBOMs.
+These cards are documentation for the pinned GGUF embedding asset. They are not
+a generative-model catalog, and they do not replace the software
+CycloneDX/SPDX SBOMs.
 
 ## Cache, import, and offline operation
 
@@ -48,7 +42,6 @@ Windows. `AUTORAG_HOME` overrides the root. The runtime state uses this layout:
 <autorag-home>/
   models/
     Qwen3-Embedding-0.6B-Q8_0.gguf
-    embeddinggemma-300M-Q8_0.gguf
     <verified platform runtime archive>
   runtime/                         # reserved runtime-resolution root
   embedding-runtime.lock
@@ -72,8 +65,8 @@ The model commands are:
 
 ```bash
 autorag models prefetch [--profile qwen3-embedding-0.6b]
-autorag models import /path/to/model.gguf --profile embeddinggemma-300m
-autorag models verify --profile embeddinggemma-300m
+autorag models import /path/to/model.gguf --profile qwen3-embedding-0.6b
+autorag models verify --profile qwen3-embedding-0.6b
 ```
 
 `import` accepts only a file whose SHA-256 matches the pinned profile asset.
@@ -170,20 +163,22 @@ paths:
    autorag refresh --method minsync --json
    ```
 
-2. Pin the compatible 768-dimensional profile in trusted config and keep the
-   workspace identity explicit:
+2. Keep the legacy workspace on an explicit Ollama/TEI embedder endpoint until
+   you are ready to reindex:
 
    ```json
    {
      "minSync": {
        "embedder": {
-         "profile": "embeddinggemma-300m"
+         "id": "tei:embeddinggemma:latest",
+         "baseUrl": "http://127.0.0.1:18080",
+         "dimension": 768
        }
      }
    }
    ```
 
-   Then run `autorag refresh --method minsync`. Pinning the profile preserves
+   Then run `autorag refresh --method minsync`. Pinning the endpoint preserves
    the 768-dimensional contract, but it does not make an Ollama/TEI vector
    store interchangeable with a store created by a different provider,
    prefix, model revision, or runtime identity. Reindex when the recorded
@@ -192,7 +187,7 @@ paths:
 The migration diagnostic for the legacy path is:
 
 ```text
-This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit profile config before using the new default runtime.
+This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.
 ```
 
 If the gateway or model is unavailable, MinSync reports an
@@ -260,8 +255,7 @@ archives separately from the npm package.
 The following are pending human or CI gates and are not claimed by this
 scaffolding:
 
-- **Legal sign-off** for the selected Qwen default and the EmbeddingGemma
-  compliance bundle, including the Gemma Terms flow-down.
+- **Legal sign-off** for the selected Qwen default.
 - **Windows x64 native acceptance**, including CPU/Vulkan selection, paths with
   spaces, per-user installation, and orphan-process cleanup.
 - **macOS signing and notarization**, including signed nested binaries,
@@ -302,26 +296,6 @@ compares this block with the machine manifest and with the pinned values in
       "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256.",
       "upstreamCardUrl": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
       "modelCard": "docs/model-cards/qwen3-embedding-0.6b.md"
-    },
-    {
-      "profileId": "embeddinggemma-300m",
-      "provider": "google",
-      "model": "embeddinggemma-300M-Q8_0.gguf",
-      "dimension": 768,
-      "queryPrefix": "task: search result | query: ",
-      "passagePrefix": "title: none | text: ",
-      "runtimeBuild": "b10951",
-      "modelRevision": "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
-      "artifactSha256": "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
-      "backend": "auto",
-      "modelAssetId": "embeddinggemma-300m",
-      "licenseId": "Gemma Terms of Use",
-      "noticeFile": "licenses/gemma-notice.txt",
-      "noticeReference": "Google EmbeddingGemma model card and Gemma Terms of Use",
-      "intendedUse": "Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
-      "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256, uses restricted by the Gemma Prohibited Use Policy.",
-      "upstreamCardUrl": "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
-      "modelCard": "docs/model-cards/embeddinggemma-300m.md"
     }
   ],
   "assets": [
@@ -339,21 +313,6 @@ compares this block with the machine manifest and with the pinned values in
       "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256.",
       "upstreamCardUrl": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
       "modelCard": "docs/model-cards/qwen3-embedding-0.6b.md"
-    },
-    {
-      "kind": "model",
-      "id": "embeddinggemma-300m",
-      "filename": "embeddinggemma-300M-Q8_0.gguf",
-      "url": "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf",
-      "revision": "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
-      "sha256": "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
-      "licenseId": "Gemma Terms of Use",
-      "noticeFile": "licenses/gemma-notice.txt",
-      "noticeReference": "Google EmbeddingGemma model card and Gemma Terms of Use",
-      "intendedUse": "Local loopback embedding for AutoRAG MinSync and native-datasource semantic retrieval. Not a generative model.",
-      "unsuitableUse": "Chat or generation, remote embedding of corpus text, shipping weights in the npm package, any GGUF other than the pinned SHA-256, uses restricted by the Gemma Prohibited Use Policy.",
-      "upstreamCardUrl": "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
-      "modelCard": "docs/model-cards/embeddinggemma-300m.md"
     },
     {
       "kind": "runtime",

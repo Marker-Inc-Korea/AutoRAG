@@ -175,7 +175,32 @@ describe("createJevJudge with the autorag backend", () => {
 
 	it("rejects on first call when the account key is missing", async () => {
 		const judge = createJevJudge({ backend: "autorag", env: {} });
-		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(/AUTORAG_API_KEY/);
+		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
+			/jev\.backend "autorag" needs AUTORAG_API_KEY/,
+		);
+	});
+
+	it("builds the hosted backend from JEV_BACKEND=autorag when no backend option is given", async () => {
+		const server = await startFakeServer(() => ({
+			body: { model: AUTORAG_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.8 } } },
+		}));
+		try {
+			const judge = createJevJudge({
+				env: { JEV_BACKEND: "autorag", AUTORAG_API_KEY: "dz_test", AUTORAG_BASE_URL: server.url },
+			});
+			const judgment = await judge({ task: "x" }, [{ type: "noul", question: "ok?" }]);
+			expect(judgment.backend).toBe("autorag");
+			expect(judgment.verdicts[0]?.answer).toBe(0.8);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("reports the config-key error for JEV_BACKEND=autorag without a key", async () => {
+		const judge = createJevJudge({ env: { JEV_BACKEND: "autorag" } });
+		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
+			/jev\.backend "autorag" needs AUTORAG_API_KEY/,
+		);
 	});
 
 	it("judges a noul question through the hosted endpoint", async () => {

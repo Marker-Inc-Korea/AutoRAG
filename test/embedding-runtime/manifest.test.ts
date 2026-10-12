@@ -3,17 +3,11 @@ import { platformRuntimeAsset, resolveProfile, selectPlatformAsset } from "../..
 import type { PlatformId } from "../../src/embedding-runtime/types.ts";
 
 describe("embedding runtime manifest", () => {
-	it("resolves both pinned profiles", () => {
+	it("resolves the pinned profile", () => {
 		expect(resolveProfile("qwen3-embedding-0.6b")).toMatchObject({
 			profileId: "qwen3-embedding-0.6b",
 			provider: "qwen",
 			dimension: 1024,
-		});
-		expect(resolveProfile("embeddinggemma-300m")).toMatchObject({
-			profileId: "embeddinggemma-300m",
-			provider: "google",
-			dimension: 768,
-			queryPrefix: "task: search result | query: ",
 		});
 		expect(() => resolveProfile("missing" as never)).toThrow(/unknown profile/i);
 	});
