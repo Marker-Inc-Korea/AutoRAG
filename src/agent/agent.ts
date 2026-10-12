@@ -670,9 +670,11 @@ export class AutoRAGAgent {
 	private lastSessionId: string | undefined;
 	private activeRun = false;
 	/**
-	 * TUI search state. pi's TUI reads the next input only after its input handler
-	 * returns, so a TUI query runs detached: input typed meanwhile steers this run
-	 * (Enter) or waits behind it (Alt+Enter), the way pi steers its own turns.
+	 * Steering state of the running search. A TUI query runs detached from pi's
+	 * input loop (pi reads the next input only after its input handler returns),
+	 * so input typed meanwhile steers this run (Enter) or waits behind it
+	 * (Alt+Enter), the way pi steers its own turns. {@link steer} feeds the same
+	 * state for `searchDocuments()` / `searchDocumentsStream()` callers.
 	 */
 	private readonly interactive: {
 		/** The detached TUI search in flight, if any. */
@@ -682,14 +684,18 @@ export class AutoRAGAgent {
 		/** Steers this run received; any steer forces verification and is restated to it. */
 		readonly steers: string[];
 		/**
-		 * Steers typed while no pi turn streamed. They wait on the bound agent's steering
-		 * queue, which the next phase's model request drains; any left when the search
-		 * ends become follow-up queries instead of leaking into the next prompt.
+		 * Steers queued on the session agent's steering queue that no model request has
+		 * taken yet; the next request drains them. A TUI turns any left when the search
+		 * ends into follow-up queries instead of letting them leak into the next prompt.
 		 */
 		readonly queuedSteers: string[];
+		/** Steers that arrived before the run's pi session existed; queued on it once it does. */
+		readonly preSessionSteers: AgentMessage[];
+		/** The run still takes steers: false once its last model request settled. */
+		acceptingSteers: boolean;
 		/** AutoRAG itself aborted the turn (tool-call limit, timeout): not the user stopping the search. */
 		harnessAbort: boolean;
-		/** The user stopped the search (Esc): no later phase runs. */
+		/** The user stopped the search (Esc, {@link abort}): no later phase runs. */
 		userAborted: boolean;
 		/**
 		 * Aborted when a steer arrives and replaced once the steer reaches the model:
@@ -704,8 +710,8 @@ export class AutoRAGAgent {
 		 */
 		nextSubmitIsFollowUp: boolean;
 		/**
-		 * Every steer text this TUI session queued. The transcript and pi's queue
-		 * keep the user's words; the model context frames these as corrections.
+		 * Every steer text this agent queued. The transcript and pi's queue keep the
+		 * user's words; the model context frames these as corrections.
 		 */
 		readonly steerTexts: Set<string>;
 	} = {
@@ -713,12 +719,16 @@ export class AutoRAGAgent {
 		followUps: [],
 		steers: [],
 		queuedSteers: [],
+		preSessionSteers: [],
+		acceptingSteers: false,
 		harnessAbort: false,
 		userAborted: false,
 		steerInterrupt: new AbortController(),
 		nextSubmitIsFollowUp: false,
 		steerTexts: new Set(),
 	};
+	/** Aborted by {@link abort} and by the run's timeout: gates publishing and the run's own requests. */
+	private activeRunAbort: AbortController | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
 	/** Evidence every retrieval tool returned this run; the answer's inline `[eN]` citations resolve against it. */
@@ -1346,11 +1356,10 @@ export class AutoRAGAgent {
 			apiKey: resolved.apiKey,
 			providerApiKeys: resolved.providerApiKeys,
 			getSystemPrompt: () => systemPrompt,
-			customTools: this.tools.filter(
-				(tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]),
-			),
+			customTools: this.steerableTools(),
 			remoteSession: this.remoteSession,
-			contextTransform: (messages) => this.withMemoryContext(messages),
+			// The model sees each steer framed as a correction of the running search.
+			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
 			...(this.jevExtension !== undefined
 				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
 				: {}),
@@ -1370,6 +1379,8 @@ export class AutoRAGAgent {
 		unsubscribers.push(
 			session.agent.subscribe((event) => {
 				this.recordSearchToolEvent(event);
+				// A user message starts each model request; queued steers go out with it.
+				if (event.type === "message_start" && event.message.role === "user") this.steersReachedModel();
 			}),
 		);
 		return unsubscribers;
@@ -1455,16 +1466,7 @@ export class AutoRAGAgent {
 			// the transcript, pi's queue display, and Esc/dequeue restores keep the user's words.
 			contextTransform: async (messages) =>
 				this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			// Retrieval and web reads are safe to cut short: stopping them loses no side effect.
-			customTools: this.tools
-				.filter((tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]))
-				.map((tool) =>
-					this.searchToolNames.has(tool.name) ||
-					tool.name === WEB_SEARCH_TOOL_NAME ||
-					tool.name === WEB_FETCH_TOOL_NAME
-						? this.interruptibleBySteer(tool)
-						: tool,
-				),
+			customTools: this.steerableTools(),
 			onInput: (input, pi) => this.routeInteractiveInput(input, pi),
 			isSearchRunning: () => this.interactive.run !== undefined,
 			onKey: (key) => this.handleInteractiveKey(key),
@@ -1482,6 +1484,23 @@ export class AutoRAGAgent {
 				await dispose();
 			},
 		};
+	}
+
+	/**
+	 * The session's custom tools, with retrieval and web reads interruptible by a
+	 * steer: stopping them loses no side effect. bash and the file tools are pi
+	 * built-ins and never pass through here.
+	 */
+	private steerableTools(): AgentTool[] {
+		return this.tools
+			.filter((tool) => !PI_BUILTIN_TOOL_NAMES.includes(tool.name as (typeof PI_BUILTIN_TOOL_NAMES)[number]))
+			.map((tool) =>
+				this.searchToolNames.has(tool.name) ||
+				tool.name === WEB_SEARCH_TOOL_NAME ||
+				tool.name === WEB_FETCH_TOOL_NAME
+					? this.interruptibleBySteer(tool)
+					: tool,
+			);
 	}
 
 	/**
@@ -1541,17 +1560,18 @@ export class AutoRAGAgent {
 			state.followUps.push(input.text);
 			return { kind: "handled" };
 		}
-		state.steers.push(input.text);
-		state.steerTexts.add(input.text);
-		// Cut any in-flight retrieval short so the steer reaches the model promptly.
-		state.steerInterrupt.abort();
-		// A turn is streaming: pi queues the user's text as steering for that turn.
-		if (input.streamingBehavior === "steer") return { kind: "steer", text: input.text };
+		if (input.streamingBehavior === "steer") {
+			// A turn is streaming: pi queues the user's text as steering for that turn.
+			state.steers.push(input.text);
+			state.steerTexts.add(input.text);
+			// Cut any in-flight retrieval short so the steer reaches the model promptly.
+			state.steerInterrupt.abort();
+			return { kind: "steer", text: input.text };
+		}
 		// Between phases no turn streams, so pi would start a new prompt. Queue the
-		// steer on the bound agent instead: the next phase's model request takes it.
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text: input.text }, ...(input.images ?? [])];
-		this.boundPiRuntime?.session.agent.steer({ role: "user", content, timestamp: Date.now() });
-		state.queuedSteers.push(input.text);
+		// steer on the search instead: the next phase's model request takes it. A
+		// search past its last request (or between queued queries) answers it next.
+		if (!this.steer(input.text, input.images)) state.followUps.push(input.text);
 		return { kind: "handled" };
 	}
 
@@ -1609,20 +1629,8 @@ export class AutoRAGAgent {
 	private async runInteractivePiQuery(query: string, pi: ExtensionAPI): Promise<void> {
 		pi.setSessionName(query.slice(0, 80));
 		const state = this.interactive;
-		state.steers.length = 0;
-		state.queuedSteers.length = 0;
-		state.harnessAbort = false;
-		state.userAborted = false;
-		// A steer aimed at the previous query must not cut this one's retrieval short.
-		state.steerInterrupt = new AbortController();
 		const session = this.boundPiRuntime?.session;
 		const unsubscribe = session?.subscribe((event) => {
-			if (event.type === "message_start" && event.message.role === "user") {
-				// The next model request took the queued steers into the transcript,
-				// so later retrieval runs uninterrupted until the next steer.
-				state.queuedSteers.length = 0;
-				if (state.steerInterrupt.signal.aborted) state.steerInterrupt = new AbortController();
-			}
 			// Alt+Up (dequeue) and Esc clear the agent's queues, including steers AutoRAG
 			// queued between phases: those are gone now, not owed a later answer.
 			if (event.type === "queue_update" && state.queuedSteers.length > 0 && !session.agent.hasQueuedMessages()) {
@@ -1652,9 +1660,57 @@ export class AutoRAGAgent {
 		while (this.interactive.run !== undefined) await this.interactive.run;
 	}
 
+	/**
+	 * Steers the running `searchDocuments()` / `searchDocumentsStream()` search,
+	 * the way Enter steers a TUI search: `text` is a correction of the search in
+	 * progress, not a new question. It reaches the search's next model request
+	 * (also between phases, where no turn streams), cuts in-flight retrieval and
+	 * the baseline prefetch short so it lands promptly, and forces the
+	 * verification phase, whose prompt restates it. A steer that lands after
+	 * verification's last request gets one more verification turn in the same
+	 * search. The final answer stays the answer to the original question.
+	 *
+	 * Returns false, and does nothing, when no search is running, the search was
+	 * stopped, or it is past its last model request; the caller should then ask
+	 * the text as a new question.
+	 */
+	steer(text: string, images: readonly ImageContent[] = []): boolean {
+		const state = this.interactive;
+		if (!this.activeRun || !state.acceptingSteers || state.userAborted || text.trim() === "") return false;
+		state.steers.push(text);
+		state.steerTexts.add(text);
+		// Cut any in-flight retrieval short so the steer reaches the model promptly.
+		state.steerInterrupt.abort();
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }, ...images];
+		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		const agent = this.activeSession?.agent;
+		if (agent === undefined) state.preSessionSteers.push(message);
+		else agent.steer(message);
+		state.queuedSteers.push(text);
+		return true;
+	}
+
+	/**
+	 * Stops the running search as a whole: the streaming model turn, the
+	 * baseline prefetch, in-flight retrieval, and every later phase. The search
+	 * then resolves without a verified answer.
+	 */
 	abort(): void {
+		if (!this.activeRun) return;
+		const state = this.interactive;
+		state.userAborted = true;
+		state.steerInterrupt.abort();
+		this.activeRunAbort?.abort();
 		void this.activeSession?.abort();
 	}
+
+	/** The next model request took the queued steers into the transcript; later retrieval runs uninterrupted until the next steer. */
+	private steersReachedModel(): void {
+		const state = this.interactive;
+		state.queuedSteers.length = 0;
+		if (state.steerInterrupt.signal.aborted && !state.userAborted) state.steerInterrupt = new AbortController();
+	}
+
 	/**
 	 * Periodically re-runs the incremental {@link refresh} so parsed mirrors and
 	 * indexes stay current. Re-parsing is incremental (mtime/size) via the
@@ -1735,6 +1791,16 @@ export class AutoRAGAgent {
 		// an aborted run must never push a preliminary into the callback a later
 		// run already installed on the instance.
 		const planAbort = new AbortController();
+		this.activeRunAbort = planAbort;
+		// Steering is per search: a steer or stop aimed at an earlier query never reaches this one.
+		const steering = this.interactive;
+		steering.steers.length = 0;
+		steering.queuedSteers.length = 0;
+		steering.preSessionSteers.length = 0;
+		steering.harnessAbort = false;
+		steering.userAborted = false;
+		steering.steerInterrupt = new AbortController();
+		steering.acceptingSteers = true;
 		const publishPreliminary = (details: AutoRAGResultsDetails): void => {
 			if (planAbort.signal.aborted || published) return;
 			published = true;
@@ -1781,6 +1847,8 @@ export class AutoRAGAgent {
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
+			for (const message of steering.preSessionSteers) session.agent.steer(message);
+			steering.preSessionSteers.length = 0;
 			let timeout: NodeJS.Timeout | undefined;
 			let timedOutAfterFastAnswer = false;
 			try {
@@ -1925,10 +1993,15 @@ export class AutoRAGAgent {
 						while (!stopped() && !planAbort.signal.aborted && this.interactive.queuedSteers.length > 0) {
 							await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
 						}
+						// Synchronous with the check above: a later steer is refused, not left unanswered.
+						steering.acceptingSteers = false;
 						if (stopped()) return;
 						const finalText = finalAnswerText(transcript());
 						if (finalText !== undefined) captured = this.deriveAnswer(finalText);
-					})(),
+					})().finally(() => {
+						// Every early return decides synchronously after its last steer check.
+						steering.acceptingSteers = false;
+					}),
 					new Promise<void>((resolve, reject) => {
 						timeout = setTimeout(() => {
 							planAbort.abort();
