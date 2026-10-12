@@ -15,7 +15,7 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { createGatewayEmbedder } from "../../embedding-runtime/gateway-embedder.ts";
 import { sanitizeIdSegment } from "../connector.ts";
@@ -44,10 +44,7 @@ export function resolveSidecarOptions(input: ResolveSidecarInput): CrawlerSideca
 	const configured = [object.crawlerDbPath, connector?.databasePath].find(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
-	const crawlerDbPath = (configured ?? archivePathFromCrawlerConfig(input) ?? input.defaultCrawlerDb).replace(
-		/^~(?=$|\/)/,
-		homedir(),
-	);
+	const crawlerDbPath = expandHome(configured ?? archivePathFromCrawlerConfig(input) ?? input.defaultCrawlerDb);
 	const workspaceId =
 		typeof connector?.workspace === "string" && connector.workspace.length > 0 ? connector.workspace : undefined;
 	return {
@@ -76,13 +73,20 @@ function archivePathFromCrawlerConfig(input: ResolveSidecarInput): string | unde
 	if (input.descriptor.archivePathInConfig !== true || typeof configPath !== "string" || configPath.length === 0) {
 		return undefined;
 	}
-	const file = configPath.replace(/^~(?=$|\/)/, homedir());
+	const file = expandHome(configPath);
 	try {
 		const dbPath = parseToml(readFileSync(file, "utf8")).db_path;
 		if (typeof dbPath !== "string" || dbPath.length === 0) return undefined;
-		const expanded = dbPath.replace(/^~(?=$|\/)/, homedir());
+		const expanded = expandHome(dbPath);
 		return isAbsolute(expanded) ? expanded : resolve(dirname(file), expanded);
 	} catch {
 		return undefined;
 	}
+}
+
+/** Expands a leading `~` or `~/` (`~\` on Windows) to the home directory, joined with platform separators. */
+function expandHome(path: string): string {
+	if (path === "~") return homedir();
+	const prefixed = path.startsWith("~/") || (sep === "\\" && path.startsWith("~\\"));
+	return prefixed ? join(homedir(), path.slice(2)) : path;
 }

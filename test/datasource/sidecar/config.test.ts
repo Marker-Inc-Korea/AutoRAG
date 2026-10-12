@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveSidecarOptions } from "../../../src/datasource/sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
@@ -81,7 +81,7 @@ describe("resolveSidecarOptions: on by default", () => {
 					?.sidecarDbPath ?? "";
 			const rel = relative(datasources, path);
 			expect(rel.startsWith("..")).toBe(false);
-			expect(rel.split("/")).toHaveLength(3);
+			expect(rel.split(sep)).toHaveLength(3);
 		}
 	});
 });
