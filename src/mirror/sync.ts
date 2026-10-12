@@ -5,6 +5,8 @@ import { dirname, extname, resolve, sep } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "../parser/defaults.ts";
 import { ParseError } from "../parser/errors.ts";
+import { KORDOC_IMAGE_EXTENSIONS } from "../parser/kordoc.ts";
+import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput } from "../parser/types.ts";
@@ -109,6 +111,8 @@ interface CurrentEntry {
 }
 
 const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";
+
+const STANDALONE_OCR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(KORDOC_IMAGE_EXTENSIONS);
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
@@ -227,6 +231,25 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 					code: failure.code,
 					severity: failure.severity,
 					message: failure.message,
+					source: entry.virtualPath,
+				});
+				sinceCheckpoint += 1;
+				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
+				continue;
+			}
+
+			// A page image inside a PDF stays on the provider. Only a standalone image below leptonica's
+			// minimum is a per-file skip, recorded the same way as the max-size gate.
+			const tooSmallImage = standaloneImageTooSmallMessage(entry.virtualPath, bytes);
+			if (tooSmallImage !== undefined) {
+				deleted += removePrevious(options.root, previous, entry.virtualPath);
+				handledPrevious.add(entry.virtualPath);
+				skipped += 1;
+				recordSkip(entry, "parser-skipped");
+				diagnostics.push({
+					code: "parser-skipped",
+					severity: "warning",
+					message: tooSmallImage,
 					source: entry.virtualPath,
 				});
 				sinceCheckpoint += 1;
@@ -364,6 +387,11 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		});
 	}
 	return diagnostics;
+}
+
+function standaloneImageTooSmallMessage(virtualPath: string, bytes: Uint8Array): string | undefined {
+	if (!STANDALONE_OCR_IMAGE_EXTENSIONS.has(normalizeExtension(extname(virtualPath)))) return undefined;
+	return ocrImageTooSmallMessage(bytes);
 }
 
 function sourceReadFailure(error: unknown):
