@@ -182,6 +182,21 @@ describe("crawler skills with a sidecar", () => {
 		expect(await bm25?.retrieve("release", { topK: 3 })).toHaveLength(1);
 	});
 
+	it("says how many messages still wait for a vector so a partial semantic index is not mistaken for a complete one", async () => {
+		const skill = slackWithSidecar({ batchSize: 1, maxEmbedPerSync: 1 });
+		const result = await skill.index();
+		expect(result.ok).toBe(true);
+		expect(result.diagnostics).toEqual([
+			expect.objectContaining({
+				code: "datasource-index-failed",
+				severity: "info",
+				message: expect.stringContaining("semantic index catching up: 1 of 2 messages embedded, 1 remaining"),
+			}),
+		]);
+		// The next refresh (same sidecar file) embeds the last message and reports nothing.
+		expect((await slackWithSidecar({ batchSize: 1, maxEmbedPerSync: 1 }).index()).diagnostics).toEqual([]);
+	});
+
 	it("does not touch the sidecar when the CLI sync itself failed", async () => {
 		const failing: CrawlerSkillClient = {
 			sync: async () => ({ ok: false, reason: "binary-missing", stdout: "", stderr: "", code: null }),

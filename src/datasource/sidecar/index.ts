@@ -32,7 +32,13 @@ export interface SidecarHit {
 }
 
 export type SidecarSyncResult =
-	| { readonly ok: true; readonly embedded: number; readonly pruned: number }
+	| {
+			readonly ok: true;
+			readonly embedded: number;
+			readonly pruned: number;
+			/** Messages still waiting for a vector after this sync (0 when fully caught up). */
+			readonly remaining: number;
+	  }
 	| { readonly ok: false; readonly message: string };
 
 export interface CrawlerSidecarOptions {
@@ -43,10 +49,20 @@ export interface CrawlerSidecarOptions {
 	readonly workspaceId?: string;
 	/** Required for semantic and hybrid search; lexical search works without it. */
 	readonly embedder?: Embedder;
+	/** Messages per embedding request and per write transaction. Default {@link DEFAULT_BATCH_SIZE}. */
+	readonly batchSize?: number;
+	/**
+	 * Most messages one `sync()` will embed. A first sync over a large archive otherwise holds the whole
+	 * refresh for minutes; the remainder is picked up by the next sync, and BM25 never waits for vectors.
+	 * Default {@link DEFAULT_MAX_EMBED_PER_SYNC}.
+	 */
+	readonly maxEmbedPerSync?: number;
 }
 
-/** Messages embedded per write transaction; bounds memory and keeps a failed sync resumable. */
-const EMBED_CHUNK = 256;
+/** Messages embedded per request and per write transaction; bounds memory and keeps a failed sync resumable. */
+const DEFAULT_BATCH_SIZE = 256;
+/** About 7 s on the local gateway at the measured ~224 msg/s; a 16k-message archive finishes in ~3 refreshes. */
+const DEFAULT_MAX_EMBED_PER_SYNC = 2048;
 /** Candidate pool multiplier: over-fetch so scope/deleted filtering and fusion still fill `topK`. */
 const POOL_FACTOR = 3;
 const IDENTITY_KEY = "identity";
@@ -69,22 +85,16 @@ interface SidecarRow {
 export class CrawlerSidecar {
 	readonly descriptor: CrawlerDescriptor;
 	private readonly options: CrawlerSidecarOptions;
-	private readonly db: DatabaseSync;
 	private readonly select: string;
 	private readonly where: string;
+	/** Opened on first use: building a skill must not create files, directories, or file descriptors. */
+	private opened: DatabaseSync | undefined;
 	private attached = false;
 
 	constructor(options: CrawlerSidecarOptions) {
 		this.options = options;
 		const { descriptor } = options;
 		this.descriptor = descriptor;
-		mkdirSync(dirname(options.sidecarDbPath), { recursive: true });
-		this.db = new DatabaseSync(options.sidecarDbPath);
-		this.db.exec("pragma journal_mode = wal");
-		this.db.exec(`
-			create table if not exists sidecar_meta (k text primary key, v text not null);
-			create table if not exists sidecar_vec (message_key text primary key, hash text not null, vec blob not null);
-		`);
 		const metadataColumns = descriptor.metadata.map((column, index) => `${column.sql} as m${index}`);
 		this.select = [
 			`${descriptor.keyExpression} as k`,
@@ -97,10 +107,25 @@ export class CrawlerSidecar {
 		this.where = scope ? `${descriptor.liveWhere} and ${descriptor.scopeExpression} = ?` : descriptor.liveWhere;
 	}
 
+	/** The sidecar database, created on first call. Only reached once the crawler archive exists. */
+	private get db(): DatabaseSync {
+		if (this.opened !== undefined) return this.opened;
+		mkdirSync(dirname(this.options.sidecarDbPath), { recursive: true });
+		const db = new DatabaseSync(this.options.sidecarDbPath);
+		db.exec("pragma journal_mode = wal");
+		db.exec(`
+			create table if not exists sidecar_meta (k text primary key, v text not null);
+			create table if not exists sidecar_vec (message_key text primary key, hash text not null, vec blob not null);
+		`);
+		this.opened = db;
+		return db;
+	}
+
 	/**
 	 * Attach the crawler archive read-only, once it exists and has the expected
 	 * shape. The crawler may not have synced yet (or may have rebuilt its file),
-	 * so this is retried on every call until it succeeds.
+	 * so this is retried on every call until it succeeds. Nothing is created
+	 * on disk until the archive exists.
 	 */
 	private attachCrawler(): boolean {
 		if (this.attached) return true;
@@ -125,8 +150,11 @@ export class CrawlerSidecar {
 		return true;
 	}
 
+	/** Release the database handle. Safe to call repeatedly; a later search reopens and re-attaches. */
 	close(): void {
-		this.db.close();
+		this.opened?.close();
+		this.opened = undefined;
+		this.attached = false;
 	}
 
 	/** Bound parameters for the scope predicate, if any. */
@@ -211,9 +239,12 @@ export class CrawlerSidecar {
 		this.adoptIdentity(identity);
 		const pruned = this.prune();
 		const pending = this.pendingKeys();
+		const batchSize = Math.max(1, this.options.batchSize ?? DEFAULT_BATCH_SIZE);
+		const budget = Math.max(1, this.options.maxEmbedPerSync ?? DEFAULT_MAX_EMBED_PER_SYNC);
+		const target = Math.min(pending.length, budget);
 		let embedded = 0;
-		for (let offset = 0; offset < pending.length; offset += EMBED_CHUNK) {
-			const rows = [...this.hydrate(pending.slice(offset, offset + EMBED_CHUNK)).values()];
+		for (let offset = 0; offset < target; offset += batchSize) {
+			const rows = [...this.hydrate(pending.slice(offset, Math.min(offset + batchSize, target))).values()];
 			if (rows.length === 0) continue;
 			let vectors: readonly (readonly number[])[];
 			try {
@@ -234,7 +265,7 @@ export class CrawlerSidecar {
 			this.store(rows, vectors);
 			embedded += rows.length;
 		}
-		return { ok: true, embedded, pruned };
+		return { ok: true, embedded, pruned, remaining: pending.length - embedded };
 	}
 
 	private adoptIdentity(identity: EmbeddingIdentity): void {

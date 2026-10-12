@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -138,6 +138,38 @@ describe("CrawlerSidecar lexical search", () => {
 	});
 });
 
+describe("CrawlerSidecar is lazy", () => {
+	it("creates no file or directory until it is first used", () => {
+		const nested = join(root, "deep", "dir", "sidecar.sqlite");
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.slack,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: nested,
+		});
+		expect(existsSync(join(root, "deep"))).toBe(false);
+		sidecar.close();
+		expect(existsSync(join(root, "deep"))).toBe(false);
+	});
+
+	it("does not create its database for a search that cannot succeed (no crawler archive yet)", async () => {
+		const sidecar = open(vocabEmbedder(VOCAB));
+		expect(sidecar.searchLexical("release", 5)).toEqual([]);
+		expect(await sidecar.searchSemantic("release", 5)).toEqual([]);
+		expect(existsSync(sidecarDb)).toBe(false);
+		sidecar.close();
+	});
+
+	it("opens, then releases, its handles: close() is idempotent and a closed sidecar reopens on next use", async () => {
+		seedSlack([{ channel: "C1", ts: "1.000001", text: "release notes" }]);
+		const sidecar = open(vocabEmbedder(VOCAB));
+		expect(sidecar.searchLexical("release", 5)).toHaveLength(1);
+		sidecar.close();
+		sidecar.close();
+		expect(sidecar.searchLexical("release", 5)).toHaveLength(1);
+		sidecar.close();
+	});
+});
+
 describe("CrawlerSidecar before the crawler has an archive", () => {
 	it("constructs without a crawler database and answers empty instead of throwing", async () => {
 		const sidecar = open(vocabEmbedder(VOCAB));
@@ -253,6 +285,52 @@ describe("CrawlerSidecar semantic index", () => {
 		};
 		const sidecar = open(broken);
 		expect(await sidecar.sync()).toMatchObject({ ok: false });
+		sidecar.close();
+	});
+});
+
+describe("CrawlerSidecar sync budget", () => {
+	it("stops embedding when the budget is spent, keeps what it embedded, and finishes the rest on the next sync", async () => {
+		seedSlack(Array.from({ length: 6 }, (_, i) => ({ channel: "C1", ts: `${i + 1}.000001`, text: `release ${i}` })));
+		const base = vocabEmbedder(VOCAB);
+		const batches: number[] = [];
+		const slow: Embedder = {
+			identity: base.identity,
+			embed: async (texts) => {
+				batches.push(texts.length);
+				return base.embed(texts);
+			},
+		};
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.slack,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+			workspaceId: "T1",
+			embedder: slow,
+			batchSize: 2,
+			maxEmbedPerSync: 4,
+		});
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 4, remaining: 2 });
+		expect(batches).toEqual([2, 2]);
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 2, remaining: 0 });
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 0, remaining: 0 });
+		sidecar.close();
+	});
+
+	it("keeps partially embedded messages searchable while the backlog drains (BM25 never waits for vectors)", async () => {
+		seedSlack(Array.from({ length: 4 }, (_, i) => ({ channel: "C1", ts: `${i + 1}.000001`, text: `release ${i}` })));
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.slack,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+			embedder: vocabEmbedder(VOCAB),
+			batchSize: 2,
+			maxEmbedPerSync: 2,
+		});
+		await sidecar.sync();
+		expect(sidecar.searchLexical("release", 10)).toHaveLength(4);
+		expect(await sidecar.searchSemantic("release", 10)).toHaveLength(2);
+		expect(await sidecar.searchHybrid("release", 10)).toHaveLength(4);
 		sidecar.close();
 	});
 });

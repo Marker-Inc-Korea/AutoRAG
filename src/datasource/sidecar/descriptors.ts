@@ -13,6 +13,11 @@
 
 export interface CrawlerDescriptor {
 	readonly id: string;
+	/**
+	 * True when the crawler's own TOML config (`connector.configPath`) can relocate its archive via
+	 * `db_path`. The sidecar then follows that setting instead of assuming the default archive.
+	 */
+	readonly archivePathInConfig?: boolean;
 	/** `message_key` stored in the sidecar for each row; unique per message within one crawler DB. */
 	readonly keyExpression: string;
 	/**
@@ -51,6 +56,7 @@ const str = (value: unknown): string | undefined => (typeof value === "string" &
 
 const slack: CrawlerDescriptor = {
 	id: "slack",
+	archivePathInConfig: true,
 	keyExpression: "m.channel_id || '|' || m.ts",
 	// slacrawl search emits no message id; the CLI client derives `<channel>-<ts with dots as dashes>`.
 	chunkId: (_key, metadata) => `${metadata.channelId ?? ""}-${(metadata.timestamp ?? "").replaceAll(".", "-")}`,

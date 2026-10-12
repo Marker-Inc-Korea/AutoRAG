@@ -136,18 +136,31 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		}
 	}
 
-	/** Embed new crawler messages into the sidecar. Failure never fails the index: lexical search stays available. */
+	/**
+	 * Embed new crawler messages into the sidecar. Failure never fails the index: BM25 stays available.
+	 * A bounded sync that left a backlog says so, so a partial semantic index is not mistaken for a complete one.
+	 */
 	private async syncSidecar(): Promise<DatasourceDiagnostic[]> {
 		if (this.sidecar === undefined) return [];
 		const result = await this.sidecar.sync();
-		if (result.ok) return [];
+		const base = { instanceId: this.instanceId, source: this.definition.datasourceId } as const;
+		if (!result.ok) {
+			return [
+				{
+					code: "datasource-index-failed",
+					severity: "warning",
+					message: `semantic-unavailable: ${result.message}`.slice(0, 300),
+					...base,
+				},
+			];
+		}
+		if (result.remaining === 0) return [];
 		return [
 			{
 				code: "datasource-index-failed",
-				severity: "warning",
-				message: `semantic-unavailable: ${result.message}`.slice(0, 300),
-				instanceId: this.instanceId,
-				source: this.definition.datasourceId,
+				severity: "info",
+				message: `semantic index catching up: ${result.embedded} of ${result.embedded + result.remaining} messages embedded, ${result.remaining} remaining; hybrid search uses BM25 for the rest until the next refresh`,
+				...base,
 			},
 		];
 	}
