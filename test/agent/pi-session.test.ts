@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type FauxResponseStep, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { type JevBackend, MockBackend } from "jev-use";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,10 +89,23 @@ async function tuiAgent(
 		...extra,
 	});
 	const hosted = await agent.createPiInteractiveRuntime();
+	// What InteractiveMode does on init: bind a UI whose terminal-key listeners the test can drive.
+	const keyListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
+	await hosted.runtime.session.bindExtensions({
+		uiContext: {
+			...noUi(),
+			onTerminalInput: (handler) => {
+				keyListeners.add(handler);
+				return () => keyListeners.delete(handler);
+			},
+		},
+	});
 	return {
 		agent,
 		registration,
 		session: hosted.runtime.session,
+		/** Feeds one terminal key sequence through the bound listeners, as the TUI does before the editor sees it. */
+		pressKey: (data: string): boolean => [...keyListeners].some((listener) => listener(data)?.consume === true),
 		dispose: async () => {
 			await hosted.dispose();
 			registration.unregister();
@@ -100,8 +113,42 @@ async function tuiAgent(
 	};
 }
 
-/** Wraps a Jev backend so the first batch asking `questionId` stays in flight until released. */
-function holdingJev(inner: JevBackend, questionId: string) {
+/** The interactive UI surface the TUI binds, with no visible effect. */
+function noUi(): ExtensionUIContext {
+	return {
+		select: async () => undefined,
+		confirm: async () => false,
+		input: async () => undefined,
+		notify: () => undefined,
+		onTerminalInput: () => () => undefined,
+		setStatus: () => undefined,
+		setWorkingMessage: () => undefined,
+		setWorkingVisible: () => undefined,
+		setWorkingIndicator: () => undefined,
+		setHiddenThinkingLabel: () => undefined,
+		setWidget: () => undefined,
+		setFooter: () => undefined,
+		setHeader: () => undefined,
+		setTitle: () => undefined,
+		custom: async () => undefined as never,
+		pasteToEditor: () => undefined,
+		setEditorText: () => undefined,
+		getEditorText: () => "",
+		editor: async () => undefined,
+		addAutocompleteProvider: () => undefined,
+		setEditorComponent: () => undefined,
+		getEditorComponent: () => undefined,
+		theme: undefined as never,
+		getAllThemes: () => [],
+		getTheme: () => undefined,
+		setTheme: () => ({ success: false, error: "UI not available" }),
+		getToolsExpanded: () => false,
+		setToolsExpanded: () => undefined,
+	} as ExtensionUIContext;
+}
+
+/** Wraps a Jev backend so the `nth` (1-based) batch asking `questionId` stays in flight until released. */
+function holdingJev(inner: JevBackend, questionId: string, nth = 1) {
 	let markEntered = (): void => {};
 	let release = (): void => {};
 	const entered = new Promise<void>((resolve) => {
@@ -110,12 +157,11 @@ function holdingJev(inner: JevBackend, questionId: string) {
 	const gate = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	let held = false;
+	let seenCalls = 0;
 	const backend: JevBackend = {
 		name: inner.name,
 		async judge(request) {
-			if (!held && request.questions.some((question) => question.id === questionId)) {
-				held = true;
+			if (request.questions.some((question) => question.id === questionId) && ++seenCalls === nth) {
 				markEntered();
 				await gate;
 			}
@@ -655,6 +701,135 @@ describe("AutoRAG pi coding-agent host", () => {
 			await tui.agent.waitForIdle();
 
 			expect(tui.registration.state.callCount).toBe(1);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("verifies a steered direct question without the previous query's answer as its draft", async () => {
+		// A steer typed while Jev routes a direct question skips the direct
+		// prompt. The bound session still ends on the previous query's answer,
+		// which must never be presented as this question's first draft.
+		const verificationPrompts: string[] = [];
+		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID, 2);
+		const tui = await tuiAgent(
+			[
+				fauxAssistantMessage("FIRST QUERY ANSWER.", { stopReason: "stop" }),
+				(context) => {
+					for (const message of context.messages) {
+						if (message.role === "user" && textOf(message.content).startsWith("Original query:"))
+							verificationPrompts.push(textOf(message.content));
+					}
+					return fauxAssistantMessage("Leonardo da Vinci.", { stopReason: "stop" });
+				},
+			],
+			routing.backend,
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await tui.agent.waitForIdle();
+			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
+			await routing.entered;
+			await tui.session.prompt("Answer in one name.", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(verificationPrompts).toHaveLength(1);
+			expect(verificationPrompts[0]).toContain("Original query: Who painted the Mona Lisa?");
+			expect(verificationPrompts[0]).not.toContain("FIRST QUERY ANSWER");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("keeps a slash-prefixed message typed during a search inside the search", async () => {
+		// pi's input loop runs while the search is detached. A "/..." line that is
+		// no command used to start pi's own prompt on the bound session between
+		// phases, outside the harness, and the next phase then failed as busy.
+		const seen: string[] = [];
+		const routing = holdingJev(jevRoute("local", 0.9), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent([seeingStep("Fast answer.", seen), seeingStep("Verified.", seen)], routing.backend);
+		try {
+			await tui.session.prompt("What does my hosts file say?", { source: "interactive" });
+			await routing.entered;
+			await tui.session.prompt("/etc/hosts is the file I mean.", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			const errors = tui.session.messages.filter(
+				(message) => message.role === "custom" && message.customType === "autorag.error",
+			);
+			expect(errors).toEqual([]);
+			expect(seen[0]).toContain("/etc/hosts is the file I mean.");
+			expect(tui.registration.state.callCount).toBe(2);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("queues Alt+Enter between phases as the next question, not a steer", async () => {
+		// With no turn streaming, pi submits Alt+Enter like Enter. AutoRAG reads
+		// the key itself, so it still queues a new question rather than a correction.
+		const seen: string[] = [];
+		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent([seeingStep("Paris.", seen), seeingStep("Leonardo da Vinci.", seen)], routing.backend);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await routing.entered;
+			// Alt+Enter: the key reaches AutoRAG's listener, then pi submits the editor text.
+			tui.pressKey("\x1b\r");
+			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(seen).toHaveLength(2);
+			expect(seen[0]).not.toContain("Mona Lisa");
+			expect(seen[1]).toContain("Who painted the Mona Lisa?");
+			expect(seen[1]).not.toContain("interrupted the running search");
+			expect(tui.session.sessionName).toBe("Who painted the Mona Lisa?");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("stops the search on Esc between phases, before its next phase runs", async () => {
+		// pi's Esc only aborts a streaming turn. Between phases AutoRAG reads
+		// the key itself and ends the search.
+		const routing = holdingJev(jevRoute("local", 0.9), QUERY_ROUTE_QUESTION_ID);
+		const tui = await tuiAgent([fauxAssistantMessage("Must not run.", { stopReason: "stop" })], routing.backend);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await routing.entered;
+			expect(tui.pressKey("\x1b")).toBe(true);
+			routing.release();
+			await tui.agent.waitForIdle();
+
+			expect(tui.registration.state.callCount).toBe(0);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("lists and restores a steer as the user's own words, and keeps queued steers on dequeue", async () => {
+		// pi shows queued steering, puts it back in the editor on Esc, and Alt+Up
+		// clears both queues. It must see what the user typed, not AutoRAG's framing,
+		// while the model still receives the framed correction.
+		const seen: string[] = [];
+		const first = heldStep(
+			fauxAssistantMessage([fauxToolCall("search_custom", { query: "capital" })], { stopReason: "toolUse" }),
+		);
+		const tui = await tuiAgent([first.held, seeingStep("Checked Lyon.", seen), seeingStep("Verified.", seen)]);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await first.entered;
+			await tui.session.prompt("Check Lyon too.", { source: "interactive", streamingBehavior: "steer" });
+			expect(tui.session.getSteeringMessages()).toEqual(["Check Lyon too."]);
+			first.release();
+			await tui.agent.waitForIdle();
+
+			expect(seen[0]).toContain("The user interrupted the running search with this correction");
+			expect(seen[0]).toContain("Check Lyon too.");
+			expect(tui.session.getSteeringMessages()).toEqual([]);
 		} finally {
 			await tui.dispose();
 		}

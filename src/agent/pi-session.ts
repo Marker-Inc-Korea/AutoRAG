@@ -20,6 +20,7 @@ import {
 	type ToolDefinition,
 	type TuiMode,
 } from "@earendil-works/pi-coding-agent";
+import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { registerAutoRAGProvider } from "../cloud/provider.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
@@ -73,6 +74,9 @@ export interface AutoRAGInteractiveInput {
 	readonly streamingBehavior: "steer" | "followUp" | undefined;
 }
 
+/** A TUI key AutoRAG acts on itself while a search runs, even when no pi turn streams. */
+export type AutoRAGInteractiveKey = "interrupt" | "followUp";
+
 export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessionOptions, "model"> {
 	readonly model?: Model<Api>;
 	readonly inactiveToolNames?: readonly string[];
@@ -82,6 +86,15 @@ export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessio
 	 * pi's TUI reads the next input only after this returns.
 	 */
 	readonly onInput: (input: AutoRAGInteractiveInput, pi: ExtensionAPI) => AutoRAGInputDisposition;
+	/** Whether a search is running: while it is, every interactive input belongs to it. */
+	readonly isSearchRunning?: () => boolean;
+	/**
+	 * Called for pi's interrupt (Esc) and follow-up (Alt+Enter) keys while a
+	 * search runs. pi acts on them only while a turn streams, but a search also
+	 * spends time between turns (routing, prefetch, checks). Return true to
+	 * consume the key; pi then never sees it.
+	 */
+	readonly onKey?: (key: AutoRAGInteractiveKey) => boolean;
 	/**
 	 * Optional best-effort provider for a startup update notice. Resolves to the
 	 * notice text, or `undefined` when there is nothing to announce. Called once
@@ -171,10 +184,30 @@ function createAutoRAGExtension(
 		}
 	};
 }
+/**
+ * The AutoRAG key `data` presses: pi's interrupt or follow-up binding. pi's TUI
+ * installs its keybindings (user remaps included) as pi-tui's global set; with
+ * none installed, pi's defaults apply.
+ */
+function interactiveKeyOf(data: string): AutoRAGInteractiveKey | undefined {
+	const bindings = getKeybindings();
+	const keysOf = (action: "app.interrupt" | "app.message.followUp", fallback: KeyId): readonly KeyId[] => {
+		const keys = bindings.getKeys(action);
+		return keys.length > 0 ? keys : [fallback];
+	};
+	const windows =
+		process.platform === "win32" ||
+		(process.platform === "linux" && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP));
+	if (keysOf("app.interrupt", "escape").some((key) => matchesKey(data, key))) return "interrupt";
+	if (keysOf("app.message.followUp", windows ? "ctrl+q" : "alt+enter").some((key) => matchesKey(data, key)))
+		return "followUp";
+	return undefined;
+}
+
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
-	onInput: AutoRAGPiInteractiveRuntimeOptions["onInput"],
+	options: Pick<AutoRAGPiInteractiveRuntimeOptions, "onInput" | "isSearchRunning" | "onKey">,
 	updateNotice: (() => Promise<string | undefined>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
@@ -196,9 +229,23 @@ function createAutoRAGInteractiveExtension(
 					.catch(() => undefined);
 			});
 		}
+		const { onInput, isSearchRunning, onKey } = options;
+		if (onKey !== undefined) {
+			pi.on("session_start", (_event, ctx) => {
+				ctx.ui.onTerminalInput((data) => {
+					const key = interactiveKeyOf(data);
+					return key !== undefined && onKey(key) ? { consume: true } : undefined;
+				});
+			});
+		}
 		pi.on("input", (event) => {
 			const text = event.text.trim();
-			if (event.source !== "interactive" || text.length === 0 || text.startsWith("/")) return undefined;
+			if (event.source !== "interactive" || text.length === 0) return undefined;
+			// A "/" line is pi's (commands, skills, templates), except during a search:
+			// handed back to pi then, it would start pi's own prompt on the bound
+			// session outside the search. Registered commands never reach this
+			// handler; pi runs them first.
+			if (text.startsWith("/") && isSearchRunning?.() !== true) return undefined;
 			let disposition: AutoRAGInputDisposition;
 			try {
 				disposition = onInput({ text, images: event.images, streamingBehavior: event.streamingBehavior }, pi);
@@ -321,7 +368,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,
 						options.contextTransform,
-						options.onInput,
+						{ onInput: options.onInput, isSearchRunning: options.isSearchRunning, onKey: options.onKey },
 						options.updateNotice,
 					),
 					...(options.extensionFactories ?? []),

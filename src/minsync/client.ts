@@ -13,7 +13,7 @@ import {
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
-import { spawnProcess } from "./process.ts";
+import { type ProcessResult, spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
 export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
@@ -329,17 +329,24 @@ export class MinSyncClient {
 		};
 	}
 
-	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
+	async query(
+		text: string,
+		topK: number,
+		mode: MinSyncQueryMode = "vector",
+		signal?: AbortSignal,
+	): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
-		const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
+		const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text], {
+			...(signal === undefined ? {} : { signal }),
+		});
 		if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
 		return parseQueryHits(result.stdout);
 	}
 
 	private async spawn(
 		args: readonly string[],
-		options: { readonly timeoutMs?: number } = {},
-	): Promise<ReturnType<typeof spawnProcess> extends Promise<infer T> ? T : never> {
+		options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
+	): Promise<ProcessResult> {
 		return spawnProcess(this.binaryPath, args, this.workspacePath, options);
 	}
 }

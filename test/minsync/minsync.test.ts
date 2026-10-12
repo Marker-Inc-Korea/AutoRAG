@@ -16,7 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	ensureLocalEmbedder,
@@ -198,6 +198,35 @@ process.exit(2);
 			code: 5,
 			stderr: "embedding failed: local endpoint unavailable\n",
 		});
+	});
+
+	it("stops a running query when its retrieval signal aborts", async () => {
+		// A steer aborts the baseline prefetch's MinSync query: the process must
+		// stop and free the workspace instead of running to completion. The fake
+		// query announces itself, then never finishes on its own.
+		const startedMarker = join(root, "query-started");
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+if (process.argv[2] === "query") {
+  writeFileSync(${JSON.stringify(startedMarker)}, "");
+  setInterval(() => {}, 1 << 30);
+} else {
+  process.exit(2);
+}
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const controller = new AbortController();
+
+		const query = method.retrieve("renewal cancellation", { topK: 2, signal: controller.signal });
+		// Spawning node is slow under a loaded parallel suite: wait on the marker, not the 1s default.
+		await vi.waitFor(() => expect(existsSync(startedMarker)).toBe(true), { timeout: 15_000 });
+		controller.abort();
+
+		await expect(query).rejects.toThrow(/aborted/i);
 	});
 });
 

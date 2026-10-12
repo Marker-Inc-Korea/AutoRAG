@@ -55,7 +55,7 @@ export interface JikjiFindProviderResult {
 export interface JikjiFindProvider {
 	findJikji(
 		query: string,
-		opts?: { readonly topK?: number; readonly first?: boolean },
+		opts?: { readonly topK?: number; readonly first?: boolean; readonly signal?: AbortSignal },
 	): Promise<JikjiFindProviderResult>;
 }
 
@@ -97,7 +97,7 @@ export function createJikjiFindTool(
 		description:
 			"Discover local files via Jikji. Returns answer_paths with per-candidate next_read hints and a tool-call policy directive. Call this FIRST for local file discovery when Jikji is configured.",
 		parameters: jikjiFindSchema,
-		async execute(_toolCallId, params): Promise<AgentToolResult<JikjiFindDetails>> {
+		async execute(_toolCallId, params, signal): Promise<AgentToolResult<JikjiFindDetails>> {
 			const query = String(params.query ?? "").trim();
 			if (query.length === 0) {
 				return {
@@ -121,6 +121,7 @@ export function createJikjiFindTool(
 			const { answerPack, policy, diagnostics, perRoot } = await provider.findJikji(query, {
 				topK: params.topK,
 				first: params.first,
+				...(signal === undefined ? {} : { signal }),
 			});
 
 			if (answerPack === undefined) {
