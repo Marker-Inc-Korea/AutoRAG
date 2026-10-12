@@ -359,6 +359,24 @@ for (const result of response.results) {
 }
 ```
 
+A caller can steer a search while it runs, the way Enter steers a TUI search, and stop it:
+
+```typescript
+const run = (async () => {
+  for await (const event of agent.searchDocumentsStream("When is the launch?")) {
+    if (event.type === "preliminary") console.log("Quick:", event.response.answer);
+    if (event.type === "complete") console.log("Final:", event.response.answer);
+  }
+})();
+
+// A correction of the running search, not a new question. false = no search to steer.
+agent.steer("Use the June plan, not the April one.");
+// agent.abort() stops the whole search, including every later phase.
+await run;
+```
+
+`steer()` reaches the search's next model request (also between phases), cuts in-flight retrieval and the baseline prefetch short, and always runs verification, whose prompt restates the correction. It returns `false` when no search is running, the search was stopped, or it is past its last model request; ask the text as a new question then.
+
 ---
 
 ## Hosted AutoRAG Plan (Dazzi)
