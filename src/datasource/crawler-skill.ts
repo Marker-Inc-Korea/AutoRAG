@@ -165,6 +165,11 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		];
 	}
 
+	/** Release the sidecar's database handles. Safe to call repeatedly; later use reopens them. */
+	close(): void {
+		this.sidecar?.close();
+	}
+
 	retrievalMethods(): readonly RetrievalMethod[] {
 		const cli = this.cliMethod();
 		const { sidecar } = this;

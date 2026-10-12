@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CrawlerSkillClient } from "../../../src/datasource/crawler-skill.ts";
+import type { CrawlerDatasourceSkill, CrawlerSkillClient } from "../../../src/datasource/crawler-skill.ts";
 import type { CrawlerSearchResult, CrawlerSyncResult } from "../../../src/datasource/crawler-types.ts";
 import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
 import { SlackSkill } from "../../../src/datasource/skills/slack/index.ts";
@@ -13,6 +13,13 @@ import type { Embedder } from "../../../src/embedding-runtime/gateway-embedder.t
 
 let root: string;
 let crawlerDb: string;
+/** Skills built by a test; closed before cleanup so Windows can delete their SQLite files. */
+const opened: CrawlerDatasourceSkill[] = [];
+
+function track<T extends CrawlerDatasourceSkill>(skill: T): T {
+	opened.push(skill);
+	return skill;
+}
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-sidecar-skill-"));
@@ -35,6 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	for (const skill of opened.splice(0)) skill.close();
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -57,19 +65,21 @@ const cliMustNotSearch: CrawlerSkillClient = {
 };
 
 function slackWithSidecar(extra: Record<string, unknown> = {}): SlackSkill {
-	return new SlackSkill({
-		client: cliMustNotSearch,
-		datasourceId: "slack",
-		instanceId: "main",
-		sidecar: {
-			descriptor: CRAWLER_DESCRIPTORS.slack,
-			crawlerDbPath: crawlerDb,
-			sidecarDbPath: join(root, "sidecar.sqlite"),
-			workspaceId: "T1",
-			embedder,
-			...extra,
-		},
-	});
+	return track(
+		new SlackSkill({
+			client: cliMustNotSearch,
+			datasourceId: "slack",
+			instanceId: "main",
+			sidecar: {
+				descriptor: CRAWLER_DESCRIPTORS.slack,
+				crawlerDbPath: crawlerDb,
+				sidecarDbPath: join(root, "sidecar.sqlite"),
+				workspaceId: "T1",
+				embedder,
+				...extra,
+			},
+		}),
+	);
 }
 
 describe("crawler skills with a sidecar", () => {
@@ -127,17 +137,19 @@ describe("crawler skills with a sidecar", () => {
 				code: 0,
 			}),
 		};
-		const skill = new SlackSkill({
-			client: cli,
-			datasourceId: "slack",
-			instanceId: "main",
-			sidecar: {
-				descriptor: CRAWLER_DESCRIPTORS.slack,
-				crawlerDbPath: crawlerDb,
-				sidecarDbPath: join(root, "same.sqlite"),
-				workspaceId: "T1",
-			},
-		});
+		const skill = track(
+			new SlackSkill({
+				client: cli,
+				datasourceId: "slack",
+				instanceId: "main",
+				sidecar: {
+					descriptor: CRAWLER_DESCRIPTORS.slack,
+					crawlerDbPath: crawlerDb,
+					sidecarDbPath: join(root, "same.sqlite"),
+					workspaceId: "T1",
+				},
+			}),
+		);
 		const [cliMethod, bm25] = skill.retrievalMethods();
 		const fromCli = (await cliMethod?.retrieve("release", { topK: 3 }))?.[0];
 		const fromSidecar = (await bm25?.retrieve("release", { topK: 3 }))?.[0];
@@ -146,17 +158,19 @@ describe("crawler skills with a sidecar", () => {
 	});
 
 	it("honors the channel allowlist for sidecar hits", async () => {
-		const skill = new SlackSkill({
-			client: cliMustNotSearch,
-			datasourceId: "slack",
-			channelNames: ["not-eng"],
-			sidecar: {
-				descriptor: CRAWLER_DESCRIPTORS.slack,
-				crawlerDbPath: crawlerDb,
-				sidecarDbPath: join(root, "s.sqlite"),
-				workspaceId: "T1",
-			},
-		});
+		const skill = track(
+			new SlackSkill({
+				client: cliMustNotSearch,
+				datasourceId: "slack",
+				channelNames: ["not-eng"],
+				sidecar: {
+					descriptor: CRAWLER_DESCRIPTORS.slack,
+					crawlerDbPath: crawlerDb,
+					sidecarDbPath: join(root, "s.sqlite"),
+					workspaceId: "T1",
+				},
+			}),
+		);
 		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "slack-sidecar-bm25");
 		expect(await bm25?.retrieve("release", { topK: 3 })).toEqual([]);
 	});
@@ -202,16 +216,18 @@ describe("crawler skills with a sidecar", () => {
 			sync: async () => ({ ok: false, reason: "binary-missing", stdout: "", stderr: "", code: null }),
 			search: cliMustNotSearch.search,
 		};
-		const skill = new SlackSkill({
-			client: failing,
-			sidecar: {
-				descriptor: CRAWLER_DESCRIPTORS.slack,
-				crawlerDbPath: crawlerDb,
-				sidecarDbPath: join(root, "s.sqlite"),
-				workspaceId: "T1",
-				embedder,
-			},
-		});
+		const skill = track(
+			new SlackSkill({
+				client: failing,
+				sidecar: {
+					descriptor: CRAWLER_DESCRIPTORS.slack,
+					crawlerDbPath: crawlerDb,
+					sidecarDbPath: join(root, "s.sqlite"),
+					workspaceId: "T1",
+					embedder,
+				},
+			}),
+		);
 		expect((await skill.index()).ok).toBe(false);
 	});
 
@@ -223,25 +239,29 @@ describe("crawler skills with a sidecar", () => {
 	it("shares the same wiring across telegram and whatsapp", () => {
 		for (const [skill, id] of [
 			[
-				new TelecrawlSkill({
-					client: cliMustNotSearch,
-					sidecar: {
-						descriptor: CRAWLER_DESCRIPTORS.telegram,
-						crawlerDbPath: crawlerDb,
-						sidecarDbPath: join(root, "t.sqlite"),
-					},
-				}),
+				track(
+					new TelecrawlSkill({
+						client: cliMustNotSearch,
+						sidecar: {
+							descriptor: CRAWLER_DESCRIPTORS.telegram,
+							crawlerDbPath: crawlerDb,
+							sidecarDbPath: join(root, "t.sqlite"),
+						},
+					}),
+				),
 				"telegram",
 			],
 			[
-				new WacrawlSkill({
-					client: cliMustNotSearch,
-					sidecar: {
-						descriptor: CRAWLER_DESCRIPTORS.whatsapp,
-						crawlerDbPath: crawlerDb,
-						sidecarDbPath: join(root, "w.sqlite"),
-					},
-				}),
+				track(
+					new WacrawlSkill({
+						client: cliMustNotSearch,
+						sidecar: {
+							descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+							crawlerDbPath: crawlerDb,
+							sidecarDbPath: join(root, "w.sqlite"),
+						},
+					}),
+				),
 				"whatsapp",
 			],
 		] as const) {

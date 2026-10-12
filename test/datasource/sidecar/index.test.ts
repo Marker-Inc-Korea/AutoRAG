@@ -190,7 +190,9 @@ describe("CrawlerSidecar before the crawler has an archive", () => {
 	});
 
 	it("reports a crawler database that exists but lacks the expected tables as unavailable, not as a crash", async () => {
-		new DatabaseSync(crawlerDb).exec("create table unrelated (x)");
+		const db = new DatabaseSync(crawlerDb);
+		db.exec("create table unrelated (x)");
+		db.close();
 		const sidecar = open(vocabEmbedder(VOCAB));
 		expect(sidecar.searchLexical("release", 5)).toEqual([]);
 		expect(await sidecar.sync()).toMatchObject({ ok: false });
