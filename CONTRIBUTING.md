@@ -218,7 +218,7 @@ make e2e-live      E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"   # warm run, reusing state
 
 ## Licensing and the DCO
 
-AutoRAG is released under the [MIT License](LICENSE), and contributions are accepted
+AutoRAG is released under the [Apache License 2.0](LICENSE), and contributions are accepted
 inbound under the same terms (inbound = outbound).
 
 **Every commit needs a sign-off**, which is how we enforce the inbound license:
@@ -249,7 +249,7 @@ the job prints the offending commits verbatim, and the usual fix is
 
 We chose the **Developer Certificate of Origin** over a Contributor License Agreement:
 
-1. **No relicensing or dual-licensing plan exists.** AutoRAG ships under MIT only, and
+1. **No relicensing or dual-licensing plan exists.** AutoRAG ships under Apache-2.0 only, and
    there is no commercial edition whose rights a CLA would need to protect. The CLA's
    core benefit — a standing right to relicense contributions — is not in use.
 2. **A CLA is a legal instrument we would have to maintain.** It needs drafted terms,
@@ -257,7 +257,7 @@ We chose the **Developer Certificate of Origin** over a Contributor License Agre
    contributors already write, verifiable by CI in seconds.
 3. **The reserved relicensing right in [GOVERNANCE.md](GOVERNANCE.md) is a decision
    right, not a plan.** Under DCO, each contribution is already licensed to everyone
-   under MIT, so relicensing a version that contains those contributions to another
+   under Apache-2.0, so relicensing a version that contains those contributions to another
    license would require the contributors' consent. We accept that constraint
    deliberately: lower friction for contributors now, no unilateral relicensing of
    community code later.

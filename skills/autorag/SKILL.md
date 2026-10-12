@@ -1,7 +1,7 @@
 ---
 name: autorag
 description: Search, summarize, compare, and answer questions from an already configured AutoRAG librarian over local documents and configured datasources. Use when the user asks AutoRAG to search PDFs, wikis, notes, or a knowledge base. Use autorag-setup for install, model, roots, indexing, or datasource changes.
-license: MIT
+license: Apache-2.0
 ---
 
 # AutoRAG Librarian Skill

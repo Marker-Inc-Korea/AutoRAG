@@ -1,7 +1,7 @@
 ---
 name: autorag-doctor
 description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding gateway, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the gateway will not start, or the user asks to check, diagnose, verify, or repair AutoRAG.
-license: MIT
+license: Apache-2.0
 ---
 
 # AutoRAG doctor

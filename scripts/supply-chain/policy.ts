@@ -65,7 +65,7 @@ const ALLOW_LICENSES = [
 ] as const;
 
 export const AUTORAG_SUPPLY_CHAIN_POLICY: SupplyChainPolicy = {
-	projectLicenses: ["MIT", "Apache-2.0"],
+	projectLicenses: ["Apache-2.0"],
 	allowLicenses: ALLOW_LICENSES,
 	failOnCveSeverity: "high",
 	unknownLicense: "deny",
