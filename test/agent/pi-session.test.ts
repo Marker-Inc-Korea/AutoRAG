@@ -776,8 +776,12 @@ describe("AutoRAG pi coding-agent host", () => {
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await routing.entered;
-			// Alt+Enter: the key reaches AutoRAG's listener, then pi submits the editor text.
-			tui.pressKey("\x1b\r");
+			// The follow-up key (Alt+Enter; Ctrl+Q where pi defaults to Windows bindings)
+			// reaches AutoRAG's listener, then pi submits the editor text.
+			const windowsBindings =
+				process.platform === "win32" ||
+				(process.platform === "linux" && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP));
+			tui.pressKey(windowsBindings ? "\x11" : "\x1b\r");
 			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
 			routing.release();
 			await tui.agent.waitForIdle();
