@@ -22,6 +22,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { registerAutoRAGProvider } from "../cloud/provider.ts";
+import { fitRequestLimits } from "./request-limits.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
 /**
@@ -149,6 +150,7 @@ function modelConfig(model: Model<Api>, configuredApiKey?: string): Parameters<M
 				cost: model.cost,
 				contextWindow: model.contextWindow,
 				maxTokens: model.maxTokens,
+				...(model.inputLimits === undefined ? {} : { inputLimits: model.inputLimits }),
 				...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
 			},
 		],
@@ -173,6 +175,18 @@ async function configureModelRuntime(
 	for (const [provider, key] of keys) await modelRuntime.setRuntimeApiKey(provider, key);
 }
 
+/**
+ * Keeps every model request within the session model's declared input limits.
+ * Registered after AutoRAG's own context transform, so it sizes the final
+ * transcript the provider receives.
+ */
+function enforceRequestLimits(pi: ExtensionAPI): void {
+	pi.on("context", (event, ctx) => {
+		const messages = fitRequestLimits(event.messages, ctx.model?.inputLimits);
+		return messages === undefined ? undefined : { messages };
+	});
+}
+
 function createAutoRAGExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
@@ -182,6 +196,7 @@ function createAutoRAGExtension(
 		if (contextTransform !== undefined) {
 			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
 		}
+		enforceRequestLimits(pi);
 	};
 }
 /**
@@ -215,6 +230,7 @@ function createAutoRAGInteractiveExtension(
 		if (contextTransform !== undefined) {
 			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
 		}
+		enforceRequestLimits(pi);
 		if (updateNotice !== undefined) {
 			pi.on("session_start", () => {
 				void updateNotice()

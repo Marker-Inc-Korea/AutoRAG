@@ -120,6 +120,21 @@ resolves without a catalog snapshot. It keeps resolving exactly as before: the
 explicit `baseUrl` wins over the registered provider's endpoint, and the key is
 read from the named environment variable.
 
+### Request size
+
+The hosted API rejects a request body above about 4.49 MB with HTTP 413. Every
+`autorag` model, whether it comes from the live catalog, a snapshot, or an explicit
+endpoint, declares `inputLimits` (`AUTORAG_INPUT_LIMITS` in `src/cloud/config.ts`):
+a 3.5 MB transcript cap and a 1 MB cap for each image.
+
+pi keeps every image a tool returned and resends all of them on each later turn, so
+a search that reads several photos would otherwise cross the limit and end without
+an answer. Before each model request AutoRAG drops the oldest images until the
+transcript fits, and puts a short note in their place telling the model to read the
+file again if it still needs it. Text is never dropped. The session record keeps
+every image; only the request is trimmed. The same guard enforces `inputLimits` for
+any model that declares them.
+
 ## Jev and rerank on the hosted plan
 
 The same account key serves Jev and the rerank stage, so a hosted setup needs no
