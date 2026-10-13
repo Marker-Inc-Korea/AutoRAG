@@ -103,7 +103,9 @@ describe("createDefaultParserRegistry OCR engine selection", () => {
 		expect(tesseractMock.createWorker).toHaveBeenCalledWith(traineddata, undefined, expect.any(Object));
 	});
 
-	it("never runs OCR for any language while the switch is off", async () => {
+	it("turns kordoc OCR off explicitly while the switch is off", async () => {
+		// kordoc >= 4.16 auto-OCRs when `ocr` is omitted and its built-in model
+		// is cached, so "off" must reach kordoc as `false`, not as no option.
 		const stub = createKordocStub();
 		const registry = createDefaultParserRegistry({ languages: ["ja"], kordoc: { parse: stub.parse } });
 
@@ -111,7 +113,7 @@ describe("createDefaultParserRegistry OCR engine selection", () => {
 			.getForVirtualPath("/docs/a.pdf")
 			?.parse({ virtualPath: "/docs/a.pdf", bytes: new Uint8Array([1]) });
 
-		expect(stub.captured).toEqual([undefined]);
+		expect(stub.captured).toEqual([false]);
 		expect(tesseractMock.createWorker).not.toHaveBeenCalled();
 	});
 

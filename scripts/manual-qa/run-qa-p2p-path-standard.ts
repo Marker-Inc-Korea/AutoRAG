@@ -179,7 +179,7 @@ async function gateB(root: string, registrations: FauxProviderRegistration[]): P
 		workspacePath: root,
 		memoryPath: join(root, "memory-b.json"),
 		remoteSession: true,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 	});
 	const { client, server } = transportPair();
@@ -301,7 +301,7 @@ async function gateC(root: string, registrations: FauxProviderRegistration[]): P
 		workspacePath: root,
 		memoryPath: join(root, "memory-c.json"),
 		remoteSession: true,
-		minSync: false,
+		minSync: { autoInstall: false },
 		jikji: false,
 		datasourceSkills: [absSkill],
 	});
