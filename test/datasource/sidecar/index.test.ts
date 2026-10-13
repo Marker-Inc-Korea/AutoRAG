@@ -512,7 +512,9 @@ describe("CrawlerSidecar robustness", () => {
 		recovered.close();
 	});
 
-	it("follows the crawler when it replaces or deletes its archive file", () => {
+	// Windows refuses to rename over or delete a file another handle has open, so a crawler cannot swap its
+	// archive under an attached sidecar there; the scenario only exists on POSIX.
+	it.skipIf(process.platform === "win32")("follows the crawler when it replaces or deletes its archive file", () => {
 		seedChat([{ event: "old", chat: "family", text: "deploy old", ts: 1 }]);
 		const sidecar = new CrawlerSidecar({
 			descriptor: CRAWLER_DESCRIPTORS.whatsapp,
