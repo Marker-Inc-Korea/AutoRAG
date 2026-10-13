@@ -91,8 +91,10 @@ function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	for (const [index, row] of rows.entries()) {
 		if (!isRecord(row)) return undefined;
 		const id = stringValue(row, ["message_id", "event_id", "id"]);
+		if (id === undefined) return undefined;
+		// Group events and media-only messages carry no text; there is nothing to match or cite.
 		const content = stringValue(row, ["snippet", "text", "content"]);
-		if (id === undefined || content === undefined) return undefined;
+		if (content === undefined) continue;
 		const chatId = stringValue(row, ["chat_jid", "chat_id"]);
 		const chatName = stringValue(row, ["chat_name"]);
 		const senderName = stringValue(row, ["sender_name"]);
