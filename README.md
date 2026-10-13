@@ -24,6 +24,141 @@
 
 ---
 
+## 🖥️ The desktop app
+
+**A Finder for your computer that understands what's inside your files.** The
+AutoRAG desktop app puts this librarian behind a real file manager: browse your
+folders as usual, then ask a question and get an answer that cites the files,
+chats, and mail it came from. Everything it searches with is the engine in this
+repository.
+
+<p align="center">
+  <img src="assets/app/finder.webp" alt="AutoRAG desktop app: a folder in list view with a version stack expanded and the index column" width="100%" />
+</p>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🔎 Just ask
+
+Ask the way you'd ask a teammate. The librarian reads the files and writes back,
+every claim linked to the passage behind it. Drag files, folders, or links into
+a question to ask about just those.
+
+</td>
+<td width="50%" valign="top">
+
+<img src="assets/app/ask.webp" alt="An answer about the Seoul office lease with numbered citations" />
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+<img src="assets/app/versions.webp" alt="A folder in list view with document versions stacked under one row" />
+
+</td>
+<td width="50%" valign="top">
+
+### 🗂️ Spot the twins
+
+`proposal-final`, `proposal-v3`, `proposal (1)`: stacked into one row, newest
+on top, tagged **Latest**, **Similar**, or **Identical**. Powered by
+[dupey](https://github.com/NomaDamas/dupey), the same scan as
+`autorag duplicates`.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### ⌨️ Space to see anything
+
+Markdown, code, PDF, video, audio, Office, and HWP/HWPX previewed instantly in
+Quick Look. HWP pages are drawn locally by
+[rhwp](https://github.com/edwardkim/rhwp); Hancom Office is not required.
+
+</td>
+<td width="50%" valign="top">
+
+<img src="assets/app/quick-look.webp" alt="Quick Look showing a multi-page PDF with a page rail" />
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+<img src="assets/app/panes.webp" alt="Two folder panes side by side, each with its own tabs" />
+
+</td>
+<td width="50%" valign="top">
+
+### 🪟 A real file manager
+
+Tabs and split panes: drag a tab to an edge to split, and every pane keeps its
+own tabs, so a folder and a conversation sit side by side. Folders update live
+as other apps change them.
+
+</td>
+</tr>
+</table>
+
+**And more:** hybrid keyword + meaning search with a reranker · scheduled
+re-indexing that runs even while the app is closed · an *Ask* entry in the
+Finder and Explorer right-click menu · light and dark mode · Korean, English,
+Japanese, and Simplified Chinese.
+
+### Every place, one search
+
+The app connects the same [datasources](#-supported-datasources) the librarian
+does, and searches them right alongside your files:
+
+<table>
+<tr>
+<td align="center" width="25%">💬<br><b>Slack</b><br>Channels and threads</td>
+<td align="center" width="25%">💛<br><b>KakaoTalk</b><br>Chats on this computer</td>
+<td align="center" width="25%">🎮<br><b>Discord</b><br>Servers and forums</td>
+<td align="center" width="25%">✈️<br><b>Telegram</b><br>Chats and channels</td>
+</tr>
+<tr>
+<td align="center">📱<br><b>WhatsApp</b><br>Messages, read-only</td>
+<td align="center">✉️<br><b>Mail</b><br>Every inbox you sign in to</td>
+<td align="center">🐙<br><b>GitHub</b><br>Repos, issues, PRs</td>
+<td align="center">🔮<br><b>Obsidian</b><br>Your vaults</td>
+</tr>
+</table>
+
+### Private by design
+
+- **Embedded on your machine.** Document understanding runs on the local
+  [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md) model.
+  File contents are never sent to a remote embedder.
+- **Keys stay encrypted.** Sign-in tokens and API keys live in the system's
+  encrypted store, never in a config file.
+- **Bring your own model.** Use the [hosted AutoRAG plan](#hosted-autorag-plan),
+  or connect your own provider key and pay the provider directly.
+
+> [!TIP]
+> **The app's source lives in [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app)**
+> (Electron + React, AGPL-3.0). It depends on `@autorag/librarian` from this
+> repository; build, run, and file app issues there.
+
+### One engine, every surface
+
+The app is one way in. The same librarian runs everywhere else:
+
+| Surface | Use it for | Start here |
+|---|---|---|
+| **Desktop app** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) |
+| **Terminal UI** | Interactive, steerable search sessions | [`autorag tui`](#2-search-from-cli) |
+| **CLI** | Scripts, indexing, health checks | [CLI Command Reference](#cli-command-reference) |
+| **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](#autorag-lite-mcp-server) |
+| **TypeScript API** | Embedding the librarian in your own app | [Programmatic usage](#3-programmatic-usage-typescript-api) |
+| **Agent skills** | Letting a coding agent install and drive AutoRAG | [For AI Agents](#-for-ai-agents--llms-setup--skills) |
+
+---
+
 ## What is AutoRAG Agent?
 
 Search tools dump file paths and matching lines — forcing you to open files, read context, and synthesize answers yourself.
@@ -83,143 +218,6 @@ The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG libra
 Typing while a search runs works like steering one of Pi's own turns. **Enter** steers the running search: AutoRAG treats the text as a correction of a search that is going wrong, delivers it before the search's next model request (also between phases, where no turn is streaming), cuts in-flight retrieval short so the correction lands promptly, and always runs the verification phase so the answer reflects the correction. **Alt+Enter** queues a new question that runs after the current search answers. **Esc** stops the search instead of letting it continue into its next phase. Pi's registered `/` commands still run during a search; any other line starting with `/` (a path, for example) is a steer like any other text. A query typed after a search answers is a new search in the same session, as before.
 
 Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi update`" banner (Pi is a bundled host, not a separate install) and instead checks the published `@autorag/librarian` release, showing a one-line notice in the session when a newer version exists. Set `AUTORAG_NO_UPDATE_CHECK=1` to skip the lookup; `AUTORAG_UPDATE_CHECK_URL` overrides the registry endpoint.
-
-
----
-
-## 🤖 For AI Agents & LLMs: Setup & Skills
-
-If you are an AI coding agent or LLM (Claude Code, Cursor, Windsurf, Codex, Senpi, Pi, etc.) tasked with installing, configuring, or querying AutoRAG Agent, use our built-in skills located in the [`skills/`](skills/) directory:
-
-| Skill | Directory | When to Use |
-|---|---|---|
-| **`autorag`** | [`skills/autorag/`](skills/autorag/SKILL.md) | Model-backed querying, searching, comparing, and summarizing with an already configured AutoRAG librarian. |
-| **`autorag-setup`** | [`skills/autorag-setup/`](skills/autorag-setup/SKILL.md) | Installing AutoRAG, configuring the model-backed librarian, adding roots/datasources, running health checks, and registering Lite MCP when needed. |
-| **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Installing/registering `autorag-mcp`, initializing model-free config, maintaining indexes, and verifying MCP search. |
-
-### Install the skills into your coding agent
-
-Skills are not auto-discovered — copy only the setup skill when an agent needs
-to bootstrap AutoRAG. **Routine AutoRAG Lite retrieval is provided by MCP
-tools, not by a `autorag-lite-search` skill or shell command.**
-
-```bash
-# From a clone of this repository
-mkdir -p .claude/skills
-cp -R skills/autorag-lite-setup .claude/skills/
-```
-
-```bash
-# From a global install — the npm package ships the same skills/ folder
-AUTORAG_SKILLS="$(npm root -g)/@autorag/librarian/skills"
-# Bun global installs live at ~/.bun/install/global/node_modules/@autorag/librarian/skills
-mkdir -p .claude/skills
-cp -R "$AUTORAG_SKILLS/autorag-lite-setup" .claude/skills/
-```
-
-Run the setup skill once to register the stdio server with the host. Reload the
-agent, then discover the actual tool names and schemas with MCP `tools/list`.
-The normal Lite path is `autorag.status` → `autorag.refresh` when needed →
-`autorag.search`; use `autorag.report` and `autorag.evidence` for the optional
-curation lifecycle. Copy `skills/autorag`
-and `skills/autorag-setup` only when the agent should also drive the
-model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
-agents read their own skill directories; copy the same setup folder there and
-reload the agent session so it picks up the MCP registration instructions.
-Do not copy or retain the removed `autorag-lite-search` skill.
-
-### Quick Agent Workflow
-
-1. **Install CLI:**
-   ```bash
-   command -v autorag >/dev/null || bun install -g @autorag/librarian
-   ```
-2. **Inspect & Preflight:**
-   ```bash
-   autorag status --json        # check corpus freshness and index readiness
-   autorag duplicates --json    # scan for exact or near-duplicate document families
-   ```
-3. **Perform Curated Search:**
-   ```bash
-   autorag search "your question" --json
-   ```
-4. **Safety Guidelines for Agents:**
-   - **Never delete, move, or modify original user documents.**
-   - AutoRAG writes index artifacts strictly into `<workspace>/.autorag/` and `.jikji/` caches.
-   - Never print or leak API keys, tokens, or credential values into stdout or logs.
-
----
-
-## AutoRAG Lite MCP Server
-
-Register the package's stdio server with the host; the host owns the process
-lifecycle and sends MCP tool calls:
-
-```bash
-AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
-```
-
-For Claude Code and Codex registration commands, use
-[`skills/autorag-lite-setup/SKILL.md`](skills/autorag-lite-setup/SKILL.md).
-The MCP contract source of truth is [`src/mcp/server.ts`](src/mcp/server.ts)
-(tool registration, schemas, handlers) plus [`src/mcp/index.ts`](src/mcp/index.ts)
-(stdio entrypoint). Discover tools and schemas with MCP `tools/list`; do not
-hard-code a tool count.
-
-Core Lite tools include `autorag.status`, `autorag.search`,
-`autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
-`autorag.refresh`, `autorag.report`, and `autorag.evidence`. Configured
-integrated datasources expose additional scoped search tools. Read-only MCP
-mode omits mutating tools such as refresh and report.
-
-## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
-
-Need blazing fast local search without configuring an LLM or paying for API tokens? Use **AutoRAG Lite**.
-
-AutoRAG Lite provides the exact same high-performance indexing, BM25 ranking, and local MinSync vector/hybrid retrieval engine as the full librarian, but **runs 100% model-free**:
-
-- **Zero LLM Token Usage:** Run purely local BM25 and vector search offline.
-- **Agent Integration Ready:** Use the AutoRAG Lite MCP server to supply raw context chunks to an external model; the CLI remains a bootstrap and maintenance interface.
-- **Fast Local CLI:** The CLI remains available for terminal-only indexing and repair.
-
-```bash
-# Initialize a model-free workspace
-autorag lite init --search-paths ./documents
-
-# Index local files and datasources
-autorag lite refresh
-```
-
-Normal Lite retrieval runs through the MCP tools (`autorag.status`,
-`autorag.search`); the CLI remains the bootstrap and maintenance interface for
-indexing and repair.
-
----
-
-## 🔌 Supported Datasources
-
-AutoRAG Agent connects to external tools and communication platforms using dedicated datasource skills. Data remains in each tool's native store — AutoRAG does not copy or ingest foreign databases into a centralized store:
-
-| Datasource | Skill Alias | Backend / Driver | Storage & Privacy Model | Search Capabilities |
-|---|---|---|---|---|
-| **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | BM25, Semantic, Hybrid |
-| **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
-| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25, Semantic, Hybrid |
-| **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
-| **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
-| **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
-| **Notion** | `notion` | [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | Local page/database/block archive + FTS5 | Lexical FTS5 |
-| **Email Archives** | `mailcrawl` | [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | Local Gmail, IMAP, and Maildir storage | BM25, Semantic, Hybrid |
-| **Local Mail Export**| `mail-export` | Built-in `.mbox` / `.eml` parser | Local filesystem mailboxes | Lexical |
-| **Obsidian Vaults** | `obsidian` | [`qmd`](https://github.com/tobi/qmd) CLI | Direct markdown vault indexing | BM25, Semantic |
-| **GitHub** | `github` | GitHub REST API | In-memory fetched Issues and Pull Requests | Lexical, Scoped |
-| **GitHub Gists** | `github-gist` | GitHub REST API | Incremental local index of own-account public and permitted secret Gist content/metadata; token not stored | Lexical (BM25), Local Semantic, Scoped |
-| **Cloud Drives** | `cloud-drive` | [`rclone`](https://rclone.org) CLI | Google Drive (Tier-1), OneDrive, Dropbox, etc. | Incremental Mirror + BM25 |
-| **Photos & Shots** | `clawgallery` | `clawgallery` CLI | Local screenshot and photo store | Hybrid OCR/Visual Search |
-| **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
-| **macOS Spotlight** | `spotlight` | Native `mdfind` CLI | macOS system metadata and content index | System Native |
-
-For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md). Non-interactive `sync`/`index` steps get a 30-minute per-connector budget (`connector.indexTimeoutMs`) because first-run imports routinely take minutes; interactive search keeps its 60-second default.
 
 ---
 
@@ -379,7 +377,166 @@ await run;
 
 ---
 
-## Hosted AutoRAG Plan (Dazzi)
+## CLI Command Reference
+
+| Command | Description |
+|---|---|
+| `autorag init` | Initialize `~/.autorag/config.json` with search roots, document languages, and model settings |
+| `autorag refresh` | Refresh parsed mirrors, MinSync CDC chunks, datasources, Jikji, and the platform file-name index (Everything on Windows, FSearch on macOS/Linux) |
+| `autorag search "<query>"` | Run the librarian agent to curate structured answers |
+| `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
+| `autorag health` | Check model provider authentication, token validity, and API reachability |
+| `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
+| `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
+| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
+| `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
+| `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
+| `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |
+| `autorag evidence <session>` | Inspect persisted evidence behind numbered results; MCP clients normally use `autorag.evidence`, and the CLI stays available for terminal maintenance |
+| `autorag serve` | Start the P2P query server over SimpleX (opt-in) |
+| `autorag p2p ...` | Manage peer trust, query approvals, and sharing policies |
+
+---
+
+## AutoRAG Lite MCP Server
+
+Register the package's stdio server with the host; the host owns the process
+lifecycle and sends MCP tool calls:
+
+```bash
+AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag-mcp
+```
+
+For Claude Code and Codex registration commands, use
+[`skills/autorag-lite-setup/SKILL.md`](skills/autorag-lite-setup/SKILL.md).
+The MCP contract source of truth is [`src/mcp/server.ts`](src/mcp/server.ts)
+(tool registration, schemas, handlers) plus [`src/mcp/index.ts`](src/mcp/index.ts)
+(stdio entrypoint). Discover tools and schemas with MCP `tools/list`; do not
+hard-code a tool count.
+
+Core Lite tools include `autorag.status`, `autorag.search`,
+`autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
+`autorag.refresh`, `autorag.report`, and `autorag.evidence`. Configured
+integrated datasources expose additional scoped search tools. Read-only MCP
+mode omits mutating tools such as refresh and report.
+
+---
+
+## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
+
+Need blazing fast local search without configuring an LLM or paying for API tokens? Use **AutoRAG Lite**.
+
+AutoRAG Lite provides the exact same high-performance indexing, BM25 ranking, and local MinSync vector/hybrid retrieval engine as the full librarian, but **runs 100% model-free**:
+
+- **Zero LLM Token Usage:** Run purely local BM25 and vector search offline.
+- **Agent Integration Ready:** Use the AutoRAG Lite MCP server to supply raw context chunks to an external model; the CLI remains a bootstrap and maintenance interface.
+- **Fast Local CLI:** The CLI remains available for terminal-only indexing and repair.
+
+```bash
+# Initialize a model-free workspace
+autorag lite init --search-paths ./documents
+
+# Index local files and datasources
+autorag lite refresh
+```
+
+Normal Lite retrieval runs through the MCP tools (`autorag.status`,
+`autorag.search`); the CLI remains the bootstrap and maintenance interface for
+indexing and repair.
+
+---
+
+## 🤖 For AI Agents & LLMs: Setup & Skills
+
+If you are an AI coding agent or LLM (Claude Code, Cursor, Windsurf, Codex, Senpi, Pi, etc.) tasked with installing, configuring, or querying AutoRAG Agent, use our built-in skills located in the [`skills/`](skills/) directory:
+
+| Skill | Directory | When to Use |
+|---|---|---|
+| **`autorag`** | [`skills/autorag/`](skills/autorag/SKILL.md) | Model-backed querying, searching, comparing, and summarizing with an already configured AutoRAG librarian. |
+| **`autorag-setup`** | [`skills/autorag-setup/`](skills/autorag-setup/SKILL.md) | Installing AutoRAG, configuring the model-backed librarian, adding roots/datasources, running health checks, and registering Lite MCP when needed. |
+| **`autorag-lite-setup`** | [`skills/autorag-lite-setup/`](skills/autorag-lite-setup/SKILL.md) | Installing/registering `autorag-mcp`, initializing model-free config, maintaining indexes, and verifying MCP search. |
+
+### Install the skills into your coding agent
+
+Skills are not auto-discovered — copy only the setup skill when an agent needs
+to bootstrap AutoRAG. **Routine AutoRAG Lite retrieval is provided by MCP
+tools, not by a `autorag-lite-search` skill or shell command.**
+
+```bash
+# From a clone of this repository
+mkdir -p .claude/skills
+cp -R skills/autorag-lite-setup .claude/skills/
+```
+
+```bash
+# From a global install — the npm package ships the same skills/ folder
+AUTORAG_SKILLS="$(npm root -g)/@autorag/librarian/skills"
+# Bun global installs live at ~/.bun/install/global/node_modules/@autorag/librarian/skills
+mkdir -p .claude/skills
+cp -R "$AUTORAG_SKILLS/autorag-lite-setup" .claude/skills/
+```
+
+Run the setup skill once to register the stdio server with the host. Reload the
+agent, then discover the actual tool names and schemas with MCP `tools/list`.
+The normal Lite path is `autorag.status` → `autorag.refresh` when needed →
+`autorag.search`; use `autorag.report` and `autorag.evidence` for the optional
+curation lifecycle. Copy `skills/autorag`
+and `skills/autorag-setup` only when the agent should also drive the
+model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
+agents read their own skill directories; copy the same setup folder there and
+reload the agent session so it picks up the MCP registration instructions.
+Do not copy or retain the removed `autorag-lite-search` skill.
+
+### Quick Agent Workflow
+
+1. **Install CLI:**
+   ```bash
+   command -v autorag >/dev/null || bun install -g @autorag/librarian
+   ```
+2. **Inspect & Preflight:**
+   ```bash
+   autorag status --json        # check corpus freshness and index readiness
+   autorag duplicates --json    # scan for exact or near-duplicate document families
+   ```
+3. **Perform Curated Search:**
+   ```bash
+   autorag search "your question" --json
+   ```
+4. **Safety Guidelines for Agents:**
+   - **Never delete, move, or modify original user documents.**
+   - AutoRAG writes index artifacts strictly into `<workspace>/.autorag/` and `.jikji/` caches.
+   - Never print or leak API keys, tokens, or credential values into stdout or logs.
+
+---
+
+## 🔌 Supported Datasources
+
+AutoRAG Agent connects to external tools and communication platforms using dedicated datasource skills. Data remains in each tool's native store — AutoRAG does not copy or ingest foreign databases into a centralized store:
+
+| Datasource | Skill Alias | Backend / Driver | Storage & Privacy Model | Search Capabilities |
+|---|---|---|---|---|
+| **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | BM25, Semantic, Hybrid |
+| **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
+| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25, Semantic, Hybrid |
+| **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Notion** | `notion` | [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | Local page/database/block archive + FTS5 | Lexical FTS5 |
+| **Email Archives** | `mailcrawl` | [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | Local Gmail, IMAP, and Maildir storage | BM25, Semantic, Hybrid |
+| **Local Mail Export**| `mail-export` | Built-in `.mbox` / `.eml` parser | Local filesystem mailboxes | Lexical |
+| **Obsidian Vaults** | `obsidian` | [`qmd`](https://github.com/tobi/qmd) CLI | Direct markdown vault indexing | BM25, Semantic |
+| **GitHub** | `github` | GitHub REST API | In-memory fetched Issues and Pull Requests | Lexical, Scoped |
+| **GitHub Gists** | `github-gist` | GitHub REST API | Incremental local index of own-account public and permitted secret Gist content/metadata; token not stored | Lexical (BM25), Local Semantic, Scoped |
+| **Cloud Drives** | `cloud-drive` | [`rclone`](https://rclone.org) CLI | Google Drive (Tier-1), OneDrive, Dropbox, etc. | Incremental Mirror + BM25 |
+| **Photos & Shots** | `clawgallery` | `clawgallery` CLI | Local screenshot and photo store | Hybrid OCR/Visual Search |
+| **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
+| **macOS Spotlight** | `spotlight` | Native `mdfind` CLI | macOS system metadata and content index | System Native |
+
+For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md). Non-interactive `sync`/`index` steps get a 30-minute per-connector budget (`connector.indexTimeoutMs`) because first-run imports routinely take minutes; interactive search keeps its 60-second default.
+
+---
+
+## Hosted AutoRAG Plan
 
 AutoRAG can run on the hosted **AutoRAG** plan as a first-class model provider named
 `autorag`. The provider speaks the server's OpenAI Responses API surface (`<root>/v1`),
@@ -449,34 +606,13 @@ account key from `AUTORAG_API_KEY`, and an explicit `rerank.baseUrl`,
 
 ---
 
-## CLI Command Reference
-
-| Command | Description |
-|---|---|
-| `autorag init` | Initialize `~/.autorag/config.json` with search roots, document languages, and model settings |
-| `autorag refresh` | Refresh parsed mirrors, MinSync CDC chunks, datasources, Jikji, and the platform file-name index (Everything on Windows, FSearch on macOS/Linux) |
-| `autorag search "<query>"` | Run the librarian agent to curate structured answers |
-| `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
-| `autorag health` | Check model provider authentication, token validity, and API reachability |
-| `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
-| `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
-| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
-| `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
-| `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
-| `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |
-| `autorag evidence <session>` | Inspect persisted evidence behind numbered results; MCP clients normally use `autorag.evidence`, and the CLI stays available for terminal maintenance |
-| `autorag serve` | Start the P2P query server over SimpleX (opt-in) |
-| `autorag p2p ...` | Manage peer trust, query approvals, and sharing policies |
-
----
-
 ## Documentation Links
 
 Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and local embedding verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model card: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md).
-- **[Hosted AutoRAG Provider](docs/cloud-provider.md):** The `autorag` (Dazzi) model provider — PKCE `/login`, `AUTORAG_API_KEY`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
+- **[Hosted AutoRAG Provider](docs/cloud-provider.md):** The hosted `autorag` model provider — PKCE `/login`, `AUTORAG_API_KEY`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via OpenRouter: it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
@@ -552,6 +688,8 @@ Common failures and their fix:
 | Every search does a full local search and verification, even for small talk | `query-route-fallback` | set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 
 Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, `qmd status`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
+
+---
 
 ## License
 
