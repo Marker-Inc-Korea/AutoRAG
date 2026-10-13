@@ -82,7 +82,9 @@ function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 	const hits: CrawlerHit[] = [];
 	for (const [index, row] of rows.entries()) {
 		if (!isRecord(row)) return undefined;
-		const id = stringValue(row, ["message_id", "event_id", "id"]);
+		// event_id first: it is the archive's unique message id and the sidecar keys on it, so a message found by
+		// both the CLI and the sidecar merges instead of appearing twice.
+		const id = stringValue(row, ["event_id", "message_id", "id"]);
 		if (id === undefined) return undefined;
 		// Media-only messages carry no text; there is nothing to match or cite.
 		const content = stringValue(row, ["snippet", "text", "content"]);

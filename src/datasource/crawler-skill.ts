@@ -8,8 +8,11 @@ import { connectorSyncTimeoutHint } from "./connector-timeouts.ts";
 import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
 import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
+import { CrawlerSidecar, type CrawlerSidecarOptions, type SidecarSyncResult } from "./sidecar/index.ts";
+import { SidecarRetrievalMethod } from "./sidecar/methods.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
+	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -47,6 +50,12 @@ export interface CrawlerDatasourceSkillOptions {
 	/** Omitted/empty means search every chat/channel. */
 	readonly channelIds?: readonly string[];
 	readonly channelNames?: readonly string[];
+	/**
+	 * Opt-in read-only sidecar over the crawler's own SQLite archive: adds BM25-ranked,
+	 * semantic and hybrid methods next to the CLI-backed FTS method. The crawler database
+	 * is never written; sidecar state lives in `sidecarDbPath`.
+	 */
+	readonly sidecar?: CrawlerSidecarOptions;
 }
 
 const DEFAULT_INSTANCE_ID = "default";
@@ -61,6 +70,7 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	private readonly tags: readonly string[];
 	private readonly channelIds: ReadonlySet<string>;
 	private readonly channelNames: ReadonlySet<string>;
+	private readonly sidecar: CrawlerSidecar | undefined;
 	private lastIndexedAt: number | undefined;
 
 	constructor(definition: CrawlerDatasourceDefinition, options: CrawlerDatasourceSkillOptions) {
@@ -81,6 +91,14 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.channelIds = new Set(options.channelIds ?? []);
 		this.channelNames = new Set(options.channelNames ?? []);
+		this.sidecar =
+			options.sidecar === undefined
+				? undefined
+				: new CrawlerSidecar({
+						...options.sidecar,
+						channelIds: options.channelIds ?? [],
+						channelNames: options.channelNames ?? [],
+					});
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -118,26 +136,97 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				skill: this.definition.datasourceId,
 				chunkCount: result.count,
 				indexedAt: this.lastIndexedAt,
-				diagnostics: [],
+				diagnostics: await this.syncSidecar(),
 			};
 		} catch {
 			return this.fail("datasource-unavailable", "spawn-error");
 		}
 	}
 
+	/**
+	 * Embed new crawler messages into the sidecar. Never fails the index (the CLI sync already succeeded and BM25
+	 * stays available): any sidecar problem, including a thrown database error, becomes a warning. A bounded sync
+	 * that left a backlog says so, so a partial semantic index is not mistaken for a complete one.
+	 */
+	private async syncSidecar(): Promise<DatasourceDiagnostic[]> {
+		if (this.sidecar === undefined || !this.sidecar.semanticEnabled) return [];
+		const base = { instanceId: this.instanceId, source: this.definition.datasourceId } as const;
+		let result: SidecarSyncResult;
+		try {
+			result = await this.sidecar.sync();
+		} catch (error) {
+			result = { ok: false, message: error instanceof Error ? error.message : String(error) };
+		}
+		if (!result.ok) {
+			return [
+				{
+					code: "datasource-index-failed",
+					severity: "warning",
+					message: `semantic-unavailable: ${result.message}`.slice(0, 300),
+					...base,
+				},
+			];
+		}
+		const diagnostics: DatasourceDiagnostic[] = [];
+		if (result.skipped > 0) {
+			diagnostics.push({
+				code: "datasource-index-partial",
+				severity: "warning",
+				message: `semantic index skipped ${result.skipped} message(s) the embedder rejected; they stay searchable by BM25 and are retried when edited`,
+				...base,
+			});
+		}
+		if (result.remaining > 0) {
+			diagnostics.push({
+				code: "datasource-index-partial",
+				severity: "info",
+				message: `semantic index catching up: ${result.embedded} embedded this refresh, ${result.remaining} remaining; hybrid search uses BM25 for the rest until a later refresh`,
+				...base,
+			});
+		}
+		return diagnostics;
+	}
+
+	/** Release the sidecar's database handles. Safe to call repeatedly; later use reopens them. */
+	close(): void {
+		this.sidecar?.close();
+	}
+
 	retrievalMethods(): readonly RetrievalMethod[] {
+		const cli = this.cliMethod();
+		const { sidecar } = this;
+		if (sidecar === undefined) return [cli];
+		const shared = {
+			sidecar,
+			descriptor: sidecar.descriptor,
+			datasourceId: this.definition.datasourceId,
+			skillType: this.definition.skillType,
+			instanceId: this.instanceId,
+			tags: this.tags,
+		};
+		const bm25 = new SidecarRetrievalMethod({ ...shared, mode: "bm25" });
+		// Without an embedder, semantic is always empty and hybrid equals BM25; registering them would only
+		// add a duplicate-method corroboration bonus to the same hits.
+		if (!sidecar.semanticEnabled) return [cli, bm25];
 		return [
-			new CrawlerLexicalMethod({
-				client: this.client,
-				datasourceId: this.definition.datasourceId,
-				skillType: this.definition.skillType,
-				instanceId: this.instanceId,
-				tags: this.tags,
-				backendName: this.definition.backendName,
-				channelIds: this.channelIds,
-				channelNames: this.channelNames,
-			}),
+			cli,
+			bm25,
+			new SidecarRetrievalMethod({ ...shared, mode: "semantic" }),
+			new SidecarRetrievalMethod({ ...shared, mode: "hybrid" }),
 		];
+	}
+
+	private cliMethod(): RetrievalMethod {
+		return new CrawlerLexicalMethod({
+			client: this.client,
+			datasourceId: this.definition.datasourceId,
+			skillType: this.definition.skillType,
+			instanceId: this.instanceId,
+			tags: this.tags,
+			backendName: this.definition.backendName,
+			channelIds: this.channelIds,
+			channelNames: this.channelNames,
+		});
 	}
 
 	describeSources(): readonly SourceDescription[] {
