@@ -13,7 +13,7 @@ Do not chase a 10/10. File follow-up issues only for failing checks the project 
 
 | Baseline-shaped control | Where it lives | Status |
 |---|---|---|
-| Public license | `LICENSE` (MIT, AutoRAG 2.0) and `legacy/LICENSE` (Apache-2.0) | Present |
+| Public license | `LICENSE` (Apache-2.0, AutoRAG 2.0) and `legacy/LICENSE` (Apache-2.0) | Present |
 | Security policy and vuln inbox | `SECURITY.md` (private GitHub reporting + SLA) | Present |
 | Code of conduct | `CODE_OF_CONDUCT.md` | Present |
 | Contribution and DCO | `CONTRIBUTING.md`, `.github/workflows/dco.yml` | Present |
