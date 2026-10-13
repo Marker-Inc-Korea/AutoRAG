@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	cosine,
-	decodeVector,
-	encodeVector,
-	reciprocalRankFusion,
-	topKByCosine,
-} from "../../../src/datasource/sidecar/fusion.ts";
+import { cosine, decodeVector, encodeVector, topKByCosine } from "../../../src/datasource/sidecar/fusion.ts";
 
 describe("vector codec", () => {
 	it("round-trips float32 values and rejects a length that is not a whole number of floats", () => {
@@ -47,31 +41,5 @@ describe("topKByCosine", () => {
 
 	it("returns nothing for k <= 0", () => {
 		expect(topKByCosine([1, 0], rows, 0)).toEqual([]);
-	});
-});
-
-describe("reciprocalRankFusion", () => {
-	it("ranks an item found by both lists above items found by only one, even when it is never first", () => {
-		const fused = reciprocalRankFusion([
-			["a", "both", "c"],
-			["x", "both", "z"],
-		]);
-		expect(fused[0]?.key).toBe("both");
-		expect(fused.map((entry) => entry.key).sort()).toEqual(["a", "both", "c", "x", "z"]);
-	});
-
-	it("scores 1/(k+rank) per list with the standard k=60 and sums across lists", () => {
-		const [top] = reciprocalRankFusion([["a"], ["a"]]);
-		expect(top?.score).toBeCloseTo(2 / 61);
-	});
-
-	it("is stable for ties (earlier list wins) and tolerates empty lists", () => {
-		expect(reciprocalRankFusion([["a"], ["b"]]).map((entry) => entry.key)).toEqual(["a", "b"]);
-		expect(reciprocalRankFusion([[], []])).toEqual([]);
-	});
-
-	it("does not double count a key repeated inside one list", () => {
-		const [top] = reciprocalRankFusion([["a", "a"]]);
-		expect(top?.score).toBeCloseTo(1 / 61);
 	});
 });

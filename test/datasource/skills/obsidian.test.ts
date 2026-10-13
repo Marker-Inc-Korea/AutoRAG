@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AliasedDatasourceSkill } from "../../../src/datasource/aliased-skill.ts";
 import { QmdClient } from "../../../src/datasource/skills/obsidian/client.ts";
 import { ObsidianBm25Method, ObsidianSemanticMethod } from "../../../src/datasource/skills/obsidian/methods.ts";
 import { toQmdCollectionName } from "../../../src/datasource/skills/obsidian/paths.ts";
@@ -129,15 +130,40 @@ describe("ObsidianSkill", () => {
 			name: "obsidian",
 			datasourceId: "obsidian",
 			requiresExternalCli: true,
-			capabilities: expect.arrayContaining(["bm25", "semantic", "incremental", "external-cli"]),
+			capabilities: expect.arrayContaining(["bm25", "semantic", "hybrid", "incremental", "external-cli"]),
 		});
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 1 });
 		const methods = skill.retrievalMethods();
-		expect(methods.map((method) => method.describe().name)).toEqual(["obsidian-bm25", "obsidian-semantic"]);
+		expect(methods.map((method) => method.describe().name)).toEqual([
+			"obsidian-bm25",
+			"obsidian-semantic",
+			"obsidian-hybrid",
+		]);
 		const hits = await methods[0]?.retrieve("ship beta June", { topK: 5 });
 		expect(hits?.[0]?.source).toBe("/obsidian/vault-1/chunks/abc123");
 		expect(hits?.[0]?.metadata?.path).toBe("projects/roadmap.md");
 		expect(skill.describeSources().map((source) => source.source)).toContain("/obsidian/vault-1");
+	});
+
+	it("fuses qmd search and vsearch while preserving aliased scope and passage metadata", async () => {
+		const client = new StubClient();
+		const search = vi.spyOn(client, "search");
+		const skill = new AliasedDatasourceSkill(new ObsidianSkill({ client, instanceId: "vault-1" }), {
+			alias: "work-notes",
+		});
+		const hybrid = skill.retrievalMethods().find((method) => method.describe().type === "hybrid");
+		expect(hybrid?.describe()).toMatchObject({ name: "work-notes-hybrid", datasourceId: "work-notes" });
+		const results = await hybrid!.retrieve("ship beta", { topK: 1, scope: "/work-notes/vault-1" });
+		for (const mode of ["search", "vsearch"]) {
+			expect(search).toHaveBeenCalledWith(mode, "ship beta", expect.objectContaining({ topK: 3 }));
+		}
+		expect(search).toHaveBeenCalledTimes(2);
+		expect(results).toHaveLength(1);
+		expect(results[0]).toMatchObject({
+			source: "/work-notes/vault-1/chunks/abc123",
+			metadata: { method: "work-notes-hybrid", datasourceId: "work-notes", path: "projects/roadmap.md" },
+		});
+		await expect(hybrid!.retrieve("ship beta", { topK: 1, scope: "/other-source" })).resolves.toEqual([]);
 	});
 
 	it("soft-fails embed while keeping a successful index", async () => {

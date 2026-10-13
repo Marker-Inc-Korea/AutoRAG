@@ -362,6 +362,35 @@ slacrawl search -workspace T0123456789 <term>   # must print rows before wiring 
 autorag refresh --method datasources
 ```
 
+## Hybrid fusion over existing methods
+
+KakaoTalk, Obsidian, and GitHub Gists expose an additional hybrid method over
+their existing lexical and semantic retrieval:
+
+| Datasource | Hybrid method | Inputs |
+|---|---|---|
+| KakaoTalk | `kakao-hybrid` | `kakao-bm25` + `kakao-semantic` (`lazykatok` keyword and semantic modes) |
+| Obsidian | `obsidian-hybrid` | `obsidian-bm25` + `obsidian-semantic` (`qmd search` and `qmd vsearch`) |
+| GitHub Gists | `github-gist-hybrid` | `github-gist-lexical` + `github-gist-semantic`, when semantic retrieval is enabled |
+
+Each hybrid call searches both inputs in parallel with `topK * 3` candidates
+per input, combines their ranks with reciprocal rank fusion (RRF, k=60), and
+returns at most `topK` results (default 20). A chunk found by both methods gets
+credit from both rankings. Evidence identity is the pair of `source` and `id`,
+so distinct chunks and sources stay distinct; native source paths and metadata
+are preserved.
+
+If one input fails or returns no matches, hybrid keeps the other input's
+ranking. If both fail, their original errors reach the retrieval pipeline's
+diagnostics. Cancellation is propagated rather than treated as a fallback.
+No new index or native hybrid CLI mode is required.
+
+The standalone methods remain registered. Single-datasource search and
+`search_all_documents` still run all registered methods and use the normal
+cross-method merger. The hybrid method makes its own two input requests, so
+KakaoTalk and Obsidian each make an additional lexical and semantic CLI call
+during that fan-out.
+
 ## Hybrid search for chat crawlers (sidecar)
 
 `slack`, `telegram`, and `whatsapp` get BM25-ranked, semantic, and hybrid retrieval **by default**, through a
@@ -570,6 +599,10 @@ searching.
 
 KakaoTalk support is implemented through the external [`lazykatok`](https://github.com/changeroa/lazykatok) CLI.
 
+`kakao-hybrid` combines the CLI's keyword and semantic results in AutoRAG with
+[RRF](#hybrid-fusion-over-existing-methods); it does not pass `--mode hybrid`
+to lazykatok.
+
 Rules:
 
 - AutoRAG never reads KakaoTalk databases directly.
@@ -654,7 +687,8 @@ deleted Gists are removed from the index.
 Set `GITHUB_TOKEN` (or the environment variable named by `connector.tokenEnv`);
 if it is unavailable, authentication falls back to the `gh` CLI login. The
 token is not stored in the index or configuration. Search supports lexical
-BM25 and semantic retrieval through the local loopback embedding gateway;
+BM25, semantic retrieval through the local loopback embedding gateway, and
+[hybrid RRF](#hybrid-fusion-over-existing-methods) over those two rankings;
 Gist content stays on the machine for embeddings. If embeddings are
 unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
 Result sources are `/github-gist/<instance>/chunks/<chunk-id>` (opaque

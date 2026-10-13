@@ -18,15 +18,9 @@ import { dirname } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import type { Embedder, EmbeddingIdentity } from "../../embedding-runtime/gateway-embedder.ts";
+import { reciprocalRankFusion, type ScoredKey } from "../../retrieval/fusion.ts";
 import type { CrawlerDescriptor } from "./descriptors.ts";
-import {
-	decodeVector,
-	encodeVector,
-	type KeyedVector,
-	reciprocalRankFusion,
-	type ScoredKey,
-	topKByCosine,
-} from "./fusion.ts";
+import { decodeVector, encodeVector, type KeyedVector, topKByCosine } from "./fusion.ts";
 
 export interface SidecarHit {
 	readonly key: string;
