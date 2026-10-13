@@ -74,6 +74,15 @@ The runtime asset is selected for the current supported platform and is fetched
 from the pinned release URL at release time; model weights remain in the user
 cache.
 
+A desktop distributor that has to re-sign the runtime (a notarized macOS app
+signs every Mach-O it ships with its own Developer ID) cannot ship the pinned
+archive, because re-signed binaries no longer hash to it. It ships the tree
+extracted instead, at `runtime/<archive filename>.extracted/`, with a
+`.autorag-archive-sha256` file holding the pinned archive's SHA-256. The cache
+accepts that tree in place of the archive, offline included, only when the
+marker names the selected platform's pinned archive and every expected archive
+member is present; otherwise it falls back to the archive and its hash check.
+
 ## Runtime and backend selection
 
 The gateway supervises one `llama-server` child and one selected model. The
