@@ -6,28 +6,28 @@ legacy/ package license: Apache-2.0
 
 Third-party production dependencies:
 
-@earendil-works/pi-agent-core@1.1.0
+@earendil-works/pi-agent-core@1.2.0
 License: MIT
 
-@earendil-works/pi-ai@1.1.0
+@earendil-works/pi-ai@1.2.0
 License: MIT
 
-@earendil-works/pi-coding-agent@1.1.0
+@earendil-works/pi-coding-agent@1.2.0
 License: MIT
 
-@earendil-works/pi-tui@1.1.0
+@earendil-works/pi-tui@1.2.0
 License: MIT
 
-@modelcontextprotocol/server@2.3.0
+@modelcontextprotocol/server@2.3.1
 License: Apache-2.0
 
-@openrouter/sdk@1.4.21
+@openrouter/sdk@1.4.25
 License: Apache-2.0
 
 chardet@2.2.0
 License: MIT
 
-fast-xml-parser@5.11.1
+fast-xml-parser@5.11.2
 License: MIT
 
 iconv-lite@0.7.3
@@ -36,34 +36,34 @@ License: MIT
 jev-use@0.8.0
 License: MIT
 
-jszip@3.10.1
+jszip@3.10.2
 License: (MIT OR GPL-3.0-or-later)
 
-kordoc@4.15.7
+kordoc@4.21.30
 License: MIT
 
-mailparser@3.9.20
+mailparser@3.9.38
 License: MIT
 
-pdfjs-dist@6.3.289
+pdfjs-dist@6.4.299
 License: Apache-2.0
 
-puppeteer-core@25.11.0
+puppeteer-core@25.13.0
 License: Apache-2.0
 
-slides-grab@1.5.1
+slides-grab@1.5.2
 License: MIT
 
-smol-toml@1.8.0
+smol-toml@1.9.1
 License: BSD-3-Clause
 
 tesseract.js@7.0.0
 License: Apache-2.0
 
-typebox@1.3.25
+typebox@1.3.37
 License: MIT
 
-yaml@2.9.0
+yaml@2.9.1
 License: ISC
 
 Embedding runtime and model notices:
