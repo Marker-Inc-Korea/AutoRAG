@@ -44,17 +44,45 @@ export async function verifyCacheEntry(path: string, expectedSha256: string): Pr
 	}
 }
 
+/**
+ * Marker a distributor writes inside `<archive>.extracted/` when it ships the
+ * runtime already extracted instead of as the pinned archive. Its content is the
+ * archive's SHA-256, so a tree provisioned for another runtime build is never
+ * taken for this one. A signed and notarized macOS app needs this: every Mach-O
+ * it carries must be re-signed with the app's Developer ID, so the binaries can
+ * no longer be packed back into an archive that matches the pinned digest.
+ */
+export const PROVISIONED_RUNTIME_MARKER = ".autorag-archive-sha256";
+
 export async function hasVerifiedAsset(asset: CacheAsset, cacheRoot?: string): Promise<boolean> {
 	const destination = join(assetDirectory(asset, cacheRoot), basename(asset.filename));
+	if (asset.kind === "runtime" && (await provisionedRuntimePath(destination, asset)) !== undefined) return true;
 	if (!(await verifyIfPresent(destination, asset.sha256))) return false;
 	if (asset.kind !== "runtime") return true;
 	return asset.archiveMembers ? membersPresent(`${destination}.extracted`, asset.archiveMembers) : false;
+}
+
+/** The provisioned runtime's server path, when `<archive>.extracted/` was shipped for exactly this archive. */
+async function provisionedRuntimePath(archivePath: string, asset: CacheAsset): Promise<string | undefined> {
+	if (!asset.archiveMembers?.length) return undefined;
+	const extracted = `${archivePath}.extracted`;
+	try {
+		const marker = (await readFile(join(extracted, PROVISIONED_RUNTIME_MARKER), "utf8")).trim();
+		if (marker !== asset.sha256 || !(await membersPresent(extracted, asset.archiveMembers))) return undefined;
+		return serverPath(extracted, asset.archiveMembers);
+	} catch {
+		return undefined;
+	}
 }
 
 export async function downloadAsset(asset: CacheAsset, options: CacheOptions = {}): Promise<string> {
 	validateHash(asset.sha256);
 	const directory = assetDirectory(asset, options.cacheRoot);
 	const destination = join(directory, basename(asset.filename));
+	if (asset.kind === "runtime") {
+		const provisioned = await provisionedRuntimePath(destination, asset);
+		if (provisioned !== undefined) return provisioned;
+	}
 	await mkdir(directory, { recursive: true });
 	try {
 		if (await verifyIfPresent(destination, asset.sha256)) return finalizeAsset(destination, asset);
