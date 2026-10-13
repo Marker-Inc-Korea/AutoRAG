@@ -8,8 +8,12 @@
  * and reported so setup surfaces actionable (but path-opaque) feedback.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
+import { resolveSidecarOptions } from "../sidecar/config.ts";
+import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
@@ -28,10 +32,10 @@ import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
-import { SlackSkill, type SlacrawlOptions } from "./slack/index.ts";
+import { SlackSkill } from "./slack/index.ts";
 import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
-import { type TelecrawlOptions, TelecrawlSkill } from "./telecrawl/index.ts";
-import { type WacrawlOptions, WacrawlSkill } from "./wacrawl/index.ts";
+import { TelecrawlSkill } from "./telecrawl/index.ts";
+import { WacrawlSkill } from "./wacrawl/index.ts";
 
 /** One configured datasource entry (the trusted `datasources.<name>` value). */
 export interface DatasourceSkillConfig {
@@ -68,46 +72,71 @@ type SkillBuilder = (
 	embeddingRuntime?: DiscrawlEmbeddingRuntime,
 ) => DatasourceSkill | undefined;
 
+/**
+ * Chat crawlers (telegram, whatsapp, slack) share one construction shape: the CLI
+ * client options, the channel allowlist, and the optional read-only sidecar.
+ */
+function chatCrawlerArgs(
+	descriptor: CrawlerDescriptor,
+	defaultCrawlerDb: string,
+	config: DatasourceSkillConfig,
+	workspaceRoot: string | undefined,
+	registrationName: string,
+) {
+	const sidecar = resolveSidecarOptions({
+		descriptor,
+		connector: config.connector,
+		workspaceRoot,
+		registrationName,
+		instanceId: config.instanceId ?? "default",
+		defaultCrawlerDb,
+	});
+	return {
+		datasourceId: registrationName,
+		...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+		...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
+		...(config.tags !== undefined ? { tags: config.tags } : {}),
+		channelIds: config.channels?.ids,
+		channelNames: config.channels?.names,
+		...(sidecar === undefined ? {} : { sidecar }),
+		connectorOptions: {
+			...config.connector,
+			...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
+		},
+	};
+}
+
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
-	telegram: (config, _workspaceRoot, registrationName) =>
-		new TelecrawlSkill({
-			datasourceId: registrationName,
-			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
-			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
-			...(config.tags !== undefined ? { tags: config.tags } : {}),
-			channelIds: config.channels?.ids,
-			channelNames: config.channels?.names,
-			connectorOptions: {
-				...(config.connector as TelecrawlOptions),
-				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
-			},
-		}),
-	whatsapp: (config, _workspaceRoot, registrationName) =>
-		new WacrawlSkill({
-			datasourceId: registrationName,
-			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
-			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
-			...(config.tags !== undefined ? { tags: config.tags } : {}),
-			channelIds: config.channels?.ids,
-			channelNames: config.channels?.names,
-			connectorOptions: {
-				...(config.connector as WacrawlOptions),
-				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
-			},
-		}),
-	slack: (config, _workspaceRoot, registrationName) =>
-		new SlackSkill({
-			datasourceId: registrationName,
-			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
-			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
-			...(config.tags !== undefined ? { tags: config.tags } : {}),
-			channelIds: config.channels?.ids,
-			channelNames: config.channels?.names,
-			connectorOptions: {
-				...(config.connector as SlacrawlOptions),
-				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
-			},
-		}),
+	telegram: (config, workspaceRoot, registrationName) =>
+		new TelecrawlSkill(
+			chatCrawlerArgs(
+				CRAWLER_DESCRIPTORS.telegram,
+				join(homedir(), ".telecrawl", "telecrawl.db"),
+				config,
+				workspaceRoot,
+				registrationName,
+			),
+		),
+	whatsapp: (config, workspaceRoot, registrationName) =>
+		new WacrawlSkill(
+			chatCrawlerArgs(
+				CRAWLER_DESCRIPTORS.whatsapp,
+				join(homedir(), ".wacrawl", "wacrawl.db"),
+				config,
+				workspaceRoot,
+				registrationName,
+			),
+		),
+	slack: (config, workspaceRoot, registrationName) =>
+		new SlackSkill(
+			chatCrawlerArgs(
+				CRAWLER_DESCRIPTORS.slack,
+				join(homedir(), ".slacrawl", "slacrawl.db"),
+				config,
+				workspaceRoot,
+				registrationName,
+			),
+		),
 	discord: (config, workspaceRoot, registrationName, embeddingRuntime) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
 		const clientOptions: DiscrawlOptions = {

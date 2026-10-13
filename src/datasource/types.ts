@@ -164,6 +164,8 @@ export type DatasourceDiagnosticCode =
 	| "datasource-auth-error"
 	| "datasource-embedding-egress-rejected"
 	| "datasource-index-failed"
+	/** Index succeeded but is incomplete (e.g. a semantic backlog still draining); not a failure. */
+	| "datasource-index-partial"
 	| "datasource-permission-denied"
 	| "datasource-remote-embedding-rejected";
 

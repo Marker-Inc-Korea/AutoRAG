@@ -43,6 +43,7 @@ function datasourceCodeToRetrieval(code: DatasourceDiagnosticCode): RetrievalDia
 		case "datasource-auth-error":
 		case "datasource-embedding-egress-rejected":
 		case "datasource-index-failed":
+		case "datasource-index-partial":
 		case "datasource-permission-denied":
 		case "datasource-remote-embedding-rejected":
 			return "retrieval-method-failed";
