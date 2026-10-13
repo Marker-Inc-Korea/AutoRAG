@@ -12,15 +12,15 @@ export function encodeVector(vector: readonly number[]): Uint8Array {
 }
 
 /** Inverse of {@link encodeVector}; undefined when the blob is not a whole number of float32s. */
-export function decodeVector(blob: Uint8Array): number[] | undefined {
+export function decodeVector(blob: Uint8Array): Float32Array | undefined {
 	if (blob.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0) return undefined;
-	// Copy: a SQLite-returned view may be unaligned for Float32Array.
-	const aligned = new Uint8Array(blob).buffer;
-	return Array.from(new Float32Array(aligned));
+	// Copy: a SQLite-returned view may be unaligned for Float32Array. No Array.from: this runs for every
+	// stored vector on every semantic query, and boxing into a number[] dominated the scan cost.
+	return new Float32Array(new Uint8Array(blob).buffer);
 }
 
 /** Cosine similarity; 0 (never NaN) for zero-length, zero-norm, or mismatched-dimension inputs. */
-export function cosine(a: readonly number[], b: readonly number[]): number {
+export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
 	if (a.length === 0 || a.length !== b.length) return 0;
 	let dot = 0;
 	let normA = 0;
@@ -38,7 +38,7 @@ export function cosine(a: readonly number[], b: readonly number[]): number {
 
 export interface KeyedVector {
 	readonly key: string;
-	readonly vector: readonly number[];
+	readonly vector: ArrayLike<number>;
 }
 
 export interface ScoredKey {
@@ -47,7 +47,7 @@ export interface ScoredKey {
 }
 
 /** Best `k` positive-similarity keys, descending; ties broken by key for determinism. */
-export function topKByCosine(query: readonly number[], rows: Iterable<KeyedVector>, k: number): ScoredKey[] {
+export function topKByCosine(query: ArrayLike<number>, rows: Iterable<KeyedVector>, k: number): ScoredKey[] {
 	if (k <= 0) return [];
 	const scored: ScoredKey[] = [];
 	for (const row of rows) {

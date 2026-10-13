@@ -1,7 +1,7 @@
 /**
  * RetrievalMethod adapters over a {@link CrawlerSidecar}. One class serves every
- * crawler and every mode; the only per-instance inputs are the datasource
- * identity and the channel allowlist.
+ * crawler and every mode; the only per-instance input is the datasource identity
+ * (the channel allowlist is applied by the sidecar's SQL).
  */
 
 import type {
@@ -24,8 +24,6 @@ export interface SidecarMethodOptions {
 	readonly skillType: string;
 	readonly instanceId: string;
 	readonly tags: readonly string[];
-	readonly channelIds: ReadonlySet<string>;
-	readonly channelNames: ReadonlySet<string>;
 }
 
 const DEFAULT_TOP_K = 20;
@@ -89,16 +87,10 @@ export class SidecarRetrievalMethod implements RetrievalMethod {
 	}
 
 	private toResult(hit: SidecarHit, options: RetrievalOptions): RetrievalResult | undefined {
-		const { descriptor, datasourceId, instanceId, mode, channelIds, channelNames } = this.options;
+		const { descriptor, datasourceId, instanceId, mode } = this.options;
 		const chunkId = descriptor.chunkId(hit.key, hit.metadata);
 		const source = datasourceSourcePath(datasourceId, instanceId, chunkId);
 		if (!matchesDatasourceScope(source, options.scope)) return undefined;
-		if (channelIds.size > 0 || channelNames.size > 0) {
-			const id = hit.metadata[descriptor.channelIdKey];
-			const name = hit.metadata[descriptor.channelNameKey];
-			const allowed = (id !== undefined && channelIds.has(id)) || (name !== undefined && channelNames.has(name));
-			if (!allowed) return undefined;
-		}
 		const method = sidecarMethodName(datasourceId, mode);
 		return {
 			id: `${datasourceId}:${instanceId}:${chunkId}`,

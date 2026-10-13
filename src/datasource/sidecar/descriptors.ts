@@ -45,9 +45,12 @@ export interface CrawlerDescriptor {
 	readonly fts: { readonly table: string; readonly joinOn: string };
 	/** Extra result columns mapped into hit metadata: a SQL expression and the metadata key it fills. */
 	readonly metadata: readonly { readonly sql: string; readonly key: string }[];
-	/** Metadata keys the channel allowlist (`channels.ids/names`) matches against. */
-	readonly channelIdKey: "channelId" | "chatId";
-	readonly channelNameKey: "channelName" | "chatName";
+	/**
+	 * SQL for the chat/channel id and name the allowlist (`channels.ids/names`) matches. Pushed into the
+	 * row predicate, so excluded chats are never searched, embedded, or kept in the sidecar.
+	 */
+	readonly channelIdExpression: string;
+	readonly channelNameExpression: string;
 	/** Path-opaque label for the hierarchy: ["workspaces", ws, "channels", name] etc. */
 	readonly hierarchy: (metadata: Readonly<Record<string, unknown>>) => readonly string[];
 }
@@ -77,8 +80,8 @@ const slack: CrawlerDescriptor = {
 		{ sql: "coalesce(nullif(u.real_name, ''), u.name)", key: "senderName" },
 		{ sql: "m.ts", key: "timestamp" },
 	],
-	channelIdKey: "channelId",
-	channelNameKey: "channelName",
+	channelIdExpression: "m.channel_id",
+	channelNameExpression: "c.name",
 	hierarchy: (metadata) => [
 		"workspaces",
 		str(metadata.workspaceId) ?? "unknown",
@@ -92,7 +95,7 @@ function chatCrawler(id: string): CrawlerDescriptor {
 	return {
 		id,
 		keyExpression: "m.event_id",
-		// telecrawl/wacrawl search rows carry event_id, which the CLI client uses verbatim.
+		// event_id is the archive's unique message id (msg_id is only unique per chat); the CLI clients use it too.
 		chunkId: (key) => key,
 		fromClause: "messages m",
 		liveWhere: "(m.deleted_at is null or m.deleted_at = 0)",
@@ -106,8 +109,8 @@ function chatCrawler(id: string): CrawlerDescriptor {
 			{ sql: "m.sender_name", key: "senderName" },
 			{ sql: "m.ts", key: "timestamp" },
 		],
-		channelIdKey: "chatId",
-		channelNameKey: "chatName",
+		channelIdExpression: "m.chat_jid",
+		channelNameExpression: "m.chat_name",
 		hierarchy: (metadata) => ["chats", str(metadata.chatName) ?? str(metadata.chatId) ?? "unknown"],
 	};
 }

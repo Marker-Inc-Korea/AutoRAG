@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -202,14 +202,56 @@ describe("crawler skills with a sidecar", () => {
 		expect(result.ok).toBe(true);
 		expect(result.diagnostics).toEqual([
 			expect.objectContaining({
-				code: "datasource-index-failed",
+				code: "datasource-index-partial",
 				severity: "info",
-				message: expect.stringContaining("semantic index catching up: 1 of 2 messages embedded, 1 remaining"),
+				message: expect.stringContaining("1 remaining"),
 			}),
 		]);
 		// The next refresh (same sidecar file) embeds the last message and reports nothing.
 		expect((await slackWithSidecar({ batchSize: 1, maxEmbedPerSync: 1 }).index()).diagnostics).toEqual([]);
 	});
+
+	it("with semantic search off, registers only BM25 and never warns about a missing embedder", async () => {
+		const skill = track(
+			new SlackSkill({
+				client: cliMustNotSearch,
+				datasourceId: "slack",
+				sidecar: {
+					descriptor: CRAWLER_DESCRIPTORS.slack,
+					crawlerDbPath: crawlerDb,
+					sidecarDbPath: join(root, "lexical.sqlite"),
+					workspaceId: "T1",
+				},
+			}),
+		);
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
+			"slack-fts",
+			"slack-sidecar-bm25",
+		]);
+		expect(await skill.index()).toMatchObject({ ok: true, diagnostics: [] });
+	});
+
+	it("keeps a successful CLI sync successful when the sidecar is locked by another process", async () => {
+		const skill = slackWithSidecar();
+		await skill.index();
+		const other = new DatabaseSync(join(root, "sidecar.sqlite"));
+		other.exec("pragma busy_timeout = 0; begin immediate");
+		const db = new DatabaseSync(crawlerDb);
+		db.exec(
+			"insert into messages (channel_id, ts, workspace_id, user_id, text, normalized_text) values ('C1', '30.000001', 'T1', 'U1', 'deploy now', 'deploy now'); insert into message_fts values ('C1|30.000001', 'deploy now')",
+		);
+		db.close();
+		try {
+			const result = await skill.index();
+			expect(result).toMatchObject({ ok: true, chunkCount: 7 });
+			expect(result.diagnostics).toEqual([
+				expect.objectContaining({ severity: "warning", message: expect.stringContaining("semantic-unavailable") }),
+			]);
+		} finally {
+			other.exec("rollback");
+			other.close();
+		}
+	}, 15_000);
 
 	it("does not touch the sidecar when the CLI sync itself failed", async () => {
 		const failing: CrawlerSkillClient = {
@@ -246,6 +288,7 @@ describe("crawler skills with a sidecar", () => {
 							descriptor: CRAWLER_DESCRIPTORS.telegram,
 							crawlerDbPath: crawlerDb,
 							sidecarDbPath: join(root, "t.sqlite"),
+							embedder,
 						},
 					}),
 				),
@@ -259,6 +302,7 @@ describe("crawler skills with a sidecar", () => {
 							descriptor: CRAWLER_DESCRIPTORS.whatsapp,
 							crawlerDbPath: crawlerDb,
 							sidecarDbPath: join(root, "w.sqlite"),
+							embedder,
 						},
 					}),
 				),
@@ -272,5 +316,109 @@ describe("crawler skills with a sidecar", () => {
 				`${id}-hybrid`,
 			]);
 		}
+	});
+});
+
+/** wacrawl/telecrawl archive shape, as the real CLIs write it (event_id unique; msg_id unique per chat only). */
+function seedChatArchive(path: string): void {
+	const db = new DatabaseSync(path);
+	db.exec(`
+		create table messages (
+			rowid integer primary key autoincrement, event_id text not null unique, chat_jid text not null,
+			chat_name text, msg_id text not null, sender_name text, ts integer not null, text text, deleted_at integer
+		);
+		create virtual table messages_fts using fts5(text, chat, sender, media);
+		insert into messages (event_id, chat_jid, chat_name, msg_id, sender_name, ts, text) values
+			('evt-1', 'family@s', 'Family', 'm1', 'Bo', 1700000000, 'dinner at seven'),
+			('evt-2', 'work@g', 'Work', 'm1', 'Al', 1700000100, 'dinner with the team');
+		insert into messages_fts (rowid, text, chat, sender, media) select rowid, text, chat_name, sender_name, '' from messages;
+	`);
+	db.close();
+}
+
+/** A fake crawler CLI that prints `output` for every call, so the real client and its `parseHits` run. */
+function fakeCrawlerCli(name: string, output: unknown): string {
+	const binary = join(root, `${name}-fake.mjs`);
+	writeFileSync(binary, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(output))});\n`);
+	chmodSync(binary, 0o755);
+	return binary;
+}
+
+describe("telegram/whatsapp: CLI and sidecar agree on message identity", () => {
+	for (const [id, Skill] of [
+		["whatsapp", WacrawlSkill],
+		["telegram", TelecrawlSkill],
+	] as const) {
+		it(`${id}: a message found by both the CLI and the sidecar has one id and one source`, async () => {
+			const archive = join(root, `${id}.db`);
+			seedChatArchive(archive);
+			// The real CLI JSON row carries both ids; message_id repeats across chats, event_id does not.
+			const binaryPath = fakeCrawlerCli(id, [
+				{ event_id: "evt-1", message_id: "m1", chat_jid: "family@s", chat_name: "Family", text: "dinner at seven" },
+			]);
+			const skill = track(
+				new Skill({
+					instanceId: "main",
+					connectorOptions: { binaryPath },
+					sidecar: {
+						descriptor: CRAWLER_DESCRIPTORS[id],
+						crawlerDbPath: archive,
+						sidecarDbPath: join(root, `${id}.sqlite`),
+					},
+				}),
+			);
+			const [cliMethod, bm25] = skill.retrievalMethods();
+			const fromCli = (await cliMethod?.retrieve("dinner seven", { topK: 3 }))?.[0];
+			const fromSidecar = (await bm25?.retrieve("dinner seven", { topK: 3 }))?.[0];
+			expect(fromCli).toBeDefined();
+			expect(fromSidecar?.id).toBe(fromCli?.id);
+			expect(fromSidecar?.source).toBe(fromCli?.source);
+		});
+	}
+
+	it("applies the channel allowlist in SQL: an allowlisted match is found behind many excluded ones, and excluded chats are never embedded", async () => {
+		const archive = join(root, "allow.db");
+		const db = new DatabaseSync(archive);
+		db.exec(`
+			create table messages (
+				rowid integer primary key autoincrement, event_id text not null unique, chat_jid text not null,
+				chat_name text, sender_name text, ts integer not null, text text, deleted_at integer
+			);
+			create virtual table messages_fts using fts5(text, chat, sender, media);
+		`);
+		const insert = db.prepare(
+			"insert into messages (event_id, chat_jid, chat_name, sender_name, ts, text) values (?, ?, ?, 'Bo', ?, ?)",
+		);
+		for (let i = 0; i < 30; i += 1)
+			insert.run(`busy-${i}`, "busy@g", "Busy", 1700000000 + i, "release release release");
+		insert.run("fam-1", "family@s", "Family", 1700000100, "release on sunday");
+		db.exec(
+			"insert into messages_fts (rowid, text, chat, sender, media) select rowid, text, chat_name, sender_name, '' from messages",
+		);
+		db.close();
+		const embedded: string[] = [];
+		const recording: Embedder = {
+			identity: embedder.identity,
+			embed: async (texts) => {
+				embedded.push(...texts);
+				return embedder.embed(texts);
+			},
+		};
+		const skill = track(
+			new WacrawlSkill({
+				client: cliMustNotSearch,
+				channelIds: ["family@s"],
+				sidecar: {
+					descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+					crawlerDbPath: archive,
+					sidecarDbPath: join(root, "allow.sqlite"),
+					embedder: recording,
+				},
+			}),
+		);
+		await skill.index();
+		expect(embedded).toEqual(["Family\nrelease on sunday"]);
+		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "whatsapp-sidecar-bm25");
+		expect((await bm25?.retrieve("release", { topK: 5 }))?.map((hit) => hit.content)).toEqual(["release on sunday"]);
 	});
 });

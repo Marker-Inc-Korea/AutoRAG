@@ -365,7 +365,7 @@ autorag refresh --method datasources
 ## Hybrid search for chat crawlers (sidecar)
 
 `slack`, `telegram`, and `whatsapp` get BM25-ranked, semantic, and hybrid retrieval **by default**, through a
-**read-only sidecar** next to the crawler's archive. Without it they only have the CLI's plain FTS5 query, and
+**read-only sidecar** kept under the AutoRAG workspace. Without it they only have the CLI's plain FTS5 query, and
 slacrawl returns the *newest* matches and ANDs every term, so a natural-language question often matches nothing.
 
 No configuration is needed:
@@ -380,7 +380,7 @@ Tune or opt out per datasource with `connector.sidecar`:
 |---|---|
 | absent / `true` / `{}` | BM25 + semantic + hybrid (default) |
 | `false` or `{ "enabled": false }` | CLI-backed FTS only, as before |
-| `semantic: false` | BM25 only; no embedding calls |
+| `semantic: false` | BM25 only; no embedding calls, and no `<name>-semantic` / `<name>-hybrid` methods |
 | `crawlerDbPath` | archive to read. Otherwise: `connector.databasePath`; for `slack`, the `db_path` in the slacrawl config that `connector.configPath` names (relative paths resolve against that file); otherwise the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
 | `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (2048) |
 
@@ -396,17 +396,27 @@ How it works and what it never does:
   keep it, so the datasource behaves as before.
 - Methods added next to the CLI-backed `<name>-fts`: `<name>-sidecar-bm25`, `<name>-semantic`, `<name>-hybrid`
   (reciprocal rank fusion, k=60). Natural-language queries are OR-ed term by term; FTS operators in user text are
-  quoted away. A message found by both the CLI and the sidecar carries the same id, so it is merged, not repeated.
+  quoted away. A message found by both the CLI and the sidecar carries the same id (`event_id` for telegram and
+  whatsapp), so it is merged, not repeated. The semantic and hybrid methods of one search share one query
+  embedding and one vector scan.
+- `channels.ids` / `channels.names` are applied in the sidecar's SQL: excluded chats are never searched,
+  embedded, or stored as vectors, and vectors of a chat removed from the allowlist are pruned on the next refresh.
 - `autorag refresh --method datasources` runs the CLI sync first, then embeds new or edited messages with the
   local embedding gateway (the same Qwen3 model as MinSync), prunes vectors of purged or deleted messages, and
   re-embeds everything if the embedding identity changes.
 - Embedding is **bounded per refresh** so the first sync of a large archive does not hold the whole refresh. While
-  a backlog remains the datasource reports an info diagnostic (`semantic index catching up: N of M messages
-  embedded`), and hybrid search uses BM25 for the messages not yet embedded. Measured on 16,591 WhatsApp
-  messages: about 224 messages/s, so roughly 3 refreshes to catch up.
+  a backlog remains the datasource reports an info diagnostic (`datasource-index-partial`: `semantic index
+  catching up`), and hybrid search uses BM25 for the messages not yet embedded. Measured on 16,591 WhatsApp
+  messages: about 224 messages/s, 2048 per refresh, so 9 refreshes to catch up.
+- Each message's embedding input is its first 8192 characters (BM25 still indexes all of it). A message the
+  embedder rejects on its own is skipped with a warning and retried only after it is edited, so it cannot stall
+  the backlog behind it.
 - An embedding failure (for example the model is not downloaded: run `autorag models prefetch`) is a
-  `semantic-unavailable` **warning**; BM25 stays available.
-- If the crawler has not created its archive yet, sidecar methods return nothing and attach on first use.
+  `semantic-unavailable` **warning**; BM25 stays available and the CLI sync result is never turned into a failure.
+  Two AutoRAG processes (for example `autorag refresh` and a running TUI) share the sidecar file; a writer waits up
+  to 5 s for the other's lock.
+- If the crawler has not created its archive yet, sidecar methods return nothing and attach on first use. If the
+  crawler replaces or deletes its archive, the next search or refresh re-attaches the new file (or detaches).
 - Semantic search is a linear scan over stored vectors (about 280 ms at 16.6k messages). Fine for personal
   archives; measure before pointing it at a multi-million-message archive.
 - Message text is sent only to the local loopback gateway. Vectors of private chats are derived data: treat the

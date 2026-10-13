@@ -8,7 +8,7 @@ import { connectorSyncTimeoutHint } from "./connector-timeouts.ts";
 import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
 import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
-import { CrawlerSidecar, type CrawlerSidecarOptions } from "./sidecar/index.ts";
+import { CrawlerSidecar, type CrawlerSidecarOptions, type SidecarSyncResult } from "./sidecar/index.ts";
 import { SidecarRetrievalMethod } from "./sidecar/methods.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
@@ -91,7 +91,14 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.channelIds = new Set(options.channelIds ?? []);
 		this.channelNames = new Set(options.channelNames ?? []);
-		this.sidecar = options.sidecar === undefined ? undefined : new CrawlerSidecar(options.sidecar);
+		this.sidecar =
+			options.sidecar === undefined
+				? undefined
+				: new CrawlerSidecar({
+						...options.sidecar,
+						channelIds: options.channelIds ?? [],
+						channelNames: options.channelNames ?? [],
+					});
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -137,13 +144,19 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	}
 
 	/**
-	 * Embed new crawler messages into the sidecar. Failure never fails the index: BM25 stays available.
-	 * A bounded sync that left a backlog says so, so a partial semantic index is not mistaken for a complete one.
+	 * Embed new crawler messages into the sidecar. Never fails the index (the CLI sync already succeeded and BM25
+	 * stays available): any sidecar problem, including a thrown database error, becomes a warning. A bounded sync
+	 * that left a backlog says so, so a partial semantic index is not mistaken for a complete one.
 	 */
 	private async syncSidecar(): Promise<DatasourceDiagnostic[]> {
-		if (this.sidecar === undefined) return [];
-		const result = await this.sidecar.sync();
+		if (this.sidecar === undefined || !this.sidecar.semanticEnabled) return [];
 		const base = { instanceId: this.instanceId, source: this.definition.datasourceId } as const;
+		let result: SidecarSyncResult;
+		try {
+			result = await this.sidecar.sync();
+		} catch (error) {
+			result = { ok: false, message: error instanceof Error ? error.message : String(error) };
+		}
 		if (!result.ok) {
 			return [
 				{
@@ -154,15 +167,24 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				},
 			];
 		}
-		if (result.remaining === 0) return [];
-		return [
-			{
-				code: "datasource-index-failed",
-				severity: "info",
-				message: `semantic index catching up: ${result.embedded} of ${result.embedded + result.remaining} messages embedded, ${result.remaining} remaining; hybrid search uses BM25 for the rest until the next refresh`,
+		const diagnostics: DatasourceDiagnostic[] = [];
+		if (result.skipped > 0) {
+			diagnostics.push({
+				code: "datasource-index-partial",
+				severity: "warning",
+				message: `semantic index skipped ${result.skipped} message(s) the embedder rejected; they stay searchable by BM25 and are retried when edited`,
 				...base,
-			},
-		];
+			});
+		}
+		if (result.remaining > 0) {
+			diagnostics.push({
+				code: "datasource-index-partial",
+				severity: "info",
+				message: `semantic index catching up: ${result.embedded} embedded this refresh, ${result.remaining} remaining; hybrid search uses BM25 for the rest until a later refresh`,
+				...base,
+			});
+		}
+		return diagnostics;
 	}
 
 	/** Release the sidecar's database handles. Safe to call repeatedly; later use reopens them. */
@@ -181,12 +203,14 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 			skillType: this.definition.skillType,
 			instanceId: this.instanceId,
 			tags: this.tags,
-			channelIds: this.channelIds,
-			channelNames: this.channelNames,
 		};
+		const bm25 = new SidecarRetrievalMethod({ ...shared, mode: "bm25" });
+		// Without an embedder, semantic is always empty and hybrid equals BM25; registering them would only
+		// add a duplicate-method corroboration bonus to the same hits.
+		if (!sidecar.semanticEnabled) return [cli, bm25];
 		return [
 			cli,
-			new SidecarRetrievalMethod({ ...shared, mode: "bm25" }),
+			bm25,
 			new SidecarRetrievalMethod({ ...shared, mode: "semantic" }),
 			new SidecarRetrievalMethod({ ...shared, mode: "hybrid" }),
 		];

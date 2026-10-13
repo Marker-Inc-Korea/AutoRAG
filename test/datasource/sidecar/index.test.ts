@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -441,6 +441,111 @@ describe("CrawlerSidecar over the telecrawl/wacrawl schema", () => {
 		db.close();
 		expect(await sidecar.sync()).toMatchObject({ ok: true, pruned: 1 });
 		expect((await sidecar.searchSemantic("release", 5)).map((hit) => hit.key)).toEqual(["e2"]);
+		sidecar.close();
+	});
+});
+
+describe("CrawlerSidecar robustness", () => {
+	it("skips a message the embedder keeps rejecting so the backlog behind it still drains", async () => {
+		seedChat(
+			Array.from({ length: 6 }, (_, i) => ({
+				event: `e${i}`,
+				chat: "family",
+				text: i === 1 ? "poison" : `release ${i}`,
+				ts: i,
+			})),
+		);
+		const base = vocabEmbedder(VOCAB);
+		const picky: Embedder = {
+			identity: base.identity,
+			embed: async (texts) => {
+				if (texts.some((text) => text.includes("poison")))
+					throw new Error("gateway /v1/embeddings returned HTTP 413");
+				return base.embed(texts);
+			},
+		};
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+			embedder: picky,
+			batchSize: 2,
+		});
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 5, skipped: 1, remaining: 0 });
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 0, skipped: 0, remaining: 0 });
+		expect((await sidecar.searchSemantic("release", 10)).map((hit) => hit.key).sort()).toEqual([
+			"e0",
+			"e2",
+			"e3",
+			"e4",
+			"e5",
+		]);
+		sidecar.close();
+	});
+
+	it("keeps everything pending when the embedder rejects every message (the gateway is down, not one message)", async () => {
+		seedChat([
+			{ event: "e1", chat: "family", text: "release", ts: 1 },
+			{ event: "e2", chat: "family", text: "ship", ts: 2 },
+		]);
+		const down: Embedder = {
+			identity: async () => ({ provider: "t", model: "m", dimension: VOCAB.length }),
+			embed: async () => {
+				throw new Error("gateway down");
+			},
+		};
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+			embedder: down,
+		});
+		expect(await sidecar.sync()).toEqual({ ok: false, message: "gateway down" });
+		sidecar.close();
+		const recovered = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+			embedder: vocabEmbedder(VOCAB),
+		});
+		expect(await recovered.sync()).toMatchObject({ ok: true, embedded: 2, skipped: 0 });
+		recovered.close();
+	});
+
+	it("follows the crawler when it replaces or deletes its archive file", () => {
+		seedChat([{ event: "old", chat: "family", text: "deploy old", ts: 1 }]);
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.whatsapp,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+		});
+		expect(sidecar.searchLexical("deploy", 5).map((hit) => hit.key)).toEqual(["old"]);
+		const live = crawlerDb;
+		crawlerDb = join(root, "rebuilt.db");
+		seedChat([{ event: "new", chat: "family", text: "deploy new", ts: 2 }]);
+		renameSync(crawlerDb, live);
+		crawlerDb = live;
+		expect(sidecar.searchLexical("deploy", 5).map((hit) => hit.key)).toEqual(["new"]);
+		rmSync(live);
+		expect(sidecar.searchLexical("deploy", 5)).toEqual([]);
+		sidecar.close();
+	});
+
+	it("embeds a search query once for the semantic and hybrid methods of the same search", async () => {
+		seedSlack([{ channel: "C1", ts: "1.000001", text: "release notes" }]);
+		const base = vocabEmbedder(VOCAB);
+		const queries: string[] = [];
+		const counting: Embedder = {
+			identity: base.identity,
+			embed: async (texts) => {
+				if (texts.length === 1 && texts[0] === "release") queries.push(texts[0]);
+				return base.embed(texts);
+			},
+		};
+		const sidecar = open(counting);
+		await sidecar.sync();
+		await Promise.all([sidecar.searchSemantic("release", 5), sidecar.searchHybrid("release", 5)]);
+		expect(queries).toEqual(["release"]);
 		sidecar.close();
 	});
 });

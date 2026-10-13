@@ -10,7 +10,7 @@ import {
 describe("vector codec", () => {
 	it("round-trips float32 values and rejects a length that is not a whole number of floats", () => {
 		const original = [0.25, -1.5, 3];
-		expect(decodeVector(encodeVector(original))).toEqual(original);
+		expect([...(decodeVector(encodeVector(original)) ?? [])]).toEqual(original);
 		expect(decodeVector(new Uint8Array(7))).toBeUndefined();
 	});
 });
