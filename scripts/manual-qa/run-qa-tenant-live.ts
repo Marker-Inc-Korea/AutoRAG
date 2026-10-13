@@ -60,7 +60,7 @@ const { skills } = buildDatasourceSkills(datasources, ws);
 const agent = new AutoRAGAgent({
 	searchPaths: [docs],
 	workspacePath: ws,
-	minSync: false,
+	minSync: { autoInstall: false },
 	datasourceSkills: skills,
 });
 

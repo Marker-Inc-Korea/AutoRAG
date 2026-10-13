@@ -50,7 +50,7 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 			model: registration.getModel(),
 			searchPaths: [root],
 			memoryPath: join(root, "memory.json"),
-			minSync: false,
+			minSync: { autoInstall: false },
 			dupey: false,
 			datasourceSkills: [skill],
 			searchTimeoutMs: 30_000,

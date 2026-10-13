@@ -84,7 +84,7 @@ try {
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
 		workspacePath: tmpRoot,
-		minSync: false,
+		minSync: { autoInstall: false },
 		datasourceSkills: skills,
 	});
 
