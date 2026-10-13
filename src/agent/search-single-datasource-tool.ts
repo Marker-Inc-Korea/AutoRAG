@@ -138,7 +138,7 @@ export function formatDatasourceResults(
 			: "";
 	if (results.length === 0) return `No datasource results.${diagnosticSummary}`;
 	const rows = results.map((result, index) => {
-		const line = result.content.replace(/\s+/gu, " ").slice(0, 500);
+		const line = result.content.replace(/\s+/gu, " ");
 		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
 	});
 	return `Datasource results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}${diagnosticSummary}`;
