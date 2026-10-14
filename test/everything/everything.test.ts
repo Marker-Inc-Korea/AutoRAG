@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import JSZip from "jszip";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	buildEverythingIni,
 	buildEverythingSearchArgs,
@@ -281,12 +281,16 @@ describe("parseEverythingJson", () => {
 });
 
 describe("EverythingClient", () => {
-	function fakeClient(responses: Array<{ code: number; stdout?: string; stderr?: string }>) {
+	function fakeClient(
+		responses: Array<{ code: number; stdout?: string; stderr?: string }>,
+		excludeFolders: readonly string[] = [],
+	) {
 		const calls: Array<{ command: string; args: readonly string[] }> = [];
 		const launched: Array<{ command: string; args: readonly string[] }> = [];
 		const client = new EverythingClient({
 			root,
 			folders: [join(root, "docs")],
+			excludeFolders,
 			platform: "win32",
 			resolveBinaries: async () => ({
 				ok: true,
@@ -343,6 +347,163 @@ describe("EverythingClient", () => {
 		expect(calls.at(-1)!.args).toEqual(expect.arrayContaining(["-instance", client.instanceName, "-json"]));
 		const searchArgs = calls.at(-1)!.args;
 		expect(searchArgs[searchArgs.indexOf("-timeout") + 1]).toBe("30000");
+	});
+
+	it("filters excluded files and subtrees using Windows paths while keeping sibling prefixes", async () => {
+		const paths = [
+			"C:\\DOCS\\PRIVATE\\",
+			"c:/docs/private/nested/hidden.txt",
+			"C:\\docs\\SECRET.TXT",
+			"C:\\docs\\private-copy\\kept.txt",
+			"C:\\docs\\secret.txt.bak",
+		];
+		const { client } = fakeClient(
+			[
+				{ code: 0, stdout: "1.4.1.1032" },
+				{ code: 0, stdout: JSON.stringify(paths.map((filename) => ({ filename }))) },
+			],
+			["c:/docs/private/", "c:\\DOCS\\secret.txt"],
+		);
+		const result = await client.search({ query: "*" });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual(paths.slice(3));
+	});
+
+	it("applies exclusions before offset and page size without sending a native offset", async () => {
+		const paths = [
+			"C:\\docs\\private\\hidden.txt",
+			"C:\\docs\\a.txt",
+			"C:\\docs\\secret.txt",
+			"C:\\docs\\b.txt",
+			"C:\\docs\\c.txt",
+			"C:\\docs\\d.txt",
+		];
+		const { client, calls } = fakeClient(
+			[
+				{ code: 0, stdout: "1.4.1.1032" },
+				{ code: 0, stdout: JSON.stringify(paths.map((filename) => ({ filename }))) },
+			],
+			["C:\\docs\\private", "C:\\docs\\secret.txt"],
+		);
+		const result = await client.search({ query: "*.txt", offset: 1, maxResults: 2, sort: "path-ascending" });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual([paths[3], paths[4]]);
+		const searchArgs = calls.at(-1)!.args;
+		expect(searchArgs).not.toContain("-offset");
+		expect(searchArgs[searchArgs.indexOf("-n") + 1]).toBe("1000");
+		expect(searchArgs[searchArgs.indexOf("-sort") + 1]).toBe("path-ascending");
+	});
+
+	it("keeps native pagination unchanged without exclusions", async () => {
+		const { client, calls } = fakeClient([
+			{ code: 0, stdout: "1.4.1.1032" },
+			{ code: 0, stdout: JSON.stringify([{ filename: "C:\\docs\\third.txt" }]) },
+		]);
+		const request = { query: "*.txt", offset: 2, maxResults: 1 };
+		const result = await client.search(request);
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual(["C:\\docs\\third.txt"]);
+		expect(calls.at(-1)!.args).toEqual(buildEverythingSearchArgs(client.instanceName, request, 30_000));
+	});
+
+	it("continues beyond a full excluded native page to find an allowed result", async () => {
+		const { client, calls } = fakeClient(
+			[
+				{ code: 0, stdout: "1.4.1.1032" },
+				{
+					code: 0,
+					stdout: JSON.stringify(
+						Array.from({ length: 1000 }, (_, index) => ({ filename: `C:\\docs\\private\\${index}.txt` })),
+					),
+				},
+				{ code: 0, stdout: JSON.stringify([{ filename: "C:\\docs\\kept.txt" }]) },
+			],
+			["C:\\docs\\private"],
+		);
+		const result = await client.search({ query: "*.txt", maxResults: 1 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual(["C:\\docs\\kept.txt"]);
+		expect(calls).toHaveLength(3);
+		const searchArgs = calls.at(-1)!.args;
+		expect(searchArgs[searchArgs.indexOf("-n") + 1]).toBe("1000");
+		expect(searchArgs[searchArgs.indexOf("-offset") + 1]).toBe("1000");
+	});
+
+	it("supports filtered page offsets beyond the first 1000 native results", async () => {
+		const { client, calls } = fakeClient(
+			[
+				{ code: 0, stdout: "1.4.1.1032" },
+				{
+					code: 0,
+					stdout: JSON.stringify(
+						Array.from({ length: 1000 }, (_, index) => ({ filename: `C:\\docs\\${index}.txt` })),
+					),
+				},
+				{ code: 0, stdout: JSON.stringify([{ filename: "C:\\docs\\1000.txt" }]) },
+			],
+			["C:\\unrelated"],
+		);
+		const result = await client.search({ query: "*.txt", offset: 1000, maxResults: 1 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual(["C:\\docs\\1000.txt"]);
+		expect(calls).toHaveLength(3);
+		expect(calls[1]!.args).not.toContain("-offset");
+		const searchArgs = calls[2]!.args;
+		expect(searchArgs[searchArgs.indexOf("-offset") + 1]).toBe("1000");
+	});
+
+	it("reports the total filtering deadline instead of returning a partial successful page", async () => {
+		const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+		try {
+			const client = new EverythingClient({
+				root,
+				folders: ["C:\\docs"],
+				excludeFolders: ["C:\\docs\\private"],
+				platform: "win32",
+				timeoutMs: 100,
+				resolveBinaries: async () => ({
+					ok: true,
+					everythingPath: "C:\\cache\\everything.exe",
+					esPath: "C:\\cache\\es.exe",
+					source: "cached",
+				}),
+				run: async (_command, args) => {
+					if (args.includes("-get-everything-version")) return { code: 0, stdout: "1.4.1.1032", stderr: "" };
+					now.mockReturnValue(1_101);
+					return { code: 0, stdout: JSON.stringify([{ filename: "C:\\docs\\kept.txt" }]), stderr: "" };
+				},
+			});
+			const result = await client.search({ query: "*.txt", maxResults: 10 });
+			expect(result).toMatchObject({ ok: false, reason: "search-failed" });
+			if (result.ok) throw new Error("expected deadline failure");
+			expect(result.message).toContain("exceeded 100ms");
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it("passes configured exclusions to the index without dropping state-directory exclusions", async () => {
+		const excluded = ["C:\\docs\\private", "C:\\docs\\secret.txt"];
+		const { client } = fakeClient(
+			[
+				{ code: 8, stderr: "Everything IPC not found" },
+				{ code: 0, stdout: "1.4.1.1032" },
+				{ code: 0 },
+				{ code: 0, stdout: "2" },
+			],
+			excluded,
+		);
+		expect(await client.index()).toMatchObject({ ok: true });
+		const ini = readFileSync(join(root, ".autorag", "everything", "Everything.ini"), "utf8");
+		const exclusionLine = ini.split("\r\n").find((line) => line.startsWith("exclude_folders="));
+		for (const path of [join(root, ".autorag"), join(root, "docs", ".autorag"), ...excluded]) {
+			expect(exclusionLine).toContain(`"${path.replace(/\\/g, "\\\\")}"`);
+		}
 	});
 
 	it("reports not-running instead of launching when no instance answers a search", async () => {

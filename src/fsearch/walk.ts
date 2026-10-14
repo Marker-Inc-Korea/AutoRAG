@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, join, sep } from "node:path";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import type { FSearchEntry, FSearchSearchRequest, FSearchSort } from "./client.ts";
 
 /**
@@ -52,14 +53,7 @@ export async function walkFileSearch(
 	request: FSearchSearchRequest,
 	options: FSearchWalkOptions = {},
 ): Promise<FSearchWalkResult> {
-	const excluded = (options.excludeFolders ?? []).map((path) => resolve(path));
-	const isExcluded = (path: string) => {
-		const absolute = resolve(path);
-		return excluded.some((entry) => {
-			const prefix = entry.endsWith(sep) ? entry : `${entry}${sep}`;
-			return absolute === entry || absolute.startsWith(prefix);
-		});
-	};
+	const isExcluded = createPathExclusionMatcher(options.excludeFolders ?? []);
 	const maxVisited = options.maxVisited ?? DEFAULT_MAX_VISITED;
 	const maxMatches = options.maxMatches ?? DEFAULT_MAX_MATCHES;
 	const deadline = Date.now() + (options.deadlineMs ?? DEFAULT_DEADLINE_MS);

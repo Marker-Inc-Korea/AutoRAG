@@ -117,6 +117,7 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			const legacy = JSON.parse(readFileSync(legacyPath, "utf8")) as Partial<CliConfig>;
 			const normalizedLegacy = normalizeLegacyConfigPaths(legacy, dirname(legacyPath));
 			partial.searchPaths ??= normalizedLegacy.searchPaths;
+			partial.excludePaths ??= normalizedLegacy.excludePaths;
 			partial.workspacePath ??= normalizedLegacy.workspacePath;
 			partial.memoryPath ??= normalizedLegacy.memoryPath;
 			partial.model ??= legacy.model;

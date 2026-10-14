@@ -90,6 +90,19 @@ describe("fsearch_search tool", () => {
 		expect(text).toContain("[1] file /docs/a.txt");
 	});
 
+	it("preserves native truncation notes when exclusions leave an empty page", async () => {
+		const note = "The native candidate limit was reached; results may be incomplete. Narrow the query.";
+		const tool = createFSearchSearchTool({
+			async searchFsearch() {
+				return { ok: true, backend: "fsearch-cli", total: 1001, truncated: true, note, results: [] };
+			},
+		});
+		const result = await tool.execute("call-truncated", { query: "report" });
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain(note);
+		expect(result.details).toMatchObject({ resultCount: 0, sources: [] });
+	});
+
 	it("rejects an empty query without calling fsearch", async () => {
 		let called = false;
 		const tool = createFSearchSearchTool({

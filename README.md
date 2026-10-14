@@ -278,8 +278,8 @@ including spaces and commas; relative paths resolve from the current directory.
 Excluding a folder also excludes its descendants. Paths are literal, not globs.
 
 For an existing configuration, edit its `excludePaths` array and run
-`autorag refresh` to update the indexes. File-name search also honors exclusions
-when it falls back to a filesystem walk. See the
+`autorag refresh` to update the indexes. File-name search applies exclusions to
+native fsearch and Everything results as well as the filesystem walk. See the
 [exclusion configuration examples](docs/minsync-setup.md#excluding-files-and-folders).
 
 ### Document languages and parsers

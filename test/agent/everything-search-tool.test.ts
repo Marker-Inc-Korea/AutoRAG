@@ -141,9 +141,10 @@ describe("AutoRAGAgent Everything wiring", () => {
 		return { code: 0, stdout: "", stderr: "" };
 	};
 
-	function windowsAgent() {
+	function windowsAgent(options: { readonly excludePaths?: readonly string[]; readonly run?: EverythingRunner } = {}) {
 		return new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
+			excludePaths: options.excludePaths,
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
 			minSync: { autoInstall: false },
@@ -157,7 +158,7 @@ describe("AutoRAGAgent Everything wiring", () => {
 					esPath: "C:\\c\\es.exe",
 					source: "cached",
 				}),
-				run: fakeRunner,
+				run: options.run ?? fakeRunner,
 				launch: () => {},
 			},
 		});
@@ -167,6 +168,24 @@ describe("AutoRAGAgent Everything wiring", () => {
 		const agent = windowsAgent();
 		expect(toolNames(agent)).toContain(EVERYTHING_SEARCH_TOOL_NAME);
 		expect(agent.getSystemPrompt()).toContain("## Windows Everything File-Name Search");
+	});
+
+	it("passes configured file and folder exclusions to Everything search", async () => {
+		const excludedFolder = join(tmpDir, "private");
+		const excludedFile = join(tmpDir, "secret.txt");
+		const keptFile = join(tmpDir, "private-copy", "kept.txt");
+		const paths = [join(excludedFolder, "hidden.txt"), excludedFile, keptFile];
+		const agent = windowsAgent({
+			excludePaths: [excludedFolder, excludedFile],
+			run: async (command, args, timeoutMs) =>
+				args.includes("-json")
+					? { code: 0, stdout: JSON.stringify(paths.map((filename) => ({ filename }))), stderr: "" }
+					: fakeRunner(command, args, timeoutMs),
+		});
+		const result = await agent.searchEverything({ query: "*.txt" });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual([keptFile]);
 	});
 
 	it("omits Everything on non-Windows hosts and when disabled", () => {

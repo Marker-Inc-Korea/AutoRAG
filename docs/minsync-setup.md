@@ -70,9 +70,12 @@ in JSON resolve against the configured `workspacePath`, or the config file's
 directory when `workspacePath` is absent.
 
 Run `autorag refresh` after editing the config to remove excluded documents from
-the parsed mirror and update the indexes. The fsearch filesystem fallback also
-applies exclusions before walking a subtree, so excluded contents do not consume
-its traversal budget or appear in file-name results.
+the parsed mirror and update the indexes. Native fsearch and Everything results
+are filtered before pagination, including exact file exclusions and stale index
+entries. Native filename indexes may retain metadata for individually excluded
+files; the result filter prevents those entries from appearing in searches.
+The fsearch filesystem fallback applies exclusions before walking a subtree, so
+excluded contents do not consume its traversal budget.
 
 ## Selecting a profile
 
