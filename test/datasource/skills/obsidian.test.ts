@@ -199,55 +199,57 @@ describe("Obsidian retrieval methods", () => {
 });
 
 describe("QmdClient", () => {
-	it("keeps multiple passages from one note distinct through retrieval and merging", async () => {
-		const binaryPath = join(root, "qmd-multiple-passages");
-		const hits: Array<Record<string, unknown>> = [1, 12, 24].map((line) => ({
-			docid: "#a13360",
-			file: "qmd://vault/long.md",
-			line,
-			score: 1,
-			title: `Chapter at line ${line}`,
-			snippet: `passage ${line}`,
-		}));
-		hits.push({
-			docid: "#a13360",
-			file: "qmd://vault/long.md",
-			score: 1,
-			title: "Passage without line metadata",
-			snippet: "passage without line metadata",
-		});
-		hits.push({
-			docid: "#a13360",
-			file: "qmd://vault/long.md",
-			score: 1,
-			title: "Another passage without line metadata",
-			snippet: "another passage without line metadata",
-		});
+	it("keeps same-note passages from separate qmd methods distinct through merging", async () => {
+		const binaryPath = join(root, "qmd-cross-method-passages");
+		const hitsByMode: Record<string, Record<string, unknown>> = {
+			search: {
+				docid: "#a13360",
+				file: "qmd://vault/long.md",
+				line: 1,
+				score: 1,
+				title: "BM25 passage",
+				snippet: "passage from lexical search",
+			},
+			vsearch: {
+				docid: "#a13360",
+				file: "qmd://vault/long.md",
+				line: 24,
+				score: 1,
+				title: "Vector passage",
+				snippet: "passage from semantic search",
+			},
+		};
 		writeFileSync(
 			binaryPath,
-			`#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(hits))});\n`,
+			`#!/usr/bin/env node\nconst mode = process.argv[2];\nprocess.stdout.write(JSON.stringify([${JSON.stringify(hitsByMode)}[mode]]));\n`,
 		);
 		chmodSync(binaryPath, 0o755);
 
 		const client = new QmdClient({ binaryPath, collectionName: "vault" });
-		const search = await client.search("search", "passage", { topK: 5 });
-		expect(search.ok).toBe(true);
-		if (!search.ok) return;
-		expect(search.hits.slice(0, 3).map((hit) => hit.chunkId)).toEqual(["a13360-L1", "a13360-L12", "a13360-L24"]);
-		expect(search.hits[3]?.chunkId).toMatch(/^a13360-S[a-f0-9]{16}$/);
-		expect(search.hits[4]?.chunkId).toMatch(/^a13360-S[a-f0-9]{16}$/);
-		expect(search.hits[3]?.chunkId).not.toBe(search.hits[4]?.chunkId);
+		const bm25 = await new ObsidianBm25Method({ client, instanceId: "vault" }).retrieve("passage", {
+			topK: 5,
+		});
+		const semantic = await new ObsidianSemanticMethod({ client, instanceId: "vault" }).retrieve("passage", {
+			topK: 5,
+		});
 
-		const method = new ObsidianBm25Method({ client, instanceId: "vault" });
-		const retrieved = await method.retrieve("passage", { topK: 5 });
-		expect(new Set(retrieved.map((hit) => hit.source)).size).toBe(5);
-		const merged = new ResultMerger().merge(new Map([["obsidian-bm25", retrieved]]), { topK: 5, dedup: true });
+		expect(bm25).toHaveLength(1);
+		expect(semantic).toHaveLength(1);
+		expect(bm25[0]?.source).toBe("/obsidian/vault/chunks/a13360-L1");
+		expect(semantic[0]?.source).toBe("/obsidian/vault/chunks/a13360-L24");
+		expect(bm25[0]?.metadata?.line).toBe(1);
+		expect(semantic[0]?.metadata?.line).toBe(24);
+
+		const merged = new ResultMerger().merge(
+			new Map([
+				["obsidian-bm25", bm25],
+				["obsidian-semantic", semantic],
+			]),
+			{ topK: 5, dedup: true },
+		);
 		expect(merged.map((hit) => hit.content)).toEqual([
-			"passage 1",
-			"passage 12",
-			"passage 24",
-			"passage without line metadata",
-			"another passage without line metadata",
+			"passage from lexical search",
+			"passage from semantic search",
 		]);
 	});
 
