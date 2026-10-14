@@ -460,11 +460,13 @@ semantic retrieval fails, healthy candidates can still answer; returned hit meta
 partial-failure reasons. If a backend fails and no candidates remain, retrieval surfaces the failure instead
 of reporting a successful empty search.
 
-BM25 currently reads only the base `message_fts` index. It does not apply discrawl's language-specific
-tokenization or BM25-rank `message_fts_ko`, `message_fts_zh`, or `message_fts_ja`. With native
-`search.lexical.languages` configured, native FTS can contribute language-index-only candidates, but these
-supplemental candidates retain native order and may be cut by the final result limit. Set `sidecar: false`
-to retain the native method set and its language-index fusion throughout.
+BM25 ranks the base `message_fts` index and, when discrawl's `search.lexical.languages` has built them, the
+tokenizer-specific `message_fts_ko`, `message_fts_ja`, `message_fts_zh`, and `message_fts_ar` indexes as well.
+The sidecar discovers those tables from the archive's `sqlite_master` and fuses each present table's BM25
+ranking with the base ranking using reciprocal rank fusion, so an inflected Korean, Japanese, Chinese, or
+Arabic message that the base tokenizer splits differently is still ranked lexically instead of only arriving as
+a supplemental native candidate. Tables that are not configured are ignored. Set `sidecar: false` to retain the
+native method set and its language-index fusion throughout.
 
 ## Cloud drives via rclone
 

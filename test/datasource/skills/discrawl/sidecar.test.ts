@@ -251,6 +251,52 @@ describe("Discord BM25 over the native archive", () => {
 		});
 		expect(ranked?.source).toBe(`/discord/work/chunks/${OLD_MESSAGE}`);
 	});
+
+	it("ranks a language-index-only message that the base tokenizer cannot match", () => {
+		seed([{ id: OLD_MESSAGE, content: "내일배포완료", normalized: "내일배포완료" }]);
+		const native = new DatabaseSync(crawlerDb);
+		native.exec(`
+			create virtual table message_fts_ko using fts5(
+				message_id unindexed, guild_id unindexed, channel_id unindexed, author_id unindexed,
+				author_name, channel_name, content, tokenize = 'unicode61 remove_diacritics 0'
+			);
+		`);
+		native
+			.prepare(
+				`insert into message_fts_ko
+				(rowid, message_id, guild_id, channel_id, author_id, author_name, channel_name, content)
+				values (1, ?, 'G1', 'C1', 'U1', 'Ada', 'releases', '내일 배포 완료')`,
+			)
+			.run(OLD_MESSAGE);
+		// unicode61 keeps the unspaced base text as one token, so the base index misses the Korean term.
+		expect(
+			native.prepare("select count(*) as count from message_fts where message_fts match '배포'").get()?.count,
+		).toBe(0);
+		native.close();
+
+		const hits = open().searchLexical("배포", 5);
+		expect(hits.map((hit) => hit.key)).toEqual([OLD_MESSAGE]);
+		expect(hits[0]?.metadata.channelName).toBe("releases");
+	});
+
+	it("fuses base and language rankings once when evidence appears in both", () => {
+		seed([
+			{ id: OLD_MESSAGE, content: "bug bug bug bug crash" },
+			{ id: "korean-only", content: "내일배포완료", normalized: "내일배포완료" },
+		]);
+		const native = new DatabaseSync(crawlerDb);
+		native.exec(
+			"create virtual table message_fts_ko using fts5(message_id unindexed, guild_id unindexed, channel_id unindexed, author_id unindexed, author_name, channel_name, content)",
+		);
+		const insert = native.prepare("insert into message_fts_ko values (?, 'G1', 'C1', 'U1', 'Ada', 'releases', ?)");
+		insert.run("korean-only", "내일 배포 완료");
+		// The old strong hit also appears in the language index; it must not gain a second vote.
+		insert.run(OLD_MESSAGE, "bug bug bug bug crash");
+		native.close();
+
+		const hits = open().searchLexical("bug 배포", 5);
+		expect(hits.map((hit) => hit.key)).toEqual([OLD_MESSAGE, "korean-only"]);
+	});
 });
 
 describe("Discord sidecar discovery", () => {
