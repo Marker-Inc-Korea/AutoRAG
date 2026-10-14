@@ -1764,11 +1764,19 @@ export class AutoRAGAgent {
 		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
 		this.activeRetrievalOptions = options;
 
+		// A later turn of an interactive conversation is a plain agent turn: the
+		// model searches by tool call when it needs to, and answers from evidence
+		// already in the transcript when it does not. Only the first turn runs the
+		// Jev gate and the baseline pipeline.
+		const conversational = this.isConversationTurn();
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
-		this.evidenceLedger.clear();
-		this.evidenceOrigins.clear();
+		// Evidence ids stay valid across a conversation: the transcript still holds the earlier [eN] citations.
+		if (!conversational) {
+			this.evidenceLedger.clear();
+			this.evidenceOrigins.clear();
+		}
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
@@ -1860,7 +1868,6 @@ export class AutoRAGAgent {
 						// citations against the evidence ledger.
 						// With Jev enabled, Jev first picks a direct answer (intrinsic knowledge)
 						// or local search, and whether the question needs decomposition.
-						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						const activeSession = session;
 						const sessionAgent = activeSession.piSession;
 						const transcript = (): readonly AgentMessage[] =>
@@ -1870,6 +1877,24 @@ export class AutoRAGAgent {
 							if (sessionAgent !== undefined) sessionAgent.setThinkingLevel(clamped);
 							else activeSession.agent.state.thinkingLevel = clamped;
 						};
+						if (conversational) {
+							setThinking(this.finalThinkingLevel);
+							await activeSession.prompt(this.buildConversationTurnPrompt(trimmedQuery, options));
+							// A steer typed after the turn's last model request is still owed an answer.
+							while (
+								!this.interactive.userAborted &&
+								!planAbort.signal.aborted &&
+								this.interactive.queuedSteers.length > 0
+							) {
+								await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+							}
+							steering.acceptingSteers = false;
+							if (this.interactive.userAborted) return;
+							const turnText = finalAnswerText(transcript());
+							if (turnText !== undefined) captured = this.deriveAnswer(turnText);
+							return;
+						}
+						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
 							// Self-configuration: no retrieval and no fast answer. The model
 							// gets the full setup skill and edits the config itself, then
@@ -2791,6 +2816,42 @@ export class AutoRAGAgent {
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
 			`Write the answer as your reply, then stop.`
+		);
+	}
+
+	/**
+	 * True when the bound interactive session already holds an assistant turn:
+	 * the query continues a conversation instead of opening one. Read from the
+	 * transcript, so a fresh session (`/new`) starts over with the full pipeline.
+	 */
+	private isConversationTurn(): boolean {
+		if (this.remoteSession || this.boundPiRuntime === undefined) return false;
+		return this.boundPiRuntime.session.messages.some((message) => message.role === "assistant");
+	}
+
+	/**
+	 * Prompt for a follow-up turn of a conversation. No baseline is injected and
+	 * no verification pass follows: the model decides, per question, between
+	 * answering from what the conversation already established and searching.
+	 */
+	buildConversationTurnPrompt(query: string, options: RetrievalOptions): string {
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Follow-up in this conversation: ${query}${limit}${scope}\n\n` +
+			`First decide whether the evidence and answers already in this conversation settle it. If they do, answer from them without searching; their [eN] ids are still valid to cite. ` +
+			`If they do not, or the question concerns something not yet looked up, search with the retrieval tools (rewrite the question into self-contained queries using the conversation context), then answer. ` +
+			`${this.discoveryHint((tools) => `When exploring local files and folders, use ${tools} rather than exploratory bash commands. `)}${this.webFallbackHint()}` +
+			`Never answer from memory about the user's own files, chats, records, or recent facts: search first.\n\n` +
+			`Formatting and content rules for the answer:\n` +
+			`- Answer the question directly and concisely; use bullet points only when they help. Do not include file paths, datasource descriptions, or retrieval mechanics.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
+			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n\n` +
+			`Do not use broad grep/find or recursive filesystem scans. Avoid repeating near-identical queries; once more searching stops surfacing new evidence, conclude from what you have. ` +
+			`If more search is needed, first write a brief 1\u20132 line progress update, then call retrieval tools. ` +
+			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);
 	}
 
