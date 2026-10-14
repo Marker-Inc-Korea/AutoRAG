@@ -316,9 +316,11 @@ Every instance maps to a slash-hierarchical datasource root like `/kakao/persona
 For Obsidian vaults indexed through qmd, chunk IDs use the qmd `docid` when
 available, or an ID derived from the file path or title when it is absent. A
 passage locator is appended to that note ID: `-L<line>` when qmd reports a line
-number, or `-S<16 hex characters>` from the snippet's SHA-256 when line metadata
-is missing. This keeps passages returned by different searches for one note as
-distinct source identities.
+number, or `-S<16 hex characters>` from the SHA-256 of normalized result content
+when line metadata is missing. That content prefers qmd's snippet, content,
+text, or body fields, then falls back to the title or file path. This keeps
+passages returned by separate searches for one note as distinct source
+identities; qmd 2.8.3 returns at most one row per note per search call.
 
 ## Slack via slacrawl
 
