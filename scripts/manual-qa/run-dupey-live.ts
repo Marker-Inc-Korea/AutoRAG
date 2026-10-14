@@ -39,7 +39,7 @@ try {
 		searchPaths: [docs],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		minSync: false,
+		minSync: { autoInstall: false },
 	});
 	const tool = createScanDuplicateDocumentsTool(agent);
 	const toolResult = await tool.execute("live-dupey", {});

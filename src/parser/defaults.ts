@@ -39,10 +39,12 @@ export function resolveParserOptions(
 
 /**
  * `ocr.enabled` is the single opt-in. Off: image files are not parsed and
- * scanned pages are left unrecognized. On: kordoc owns both, and the
- * configured languages pick the engine. kordoc's built-in PP-OCRv5 model is
- * used only when every language is one it reads reliably; otherwise Tesseract
- * is injected as kordoc's OCR provider. An explicit `kordoc.ocr` always wins.
+ * scanned pages are left unrecognized; kordoc gets an explicit `ocr: false`,
+ * because omitting it lets kordoc auto-OCR whenever its built-in model is
+ * already cached. On: kordoc owns both, and the configured languages pick the
+ * engine. kordoc's built-in PP-OCRv5 model is used only when every language is
+ * one it reads reliably; otherwise Tesseract is injected as kordoc's OCR
+ * provider. An explicit `kordoc.ocr` always wins.
  */
 export function createDefaultParserRegistry(options: DefaultParserRegistryOptions = {}): ParserRegistry {
 	const languages = options.languages ?? DEFAULT_LANGUAGES;
@@ -51,15 +53,17 @@ export function createDefaultParserRegistry(options: DefaultParserRegistryOption
 	const kordocOptions: KordocParserOptions = {
 		...options.kordoc,
 		images: ocrEnabled,
-		...(options.kordoc?.ocr === undefined && ocrEnabled
+		...(options.kordoc?.ocr === undefined
 			? {
-					ocr: builtinCovers
-						? true
-						: createTesseractOcrProvider({
-								languages,
-								timeoutMs: options.ocr?.timeoutMs,
-								cachePath: options.ocr?.cachePath,
-							}),
+					ocr: !ocrEnabled
+						? false
+						: builtinCovers
+							? true
+							: createTesseractOcrProvider({
+									languages,
+									timeoutMs: options.ocr?.timeoutMs,
+									cachePath: options.ocr?.cachePath,
+								}),
 				}
 			: {}),
 	};

@@ -79,7 +79,7 @@ const runs = runsFlag >= 0 ? Number(process.argv[runsFlag + 1] ?? "1") : 1;
 const printState = process.argv.includes("--state");
 
 const config = resolveConfigReadOnly({ flags: {} });
-const agent = new AutoRAGAgent({ ...buildAgentOptions(config), minSync: false, jikji: false });
+const agent = new AutoRAGAgent({ ...buildAgentOptions(config), minSync: { autoInstall: false }, jikji: false });
 // The judge is a private field; wrapping it records the exact state per call.
 const internals = agent as unknown as {
 	jevJudge: JevJudge | undefined;

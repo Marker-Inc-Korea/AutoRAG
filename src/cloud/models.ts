@@ -1,6 +1,6 @@
 import type { AnyModel, Credential, ModelCost, ModelsStoreEntry } from "@earendil-works/pi-ai";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { MODELS_PATH, normalizeBaseUrl } from "./config.ts";
+import { AUTORAG_INPUT_LIMITS, MODELS_PATH, normalizeBaseUrl } from "./config.ts";
 import { AutoragHttpError, AutoragOAuthError, extractErrorPayload } from "./errors.ts";
 
 /** Used when the server omits `context_window` / `max_output_tokens`. */
@@ -101,6 +101,7 @@ export function mapServerModel(entry: Record<string, unknown>): ProviderModelCon
 		reasoning: entry.reasoning === true,
 		contextWindow: readPositiveNumber(entry.context_window) ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: readPositiveNumber(entry.max_output_tokens) ?? DEFAULT_MAX_TOKENS,
+		inputLimits: AUTORAG_INPUT_LIMITS,
 	};
 }
 
@@ -145,6 +146,8 @@ export function modelsFromStore(stored: ModelsStoreEntry | undefined): ProviderM
 			reasoning: entry.reasoning,
 			contextWindow: entry.contextWindow,
 			maxTokens: entry.maxTokens,
+			// Limits belong to the server, not the snapshot: older snapshots lack them.
+			inputLimits: AUTORAG_INPUT_LIMITS,
 		});
 	}
 	return models;

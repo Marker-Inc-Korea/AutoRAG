@@ -22,6 +22,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { registerAutoRAGProvider } from "../cloud/provider.ts";
+import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
+import { fitRequestLimits } from "./request-limits.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
 /**
@@ -149,6 +151,7 @@ function modelConfig(model: Model<Api>, configuredApiKey?: string): Parameters<M
 				cost: model.cost,
 				contextWindow: model.contextWindow,
 				maxTokens: model.maxTokens,
+				...(model.inputLimits === undefined ? {} : { inputLimits: model.inputLimits }),
 				...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
 			},
 		],
@@ -173,15 +176,55 @@ async function configureModelRuntime(
 	for (const [provider, key] of keys) await modelRuntime.setRuntimeApiKey(provider, key);
 }
 
+/**
+ * Keeps every model request within the session model's declared input limits.
+ * Registered after AutoRAG's own context transform, so it sizes the final
+ * transcript the provider receives.
+ */
+function enforceRequestLimits(pi: ExtensionAPI): void {
+	pi.on("context", (event, ctx) => {
+		const messages = fitRequestLimits(event.messages, ctx.model?.inputLimits);
+		return messages === undefined ? undefined : { messages };
+	});
+}
+
+/**
+ * Runs AutoRAG's context transform, then keeps the aggregate retrieval payload
+ * within the active model's context window by dropping whole lower-ranked
+ * candidates. Registered before {@link enforceRequestLimits}.
+ */
+function guardContext(
+	pi: ExtensionAPI,
+	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
+): void {
+	pi.on("context", async (event, ctx) => {
+		// Not part of event.messages, yet sent with every request.
+		const activeTools = new Set(pi.getActiveTools());
+		const toolDeclarations = pi
+			.getAllTools()
+			.filter((tool) => activeTools.has(tool.name))
+			.map(({ name, description, parameters }) => ({ name, description, parameters }));
+		const fixedOverheadTokens = Math.ceil(
+			(ctx.getSystemPrompt().length + JSON.stringify(toolDeclarations).length) / 4,
+		);
+		return {
+			messages: await createContextTokenGuardedTransform(
+				ctx.model,
+				contextTransform,
+				() => fixedOverheadTokens,
+			)(event.messages),
+		};
+	});
+}
+
 function createAutoRAGExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		guardContext(pi, contextTransform);
+		enforceRequestLimits(pi);
 	};
 }
 /**
@@ -212,9 +255,8 @@ function createAutoRAGInteractiveExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
-		if (contextTransform !== undefined) {
-			pi.on("context", async (event) => ({ messages: await contextTransform(event.messages) }));
-		}
+		guardContext(pi, contextTransform);
+		enforceRequestLimits(pi);
 		if (updateNotice !== undefined) {
 			pi.on("session_start", () => {
 				void updateNotice()

@@ -178,6 +178,39 @@ process.exit(2);
 		});
 		expect(await client.search("query")).toMatchObject({ ok: true, hits: [] });
 	});
+
+	it("drops group events and media-only rows instead of failing the whole search", async () => {
+		// wacrawl 0.4 search returns group events (e.g. `group_event`, `type_59`) with no text.
+		writeFakeWacrawl();
+		const client = new WacrawlClient({
+			binaryPath,
+			env: {
+				WACRAWL_FAKE_OUTPUT: JSON.stringify([
+					{
+						event_id: "wa:16593",
+						message_id: "3A71",
+						chat_name: "Jangkrik Homestay",
+						message_type: "group_event",
+					},
+					{ message_id: "m-2", chat_name: "Jangkrik Homestay", text: "Check-in is at 2pm", message_type: "text" },
+				]),
+			},
+		});
+
+		const result = await client.search("homestay");
+
+		expect(result).toMatchObject({ ok: true, hits: [{ id: "m-2", content: "Check-in is at 2pm" }] });
+		expect(result.ok && result.hits).toHaveLength(1);
+	});
+
+	it("still rejects a row without an id", async () => {
+		writeFakeWacrawl();
+		const client = new WacrawlClient({
+			binaryPath,
+			env: { WACRAWL_FAKE_OUTPUT: JSON.stringify([{ chat_name: "Ops", text: "no identity" }]) },
+		});
+		expect(await client.search("query")).toMatchObject({ ok: false, reason: "invalid-output" });
+	});
 });
 
 describe("WacrawlSkill", () => {

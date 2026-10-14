@@ -13,6 +13,7 @@ import {
 } from "../agent/local-model.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
+import { AUTORAG_INPUT_LIMITS, PROVIDER_ID as AUTORAG_PROVIDER_ID } from "../cloud/config.ts";
 import { registerAutoRAGProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
@@ -1450,6 +1451,8 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: reference.contextWindow ?? 128_000,
 		maxTokens: reference.maxTokens ?? 16_384,
+		// The hosted plan's limits hold even before its catalog is loaded.
+		...(reference.provider === AUTORAG_PROVIDER_ID ? { inputLimits: AUTORAG_INPUT_LIMITS } : {}),
 	};
 }
 

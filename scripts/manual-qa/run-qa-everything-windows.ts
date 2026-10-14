@@ -43,7 +43,7 @@ const agent = new AutoRAGAgent({
 	searchPaths: [docs],
 	workspacePath: workspace,
 	memoryPath: join(workspace, "memory.json"),
-	minSync: false,
+	minSync: { autoInstall: false },
 	jikji: false,
 	webSearch: false,
 });

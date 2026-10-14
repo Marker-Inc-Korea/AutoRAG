@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { AUTORAG_INPUT_LIMITS } from "../../src/cloud/config.ts";
 import { AutoragHttpError } from "../../src/cloud/errors.ts";
 import {
 	buildStoreEntry,
@@ -45,6 +46,7 @@ describe("mapServerModel", () => {
 			reasoning: true,
 			contextWindow: 1_000_000,
 			maxTokens: 32_000,
+			inputLimits: AUTORAG_INPUT_LIMITS,
 		});
 	});
 
@@ -58,6 +60,7 @@ describe("mapServerModel", () => {
 			reasoning: false,
 			contextWindow: DEFAULT_CONTEXT_WINDOW,
 			maxTokens: DEFAULT_MAX_TOKENS,
+			inputLimits: AUTORAG_INPUT_LIMITS,
 		});
 	});
 
@@ -130,6 +133,28 @@ describe("catalog persistence round trip", () => {
 		});
 
 		expect(modelsFromStore(entry)).toEqual(models);
+	});
+
+	it("restores the hosted API's request limits from a snapshot saved without them", () => {
+		const [model] = modelsFromStore({
+			models: [
+				{
+					type: "chat",
+					id: "vendor/model-alpha",
+					name: "Model Alpha",
+					api: "openai-responses",
+					provider: "autorag",
+					baseUrl: "https://api.dazziapp.com/v1",
+					input: ["text", "image"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					reasoning: true,
+					contextWindow: 1_000_000,
+					maxTokens: 32_000,
+				},
+			],
+		});
+
+		expect(model?.inputLimits).toEqual(AUTORAG_INPUT_LIMITS);
 	});
 
 	it("returns nothing for a missing snapshot", () => {

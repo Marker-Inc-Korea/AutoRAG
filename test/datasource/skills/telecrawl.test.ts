@@ -136,6 +136,34 @@ describe("TelecrawlClient", () => {
 		});
 		expect(await client.search("query")).toMatchObject({ ok: true, hits: [] });
 	});
+
+	it("drops media-only messages instead of failing the whole search", async () => {
+		// telecrawl 0.5 returns photo/video messages with no text or snippet.
+		writeFakeTelecrawl();
+		const client = new TelecrawlClient({
+			binaryPath,
+			env: {
+				TELECRAWL_FAKE_OUTPUT: JSON.stringify([
+					{ message_id: "0:149", chat_name: "Gajae", message_type: "message", media_type: "photo_or_video" },
+					{ message_id: "0:4950", chat_name: "Gajae", text: "G004 end-to-end QA", snippet: "G004 end-to-end QA" },
+				]),
+			},
+		});
+
+		const result = await client.search("QA");
+
+		expect(result).toMatchObject({ ok: true, hits: [{ id: "0:4950", content: "G004 end-to-end QA" }] });
+		expect(result.ok && result.hits).toHaveLength(1);
+	});
+
+	it("still rejects a row without an id", async () => {
+		writeFakeTelecrawl();
+		const client = new TelecrawlClient({
+			binaryPath,
+			env: { TELECRAWL_FAKE_OUTPUT: JSON.stringify([{ chat_name: "Gajae", text: "no identity" }]) },
+		});
+		expect(await client.search("query")).toMatchObject({ ok: false, reason: "invalid-output" });
+	});
 });
 
 describe("TelecrawlSkill", () => {

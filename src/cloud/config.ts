@@ -1,5 +1,7 @@
 /** Provider identity and endpoint configuration for the hosted AutoRAG (Dazzi) plan. */
 
+import type { ModelInputLimits } from "@earendil-works/pi-ai";
+
 export const PROVIDER_ID = "autorag";
 export const PROVIDER_NAME = "AutoRAG";
 
@@ -14,6 +16,21 @@ export const API_PATH = "/v1";
 export const MODELS_PATH = "/v1/models";
 export const AUTHORIZE_PATH = "/desktop/authorize";
 export const TOKEN_PATH = "/api/desktop/token";
+
+/**
+ * Request limits of the hosted API, declared on every `autorag` model.
+ *
+ * The API is served from Vercel, which rejects a request body above about
+ * 4.49 MB with HTTP 413 before it reaches the model (measured against
+ * `POST /v1/responses`). pi resends every image a tool returned on each later
+ * turn, so a search that reads a few photos crosses that line. The transcript
+ * cap leaves headroom for the tool declarations and request framing the
+ * transcript size does not count; the resize cap keeps one image well below it.
+ */
+export const AUTORAG_INPUT_LIMITS = {
+	maxRequestBytes: 3_500_000,
+	images: { resize: { maxBytes: 1_000_000 } },
+} as const satisfies ModelInputLimits;
 
 /** OAuth client identifier for the AutoRAG agent (Pi-compatible hosts use `pi`). */
 export const OAUTH_CLIENT_ID = "agent";

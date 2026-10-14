@@ -1,10 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CacheError, downloadAsset, importAsset, verifyCacheEntry } from "../../src/embedding-runtime/cache.ts";
+import {
+	CacheError,
+	downloadAsset,
+	hasVerifiedAsset,
+	importAsset,
+	PROVISIONED_RUNTIME_MARKER,
+	verifyCacheEntry,
+} from "../../src/embedding-runtime/cache.ts";
 
 const bytes = Buffer.from("verified model bytes");
 const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -134,5 +141,53 @@ describe("embedding runtime cache", () => {
 			code: "missing-member",
 		});
 		await expect(stat(join(cacheRoot, "runtime", "bad-runtime.tar.gz.extracted.part-dir"))).rejects.toThrow();
+	});
+
+	describe("a runtime shipped already extracted (signed desktop builds)", () => {
+		const runtimeAsset = {
+			id: "runtime-fixture",
+			url: "https://fixture.invalid/runtime.tar.gz",
+			filename: "runtime.tar.gz",
+			sha256: "a".repeat(64),
+			kind: "runtime" as const,
+			archiveMembers: ["llama-b10951/llama-server"],
+		};
+
+		async function provision(cacheRoot: string, marker: string) {
+			const extracted = join(cacheRoot, "runtime", "runtime.tar.gz.extracted");
+			await mkdir(join(extracted, "llama-b10951"), { recursive: true });
+			await writeFile(join(extracted, "llama-b10951", "llama-server"), "#!/bin/sh\n");
+			await writeFile(join(extracted, PROVISIONED_RUNTIME_MARKER), `${marker}\n`);
+			return join(extracted, "llama-b10951", "llama-server");
+		}
+
+		it("is used offline without the archive when its marker names the pinned archive", async () => {
+			const cacheRoot = await root();
+			const server = await provision(cacheRoot, runtimeAsset.sha256);
+			let fetched = false;
+			const fetch: typeof globalThis.fetch = async () => {
+				fetched = true;
+				return new Response("unused");
+			};
+			expect(await hasVerifiedAsset(runtimeAsset, cacheRoot)).toBe(true);
+			expect(await downloadAsset(runtimeAsset, { cacheRoot, offline: true, fetch })).toBe(server);
+			expect(fetched).toBe(false);
+		});
+
+		it("is ignored when its marker names another archive, so the pinned one is still required", async () => {
+			const cacheRoot = await root();
+			await provision(cacheRoot, "b".repeat(64));
+			expect(await hasVerifiedAsset(runtimeAsset, cacheRoot)).toBe(false);
+			await expect(downloadAsset(runtimeAsset, { cacheRoot, offline: true })).rejects.toMatchObject({
+				code: "offline-missing",
+			});
+		});
+
+		it("is ignored when an expected member is missing", async () => {
+			const cacheRoot = await root();
+			const server = await provision(cacheRoot, runtimeAsset.sha256);
+			await rm(server);
+			expect(await hasVerifiedAsset(runtimeAsset, cacheRoot)).toBe(false);
+		});
 	});
 });
