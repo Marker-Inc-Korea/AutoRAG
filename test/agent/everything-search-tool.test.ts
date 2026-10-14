@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -171,9 +171,14 @@ describe("AutoRAGAgent Everything wiring", () => {
 	});
 
 	it("passes configured file and folder exclusions to Everything search", async () => {
-		const excludedFolder = join(tmpDir, "private");
-		const excludedFile = join(tmpDir, "secret.txt");
-		const keptFile = join(tmpDir, "private-copy", "kept.txt");
+		// The agent canonicalizes excludePaths with realpath before handing them
+		// to Everything, so the fake Everything entries must use the canonical
+		// root too. On macOS the tmpdir lives under the /var -> /private/var
+		// symlink, so raw join(tmpDir, ...) paths would never match.
+		const root = realpathSync(tmpDir);
+		const excludedFolder = join(root, "private");
+		const excludedFile = join(root, "secret.txt");
+		const keptFile = join(root, "private-copy", "kept.txt");
 		const paths = [join(excludedFolder, "hidden.txt"), excludedFile, keptFile];
 		const agent = windowsAgent({
 			excludePaths: [excludedFolder, excludedFile],
