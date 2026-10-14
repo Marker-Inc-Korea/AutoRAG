@@ -263,6 +263,25 @@ autorag refresh
 autorag status
 ```
 
+### Excluding files and folders
+
+Leave generated workspaces or archives out when initializing:
+
+```bash
+autorag init --search-paths "$HOME/Documents" \
+  --exclude "$HOME/Documents/Build output" \
+  --exclude "$HOME/Documents/Archive, old"
+```
+
+Repeat `--exclude` for each file or folder. Each argument is one complete path,
+including spaces and commas; relative paths resolve from the current directory.
+Excluding a folder also excludes its descendants. Paths are literal, not globs.
+
+For an existing configuration, edit its `excludePaths` array and run
+`autorag refresh` to update the indexes. File-name search also honors exclusions
+when it falls back to a filesystem walk. See the
+[exclusion configuration examples](docs/minsync-setup.md#excluding-files-and-folders).
+
 ### Document languages and parsers
 
 One global `languages` setting describes the corpus. It is resolved from

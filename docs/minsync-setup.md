@@ -39,6 +39,41 @@ autorag gateway stop
 when available, health, and sanitized failure details. `gateway stop` stops
 the owned child process and removes its pid/lock state.
 
+## Excluding files and folders
+
+Exclude generated workspaces, archives, or individual files before the first
+refresh by repeating `--exclude`:
+
+```bash
+autorag init --search-paths /path/to/docs \
+  --exclude "/path/to/docs/Build output" \
+  --exclude "/path/to/docs/Archive, old"
+autorag refresh
+```
+
+Each `--exclude` argument is one complete path; spaces and commas are preserved.
+Relative CLI paths resolve from the current directory, even when `--workspace`
+points elsewhere. The generated config stores absolute paths.
+
+For an existing config, add or edit `excludePaths`, preserving the other settings:
+
+```json
+{
+  "searchPaths": ["/path/to/docs"],
+  "excludePaths": ["/path/to/docs/Build output", "/path/to/docs/private-notes.txt"]
+}
+```
+
+Each entry excludes that exact file or directory and all descendants of an
+excluded directory. Entries are literal paths, not glob patterns. Relative paths
+in JSON resolve against the configured `workspacePath`, or the config file's
+directory when `workspacePath` is absent.
+
+Run `autorag refresh` after editing the config to remove excluded documents from
+the parsed mirror and update the indexes. The fsearch filesystem fallback also
+applies exclusions before walking a subtree, so excluded contents do not consume
+its traversal budget or appear in file-name results.
+
 ## Selecting a profile
 
 The default profile is Qwen3-Embedding-0.6B at 1024 dimensions; it is the only

@@ -311,6 +311,7 @@ export class FSearchClient {
 				// Issue #1763 graceful fallback: bounded slow walk.
 				try {
 					const walked = await walkFileSearch(this.options.folders, request, {
+						excludeFolders: this.options.excludeFolders,
 						maxVisited: this.options.walkMaxVisited,
 						deadlineMs: this.options.walkDeadlineMs,
 					});

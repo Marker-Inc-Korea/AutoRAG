@@ -8,16 +8,26 @@ import { buildAgentOptions, resolveConfig } from "../../src/cli/config.ts";
 
 let root: string;
 let previousHome: string | undefined;
+let previousAutoRagHome: string | undefined;
+let previousAutoRagConfig: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-init-"));
 	previousHome = process.env.HOME;
+	previousAutoRagHome = process.env.AUTORAG_HOME;
+	previousAutoRagConfig = process.env.AUTORAG_CONFIG;
 	process.env.HOME = join(root, "home");
+	process.env.AUTORAG_HOME = join(root, "home", ".autorag");
+	delete process.env.AUTORAG_CONFIG;
 });
 
 afterEach(() => {
 	if (previousHome === undefined) delete process.env.HOME;
 	else process.env.HOME = previousHome;
+	if (previousAutoRagHome === undefined) delete process.env.AUTORAG_HOME;
+	else process.env.AUTORAG_HOME = previousAutoRagHome;
+	if (previousAutoRagConfig === undefined) delete process.env.AUTORAG_CONFIG;
+	else process.env.AUTORAG_CONFIG = previousAutoRagConfig;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -61,6 +71,41 @@ describe("runInit", () => {
 		expect(config.model).toBeUndefined();
 		expect(config.jikji).toEqual({});
 		expect(config.excludeExactDuplicates).toBe(true);
+		expect(config.excludePaths).toBeUndefined();
+	});
+
+	it("resolves exclusions against the invocation cwd and keeps them stable across reloads", async () => {
+		const initCwd = join(root, "project");
+		const workspace = join(root, "workspace");
+		const expected = [join(initCwd, "docs", "private, notes"), join(root, "generated")];
+		const code = await runInit(
+			makeCtx({
+				cwd: initCwd,
+				flags: { workspace, exclude: expected[1] },
+				repeatedFlags: { exclude: [join("docs", "private, notes"), expected[1]] },
+			}),
+		);
+		expect(code).toBe(0);
+		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).excludePaths).toEqual(expected);
+		const resolved = resolveConfig({
+			flags: { config: homeConfigPath() },
+			env: { HOME: process.env.HOME },
+			cwd: join(root, "other"),
+		});
+		expect(resolved.excludePaths).toEqual(expected);
+		expect(buildAgentOptions(resolved).excludePaths).toEqual(expected);
+	});
+
+	it("accepts a single exclusion from a direct command context", async () => {
+		expect(await runInit(makeCtx({ flags: { exclude: "private notes" } }))).toBe(0);
+		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).excludePaths).toEqual([join(root, "private notes")]);
+	});
+
+	it.each(["", "   ", true])("rejects an empty exclusion without writing config: %j", async (exclude) => {
+		const stderr: string[] = [];
+		expect(await runInit(makeCtx({ flags: { exclude }, stderr: (line) => stderr.push(line) }))).toBe(2);
+		expect(stderr.join("\n")).toContain("--exclude");
+		expect(existsSync(homeConfigPath())).toBe(false);
 	});
 
 	it("preserves a migrated legacy model unless explicitly overridden", async () => {

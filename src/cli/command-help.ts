@@ -40,6 +40,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"",
 		"Flags:",
 		"  --search-paths <csv>          Folders to index/search",
+		"  --exclude <path>              Exclude a file or folder (repeatable; relative to the current directory)",
 		"  --languages <csv>             OCR/parser languages",
 		"  --workspace <dir>             Workspace that owns .autorag state",
 		"  --memory-path <file>          Retrieval memory file",
