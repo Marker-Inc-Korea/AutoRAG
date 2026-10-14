@@ -78,7 +78,7 @@ function agentOptions(model: ReturnType<typeof fauxModel>): AutoRAGAgentOptions 
 
 describe("answer image-embed exception (#1790)", () => {
 	it("states the image-embed exception in the system prompt while keeping the no-path rule", () => {
-		const prompt = buildSystemPrompt({ toolNames: [], manifests: [], modelId: "test-model" });
+		const prompt = buildSystemPrompt({ toolNames: [], modelId: "test-model" });
 		expectImageEmbedRule(prompt);
 		// The original ban must survive the exception.
 		expect(prompt).toContain("Never include specific file paths");
