@@ -1,7 +1,7 @@
 /**
  * Declarative description of a crawler's read-only SQLite schema. The sidecar
  * engine (index.ts) is crawler-agnostic: everything that differs between
- * slacrawl, telecrawl, wacrawl and notcrawl is expressed here as SQL fragments.
+ * slacrawl, telecrawl, wacrawl and discrawl is expressed here as SQL fragments.
  *
  * Every SQL fragment is a trusted constant authored in this file. User input
  * (the search query, workspace id) is only ever bound as a parameter.
@@ -90,6 +90,43 @@ const slack: CrawlerDescriptor = {
 	],
 };
 
+/** discrawl's FTS row refers to the stable Discord message id, independent of SQLite rowid. */
+export const discordDescriptor: CrawlerDescriptor = {
+	id: "discord",
+	keyExpression: "m.id",
+	chunkId: (key) => key,
+	fromClause: "messages m left join channels c on c.id = m.channel_id left join guilds g on g.id = m.guild_id",
+	liveWhere: "m.deleted_at is null and trim(coalesce(m.normalized_content, '')) <> ''",
+	scopeExpression: "m.guild_id",
+	textExpression: "case when trim(coalesce(m.content, '')) <> '' then m.content else m.normalized_content end",
+	titleExpression: "c.name",
+	epochSecondsExpression: "cast(strftime('%s', m.created_at) as real)",
+	fts: { table: "message_fts", joinOn: "message_fts.message_id = m.id" },
+	metadata: [
+		{ sql: "m.id", key: "messageId" },
+		{ sql: "m.channel_id", key: "channelId" },
+		{ sql: "c.name", key: "channelName" },
+		{ sql: "m.guild_id", key: "guildId" },
+		{ sql: "g.name", key: "guildName" },
+		{ sql: "m.author_id", key: "authorId" },
+		{
+			sql:
+				"coalesce(json_extract(m.raw_json, '$.member.nick'), " +
+				"json_extract(m.raw_json, '$.author.global_name'), json_extract(m.raw_json, '$.author.username'), '')",
+			key: "authorName",
+		},
+		{ sql: "m.created_at", key: "timestamp" },
+	],
+	channelIdExpression: "m.channel_id",
+	channelNameExpression: "c.name",
+	hierarchy: (metadata) => [
+		"guilds",
+		str(metadata.guildName) ?? str(metadata.guildId) ?? "unknown",
+		"channels",
+		str(metadata.channelName) ?? str(metadata.channelId) ?? "unknown",
+	],
+};
+
 /** telecrawl and wacrawl share one message schema (`messages` + external-content `messages_fts` keyed by rowid). */
 function chatCrawler(id: string): CrawlerDescriptor {
 	return {
@@ -119,6 +156,7 @@ export const CRAWLER_DESCRIPTORS = {
 	slack,
 	telegram: chatCrawler("telegram"),
 	whatsapp: chatCrawler("whatsapp"),
+	discord: discordDescriptor,
 } as const satisfies Readonly<Record<string, CrawlerDescriptor>>;
 
 export type SidecarCrawlerId = keyof typeof CRAWLER_DESCRIPTORS;

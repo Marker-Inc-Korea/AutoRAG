@@ -184,29 +184,27 @@ export class CrawlerSidecar {
 		try {
 			const { dev, ino } = statSync(this.options.crawlerDbPath);
 			file = { dev, ino };
-		} catch {
+		} catch (error) {
 			this.detachCrawler();
-			return false;
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+			throw error;
 		}
 		if (this.attached !== undefined) {
 			if (this.attached.dev === file.dev && this.attached.ino === file.ino) return true;
 			this.detachCrawler();
 		}
 		const crawlerUri = `${pathToFileURL(this.options.crawlerDbPath).href}?mode=ro`.replaceAll("'", "''");
-		try {
-			this.db.exec(`attach database '${crawlerUri}' as crawler`);
-		} catch {
-			return false;
-		}
+		// A present but unreadable archive is a retrieval failure, not an empty index.
+		this.db.exec(`attach database '${crawlerUri}' as crawler`);
 		const { descriptor } = this.options;
 		try {
 			this.db
 				.prepare(`select ${this.select} from ${descriptor.fromClause} where ${this.where} limit 0`)
 				.all(...this.whereParams());
 			this.db.prepare(`select 1 from ${descriptor.fts.table} limit 0`).all();
-		} catch {
+		} catch (error) {
 			this.db.exec("detach database crawler");
-			return false;
+			throw error;
 		}
 		this.attached = file;
 		this.lastSemantic = undefined;

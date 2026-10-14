@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -139,6 +139,29 @@ describe("CrawlerSidecar lexical search", () => {
 });
 
 describe("CrawlerSidecar is lazy", () => {
+	it("surfaces corrupt archives instead of treating them as not-yet-synced", async () => {
+		writeFileSync(crawlerDb, "not a SQLite archive");
+		const sidecar = open(vocabEmbedder(VOCAB));
+		try {
+			expect(() => sidecar.searchLexical("release", 5)).toThrow("file is not a database");
+			await expect(sidecar.sync()).rejects.toThrow("file is not a database");
+		} finally {
+			sidecar.close();
+		}
+	});
+
+	it("preserves schema errors and retries after the native schema is repaired", () => {
+		new DatabaseSync(crawlerDb).close();
+		const sidecar = open();
+		try {
+			expect(() => sidecar.searchLexical("release", 5)).toThrow("no such table: messages");
+			seedSlack([{ channel: "C1", ts: "1.000001", text: "release notes" }]);
+			expect(sidecar.searchLexical("release", 5).map((hit) => hit.key)).toEqual(["C1|1.000001"]);
+		} finally {
+			sidecar.close();
+		}
+	});
+
 	it("creates no file or directory until it is first used", () => {
 		const nested = join(root, "deep", "dir", "sidecar.sqlite");
 		const sidecar = new CrawlerSidecar({
@@ -189,14 +212,17 @@ describe("CrawlerSidecar before the crawler has an archive", () => {
 		sidecar.close();
 	});
 
-	it("reports a crawler database that exists but lacks the expected tables as unavailable, not as a crash", async () => {
+	it("reports the underlying schema error for a present but incompatible archive", async () => {
 		const db = new DatabaseSync(crawlerDb);
 		db.exec("create table unrelated (x)");
 		db.close();
 		const sidecar = open(vocabEmbedder(VOCAB));
-		expect(sidecar.searchLexical("release", 5)).toEqual([]);
-		expect(await sidecar.sync()).toMatchObject({ ok: false });
-		sidecar.close();
+		try {
+			expect(() => sidecar.searchLexical("release", 5)).toThrow("no such table: messages");
+			await expect(sidecar.sync()).rejects.toThrow("no such table: messages");
+		} finally {
+			sidecar.close();
+		}
 	});
 });
 

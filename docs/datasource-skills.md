@@ -374,7 +374,7 @@ No configuration is needed:
 { "datasources": { "slack-work": { "type": "slack", "connector": { "workspace": "T0123456789" } } } }
 ```
 
-Tune or opt out per datasource with `connector.sidecar`:
+For these three crawlers, tune or opt out per datasource with `connector.sidecar`:
 
 | `connector.sidecar` | Meaning |
 |---|---|
@@ -422,8 +422,34 @@ How it works and what it never does:
 - Message text is sent only to the local loopback gateway. Vectors of private chats are derived data: treat the
   sidecar file with the same care as the archive itself.
 
-Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` already has semantic and hybrid through
-discrawl.
+`notion` (notcrawl) keeps its page/comment FTS.
+
+### Discord BM25 ranking
+
+`discord` adds `discord-sidecar-bm25` by default when an AutoRAG workspace is available. It ranks matches in
+discrawl's existing FTS5 index by BM25 relevance, so an older, relevant message can outrank newer mentions.
+Queries use the same term-by-term OR matching as the other sidecars. The existing `discord-fts`,
+`discord-semantic`, and `discord-hybrid` methods still use the native CLI; `discord-hybrid` continues to combine
+native FTS5 and semantic results and does not incorporate the new BM25 method.
+
+To keep only the native methods, set `connector.sidecar` to `false` (or `{ "enabled": false }`):
+
+```json
+{ "datasources": { "discord-local": { "type": "discord", "connector": { "sidecar": false } } } }
+```
+
+The archive path comes from the read-only `discrawl --json status` command, using the connector's config and
+the crawler's platform-specific defaults. An explicit `connector.sidecar.crawlerDbPath` or
+`connector.databasePath` takes precedence for the sidecar only; the native CLI still uses its own config.
+The sidecar reads the archive through SQLite's read-only attachment;
+it does not change discrawl's native embeddings, invoke an additional embedder, or build another vector index.
+Native embedding configuration and refresh behavior remain the same. `connector.sidecar.semantic` does not
+change Discord's native semantic or hybrid methods.
+
+Discord message IDs remain strings and match the IDs returned by the native methods, so retrieval can merge
+duplicate hits. Soft-deleted and empty normalized messages are excluded, and `channels.ids` / `channels.names`
+filter BM25 results in SQL. Without a workspace, or before the archive exists, the native methods remain
+available. Database access or schema failures are surfaced instead of being treated as an empty search.
 
 ## Cloud drives via rclone
 
