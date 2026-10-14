@@ -19,6 +19,7 @@ import {
 	type DiscrawlSearchClient,
 	DiscrawlSemanticMethod,
 } from "./methods.ts";
+import { DiscrawlRankedMethod, type DiscrawlRankedMethodOptions } from "./ranked-method.ts";
 import { DiscrawlSidecar, type DiscrawlSidecarOptions, type DiscrawlStatusClient } from "./sidecar.ts";
 import type {
 	DiscrawlDoctorResult,
@@ -81,6 +82,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 	private readonly defaultMode: DiscrawlSearchMode;
 	private readonly embedLimit: number | undefined;
 	private readonly sidecar: DiscrawlSidecar | undefined;
+	private readonly retrievalScope: Pick<DiscrawlRankedMethodOptions, "workspaceId" | "channelIds" | "channelNames">;
 	private lastIndexedAt: number | undefined;
 
 	constructor(options: DiscrawlSkillOptions) {
@@ -94,6 +96,11 @@ export class DiscrawlSkill implements DatasourceSkill {
 		this.defaultMode = options.defaultMode ?? DEFAULT_DISCRAWL_MODE;
 		this.embedLimit = options.embedLimit;
 		this.lastIndexedAt = options.lastIndexedAt;
+		this.retrievalScope = {
+			workspaceId: options.sidecar?.workspaceId,
+			channelIds: options.channelIds ?? options.sidecar?.channelIds,
+			channelNames: options.channelNames ?? options.sidecar?.channelNames,
+		};
 		this.sidecar =
 			options.sidecar === undefined
 				? undefined
@@ -227,15 +234,20 @@ export class DiscrawlSkill implements DatasourceSkill {
 		const sidecar = this.sidecar;
 		if (sidecar === undefined) return methods;
 		return [
-			...methods,
-			new SidecarRetrievalMethod({
-				sidecar: (signal) => sidecar.get(signal),
-				descriptor: CRAWLER_DESCRIPTORS.discord,
-				mode: "bm25",
-				datasourceId: DISCORD_DATASOURCE_ID,
-				skillType: DISCORD_SKILL_TYPE,
-				instanceId: this.instanceId,
-				tags: this.tags,
+			new DiscrawlRankedMethod({
+				mode: this.defaultMode,
+				lexical: new SidecarRetrievalMethod({
+					sidecar: (signal) => sidecar.get(signal),
+					descriptor: CRAWLER_DESCRIPTORS.discord,
+					mode: "bm25",
+					datasourceId: DISCORD_DATASOURCE_ID,
+					skillType: DISCORD_SKILL_TYPE,
+					instanceId: this.instanceId,
+					tags: this.tags,
+				}),
+				nativeFts: fts,
+				semantic,
+				...this.retrievalScope,
 			}),
 		];
 	}
@@ -303,7 +315,9 @@ export class DiscrawlSkill implements DatasourceSkill {
 				...(this.sidecar === undefined
 					? []
 					: [
-							"The separate `discord-sidecar-bm25` method ranks lexical matches by BM25 relevance before applying the result limit. Native `discord-fts` can return newest matches first; native `discord-hybrid` continues to combine discrawl's own lexical and semantic rankings. The BM25 sidecar does not replace the native hybrid method or build another embedding index.",
+							`With the sidecar enabled, the configured \`defaultMode\` selects one retrieval method: \`discord-${this.defaultMode}\`. Lexical search ranks BM25 matches first and adds distinct native FTS candidates afterward. Hybrid search fuses that lexical ranking with native semantic results once, so repeated native lexical matches cannot overturn BM25 order by receiving extra votes. No additional embedding index is built.`,
+							"Native FTS supplies supplemental candidates from configured Korean, Chinese, and Japanese language indexes; those candidates retain native ordering and may fall outside the final result limit. BM25 currently ranks the base `message_fts` index only. Partial backend failures are recorded in result metadata; an unavailable semantic backend leaves the lexical ranking intact.",
+							"Set `connector.sidecar` to `false` to restore the separate native `discord-hybrid`, `discord-fts`, and `discord-semantic` methods, or use the native CLI directly to select another mode.",
 						]),
 				"Hybrid retrieval is the default. The underlying FTS index merges words across line breaks into a single token, so lexical-only search can miss terms that appear immediately after a newline; semantic recall covers that gap. Prefer natural-language queries over single exact keywords.",
 				"",

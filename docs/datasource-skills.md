@@ -426,11 +426,17 @@ How it works and what it never does:
 
 ### Discord BM25 ranking
 
-`discord` adds `discord-sidecar-bm25` by default when an AutoRAG workspace is available. It ranks matches in
-discrawl's existing FTS5 index by BM25 relevance, so an older, relevant message can outrank newer mentions.
-Queries use the same term-by-term OR matching as the other sidecars. The existing `discord-fts`,
-`discord-semantic`, and `discord-hybrid` methods still use the native CLI; `discord-hybrid` continues to combine
-native FTS5 and semantic results and does not incorporate the new BM25 method.
+When an AutoRAG workspace is available, `discord` ranks lexical matches in discrawl's existing FTS5 index
+by BM25 relevance. An older, relevant message can therefore outrank newer mentions before the result limit.
+Queries use the same term-by-term OR matching as the other sidecars. Native FTS-only hits supplement the
+lexical candidate list after BM25 hits; duplicate evidence contributes only once. Hybrid retrieval combines
+this one lexical ranking with native semantic results using reciprocal rank fusion (RRF).
+
+With the sidecar enabled, the skill registers one method matching `connector.defaultMode`:
+`discord-hybrid` by default, `discord-fts` for lexical ranking, or `discord-semantic` for native semantic-only
+search. This prevents the outer result merger from treating overlapping native FTS, native hybrid, and BM25
+results as independent votes. Datasource-scoped searches use the configured method. Explicit method-name
+selection must use that registered name; the other native method names are available with the sidecar disabled.
 
 To keep only the native methods, set `connector.sidecar` to `false` (or `{ "enabled": false }`):
 
@@ -444,12 +450,21 @@ the crawler's platform-specific defaults. An explicit `connector.sidecar.crawler
 The sidecar reads the archive through SQLite's read-only attachment;
 it does not change discrawl's native embeddings, invoke an additional embedder, or build another vector index.
 Native embedding configuration and refresh behavior remain the same. `connector.sidecar.semantic` does not
-change Discord's native semantic or hybrid methods.
+enable a separate vector index; `connector.defaultMode` selects the retrieval mode.
 
 Discord message IDs remain strings and match the IDs returned by the native methods, so retrieval can merge
-duplicate hits. Soft-deleted and empty normalized messages are excluded, and `channels.ids` / `channels.names`
-filter BM25 results in SQL. Without a workspace, or before the archive exists, the native methods remain
-available. Database access or schema failures are surfaced instead of being treated as an empty search.
+duplicate hits. Soft-deleted and empty normalized messages are excluded from BM25, and `channels.ids` /
+`channels.names` filter its results in SQL. Native candidates are checked against the configured guild and
+channel allowlists before combination. Without a workspace, the native methods remain available. If BM25 or
+semantic retrieval fails, healthy candidates can still answer; returned hit metadata retains the original
+partial-failure reasons. If a backend fails and no candidates remain, retrieval surfaces the failure instead
+of reporting a successful empty search.
+
+BM25 currently reads only the base `message_fts` index. It does not apply discrawl's language-specific
+tokenization or BM25-rank `message_fts_ko`, `message_fts_zh`, or `message_fts_ja`. With native
+`search.lexical.languages` configured, native FTS can contribute language-index-only candidates, but these
+supplemental candidates retain native order and may be cut by the final result limit. Set `sidecar: false`
+to retain the native method set and its language-index fusion throughout.
 
 ## Cloud drives via rclone
 

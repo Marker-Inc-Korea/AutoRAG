@@ -6,8 +6,9 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { discordDescriptor } from "../../../../src/datasource/sidecar/descriptors.ts";
 import { CrawlerSidecar, type CrawlerSidecarOptions } from "../../../../src/datasource/sidecar/index.ts";
+import { SidecarRetrievalMethod } from "../../../../src/datasource/sidecar/methods.ts";
 import { DiscrawlFtsMethod } from "../../../../src/datasource/skills/discrawl/methods.ts";
-import type { DiscrawlSidecarOptions } from "../../../../src/datasource/skills/discrawl/sidecar.ts";
+import { DiscrawlSidecar, type DiscrawlSidecarOptions } from "../../../../src/datasource/skills/discrawl/sidecar.ts";
 import { DiscrawlSkill, type DiscrawlSkillClient } from "../../../../src/datasource/skills/discrawl/skill.ts";
 import type { DiscrawlStatusResult } from "../../../../src/datasource/skills/discrawl/types.ts";
 import { buildDatasourceSkills } from "../../../../src/datasource/skills/factory.ts";
@@ -135,12 +136,19 @@ function client() {
 	};
 }
 
-function skill(stub = client(), sidecar: DiscrawlSidecarOptions = options()) {
-	const value = new DiscrawlSkill({ client: stub, instanceId: "work", sidecar });
-	opened.push(value);
-	const method = value.retrievalMethods().find((entry) => entry.describe().name === "discord-sidecar-bm25");
-	if (method === undefined) throw new Error("Discord BM25 method was not registered");
-	return { value, method, stub };
+function lexicalMethod(stub = client(), sidecarOptions: DiscrawlSidecarOptions = options()) {
+	const sidecar = new DiscrawlSidecar(sidecarOptions, stub);
+	opened.push(sidecar);
+	const method = new SidecarRetrievalMethod({
+		sidecar: (signal) => sidecar.get(signal),
+		descriptor: discordDescriptor,
+		mode: "bm25",
+		datasourceId: "discord",
+		skillType: "discord-archive",
+		instanceId: "work",
+		tags: ["discord"],
+	});
+	return { method, stub };
 }
 
 describe("Discord BM25 over the native archive", () => {
@@ -192,11 +200,9 @@ describe("Discord BM25 over the native archive", () => {
 				{ id: "outside-channel", content: "bug bug bug", channel: "C2" },
 				{ id: OLD_MESSAGE, content: "release notes mention a bug and other unrelated details" },
 			]);
-			const value = new DiscrawlSkill({ client: client(), sidecar: options({ workspaceId: "G1" }), ...allowlist });
-			opened.push(value);
-			const method = value.retrievalMethods().find((entry) => entry.describe().name === "discord-sidecar-bm25");
-			const hits = await method?.retrieve("bug", { topK: 1 });
-			expect(hits?.map((hit) => hit.metadata.messageId)).toEqual([OLD_MESSAGE]);
+			const { method } = lexicalMethod(client(), options({ workspaceId: "G1", ...allowlist }));
+			const hits = await method.retrieve("bug", { topK: 1 });
+			expect(hits.map((hit) => hit.metadata.messageId)).toEqual([OLD_MESSAGE]);
 		},
 	);
 
@@ -228,7 +234,7 @@ describe("Discord BM25 over the native archive", () => {
 
 	it("uses the same source and evidence id as native Discord retrieval", async () => {
 		seed([{ id: OLD_MESSAGE, content: "release notes" }]);
-		const { method, stub } = skill();
+		const { method, stub } = lexicalMethod();
 		const hits = [{ messageId: OLD_MESSAGE, content: "release notes", score: 1 }];
 		stub.search.mockResolvedValue({ ok: true, code: 0, stdout: "", stderr: "", hits, data: { hits } });
 		const [native] = await new DiscrawlFtsMethod({ client: stub, instanceId: "work" }).retrieve("release", {});
@@ -250,7 +256,7 @@ describe("Discord BM25 over the native archive", () => {
 describe("Discord sidecar discovery", () => {
 	it("discovers the native database lazily, reuses it, and never invokes native search", async () => {
 		seed([{ id: OLD_MESSAGE, content: "release checklist" }]);
-		const { method, stub } = skill(client(), { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
+		const { method, stub } = lexicalMethod(client(), { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
 		expect(stub.status).not.toHaveBeenCalled();
 		expect(existsSync(sidecarDb)).toBe(false);
 		await expect(method.retrieve("release", {})).resolves.toHaveLength(1);
@@ -262,7 +268,7 @@ describe("Discord sidecar discovery", () => {
 
 	it("bypasses status for an explicitly configured database", async () => {
 		seed([{ id: OLD_MESSAGE, content: "release checklist" }]);
-		const { method, stub } = skill();
+		const { method, stub } = lexicalMethod();
 		await expect(method.retrieve("release", {})).resolves.toHaveLength(1);
 		expect(stub.status).not.toHaveBeenCalled();
 	});
@@ -277,7 +283,7 @@ describe("Discord sidecar discovery", () => {
 			stdout: "",
 			stderr: "cannot open /archive/team.db",
 		});
-		const { method } = skill(stub, { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
+		const { method } = lexicalMethod(stub, { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
 		await expect(method.retrieve("release", {})).rejects.toThrow("cannot open /archive/team.db");
 		expect(existsSync(sidecarDb)).toBe(false);
 		await expect(method.retrieve("release", {})).resolves.toHaveLength(1);
@@ -285,7 +291,7 @@ describe("Discord sidecar discovery", () => {
 	});
 
 	it("skips discovery for empty queries, empty limits, and pre-aborted requests", async () => {
-		const { method, stub } = skill(client(), { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
+		const { method, stub } = lexicalMethod(client(), { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
 		await expect(method.retrieve("  ", {})).resolves.toEqual([]);
 		await expect(method.retrieve("release", { topK: 0 })).resolves.toEqual([]);
 		const signal = AbortSignal.abort(new Error("query cancelled"));
@@ -302,7 +308,7 @@ describe("Discord sidecar discovery", () => {
 			controller.abort(new Error("query cancelled"));
 			return status();
 		});
-		const { method } = skill(stub, { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
+		const { method } = lexicalMethod(stub, { descriptor: discordDescriptor, sidecarDbPath: sidecarDb });
 		await expect(method.retrieve("release", { signal: controller.signal })).rejects.toThrow("query cancelled");
 		expect(stub.status).toHaveBeenCalledWith(controller.signal);
 		expect(existsSync(sidecarDb)).toBe(false);
@@ -310,14 +316,9 @@ describe("Discord sidecar discovery", () => {
 });
 
 describe("Discord sidecar factory configuration", () => {
-	it("adds only BM25 while retaining native hybrid, FTS, and semantic methods", () => {
+	it("registers one composed hybrid method when the BM25 sidecar is enabled", () => {
 		const { skills } = buildDatasourceSkills({ discord: {} }, root);
-		expect(skills[0]?.retrievalMethods().map((method) => method.describe().name)).toEqual([
-			"discord-hybrid",
-			"discord-fts",
-			"discord-semantic",
-			"discord-sidecar-bm25",
-		]);
+		expect(skills[0]?.retrievalMethods().map((method) => method.describe().name)).toEqual(["discord-hybrid"]);
 		expect(existsSync(join(root, ".autorag"))).toBe(false);
 	});
 
@@ -353,7 +354,7 @@ describe("Discord sidecar factory configuration", () => {
 		const value = skills[0];
 		if (!(value instanceof DiscrawlSkill)) throw new Error("Expected a Discord skill");
 		opened.push(value);
-		const method = value.retrievalMethods().find((entry) => entry.describe().name === "discord-sidecar-bm25");
+		const method = value.retrievalMethods().find((entry) => entry.describe().name === "discord-hybrid");
 		const hits = await method?.retrieve("release", { topK: 1 });
 		expect(hits?.map((hit) => hit.metadata.messageId)).toEqual([OLD_MESSAGE]);
 	});
