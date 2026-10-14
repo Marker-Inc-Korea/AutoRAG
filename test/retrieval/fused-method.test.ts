@@ -56,7 +56,11 @@ describe("FusedRetrievalMethod", () => {
 		const fused = await makeFused(lexical, semantic).retrieve("approval policy", { topK: 1 });
 
 		expect(fused).toHaveLength(1);
-		expect(fused[0]).toEqual({ ...shared, score: 2 / 62, metadata: { ...shared.metadata, method: "work-hybrid" } });
+		expect(fused[0]).toEqual({
+			...shared,
+			score: 2 / 62,
+			metadata: { ...shared.metadata, method: "work-hybrid", mode: "hybrid" },
+		});
 		expect(shared.score).toBe(10);
 		expect(shared.metadata.method).toBe("bm25");
 	});
@@ -190,7 +194,9 @@ describe("FusedRetrievalMethod", () => {
 				const fused = await makeFused(lexical, semantic).retrieve("policy", { topK: 2 });
 
 				expect(fused).toEqual(
-					hits.slice(0, 2).map((hit) => ({ ...hit, metadata: { ...hit.metadata, method: "work-hybrid" } })),
+					hits
+						.slice(0, 2)
+						.map((hit) => ({ ...hit, metadata: { ...hit.metadata, method: "work-hybrid", mode: "hybrid" } })),
 				);
 			},
 		);
@@ -209,6 +215,38 @@ describe("FusedRetrievalMethod", () => {
 		await expect(makeFused(makeMethod("lexical"), makeMethod("semantic")).retrieve("policy", {})).resolves.toEqual(
 			[],
 		);
+	});
+
+	it.each(["lexical", "semantic"] as const)(
+		"surfaces the %s failure instead of an empty result when the other ranking is empty",
+		async (unavailable) => {
+			// Hybrid-only selection (`methods: ["work-hybrid"]`) has no sibling method to
+			// report the failure, so the fused method must not swallow it as "no matches".
+			const failure = new Error("native search failed");
+			const lexical = makeMethod("lexical");
+			const semantic = makeMethod("semantic");
+			(unavailable === "lexical" ? lexical : semantic).retrieve.mockRejectedValue(failure);
+
+			const error = await makeFused(lexical, semantic)
+				.retrieve("policy", {})
+				.catch((reason: unknown) => reason);
+
+			expect(error).toBeInstanceOf(AggregateError);
+			if (!(error instanceof AggregateError)) throw new Error("Expected the surfaced retrieval failure");
+			expect(error.errors).toEqual([failure]);
+			expect(error.message).toContain(failure.message);
+		},
+	);
+
+	it("keeps the surviving ranking when one input fails and the other has matches", async () => {
+		const hits = [result("first"), result("second")];
+		const lexical = makeMethod("lexical", hits);
+		const semantic = makeMethod("semantic");
+		semantic.retrieve.mockRejectedValue(new Error("native search failed"));
+
+		const fused = await makeFused(lexical, semantic).retrieve("policy", { topK: 2 });
+
+		expect(fused.map((hit) => hit.id)).toEqual(["first", "second"]);
 	});
 
 	it("reports both original failures when neither method can search", async () => {

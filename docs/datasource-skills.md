@@ -378,11 +378,17 @@ per input, combines their ranks with reciprocal rank fusion (RRF, k=60), and
 returns at most `topK` results (default 20). A chunk found by both methods gets
 credit from both rankings. Evidence identity is the pair of `source` and `id`,
 so distinct chunks and sources stay distinct; native source paths and metadata
-are preserved.
+are preserved. Every fused hit carries `metadata.method` set to the hybrid
+method name and `metadata.mode` set to `hybrid`, never the first-seen input's
+`keyword` or `semantic` value.
 
-If one input fails or returns no matches, hybrid keeps the other input's
-ranking. If both fail, their original errors reach the retrieval pipeline's
-diagnostics. Cancellation is propagated rather than treated as a fallback.
+If one input fails, hybrid keeps the other input's ranking. If both fail — or
+one fails and the other returns no matches, leaving no ranking to fall back to —
+the original errors reach the retrieval pipeline's diagnostics (and its
+`unsearched` surfaces), so a hybrid-only selection such as
+`methods: ["kakao-hybrid"]` still reports the failure instead of an empty
+result. If both inputs succeed but match nothing, hybrid returns no results and
+no diagnostic. Cancellation is propagated rather than treated as a fallback.
 No new index or native hybrid CLI mode is required.
 
 The standalone methods remain registered. Single-datasource search and

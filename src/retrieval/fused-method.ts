@@ -11,6 +11,13 @@ export interface FusedRetrievalMethodOptions {
 const DEFAULT_TOP_K = 20;
 const CANDIDATE_MULTIPLIER = 3;
 
+/**
+ * `metadata.mode` for every fused hit. A fused hit is never the output of one
+ * native search mode, so it must not keep the first-seen input's `keyword` or
+ * `semantic` value; the `hybrid` marker matches the descriptor `type`.
+ */
+const FUSED_MODE = "hybrid";
+
 /** Deterministic hybrid retrieval over two existing ranked methods; no indexing or query expansion. */
 export class FusedRetrievalMethod implements RetrievalMethod {
 	private readonly options: FusedRetrievalMethodOptions;
@@ -59,6 +66,14 @@ export class FusedRetrievalMethod implements RetrievalMethod {
 		}
 		const lists = settled.map((result) => (result.status === "fulfilled" ? result.value : []));
 		const nonempty = lists.filter((list) => list.length > 0);
+		// Nothing survived to fuse or fall back to. If an input failed, surface it:
+		// retrieveWithDiagnostics then reports this surface instead of returning an
+		// empty list that reads like a successful search with no matches. This is the
+		// only signal a hybrid-only selection (`methods: ["kakao-hybrid"]`) gets.
+		if (nonempty.length === 0 && failures.length > 0) {
+			const reasons = failures.map((failure) => failure.reason);
+			throw new AggregateError(reasons, reasons.map(describeRetrievalError).join("\n"));
+		}
 		// A missing side must not change the surviving side's rank or score scale.
 		if (nonempty.length < 2) return (nonempty[0] ?? []).slice(0, topK).map((hit) => this.withMethod(hit));
 
@@ -77,6 +92,8 @@ export class FusedRetrievalMethod implements RetrievalMethod {
 	}
 
 	private withMethod(hit: RetrievalResult): RetrievalResult {
-		return { ...hit, metadata: { ...hit.metadata, method: this.options.name } };
+		// The hit is the hybrid method's output, not a single native search: replace
+		// the first-seen input's `mode` so metadata never points at one input alone.
+		return { ...hit, metadata: { ...hit.metadata, method: this.options.name, mode: FUSED_MODE } };
 	}
 }
