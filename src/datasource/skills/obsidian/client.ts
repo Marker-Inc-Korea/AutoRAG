@@ -390,6 +390,10 @@ function normalizeHit(raw: unknown): QmdSearchHit | undefined {
 	};
 }
 
+// qmd 2.8.3 returns at most one row per note per search method (FTS matches at
+// the document level and vector search dedupes by filepath), so the same note
+// can arrive from both `search` and `vsearch` with different passages. The
+// `-L`/`-S` suffix keeps those cross-method passages as distinct chunk IDs.
 function toChunkId(
 	docid: string | undefined,
 	file: string | undefined,

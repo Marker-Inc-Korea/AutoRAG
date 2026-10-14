@@ -200,6 +200,9 @@ describe("Obsidian retrieval methods", () => {
 });
 
 describe("QmdClient", () => {
+	// qmd 2.8.3 emits one row per note per method, so the same docid can arrive
+	// from `search` and `vsearch` with different passages; the -L/-S suffix
+	// keeps those cross-method passages as distinct chunk identities.
 	it("keeps same-note passages from separate qmd methods distinct through merging", async () => {
 		const binaryPath = join(root, "qmd-cross-method-passages");
 		const hitsByMode: Record<string, Record<string, unknown>> = {
