@@ -69,9 +69,14 @@ describe("createAutoRAGProviderConfig", () => {
 		expect(config.name).toBe("AutoRAG");
 		expect(config.api).toBe("openai-responses");
 		expect(config.baseUrl).toBe("https://api.dazziapp.com/v1");
-		expect(config.apiKey).toBe("$AUTORAG_API_KEY");
+		expect(config.apiKey).toBeUndefined();
 		expect(config.models).toBeUndefined();
 		expect(config.oauth?.name).toBe("AutoRAG");
+	});
+
+	it("declares the headless key reference only when AUTORAG_API_KEY is set", () => {
+		expect(createAutoRAGProviderConfig({ AUTORAG_API_KEY: "dz_env" }).apiKey).toBe("$AUTORAG_API_KEY");
+		expect(createAutoRAGProviderConfig({ AUTORAG_API_KEY: "  " }).apiKey).toBeUndefined();
 	});
 
 	it("honours AUTORAG_BASE_URL and strips a trailing slash", () => {
@@ -208,6 +213,44 @@ describe("registerAutoRAGProvider", () => {
 		expect(provider?.auth.oauth?.name).toBe("AutoRAG");
 		expect(runtime.getModels("autorag")).toHaveLength(0);
 		expect(server.requests).toHaveLength(0);
+	});
+
+	it("refreshes a signed-out runtime without errors and keeps the persisted catalog", async () => {
+		server = await startFakeServer(() => ({ body: { object: "list", data: [catalogEntry] } }));
+		writeFileSync(join(root, "models-store.json"), JSON.stringify({ autorag: storedCatalog() }));
+		const runtime = await ModelRuntime.create({
+			authPath: join(root, "auth.json"),
+			modelsPath: join(root, "models.json"),
+		});
+		await registerAutoRAGProvider(runtime, { AUTORAG_BASE_URL: server.url });
+
+		const result = await runtime.refresh({ providers: ["autorag"] });
+
+		expect([...result.errors.keys()]).toEqual([]);
+		expect(runtime.getModels("autorag").map((model) => model.id)).toEqual(["vendor/model-alpha"]);
+		expect(server.requests).toHaveLength(0);
+	});
+
+	it("uses AUTORAG_API_KEY for the refresh when no login is stored", async () => {
+		server = await startFakeServer(() => ({ body: { object: "list", data: [catalogEntry] } }));
+		const previous = process.env.AUTORAG_API_KEY;
+		process.env.AUTORAG_API_KEY = "dz_env_key";
+		try {
+			const runtime = await ModelRuntime.create({
+				authPath: join(root, "auth.json"),
+				modelsPath: join(root, "models.json"),
+			});
+			await registerAutoRAGProvider(runtime, { AUTORAG_BASE_URL: server.url, AUTORAG_API_KEY: "dz_env_key" });
+
+			const result = await runtime.refresh({ providers: ["autorag"] });
+
+			expect([...result.errors.keys()]).toEqual([]);
+			expect(server.requests[0]!.headers.authorization).toBe("Bearer dz_env_key");
+			expect(runtime.getModels("autorag").map((model) => model.id)).toEqual(["vendor/model-alpha"]);
+		} finally {
+			if (previous === undefined) delete process.env.AUTORAG_API_KEY;
+			else process.env.AUTORAG_API_KEY = previous;
+		}
 	});
 
 	it("loads the persisted catalog snapshot offline", async () => {

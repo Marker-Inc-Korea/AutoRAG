@@ -11,7 +11,14 @@
 
 import type { RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ModelRuntime, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { API_KEY_CONFIG_VALUE, API_PATH, PROVIDER_ID, PROVIDER_NAME, resolveBaseUrl } from "./config.ts";
+import {
+	API_KEY_CONFIG_VALUE,
+	API_PATH,
+	AUTORAG_API_KEY_ENV,
+	PROVIDER_ID,
+	PROVIDER_NAME,
+	resolveBaseUrl,
+} from "./config.ts";
 import { buildStoreEntry, fetchModels, modelsFromStore, resolveCredentialKey } from "./models.ts";
 import { loginAutorag, refreshAutoragCredentials } from "./oauth-login.ts";
 
@@ -57,15 +64,24 @@ export async function refreshAutoragModels(
 	return models;
 }
 
-/** Build the `ProviderConfig` handed to `ModelRuntime.registerProvider("autorag", ...)`. */
+/**
+ * Build the `ProviderConfig` handed to `ModelRuntime.registerProvider("autorag", ...)`.
+ *
+ * The headless `$AUTORAG_API_KEY` reference is declared only when the variable
+ * is set. Pi resolves a declared reference on every catalog refresh and throws
+ * when it is unset, which made `/model` report "Could not refresh autorag" for
+ * every signed-out user. Without it the provider is OAuth-only: `/login` works
+ * and a signed-out refresh restores the persisted snapshot without an error.
+ */
 export function createAutoRAGProviderConfig(env: AutoragEnv = process.env): ProviderConfig {
 	const baseUrl = resolveBaseUrl(env);
 	const endpoints: Endpoints = { baseUrl, apiBaseUrl: `${baseUrl}${API_PATH}` };
+	const hasEnvKey = (env[AUTORAG_API_KEY_ENV] ?? "").trim() !== "";
 	return {
 		name: PROVIDER_NAME,
 		baseUrl: endpoints.apiBaseUrl,
 		api: "openai-responses",
-		apiKey: API_KEY_CONFIG_VALUE,
+		...(hasEnvKey ? { apiKey: API_KEY_CONFIG_VALUE } : {}),
 		oauth: {
 			name: PROVIDER_NAME,
 			login: (callbacks) => loginAutorag(callbacks, { baseUrl }),

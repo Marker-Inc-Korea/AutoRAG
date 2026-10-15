@@ -41,9 +41,12 @@ again.
 export AUTORAG_API_KEY=dz_...
 ```
 
-Pi resolves `$AUTORAG_API_KEY` for this provider, so it is authorized without
-`/login`. A stored credential from `/login` takes precedence over the environment
-variable; log out from the Pi UI to fall back to it.
+AutoRAG declares `$AUTORAG_API_KEY` as the provider key only when the variable is
+set in the process environment at startup, so it is authorized without `/login`.
+When it is unset the provider is OAuth-only: `/login` lists AutoRAG and `/model`
+refreshes cleanly instead of reporting "Could not refresh autorag". A stored
+credential from `/login` takes precedence over the environment variable; log out
+from the Pi UI to fall back to it.
 
 ## Environment variables
 
