@@ -61,6 +61,7 @@ import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	isPathExcluded,
+	MirrorWorkspaceError,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
@@ -578,6 +579,8 @@ export interface AutoRAGAgentOptions {
 	 * {@link AutoRAGRetrievalLimits}. Values must be positive integers.
 	 */
 	limits?: AutoRAGRetrievalLimits;
+	/** Refresh tuning: `transientRetries` retries a transient per-file I/O error (default 3). */
+	refresh?: { readonly transientRetries?: number };
 	datasourceSkills?: readonly DatasourceSkill[];
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
@@ -808,6 +811,7 @@ export class AutoRAGAgent {
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
 	private readonly limits: ResolvedRetrievalLimits;
+	private readonly transientRetries: number | undefined;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -851,6 +855,7 @@ export class AutoRAGAgent {
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
+		this.transientRetries = options.refresh?.transientRetries;
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
 		this.rerankTopN =
 			options.rerank === false || options.rerank === undefined
@@ -3054,7 +3059,12 @@ export class AutoRAGAgent {
 			this.refreshState = {
 				...this.refreshState,
 				lastOutcome: "failed",
-				lastError: error instanceof Error ? `Refresh failed: ${error.name}` : "Refresh failed.",
+				lastError:
+					error instanceof MirrorWorkspaceError
+						? `Refresh failed: workspace not writable${error.code === undefined ? "" : ` (${error.code})`}`
+						: error instanceof Error
+							? `Refresh failed: ${error.name}`
+							: "Refresh failed.",
 			};
 			progress = updateRefreshProgress(progress, {
 				state: "failed",
@@ -3268,6 +3278,7 @@ export class AutoRAGAgent {
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
+			...(this.transientRetries !== undefined ? { transientRetries: this.transientRetries } : {}),
 		});
 	}
 
