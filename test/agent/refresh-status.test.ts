@@ -284,6 +284,40 @@ process.exit(2);
 		expect(status.components.minsync).toBe("degraded");
 		expect(status.diagnostics.some((d) => d.code === "embedder-unavailable" && d.source === "minsync")).toBe(true);
 	});
+
+	it("keeps parsed mirrors and warns when a previously indexed root is emptied, without leaking paths", async () => {
+		const agent = makeAgent();
+		await agent.refresh(false, { methods: ["parsed"] });
+		rmSync(join(docs, "a.txt"));
+
+		const result = await agent.refresh(false, { methods: ["parsed"] });
+
+		expect(result.deleted).toBe(0);
+		expect(result.diagnostics.some((d) => d.code === "deleted-mirror")).toBe(false);
+		const warning = result.diagnostics.find((d) => d.code === "search-root-unavailable");
+		expect(warning).toMatchObject({ severity: "warning", source: "/docs" });
+		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+		const status = await agent.getRefreshStatus();
+		expect(status.diagnostics.some((d) => d.code === "search-root-unavailable")).toBe(true);
+	});
+
+	it("applies the configured refresh.maxDeleteRatio to the parsed refresh", async () => {
+		for (let index = 0; index < 150; index += 1) writeFileSync(join(docs, `n${index}.txt`), `Note ${index}\n`);
+		const agent = makeAgent({ refresh: { maxDeleteRatio: 0.1 } });
+		await agent.refresh(false, { methods: ["parsed"] });
+		for (let index = 0; index < 120; index += 1) rmSync(join(docs, `n${index}.txt`));
+
+		const suppressed = await agent.refresh(false, { methods: ["parsed"] });
+		expect(suppressed.deleted).toBe(0);
+		expect(suppressed.diagnostics.some((d) => d.code === "mass-delete-suppressed")).toBe(true);
+
+		const forced = await agent.refresh(true, { methods: ["parsed"] });
+		expect(forced.deleted).toBe(120);
+	});
+
+	it("rejects an invalid refresh limit at construction", () => {
+		expect(() => makeAgent({ refresh: { maxDeleteRatio: 2 } })).toThrow(/maxDeleteRatio/);
+	});
 });
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {

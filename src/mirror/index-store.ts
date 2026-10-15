@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "./atomic-write.ts";
 import { parsedMirrorIndexPath } from "./paths.ts";
 
 export interface ParsedMirrorEntry {
@@ -49,11 +48,7 @@ export function loadMirrorIndex(root: string): ParsedMirrorIndex {
 }
 
 export function saveMirrorIndex(root: string, index: ParsedMirrorIndex): void {
-	const path = parsedMirrorIndexPath(root);
-	mkdirSync(dirname(path), { recursive: true });
-	const tmp = `${path}.${randomUUID()}.tmp`;
-	writeFileSync(tmp, `${JSON.stringify(index, null, 2)}\n`);
-	renameSync(tmp, path);
+	writeFileAtomic(parsedMirrorIndexPath(root), `${JSON.stringify(index, null, 2)}\n`);
 }
 
 function isParsedMirrorIndex(value: unknown): value is ParsedMirrorIndex {
