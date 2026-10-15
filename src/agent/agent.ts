@@ -339,6 +339,12 @@ export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "ev
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/**
+	 * Cancels the refresh. A running `minsync sync` is stopped with its whole
+	 * process tree and `refresh` rejects with the signal's reason. The other
+	 * phases do not observe it yet.
+	 */
+	readonly signal?: AbortSignal;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -2942,7 +2948,7 @@ export class AutoRAGAgent {
 				},
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsync = wants("minsync") ? await this.syncMinSync(force) : undefined;
+			const minsync = wants("minsync") ? await this.syncMinSync(force, opts?.signal) : undefined;
 			if (minsync !== undefined) {
 				progress = updateRefreshProgress(progress, {
 					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
@@ -3315,8 +3321,8 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncMinSync(force = false): Promise<MinSyncSyncResult> {
-		const result = await this.minSyncMethod.sync(force);
+	async syncMinSync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
+		const result = await this.minSyncMethod.sync(force, signal);
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
@@ -4030,7 +4036,9 @@ function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocume
 			? "embedder-unavailable"
 			: diag.code === "embedding-identity-mismatch"
 				? "embedding-identity-mismatch"
-				: "minsync-sync-failed";
+				: diag.code === "minsync-lock-held"
+					? "minsync-lock-held"
+					: "minsync-sync-failed";
 	return {
 		code,
 		severity: ok ? "info" : "error",

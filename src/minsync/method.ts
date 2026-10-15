@@ -13,6 +13,7 @@ import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
 import { minSyncBinaryMissingError, minSyncInstallFailedError } from "./errors.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
+import { abortError } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 
@@ -126,17 +127,19 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
-	async sync(force = false): Promise<MinSyncSyncResult> {
+	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
 		const inFlight = workspaceSyncInFlight.get(this.workspacePath) ?? 0;
 		workspaceSyncInFlight.set(this.workspacePath, inFlight + 1);
-		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force)).finally(() => {
+		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force, signal)).finally(() => {
 			const remaining = (workspaceSyncInFlight.get(this.workspacePath) ?? 1) - 1;
 			if (remaining === 0) workspaceSyncInFlight.delete(this.workspacePath);
 			else workspaceSyncInFlight.set(this.workspacePath, remaining);
 		});
 	}
 
-	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
+	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
+		// A sync queued behind another one must not stage or install once its caller gave up.
+		if (signal?.aborted) throw abortError(signal);
 		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
@@ -148,7 +151,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			maxChunkSize: this.maxChunkSize,
 			runtime: this.runtime,
 		});
-		return withExcluded(await client.sync(force));
+		return withExcluded(await client.sync(force, signal));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */

@@ -20,6 +20,7 @@ export type SearchDocumentDiagnosticCode =
 	| "caller-tool-dropped"
 	| "minsync-staging-excluded"
 	| "minsync-sync-failed"
+	| "minsync-lock-held"
 	| "embedder-unavailable"
 	| "embedding-identity-mismatch"
 	| "parser-skipped"

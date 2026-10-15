@@ -143,6 +143,23 @@ stop the refresh.
 `AutoRAGAgent.refresh()` and `getRefreshStatus()` expose both codes through
 the public `SearchDocumentDiagnosticCode` type, alongside parser diagnostics.
 
+## Cancelling a refresh
+
+`AutoRAGAgent.refresh(force, { signal })` forwards the signal to the MinSync
+`init`, `check`, and `sync` processes. Aborting stops the running `minsync` and
+every descendant it started (SIGTERM to the process group, SIGKILL after 5
+seconds), restores the `config.toml` this run rewrote, and rejects `refresh`
+with the signal's reason. On POSIX each MinSync process leads its own process
+group, so the host also reaps it on SIGINT, SIGTERM, SIGHUP, and exit; Windows
+uses `taskkill /t`. A run without a signal behaves as before. Only the MinSync
+phase observes the signal; parse, datasource, and Jikji phases do not yet.
+
+A `minsync` run that outlives its host (for example after `SIGKILL` of the
+host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
+`sync` exits 3 with `another sync is in progress`, which AutoRAG reports as the
+retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
+of a generic `minsync-sync-failed`.
+
 ## Migration and failure behavior
 
 A MinSync workspace keeps its state in the `.minsync` subdirectory of
