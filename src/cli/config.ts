@@ -244,6 +244,8 @@ export interface CliConfig {
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
 	limits?: AutoRAGRetrievalLimits;
+	/** Refresh tuning. `transientRetries` (default 3) retries EMFILE/EBUSY/EIO/ETIMEDOUT per file. */
+	refresh?: RefreshCliConfig;
 	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** P2P sharing configuration. Disabled by default. */
@@ -918,6 +920,27 @@ export function normalizeIndexingConfig(raw: RawIndexingMethods): NormalizedInde
 	};
 }
 
+export interface RefreshCliConfig {
+	transientRetries?: number;
+}
+
+/** Validate the `refresh` section. `transientRetries` is a non-negative integer (0 disables retries). */
+export function normalizeRefreshConfig(raw: unknown): RefreshCliConfig {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'refresh' must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (key !== "transientRetries") throw new ConfigError(`refresh.${key} is not a recognized field`);
+	}
+	const retries = record.transientRetries;
+	if (retries === undefined) return {};
+	if (typeof retries !== "number" || !Number.isInteger(retries) || retries < 0) {
+		throw new ConfigError("refresh.transientRetries must be a non-negative integer");
+	}
+	return { transientRetries: retries };
+}
+
 const LIMITS_ALLOWLIST: Record<string, true> = {
 	mergedEvidenceCeiling: true,
 	singleDatasourceTopK: true,
@@ -1061,6 +1084,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	if (model) config.model = model;
 	if (fileExcludePaths !== undefined) config.excludePaths = fileExcludePaths;
 	if (file.limits !== undefined) config.limits = normalizeLimitsConfig(file.limits);
+	if (file.refresh !== undefined) config.refresh = normalizeRefreshConfig(file.refresh);
 	const normalized = normalizeIndexingConfig({
 		minSync: file.minSync as MinSyncMethodConfig | false | undefined,
 	});
@@ -1398,6 +1422,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
 	if (config.limits !== undefined) opts.limits = config.limits;
+	if (config.refresh !== undefined) opts.refresh = config.refresh;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
@@ -2005,6 +2030,7 @@ export function writeDefaultConfig(
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
+	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
 	full.rerank = partial.rerank ?? {
 		provider: DEFAULT_RERANK_PROVIDER,

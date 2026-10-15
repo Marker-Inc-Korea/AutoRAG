@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { type Dir, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { type Dir, existsSync, rmSync } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { dirname, extname, resolve, sep } from "node:path";
+import { extname, resolve, sep } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "../parser/defaults.ts";
 import { ParseError } from "../parser/errors.ts";
@@ -10,6 +10,7 @@ import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput } from "../parser/types.ts";
+import { writeFileAtomic } from "./atomic-write.ts";
 import {
 	loadMirrorIndex,
 	type ParsedMirrorEntry,
@@ -68,14 +69,24 @@ export interface ParsedMirrorSyncOptions {
 	readonly excludeSourcePaths?: ReadonlySet<string>;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Retries for a transient I/O error (`EMFILE`, `EBUSY`, `EIO`, `ETIMEDOUT`) on one
+	 * file's read or mirror write before the file is recorded as skipped. Default 3.
+	 */
+	readonly transientRetries?: number;
+	/** Base delay between transient retries; doubles per retry. Default 50ms. */
+	readonly transientRetryBackoffMs?: number;
 }
 
 export type ParsedMirrorDiagnosticCode =
 	| "unsupported-file"
 	| "parser-skipped"
 	| "parser-failed"
+	| "parser-crashed"
 	| "source-vanished"
 	| "source-unreadable"
+	| "source-read-failed"
+	| "mirror-write-failed"
 	| "duplicate-excluded"
 	| "deleted-mirror"
 	| "stale-index"
@@ -111,6 +122,61 @@ interface CurrentEntry {
 }
 
 const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";
+const PARSER_CRASH_MESSAGE = "The registered parser crashed unexpectedly on this file; it was skipped during indexing.";
+
+/** Default retries for a transient per-file I/O error. Mirrors the `refresh.transientRetries` config default. */
+export const DEFAULT_TRANSIENT_RETRIES = 3;
+const DEFAULT_TRANSIENT_BACKOFF_MS = 50;
+
+/** Errors that usually clear on their own: descriptor exhaustion, busy files, flaky disks and mounts. */
+const TRANSIENT_ERROR_CODES: Record<string, true> = { EMFILE: true, EBUSY: true, EIO: true, ETIMEDOUT: true };
+
+/** Write errors that mean the workspace itself is unusable, not that one file is bad. */
+const WORKSPACE_ERROR_CODES: Record<string, true> = {
+	ENOSPC: true,
+	EDQUOT: true,
+	EACCES: true,
+	EPERM: true,
+	EROFS: true,
+};
+
+/**
+ * A failure that makes continuing the refresh pointless: the workspace volume is full or the
+ * workspace is not writable. Per-file failures never use this class.
+ */
+export class MirrorWorkspaceError extends Error {
+	readonly code: string | undefined;
+
+	constructor(workspace: string, cause: unknown) {
+		const code = errorCode(cause);
+		const detail = cause instanceof Error ? cause.message : String(cause);
+		super(
+			`Refresh aborted: workspace ${workspace} is not writable${code === undefined ? "" : ` (${code})`}: ${detail}`,
+		);
+		this.name = "MirrorWorkspaceError";
+		this.code = code;
+		this.cause = cause;
+	}
+}
+
+function errorCode(error: unknown): string | undefined {
+	if (!(error instanceof Error)) return undefined;
+	const code = (error as NodeJS.ErrnoException).code;
+	return typeof code === "string" ? code : undefined;
+}
+
+/** Run `operation`, retrying transient I/O errors up to `retries` times with doubling backoff. */
+async function withTransientRetry<T>(operation: () => T | Promise<T>, retries: number, backoffMs: number): Promise<T> {
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			return await operation();
+		} catch (error) {
+			const code = errorCode(error);
+			if (attempt >= retries || code === undefined || !Object.hasOwn(TRANSIENT_ERROR_CODES, code)) throw error;
+			if (backoffMs > 0) await sleep(backoffMs * 2 ** attempt);
+		}
+	}
+}
 
 const STANDALONE_OCR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(KORDOC_IMAGE_EXTENSIONS);
 
@@ -127,6 +193,8 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	let skipped = 0;
 	let deleted = 0;
 	let sinceCheckpoint = 0;
+	const transientRetries = Math.max(0, options.transientRetries ?? DEFAULT_TRANSIENT_RETRIES);
+	const transientBackoffMs = options.transientRetryBackoffMs ?? DEFAULT_TRANSIENT_BACKOFF_MS;
 	const diagnostics: ParsedMirrorDiagnostic[] = [];
 
 	const recordSkip = (entry: CurrentEntry, reason: ParsedMirrorSkipReason): void => {
@@ -157,6 +225,23 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		}
 		saveMirrorIndex(options.root, { version: 1, entries: merged, skipped: mergedSkipped });
 		sinceCheckpoint = 0;
+	};
+
+	// Isolate one file's failure: drop its stale mirror, count the skip, surface one diagnostic, and
+	// keep going. A `skipReason` persists the skip so an unchanged file is not retried; read and
+	// write failures pass none, so a later refresh tries the file again.
+	const skipFile = (
+		entry: CurrentEntry,
+		diagnostic: Omit<ParsedMirrorDiagnostic, "source">,
+		skipReason?: ParsedMirrorSkipReason,
+	): void => {
+		deleted += removePrevious(options.root, previous, entry.virtualPath);
+		handledPrevious.add(entry.virtualPath);
+		skipped += 1;
+		if (skipReason !== undefined) recordSkip(entry, skipReason);
+		diagnostics.push({ ...diagnostic, source: entry.virtualPath });
+		sinceCheckpoint += 1;
+		if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
 	};
 
 	for (const entry of current) {
@@ -216,25 +301,13 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			existsSync(outputPath);
 
 		if (!unchanged) {
-			// Isolate the source read from parser execution and mirror writes. A file that disappears
-			// or cannot be read must not abort the refresh or be cached as a permanent skip.
+			// Every failure below is isolated to this one file. Only a workspace-level write failure
+			// (full volume, unwritable workspace) aborts the refresh.
 			let bytes: Awaited<ReturnType<typeof readFile>>;
 			try {
-				bytes = await readFile(entry.sourcePath);
+				bytes = await withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs);
 			} catch (error) {
-				const failure = sourceReadFailure(error);
-				if (failure === undefined) throw error;
-				deleted += removePrevious(options.root, previous, entry.virtualPath);
-				handledPrevious.add(entry.virtualPath);
-				skipped += 1;
-				diagnostics.push({
-					code: failure.code,
-					severity: failure.severity,
-					message: failure.message,
-					source: entry.virtualPath,
-				});
-				sinceCheckpoint += 1;
-				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
+				skipFile(entry, sourceReadFailure(error));
 				continue;
 			}
 
@@ -242,18 +315,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			// minimum is a per-file skip, recorded the same way as the max-size gate.
 			const tooSmallImage = standaloneImageTooSmallMessage(entry.virtualPath, bytes);
 			if (tooSmallImage !== undefined) {
-				deleted += removePrevious(options.root, previous, entry.virtualPath);
-				handledPrevious.add(entry.virtualPath);
-				skipped += 1;
-				recordSkip(entry, "parser-skipped");
-				diagnostics.push({
-					code: "parser-skipped",
-					severity: "warning",
-					message: tooSmallImage,
-					source: entry.virtualPath,
-				});
-				sinceCheckpoint += 1;
-				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
+				skipFile(entry, { code: "parser-skipped", severity: "warning", message: tooSmallImage }, "parser-skipped");
 				continue;
 			}
 
@@ -263,22 +325,45 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				// but only after the size gate above.
 				parsed = await parser.parse({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes });
 			} catch (error) {
-				if (!(error instanceof ParseError)) throw error;
-				deleted += removePrevious(options.root, previous, entry.virtualPath);
-				handledPrevious.add(entry.virtualPath);
-				skipped += 1;
-				recordSkip(entry, "parser-failed");
-				diagnostics.push({
-					code: "parser-failed",
-					severity: "warning",
-					message: PARSER_FAILURE_MESSAGE,
-					source: entry.virtualPath,
-				});
-				sinceCheckpoint += 1;
-				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
+				if (error instanceof ParseError) {
+					skipFile(
+						entry,
+						{ code: "parser-failed", severity: "warning", message: PARSER_FAILURE_MESSAGE },
+						"parser-failed",
+					);
+				} else {
+					// A parser bug or a third-party plain Error. The message is withheld: it may name a path.
+					skipFile(entry, {
+						code: "parser-crashed",
+						severity: "warning",
+						message: PARSER_CRASH_MESSAGE,
+						...(error instanceof Error ? { reason: error.name } : {}),
+					});
+				}
 				continue;
 			}
-			writeAtomic(outputPath, normalizeMarkdown(parsed.markdown));
+			try {
+				const markdown = normalizeMarkdown(parsed.markdown);
+				await withTransientRetry(() => writeFileAtomic(outputPath, markdown), transientRetries, transientBackoffMs);
+			} catch (error) {
+				const code = errorCode(error);
+				if (code !== undefined && Object.hasOwn(WORKSPACE_ERROR_CODES, code)) {
+					// Keep what is already mirrored so the next run restarts incrementally.
+					try {
+						checkpoint();
+					} catch {
+						// The index shares the failing volume; the write error below is the root cause.
+					}
+					throw new MirrorWorkspaceError(options.root, error);
+				}
+				skipFile(entry, {
+					code: "mirror-write-failed",
+					severity: "warning",
+					message: error instanceof Error ? error.message : String(error),
+					...(code !== undefined ? { reason: code } : {}),
+				});
+				continue;
+			}
 			for (const diagnostic of parsed.diagnostics ?? []) {
 				diagnostics.push({
 					code: diagnostic.code,
@@ -394,22 +479,17 @@ function standaloneImageTooSmallMessage(virtualPath: string, bytes: Uint8Array):
 	return ocrImageTooSmallMessage(bytes);
 }
 
-function sourceReadFailure(error: unknown):
-	| {
-			readonly code: "source-vanished" | "source-unreadable";
-			readonly severity: "info" | "warning";
-			readonly message: string;
-	  }
-	| undefined {
-	if (!(error instanceof Error)) return undefined;
-	const code = (error as NodeJS.ErrnoException).code;
+/** Map any per-file read error to a diagnostic; unknown errors become `source-read-failed`. */
+function sourceReadFailure(error: unknown): Omit<ParsedMirrorDiagnostic, "source"> {
+	const code = errorCode(error);
+	const message = error instanceof Error ? error.message : String(error);
 	if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") {
-		return { code: "source-vanished", severity: "info", message: error.message };
+		return { code: "source-vanished", severity: "info", message };
 	}
 	if (code === "EACCES" || code === "EPERM") {
-		return { code: "source-unreadable", severity: "warning", message: error.message };
+		return { code: "source-unreadable", severity: "warning", message };
 	}
-	return undefined;
+	return { code: "source-read-failed", severity: "warning", message, ...(code !== undefined ? { reason: code } : {}) };
 }
 
 function supportedExtensionSet(registry: ParserRegistry): ReadonlySet<string> {
@@ -490,13 +570,6 @@ function removePrevious(root: string, index: ParsedMirrorIndex, virtualPath: str
 	if (!previous) return 0;
 	removeFile(parsedOutputPath(root, previous.virtualPath));
 	return 1;
-}
-
-function writeAtomic(path: string, content: string): void {
-	mkdirSync(dirname(path), { recursive: true });
-	const tmp = `${path}.${randomUUID()}.tmp`;
-	writeFileSync(tmp, content);
-	renameSync(tmp, path);
 }
 
 function removeFile(path: string): void {
