@@ -167,12 +167,16 @@ when managing the binary yourself. Refresh is incremental: MinSync syncs only
 changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Roots
 prepare in parallel.
 
-Jikji stores its prepared corpus metadata in a hidden `.jikji` directory
-inside each indexed source root — that is Jikji's native index layout and
-intended behavior, not a misplaced artifact. Tell the user before the first
-`refresh` that `<root>/.jikji` will be created inside every approved document
-root (one per root, alongside the documents), and never delete or edit its
-contents; removing it only forces a full Jikji re-prepare on the next refresh.
+Jikji keeps its prepared corpus (search index, parsed text, wiki, routes) in one
+central store, not inside your documents: `<OS data dir>/jikji/index.sqlite`
+plus `<OS data dir>/jikji/roots/<id>/` (macOS `~/Library/Application Support`,
+Linux `$XDG_DATA_HOME` or `~/.local/share`, Windows `%LOCALAPPDATA%`; override
+with the `JIKJI_DATA_DIR` environment variable). The only file `refresh` adds
+inside an approved document root is the `.jikji_agent_map.md` guide. Tell the
+user that before the first `refresh`, and never delete or edit Jikji's central
+store by hand; removing it only forces a full Jikji re-prepare on the next
+refresh. Older Jikji versions wrote a `<root>/.jikji` directory instead; such a
+leftover is now unused and safe for the user to delete.
 
 Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
 `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
