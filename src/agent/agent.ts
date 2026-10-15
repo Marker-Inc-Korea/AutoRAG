@@ -220,6 +220,23 @@ const SIMILAR_PAST_RESULT_LIMIT = 4;
 const MEMORY_EXCERPT_CHARACTERS = 1_500;
 
 /**
+ * Safety limits for the parsed-mirror refresh. Every field is optional; an
+ * omitted field keeps the shipped default.
+ */
+export interface AutoRAGRefreshLimits {
+	/**
+	 * Largest share (0–1) of indexed documents one refresh may delete because
+	 * their source disappeared; a bigger deletion above 100 documents is
+	 * suppressed unless the refresh is forced. Default 0.3.
+	 */
+	readonly maxDeleteRatio?: number;
+	/** Directory entries examined per search root before the walk stops. Default 2,000,000. */
+	readonly maxScannedEntries?: number;
+	/** Deepest directory level walked below a search root. Default 64. */
+	readonly maxDepth?: number;
+}
+
+/**
  * Hard caps on retrieval, baseline prefetch, and the candidate lists handed to
  * the model. Every field is optional: an omitted field keeps the shipped
  * default below, so this only exists to let an operator tighten or widen a
@@ -277,6 +294,26 @@ function positiveLimit(value: number | undefined, fallback: number, path: string
 	if (value === undefined) return fallback;
 	if (!Number.isInteger(value) || value <= 0) throw new Error(`${path} must be a positive integer`);
 	return value;
+}
+
+function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRAGRefreshLimits {
+	if (limits === undefined) return {};
+	const { maxDeleteRatio, maxScannedEntries, maxDepth } = limits;
+	if (
+		maxDeleteRatio !== undefined &&
+		!(Number.isFinite(maxDeleteRatio) && maxDeleteRatio >= 0 && maxDeleteRatio <= 1)
+	) {
+		throw new Error("refresh.maxDeleteRatio must be a number between 0 and 1");
+	}
+	if (maxScannedEntries !== undefined) positiveLimit(maxScannedEntries, 0, "refresh.maxScannedEntries");
+	if (maxDepth !== undefined && (!Number.isInteger(maxDepth) || maxDepth < 0)) {
+		throw new Error("refresh.maxDepth must be a non-negative integer");
+	}
+	return {
+		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
+		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
+		...(maxDepth !== undefined ? { maxDepth } : {}),
+	};
 }
 
 function resolveRetrievalLimits(limits: AutoRAGRetrievalLimits | undefined): ResolvedRetrievalLimits {
@@ -578,6 +615,8 @@ export interface AutoRAGAgentOptions {
 	 * {@link AutoRAGRetrievalLimits}. Values must be positive integers.
 	 */
 	limits?: AutoRAGRetrievalLimits;
+	/** Safety limits for the parsed-mirror refresh. See {@link AutoRAGRefreshLimits}. */
+	refresh?: AutoRAGRefreshLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
@@ -808,6 +847,7 @@ export class AutoRAGAgent {
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
 	private readonly limits: ResolvedRetrievalLimits;
+	private readonly refreshLimits: AutoRAGRefreshLimits;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -851,6 +891,7 @@ export class AutoRAGAgent {
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
+		this.refreshLimits = validateRefreshLimits(options.refresh);
 		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
 		this.rerankTopN =
 			options.rerank === false || options.rerank === undefined
@@ -3084,6 +3125,7 @@ export class AutoRAGAgent {
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const persistedProgress = readRefreshProgress(this.workspaceProjectRoot);
 		const staleDiagnostics = await detectMirrorStaleness({
+			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,
@@ -3262,6 +3304,7 @@ export class AutoRAGAgent {
 	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
+			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			force,
@@ -3280,6 +3323,7 @@ export class AutoRAGAgent {
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		const diagnostics = await detectMirrorStaleness({
+			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,

@@ -26,6 +26,18 @@ export const DEFAULT_MAX_SOURCE_BYTES = 50 * 1024 * 1024;
 /** Persist partial mirror progress this often so an OOM mid-run still restarts incrementally. */
 const MIRROR_CHECKPOINT_EVERY = 25;
 
+/** A refresh may delete at most this share of the indexed documents (above {@link MASS_DELETE_FLOOR}). */
+export const DEFAULT_MAX_DELETE_RATIO = 0.3;
+
+/** Deletions at or below this many documents are never treated as a mass delete. */
+const MASS_DELETE_FLOOR = 100;
+
+/** Directory entries examined per search root before the walk stops. */
+export const DEFAULT_MAX_SCANNED_ENTRIES = 2_000_000;
+
+/** Deepest directory level (search root = 0) the walk descends into. */
+export const DEFAULT_MAX_WALK_DEPTH = 64;
+
 /**
  * Files AutoRAG's own tooling writes into a search root. They are product output,
  * not corpus sources: Jikji rewrites its agent map after the parsed phase, so
@@ -68,6 +80,16 @@ export interface ParsedMirrorSyncOptions {
 	readonly excludeSourcePaths?: ReadonlySet<string>;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Largest share of previously indexed documents one refresh may delete because their source
+	 * disappeared. A larger deletion (above 100 documents) is suppressed with `mass-delete-suppressed`
+	 * unless `force` is set. Default {@link DEFAULT_MAX_DELETE_RATIO}.
+	 */
+	readonly maxDeleteRatio?: number;
+	/** Directory entries examined per search root before the walk stops with `walk-truncated`. */
+	readonly maxScannedEntries?: number;
+	/** Deepest directory level the walk descends into (search root = 0), else `walk-truncated`. */
+	readonly maxDepth?: number;
 }
 
 export type ParsedMirrorDiagnosticCode =
@@ -80,7 +102,11 @@ export type ParsedMirrorDiagnosticCode =
 	| "deleted-mirror"
 	| "stale-index"
 	| "pdf-extract-thin"
-	| "parser-warning";
+	| "parser-warning"
+	| "search-root-unavailable"
+	| "mass-delete-suppressed"
+	| "walk-truncated"
+	| "directory-unreadable";
 
 /**
  * Refresh diagnostic. `source` is an opaque virtual path, never a real filesystem path.
@@ -118,7 +144,8 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
 	const maxSourceBytes = options.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES;
 	const supportedExtensions = supportedExtensionSet(registry);
-	const current = await listCurrentFiles(options.searchPaths, supportedExtensions);
+	const listing = await listCurrentFiles(options.searchPaths, supportedExtensions, walkLimits(options));
+	const current = listing.entries;
 	const previous = loadMirrorIndex(options.root);
 	const nextEntries: Record<string, ParsedMirrorEntry> = {};
 	const nextSkipped: Record<string, ParsedMirrorSkipEntry> = {};
@@ -127,7 +154,24 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	let skipped = 0;
 	let deleted = 0;
 	let sinceCheckpoint = 0;
-	const diagnostics: ParsedMirrorDiagnostic[] = [];
+	const diagnostics: ParsedMirrorDiagnostic[] = [...listing.diagnostics];
+	// Virtual path prefixes whose files the walk could not fully see. A previous entry under one of
+	// them that is absent from `current` is unverifiable, not deleted, so it is kept as-is.
+	const preservedPrefixes: string[] = [...listing.unreliablePrefixes];
+	for (const unavailable of listing.unavailableRoots) {
+		if (unavailable.reason === "empty") {
+			// An empty root only matters when it used to hold documents; an explicit force clears it.
+			if (options.force === true || !hasIndexedUnder(previous, unavailable.prefix)) continue;
+		}
+		preservedPrefixes.push(unavailable.prefix);
+		diagnostics.push({
+			code: "search-root-unavailable",
+			severity: "warning",
+			message: SEARCH_ROOT_UNAVAILABLE_MESSAGES[unavailable.reason],
+			source: unavailable.prefix,
+			reason: unavailable.reason,
+		});
+	}
 
 	const recordSkip = (entry: CurrentEntry, reason: ParsedMirrorSkipReason): void => {
 		nextSkipped[entry.virtualPath] = {
@@ -305,19 +349,56 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
 	}
 
+	const isPreserved = (virtualPath: string): boolean =>
+		preservedPrefixes.some((prefix) => virtualPath === prefix || virtualPath.startsWith(`${prefix}/`));
+	const staleCandidates: string[] = [];
 	for (const [virtualPath, entry] of Object.entries(previous.entries)) {
 		if (handledPrevious.has(virtualPath)) continue;
 		if (nextEntries[virtualPath]) continue;
-		// Only delete previous index entries for files no longer present among current supported files.
-		// Entries outside this run's supported collect set that disappeared should still be cleaned.
-		removeFile(parsedOutputPath(options.root, entry.virtualPath));
-		deleted += 1;
+		if (preservedPrefixes.length > 0 && isPreserved(virtualPath)) {
+			nextEntries[virtualPath] = entry;
+			continue;
+		}
+		staleCandidates.push(virtualPath);
+	}
+	if (preservedPrefixes.length > 0) {
+		const currentPaths = new Set(current.map((entry) => entry.virtualPath));
+		for (const [virtualPath, skip] of Object.entries(previous.skipped ?? {})) {
+			if (virtualPath in nextSkipped || currentPaths.has(virtualPath) || !isPreserved(virtualPath)) continue;
+			nextSkipped[virtualPath] = skip;
+		}
+	}
+
+	// Only delete previous index entries for files no longer present among current supported files.
+	// Entries outside this run's supported collect set that disappeared should still be cleaned.
+	const indexedCount = Object.keys(previous.entries).length;
+	const maxDeleteRatio = options.maxDeleteRatio ?? DEFAULT_MAX_DELETE_RATIO;
+	const massDelete =
+		options.force !== true &&
+		staleCandidates.length > MASS_DELETE_FLOOR &&
+		staleCandidates.length / indexedCount > maxDeleteRatio;
+	if (massDelete) {
+		for (const virtualPath of staleCandidates) {
+			const kept = previous.entries[virtualPath];
+			if (kept) nextEntries[virtualPath] = kept;
+		}
 		diagnostics.push({
-			code: "deleted-mirror",
-			severity: "info",
-			message: "A previously indexed document is gone; its parsed mirror was removed.",
-			source: virtualPath,
+			code: "mass-delete-suppressed",
+			severity: "warning",
+			message: `This refresh would remove ${staleCandidates.length} of ${indexedCount} indexed documents, more than the allowed ${Math.round(maxDeleteRatio * 100)}%; their mirrors were kept. If the sources are really gone, run a forced refresh.`,
+			source: "parsed-mirror",
 		});
+	} else {
+		for (const virtualPath of staleCandidates) {
+			removeFile(parsedOutputPath(options.root, previous.entries[virtualPath]?.virtualPath ?? virtualPath));
+			deleted += 1;
+			diagnostics.push({
+				code: "deleted-mirror",
+				severity: "info",
+				message: "A previously indexed document is gone; its parsed mirror was removed.",
+				source: virtualPath,
+			});
+		}
 	}
 
 	const index: ParsedMirrorIndex = { version: 1, entries: nextEntries, skipped: nextSkipped };
@@ -345,7 +426,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
 	const supportedExtensions = supportedExtensionSet(registry);
-	const current = await listCurrentFiles(options.searchPaths, supportedExtensions);
+	const current = (await listCurrentFiles(options.searchPaths, supportedExtensions, walkLimits(options))).entries;
 	const previous = loadMirrorIndex(options.root);
 	const diagnostics: ParsedMirrorDiagnostic[] = [];
 	for (const entry of current) {
@@ -435,53 +516,207 @@ export function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string>
 	return false;
 }
 
+type SearchRootUnavailableReason = "gone" | "not-a-directory" | "unreadable" | "empty";
+
+const SEARCH_ROOT_UNAVAILABLE_MESSAGES: Readonly<Record<SearchRootUnavailableReason, string>> = {
+	gone: "A search root no longer exists; its previously indexed documents were left untouched.",
+	"not-a-directory": "A search root is no longer a directory; its previously indexed documents were left untouched.",
+	unreadable:
+		"A search root cannot be listed (unmounted, signed out, or permission denied); its previously indexed documents were left untouched.",
+	empty: "A search root is empty although it previously held indexed documents; they were left untouched. If they were removed on purpose, run a forced refresh.",
+};
+
+interface UnavailableRoot {
+	readonly prefix: string;
+	readonly reason: SearchRootUnavailableReason;
+}
+
+interface WalkLimits {
+	readonly maxScannedEntries: number;
+	readonly maxDepth: number;
+}
+
+interface CurrentFileListing {
+	readonly entries: CurrentEntry[];
+	readonly diagnostics: ParsedMirrorDiagnostic[];
+	/** Virtual prefixes the walk could not fully see; absence under them is not evidence of deletion. */
+	readonly unreliablePrefixes: string[];
+	/** Roots that were not walked because they were missing, unlistable, or empty. */
+	readonly unavailableRoots: UnavailableRoot[];
+}
+
+interface WalkState {
+	readonly sourceRoot: SourceRoot;
+	readonly supportedExtensions: ReadonlySet<string>;
+	readonly limits: WalkLimits;
+	readonly listing: CurrentFileListing;
+	readonly unreadableDirectories: Set<string>;
+	readonly truncationReasons: Set<string>;
+	visited: number;
+	stopped: boolean;
+}
+
+function walkLimits(options: ParsedMirrorSyncOptions): WalkLimits {
+	return {
+		maxScannedEntries: options.maxScannedEntries ?? DEFAULT_MAX_SCANNED_ENTRIES,
+		maxDepth: options.maxDepth ?? DEFAULT_MAX_WALK_DEPTH,
+	};
+}
+
+function hasIndexedUnder(index: ParsedMirrorIndex, prefix: string): boolean {
+	const inside = (virtualPath: string): boolean => virtualPath === prefix || virtualPath.startsWith(`${prefix}/`);
+	return Object.keys(index.entries).some(inside) || Object.keys(index.skipped ?? {}).some(inside);
+}
+
+function errnoCode(error: unknown): string | undefined {
+	if (!(error instanceof Error)) return undefined;
+	const code = (error as NodeJS.ErrnoException).code;
+	return typeof code === "string" ? code : undefined;
+}
+
+/** Why a search root cannot be trusted as a listing, or `undefined` when it is a readable, non-empty directory. */
+async function probeSearchRoot(rootPath: string): Promise<SearchRootUnavailableReason | undefined> {
+	let isDirectory: boolean;
+	try {
+		isDirectory = (await stat(rootPath)).isDirectory();
+	} catch (error) {
+		const code = errnoCode(error);
+		return code === "ENOENT" || code === "ENOTDIR" ? "gone" : "unreadable";
+	}
+	if (!isDirectory) return "not-a-directory";
+	let dir: Dir;
+	try {
+		dir = await opendir(rootPath);
+	} catch {
+		return "unreadable";
+	}
+	try {
+		return (await dir.read()) === null ? "empty" : undefined;
+	} catch {
+		return "unreadable";
+	} finally {
+		await dir.close().catch(() => undefined);
+	}
+}
+
 async function listCurrentFiles(
 	searchPaths: readonly string[],
 	supportedExtensions: ReadonlySet<string>,
-): Promise<CurrentEntry[]> {
-	const entries: CurrentEntry[] = [];
+	limits: WalkLimits,
+): Promise<CurrentFileListing> {
+	const listing: CurrentFileListing = { entries: [], diagnostics: [], unreliablePrefixes: [], unavailableRoots: [] };
 	for (const sourceRoot of planSourceRoots(searchPaths)) {
-		await collectFiles(sourceRoot, sourceRoot.rootPath, entries, supportedExtensions);
+		const reason = await probeSearchRoot(sourceRoot.rootPath);
+		if (reason !== undefined) {
+			listing.unavailableRoots.push({ prefix: sourceRoot.prefix, reason });
+			continue;
+		}
+		const state: WalkState = {
+			sourceRoot,
+			supportedExtensions,
+			limits,
+			listing,
+			unreadableDirectories: new Set(),
+			truncationReasons: new Set(),
+			visited: 0,
+			stopped: false,
+		};
+		await collectFiles(state, sourceRoot.rootPath, 0);
 	}
-	entries.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
-	return entries;
+	listing.entries.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
+	return listing;
 }
 
-async function collectFiles(
-	sourceRoot: SourceRoot,
-	directory: string,
-	entries: CurrentEntry[],
-	supportedExtensions: ReadonlySet<string>,
-): Promise<void> {
+function warnDirectoryUnreadable(state: WalkState, directory: string, code: string): void {
+	if (state.unreadableDirectories.has(directory)) return;
+	state.unreadableDirectories.add(directory);
+	state.listing.diagnostics.push({
+		code: "directory-unreadable",
+		severity: "warning",
+		message: `A directory could not be read (${code}); its previously indexed documents were left untouched.`,
+		source: sourceIdentifier(state.sourceRoot, directory),
+		reason: code,
+	});
+}
+
+function warnWalkTruncated(state: WalkState, reason: "max-entries" | "max-depth"): void {
+	if (state.truncationReasons.has(reason)) return;
+	state.truncationReasons.add(reason);
+	state.listing.diagnostics.push({
+		code: "walk-truncated",
+		severity: "warning",
+		message:
+			reason === "max-entries"
+				? `A search root has more than ${state.limits.maxScannedEntries} entries; the walk stopped early and previously indexed documents it did not reach were left untouched.`
+				: `A search root has directories nested deeper than ${state.limits.maxDepth} levels; documents below that depth were not scanned and previously indexed ones were left untouched.`,
+		source: state.sourceRoot.prefix,
+		reason,
+	});
+}
+
+async function collectFiles(state: WalkState, directory: string, depth: number): Promise<void> {
+	const { sourceRoot, listing } = state;
 	let dir: Dir;
 	try {
 		dir = await opendir(directory);
-	} catch {
+	} catch (error) {
+		const code = errnoCode(error);
+		if (code === undefined) throw error;
+		// A directory that vanished between listing and opening is genuinely gone.
+		if (code === "ENOENT" || code === "ENOTDIR") return;
+		listing.unreliablePrefixes.push(sourceIdentifier(sourceRoot, directory));
+		warnDirectoryUnreadable(state, directory, code);
 		return;
 	}
-	for await (const entry of dir) {
-		if (SKIP_DIR_NAMES.has(entry.name)) continue;
-		if (PRODUCT_ARTIFACT_FILE_NAMES.has(entry.name)) continue;
-		const sourcePath = resolve(directory, entry.name);
-		if (entry.isDirectory()) {
-			await collectFiles(sourceRoot, sourcePath, entries, supportedExtensions);
-			continue;
+	try {
+		for await (const entry of dir) {
+			if (state.visited >= state.limits.maxScannedEntries) {
+				state.stopped = true;
+				listing.unreliablePrefixes.push(sourceRoot.prefix);
+				warnWalkTruncated(state, "max-entries");
+				return;
+			}
+			state.visited += 1;
+			if (SKIP_DIR_NAMES.has(entry.name)) continue;
+			if (PRODUCT_ARTIFACT_FILE_NAMES.has(entry.name)) continue;
+			const sourcePath = resolve(directory, entry.name);
+			if (entry.isDirectory()) {
+				if (depth + 1 > state.limits.maxDepth) {
+					listing.unreliablePrefixes.push(sourceIdentifier(sourceRoot, sourcePath));
+					warnWalkTruncated(state, "max-depth");
+					continue;
+				}
+				await collectFiles(state, sourcePath, depth + 1);
+				if (state.stopped) return;
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			const extension = normalizeExtension(extname(entry.name));
+			if (!state.supportedExtensions.has(extension)) continue;
+			let fileStat: Awaited<ReturnType<typeof stat>>;
+			try {
+				fileStat = await stat(sourcePath, { bigint: true });
+			} catch (error) {
+				const code = errnoCode(error);
+				if (code === undefined) throw error;
+				if (code === "ENOENT" || code === "ENOTDIR") continue;
+				// Present but unstat-able (for example a directory without search permission): keep its mirror.
+				listing.unreliablePrefixes.push(sourceIdentifier(sourceRoot, sourcePath));
+				warnDirectoryUnreadable(state, directory, code);
+				continue;
+			}
+			listing.entries.push({
+				virtualPath: sourceIdentifier(sourceRoot, sourcePath),
+				sourcePath,
+				sizeBytes: Number(fileStat.size),
+				mtimeNs: Number(fileStat.mtimeNs),
+			});
 		}
-		if (!entry.isFile()) continue;
-		const extension = normalizeExtension(extname(entry.name));
-		if (!supportedExtensions.has(extension)) continue;
-		let fileStat: Awaited<ReturnType<typeof stat>>;
-		try {
-			fileStat = await stat(sourcePath, { bigint: true });
-		} catch {
-			continue;
-		}
-		entries.push({
-			virtualPath: sourceIdentifier(sourceRoot, sourcePath),
-			sourcePath,
-			sizeBytes: Number(fileStat.size),
-			mtimeNs: Number(fileStat.mtimeNs),
-		});
+	} catch (error) {
+		const code = errnoCode(error);
+		if (code === undefined) throw error;
+		listing.unreliablePrefixes.push(sourceIdentifier(sourceRoot, directory));
+		warnDirectoryUnreadable(state, directory, code);
 	}
 }
 

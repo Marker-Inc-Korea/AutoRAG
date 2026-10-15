@@ -309,6 +309,22 @@ and are never settable from model/tool arguments: `maxDocuments`,
 `bandwidthLimit`, and `dryRun` (cloud-drive/rclone). `maxContentChars` defaults
 to 20000 for RSS and 100000 for Spotlight and cloud-drive.
 
+### Refresh safety limits
+
+`refresh` guards the parsed-mirror refresh against deleting a corpus because a
+search root became unavailable. Every field is optional; unknown keys fail
+config resolution.
+
+| Field | Default | Controls |
+|---|---|---|
+| `maxDeleteRatio` | 0.3 | Largest share (0–1) of indexed documents one refresh may delete; a bigger deletion above 100 documents is suppressed (`mass-delete-suppressed`) unless the refresh is forced |
+| `maxScannedEntries` | 2000000 | Directory entries examined per search root before `walk-truncated` |
+| `maxDepth` | 64 | Deepest directory level walked below a root before `walk-truncated` |
+
+A root that is missing, unlistable, or empty while it previously held documents
+keeps its mirrors and reports `search-root-unavailable`; see
+`docs/minsync-setup.md`.
+
 ## Probe and configure datasource skills (setup wizard)
 
 Use `autorag setup` to probe the local runtime, model profile, and known

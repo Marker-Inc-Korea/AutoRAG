@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
 import type { JevBackendName } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
@@ -244,6 +244,8 @@ export interface CliConfig {
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
 	limits?: AutoRAGRetrievalLimits;
+	/** Safety limits for the parsed-mirror refresh (delete-ratio valve, walk caps). */
+	refresh?: AutoRAGRefreshLimits;
 	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** P2P sharing configuration. Disabled by default. */
@@ -990,6 +992,43 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 	};
 }
 
+const REFRESH_ALLOWLIST: Record<string, true> = {
+	maxDeleteRatio: true,
+	maxScannedEntries: true,
+	maxDepth: true,
+};
+
+/** Validate the `refresh` section and map it onto the agent option. */
+export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'refresh' must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(REFRESH_ALLOWLIST, key)) throw new ConfigError(`refresh.${key} is not a recognized field`);
+	}
+	const maxDeleteRatio = record.maxDeleteRatio;
+	if (
+		maxDeleteRatio !== undefined &&
+		(typeof maxDeleteRatio !== "number" ||
+			!Number.isFinite(maxDeleteRatio) ||
+			maxDeleteRatio < 0 ||
+			maxDeleteRatio > 1)
+	) {
+		throw new ConfigError("refresh.maxDeleteRatio must be a number between 0 and 1");
+	}
+	const maxScannedEntries = positiveLimitField(record, "maxScannedEntries", "refresh");
+	const maxDepth = record.maxDepth;
+	if (maxDepth !== undefined && (typeof maxDepth !== "number" || !Number.isInteger(maxDepth) || maxDepth < 0)) {
+		throw new ConfigError("refresh.maxDepth must be a non-negative integer");
+	}
+	return {
+		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
+		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
+		...(maxDepth !== undefined ? { maxDepth } : {}),
+	};
+}
+
 export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const flags = input.flags;
 	const env = input.env ?? process.env;
@@ -1061,6 +1100,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	if (model) config.model = model;
 	if (fileExcludePaths !== undefined) config.excludePaths = fileExcludePaths;
 	if (file.limits !== undefined) config.limits = normalizeLimitsConfig(file.limits);
+	if (file.refresh !== undefined) config.refresh = normalizeRefreshConfig(file.refresh);
 	const normalized = normalizeIndexingConfig({
 		minSync: file.minSync as MinSyncMethodConfig | false | undefined,
 	});
@@ -1398,6 +1438,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
 	if (config.limits !== undefined) opts.limits = config.limits;
+	if (config.refresh !== undefined) opts.refresh = config.refresh;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
@@ -2005,6 +2046,7 @@ export function writeDefaultConfig(
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
+	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
 	full.rerank = partial.rerank ?? {
 		provider: DEFAULT_RERANK_PROVIDER,
