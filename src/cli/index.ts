@@ -19,6 +19,7 @@ const BOOLEAN_FLAGS = new Set([
 	"immediate",
 	"skip-probes",
 	"full",
+	"retry-failed",
 	"strict",
 	"refresh",
 	"available",
@@ -114,7 +115,7 @@ Commands:
   health               Check model/provider auth and completion access (no index check)
   lite init|refresh|watch|status|index|duplicates|health
                        Model-free setup, indexing, status, and datasource lifecycle
-                       (lite refresh: --full --force --method; watch: --once)
+                       (lite refresh: --full --force --retry-failed --method; watch: --once)
   lite retrieve <query>
                        Retrieve documents without model curation
                        (--top-k N  --scope SCOPE  --json  --debug)

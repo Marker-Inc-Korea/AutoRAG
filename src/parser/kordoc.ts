@@ -1,6 +1,30 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { parse as kordocParse } from "kordoc";
 import { ParseError } from "./errors.ts";
 import { type ParseDiagnostic, type ParseInput, type ParseOutput, Parser } from "./types.ts";
+
+/**
+ * The installed kordoc release. Its `exports` map hides `package.json`, so the manifest is read
+ * next to the resolved entry point (`<pkg>/dist/index.*`). Upgrading kordoc is exactly when a
+ * previously failed file deserves another attempt.
+ */
+function installedKordocVersion(): string {
+	try {
+		const entry = createRequire(import.meta.url).resolve("kordoc");
+		const manifest = JSON.parse(readFileSync(join(dirname(dirname(entry)), "package.json"), "utf8")) as {
+			name?: unknown;
+			version?: unknown;
+		};
+		if (manifest.name === "kordoc" && typeof manifest.version === "string") return manifest.version;
+	} catch {
+		// Fall through: an unreadable manifest only makes the stamp coarser.
+	}
+	return "unknown";
+}
+
+const KORDOC_VERSION = installedKordocVersion();
 
 /** Image mime types kordoc hands to an injected OCR provider. */
 export type KordocOcrMimeType = "image/png" | "image/jpeg" | "image/webp";
@@ -94,6 +118,7 @@ const defaultParse: KordocParseFn = async (bytes, options) => {
  */
 export class KordocParser extends Parser {
 	readonly name = "kordoc";
+	readonly version = KORDOC_VERSION;
 	readonly extensions: readonly string[];
 
 	readonly #parse: KordocParseFn;

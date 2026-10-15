@@ -14,12 +14,20 @@ export interface ParsedMirrorEntry {
 }
 
 /** Why refresh deliberately left a source out of the parsed mirror. */
-export type ParsedMirrorSkipReason = "duplicate-excluded" | "user-excluded" | "parser-skipped" | "parser-failed";
+export type ParsedMirrorSkipReason =
+	| "duplicate-excluded"
+	| "user-excluded"
+	| "parser-skipped"
+	| "parser-failed"
+	| "source-unreadable";
 
 /**
  * A source the last refresh decided not to mirror, pinned to the exact version it
  * decided on. Staleness checks compare against this record instead of re-deriving
  * the decision, so a deliberately skipped file is not reported as a new source.
+ *
+ * Retryable skips (`parser-failed`, `source-unreadable`) also carry the retry policy state, so
+ * refresh can honor the record without reading or parsing the file again.
  */
 export interface ParsedMirrorSkipEntry {
 	readonly virtualPath: string;
@@ -28,6 +36,14 @@ export interface ParsedMirrorSkipEntry {
 	readonly sourceMtimeNs: number;
 	readonly sourceSizeBytes: number;
 	readonly updatedAt: string;
+	/** `Parser.name` the skip was decided with. */
+	readonly parserName?: string;
+	/** `Parser.version` the skip was decided with. Absent on records written before version stamps. */
+	readonly parserVersion?: string;
+	/** Consecutive failed attempts against this exact source version; drives the backoff window. */
+	readonly attempts?: number;
+	/** ISO time before which a retryable skip is honored without reading the file. */
+	readonly retryAfter?: string;
 }
 
 export interface ParsedMirrorIndex {
@@ -77,7 +93,11 @@ function isParsedMirrorSkipEntry(value: unknown): value is ParsedMirrorSkipEntry
 		isParsedMirrorSkipReason(value.reason) &&
 		typeof value.sourceMtimeNs === "number" &&
 		typeof value.sourceSizeBytes === "number" &&
-		typeof value.updatedAt === "string"
+		typeof value.updatedAt === "string" &&
+		(value.parserName === undefined || typeof value.parserName === "string") &&
+		(value.parserVersion === undefined || typeof value.parserVersion === "string") &&
+		(value.attempts === undefined || (typeof value.attempts === "number" && Number.isInteger(value.attempts))) &&
+		(value.retryAfter === undefined || typeof value.retryAfter === "string")
 	);
 }
 
@@ -86,7 +106,8 @@ function isParsedMirrorSkipReason(value: unknown): value is ParsedMirrorSkipReas
 		value === "duplicate-excluded" ||
 		value === "user-excluded" ||
 		value === "parser-skipped" ||
-		value === "parser-failed"
+		value === "parser-failed" ||
+		value === "source-unreadable"
 	);
 }
 

@@ -339,6 +339,11 @@ export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "ev
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/**
+	 * Retry sources previously skipped as parser-failed or source-unreadable once, ignoring their
+	 * backoff windows. Unlike `force`, healthy unchanged mirrors are not re-parsed.
+	 */
+	readonly retrySkipped?: boolean;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -2924,7 +2929,9 @@ export class AutoRAGAgent {
 			lastStartedAt: startedAt,
 		};
 		try {
-			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
+			const summary = needsParsed
+				? await this.syncParsedMirrors(force, opts?.retrySkipped === true)
+				: await this.scanMirrorStaleness();
 			progress = updateRefreshProgress(progress, {
 				phase: wants("minsync")
 					? "minsync"
@@ -3259,12 +3266,13 @@ export class AutoRAGAgent {
 		};
 	}
 
-	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
+	async syncParsedMirrors(force = false, retrySkipped = false): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			force,
+			retrySkipped,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),

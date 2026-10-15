@@ -87,6 +87,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --method <csv>  Restrict the run: minsync,parsed,datasources,jikji,everything,fsearch,all",
 		"  --force         Re-index even when the mirror looks unchanged",
+		"  --retry-failed  Retry files whose parse or read failed earlier, once, ignoring their backoff window",
 	]),
 	status: usage([
 		"autorag status - corpus freshness and index health",
