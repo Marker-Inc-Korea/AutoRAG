@@ -17,6 +17,8 @@ import {
 	detectMirrorStaleness,
 	loadMirrorIndex,
 	type ParsedMirrorIndex,
+	type ParsedMirrorSyncOptions,
+	type ParsedMirrorSyncResult,
 	parsedMirrorIndexPath,
 	parsedMirrorRoot,
 	saveMirrorIndex,
@@ -210,6 +212,7 @@ describe("syncParsedMirrors", () => {
 	it("ignores poisoned stale index output paths when deleting removed files", async () => {
 		const outside = join(root, "outside-stale.md");
 		writeFileSync(outside, "do not delete\n");
+		writeFileSync(join(source, "present.txt"), "Still here\n");
 		saveMirrorIndex(root, {
 			version: 1,
 			entries: {
@@ -290,6 +293,7 @@ describe("syncParsedMirrors", () => {
 	it("returns deleted-mirror diagnostics when previously indexed files disappear", async () => {
 		const file = join(source, "gone.txt");
 		writeFileSync(file, "Bye\n");
+		writeFileSync(join(source, "present.txt"), "Still here\n");
 		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 
 		unlinkSync(file);
@@ -802,5 +806,314 @@ describe("skipped-source retry policy", () => {
 				chmodSync(file, 0o644);
 			}
 		});
+	});
+});
+
+const canChmod = process.platform !== "win32" && process.getuid?.() !== 0;
+
+function writeFiles(directory: string, count: number): void {
+	mkdirSync(directory, { recursive: true });
+	for (let index = 0; index < count; index += 1) {
+		writeFileSync(join(directory, `f${String(index).padStart(3, "0")}.txt`), `File ${index}\n`);
+	}
+}
+
+function diagnosticsWith(result: ParsedMirrorSyncResult, code: string): ParsedMirrorSyncResult["diagnostics"] {
+	return result.diagnostics.filter((diagnostic) => diagnostic.code === code);
+}
+
+describe("syncParsedMirrors search-root availability", () => {
+	async function indexOnce(searchPaths: string[] = [source]) {
+		return syncParsedMirrors({ root, searchPaths, registry: createDefaultParserRegistry() });
+	}
+
+	it("keeps every mirror when a previously populated root is emptied", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		writeFileSync(join(source, "b.txt"), "Beta\n");
+		await indexOnce();
+		const before = loadMirrorIndex(root);
+
+		unlinkSync(join(source, "a.txt"));
+		unlinkSync(join(source, "b.txt"));
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+		const unavailable = diagnosticsWith(result, "search-root-unavailable");
+		expect(unavailable).toHaveLength(1);
+		expect(unavailable[0]).toMatchObject({ severity: "warning", source: "/docs", reason: "empty" });
+		expect(JSON.stringify(unavailable)).not.toContain(root);
+		const after = loadMirrorIndex(root);
+		expect(Object.keys(after.entries).sort()).toEqual(["/docs/a.txt", "/docs/b.txt"]);
+		for (const entry of Object.values(before.entries)) expect(existsSync(entry.outputPath)).toBe(true);
+	});
+
+	it("keeps every mirror when the root directory disappeared", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+
+		rmSync(source, { recursive: true, force: true });
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "search-root-unavailable")[0]).toMatchObject({
+			severity: "warning",
+			source: "/docs",
+			reason: "gone",
+		});
+		expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+	});
+
+	it("keeps every mirror when the root path is no longer a directory", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+
+		rmSync(source, { recursive: true, force: true });
+		writeFileSync(source, "now a file\n");
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "search-root-unavailable")[0]).toMatchObject({ reason: "not-a-directory" });
+		expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+	});
+
+	it.skipIf(!canChmod)("keeps every mirror when the root cannot be listed (chmod 000 and 111)", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+
+		try {
+			for (const mode of [0o000, 0o111]) {
+				chmodSync(source, mode);
+				const result = await indexOnce();
+				expect(result.deleted).toBe(0);
+				expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+				expect(diagnosticsWith(result, "search-root-unavailable")[0]).toMatchObject({
+					severity: "warning",
+					source: "/docs",
+					reason: "unreadable",
+				});
+				expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+			}
+		} finally {
+			chmodSync(source, 0o755);
+		}
+	});
+
+	it("still removes genuinely stale mirrors in healthy roots while an unavailable root keeps its own", async () => {
+		const other = join(root, "other");
+		mkdirSync(other, { recursive: true });
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		writeFileSync(join(other, "x.txt"), "Ex\n");
+		writeFileSync(join(other, "y.txt"), "Why\n");
+		await indexOnce([source, other]);
+
+		unlinkSync(join(source, "a.txt"));
+		unlinkSync(join(other, "x.txt"));
+		unlinkSync(join(other, "y.txt"));
+		writeFileSync(join(source, "b.txt"), "Beta\n");
+		const result = await indexOnce([source, other]);
+
+		expect(result.deleted).toBe(1);
+		expect(diagnosticsWith(result, "deleted-mirror").map((d) => d.source)).toEqual(["/docs/a.txt"]);
+		expect(diagnosticsWith(result, "search-root-unavailable").map((d) => d.source)).toEqual(["/other"]);
+		expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual([
+			"/docs/b.txt",
+			"/other/x.txt",
+			"/other/y.txt",
+		]);
+	});
+
+	it("does not warn about a root that was never populated", async () => {
+		const result = await indexOnce();
+
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("indexes the root again after it comes back and deletes nothing it still has", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+		unlinkSync(join(source, "a.txt"));
+		await indexOnce();
+
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "search-root-unavailable")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+	});
+});
+
+describe("syncParsedMirrors deletion-ratio safety valve", () => {
+	async function sync(extra: Partial<ParsedMirrorSyncOptions> = {}) {
+		return syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry(), ...extra });
+	}
+
+	function removeFirst(count: number): void {
+		for (let index = 0; index < count; index += 1) {
+			unlinkSync(join(source, `f${String(index).padStart(3, "0")}.txt`));
+		}
+	}
+
+	it("refuses to delete more than maxDeleteRatio above the 100-file floor", async () => {
+		writeFiles(source, 150);
+		await sync();
+
+		removeFirst(120);
+		const result = await sync();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+		const suppressed = diagnosticsWith(result, "mass-delete-suppressed");
+		expect(suppressed).toHaveLength(1);
+		expect(suppressed[0]?.severity).toBe("warning");
+		expect(suppressed[0]?.message).toContain("120");
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(150);
+		for (const entry of Object.values(loadMirrorIndex(root).entries)) expect(existsSync(entry.outputPath)).toBe(true);
+	});
+
+	it("keeps suppressing on the next refresh until force is set, then deletes", async () => {
+		writeFiles(source, 150);
+		await sync();
+		removeFirst(120);
+		await sync();
+
+		const forced = await sync({ force: true });
+
+		expect(forced.deleted).toBe(120);
+		expect(diagnosticsWith(forced, "mass-delete-suppressed")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(30);
+	});
+
+	it("deletes at or below the ratio", async () => {
+		writeFiles(source, 150);
+		await sync();
+
+		removeFirst(45);
+		const result = await sync();
+
+		expect(result.deleted).toBe(45);
+		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(105);
+	});
+
+	it("honors a custom maxDeleteRatio", async () => {
+		writeFiles(source, 150);
+		await sync();
+
+		removeFirst(120);
+		const result = await sync({ maxDeleteRatio: 0.9 });
+
+		expect(result.deleted).toBe(120);
+		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
+	});
+
+	it("never suppresses deletions at or below the 100-file floor", async () => {
+		writeFiles(source, 100);
+		await sync();
+
+		removeFirst(99);
+		const result = await sync();
+
+		expect(result.deleted).toBe(99);
+		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
+	});
+});
+
+describe("syncParsedMirrors walk hardening", () => {
+	it("reports walk-truncated and keeps unseen mirrors when maxScannedEntries is hit", async () => {
+		writeFiles(source, 20);
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxScannedEntries: 5,
+		});
+
+		expect(result.scanned).toBeLessThanOrEqual(5);
+		expect(result.deleted).toBe(0);
+		const truncated = diagnosticsWith(result, "walk-truncated");
+		expect(truncated).toHaveLength(1);
+		expect(truncated[0]).toMatchObject({ severity: "warning", source: "/docs", reason: "max-entries" });
+		expect(JSON.stringify(truncated)).not.toContain(root);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(20);
+	});
+
+	it("reports walk-truncated and keeps deeper mirrors when maxDepth is hit", async () => {
+		const deep = join(source, "a", "b", "c");
+		mkdirSync(deep, { recursive: true });
+		writeFileSync(join(source, "top.txt"), "Top\n");
+		writeFileSync(join(source, "a", "mid.txt"), "Mid\n");
+		writeFileSync(join(deep, "deep.txt"), "Deep\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxDepth: 2,
+		});
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "walk-truncated")[0]).toMatchObject({
+			severity: "warning",
+			source: "/docs",
+			reason: "max-depth",
+		});
+		expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual([
+			"/docs/a/b/c/deep.txt",
+			"/docs/a/mid.txt",
+			"/docs/top.txt",
+		]);
+	});
+
+	it("does not report truncation for a tree within the limits", async () => {
+		writeFiles(source, 3);
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxScannedEntries: 3,
+			maxDepth: 1,
+		});
+
+		expect(result.diagnostics).toEqual([]);
+		expect(result.scanned).toBe(3);
+	});
+
+	it.skipIf(!canChmod)("reports directory-unreadable for one subdirectory while siblings still index", async () => {
+		const locked = join(source, "locked");
+		const open = join(source, "open");
+		mkdirSync(locked, { recursive: true });
+		mkdirSync(open, { recursive: true });
+		writeFileSync(join(locked, "secret.txt"), "Secret\n");
+		writeFileSync(join(open, "one.txt"), "One\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		writeFileSync(join(open, "two.txt"), "Two\n");
+		try {
+			chmodSync(locked, 0o000);
+			const result = await syncParsedMirrors({
+				root,
+				searchPaths: [source],
+				registry: createDefaultParserRegistry(),
+			});
+
+			expect(result.deleted).toBe(0);
+			expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+			const unreadable = diagnosticsWith(result, "directory-unreadable");
+			expect(unreadable).toHaveLength(1);
+			expect(unreadable[0]).toMatchObject({ severity: "warning", source: "/docs/locked" });
+			expect(JSON.stringify(unreadable)).not.toContain(root);
+			expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual([
+				"/docs/locked/secret.txt",
+				"/docs/open/one.txt",
+				"/docs/open/two.txt",
+			]);
+		} finally {
+			chmodSync(locked, 0o755);
+		}
 	});
 });

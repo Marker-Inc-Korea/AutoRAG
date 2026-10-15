@@ -13,4 +13,11 @@ export type {
 	ParsedMirrorSyncOptions,
 	ParsedMirrorSyncResult,
 } from "./sync.ts";
-export { DEFAULT_MAX_SOURCE_BYTES, detectMirrorStaleness, isPathExcluded, syncParsedMirrors } from "./sync.ts";
+export {
+	DEFAULT_MAX_SOURCE_BYTES,
+	DEFAULT_TRANSIENT_RETRIES,
+	detectMirrorStaleness,
+	isPathExcluded,
+	MirrorWorkspaceError,
+	syncParsedMirrors,
+} from "./sync.ts";
