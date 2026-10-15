@@ -244,7 +244,7 @@ export interface CliConfig {
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
 	limits?: AutoRAGRetrievalLimits;
-	/** Safety limits for the parsed-mirror refresh (delete-ratio valve, walk caps). */
+	/** Refresh limits (delete-ratio valve, walk caps) and `transientRetries` (default 3, EMFILE/EBUSY/EIO/ETIMEDOUT per file). */
 	refresh?: AutoRAGRefreshLimits;
 	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
@@ -996,6 +996,7 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	maxDeleteRatio: true,
 	maxScannedEntries: true,
 	maxDepth: true,
+	transientRetries: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -1022,10 +1023,18 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	if (maxDepth !== undefined && (typeof maxDepth !== "number" || !Number.isInteger(maxDepth) || maxDepth < 0)) {
 		throw new ConfigError("refresh.maxDepth must be a non-negative integer");
 	}
+	const transientRetries = record.transientRetries;
+	if (
+		transientRetries !== undefined &&
+		(typeof transientRetries !== "number" || !Number.isInteger(transientRetries) || transientRetries < 0)
+	) {
+		throw new ConfigError("refresh.transientRetries must be a non-negative integer");
+	}
 	return {
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
+		...(transientRetries !== undefined ? { transientRetries } : {}),
 	};
 }
 

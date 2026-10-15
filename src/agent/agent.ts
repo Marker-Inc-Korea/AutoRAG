@@ -61,6 +61,7 @@ import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	isPathExcluded,
+	MirrorWorkspaceError,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
@@ -234,6 +235,8 @@ export interface AutoRAGRefreshLimits {
 	readonly maxScannedEntries?: number;
 	/** Deepest directory level walked below a search root. Default 64. */
 	readonly maxDepth?: number;
+	/** Retries for a transient per-file I/O error (EMFILE/EBUSY/EIO/ETIMEDOUT) before the file is skipped. Default 3. */
+	readonly transientRetries?: number;
 }
 
 /**
@@ -298,7 +301,7 @@ function positiveLimit(value: number | undefined, fallback: number, path: string
 
 function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRAGRefreshLimits {
 	if (limits === undefined) return {};
-	const { maxDeleteRatio, maxScannedEntries, maxDepth } = limits;
+	const { maxDeleteRatio, maxScannedEntries, maxDepth, transientRetries } = limits;
 	if (
 		maxDeleteRatio !== undefined &&
 		!(Number.isFinite(maxDeleteRatio) && maxDeleteRatio >= 0 && maxDeleteRatio <= 1)
@@ -309,10 +312,14 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	if (maxDepth !== undefined && (!Number.isInteger(maxDepth) || maxDepth < 0)) {
 		throw new Error("refresh.maxDepth must be a non-negative integer");
 	}
+	if (transientRetries !== undefined && (!Number.isInteger(transientRetries) || transientRetries < 0)) {
+		throw new Error("refresh.transientRetries must be a non-negative integer");
+	}
 	return {
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
+		...(transientRetries !== undefined ? { transientRetries } : {}),
 	};
 }
 
@@ -615,7 +622,7 @@ export interface AutoRAGAgentOptions {
 	 * {@link AutoRAGRetrievalLimits}. Values must be positive integers.
 	 */
 	limits?: AutoRAGRetrievalLimits;
-	/** Safety limits for the parsed-mirror refresh. See {@link AutoRAGRefreshLimits}. */
+	/** Parsed-mirror refresh limits and retry tuning. See {@link AutoRAGRefreshLimits}. */
 	refresh?: AutoRAGRefreshLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
@@ -3095,7 +3102,12 @@ export class AutoRAGAgent {
 			this.refreshState = {
 				...this.refreshState,
 				lastOutcome: "failed",
-				lastError: error instanceof Error ? `Refresh failed: ${error.name}` : "Refresh failed.",
+				lastError:
+					error instanceof MirrorWorkspaceError
+						? `Refresh failed: workspace not writable${error.code === undefined ? "" : ` (${error.code})`}`
+						: error instanceof Error
+							? `Refresh failed: ${error.name}`
+							: "Refresh failed.",
 			};
 			progress = updateRefreshProgress(progress, {
 				state: "failed",

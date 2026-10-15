@@ -137,11 +137,36 @@ diagnostic `source` is the virtual path, and the message is the underlying
 filesystem error. Refresh removes any previous mirror for that path and
 continues with the remaining files. These transient reads are not stored as
 skip records, so a later refresh tries the source again once it can be read.
-Unexpected read errors, parser bugs, and mirror or index write failures still
-stop the refresh.
+Any other read error, a parser that throws something other than `ParseError`, and
+a failed mirror write are also isolated to the one file. Each is skipped and the
+refresh continues:
 
-`AutoRAGAgent.refresh()` and `getRefreshStatus()` expose both codes through
-the public `SearchDocumentDiagnosticCode` type, alongside parser diagnostics.
+| Code | Severity | Cause |
+| --- | --- | --- |
+| `source-read-failed` | warning | Read error not listed above (`EMFILE`, `EIO`, `EBUSY`, `ETIMEDOUT`, …); `reason` carries the errno code. |
+| `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
+| `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
+
+`EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
+(50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
+`refresh.transientRetries` config key (default `3`, `0` disables retries):
+
+```json
+{ "refresh": { "transientRetries": 3 } }
+```
+
+Like `source-unreadable`, these skips are not persisted, so the next refresh
+tries the file again. Mirror writes go through a temp file that is removed on
+any failure, so a failed write never leaves a `*.tmp` orphan.
+
+A write failure that makes the workspace itself unusable (`ENOSPC`, `EDQUOT`,
+`EACCES`, `EPERM`, `EROFS`) is not a per-file problem and aborts the refresh with
+a `MirrorWorkspaceError` naming the workspace. Files already mirrored in that run
+stay in the index, so the next refresh resumes incrementally.
+
+`AutoRAGAgent.refresh()` and `getRefreshStatus()` expose all of these codes
+through the public `SearchDocumentDiagnosticCode` type, alongside parser
+diagnostics.
 
 ### Unavailable search roots and mass deletions
 
