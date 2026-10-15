@@ -10,6 +10,7 @@ export {
 export type {
 	ParsedMirrorDiagnostic,
 	ParsedMirrorDiagnosticCode,
+	ParsedMirrorProgress,
 	ParsedMirrorSyncOptions,
 	ParsedMirrorSyncResult,
 } from "./sync.ts";

@@ -59,6 +59,11 @@ function lookupInPath(env: NodeJS.ProcessEnv): string | undefined {
  * registers the vector and hybrid methods over the same workspace and the parallel
  * retriever runs them at once, so operations for one workspace queue here.
  */
+/** The rejection for a sync its caller aborted: the signal's reason when it is an error. */
+function abortReason(signal: AbortSignal): Error {
+	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
+}
+
 const workspaceOperationTails = new Map<string, Promise<unknown>>();
 const workspaceSyncInFlight = new Map<string, number>();
 
@@ -126,17 +131,18 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
-	async sync(force = false): Promise<MinSyncSyncResult> {
+	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
 		const inFlight = workspaceSyncInFlight.get(this.workspacePath) ?? 0;
 		workspaceSyncInFlight.set(this.workspacePath, inFlight + 1);
-		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force)).finally(() => {
+		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force, signal)).finally(() => {
 			const remaining = (workspaceSyncInFlight.get(this.workspacePath) ?? 1) - 1;
 			if (remaining === 0) workspaceSyncInFlight.delete(this.workspacePath);
 			else workspaceSyncInFlight.set(this.workspacePath, remaining);
 		});
 	}
 
-	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
+	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
+		if (signal?.aborted) throw abortReason(signal);
 		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
@@ -148,7 +154,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			maxChunkSize: this.maxChunkSize,
 			runtime: this.runtime,
 		});
-		return withExcluded(await client.sync(force));
+		return withExcluded(await client.sync(force, signal));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */

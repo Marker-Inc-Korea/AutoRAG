@@ -171,7 +171,7 @@ export class MinSyncClient {
 		return previous === undefined || JSON.stringify(previous) !== JSON.stringify(identity);
 	}
 
-	async sync(force = false): Promise<MinSyncSyncResult> {
+	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		let effective: {
 			config: MinSyncEmbedderConfig;
@@ -226,7 +226,9 @@ export class MinSyncClient {
 		// never double as a process-wide kill timer: a full reindex legitimately
 		// runs for minutes or hours, and a small embedder timeout previously
 		// SIGTERM'd `minsync sync` mid-run. Spawn init, check, and sync without a
-		// process timeout so a long sync always runs to completion.
+		// process timeout so a long sync always runs to completion; only the
+		// caller's abort signal can stop them.
+		const spawnOptions = signal === undefined ? {} : { signal };
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
 		if (!initialized) {
@@ -234,7 +236,7 @@ export class MinSyncClient {
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
-			const init = await this.spawn(initArgs);
+			const init = await this.spawn(initArgs, spawnOptions);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
 					ok: false,
@@ -256,7 +258,11 @@ export class MinSyncClient {
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
-		const check = await this.spawn(["check", "--format", "json"]);
+		const check = await this.spawn(["check", "--format", "json"], spawnOptions).catch((error: unknown) => {
+			// An abort rejects out of spawn; the rewritten config must not outlive the run.
+			restoreConfig();
+			throw error;
+		});
 		if (!check.ok) {
 			restoreConfig();
 			return {
@@ -294,7 +300,10 @@ export class MinSyncClient {
 		const fullReindex = force || chunkSizeChanged || dimensionChanged || identityChanged;
 		const syncArgs =
 			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await this.spawn(syncArgs);
+		const result = await this.spawn(syncArgs, spawnOptions).catch((error: unknown) => {
+			restoreConfig();
+			throw error;
+		});
 		if (!result.ok) {
 			restoreConfig();
 			return {

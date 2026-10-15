@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { terminateProcessTree } from "../process/terminate-tree.ts";
 
 export interface ProcessResult {
 	readonly ok: boolean;
@@ -23,7 +24,13 @@ export function spawnProcess(
 			return;
 		}
 		const portable = portableSpawnCommand(command, args);
-		const child = spawn(portable.command, [...portable.args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+		// A signal-bearing run leads its own process group on POSIX so an abort reaches descendants too;
+		// without a signal the child stays in the caller's group exactly as before.
+		const child = spawn(portable.command, [...portable.args], {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+			...(signal !== undefined && process.platform !== "win32" ? { detached: true } : {}),
+		});
 		let stdout = "";
 		let stderr = "";
 		let timedOut = false;
@@ -44,7 +51,7 @@ export function spawnProcess(
 				: undefined;
 		// The caller gave up on the result: stop the process instead of letting it run on.
 		const onAbort = (): void => {
-			child.kill("SIGTERM");
+			terminateProcessTree(child);
 		};
 		signal?.addEventListener("abort", onAbort, { once: true });
 		const settle = (): void => {

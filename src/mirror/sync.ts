@@ -4,7 +4,13 @@ import { opendir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, resolve, sep } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "../parser/defaults.ts";
-import { ParseError } from "../parser/errors.ts";
+import { ParseError, ParseIsolationError } from "../parser/errors.ts";
+import {
+	ISOLATED_PARSER_NAMES,
+	IsolatedParseRunner,
+	validateIsolationOptions,
+	workerParserOptions,
+} from "../parser/isolated.ts";
 import { KORDOC_IMAGE_EXTENSIONS } from "../parser/kordoc.ts";
 import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
@@ -68,6 +74,25 @@ export interface ParsedMirrorSyncOptions {
 	readonly excludeSourcePaths?: ReadonlySet<string>;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Stops the sync between files and kills an in-flight parse worker. The sync rejects with the signal's
+	 * reason after checkpointing the mirror, so finished files are not re-parsed next time.
+	 */
+	readonly signal?: AbortSignal;
+	/** Called before each file and once more with `processed === total` when the parse phase ends. */
+	readonly onProgress?: (progress: ParsedMirrorProgress) => void;
+}
+
+/** Parse-phase progress. Every scanned file counts as processed, whether parsed, unchanged, skipped or excluded. */
+export interface ParsedMirrorProgress {
+	readonly processed: number;
+	readonly total: number;
+	/** Running totals for the files processed so far; the final event carries the sync result's counts. */
+	readonly written: number;
+	readonly deleted: number;
+	readonly skipped: number;
+	/** The file about to be processed; absent on the final event. */
+	readonly currentVirtualPath?: string;
 }
 
 export type ParsedMirrorDiagnosticCode =
@@ -110,12 +135,42 @@ interface CurrentEntry {
 	readonly mtimeNs: number;
 }
 
+/** The rejection for a sync its caller aborted: the signal's reason when it is an error. */
+function abortReason(signal: AbortSignal): Error {
+	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
+}
+
 const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";
 
 const STANDALONE_OCR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(KORDOC_IMAGE_EXTENSIONS);
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
+	if (options.parserOptions !== undefined) validateIsolationOptions(options.parserOptions);
+	if (options.signal?.aborted) throw abortReason(options.signal);
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
+	// Worker isolation applies to the default registry only: an injected registry or a function-valued
+	// parser option cannot cross the thread boundary, so those parse in-process.
+	const workerOptions = options.registry === undefined ? workerParserOptions(options.parserOptions ?? {}) : undefined;
+	const isolated =
+		workerOptions === undefined
+			? undefined
+			: new IsolatedParseRunner({
+					parserOptions: workerOptions,
+					fileTimeoutMs: options.parserOptions?.fileTimeoutMs,
+					maxHeapMb: options.parserOptions?.maxHeapMb,
+				});
+	try {
+		return await syncWithRegistry(options, registry, isolated);
+	} finally {
+		await isolated?.close();
+	}
+}
+
+async function syncWithRegistry(
+	options: ParsedMirrorSyncOptions,
+	registry: ParserRegistry,
+	isolated: IsolatedParseRunner | undefined,
+): Promise<ParsedMirrorSyncResult> {
 	const maxSourceBytes = options.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES;
 	const supportedExtensions = supportedExtensionSet(registry);
 	const current = await listCurrentFiles(options.searchPaths, supportedExtensions);
@@ -159,7 +214,19 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		sinceCheckpoint = 0;
 	};
 
-	for (const entry of current) {
+	for (const [position, entry] of current.entries()) {
+		options.onProgress?.({
+			processed: position,
+			total: current.length,
+			written,
+			deleted,
+			skipped,
+			currentVirtualPath: entry.virtualPath,
+		});
+		if (options.signal?.aborted) {
+			checkpoint();
+			throw abortReason(options.signal);
+		}
 		if (isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths)) {
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
@@ -261,8 +328,16 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			try {
 				// Prefer sourcePath streaming into parsers; still pass bytes for parsers that need them,
 				// but only after the size gate above.
-				parsed = await parser.parse({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes });
+				const input = { virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes };
+				parsed =
+					isolated !== undefined && ISOLATED_PARSER_NAMES.has(parser.name)
+						? await isolated.parse(parser.name, input, options.signal)
+						: await parser.parse(input);
 			} catch (error) {
+				if (options.signal?.aborted) {
+					checkpoint();
+					throw error;
+				}
 				if (!(error instanceof ParseError)) throw error;
 				deleted += removePrevious(options.root, previous, entry.virtualPath);
 				handledPrevious.add(entry.virtualPath);
@@ -271,7 +346,10 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				diagnostics.push({
 					code: "parser-failed",
 					severity: "warning",
-					message: PARSER_FAILURE_MESSAGE,
+					message:
+						error.cause instanceof ParseIsolationError
+							? `${PARSER_FAILURE_MESSAGE} ${error.cause.message}.`
+							: PARSER_FAILURE_MESSAGE,
 					source: entry.virtualPath,
 				});
 				sinceCheckpoint += 1;
@@ -320,6 +398,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		});
 	}
 
+	options.onProgress?.({ processed: current.length, total: current.length, written, deleted, skipped });
 	const index: ParsedMirrorIndex = { version: 1, entries: nextEntries, skipped: nextSkipped };
 	saveMirrorIndex(options.root, index);
 	return {
