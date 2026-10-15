@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { AutoRAGAgentOptions, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
 import type { JevBackendName } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
@@ -244,8 +244,8 @@ export interface CliConfig {
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
 	limits?: AutoRAGRetrievalLimits;
-	/** Refresh tuning. `transientRetries` (default 3) retries EMFILE/EBUSY/EIO/ETIMEDOUT per file. */
-	refresh?: RefreshCliConfig;
+	/** Refresh limits (delete-ratio valve, walk caps) and `transientRetries` (default 3, EMFILE/EBUSY/EIO/ETIMEDOUT per file). */
+	refresh?: AutoRAGRefreshLimits;
 	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** P2P sharing configuration. Disabled by default. */
@@ -920,27 +920,6 @@ export function normalizeIndexingConfig(raw: RawIndexingMethods): NormalizedInde
 	};
 }
 
-export interface RefreshCliConfig {
-	transientRetries?: number;
-}
-
-/** Validate the `refresh` section. `transientRetries` is a non-negative integer (0 disables retries). */
-export function normalizeRefreshConfig(raw: unknown): RefreshCliConfig {
-	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-		throw new ConfigError("Config field 'refresh' must be an object");
-	}
-	const record = raw as Record<string, unknown>;
-	for (const key of Object.keys(record)) {
-		if (key !== "transientRetries") throw new ConfigError(`refresh.${key} is not a recognized field`);
-	}
-	const retries = record.transientRetries;
-	if (retries === undefined) return {};
-	if (typeof retries !== "number" || !Number.isInteger(retries) || retries < 0) {
-		throw new ConfigError("refresh.transientRetries must be a non-negative integer");
-	}
-	return { transientRetries: retries };
-}
-
 const LIMITS_ALLOWLIST: Record<string, true> = {
 	mergedEvidenceCeiling: true,
 	singleDatasourceTopK: true,
@@ -1010,6 +989,52 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
 		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
 		...(prefetch !== undefined ? { prefetch } : {}),
+	};
+}
+
+const REFRESH_ALLOWLIST: Record<string, true> = {
+	maxDeleteRatio: true,
+	maxScannedEntries: true,
+	maxDepth: true,
+	transientRetries: true,
+};
+
+/** Validate the `refresh` section and map it onto the agent option. */
+export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("Config field 'refresh' must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(REFRESH_ALLOWLIST, key)) throw new ConfigError(`refresh.${key} is not a recognized field`);
+	}
+	const maxDeleteRatio = record.maxDeleteRatio;
+	if (
+		maxDeleteRatio !== undefined &&
+		(typeof maxDeleteRatio !== "number" ||
+			!Number.isFinite(maxDeleteRatio) ||
+			maxDeleteRatio < 0 ||
+			maxDeleteRatio > 1)
+	) {
+		throw new ConfigError("refresh.maxDeleteRatio must be a number between 0 and 1");
+	}
+	const maxScannedEntries = positiveLimitField(record, "maxScannedEntries", "refresh");
+	const maxDepth = record.maxDepth;
+	if (maxDepth !== undefined && (typeof maxDepth !== "number" || !Number.isInteger(maxDepth) || maxDepth < 0)) {
+		throw new ConfigError("refresh.maxDepth must be a non-negative integer");
+	}
+	const transientRetries = record.transientRetries;
+	if (
+		transientRetries !== undefined &&
+		(typeof transientRetries !== "number" || !Number.isInteger(transientRetries) || transientRetries < 0)
+	) {
+		throw new ConfigError("refresh.transientRetries must be a non-negative integer");
+	}
+	return {
+		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
+		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
+		...(maxDepth !== undefined ? { maxDepth } : {}),
+		...(transientRetries !== undefined ? { transientRetries } : {}),
 	};
 }
 

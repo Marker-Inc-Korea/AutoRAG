@@ -168,6 +168,36 @@ stay in the index, so the next refresh resumes incrementally.
 through the public `SearchDocumentDiagnosticCode` type, alongside parser
 diagnostics.
 
+### Unavailable search roots and mass deletions
+
+Parsed refresh never treats a search root it cannot see as proof that its
+documents are gone. Before walking, each root is probed. A root that no longer
+exists (`gone`), is no longer a directory (`not-a-directory`), cannot be listed
+(`unreadable`), or is empty although it previously held indexed documents
+(`empty`) is skipped: its previous mirrors and skip records stay untouched and
+refresh records one `search-root-unavailable` warning whose `source` is the
+opaque root prefix (for example `/docs`) and whose `reason` is one of the four
+values. `deleted-mirror` is never emitted for these roots. Healthy roots in the
+same refresh are still indexed and still delete their genuinely stale mirrors.
+A forced refresh (`force`) treats an empty root as intentionally emptied.
+
+A refresh that would delete more than `refresh.maxDeleteRatio` (default `0.3`)
+of the indexed documents, and more than 100 of them, is refused: nothing is
+deleted and one `mass-delete-suppressed` warning is recorded. The next refresh
+repeats the check; a forced refresh (`autorag refresh --force`) deletes them.
+
+The directory walk is bounded by `refresh.maxScannedEntries` (default
+`2000000` entries per root) and `refresh.maxDepth` (default `64`). Hitting
+either records a `walk-truncated` warning (`reason` `max-entries` or
+`max-depth`) and keeps mirrors for anything the walk did not reach. A single
+unreadable subdirectory records `directory-unreadable` with the opaque virtual
+path of that directory, keeps the mirrors beneath it, and does not stop its
+siblings from indexing.
+
+```json
+{ "refresh": { "maxDeleteRatio": 0.3, "maxScannedEntries": 2000000, "maxDepth": 64 } }
+```
+
 ## Migration and failure behavior
 
 A MinSync workspace keeps its state in the `.minsync` subdirectory of
