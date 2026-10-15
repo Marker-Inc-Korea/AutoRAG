@@ -517,7 +517,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 |---|---|---|---|---|
 | **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | BM25, Semantic, Hybrid |
 | **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
-| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25, Semantic, Hybrid |
+| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25 + native semantic hybrid ranking by default via a [read-only sidecar](docs/datasource-skills.md#discord-bm25-ranking); native FTS supplements lexical recall |
 | **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
 | **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
 | **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
