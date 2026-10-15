@@ -134,6 +134,18 @@ describe("per-file parser crash isolation", () => {
 		expect(Object.keys(index.entries).sort()).toEqual(["/docs/a.txt", "/docs/c.txt"]);
 	});
 
+	it("does not persist a parser-crashed skip, so the next refresh retries the file", async () => {
+		writeCorpus();
+		await sync({
+			registry: new ParserRegistry([new CrashOnParser("/docs/b.txt", () => new Error("boom"))]),
+		});
+		expect(loadMirrorIndex(root).skipped?.["/docs/b.txt"]).toBeUndefined();
+
+		const result = await sync();
+		expect(result.diagnostics).toEqual([]);
+		expect(loadMirrorIndex(root).entries["/docs/b.txt"]).toBeDefined();
+	});
+
 	it("isolates a non-Error throw from a parser", async () => {
 		writeCorpus();
 		const result = await sync({

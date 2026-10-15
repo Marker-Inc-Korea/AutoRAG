@@ -333,16 +333,12 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 					);
 				} else {
 					// A parser bug or a third-party plain Error. The message is withheld: it may name a path.
-					skipFile(
-						entry,
-						{
-							code: "parser-crashed",
-							severity: "warning",
-							message: PARSER_CRASH_MESSAGE,
-							...(error instanceof Error ? { reason: error.name } : {}),
-						},
-						"parser-failed",
-					);
+					skipFile(entry, {
+						code: "parser-crashed",
+						severity: "warning",
+						message: PARSER_CRASH_MESSAGE,
+						...(error instanceof Error ? { reason: error.name } : {}),
+					});
 				}
 				continue;
 			}
