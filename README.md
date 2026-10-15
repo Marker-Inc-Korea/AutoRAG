@@ -684,6 +684,7 @@ Common failures and their fix:
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync binary missing (search and refresh fail with `MinSync is required ...`) | — | `cargo install minsync`, or leave `minSync.autoInstall` on and re-run refresh |
 | Jikji missing | `jikji-unavailable` | check the Rust toolchain, re-run refresh |
+| Jikji prepare of a large root times out (`the Jikji prepare run timed out`) | `jikji-prepare-failed` | the refresh still finishes and the other roots are indexed. The wall is 60 s per root by default; raise `jikji.timeoutMs`, or set `jikji.prepareTimeoutMsPerFile` (ms added per file under the root, capped at 30 min) to scale it with root size. `jikji.parseTimeout` (seconds) is forwarded to `jikji prepare --parse-timeout`. A timeout kills jikji's whole process group |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
 | Every search does a full local search and verification, even for small talk | `query-route-fallback` | set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 

@@ -302,6 +302,137 @@ describe("JikjiClient", () => {
 		expect(loggedCalls()).toHaveLength(1);
 	});
 
+	describe("process-tree lifecycle", () => {
+		const SPAWN_STUCK_DESCENDANT = `
+const { spawn } = await import("node:child_process");
+const { writeFileSync } = await import("node:fs");
+const descendant = spawn(process.execPath, ["-e", "setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+writeFileSync(PIDFILE, String(descendant.pid));
+`;
+
+		function pidFile(): string {
+			return join(root, "descendant.pid");
+		}
+
+		function stuckDescendantBody(parentBehavior: string): string {
+			return `const PIDFILE = ${JSON.stringify(pidFile())};\n${SPAWN_STUCK_DESCENDANT}\n${parentBehavior}`;
+		}
+
+		async function descendantPid(): Promise<number> {
+			const deadline = Date.now() + FAKE_CHILD_READY_TIMEOUT_MS;
+			while (Date.now() < deadline) {
+				if (existsSync(pidFile()) && statSync(pidFile()).size > 0) return Number(readFileSync(pidFile(), "utf8"));
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			throw new Error("timed out waiting for the descendant pid");
+		}
+
+		function isAlive(pid: number): boolean {
+			try {
+				process.kill(pid, 0);
+				return true;
+			} catch {
+				return false;
+			}
+		}
+
+		async function expectReaped(pid: number): Promise<void> {
+			const deadline = Date.now() + 5_000;
+			while (isAlive(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(isAlive(pid)).toBe(false);
+		}
+
+		it.skipIf(process.platform === "win32")(
+			"reaps a descendant holding the pipes when the wall expires",
+			{ timeout: 20_000 },
+			async () => {
+				writeFakeJikji(stuckDescendantBody("await new Promise(() => undefined);"));
+				const client = new JikjiClient({ env: pathEnv(), timeoutMs: 2_000 });
+
+				const result = await client.prepare(corpusRoot);
+
+				expect(result).toMatchObject({ ok: false, reason: "timeout" });
+				await expectReaped(await descendantPid());
+			},
+		);
+
+		it.skipIf(process.platform === "win32")(
+			"does not hang when the direct child exits but a descendant keeps the pipes open",
+			{ timeout: 20_000 },
+			async () => {
+				writeFakeJikji(stuckDescendantBody("process.exit(0);"));
+				const client = new JikjiClient({ env: pathEnv(), timeoutMs: 15_000 });
+
+				const result = await client.prepare(corpusRoot);
+
+				expect(result).toMatchObject({ ok: true });
+				await expectReaped(await descendantPid());
+			},
+		);
+
+		it.skipIf(process.platform === "win32")("reaps a descendant on abort", { timeout: 20_000 }, async () => {
+			writeFakeJikji(stuckDescendantBody("await new Promise(() => undefined);"));
+			const controller = new AbortController();
+			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 15_000 });
+
+			const pending = client.prepare(corpusRoot, { signal: controller.signal });
+			const pid = await descendantPid();
+			controller.abort();
+
+			expect(await pending).toMatchObject({ ok: false, reason: "aborted" });
+			await expectReaped(pid);
+		});
+	});
+
+	describe("prepare budget", () => {
+		function populate(files: number): void {
+			mkdirSync(corpusRoot, { recursive: true });
+			for (let index = 0; index < files; index += 1) writeFileSync(join(corpusRoot, `f${index}.txt`), "x");
+		}
+
+		const SLEEP_THEN_OK = "await new Promise((resolve) => setTimeout(resolve, 600));";
+
+		it("keeps the flat client wall when no per-file budget is configured", async () => {
+			populate(50);
+			writeFakeJikji(SLEEP_THEN_OK);
+			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 200 });
+
+			expect(await client.prepare(corpusRoot)).toMatchObject({ ok: false, reason: "timeout" });
+		});
+
+		it("lets a large root finish under a size-scaled budget that a small root would exceed", async () => {
+			writeFakeJikji(SLEEP_THEN_OK);
+			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 200, prepareTimeoutMsPerFile: 50 });
+
+			populate(2);
+			expect(await client.prepare(corpusRoot)).toMatchObject({ ok: false, reason: "timeout" });
+
+			rmSync(corpusRoot, { recursive: true, force: true });
+			populate(40);
+			expect(await client.prepare(corpusRoot)).toMatchObject({ ok: true });
+		});
+
+		it("lets a per-call timeoutMs override the client budget", async () => {
+			writeFakeJikji(SLEEP_THEN_OK);
+			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 15_000 });
+
+			expect(await client.prepare(corpusRoot, { timeoutMs: 200 })).toMatchObject({ ok: false, reason: "timeout" });
+		});
+
+		it("passes a per-call parseTimeout to --parse-timeout, overriding the client value", async () => {
+			writeFakeJikji("console.log('{}');");
+			const client = new JikjiClient({ env: pathEnv(), parseTimeout: 5 });
+
+			await client.prepare(corpusRoot, { parseTimeout: 120 });
+			await client.prepare(corpusRoot);
+
+			const [first, second] = loggedCalls();
+			expect(first?.args).toEqual(expect.arrayContaining(["--parse-timeout", "120"]));
+			expect(first?.args).not.toContain("5");
+			expect(second?.args).toEqual(expect.arrayContaining(["--parse-timeout", "5"]));
+		});
+	});
+
 	it("returns failure for oversized stdout without throwing", async () => {
 		writeFakeJikji('process.stdout.write("x".repeat(64));');
 		const client = new JikjiClient({

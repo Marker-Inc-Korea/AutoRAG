@@ -8,7 +8,17 @@ export interface JikjiOptions {
 	 * cargo. Set false to disable auto-installation.
 	 */
 	readonly autoInstall?: boolean;
+	/**
+	 * Wall-clock budget for one `jikji` process. Default 60 s. For `prepare` this
+	 * is the base budget that `prepareTimeoutMsPerFile` scales up.
+	 */
 	readonly timeoutMs?: number;
+	/**
+	 * Opt-in size-scaled `prepare` budget: each file found under the root adds
+	 * this many milliseconds to `timeoutMs` (capped at 30 minutes, the connector
+	 * sync budget). Unset keeps the flat `timeoutMs`/60 s wall.
+	 */
+	readonly prepareTimeoutMsPerFile?: number;
 	readonly maxBufferBytes?: number;
 	readonly includeHidden?: boolean;
 	readonly includeSensitive?: boolean;
@@ -62,6 +72,10 @@ export const DEFAULT_JIKJI_OPTIONS: JikjiDefaultOptions = {
 
 export interface JikjiPrepareOptions {
 	readonly signal?: AbortSignal;
+	/** Hard wall for this one root; replaces the client budget (including the size-scaled one). */
+	readonly timeoutMs?: number;
+	/** `--parse-timeout` seconds for this root; replaces the client `parseTimeout`. */
+	readonly parseTimeout?: number;
 }
 
 export type JikjiFailureReason =

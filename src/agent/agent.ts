@@ -37,11 +37,13 @@ import {
 	type JikjiFindResult,
 	type JikjiHandoffAction,
 	type JikjiOptions,
+	type JikjiPrepareOptions,
 	type JikjiPrepareResult,
 	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
+import { mapWithConcurrency } from "../jikji/pool.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
@@ -199,6 +201,9 @@ const SEARCH_TOOLS = [
 	FSEARCH_SEARCH_TOOL_NAME,
 ] as const;
 
+/** Roots `jikji prepare` runs at once during a refresh. */
+const JIKJI_PREPARE_CONCURRENCY = 3;
+
 /**
  * Safety ceiling on merged evidence when the caller names no `topK`.
  *
@@ -339,6 +344,12 @@ export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "ev
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/**
+	 * Per-root `jikji prepare` controls: an abort `signal`, a hard `timeoutMs`
+	 * wall per root, and a `parseTimeout` (seconds, forwarded to `--parse-timeout`).
+	 * Unset values fall back to the `jikji` client options.
+	 */
+	readonly jikjiPrepare?: JikjiPrepareOptions;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -2959,7 +2970,10 @@ export class AutoRAGAgent {
 			}
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
-			const jikji = allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare() : undefined;
+			const jikji =
+				allMethods || wants("jikji") || wants("minsync")
+					? await this.executeJikjiPrepare(opts?.jikjiPrepare)
+					: undefined;
 			// On Windows, the bundled Everything instance indexes the same local
 			// roots by name so the agent can locate files instantly.
 			let everything: AutoRAGEverythingRefreshResult | undefined;
@@ -3356,21 +3370,29 @@ export class AutoRAGAgent {
 		await this.fsearchClient?.stop();
 	}
 
-	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
-		const results = await this.executeJikjiPrepare();
+	async prepareJikji(options?: JikjiPrepareOptions): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
+		const results = await this.executeJikjiPrepare(options);
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
 	}
 
 	/**
 	 * Build or incrementally update every root's Jikji index. Called only by
 	 * refresh/watch (and the explicit `prepareJikji()` API), never by a query:
-	 * `jikji prepare` reuses unchanged documents, and roots run in parallel so
-	 * one slow root does not serialize the rest.
+	 * `jikji prepare` reuses unchanged documents. Roots run with bounded
+	 * concurrency so one slow root does not serialize the rest and a host with
+	 * many roots does not fork one jikji per root at once. A failed or timed-out
+	 * root is a degraded result (reported as a diagnostic), never a rejection, so
+	 * the refresh still finishes. `jikji.parseTimeout` / `jikji.timeoutMs` /
+	 * `jikji.prepareTimeoutMsPerFile` apply to every root through the client.
 	 */
-	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
+	private async executeJikjiPrepare(
+		options?: JikjiPrepareOptions,
+	): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
-		return Promise.all(this.searchPaths.map((sourcePath) => client.prepare(sourcePath)));
+		return mapWithConcurrency(this.searchPaths, JIKJI_PREPARE_CONCURRENCY, (sourcePath) =>
+			client.prepare(sourcePath, options),
+		);
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {

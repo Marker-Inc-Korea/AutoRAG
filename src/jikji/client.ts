@@ -3,8 +3,10 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
+import { countFilesBounded, filesToReachCap, scaledPrepareTimeoutMs } from "./prepare-budget.ts";
 import type {
 	JikjiFailureReason,
 	JikjiFindOptions,
@@ -38,6 +40,8 @@ type SpawnJikjiRequest = {
 	readonly args: readonly string[];
 	readonly signal?: AbortSignal;
 	readonly cwd?: string;
+	/** Wall for this process; falls back to `options.timeoutMs`, then 60 s. */
+	readonly timeoutMs?: number;
 };
 
 export class JikjiClient {
@@ -110,10 +114,13 @@ export class JikjiClient {
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
+		const clientOptions: JikjiOptions =
+			options.parseTimeout === undefined ? this.options : { ...this.options, parseTimeout: options.parseTimeout };
 		const result = await this.spawn({
 			command: await this.resolveCommand(),
-			args: buildPrepareArgs(this.options, root),
+			args: buildPrepareArgs(clientOptions, root),
 			signal: options.signal,
+			timeoutMs: options.timeoutMs ?? (await this.prepareTimeoutMs(root)),
 		});
 		if (!result.ok) {
 			return {
@@ -166,6 +173,19 @@ export class JikjiClient {
 		};
 	}
 
+	/**
+	 * Budget for one root. An explicit `timeoutMs` stays a flat wall (default 60 s
+	 * behavior is unchanged); `prepareTimeoutMsPerFile` opts into scaling the base
+	 * budget by the number of files found under the root.
+	 */
+	private async prepareTimeoutMs(root: string): Promise<number | undefined> {
+		const perFile = this.options.prepareTimeoutMsPerFile;
+		if (perFile === undefined || perFile <= 0) return undefined;
+		const base = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+		const files = await countFilesBounded(root, filesToReachCap(base, perFile), this.options.includeHidden === true);
+		return scaledPrepareTimeoutMs(base, perFile, files);
+	}
+
 	private async spawn(request: Omit<SpawnJikjiRequest, "options">): Promise<ProcessResult> {
 		return spawnJikji({
 			...request,
@@ -187,16 +207,40 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 		const child = spawn(portable.command, [...portable.args], {
 			env: controlledEnv(options.env),
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+			// POSIX: lead our own process group so terminateProcessTree can reap
+			// descendants that inherited the pipes (#1578 hang class). Windows keeps
+			// the parent/child chain that `taskkill /t` walks.
+			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
 		let finalReason: JikjiFailureReason | undefined;
-		const timeout = setTimeout(() => {
-			finalReason = "timeout";
-			terminate(child);
-		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
+		const settleWith = (result: ProcessResult): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			clearTimeout(pipeGuard);
+			request.signal?.removeEventListener("abort", abortHandler);
+			resolve(result);
+		};
+		const finish = (code: number | null): void => {
+			if (finalReason !== undefined) {
+				settleWith({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
+				return;
+			}
+			settleWith({ ok: code === 0, stdout: stdout.text, stderr: stderr.text, code });
+		};
+		const timeout = setTimeout(
+			() => {
+				finalReason = "timeout";
+				terminate(child);
+			},
+			request.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
 			terminate(child);
@@ -219,24 +263,18 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 				terminate(child);
 			}
 		});
+		child.on("exit", () => {
+			if (settled) return;
+			// The direct child can exit while a descendant still holds the pipes it
+			// inherited, which keeps "close" from firing. Reap the group, then bound
+			// the wait for the stream release.
+			terminate(child);
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
+		});
 		child.on("error", (error) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			request.signal?.removeEventListener("abort", abortHandler);
-			resolve({ ok: false, reason: "spawn-error", stdout: stdout.text, stderr: error.message, code: null });
+			settleWith({ ok: false, reason: "spawn-error", stdout: stdout.text, stderr: error.message, code: null });
 		});
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			request.signal?.removeEventListener("abort", abortHandler);
-			if (finalReason !== undefined) {
-				resolve({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
-				return;
-			}
-			resolve({ ok: code === 0, stdout: stdout.text, stderr: stderr.text, code });
-		});
+		child.on("close", (code) => finish(code));
 	});
 }
 
@@ -289,7 +327,7 @@ function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined
 }
 
 function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
+	terminateProcessTree(child);
 }
 
 function appendBounded(state: BufferState, chunk: string, maxBytes: number): BufferState {
