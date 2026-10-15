@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	detectMirrorStaleness,
 	loadMirrorIndex,
@@ -585,9 +585,6 @@ describe("mirror staleness decisions", () => {
  * read and parsed again on every refresh while nothing about it has changed.
  */
 describe("skipped-source retry policy", () => {
-	const MINUTE = 60_000;
-	const T0 = new Date("2026-10-15T00:00:00.000Z").getTime();
-
 	/** Fails every `.txt` it is handed with a typed ParseError and counts its attempts. */
 	class FailingParser extends PlainTextParser {
 		readonly attempted: string[] = [];
@@ -611,21 +608,11 @@ describe("skipped-source retry policy", () => {
 		return requireValue(loadMirrorIndex(root).skipped?.[virtualPath], `skip record ${virtualPath}`);
 	}
 
-	beforeEach(() => {
-		vi.useFakeTimers({ toFake: ["Date"] });
-		vi.setSystemTime(T0);
-	});
-
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
 	it("does not parse a parser-failed source again while it is unchanged", async () => {
 		writeFileSync(join(source, "bad.txt"), "broken\n");
 		const parser = new FailingParser();
 
 		await refresh(parser);
-		vi.setSystemTime(T0 + 10_000);
 		const second = await refresh(parser);
 
 		expect(parser.attempted).toEqual(["/docs/bad.txt"]);
@@ -671,32 +658,7 @@ describe("skipped-source retry policy", () => {
 		expect(loadMirrorIndex(root).entries["/docs/good.md"]).toBeDefined();
 	});
 
-	it("retries a failed source with exponential backoff capped at six hours", async () => {
-		writeFileSync(join(source, "bad.txt"), "broken\n");
-		const parser = new FailingParser();
-		const windows = [1 * MINUTE, 5 * MINUTE, 30 * MINUTE, 6 * 60 * MINUTE, 6 * 60 * MINUTE];
-
-		let now = T0;
-		for (const [index, window] of windows.entries()) {
-			vi.setSystemTime(now);
-			await refresh(parser);
-			expect(parser.attempted).toHaveLength(index + 1);
-			expect(skipRecord("/docs/bad.txt").attempts).toBe(index + 1);
-
-			// One tick before the window ends: still honored, no new attempt.
-			vi.setSystemTime(now + window - 1);
-			await refresh(parser);
-			expect(parser.attempted).toHaveLength(index + 1);
-
-			now += window;
-		}
-		// The window after the last attempt is retried, proving it elapsed exactly.
-		vi.setSystemTime(now);
-		await refresh(parser);
-		expect(parser.attempted).toHaveLength(windows.length + 1);
-	});
-
-	it("retries immediately when the source changed during the backoff window", async () => {
+	it("retries immediately when the source changed after it failed", async () => {
 		const file = join(source, "bad.txt");
 		writeFileSync(file, "broken\n");
 		const parser = new FailingParser();
@@ -706,7 +668,6 @@ describe("skipped-source retry policy", () => {
 		await refresh(parser);
 
 		expect(parser.attempted).toHaveLength(2);
-		expect(skipRecord("/docs/bad.txt").attempts).toBe(1);
 	});
 
 	it("indexes a previously failed source once a retry succeeds and drops its skip record", async () => {
@@ -715,8 +676,7 @@ describe("skipped-source retry policy", () => {
 		await refresh(parser);
 
 		parser.failing = false;
-		vi.setSystemTime(T0 + 2 * MINUTE);
-		const result = await refresh(parser);
+		const result = await refresh(parser, { retrySkipped: true });
 
 		expect(result).toMatchObject({ written: 1, skipped: 0 });
 		expect(loadMirrorIndex(root).skipped?.["/docs/bad.txt"]).toBeUndefined();
@@ -757,13 +717,11 @@ describe("skipped-source retry policy", () => {
 		expect(parser.attempted).toHaveLength(1);
 
 		parser.version = "2";
-		vi.setSystemTime(T0 + 10_000);
 		await refresh(parser);
 		expect(parser.attempted).toHaveLength(2);
-		expect(skipRecord("/docs/bad.txt")).toMatchObject({ parserVersion: "2", attempts: 1 });
+		expect(skipRecord("/docs/bad.txt")).toMatchObject({ parserVersion: "2" });
 
-		// Still failing at version 2: re-skipped, not retried again inside the window.
-		vi.setSystemTime(T0 + 20_000);
+		// Still failing at version 2: re-skipped, not retried again.
 		await refresh(parser);
 		expect(parser.attempted).toHaveLength(2);
 	});
@@ -773,12 +731,7 @@ describe("skipped-source retry policy", () => {
 		writeFileSync(file, "broken\n");
 		const parser = new FailingParser();
 		await refresh(parser);
-		const {
-			parserVersion: _version,
-			attempts: _attempts,
-			retryAfter: _retryAfter,
-			...legacy
-		} = skipRecord("/docs/bad.txt");
+		const { parserVersion: _version, ...legacy } = skipRecord("/docs/bad.txt");
 		saveMirrorIndex(root, { version: 1, entries: {}, skipped: { "/docs/bad.txt": legacy } });
 
 		await refresh(parser);
@@ -805,7 +758,7 @@ describe("skipped-source retry policy", () => {
 	});
 
 	describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("unreadable sources", () => {
-		it("does not read an unreadable source again until its backoff window elapses", async () => {
+		it("does not read an unreadable source again while it is unchanged", async () => {
 			const file = join(source, "locked.txt");
 			writeFileSync(file, "secret\n");
 			chmodSync(file, 0o000);
@@ -814,18 +767,16 @@ describe("skipped-source retry policy", () => {
 			try {
 				const first = await refresh(parser);
 				expect(first.diagnostics.map((d) => d.code)).toEqual(["source-unreadable"]);
-				expect(skipRecord("/docs/locked.txt")).toMatchObject({ reason: "source-unreadable", attempts: 1 });
+				expect(skipRecord("/docs/locked.txt")).toMatchObject({ reason: "source-unreadable" });
 
-				// Readable again, but the window has not elapsed: honored without a read.
+				// Readable again but unchanged since the failure (chmod does not touch mtime/size): honored.
 				chmodSync(file, 0o644);
-				vi.setSystemTime(T0 + 30_000);
 				const second = await refresh(parser);
 				expect(second).toMatchObject({ written: 0, skipped: 1 });
 				expect(second.diagnostics.map((d) => d.code)).toEqual(["source-unreadable"]);
 				expect(JSON.stringify(second.diagnostics)).not.toContain(root);
 
-				vi.setSystemTime(T0 + 2 * MINUTE);
-				const third = await refresh(parser);
+				const third = await refresh(parser, { retrySkipped: true });
 				expect(third).toMatchObject({ written: 1, skipped: 0 });
 				expect(loadMirrorIndex(root).skipped?.["/docs/locked.txt"]).toBeUndefined();
 			} finally {

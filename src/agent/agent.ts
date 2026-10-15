@@ -341,7 +341,7 @@ export interface AutoRAGRefreshOptions {
 	readonly methods?: readonly RefreshMethod[];
 	/**
 	 * Retry sources previously skipped as parser-failed or source-unreadable once, ignoring their
-	 * backoff windows. Unlike `force`, healthy unchanged mirrors are not re-parsed.
+	 * skip records. Unlike `force`, healthy unchanged mirrors are not re-parsed.
 	 */
 	readonly retrySkipped?: boolean;
 }

@@ -69,8 +69,8 @@ export interface ParsedMirrorSyncOptions {
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
 	/**
-	 * Retry sources that previously failed to parse or read once, ignoring their skip records and
-	 * backoff windows. Healthy, unchanged mirrors are still left alone (unlike `force`).
+	 * Retry sources that previously failed to parse or read once, ignoring their skip records.
+	 * Healthy, unchanged mirrors are still left alone (unlike `force`).
 	 */
 	readonly retrySkipped?: boolean;
 }
@@ -122,21 +122,14 @@ type RetryableSkipReason = "parser-failed" | "source-unreadable";
 const RETRYABLE_SKIP_MESSAGES: Readonly<Record<RetryableSkipReason, string>> = {
 	"parser-failed": "The registered parser failed on this file; it was skipped during indexing.",
 	"source-unreadable":
-		"The source could not be read (permission denied); it is skipped until its retry window elapses.",
+		"The source could not be read (permission denied); it is skipped until it changes or is retried.",
 };
 
-/** Wait after the Nth consecutive failure before the same unchanged source is tried again. */
-const RETRY_BACKOFF_MS: readonly number[] = [60_000, 5 * 60_000, 30 * 60_000, 6 * 60 * 60_000];
-
-function retryDelayMs(attempts: number): number {
-	const index = Math.min(Math.max(attempts, 1), RETRY_BACKOFF_MS.length) - 1;
-	return RETRY_BACKOFF_MS[index] as number;
-}
-
 /**
- * Whether a recorded skip still stands for this source. Only retryable reasons qualify: the others
- * are re-derived cheaply from config and stat every run. A record without a parser stamp predates
- * this policy and is retried once, which then stamps it.
+ * Whether a recorded skip still stands for this source: same mtime, size, parser name and parser
+ * version. Only retryable reasons qualify; the others are re-derived cheaply from config and stat
+ * every run. A record without a parser stamp predates this policy and is retried once, which then
+ * stamps it.
  */
 function isSkipHonored(
 	skip: ParsedMirrorSkipEntry,
@@ -147,10 +140,7 @@ function isSkipHonored(
 	if (retryPass) return false;
 	if (skip.reason !== "parser-failed" && skip.reason !== "source-unreadable") return false;
 	if (skip.sourceMtimeNs !== entry.mtimeNs || skip.sourceSizeBytes !== entry.sizeBytes) return false;
-	if (skip.parserName !== parser.name || skip.parserVersion !== parser.version) return false;
-	if (skip.retryAfter === undefined) return false;
-	const retryAt = Date.parse(skip.retryAfter);
-	return Number.isFinite(retryAt) && Date.now() < retryAt;
+	return skip.parserName === parser.name && skip.parserVersion === parser.version;
 }
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
@@ -181,32 +171,17 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		};
 	};
 
-	/**
-	 * Record a skip a later refresh may retry. Attempts count consecutive failures against this exact
-	 * source, reason and parser version; any change starts over at one.
-	 */
+	/** Record a skip a later refresh may retry, stamped with the parser that failed. */
 	const recordRetryableSkip = (entry: CurrentEntry, reason: RetryableSkipReason, parser: Parser): void => {
-		const prior = previous.skipped?.[entry.virtualPath];
-		const repeated =
-			prior !== undefined &&
-			prior.reason === reason &&
-			prior.sourceMtimeNs === entry.mtimeNs &&
-			prior.sourceSizeBytes === entry.sizeBytes &&
-			prior.parserName === parser.name &&
-			prior.parserVersion === parser.version;
-		const attempts = repeated ? (prior.attempts ?? 0) + 1 : 1;
-		const now = Date.now();
 		nextSkipped[entry.virtualPath] = {
 			virtualPath: entry.virtualPath,
 			sourcePath: entry.sourcePath,
 			reason,
 			sourceMtimeNs: entry.mtimeNs,
 			sourceSizeBytes: entry.sizeBytes,
-			updatedAt: new Date(now).toISOString(),
+			updatedAt: new Date().toISOString(),
 			parserName: parser.name,
 			parserVersion: parser.version,
-			attempts,
-			retryAfter: new Date(now + retryDelayMs(attempts)).toISOString(),
 		};
 	};
 
@@ -278,8 +253,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 
 		const previousSkip = previous.skipped?.[entry.virtualPath];
 		if (previousSkip !== undefined && isSkipHonored(previousSkip, entry, parser, retryPass)) {
-			// Same source, same parser, still inside the backoff window: keep the record and do not
-			// read or parse the file again.
+			// Same source and parser: keep the record and do not read or parse the file again.
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;

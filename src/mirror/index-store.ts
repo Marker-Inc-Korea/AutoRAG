@@ -26,8 +26,8 @@ export type ParsedMirrorSkipReason =
  * decided on. Staleness checks compare against this record instead of re-deriving
  * the decision, so a deliberately skipped file is not reported as a new source.
  *
- * Retryable skips (`parser-failed`, `source-unreadable`) also carry the retry policy state, so
- * refresh can honor the record without reading or parsing the file again.
+ * Retryable skips (`parser-failed`, `source-unreadable`) also carry the parser stamp, so refresh
+ * can honor the record without reading or parsing the file again.
  */
 export interface ParsedMirrorSkipEntry {
 	readonly virtualPath: string;
@@ -40,10 +40,6 @@ export interface ParsedMirrorSkipEntry {
 	readonly parserName?: string;
 	/** `Parser.version` the skip was decided with. Absent on records written before version stamps. */
 	readonly parserVersion?: string;
-	/** Consecutive failed attempts against this exact source version; drives the backoff window. */
-	readonly attempts?: number;
-	/** ISO time before which a retryable skip is honored without reading the file. */
-	readonly retryAfter?: string;
 }
 
 export interface ParsedMirrorIndex {
@@ -95,9 +91,7 @@ function isParsedMirrorSkipEntry(value: unknown): value is ParsedMirrorSkipEntry
 		typeof value.sourceSizeBytes === "number" &&
 		typeof value.updatedAt === "string" &&
 		(value.parserName === undefined || typeof value.parserName === "string") &&
-		(value.parserVersion === undefined || typeof value.parserVersion === "string") &&
-		(value.attempts === undefined || (typeof value.attempts === "number" && Number.isInteger(value.attempts))) &&
-		(value.retryAfter === undefined || typeof value.retryAfter === "string")
+		(value.parserVersion === undefined || typeof value.parserVersion === "string")
 	);
 }
 

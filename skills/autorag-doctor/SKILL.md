@@ -193,10 +193,9 @@ freshness install an hourly `autorag watch --once` job (cron, launchd, systemd
 timer, or Task Scheduler).
 
 A file the parser failed on (corrupt PDF, encrypted HWP) or that was unreadable is not
-re-parsed on every refresh: it is skipped while its mtime, size and parser version are
-unchanged, and retried after 1m, 5m, 30m, then every 6h. After fixing the cause, run
-`autorag refresh --retry-failed --json` to retry those files once without re-indexing
-healthy ones.
+re-parsed on every refresh: it is skipped until its mtime, size or parser version changes.
+After fixing the cause (permissions, OCR setup), run `autorag refresh --retry-failed --json`
+to retry those files once without re-indexing healthy ones.
 
 ### Missing or wrong setup
 
