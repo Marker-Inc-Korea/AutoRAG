@@ -5,6 +5,7 @@ import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
+import { SerialQueue } from "./serial-queue.ts";
 import type {
 	JikjiFailureReason,
 	JikjiFindOptions,
@@ -17,6 +18,9 @@ import type {
 const DEFAULT_BINARY = "jikji";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
+
+/** Result of a call whose signal aborted while it was still queued: nothing was spawned. */
+const ABORTED_BEFORE_START: ProcessResult = { ok: false, reason: "aborted", stdout: "", stderr: "", code: null };
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -44,6 +48,12 @@ export class JikjiClient {
 	private readonly options: JikjiOptions;
 	private resolvedCommand: string | undefined;
 	private installCommandInFlight: Promise<string> | undefined;
+	// Every jikji process writes one central SQLite file with no busy timeout,
+	// so concurrent writers fail with "database is locked". Writers are
+	// serialized per kind: prepares queue behind each other, finds queue behind
+	// each other, and a query never waits behind a minutes-long refresh.
+	private readonly prepareQueue = new SerialQueue();
+	private readonly findQueue = new SerialQueue();
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
@@ -105,11 +115,15 @@ export class JikjiClient {
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
-		const result = await this.spawn({
-			command: await this.resolveCommand(),
-			args: buildPrepareArgs(this.options, root),
-			signal: options.signal,
-		});
+		const result = await this.prepareQueue.run(
+			async () =>
+				this.spawn({
+					command: await this.resolveCommand(),
+					args: buildPrepareArgs(this.options, root),
+					signal: options.signal,
+				}),
+			{ signal: options.signal, value: ABORTED_BEFORE_START },
+		);
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -128,11 +142,15 @@ export class JikjiClient {
 	}
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
-		const result = await this.spawn({
-			command: await this.resolveCommand({ install: false }),
-			args: buildFindArgs(root, query, options),
-			signal: options.signal,
-		});
+		const result = await this.findQueue.run(
+			async () =>
+				this.spawn({
+					command: await this.resolveCommand({ install: false }),
+					args: buildFindArgs(root, query, options),
+					signal: options.signal,
+				}),
+			{ signal: options.signal, value: ABORTED_BEFORE_START },
+		);
 		if (!result.ok) {
 			return {
 				ok: false,
