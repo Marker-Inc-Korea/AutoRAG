@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { abortReason } from "../process/abort-reason.ts";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { terminateProcessTree } from "../process/terminate-tree.ts";
 
@@ -20,7 +21,7 @@ export function spawnProcess(
 	return new Promise((resolve, reject) => {
 		const { signal } = options;
 		if (signal?.aborted) {
-			reject(abortError(signal));
+			reject(abortReason(signal));
 			return;
 		}
 		const portable = portableSpawnCommand(command, args);
@@ -60,13 +61,13 @@ export function spawnProcess(
 		};
 		child.on("error", (error) => {
 			settle();
-			if (signal?.aborted) reject(abortError(signal));
+			if (signal?.aborted) reject(abortReason(signal));
 			else resolve({ ok: false, stdout, stderr: error.message, code: null });
 		});
 		child.on("close", (code) => {
 			settle();
 			if (signal?.aborted) {
-				reject(abortError(signal));
+				reject(abortReason(signal));
 			} else if (timedOut) {
 				resolve({ ok: false, stdout, stderr: "process timed out", code: null, timedOut: true });
 			} else {
@@ -74,9 +75,4 @@ export function spawnProcess(
 			}
 		});
 	});
-}
-
-/** The rejection for a process its caller aborted: the signal's reason when it is an error. */
-function abortError(signal: AbortSignal): Error {
-	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
 }

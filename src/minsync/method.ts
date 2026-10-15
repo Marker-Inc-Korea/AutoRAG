@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
 import { ensureRuntime } from "../embedding-runtime/index.ts";
+import { abortReason } from "../process/abort-reason.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -59,11 +60,6 @@ function lookupInPath(env: NodeJS.ProcessEnv): string | undefined {
  * registers the vector and hybrid methods over the same workspace and the parallel
  * retriever runs them at once, so operations for one workspace queue here.
  */
-/** The rejection for a sync its caller aborted: the signal's reason when it is an error. */
-function abortReason(signal: AbortSignal): Error {
-	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
-}
-
 const workspaceOperationTails = new Map<string, Promise<unknown>>();
 const workspaceSyncInFlight = new Map<string, number>();
 

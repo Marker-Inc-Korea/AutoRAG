@@ -16,6 +16,7 @@ import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput } from "../parser/types.ts";
+import { abortReason } from "../process/abort-reason.ts";
 import {
 	loadMirrorIndex,
 	type ParsedMirrorEntry,
@@ -133,11 +134,6 @@ interface CurrentEntry {
 	readonly sourcePath: string;
 	readonly sizeBytes: number;
 	readonly mtimeNs: number;
-}
-
-/** The rejection for a sync its caller aborted: the signal's reason when it is an error. */
-function abortReason(signal: AbortSignal): Error {
-	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
 }
 
 const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";

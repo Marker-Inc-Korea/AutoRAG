@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
+import { abortReason } from "../process/abort-reason.ts";
 import type { DefaultParserRegistryOptions } from "./defaults.ts";
 import { ParseError, ParseIsolationError } from "./errors.ts";
 import type { ParseInput, ParseOutput } from "./types.ts";
@@ -128,7 +129,7 @@ export class IsolatedParseRunner {
 		// Executor form: the ES2022 lib this package targets has no Promise.withResolvers.
 		return new Promise((resolve, reject) => {
 			if (signal?.aborted) {
-				reject(abortError(signal));
+				reject(abortReason(signal));
 				return;
 			}
 			const worker = this.#worker ?? this.#spawn();
@@ -176,7 +177,7 @@ export class IsolatedParseRunner {
 			const onAbort = (): void => {
 				settle();
 				this.#discard(worker);
-				reject(abortError(signal as AbortSignal));
+				reject(abortReason(signal as AbortSignal));
 			};
 			const timer = setTimeout(() => {
 				lost(
@@ -242,8 +243,4 @@ function defaultWorkerUrl(): URL {
 		if (existsSync(candidate)) return pathToFileURL(candidate);
 	}
 	throw new Error(`The AutoRAG parse worker entry was not found near ${here}.`);
-}
-
-function abortError(signal: AbortSignal): Error {
-	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
 }
