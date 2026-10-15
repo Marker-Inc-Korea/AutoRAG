@@ -3,34 +3,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mapWithConcurrency } from "../../src/jikji/pool.ts";
-import {
-	countFilesBounded,
-	filesToReachCap,
-	MAX_PREPARE_TIMEOUT_MS,
-	scaledPrepareTimeoutMs,
-} from "../../src/jikji/prepare-budget.ts";
+import { countFiles, MAX_TIMER_MS, scaledPrepareTimeoutMs } from "../../src/jikji/prepare-budget.ts";
 
 describe("scaledPrepareTimeoutMs", () => {
 	it("adds the per-file budget to the base", () => {
 		expect(scaledPrepareTimeoutMs(60_000, 10, 1_000)).toBe(70_000);
 	});
 
-	it("caps at the connector sync budget", () => {
-		expect(scaledPrepareTimeoutMs(60_000, 1_000, 10_000_000)).toBe(MAX_PREPARE_TIMEOUT_MS);
+	it("has no policy ceiling: 10M files still exceed the old 30 minute wall", () => {
+		expect(scaledPrepareTimeoutMs(60_000, 5_000, 10_000_000)).toBeGreaterThan(1_800_000);
 	});
 
-	it("never goes below a base that is already above the cap", () => {
-		expect(scaledPrepareTimeoutMs(MAX_PREPARE_TIMEOUT_MS + 5, 10, 100)).toBe(MAX_PREPARE_TIMEOUT_MS + 5);
-	});
-
-	it("reports how many files reach the cap", () => {
-		const files = filesToReachCap(60_000, 100);
-		expect(scaledPrepareTimeoutMs(60_000, 100, files)).toBe(MAX_PREPARE_TIMEOUT_MS);
-		expect(scaledPrepareTimeoutMs(60_000, 100, files - 1)).toBeLessThan(MAX_PREPARE_TIMEOUT_MS);
+	it("clamps only to the timer limit so setTimeout never fires early", () => {
+		expect(scaledPrepareTimeoutMs(60_000, 5_000, 10_000_000_000)).toBe(MAX_TIMER_MS);
 	});
 });
 
-describe("countFilesBounded", () => {
+describe("countFiles", () => {
 	let root: string;
 
 	beforeEach(() => {
@@ -50,19 +39,21 @@ describe("countFilesBounded", () => {
 	});
 
 	it("counts regular files recursively, skipping hidden entries and symlinks", async () => {
-		expect(await countFilesBounded(root, 1_000, false)).toBe(3);
+		expect(await countFiles(root, false)).toBe(3);
 	});
 
 	it("includes hidden entries when asked", async () => {
-		expect(await countFilesBounded(root, 1_000, true)).toBe(5);
-	});
-
-	it("stops at the limit", async () => {
-		expect(await countFilesBounded(root, 2, false)).toBe(2);
+		expect(await countFiles(root, true)).toBe(5);
 	});
 
 	it("returns 0 for a missing root", async () => {
-		expect(await countFilesBounded(join(root, "nope"), 10, false)).toBe(0);
+		expect(await countFiles(join(root, "nope"), false)).toBe(0);
+	});
+
+	it("stops walking once the signal aborts", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		expect(await countFiles(root, false, controller.signal)).toBe(0);
 	});
 });
 

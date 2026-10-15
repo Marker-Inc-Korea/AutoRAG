@@ -6,7 +6,7 @@ import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
-import { countFilesBounded, filesToReachCap, scaledPrepareTimeoutMs } from "./prepare-budget.ts";
+import { countFiles, scaledPrepareTimeoutMs } from "./prepare-budget.ts";
 import type {
 	JikjiFailureReason,
 	JikjiFindOptions,
@@ -18,6 +18,8 @@ import type {
 
 const DEFAULT_BINARY = "jikji";
 const DEFAULT_TIMEOUT_MS = 60_000;
+/** `jikji prepare --parse-timeout` default (seconds): the per-file limit jikji enforces itself. */
+const DEFAULT_PARSE_TIMEOUT_SECONDS = 5;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 
 type ProcessResult = {
@@ -120,7 +122,7 @@ export class JikjiClient {
 			command: await this.resolveCommand(),
 			args: buildPrepareArgs(clientOptions, root),
 			signal: options.signal,
-			timeoutMs: options.timeoutMs ?? (await this.prepareTimeoutMs(root)),
+			timeoutMs: options.timeoutMs ?? (await this.prepareTimeoutMs(root, clientOptions, options.signal)),
 		});
 		if (!result.ok) {
 			return {
@@ -174,16 +176,24 @@ export class JikjiClient {
 	}
 
 	/**
-	 * Budget for one root. An explicit `timeoutMs` stays a flat wall (default 60 s
-	 * behavior is unchanged); `prepareTimeoutMsPerFile` opts into scaling the base
-	 * budget by the number of files found under the root.
+	 * Hang guard for one root, never a fixed total wall: `timeoutMs` (base) plus a
+	 * per-file slice for every file under the root, so a very large root is not
+	 * cut by its size. The slice defaults to the per-file parse limit
+	 * (`parseTimeout`, seconds) that jikji itself enforces by skipping the file,
+	 * so only a run that outlives even an all-files-hit-the-limit budget is
+	 * killed (reported as a degraded root). `prepareTimeoutMsPerFile` overrides
+	 * the slice; `0` restores a flat `timeoutMs` wall. A per-call `timeoutMs`
+	 * bypasses all of this.
 	 */
-	private async prepareTimeoutMs(root: string): Promise<number | undefined> {
-		const perFile = this.options.prepareTimeoutMsPerFile;
-		if (perFile === undefined || perFile <= 0) return undefined;
-		const base = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-		const files = await countFilesBounded(root, filesToReachCap(base, perFile), this.options.includeHidden === true);
-		return scaledPrepareTimeoutMs(base, perFile, files);
+	private async prepareTimeoutMs(
+		root: string,
+		options: JikjiOptions,
+		signal: AbortSignal | undefined,
+	): Promise<number | undefined> {
+		const perFile = options.prepareTimeoutMsPerFile ?? (options.parseTimeout ?? DEFAULT_PARSE_TIMEOUT_SECONDS) * 1000;
+		if (perFile <= 0) return undefined;
+		const files = await countFiles(root, options.includeHidden === true, signal);
+		return scaledPrepareTimeoutMs(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, perFile, files);
 	}
 
 	private async spawn(request: Omit<SpawnJikjiRequest, "options">): Promise<ProcessResult> {

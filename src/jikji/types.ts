@@ -10,13 +10,16 @@ export interface JikjiOptions {
 	readonly autoInstall?: boolean;
 	/**
 	 * Wall-clock budget for one `jikji` process. Default 60 s. For `prepare` this
-	 * is the base budget that `prepareTimeoutMsPerFile` scales up.
+	 * is only the base of a hang guard that grows with the root's file count
+	 * (see `prepareTimeoutMsPerFile`), not a total cap.
 	 */
 	readonly timeoutMs?: number;
 	/**
-	 * Opt-in size-scaled `prepare` budget: each file found under the root adds
-	 * this many milliseconds to `timeoutMs` (capped at 30 minutes, the connector
-	 * sync budget). Unset keeps the flat `timeoutMs`/60 s wall.
+	 * Milliseconds each file under the root adds to `timeoutMs` for `prepare`.
+	 * There is no overall ceiling, so a very large root is never cut by its
+	 * size. Defaults to `parseTimeout` (5 s) per file, i.e. the budget only
+	 * expires when the run is stuck beyond what per-file parse limits allow.
+	 * `0` restores a flat `timeoutMs` wall.
 	 */
 	readonly prepareTimeoutMsPerFile?: number;
 	readonly maxBufferBytes?: number;

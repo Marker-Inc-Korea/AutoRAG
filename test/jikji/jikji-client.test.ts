@@ -392,15 +392,15 @@ writeFileSync(PIDFILE, String(descendant.pid));
 
 		const SLEEP_THEN_OK = "await new Promise((resolve) => setTimeout(resolve, 600));";
 
-		it("keeps the flat client wall when no per-file budget is configured", async () => {
+		it("keeps a flat wall when prepareTimeoutMsPerFile is 0", async () => {
 			populate(50);
 			writeFakeJikji(SLEEP_THEN_OK);
-			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 200 });
+			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 200, prepareTimeoutMsPerFile: 0 });
 
 			expect(await client.prepare(corpusRoot)).toMatchObject({ ok: false, reason: "timeout" });
 		});
 
-		it("lets a large root finish under a size-scaled budget that a small root would exceed", async () => {
+		it("lets a large root finish under a budget that a small root would exceed", async () => {
 			writeFakeJikji(SLEEP_THEN_OK);
 			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 200, prepareTimeoutMsPerFile: 50 });
 
@@ -409,6 +409,15 @@ writeFileSync(PIDFILE, String(descendant.pid));
 
 			rmSync(corpusRoot, { recursive: true, force: true });
 			populate(40);
+			expect(await client.prepare(corpusRoot)).toMatchObject({ ok: true });
+		});
+
+		it("defaults the per-file slice to the parse timeout, so no fixed total wall applies", async () => {
+			populate(40);
+			writeFakeJikji(SLEEP_THEN_OK);
+			// 200 ms base + 40 files * 1 s (parseTimeout 1) far exceeds the 600 ms run.
+			const client = new JikjiClient({ env: pathEnv(), timeoutMs: 200, parseTimeout: 1 });
+
 			expect(await client.prepare(corpusRoot)).toMatchObject({ ok: true });
 		});
 
