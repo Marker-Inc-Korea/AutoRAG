@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { ANSWER_CITATION_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import { ANSWER_CITATION_RULE, ANSWER_DELIVERABLE_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 
 const evidenceRefSchema = Type.Object({
 	method: Type.String({ description: "Retrieval method namespace for this evidence chunk" }),
@@ -25,7 +25,7 @@ const evidenceRefSchema = Type.Object({
 });
 
 const answerSchema = Type.String({
-	description: `Answer for the caller. At most 5 bullet points (plus optional explanation); reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
+	description: `Answer for the caller. Unless the user explicitly requests otherwise, provide at most 5 bullet points (plus optional explanation) and answer directly; reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_DELIVERABLE_RULE} ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
 });
 
 const warningsSchema = Type.Optional(

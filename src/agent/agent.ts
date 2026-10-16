@@ -91,7 +91,13 @@ import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { deriveResultsFromAnswer } from "./answer-citations.ts";
-import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import {
+	ANSWER_CITATION_RULE,
+	ANSWER_DELIVERABLE_DELTA_RULE,
+	ANSWER_DELIVERABLE_RULE,
+	ANSWER_IMAGE_DELTA_RULE,
+	ANSWER_IMAGE_EMBED_RULE,
+} from "./answer-guidelines.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -1150,8 +1156,11 @@ export class AutoRAGAgent {
 		this.tools = tools;
 		// pi registers the jev tool from its extension; AutoRAG still lists the
 		// name so the prompt advertises it and reserved-name checks cover it.
+		const builtinToolNames = this.remoteSession
+			? PI_BUILTIN_TOOL_NAMES.filter((name) => name !== "write" && name !== "edit")
+			: PI_BUILTIN_TOOL_NAMES;
 		const toolNames = [
-			...PI_BUILTIN_TOOL_NAMES,
+			...builtinToolNames,
 			...tools.map((tool) => tool.name),
 			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
 		];
@@ -1168,7 +1177,7 @@ export class AutoRAGAgent {
 		this.innerAgent = {
 			state: {
 				systemPrompt,
-				tools: [...PI_BUILTIN_TOOL_NAMES.map((name) => ({ name })), ...tools],
+				tools: [...builtinToolNames.map((name) => ({ name })), ...tools],
 				messages: [],
 			},
 			transformContext: (messages) => this.withMemoryContext(messages),
@@ -1576,6 +1585,7 @@ export class AutoRAGAgent {
 				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
 			],
 			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
+			remoteSession: this.remoteSession,
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
@@ -2846,8 +2856,9 @@ export class AutoRAGAgent {
 			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
-			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- ${ANSWER_DELIVERABLE_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
@@ -2922,13 +2933,15 @@ export class AutoRAGAgent {
 				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list.\n` +
 				`- Mark each item clearly as a correction or as a new finding.\n` +
 				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
+				`- ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
 				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
-				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+				`- ${ANSWER_DELIVERABLE_RULE}${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}\n` +
 				`- ${ANSWER_CITATION_RULE}\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
@@ -2957,8 +2970,9 @@ export class AutoRAGAgent {
 			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop.\n\n` +
 			`Formatting and content rules for the answer:\n` +
-			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- ${ANSWER_DELIVERABLE_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
