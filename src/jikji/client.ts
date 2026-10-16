@@ -265,7 +265,14 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 }
 
 function buildFindArgs(root: string, query: string, options: JikjiFindOptions): readonly string[] {
-	const args = ["find", root, query, "--json"];
+	// `jikji find` otherwise spawns a detached `jikji prepare <root>` when the
+	// index is changed or stale. That would index during a query and, because
+	// the detached child omits `--no-agent-rules`, rewrite AGENTS.md /
+	// CLAUDE.md / .cursorrules in the user's source root.
+	// Not covered: upstream's synchronous reindex when a query returns no paths
+	// has no CLI opt-out (jikji 0.1.1 and main). Observed: it does not rewrite
+	// AGENTS.md / CLAUDE.md / .cursorrules.
+	const args = ["find", root, query, "--json", "--no-background-refresh"];
 	if (options.topK !== undefined) args.push("--top-k", String(options.topK));
 	if (options.first === true) args.push("--first");
 	if (options.fresh === true) args.push("--fresh");
