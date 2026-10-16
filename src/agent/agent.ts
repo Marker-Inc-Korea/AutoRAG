@@ -398,6 +398,11 @@ export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
 	/**
+	 * Retry sources previously skipped as parser-failed or source-unreadable once, ignoring their
+	 * skip records. Unlike `force`, healthy unchanged mirrors are not re-parsed.
+	 */
+	readonly retrySkipped?: boolean;
+	/**
 	 * Cancels the refresh. It is checked between files and between phases, and it kills an in-flight parse
 	 * worker and the MinSync, Jikji and datasource child processes. `refresh` then rejects with the signal's
 	 * reason and records the run as failed; mirror entries written before the abort are kept.
@@ -3015,6 +3020,7 @@ export class AutoRAGAgent {
 		try {
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
+						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
@@ -3386,7 +3392,7 @@ export class AutoRAGAgent {
 
 	async syncParsedMirrors(
 		force = false,
-		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress"> = {},
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({

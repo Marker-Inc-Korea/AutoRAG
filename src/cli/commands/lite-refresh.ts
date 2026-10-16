@@ -17,7 +17,11 @@ export async function runLiteRefresh(ctx: CommandContext): Promise<number> {
 		const lite = createAutoRAGLite({ flags: ctx.flags, cwd: ctx.cwd });
 		const methods = parseMethodFlag(ctx.flags.method);
 		const force = ctx.flags.force === true || ctx.flags.full === true;
-		const result = await lite.refresh(force, methods ? { methods } : undefined);
+		const options = {
+			...(methods ? { methods } : {}),
+			...(ctx.flags["retry-failed"] === true ? { retrySkipped: true } : {}),
+		};
+		const result = await lite.refresh(force, options);
 		const { renderRefresh } = await import("../output.ts");
 		ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
 		return 0;
