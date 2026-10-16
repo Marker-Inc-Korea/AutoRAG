@@ -56,6 +56,12 @@ export interface DatasourceSkillDescriptor {
 	readonly instances?: readonly string[];
 }
 
+/** Per-call options for {@link DatasourceSkill.index}. */
+export interface DatasourceIndexOptions {
+	/** Aborting stops the index run and kills any CLI it spawned. An aborted run may reject instead of returning a fail variant. */
+	readonly signal?: AbortSignal;
+}
+
 /**
  * A pluggable datasource skill. Skills are server-bound: they are constructed
  * with trusted configuration and never derive authority from model/tool args.
@@ -71,7 +77,7 @@ export interface DatasourceSkill {
 	 * never throws. Remote embedding egress MUST be rejected here and reported
 	 * via a `datasource-embedding-egress-rejected` diagnostic.
 	 */
-	index(): Promise<DatasourceIndexResult>;
+	index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult>;
 	/** Retrieval methods exposed by this skill, fed into the shared pipeline. */
 	retrievalMethods(): readonly RetrievalMethod[];
 	/** Opaque source descriptions for the skill's current evidence set. */

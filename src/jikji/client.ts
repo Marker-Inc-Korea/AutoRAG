@@ -1,8 +1,8 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
 import type {
@@ -47,11 +47,6 @@ export class JikjiClient {
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
-	}
-
-	/** Jikji stores prepared corpus metadata under a hidden directory in each root. */
-	isPrepared(root: string): boolean {
-		return existsSync(join(root, ".jikji", "doc_meta")) || existsSync(join(root, ".jikji", "doc_text"));
 	}
 
 	/**
@@ -188,6 +183,8 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 			env: controlledEnv(options.env),
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
 			stdio: ["ignore", "pipe", "pipe"],
+			// A signal-bearing run leads its own process group on POSIX so an abort reaches descendants too.
+			...(request.signal !== undefined && process.platform !== "win32" ? { detached: true } : {}),
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
@@ -199,7 +196,7 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
-			terminate(child);
+			terminateProcessTree(child);
 		};
 		if (request.signal?.aborted) abortHandler();
 		request.signal?.addEventListener("abort", abortHandler, { once: true });

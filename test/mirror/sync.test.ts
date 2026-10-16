@@ -32,7 +32,7 @@ import {
 	ParserRegistry,
 	PlainTextParser,
 } from "../../src/parser/index.ts";
-import { createXlsFixture } from "../fixtures/document-formats.ts";
+import { createDocxFixture, createXlsFixture } from "../fixtures/document-formats.ts";
 
 let root: string;
 let source: string;
@@ -806,6 +806,134 @@ describe("skipped-source retry policy", () => {
 				chmodSync(file, 0o644);
 			}
 		});
+	});
+});
+
+describe("syncParsedMirrors: isolation, abort and progress", () => {
+	it("turns a parse past fileTimeoutMs into one parser-failed skip and finishes the rest of the corpus", async () => {
+		// A kordoc stub cannot cross the worker boundary, so this exercises the real default registry
+		// with a worker entry that spins on `spin.bin`-style names is covered in test/parser; here a
+		// real deadline of 1ms makes any worker parse of a real document time out deterministically.
+		writeFileSync(join(source, "slow.docx"), await createDocxFixture("slow"));
+		writeFileSync(join(source, "plain.txt"), "Plain survives\n");
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], parserOptions: { fileTimeoutMs: 1 } });
+		const index = loadMirrorIndex(root);
+
+		expect(result).toMatchObject({ scanned: 2, written: 1, skipped: 1 });
+		expect(result.diagnostics.filter((d) => d.code === "parser-failed")).toEqual([
+			expect.objectContaining({ source: "/docs/slow.docx", severity: "warning" }),
+		]);
+		expect(result.diagnostics.find((d) => d.code === "parser-failed")?.message).toContain("1ms");
+		expect(index.skipped?.["/docs/slow.docx"]?.reason).toBe("parser-failed");
+		expect(index.entries["/docs/plain.txt"]).toBeDefined();
+	});
+
+	it("parses documents through the isolated worker by default", async () => {
+		writeFileSync(join(source, "doc.docx"), await createDocxFixture("Worker default marker"));
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source] });
+		const outputPath = requireValue(loadMirrorIndex(root).entries["/docs/doc.docx"]?.outputPath, "docx output");
+
+		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0 });
+		expect(readFileSync(outputPath, "utf8")).toContain("Worker default marker");
+	});
+
+	it("rejects a non-positive fileTimeoutMs or maxHeapMb", async () => {
+		await expect(
+			syncParsedMirrors({ root, searchPaths: [source], parserOptions: { fileTimeoutMs: 0 } }),
+		).rejects.toThrow(/fileTimeoutMs/);
+		await expect(
+			syncParsedMirrors({ root, searchPaths: [source], parserOptions: { maxHeapMb: -1 } }),
+		).rejects.toThrow(/maxHeapMb/);
+	});
+
+	it("reports advancing processed/total progress during the parse phase", async () => {
+		for (const name of ["a", "b", "c"]) writeFileSync(join(source, `${name}.txt`), `${name}\n`);
+		const events: { processed: number; total: number; currentVirtualPath?: string }[] = [];
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			onProgress: (progress) => events.push({ ...progress }),
+		});
+
+		expect(events.every((event) => event.total === 3)).toBe(true);
+		expect(events.map((event) => event.processed)).toEqual([0, 1, 2, 3]);
+		expect(events.slice(0, 3).map((event) => event.currentVirtualPath)).toEqual([
+			"/docs/a.txt",
+			"/docs/b.txt",
+			"/docs/c.txt",
+		]);
+		expect(events[3]?.currentVirtualPath).toBeUndefined();
+	});
+
+	it("counts skipped, unchanged and excluded files as processed", async () => {
+		writeFileSync(join(source, "a.txt"), "a\n");
+		writeFileSync(join(source, "b.txt"), "b\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const events: number[] = [];
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([join(source, "a.txt")]),
+			onProgress: (progress) => events.push(progress.processed),
+		});
+
+		expect(events).toEqual([0, 1, 2]);
+	});
+
+	it("stops between files when the signal aborts, keeps finished work checkpointed, and rethrows the reason", async () => {
+		for (const name of ["a", "b", "c"]) writeFileSync(join(source, `${name}.txt`), `${name}\n`);
+		const controller = new AbortController();
+		const reason = new Error("host cancelled");
+
+		const run = syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			signal: controller.signal,
+			onProgress: (progress) => {
+				if (progress.processed === 1) controller.abort(reason);
+			},
+		});
+
+		await expect(run).rejects.toBe(reason);
+		const index = loadMirrorIndex(root);
+		expect(Object.keys(index.entries)).toEqual(["/docs/a.txt"]);
+		expect(existsSync(requireValue(index.entries["/docs/a.txt"]?.outputPath, "a output"))).toBe(true);
+	});
+
+	it("rejects without touching the mirror when the signal is already aborted", async () => {
+		writeFileSync(join(source, "a.txt"), "a\n");
+		await expect(
+			syncParsedMirrors({
+				root,
+				searchPaths: [source],
+				registry: createDefaultParserRegistry(),
+				signal: AbortSignal.abort(),
+			}),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(existsSync(parsedMirrorIndexPath(root))).toBe(false);
+	});
+
+	it("kills an in-flight isolated parse when the signal aborts", async () => {
+		writeFileSync(join(source, "doc.docx"), await createDocxFixture("never finishes"));
+		const controller = new AbortController();
+		// Abort as soon as the file is announced, i.e. while its parse starts.
+		const run = syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			signal: controller.signal,
+			onProgress: (progress) => {
+				if (progress.currentVirtualPath === "/docs/doc.docx") queueMicrotask(() => controller.abort());
+			},
+		});
+		await expect(run).rejects.toMatchObject({ name: "AbortError" });
+		expect(loadMirrorIndex(root).entries["/docs/doc.docx"]).toBeUndefined();
 	});
 });
 

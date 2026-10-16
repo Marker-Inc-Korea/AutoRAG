@@ -12,6 +12,14 @@ export interface DefaultParserRegistryOptions {
 	readonly kordoc?: KordocParserOptions;
 	/** Global document languages; selects the OCR engine when OCR is enabled. */
 	readonly languages?: readonly LanguageTag[];
+	/**
+	 * Hard per-file parse deadline in milliseconds (default 120000). kordoc, pptx and eml parse in a worker
+	 * thread during a refresh; a parse still running at the deadline has its worker terminated and the file
+	 * is skipped as `parser-failed`. A synchronous spin cannot be interrupted any other way.
+	 */
+	readonly fileTimeoutMs?: number;
+	/** V8 old-generation heap limit in MB for the parse worker. An out-of-memory parse becomes a `parser-failed` skip. */
+	readonly maxHeapMb?: number;
 }
 
 /** Workspace-relative directory for Tesseract traineddata, so models never land in the process working directory. */

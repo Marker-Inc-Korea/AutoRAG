@@ -4,6 +4,7 @@ import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -21,8 +22,8 @@ import type {
 } from "./types.ts";
 
 export interface ClawGallerySkillClient extends ClawGallerySearchClient {
-	bootstrap(): Promise<ClawGalleryIndexResult>;
-	syncVisual(): Promise<ClawGalleryVdrResult>;
+	bootstrap(signal?: AbortSignal): Promise<ClawGalleryIndexResult>;
+	syncVisual(signal?: AbortSignal): Promise<ClawGalleryVdrResult>;
 }
 export interface ClawGallerySkillOptions {
 	readonly client: ClawGallerySkillClient;
@@ -80,8 +81,8 @@ export class ClawGallerySkill implements DatasourceSkill {
 			lastIndexedAt: this.lastIndexedAt,
 		};
 	}
-	async index(): Promise<DatasourceIndexResult> {
-		const bootstrap = await this.options.client.bootstrap();
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
+		const bootstrap = await this.options.client.bootstrap(options?.signal);
 		if (!bootstrap.ok) {
 			const code = codeFor(bootstrap, "datasource-index-failed");
 			const message = `clawgallery bootstrap failed (${bootstrap.reason})`;
@@ -106,7 +107,7 @@ export class ClawGallerySkill implements DatasourceSkill {
 		}
 		const diagnostics: DatasourceDiagnostic[] = [];
 		if (this.sync) {
-			const visual = await this.options.client.syncVisual();
+			const visual = await this.options.client.syncVisual(options?.signal);
 			if (!visual.ok)
 				diagnostics.push({
 					code: codeFor(visual, "datasource-index-failed"),

@@ -63,6 +63,7 @@ import {
 	isPathExcluded,
 	MirrorWorkspaceError,
 	type ParsedMirrorDiagnostic,
+	type ParsedMirrorSyncOptions,
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
@@ -380,6 +381,19 @@ export interface AutoRefreshOptions {
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
 export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything" | "fsearch";
 
+/**
+ * Progress of a refresh phase that can count its work. `parsed` counts source files
+ * (`currentVirtualPath` is the opaque virtual path of the file about to be processed);
+ * `datasources` counts configured datasource skills. Other phases do not report counts.
+ */
+export interface AutoRAGRefreshProgress {
+	readonly phase: "parsed" | "datasources";
+	/** Items finished so far. Advances by one per item and ends equal to `total`. */
+	readonly processed: number;
+	readonly total: number;
+	readonly currentVirtualPath?: string;
+}
+
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
@@ -388,6 +402,14 @@ export interface AutoRAGRefreshOptions {
 	 * skip records. Unlike `force`, healthy unchanged mirrors are not re-parsed.
 	 */
 	readonly retrySkipped?: boolean;
+	/**
+	 * Cancels the refresh. It is checked between files and between phases, and it kills an in-flight parse
+	 * worker and the MinSync, Jikji and datasource child processes. `refresh` then rejects with the signal's
+	 * reason and records the run as failed; mirror entries written before the abort are kept.
+	 */
+	readonly signal?: AbortSignal;
+	/** Called while the parse and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
+	readonly onProgress?: (progress: AutoRAGRefreshProgress) => void;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -2405,12 +2427,21 @@ export class AutoRAGAgent {
 		return this.datasourceAgentSkills.find((skill) => skill.name === name);
 	}
 
-	private async indexDatasources(): Promise<readonly DatasourceIndexResult[]> {
+	private async indexDatasources(
+		signal?: AbortSignal,
+		onProgress?: (progress: AutoRAGRefreshProgress) => void,
+	): Promise<readonly DatasourceIndexResult[]> {
 		const results: DatasourceIndexResult[] = [];
-		for (const skill of this.datasourceSkills) {
+		const total = this.datasourceSkills.length;
+		for (const [position, skill] of this.datasourceSkills.entries()) {
+			signal?.throwIfAborted();
+			onProgress?.({ phase: "datasources", processed: position, total });
 			try {
-				results.push(await skill.index());
+				results.push(await skill.index(signal === undefined ? undefined : { signal }));
+				signal?.throwIfAborted();
 			} catch (error) {
+				// A cancelled refresh is not a failed datasource: stop instead of recording a fake failure.
+				signal?.throwIfAborted();
 				const descriptor = skill.describe();
 				results.push({
 					ok: false,
@@ -2432,6 +2463,7 @@ export class AutoRAGAgent {
 				});
 			}
 		}
+		onProgress?.({ phase: "datasources", processed: total, total });
 		return results;
 	}
 
@@ -2952,6 +2984,15 @@ export class AutoRAGAgent {
 	}
 
 	async refresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
+		const signal = opts?.signal;
+		signal?.throwIfAborted();
+		const emitProgress = (event: AutoRAGRefreshProgress): void => {
+			try {
+				opts?.onProgress?.(event);
+			} catch {
+				// Progress is observational: a host callback bug must not fail the indexing run.
+			}
+		};
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
@@ -2978,8 +3019,32 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed
-				? await this.syncParsedMirrors(force, opts?.retrySkipped === true)
+				? await this.syncParsedMirrors(force, {
+						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
+						...(signal === undefined ? {} : { signal }),
+						onProgress: (parsedProgress) => {
+							progress = updateRefreshProgress(progress, {
+								sourceFiles: { total: parsedProgress.total },
+								parsedCounts: {
+									scanned: parsedProgress.processed,
+									written: parsedProgress.written,
+									deleted: parsedProgress.deleted,
+									skipped: parsedProgress.skipped,
+								},
+							});
+							writeRefreshProgress(this.workspaceProjectRoot, progress);
+							emitProgress({
+								phase: "parsed",
+								processed: parsedProgress.processed,
+								total: parsedProgress.total,
+								...(parsedProgress.currentVirtualPath === undefined
+									? {}
+									: { currentVirtualPath: parsedProgress.currentVirtualPath }),
+							});
+						},
+					})
 				: await this.scanMirrorStaleness();
+			signal?.throwIfAborted();
 			progress = updateRefreshProgress(progress, {
 				phase: wants("minsync")
 					? "minsync"
@@ -2997,7 +3062,8 @@ export class AutoRAGAgent {
 				},
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsync = wants("minsync") ? await this.syncMinSync(force) : undefined;
+			const minsync = wants("minsync") ? await this.syncMinSync(force, signal) : undefined;
+			signal?.throwIfAborted();
 			if (minsync !== undefined) {
 				progress = updateRefreshProgress(progress, {
 					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
@@ -3005,7 +3071,7 @@ export class AutoRAGAgent {
 				});
 				writeRefreshProgress(this.workspaceProjectRoot, progress);
 			}
-			const datasources = wants("datasources") ? await this.indexDatasources() : [];
+			const datasources = wants("datasources") ? await this.indexDatasources(signal, emitProgress) : [];
 			if (wants("datasources")) {
 				progress = updateRefreshProgress(progress, {
 					phase: wants("jikji") || allMethods ? "jikji" : "finalizing",
@@ -3014,13 +3080,16 @@ export class AutoRAGAgent {
 			}
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
-			const jikji = allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare() : undefined;
+			const jikji =
+				allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare(signal) : undefined;
+			signal?.throwIfAborted();
 			// On Windows, the bundled Everything instance indexes the same local
 			// roots by name so the agent can locate files instantly.
 			let everything: AutoRAGEverythingRefreshResult | undefined;
 			if (this.everythingClient !== undefined && (allMethods || wants("everything") || needsParsed)) {
 				progress = updateRefreshProgress(progress, { phase: "everything" });
 				writeRefreshProgress(this.workspaceProjectRoot, progress);
+				signal?.throwIfAborted();
 				const indexed = await this.everythingClient.index();
 				everything = indexed.ok
 					? { ok: true, indexedItems: indexed.indexedItems }
@@ -3032,6 +3101,7 @@ export class AutoRAGAgent {
 			if (this.fsearchClient !== undefined && (allMethods || wants("fsearch") || needsParsed)) {
 				progress = updateRefreshProgress(progress, { phase: "fsearch" });
 				writeRefreshProgress(this.workspaceProjectRoot, progress);
+				signal?.throwIfAborted();
 				const indexed = await this.fsearchClient.index();
 				fsearch = indexed.ok
 					? { ok: true, indexedItems: indexed.indexedItems }
@@ -3320,14 +3390,17 @@ export class AutoRAGAgent {
 		};
 	}
 
-	async syncParsedMirrors(force = false, retrySkipped = false): Promise<ParsedMirrorSyncResult> {
+	async syncParsedMirrors(
+		force = false,
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped"> = {},
+	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
+			...options,
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			force,
-			retrySkipped,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
@@ -3379,8 +3452,8 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncMinSync(force = false): Promise<MinSyncSyncResult> {
-		const result = await this.minSyncMethod.sync(force);
+	async syncMinSync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
+		const result = await this.minSyncMethod.sync(force, signal);
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
@@ -3431,10 +3504,12 @@ export class AutoRAGAgent {
 	 * `jikji prepare` reuses unchanged documents, and roots run in parallel so
 	 * one slow root does not serialize the rest.
 	 */
-	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
+	private async executeJikjiPrepare(signal?: AbortSignal): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
-		return Promise.all(this.searchPaths.map((sourcePath) => client.prepare(sourcePath)));
+		return Promise.all(
+			this.searchPaths.map((sourcePath) => client.prepare(sourcePath, signal === undefined ? {} : { signal })),
+		);
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
