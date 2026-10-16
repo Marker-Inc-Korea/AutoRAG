@@ -852,6 +852,26 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
+	it("keeps the provider's own name when an embedded model is registered under it", async () => {
+		const registration = registerFauxProvider({ api: `faux-${Date.now()}`, models: [{ id: "pi-provider-test" }] });
+		try {
+			const model = { ...registration.getModel(), provider: "dazzi", id: "not-in-catalog", name: "Some Model Name" };
+			const session = await createAutoRAGPiSession({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				model,
+				getSystemPrompt: () => "AutoRAG system prompt",
+				customTools: [],
+			});
+			const provider = session.session.modelRuntime.getProvider("dazzi");
+			expect(provider?.name).toBe("Dazzi Models");
+			expect(provider?.auth.oauth).toBeDefined();
+			session.session.dispose();
+		} finally {
+			registration.unregister();
+		}
+	});
+
 	describe("follow-up turns in one conversation", () => {
 		/** Counts Jev judge calls so a test can see whether a turn went through the gate. */
 		function countingJev(inner: JevBackend): { backend: JevBackend; calls: () => number } {
