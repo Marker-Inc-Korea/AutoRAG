@@ -38,6 +38,7 @@ import {
 	type JikjiFindResult,
 	type JikjiHandoffAction,
 	type JikjiOptions,
+	type JikjiPrepareOptions,
 	type JikjiPrepareResult,
 	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
@@ -411,6 +412,12 @@ export interface AutoRAGRefreshOptions {
 	readonly signal?: AbortSignal;
 	/** Called while the parse and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
 	readonly onProgress?: (progress: AutoRAGRefreshProgress) => void;
+	/**
+	 * Per-root `jikji prepare` controls: a hard `timeoutMs` wall per root and a
+	 * `parseTimeout` (seconds, forwarded to `--parse-timeout`). Unset values fall
+	 * back to the `jikji` client options. Cancel through the refresh `signal`.
+	 */
+	readonly jikjiPrepare?: Omit<JikjiPrepareOptions, "signal">;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -3065,7 +3072,9 @@ export class AutoRAGAgent {
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
 			const jikji =
-				allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare(signal) : undefined;
+				allMethods || wants("jikji") || wants("minsync")
+					? await this.executeJikjiPrepare({ ...opts?.jikjiPrepare, ...(signal === undefined ? {} : { signal }) })
+					: undefined;
 			signal?.throwIfAborted();
 			// On Windows, the bundled Everything instance indexes the same local
 			// roots by name so the agent can locate files instantly.
@@ -3477,8 +3486,8 @@ export class AutoRAGAgent {
 		await this.fsearchClient?.stop();
 	}
 
-	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
-		const results = await this.executeJikjiPrepare();
+	async prepareJikji(options?: JikjiPrepareOptions): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
+		const results = await this.executeJikjiPrepare(options);
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
 	}
 
@@ -3489,14 +3498,17 @@ export class AutoRAGAgent {
 	 * but `JikjiClient` runs them one at a time, because every root shares one
 	 * central SQLite file that fails with "database is locked" under concurrent
 	 * writers. Nested and duplicate roots are skipped: upstream rejects
-	 * overlapping roots and the outer root's index already covers them.
+	 * overlapping roots and the outer root's index already covers them. A failed
+	 * or timed-out root is a degraded result (reported as a diagnostic), never a
+	 * rejection, so the refresh still finishes. `jikji.parseTimeout` /
+	 * `jikji.timeoutMs` / `jikji.prepareTimeoutMsPerFile` apply to every root.
 	 */
-	private async executeJikjiPrepare(signal?: AbortSignal): Promise<readonly JikjiPrepareResult[] | undefined> {
+	private async executeJikjiPrepare(
+		options: JikjiPrepareOptions = {},
+	): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
-		return Promise.all(
-			this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, signal === undefined ? {} : { signal })),
-		);
+		return Promise.all(this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, options)));
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
