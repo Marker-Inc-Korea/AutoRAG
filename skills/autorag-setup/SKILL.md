@@ -164,8 +164,10 @@ GitHub release into `<workspace>/.autorag/bin` (`minSync.autoInstall` defaults
 to true), and Jikji installs `jikji-cli` through cargo (`jikji.autoInstall`
 defaults to true; requires the Rust toolchain). Set `"autoInstall": false` only
 when managing the binary yourself. Refresh is incremental: MinSync syncs only
-changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Roots
-prepare in parallel.
+changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Jikji
+roots prepare one at a time (they share one central SQLite file that rejects
+concurrent writers). A search root nested inside, or duplicating, another root
+is skipped for Jikji because the outer root's index already covers it.
 
 Jikji keeps its prepared corpus (search index, parsed text, wiki, routes) in one
 central store, not inside your documents: `<OS data dir>/jikji/index.sqlite`
