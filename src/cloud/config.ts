@@ -5,6 +5,20 @@ import type { ModelInputLimits } from "@earendil-works/pi-ai";
 export const PROVIDER_ID = "dazzi";
 export const PROVIDER_NAME = "Dazzi Models";
 
+/**
+ * Chat model used when nothing is configured and the user is signed in. Used only
+ * if the live or persisted catalog lists it; otherwise the first catalog model.
+ */
+export const DEFAULT_DAZZI_CHAT_MODEL_ID = "anthropic/claude-haiku-5.5";
+
+/**
+ * Question-decomposition model used when nothing is configured and the user is
+ * signed in. `z-ai/glm-5.3-flash` is not usable here: it requires reasoning, and
+ * the decomposition call runs with reasoning off. Same catalog caveat as
+ * {@link DEFAULT_DAZZI_CHAT_MODEL_ID}: the model must be in the signed-in catalog.
+ */
+export const DEFAULT_DAZZI_QUERY_DECOMPOSITION_MODEL_ID = "openai/gpt-6-luna";
+
 /** Server root, e.g. `https://api.dazziapp.com`. The API lives under `<root>/v1`. */
 export const DEFAULT_BASE_URL = "https://api.dazziapp.com";
 

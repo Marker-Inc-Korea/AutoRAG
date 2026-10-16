@@ -128,6 +128,28 @@ file again if it still needs it. Text is never dropped. The session record keeps
 every image; only the request is trimmed. The same guard enforces `inputLimits` for
 any model that declares them.
 
+## Defaults when signed in
+
+With a stored Dazzi Models login, AutoRAG prefers the hosted plan wherever it
+picks a default. OpenRouter stays the fallback when you are signed out.
+
+| What | Signed in to Dazzi Models | Signed out (fallback) |
+|---|---|---|
+| Chat model (no `model` in config, none in Pi settings) | `dazzi/anthropic/claude-haiku-5.5`, else the catalog's first model | Pi default, then the local Codex runtime |
+| Jev (`jev.backend` unset) | `dazzi` | `openrouter` |
+| Question decomposition (`queryDecomposition.model` unset) | `dazzi/openai/gpt-6-luna` | `openrouter/qwen/qwen3.7-flash` |
+| Rerank block `autorag init` writes | `dazzi` / `qwen/qwen3-reranker-8b` | `openrouter` / `voyageai/rerank-3-lite` |
+
+Explicit config always wins. An existing `config.json` keeps the blocks it already
+has; `autorag init` writes the signed-in or signed-out set once, when it creates
+the file. The chat default needs a catalog snapshot (a prior `/login` or refresh);
+without one it is skipped.
+
+**Embeddings are not part of this.** They stay on the local gateway
+(`qwen3-embedding-0.6b`) by default. Sending corpus text to a remote embedder
+requires an explicit opt-in, the hosted embeddings endpoint is Pro-only, and
+making it the default would send every indexed document off the machine.
+
 ## Jev and rerank on the hosted plan
 
 The same sign-in serves Jev and the rerank stage, so a hosted setup needs no

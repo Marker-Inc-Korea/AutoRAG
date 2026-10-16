@@ -15,12 +15,23 @@ between runs.
 `jev-use` owns backend auto-selection, request screening, and response
 validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
 on top, and uses the same client for the query pipeline described below. Jev
-is **on by default** with the OpenRouter backend, and it is always omitted for
-remote P2P sessions because its `state` leaves the machine.
+is **on by default**, on the hosted Dazzi Models backend when you are signed in
+(`/login`) and on OpenRouter otherwise. It is always omitted for remote P2P
+sessions because its `state` leaves the machine.
 
 ## Defaults and opt-out
 
-With no `jev` section, AutoRAG behaves as if the config said:
+With no `jev` section, AutoRAG behaves as if the config said, **when signed in to
+Dazzi Models**:
+
+```json
+{
+  "jev": { "backend": "dazzi" },
+  "queryDecomposition": { "model": { "provider": "dazzi", "id": "openai/gpt-6-luna" } }
+}
+```
+
+and, **when not signed in** (the fallback):
 
 ```json
 {
@@ -29,13 +40,15 @@ With no `jev` section, AutoRAG behaves as if the config said:
 }
 ```
 
-`autorag init` writes exactly these sections into new configs so they are
-visible and editable. An empty `{}` keeps the defaults. `"jev": false` or
-`enabled: false` turns Jev off completely: no routing, no follow-up check, no
-`jev` tool. Both features send the question text to OpenRouter, so disable them
-when questions must stay on the machine. Without `OPENROUTER_API_KEY`, routing
-falls back to a single local search with a `query-route-fallback` diagnostic;
-searches keep working.
+The choice is made when AutoRAG reads the config, from whether a Dazzi Models
+`/login` credential is stored. `autorag init` writes the matching block into new
+configs so it is visible and editable; an existing config keeps what it says. An
+empty `{}` keeps the defaults. `"jev": false` or `enabled: false` turns Jev off
+completely: no routing, no follow-up check, no `jev` tool. Both features send the
+question text to the chosen backend, so disable them when questions must stay on
+the machine. Without a credential for that backend (a Dazzi login, or
+`OPENROUTER_API_KEY`), routing falls back to a single local search with a
+`query-route-fallback` diagnostic; searches keep working.
 
 ### Backends
 
@@ -65,7 +78,7 @@ returns HTTP 400. Set `model` to override the pin.
 | Field                 | Meaning                                                                 |
 | --------------------- | ----------------------------------------------------------------------- |
 | `enabled`             | `false` disables Jev (same as `"jev": false`).                          |
-| `backend`             | `openrouter` (default), `typesafe`, `vercel`, or `dazzi`.              |
+| `backend`             | `dazzi` when signed in, else `openrouter` (default); or `typesafe`, `vercel`. |
 | `model`               | Wire model id sent with every call. Omit for the backend default.       |
 | `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
 
@@ -229,12 +242,13 @@ verifies (`follow-up-check-fallback`), because ending on an unchecked answer is
 the costlier mistake.
 
 Decomposition sends a short prompt to an LLM and keeps **at most five** search
-queries. The default model is `openrouter/qwen/qwen3.7-flash`.
+queries. The default model is `dazzi/openai/gpt-6-luna` when signed in to Dazzi
+Models, and `openrouter/qwen/qwen3.7-flash` otherwise.
 `queryDecomposition.model` takes the same fields and credential rules as the
 top-level `model`; `"queryDecomposition": false` decomposes with the search
 session's own model instead.
 
-The default was picked on a live OpenRouter benchmark: the real decomposition
+The OpenRouter fallback was picked on a live OpenRouter benchmark: the real decomposition
 prompt, 6 questions (including 2 Korean), and 2 runs each, scored on valid
 JSON, at most five queries, coverage of every sub-question, and language
 preserved:

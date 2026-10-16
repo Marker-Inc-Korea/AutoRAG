@@ -34,12 +34,30 @@ describe("queryDecomposition config", () => {
 		expect(() => configWith("gpt")).toThrow(ConfigError);
 	});
 
-	it("defaults the decomposition model to OpenRouter qwen/qwen3.7-flash when unset", async () => {
+	it("defaults the decomposition model to OpenRouter qwen/qwen3.7-flash when not signed in", async () => {
 		const resolved = await resolveQueryDecompositionModel(
 			{ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") },
 			{ configPath: join(root, "missing.toml"), agentDir: join(root, "agent"), env: {} },
 		);
 		expect(resolved?.model).toMatchObject({ provider: "openrouter", id: "qwen/qwen3.7-flash" });
+	});
+
+	it("defaults the decomposition model to the hosted Dazzi Models catalog when signed in", async () => {
+		const agentDir = join(root, "agent");
+		mkdirSync(agentDir, { recursive: true });
+		writeFileSync(
+			join(agentDir, "auth.json"),
+			JSON.stringify({
+				dazzi: { type: "oauth", access: "dz_login", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+			}),
+		);
+		const resolved = await resolveQueryDecompositionModel(
+			{ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") },
+			{ configPath: join(root, "missing.toml"), agentDir, env: {} },
+		).catch((error: unknown) => error);
+		// With no catalog snapshot the model is unknown offline; once a snapshot exists it resolves.
+		expect(resolved).toBeInstanceOf(ConfigError);
+		expect((resolved as Error).message).toContain("Unknown configured model: dazzi/openai/gpt-6-luna");
 	});
 
 	it("decomposes with the session model when queryDecomposition is false", async () => {

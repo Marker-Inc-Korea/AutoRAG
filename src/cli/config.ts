@@ -13,8 +13,13 @@ import {
 } from "../agent/local-model.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
-import { DAZZI_INPUT_LIMITS, PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
-import { readDazziLoginToken } from "../cloud/credential.ts";
+import {
+	DAZZI_INPUT_LIMITS,
+	PROVIDER_ID as DAZZI_PROVIDER_ID,
+	DEFAULT_DAZZI_CHAT_MODEL_ID,
+	DEFAULT_DAZZI_QUERY_DECOMPOSITION_MODEL_ID,
+} from "../cloud/config.ts";
+import { isDazziSignedIn, readDazziLoginToken } from "../cloud/credential.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
@@ -22,8 +27,6 @@ import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import {
-	DEFAULT_RERANK_API_KEY_ENV,
-	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
 	defaultRerankApiKeyEnv,
@@ -229,7 +232,7 @@ export interface CliConfig {
 	/**
 	 * Question decomposition for the Jev query pipeline. `model` names the LLM
 	 * that splits one question into at most five search queries; absent or `{}`
-	 * uses {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}, and `false` lets the
+	 * uses {@link defaultQueryDecompositionModel}, and `false` lets the
 	 * agent's own model decompose.
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
@@ -1229,16 +1232,31 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 	return out;
 }
 
-/** Jev backend used when the config names none (absent section or `{}`). */
-export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
+/**
+ * Jev backend used when the config names none (absent section or `{}`): the
+ * hosted Dazzi Models plan when the user is signed in, else OpenRouter.
+ */
+export function defaultJevBackend(agentDir: string = getAgentDir()): JevBackendName {
+	return isDazziSignedIn(agentDir) ? "dazzi" : "openrouter";
+}
+
+/** The OpenRouter fallback decomposition model, used when not signed in to Dazzi Models. */
+export const OPENROUTER_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = {
+	provider: "openrouter",
+	id: "qwen/qwen3.7-flash",
+};
 
 /**
- * Question-decomposition model used when the config names none. Picked from a
- * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
- * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
- * cheaper per call than the previous default (a 2025 Gemini flash-lite) at equal quality.
+ * Question-decomposition model used when the config names none: the hosted
+ * Dazzi Models plan when signed in, else OpenRouter. The OpenRouter pick came
+ * from a live bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
+ * covering, language-preserving decompositions at ~0.9s p50.
  */
-export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
+export function defaultQueryDecompositionModel(agentDir: string = getAgentDir()): AgentModelConfig {
+	return isDazziSignedIn(agentDir)
+		? { provider: DAZZI_PROVIDER_ID, id: DEFAULT_DAZZI_QUERY_DECOMPOSITION_MODEL_ID }
+		: { ...OPENROUTER_QUERY_DECOMPOSITION_MODEL };
+}
 
 /** Validate the `queryDecomposition` config section (`false` = decompose with the session model). */
 export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecompositionConfig | false {
@@ -1256,15 +1274,19 @@ export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecomposit
 
 /**
  * Map the `jev` config section onto the agent option. Jev is on by default:
- * an absent section or `{}` enables it on {@link DEFAULT_JEV_BACKEND}; `false`
- * and `enabled: false` are the opt-out.
+ * an absent section or `{}` enables it on {@link defaultJevBackend} (Dazzi
+ * Models when signed in, else OpenRouter); `false` and `enabled: false` are the
+ * opt-out.
  */
-function buildJevAgentOption(raw: JevCliConfig | false | undefined): AutoRAGAgentOptions["jev"] {
+function buildJevAgentOption(
+	raw: JevCliConfig | false | undefined,
+	agentDir: string | undefined,
+): AutoRAGAgentOptions["jev"] {
 	if (raw === false) return false;
 	const normalized = normalizeJevConfig(raw ?? {});
 	if (normalized.enabled === false) return false;
 	const { enabled: _omitJevEnabled, ...fields } = normalized;
-	return { backend: DEFAULT_JEV_BACKEND, ...fields };
+	return { backend: defaultJevBackend(agentDir), ...fields };
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1402,7 +1424,18 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	return out;
 }
 
-export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
+/**
+ * Rerank block `autorag init` writes when none is given: the hosted Dazzi
+ * Models reranker when signed in, else OpenRouter's.
+ */
+export function defaultRerankConfig(agentDir: string = getAgentDir()): RerankConfig {
+	return normalizeRerankConfig(
+		{ provider: isDazziSignedIn(agentDir) ? DAZZI_PROVIDER_ID : DEFAULT_RERANK_PROVIDER },
+		"rerank",
+	) as RerankConfig;
+}
+
+export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
 		languages: config.languages,
@@ -1426,7 +1459,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
-	opts.jev = buildJevAgentOption(config.jev);
+	opts.jev = buildJevAgentOption(config.jev, agentDir);
 	// The Jev `config` branch edits the very file this process resolved; it only
 	// takes effect when Jev is on, so the option is always safe to pass.
 	if (config.configPath !== undefined) {
@@ -1744,6 +1777,19 @@ async function resolvePiDefaultModel(
 	return model;
 }
 
+/**
+ * Default chat model for a signed-in Dazzi Models user when neither AutoRAG's
+ * config nor Pi's settings name one: {@link DEFAULT_DAZZI_CHAT_MODEL_ID} when
+ * the catalog lists it, else the catalog's first model. Undefined when signed
+ * out or when no catalog snapshot exists yet (the OpenRouter/local fallbacks
+ * then apply).
+ */
+function resolveDazziDefaultModel(runtime: ModelRuntime, options: ResolveAgentModelOptions): Model<Api> | undefined {
+	if (!isDazziSignedIn(resolveAgentDir(options))) return undefined;
+	const catalog = runtime.getModels(DAZZI_PROVIDER_ID) as readonly Model<Api>[];
+	return catalog.find((model) => model.id === DEFAULT_DAZZI_CHAT_MODEL_ID) ?? catalog[0];
+}
+
 function resolveConfiguredEndpointAuth(
 	reference: AgentModelConfig & { baseUrl: string },
 	model: Model<Api>,
@@ -1854,7 +1900,8 @@ async function resolveAgentModelCore(
 		};
 	}
 
-	// 3. No model configured: prefer a pi-selected usable model, then the local default runtime.
+	// 3. No model configured: prefer a pi-selected usable model, then the hosted
+	// Dazzi Models default when signed in, then the local default runtime.
 	if (modelRef === undefined) {
 		const piDefault = await resolvePiDefaultModel(runtime, options);
 		if (piDefault !== undefined) {
@@ -1867,6 +1914,19 @@ async function resolveAgentModelCore(
 				local: undefined,
 				env,
 				auth: await resolveCatalogAuth(runtime, piDefault, env),
+			};
+		}
+		const dazziDefault = resolveDazziDefaultModel(runtime, options);
+		if (dazziDefault !== undefined) {
+			return {
+				model: dazziDefault,
+				modelRef,
+				fromLocal: false,
+				configuredEndpoint: false,
+				catalog: true,
+				local: undefined,
+				env,
+				auth: await resolveCatalogAuth(runtime, dazziDefault, env),
 			};
 		}
 		let local: LocalAutoRAGModel;
@@ -1943,7 +2003,7 @@ export async function validateAgentConfigFile(
 /**
  * Resolve the question-decomposition model and its credential through the same
  * chain as the agent model. An absent section or `{}` uses
- * {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}; `queryDecomposition: false`
+ * {@link defaultQueryDecompositionModel}; `queryDecomposition: false`
  * returns undefined so the agent's own model decomposes.
  */
 export async function resolveQueryDecompositionModel(
@@ -1951,7 +2011,7 @@ export async function resolveQueryDecompositionModel(
 	options: ResolveAgentModelOptions = {},
 ): Promise<DecompositionModel | undefined> {
 	if (config.queryDecomposition === false) return undefined;
-	const reference = config.queryDecomposition?.model ?? DEFAULT_QUERY_DECOMPOSITION_MODEL;
+	const reference = config.queryDecomposition?.model ?? defaultQueryDecompositionModel(resolveAgentDir(options));
 	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
 	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
 	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
@@ -2079,18 +2139,13 @@ export function writeDefaultConfig(
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
-	full.rerank = partial.rerank ?? {
-		provider: DEFAULT_RERANK_PROVIDER,
-		model: DEFAULT_RERANK_MODEL,
-		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
-		topN: DEFAULT_RERANK_TOP_N,
-	};
+	full.rerank = partial.rerank ?? defaultRerankConfig();
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
 	// Jev routing and question decomposition are on by default; new configs
 	// spell the defaults out so they are visible and editable.
-	full.jev = partial.jev ?? { backend: DEFAULT_JEV_BACKEND };
-	full.queryDecomposition = partial.queryDecomposition ?? { model: { ...DEFAULT_QUERY_DECOMPOSITION_MODEL } };
+	full.jev = partial.jev ?? { backend: defaultJevBackend() };
+	full.queryDecomposition = partial.queryDecomposition ?? { model: defaultQueryDecompositionModel() };
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);

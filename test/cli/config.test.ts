@@ -418,6 +418,48 @@ describe("single-model CLI config", () => {
 			);
 		}
 
+		const signIn = (agentDir: string) =>
+			writeFileSync(
+				join(agentDir, "auth.json"),
+				JSON.stringify({
+					dazzi: { type: "oauth", access: "dz_stored", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+				}),
+			);
+
+		it("uses the hosted catalog's default chat model when signed in and no model is configured", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			signIn(agentDir);
+
+			const resolved = await resolveAgentModel(base(), options(agentDir));
+
+			expect(resolved.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
+			expect(resolved.apiKey).toBe("dz_stored");
+		});
+
+		it("does not pick a Dazzi model when signed out", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+
+			const error = await resolveAgentModel(base(), options(agentDir)).catch((caught: unknown) => caught);
+
+			expect(error).toBeInstanceOf(ConfigError);
+			expect((error as Error).message).toContain("No model configured");
+		});
+
+		it("lets an explicit model win over the signed-in default", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			signIn(agentDir);
+
+			const resolved = await resolveAgentModel(
+				{ ...base(), model: { provider: "dazzi", id: MODEL_ID, baseUrl: "https://staging.example.com/v1" } },
+				options(agentDir),
+			);
+
+			expect(resolved.model.baseUrl).toBe("https://staging.example.com/v1");
+		});
+
 		it("resolves the model from the persisted catalog with a stored OAuth credential", async () => {
 			const agentDir = join(root, "agent");
 			seedSnapshot(agentDir);

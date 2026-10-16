@@ -18,3 +18,12 @@ export const DAZZI_LOGIN_REQUIRED_MESSAGE =
 export function readDazziLoginToken(agentDir: string = getAgentDir()): string | undefined {
 	return resolveCredentialKey(readStoredCredential(PROVIDER_ID, join(agentDir, "auth.json")));
 }
+
+/**
+ * Whether a `/login` credential for Dazzi Models is stored. Defaults (Jev,
+ * rerank, question decomposition, the chat model) follow this: signed in means
+ * the hosted plan, signed out keeps the OpenRouter defaults.
+ */
+export function isDazziSignedIn(agentDir: string = getAgentDir()): boolean {
+	return readDazziLoginToken(agentDir) !== undefined;
+}

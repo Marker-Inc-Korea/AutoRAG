@@ -6,10 +6,14 @@ registered method, filters by trusted datasource access, merges and dedupes the
 chunks (`ResultMerger`), and then the configured reranker reorders the survivors
 by relevance to the query.
 
-The default reranker routes through **OpenRouter** using the
+The default reranker is the hosted **Dazzi Models** reranker
+(`qwen/qwen3-reranker-8b`) when you are signed in (`/login`), and
+**OpenRouter** (via the
 [`@openrouter/sdk`](https://www.npmjs.com/package/@openrouter/sdk) TypeScript
-SDK and the [`voyageai/rerank-3-lite`](https://openrouter.ai/voyageai/rerank-3-lite)
-model.
+SDK and [`voyageai/rerank-3-lite`](https://openrouter.ai/voyageai/rerank-3-lite))
+otherwise. The choice is made by `autorag init` when it writes the `rerank`
+block; a config file with no `rerank` block leaves reranking off, and an
+existing block keeps what it says.
 
 Local-first is no longer a contract: the local embedding gateway remains the
 zero-configuration default, and remote reranking (or remote embedding) is an
