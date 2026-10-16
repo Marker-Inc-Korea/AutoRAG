@@ -39,6 +39,9 @@ export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** `minsync sync` exits 3 with "another sync is in progress" while another run holds `.minsync/lock`. */
+const MINSYNC_LOCK_HELD_EXIT_CODE = 3;
+
 export class MinSyncQueryError extends Error {
 	readonly code: number | null;
 	readonly stderr: string;
@@ -227,10 +230,10 @@ export class MinSyncClient {
 		// runs for minutes or hours, and a small embedder timeout previously
 		// SIGTERM'd `minsync sync` mid-run. Spawn init, check, and sync without a
 		// process timeout so a long sync always runs to completion; only the
-		// caller's abort signal can stop them.
+		// caller's `signal` can stop them, and it takes the whole process tree.
 		const spawnOptions = signal === undefined ? {} : { signal };
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
-		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
+
 		if (!initialized) {
 			const initArgs = ["init", "--format", "json"];
 			if (this.embedder?.id) {
@@ -246,8 +249,11 @@ export class MinSyncClient {
 				};
 			}
 		}
-		const configuredChunkSize = configuredMaxChunkSize(this.workspacePath);
-		const configuredDimension = configuredVectorDimension(this.workspacePath);
+		// Read before the rewrite below: the rewrite changes what these report.
+		const chunkSizeChanged =
+			this.maxChunkSize !== undefined && configuredMaxChunkSize(this.workspacePath) !== this.maxChunkSize;
+		const dimensionChanged =
+			embedder.dimension !== undefined && configuredVectorDimension(this.workspacePath) !== embedder.dimension;
 		const configPath = minSyncConfigPath(this.workspacePath);
 		const shouldRewriteConfig =
 			this.embedder !== undefined || this.maxChunkSize !== undefined || effective.identity !== undefined;
@@ -258,11 +264,48 @@ export class MinSyncClient {
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
-		const check = await this.spawn(["check", "--format", "json"], spawnOptions).catch((error: unknown) => {
-			// An abort rejects out of spawn; the rewritten config must not outlive the run.
+		try {
+			return await this.checkAndSync(
+				force || chunkSizeChanged || dimensionChanged,
+				signal,
+				effective,
+				restoreConfig,
+			);
+		} catch (error) {
+			// An aborted run must not leave this run's embedder settings in the managed config.
 			restoreConfig();
 			throw error;
-		});
+		}
+	}
+
+	private lockHeldResult(stderr: string): MinSyncSyncResult {
+		return {
+			ok: false,
+			synced: 0,
+			workspacePath: this.workspacePath,
+			reason: "lock-held",
+			diagnostic: {
+				code: "minsync-lock-held",
+				message: stderr ? stderr.trim() : "Another MinSync sync holds the workspace lock.",
+				retryable: true,
+			},
+		};
+	}
+
+	private async checkAndSync(
+		forceFull: boolean,
+		signal: AbortSignal | undefined,
+		effective: { config: MinSyncEmbedderConfig; identity?: MinSyncEmbeddingIdentity },
+		restoreConfig: () => void,
+	): Promise<MinSyncSyncResult> {
+		const spawnOptions = signal === undefined ? {} : { signal };
+		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
+		const check = await this.spawn(["check", "--format", "json"], spawnOptions);
+		// MinSync takes the workspace lock for `check` as well as `sync`, so a held lock surfaces at either stage.
+		if (!check.ok && check.code === MINSYNC_LOCK_HELD_EXIT_CODE) {
+			restoreConfig();
+			return this.lockHeldResult(check.stderr);
+		}
 		if (!check.ok) {
 			restoreConfig();
 			return {
@@ -294,16 +337,15 @@ export class MinSyncClient {
 				},
 			};
 		}
-		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
-		const dimensionChanged = embedder.dimension !== undefined && configuredDimension !== embedder.dimension;
 		const identityChanged = effective.identity !== undefined && this.identityMismatch(effective.identity);
-		const fullReindex = force || chunkSizeChanged || dimensionChanged || identityChanged;
+		const fullReindex = forceFull || identityChanged;
 		const syncArgs =
 			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await this.spawn(syncArgs, spawnOptions).catch((error: unknown) => {
+		const result = await this.spawn(syncArgs, spawnOptions);
+		if (!result.ok && result.code === MINSYNC_LOCK_HELD_EXIT_CODE) {
 			restoreConfig();
-			throw error;
-		});
+			return this.lockHeldResult(result.stderr);
+		}
 		if (!result.ok) {
 			restoreConfig();
 			return {

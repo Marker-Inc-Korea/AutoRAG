@@ -116,6 +116,13 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("EXPLORE & RETRIEVE");
 	});
 
+	it("tells the model later messages continue the conversation and that evidence ids last all of it", () => {
+		const text = prompt();
+		expect(text).toContain("Every user message after the first continues the same conversation");
+		expect(text).toContain("cite any id a retrieval tool printed in this conversation, including in earlier turns");
+		expect(text).not.toContain("in this run");
+	});
+
 	it("instructs actively using Jikji when exploring local files and folders", () => {
 		const text = prompt();
 		expect(text).toContain("primary and preferred tool for exploring local files, folders, and documents");

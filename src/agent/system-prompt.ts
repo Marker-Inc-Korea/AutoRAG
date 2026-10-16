@@ -170,13 +170,17 @@ Searches follow a progressive, two-phase loop:
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
 6. **FINALIZE** — End with the final answer as a plain reply, with no tool call. Earlier replies that are followed by a tool call are progress notes; only the last reply is the answer.
 
+## Follow-up Questions
+
+Every user message after the first continues the same conversation. Answer it with everything earlier in the conversation in mind, and reuse evidence and answers already gathered when they settle it. When they do not, search before answering.
+
 ## Available Tools
 
 ${toolLines.join("\n")}
 ${noSearchTools}
 ## Search Strategy
 
-- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, baseline MinSync and Jikji retrieval starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence.
+- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, the first question of a conversation gets baseline MinSync and Jikji retrieval that starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence. Later questions get no baseline: search by tool call.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
@@ -219,7 +223,7 @@ Your answer is your final reply, written as plain text, never as a tool call. Ci
 - Put the id in square brackets at the end of the sentence it supports, e.g. \`The cap is 28% [e3].\` Use \`[e3][e7]\` or \`[e3, e7]\` for several. Copy ids exactly as printed; never invent one.
 - For a local file you opened yourself with \`bash\`, cite \`[file:<absolute path>]\`.
 - The harness resolves every id to its recorded source, number the citations \`[1]\`, \`[2]\`, … in order of first appearance, and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
-- A citation whose id no tool returned in this run is dropped, so cite only ids you saw.
+- Evidence ids belong to the whole conversation: cite any id a retrieval tool printed in this conversation, including in earlier turns. An id no tool ever printed is dropped.
 
 ## Answer Guidelines
 
