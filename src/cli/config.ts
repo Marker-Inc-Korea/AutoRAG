@@ -163,7 +163,6 @@ export interface P2pConfig {
 	};
 	injectionClassifier?: boolean;
 	piiNer?: boolean;
-	searchTimeoutMs?: number;
 	newFilesPublic?: boolean;
 }
 
@@ -704,6 +703,13 @@ const MINSYNC_ALLOWLIST = new Set<string>([
  */
 const MINSYNC_LEGACY_IGNORED = new Set<string>(["binaryPath"]);
 
+/**
+ * `searchTimeoutMs` capped a peer search's wall time; searches no longer have a
+ * time limit. Existing configs may still carry it, so it is ignored rather than
+ * rejected.
+ */
+const P2P_LEGACY_IGNORED = new Set<string>(["searchTimeoutMs"]);
+
 const P2P_ALLOWLIST = new Set([
 	"enabled",
 	"port",
@@ -715,7 +721,6 @@ const P2P_ALLOWLIST = new Set([
 	"quotas",
 	"injectionClassifier",
 	"piiNer",
-	"searchTimeoutMs",
 	"newFilesPublic",
 ]);
 
@@ -729,7 +734,6 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 		out.port = 7583;
 		out.injectionClassifier = true;
 		out.piiNer = false;
-		out.searchTimeoutMs = 120000;
 		return out;
 	}
 	if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -737,6 +741,7 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 	}
 	const record = raw as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
+		if (P2P_LEGACY_IGNORED.has(key)) continue;
 		if (!P2P_ALLOWLIST.has(key)) {
 			throw new ConfigError(`p2p.${key} is not a recognized field`);
 		}
@@ -857,19 +862,6 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 		}
 		out.newFilesPublic = record.newFilesPublic;
 	}
-
-	if (record.searchTimeoutMs !== undefined) {
-		if (
-			typeof record.searchTimeoutMs !== "number" ||
-			!Number.isInteger(record.searchTimeoutMs) ||
-			record.searchTimeoutMs < 5000 ||
-			record.searchTimeoutMs > 600000
-		) {
-			throw new ConfigError("p2p.searchTimeoutMs must be an integer between 5000 and 600000");
-		}
-		out.searchTimeoutMs = record.searchTimeoutMs;
-	}
-	out.searchTimeoutMs ??= 120000;
 
 	return out;
 }

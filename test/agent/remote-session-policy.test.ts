@@ -90,16 +90,4 @@ describe("remote-session retrieval policy", () => {
 		]);
 		expect(observedSources).toEqual(new Set(["/kakao/shared/chunks/a", "/kakao/private/chunks/b"]));
 	});
-
-	it("defaults remote search timeout to 120 seconds", () => {
-		temp = mkdtempSync(join(tmpdir(), "autorag-remote-timeout-"));
-		const agent = new AutoRAGAgent({
-			searchPaths: ["test/fixtures/sample-project"],
-			memoryPath: join(temp, "memory.json"),
-			remoteSession: true,
-			minSync: { autoInstall: false },
-			jikji: false,
-		});
-		expect((agent as unknown as { searchTimeoutMs: number }).searchTimeoutMs).toBe(120_000);
-	});
 });
