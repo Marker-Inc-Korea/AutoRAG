@@ -1,6 +1,7 @@
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -49,8 +50,8 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 		return this.skill.polling();
 	}
 
-	async index(): Promise<DatasourceIndexResult> {
-		const result = await this.skill.index();
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
+		const result = await this.skill.index(options);
 		return {
 			...result,
 			skill: this.alias,

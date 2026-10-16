@@ -305,6 +305,32 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(loggedArgs().map((args) => args[0])).toEqual(["find"]);
 	});
 
+	// Upstream Jikji (main) rejects `prepare` on a root that overlaps an already
+	// indexed one, and two prepares of the same root contend for its lock.
+	it("prepares and searches only the outermost of nested or duplicated search roots", async () => {
+		const nested = join(docs, "sub");
+		mkdirSync(nested, { recursive: true });
+		writeFileSync(join(nested, "deep.txt"), "Nested document.\n");
+		writeFakeJikji();
+		const agent = new AutoRAGAgent({
+			searchPaths: [nested, docs, docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+			everything: false,
+			fsearch: false,
+		});
+
+		const prepared = await agent.prepareJikji();
+		await agent.findJikji("Q3 report");
+
+		const calls = loggedArgs();
+		expect(prepared).toHaveLength(1);
+		expect(calls.filter((args) => args[0] === "prepare").map((args) => args[1])).toEqual([realpathSync(docs)]);
+		expect(calls.filter((args) => args[0] === "find").map((args) => args[1])).toEqual([realpathSync(docs)]);
+	});
+
 	it("drops user-excluded paths from the merged Jikji answer pack", async () => {
 		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
 		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");
@@ -412,7 +438,7 @@ ${body}
 		expect(call).toEqual(expect.arrayContaining(["--parse-timeout", "45"]));
 	});
 
-	it("aborts every in-flight root through the host signal", { timeout: 30_000 }, async () => {
+	it("aborts the in-flight root and the queued one through the host signal", { timeout: 30_000 }, async () => {
 		writeBehaviorJikji("await new Promise(() => setInterval(() => undefined, 1000));");
 		const second = join(root, "docs2");
 		mkdirSync(second, { recursive: true });
@@ -423,7 +449,7 @@ ${body}
 		const deadline = Date.now() + 10_000;
 		while (Date.now() < deadline) {
 			try {
-				if (loggedArgs().length >= 2) break;
+				if (loggedArgs().length >= 1) break;
 			} catch {
 				// log not created yet
 			}
@@ -433,29 +459,5 @@ ${body}
 
 		const results = await pending;
 		expect(results?.map((result) => (result.ok ? "ok" : result.reason))).toEqual(["aborted", "aborted"]);
-	});
-
-	it("runs roots with bounded concurrency instead of all at once", { timeout: 30_000 }, async () => {
-		const roots = Array.from({ length: 6 }, (_, index) => join(root, `r${index}`));
-		for (const dir of roots) mkdirSync(dir, { recursive: true });
-		writeBehaviorJikji(`
-import { mkdirSync, rmSync, readdirSync } from "node:fs";
-const gate = ${JSON.stringify(join(root, "active"))};
-mkdirSync(gate, { recursive: true });
-mkdirSync(gate + "/" + process.pid);
-appendFileSync(${JSON.stringify(join(root, "peak.log"))}, readdirSync(gate).length + "\\n");
-await new Promise((resolve) => setTimeout(resolve, 300));
-rmSync(gate + "/" + process.pid, { recursive: true });
-console.log("{}");
-`);
-		const agent = agentFor(roots);
-
-		const results = await agent.prepareJikji();
-
-		expect(results).toHaveLength(6);
-		expect(results?.every((result) => result.ok)).toBe(true);
-		const peak = Math.max(...readFileSync(join(root, "peak.log"), "utf8").trim().split("\n").map(Number));
-		expect(peak).toBeGreaterThan(1);
-		expect(peak).toBeLessThanOrEqual(3);
 	});
 });

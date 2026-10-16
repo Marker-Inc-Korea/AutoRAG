@@ -494,13 +494,31 @@ const ANSWER_PACK = {
 };
 
 describe("JikjiClient.find", () => {
-	it("emits exactly ['find', root, query, '--json'] with no flags by default", async () => {
+	it("emits only ['find', root, query, '--json', '--no-background-refresh'] by default", async () => {
 		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
 		const client = clientWithPath();
 
 		await client.find(corpusRoot, "how does X work");
 
-		expect(argsOfFirstCall()).toEqual(["find", corpusRoot, "how does X work", "--json"]);
+		expect(argsOfFirstCall()).toEqual(["find", corpusRoot, "how does X work", "--json", "--no-background-refresh"]);
+	});
+
+	// `jikji find` spawns a detached `jikji prepare <root>` (without
+	// --no-agent-rules) when the index is changed or stale. That indexes during
+	// a query and rewrites AGENTS.md/CLAUDE.md/.cursorrules in the user's root.
+	it("always opts out of upstream's detached background refresh, even with every find option set", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q", {
+			topK: 3,
+			first: true,
+			fresh: true,
+			autoPrepare: true,
+			staleAfterSeconds: 30,
+		});
+
+		expect(argsOfFirstCall()).toContain("--no-background-refresh");
 	});
 
 	it("emits --top-k only when set", async () => {
@@ -587,6 +605,7 @@ describe("JikjiClient.find", () => {
 			corpusRoot,
 			"query",
 			"--json",
+			"--no-background-refresh",
 			"--top-k",
 			"3",
 			"--first",

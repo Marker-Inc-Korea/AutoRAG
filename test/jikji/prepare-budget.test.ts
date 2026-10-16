@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mapWithConcurrency } from "../../src/jikji/pool.ts";
 import { countFiles, MAX_TIMER_MS, scaledPrepareTimeoutMs } from "../../src/jikji/prepare-budget.ts";
 
 describe("scaledPrepareTimeoutMs", () => {
@@ -54,25 +53,5 @@ describe("countFiles", () => {
 		const controller = new AbortController();
 		controller.abort();
 		expect(await countFiles(root, false, controller.signal)).toBe(0);
-	});
-});
-
-describe("mapWithConcurrency", () => {
-	it("never exceeds the limit and preserves order", async () => {
-		let active = 0;
-		let peak = 0;
-		const results = await mapWithConcurrency([1, 2, 3, 4, 5, 6, 7], 3, async (item) => {
-			active += 1;
-			peak = Math.max(peak, active);
-			await new Promise((resolve) => setTimeout(resolve, 10));
-			active -= 1;
-			return item * 2;
-		});
-		expect(results).toEqual([2, 4, 6, 8, 10, 12, 14]);
-		expect(peak).toBe(3);
-	});
-
-	it("handles an empty list", async () => {
-		expect(await mapWithConcurrency([], 3, async (item: number) => item)).toEqual([]);
 	});
 });
