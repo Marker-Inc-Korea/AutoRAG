@@ -700,9 +700,9 @@ export interface RerankAgentOptions {
 	provider?: string;
 	/** Wire model id. @default "voyageai/rerank-3-lite" */
 	model?: string;
-	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. */
+	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. Not used by the `dazzi` provider. */
 	apiKey?: string;
-	/** Environment variable holding the provider API key. */
+	/** Environment variable holding the provider API key. Not used by the `dazzi` provider, which uses the `/login` credential. */
 	apiKeyEnv?: string;
 	/** Override the provider base URL. */
 	baseUrl?: string;
@@ -943,7 +943,11 @@ export class AutoRAGAgent {
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
 		this.refreshLimits = validateRefreshLimits(options.refresh);
-		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
+		this.reranker = createReranker(
+			options.rerank === false || options.rerank === undefined
+				? false
+				: { ...options.rerank, agentDir: options.piAgentDir },
+		);
 		this.rerankTopN =
 			options.rerank === false || options.rerank === undefined
 				? undefined
@@ -1035,7 +1039,7 @@ export class AutoRAGAgent {
 		this.jevJudge =
 			options.jev === undefined || options.jev === false || this.remoteSession
 				? undefined
-				: createJevJudge(options.jev);
+				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
 		this.selfConfig = this.jevJudge === undefined || this.remoteSession ? undefined : options.selfConfig;
 		this.queryDecompositionModel =

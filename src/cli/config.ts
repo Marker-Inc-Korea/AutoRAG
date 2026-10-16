@@ -13,16 +13,20 @@ import {
 } from "../agent/local-model.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
-import { AUTORAG_INPUT_LIMITS, PROVIDER_ID as AUTORAG_PROVIDER_ID } from "../cloud/config.ts";
-import { registerAutoRAGProvider } from "../cloud/provider.ts";
+import {
+	DAZZI_INPUT_LIMITS,
+	PROVIDER_ID as DAZZI_PROVIDER_ID,
+	DEFAULT_DAZZI_CHAT_MODEL_ID,
+	DEFAULT_DAZZI_QUERY_DECOMPOSITION_MODEL_ID,
+} from "../cloud/config.ts";
+import { isDazziSignedIn, readDazziLoginToken } from "../cloud/credential.ts";
+import { registerDazziProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import {
-	DEFAULT_RERANK_API_KEY_ENV,
-	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
 	defaultRerankApiKeyEnv,
@@ -100,12 +104,12 @@ export interface WebSearchCliConfig {
  * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
  * it explicitly. Secrets never appear here: `jev-use` reads the backend
  * credential from its own environment variable (`TYPESAFE_API_KEY`,
- * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted AutoRAG
- * `autorag` backend reads `AUTORAG_API_KEY`.
+ * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted Dazzi Models
+ * `dazzi` backend uses the credential stored by `/login`.
  */
 export interface JevCliConfig {
 	enabled?: boolean;
-	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `autorag`); omit to let the first credential present win. */
+	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `dazzi`); omit to let the first credential present win. */
 	backend?: JevBackendName;
 	/** Model id sent with every call, e.g. `jev-latest`. */
 	model?: string;
@@ -121,21 +125,22 @@ export interface QueryDecompositionConfig {
 
 /**
  * Post-merge reranking config. Routes merged evidence through a dedicated
- * rerank model. `provider` is `openrouter` (default) or the hosted AutoRAG
- * plan (`autorag`); each provider supplies its own default `model` and
- * `apiKeyEnv`. Secrets never appear here — only the environment-variable name
- * that holds the provider API key.
+ * rerank model. `provider` is `openrouter` (default) or the hosted Dazzi Models
+ * plan (`dazzi`); each provider supplies its own default `model`. OpenRouter
+ * reads its key from `apiKeyEnv`; Dazzi uses the credential stored by `/login`.
+ * Secrets never appear here — only the environment-variable name that holds a
+ * provider API key.
  */
 export interface RerankConfig {
 	/** `false` disables reranking. Missing means enabled when the block is present. */
 	enabled?: boolean;
-	/** Provider id (`openrouter` or `autorag`). @default "openrouter" */
+	/** Provider id (`openrouter` or `dazzi`). @default "openrouter" */
 	provider?: string;
-	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`autorag`) */
+	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`dazzi`) */
 	model?: string;
-	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" (`openrouter`) / "AUTORAG_API_KEY" (`autorag`) */
+	/** Environment variable holding the provider API key (`openrouter` only). @default "OPENROUTER_API_KEY" */
 	apiKeyEnv?: string;
-	/** Override the provider base URL (e.g. a gateway); for `autorag`, the API base including `/v1`. */
+	/** Override the provider base URL (e.g. a gateway); for `dazzi`, the API base including `/v1`. */
 	baseUrl?: string;
 	/** Return only the top N merged results. @default 25 (DEFAULT_RERANK_TOP_N) */
 	topN?: number;
@@ -227,7 +232,7 @@ export interface CliConfig {
 	/**
 	 * Question decomposition for the Jev query pipeline. `model` names the LLM
 	 * that splits one question into at most five search queries; absent or `{}`
-	 * uses {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}, and `false` lets the
+	 * uses {@link defaultQueryDecompositionModel}, and `false` lets the
 	 * agent's own model decompose.
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
@@ -517,6 +522,11 @@ function modelReference(value: unknown, path: string): AgentModelConfig | undefi
 		out.baseUrl = record.baseUrl.trim();
 	}
 	if (record.apiKeyEnv !== undefined) {
+		if (out.provider === DAZZI_PROVIDER_ID) {
+			throw new ConfigError(
+				`${path}.apiKeyEnv is not supported for provider "${DAZZI_PROVIDER_ID}": it uses the credential stored by /login`,
+			);
+		}
 		if (typeof record.apiKeyEnv !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(record.apiKeyEnv)) {
 			throw new ConfigError(`${path}.apiKeyEnv must match /^[A-Za-z_][A-Za-z0-9_]*$/`);
 		}
@@ -1175,8 +1185,8 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 	confidenceThreshold: true,
 };
 
-/** Jev backends AutoRAG can build: jev-use's own plus the hosted AutoRAG plan. */
-const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "autorag"];
+/** Jev backends AutoRAG can build: jev-use's own plus the hosted Dazzi Models plan. */
+const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "dazzi"];
 
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
@@ -1222,16 +1232,31 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 	return out;
 }
 
-/** Jev backend used when the config names none (absent section or `{}`). */
-export const DEFAULT_JEV_BACKEND: JevBackendName = "openrouter";
+/**
+ * Jev backend used when the config names none (absent section or `{}`): the
+ * hosted Dazzi Models plan when the user is signed in, else OpenRouter.
+ */
+export function defaultJevBackend(agentDir: string = getAgentDir()): JevBackendName {
+	return isDazziSignedIn(agentDir) ? "dazzi" : "openrouter";
+}
+
+/** The OpenRouter fallback decomposition model, used when not signed in to Dazzi Models. */
+export const OPENROUTER_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = {
+	provider: "openrouter",
+	id: "qwen/qwen3.7-flash",
+};
 
 /**
- * Question-decomposition model used when the config names none. Picked from a
- * live OpenRouter bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
- * covering, language-preserving decompositions at ~0.9s p50, about 3.5x
- * cheaper per call than the previous default (a 2025 Gemini flash-lite) at equal quality.
+ * Question-decomposition model used when the config names none: the hosted
+ * Dazzi Models plan when signed in, else OpenRouter. The OpenRouter pick came
+ * from a live bench (6 questions incl. Korean, 2 runs each): 12/12 valid,
+ * covering, language-preserving decompositions at ~0.9s p50.
  */
-export const DEFAULT_QUERY_DECOMPOSITION_MODEL: AgentModelConfig = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
+export function defaultQueryDecompositionModel(agentDir: string = getAgentDir()): AgentModelConfig {
+	return isDazziSignedIn(agentDir)
+		? { provider: DAZZI_PROVIDER_ID, id: DEFAULT_DAZZI_QUERY_DECOMPOSITION_MODEL_ID }
+		: { ...OPENROUTER_QUERY_DECOMPOSITION_MODEL };
+}
 
 /** Validate the `queryDecomposition` config section (`false` = decompose with the session model). */
 export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecompositionConfig | false {
@@ -1249,15 +1274,19 @@ export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecomposit
 
 /**
  * Map the `jev` config section onto the agent option. Jev is on by default:
- * an absent section or `{}` enables it on {@link DEFAULT_JEV_BACKEND}; `false`
- * and `enabled: false` are the opt-out.
+ * an absent section or `{}` enables it on {@link defaultJevBackend} (Dazzi
+ * Models when signed in, else OpenRouter); `false` and `enabled: false` are the
+ * opt-out.
  */
-function buildJevAgentOption(raw: JevCliConfig | false | undefined): AutoRAGAgentOptions["jev"] {
+function buildJevAgentOption(
+	raw: JevCliConfig | false | undefined,
+	agentDir: string | undefined,
+): AutoRAGAgentOptions["jev"] {
 	if (raw === false) return false;
 	const normalized = normalizeJevConfig(raw ?? {});
 	if (normalized.enabled === false) return false;
 	const { enabled: _omitJevEnabled, ...fields } = normalized;
-	return { backend: DEFAULT_JEV_BACKEND, ...fields };
+	return { backend: defaultJevBackend(agentDir), ...fields };
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1350,10 +1379,11 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	if (!SUPPORTED_RERANK_PROVIDERS.includes(provider)) {
 		throw new ConfigError(`${path}.provider must be one of: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`);
 	}
+	const defaultApiKeyEnv = defaultRerankApiKeyEnv(provider);
 	const out: RerankConfig = {
 		provider,
 		model: defaultRerankModel(provider),
-		apiKeyEnv: defaultRerankApiKeyEnv(provider),
+		...(defaultApiKeyEnv !== undefined ? { apiKeyEnv: defaultApiKeyEnv } : {}),
 		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (record.enabled !== undefined) {
@@ -1367,6 +1397,11 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 		out.model = record.model.trim();
 	}
 	if (record.apiKeyEnv !== undefined) {
+		if (defaultApiKeyEnv === undefined) {
+			throw new ConfigError(
+				`${path}.apiKeyEnv is not supported for provider "${provider}": it uses the credential stored by /login`,
+			);
+		}
 		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
 			throw new ConfigError(`${path}.apiKeyEnv must match ${API_KEY_ENV_PATTERN}`);
 		}
@@ -1389,7 +1424,18 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	return out;
 }
 
-export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
+/**
+ * Rerank block `autorag init` writes when none is given: the hosted Dazzi
+ * Models reranker when signed in, else OpenRouter's.
+ */
+export function defaultRerankConfig(agentDir: string = getAgentDir()): RerankConfig {
+	return normalizeRerankConfig(
+		{ provider: isDazziSignedIn(agentDir) ? DAZZI_PROVIDER_ID : DEFAULT_RERANK_PROVIDER },
+		"rerank",
+	) as RerankConfig;
+}
+
+export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
 		languages: config.languages,
@@ -1413,7 +1459,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
-	opts.jev = buildJevAgentOption(config.jev);
+	opts.jev = buildJevAgentOption(config.jev, agentDir);
 	// The Jev `config` branch edits the very file this process resolved; it only
 	// takes effect when Jev is on, so the option is always safe to pass.
 	if (config.configPath !== undefined) {
@@ -1502,7 +1548,7 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 		contextWindow: reference.contextWindow ?? 128_000,
 		maxTokens: reference.maxTokens ?? 16_384,
 		// The hosted plan's limits hold even before its catalog is loaded.
-		...(reference.provider === AUTORAG_PROVIDER_ID ? { inputLimits: AUTORAG_INPUT_LIMITS } : {}),
+		...(reference.provider === DAZZI_PROVIDER_ID ? { inputLimits: DAZZI_INPUT_LIMITS } : {}),
 	};
 }
 
@@ -1589,10 +1635,10 @@ function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
 			modelsPath: join(agentDir, "models.json"),
 			allowModelNetwork: false,
 		});
-		// Register the hosted AutoRAG plan so `model: { provider: "autorag", id }`
+		// Register the hosted Dazzi Models plan so `model: { provider: "dazzi", id }`
 		// resolves; the cache-only refresh below loads the persisted catalog
 		// snapshot and never touches the network.
-		await registerAutoRAGProvider(runtime);
+		await registerDazziProvider(runtime);
 		return runtime;
 	})();
 	modelRuntimeCache.set(agentDir, created);
@@ -1731,11 +1777,33 @@ async function resolvePiDefaultModel(
 	return model;
 }
 
+/**
+ * Default chat model for a signed-in Dazzi Models user when neither AutoRAG's
+ * config nor Pi's settings name one: {@link DEFAULT_DAZZI_CHAT_MODEL_ID} when
+ * the catalog lists it, else the catalog's first model. Undefined when signed
+ * out or when no catalog snapshot exists yet (the OpenRouter/local fallbacks
+ * then apply).
+ */
+function resolveDazziDefaultModel(runtime: ModelRuntime, options: ResolveAgentModelOptions): Model<Api> | undefined {
+	if (!isDazziSignedIn(resolveAgentDir(options))) return undefined;
+	const catalog = runtime.getModels(DAZZI_PROVIDER_ID) as readonly Model<Api>[];
+	return catalog.find((model) => model.id === DEFAULT_DAZZI_CHAT_MODEL_ID) ?? catalog[0];
+}
+
 function resolveConfiguredEndpointAuth(
 	reference: AgentModelConfig & { baseUrl: string },
 	model: Model<Api>,
 	env: NodeJS.ProcessEnv,
+	agentDir: string,
 ): ResolvedModelAuth {
+	// Dazzi Models authenticates only with the credential `/login` stored; there
+	// is no environment-variable key for it.
+	if (model.provider === DAZZI_PROVIDER_ID) {
+		const token = readDazziLoginToken(agentDir);
+		return token === undefined
+			? { present: false, source: "none" }
+			: { apiKey: token, providerApiKeys: { [model.provider]: token }, present: true, source: "pi_auth" };
+	}
 	const envName = configuredApiKeyEnv(reference);
 	const value = env[envName];
 	const providerApiKeys = typeof value === "string" && value.length > 0 ? { [model.provider]: value } : undefined;
@@ -1813,7 +1881,7 @@ async function resolveAgentModelCore(
 			catalog: catalogModel !== undefined,
 			local: undefined,
 			env,
-			auth: resolveConfiguredEndpointAuth(modelRef, model, env),
+			auth: resolveConfiguredEndpointAuth(modelRef, model, env, resolveAgentDir(options)),
 		};
 	}
 
@@ -1832,7 +1900,8 @@ async function resolveAgentModelCore(
 		};
 	}
 
-	// 3. No model configured: prefer a pi-selected usable model, then the local default runtime.
+	// 3. No model configured: prefer a pi-selected usable model, then the hosted
+	// Dazzi Models default when signed in, then the local default runtime.
 	if (modelRef === undefined) {
 		const piDefault = await resolvePiDefaultModel(runtime, options);
 		if (piDefault !== undefined) {
@@ -1845,6 +1914,19 @@ async function resolveAgentModelCore(
 				local: undefined,
 				env,
 				auth: await resolveCatalogAuth(runtime, piDefault, env),
+			};
+		}
+		const dazziDefault = resolveDazziDefaultModel(runtime, options);
+		if (dazziDefault !== undefined) {
+			return {
+				model: dazziDefault,
+				modelRef,
+				fromLocal: false,
+				configuredEndpoint: false,
+				catalog: true,
+				local: undefined,
+				env,
+				auth: await resolveCatalogAuth(runtime, dazziDefault, env),
 			};
 		}
 		let local: LocalAutoRAGModel;
@@ -1921,7 +2003,7 @@ export async function validateAgentConfigFile(
 /**
  * Resolve the question-decomposition model and its credential through the same
  * chain as the agent model. An absent section or `{}` uses
- * {@link DEFAULT_QUERY_DECOMPOSITION_MODEL}; `queryDecomposition: false`
+ * {@link defaultQueryDecompositionModel}; `queryDecomposition: false`
  * returns undefined so the agent's own model decomposes.
  */
 export async function resolveQueryDecompositionModel(
@@ -1929,7 +2011,7 @@ export async function resolveQueryDecompositionModel(
 	options: ResolveAgentModelOptions = {},
 ): Promise<DecompositionModel | undefined> {
 	if (config.queryDecomposition === false) return undefined;
-	const reference = config.queryDecomposition?.model ?? DEFAULT_QUERY_DECOMPOSITION_MODEL;
+	const reference = config.queryDecomposition?.model ?? defaultQueryDecompositionModel(resolveAgentDir(options));
 	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
 	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
 	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
@@ -2057,18 +2139,13 @@ export function writeDefaultConfig(
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
-	full.rerank = partial.rerank ?? {
-		provider: DEFAULT_RERANK_PROVIDER,
-		model: DEFAULT_RERANK_MODEL,
-		apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
-		topN: DEFAULT_RERANK_TOP_N,
-	};
+	full.rerank = partial.rerank ?? defaultRerankConfig();
 	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
 	else full.p2p = { enabled: false };
 	// Jev routing and question decomposition are on by default; new configs
 	// spell the defaults out so they are visible and editable.
-	full.jev = partial.jev ?? { backend: DEFAULT_JEV_BACKEND };
-	full.queryDecomposition = partial.queryDecomposition ?? { model: { ...DEFAULT_QUERY_DECOMPOSITION_MODEL } };
+	full.jev = partial.jev ?? { backend: defaultJevBackend() };
+	full.queryDecomposition = partial.queryDecomposition ?? { model: defaultQueryDecompositionModel() };
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);

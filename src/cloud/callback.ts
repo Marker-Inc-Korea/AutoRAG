@@ -1,4 +1,4 @@
-import { AutoragOAuthError } from "./errors.ts";
+import { DazziOAuthError } from "./errors.ts";
 
 /** Authorization response extracted from either the loopback server or a manual paste. */
 export interface CallbackResult {
@@ -27,13 +27,13 @@ export function parseCallbackQuery(params: URLSearchParams): CallbackResult {
 export function parseCallbackInput(input: string): CallbackResult {
 	const trimmed = input.trim();
 	if (trimmed === "") {
-		throw new AutoragOAuthError("AutoRAG sign-in failed: nothing was pasted.");
+		throw new DazziOAuthError("Dazzi Models sign-in failed: nothing was pasted.");
 	}
 	if (/^https?:\/\//i.test(trimmed)) {
 		try {
 			return parseCallbackQuery(new URL(trimmed).searchParams);
 		} catch {
-			throw new AutoragOAuthError("AutoRAG sign-in failed: the pasted URL is not valid.");
+			throw new DazziOAuthError("Dazzi Models sign-in failed: the pasted URL is not valid.");
 		}
 	}
 	const query = trimmed.startsWith("?") ? trimmed.slice(1) : trimmed;
@@ -54,19 +54,19 @@ export function parseCallbackInput(input: string): CallbackResult {
  */
 export function requireAuthorizationCode(result: CallbackResult, expectedState: string): { code: string } {
 	if (result.state !== undefined && result.state !== expectedState) {
-		throw new AutoragOAuthError(
-			"AutoRAG sign-in failed: state mismatch (the callback did not originate from this login attempt).",
+		throw new DazziOAuthError(
+			"Dazzi Models sign-in failed: state mismatch (the callback did not originate from this login attempt).",
 		);
 	}
 	if (result.error !== undefined) {
-		throw new AutoragOAuthError(
+		throw new DazziOAuthError(
 			result.error === "access_denied"
-				? "AutoRAG sign-in was cancelled in the browser."
-				: `AutoRAG sign-in failed: ${result.error}.`,
+				? "Dazzi Models sign-in was cancelled in the browser."
+				: `Dazzi Models sign-in failed: ${result.error}.`,
 		);
 	}
 	if (result.code === undefined) {
-		throw new AutoragOAuthError("AutoRAG sign-in failed: the callback carried no authorization code.");
+		throw new DazziOAuthError("Dazzi Models sign-in failed: the callback carried no authorization code.");
 	}
 	return { code: result.code };
 }

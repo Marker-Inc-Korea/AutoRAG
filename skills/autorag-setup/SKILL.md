@@ -222,8 +222,9 @@ size must be positive integers, and the dimension must match the embedder
 Leave both enabled. They are the recommended setup: they make simple questions
 fast and multi-part questions thorough.
 
-- **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
-  `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
+- **Jev** (`jev`, default `{ "backend": "dazzi" }` when signed in to Dazzi
+  Models, else `{ "backend": "openrouter" }`; model `jev-1.13` on Dazzi,
+  `typesafe/jev-1.13` on OpenRouter) runs before the fast answer. It routes each question to
   local search, web search, a direct answer (general knowledge or small
   talk skips retrieval entirely), or the `config` branch, and decides whether
   to decompose it. On
@@ -238,14 +239,16 @@ fast and multi-part questions thorough.
   decides whether verification is needed, so a complete, evidence-backed fast
   answer ends the run.
 - **Question decomposition** (`queryDecomposition`, default model
+  `dazzi/openai/gpt-6-luna` when signed in to Dazzi Models, else
   `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
   five search queries that run in parallel.
 
-Both use the user's `OPENROUTER_API_KEY`; confirm it is set (`test -n
-"$OPENROUTER_API_KEY"`, never print it) and tell the user Jev routing is on.
-Without the key, routing falls back to a single local search and the run
-always verifies, so searches still work. A `query-route-fallback` diagnostic
-(`autorag search --debug`) shows that state.
+Both need a credential for the chosen backend: a Dazzi Models `/login` (check with
+`autorag models list --provider dazzi --available`), or the user's
+`OPENROUTER_API_KEY` (`test -n "$OPENROUTER_API_KEY"`, never print it). Tell the
+user Jev routing is on. Without a credential, routing falls back to a single
+local search and the run always verifies, so searches still work. A
+`query-route-fallback` diagnostic (`autorag search --debug`) shows that state.
 
 ```json
 {

@@ -21,7 +21,7 @@ import {
 	type TuiMode,
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
-import { registerAutoRAGProvider } from "../cloud/provider.ts";
+import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
 import { fitRequestLimits } from "./request-limits.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
@@ -327,7 +327,7 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		authPath: join(agentDir, "auth.json"),
 		modelsPath: join(agentDir, "models.json"),
 	});
-	await registerAutoRAGProvider(modelRuntime);
+	await registerDazziProvider(modelRuntime);
 	await configureModelRuntime(modelRuntime, options.model, options.apiKey, options.providerApiKeys);
 	const customTools = [...options.customTools];
 	const extensionToolNames = [...(options.extensionToolNames ?? [])];
@@ -389,7 +389,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 		authPath: join(agentDir, "auth.json"),
 		modelsPath: join(agentDir, "models.json"),
 	});
-	await registerAutoRAGProvider(modelRuntime);
+	await registerDazziProvider(modelRuntime);
 	await configureModelRuntime(modelRuntime, options.model, options.apiKey, options.providerApiKeys);
 	const sessionManager = options.sessionPath
 		? SessionManager.open(options.sessionPath, options.sessionDir, options.cwd)

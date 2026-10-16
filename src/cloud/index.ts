@@ -10,10 +10,8 @@ export {
 	startCallbackServer,
 } from "./callback-server.ts";
 export {
-	API_KEY_CONFIG_VALUE,
 	API_PATH,
 	AUTHORIZE_PATH,
-	AUTORAG_API_KEY_ENV,
 	AUTORAG_BASE_URL_ENV,
 	DEFAULT_BASE_URL,
 	MODELS_PATH,
@@ -24,10 +22,11 @@ export {
 	resolveBaseUrl,
 	TOKEN_PATH,
 } from "./config.ts";
+export { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "./credential.ts";
 export {
-	AutoragError,
-	AutoragHttpError,
-	AutoragOAuthError,
+	DazziError,
+	DazziHttpError,
+	DazziOAuthError,
 	type ErrorPayload,
 	extractErrorPayload,
 } from "./errors.ts";
@@ -43,7 +42,7 @@ export {
 	modelsFromStore,
 	resolveCredentialKey,
 } from "./models.ts";
-export { type LoginOptions, loginAutorag, refreshAutoragCredentials } from "./oauth-login.ts";
+export { type LoginOptions, loginDazzi, refreshDazziCredentials } from "./oauth-login.ts";
 export {
 	base64UrlEncode,
 	createCodeChallenge,
@@ -53,9 +52,9 @@ export {
 	type PkcePair,
 } from "./pkce.ts";
 export {
-	type AutoragEnv,
-	createAutoRAGProviderConfig,
-	refreshAutoragModels,
-	registerAutoRAGProvider,
+	createDazziProviderConfig,
+	type DazziEnv,
+	refreshDazziModels,
+	registerDazziProvider,
 } from "./provider.ts";
 export { type ExchangeCodeOptions, exchangeCodeForToken, mapTokenExchangeError, type TokenResponse } from "./token.ts";

@@ -2,7 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Jev, type JevBackend, type Judgment, type Question, type State } from "jev-use";
 import { type Static, Type } from "typebox";
-import { AUTORAG_DEFAULT_JEV_MODEL, AutoragJevBackend } from "../cloud/jev-backend.ts";
+import { DAZZI_DEFAULT_JEV_MODEL, DazziJevBackend } from "../cloud/jev-backend.ts";
 import { toToolDefinition } from "./pi-session.ts";
 
 /** `jev` tool name, kept in AutoRAG's reserved set and system prompt. */
@@ -10,10 +10,10 @@ export const JEV_TOOL_NAME = "jev";
 
 /**
  * Jev backends the `jev-use` engine resolves from the environment, in
- * auto-select order: TypeSafe -> OpenRouter -> Vercel AI Gateway. `autorag` is
- * the hosted AutoRAG (Dazzi) plan, built here rather than resolved by jev-use.
+ * auto-select order: TypeSafe -> OpenRouter -> Vercel AI Gateway. `dazzi` is
+ * the hosted Dazzi Models plan, built here rather than resolved by jev-use.
  */
-export type JevBackendName = "typesafe" | "openrouter" | "vercel" | "autorag";
+export type JevBackendName = "typesafe" | "openrouter" | "vercel" | "dazzi";
 
 /**
  * OpenRouter's live Jev model id. `jev-use` 0.8.0 ships `typesafe/jev-latest`,
@@ -25,7 +25,7 @@ export const OPENROUTER_DEFAULT_MODEL = "typesafe/jev-1.13";
 /** Per-backend model overrides applied when the caller names none. */
 const BACKEND_DEFAULT_MODEL: Record<string, string> = {
 	openrouter: OPENROUTER_DEFAULT_MODEL,
-	autorag: AUTORAG_DEFAULT_JEV_MODEL,
+	dazzi: DAZZI_DEFAULT_JEV_MODEL,
 };
 
 /**
@@ -55,6 +55,8 @@ export interface JevToolOptions {
 export interface JevJudgeOptions extends JevToolOptions {
 	/** Environment consulted for the backend credential. Default `process.env`. */
 	readonly env?: Record<string, string | undefined>;
+	/** Pi agent home whose `auth.json` holds the Dazzi `/login` credential. Default: Pi's agent dir. */
+	readonly agentDir?: string;
 }
 
 /**
@@ -78,23 +80,23 @@ export function createJevJudge(options: JevJudgeOptions = {}): JevJudge {
 	let client: Jev | undefined;
 	return async (state, questions, callOptions = {}) => {
 		if (client === undefined) {
-			// `autorag` is built here (not by jev-use): the hosted plan needs its
-			// own bearer key and native endpoint. That covers both the explicit
-			// option and the `JEV_BACKEND=autorag` env route, which jev-use would
-			// otherwise reject as an unknown backend. A missing key throws the same
-			// named error the other backends give, on the first call.
+			// `dazzi` is built here (not by jev-use): the hosted plan needs its
+			// own bearer token (the `/login` credential) and native endpoint. That
+			// covers both the explicit option and the `JEV_BACKEND=dazzi` env route,
+			// which jev-use would otherwise reject as an unknown backend. A missing
+			// sign-in throws a named error on the first call.
 			const env = options.env ?? process.env;
 			const explicit = options.backend;
 			let backend: JevBackend | "typesafe" | "openrouter" | "vercel" | undefined;
 			if (typeof explicit === "string") {
-				backend = explicit === "autorag" ? new AutoragJevBackend({ env }) : explicit;
+				backend = explicit === "dazzi" ? new DazziJevBackend({ env, agentDir: options.agentDir }) : explicit;
 			} else if (explicit !== undefined) {
 				backend = explicit;
-			} else if (env.JEV_BACKEND?.toLowerCase() === "autorag") {
-				backend = new AutoragJevBackend({ env });
+			} else if (env.JEV_BACKEND?.toLowerCase() === "dazzi") {
+				backend = new DazziJevBackend({ env, agentDir: options.agentDir });
 			} else {
 				// Leave it unset: jev-use resolves its own backends from `env`
-				// (including `JEV_BACKEND`), which is why only `autorag` is special.
+				// (including `JEV_BACKEND`), which is why only `dazzi` is special.
 				backend = undefined;
 			}
 			client = new Jev({

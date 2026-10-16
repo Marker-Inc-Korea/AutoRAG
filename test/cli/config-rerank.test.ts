@@ -1,11 +1,16 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildAgentOptions, type CliConfig, ConfigError, normalizeRerankConfig } from "../../src/cli/config.ts";
 import {
-	DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
-	DEFAULT_AUTORAG_RERANK_MODEL,
+	buildAgentOptions,
+	type CliConfig,
+	ConfigError,
+	defaultRerankConfig,
+	normalizeRerankConfig,
+} from "../../src/cli/config.ts";
+import {
+	DEFAULT_DAZZI_RERANK_MODEL,
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
@@ -32,6 +37,33 @@ function baseConfig(rerank?: CliConfig["rerank"]): CliConfig {
 	};
 }
 
+describe("defaultRerankConfig (what `autorag init` writes)", () => {
+	it("defaults to OpenRouter when not signed in to Dazzi Models", () => {
+		expect(defaultRerankConfig(join(root, "agent"))).toEqual({
+			provider: DEFAULT_RERANK_PROVIDER,
+			model: DEFAULT_RERANK_MODEL,
+			apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
+			topN: DEFAULT_RERANK_TOP_N,
+		});
+	});
+
+	it("defaults to the Dazzi Models reranker when signed in", () => {
+		const agentDir = join(root, "agent");
+		mkdirSync(agentDir, { recursive: true });
+		writeFileSync(
+			join(agentDir, "auth.json"),
+			JSON.stringify({
+				dazzi: { type: "oauth", access: "dz_login", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+			}),
+		);
+		expect(defaultRerankConfig(agentDir)).toEqual({
+			provider: "dazzi",
+			model: DEFAULT_DAZZI_RERANK_MODEL,
+			topN: DEFAULT_RERANK_TOP_N,
+		});
+	});
+});
+
 describe("normalizeRerankConfig", () => {
 	it("fills provider, model, apiKeyEnv, and topN defaults", () => {
 		expect(normalizeRerankConfig(undefined, "rerank")).toEqual({
@@ -51,13 +83,18 @@ describe("normalizeRerankConfig", () => {
 		});
 	});
 
-	it("fills the autorag provider's own model and key env, not OpenRouter's", () => {
-		expect(normalizeRerankConfig({ provider: "autorag" }, "rerank")).toEqual({
-			provider: "autorag",
-			model: DEFAULT_AUTORAG_RERANK_MODEL,
-			apiKeyEnv: DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
+	it("fills the dazzi provider's own model and no key env (it uses the /login credential)", () => {
+		expect(normalizeRerankConfig({ provider: "dazzi" }, "rerank")).toEqual({
+			provider: "dazzi",
+			model: DEFAULT_DAZZI_RERANK_MODEL,
 			topN: DEFAULT_RERANK_TOP_N,
 		});
+	});
+
+	it("rejects apiKeyEnv for the dazzi provider instead of silently ignoring it", () => {
+		expect(() => normalizeRerankConfig({ provider: "dazzi", apiKeyEnv: "DAZZI_KEY" }, "rerank")).toThrow(
+			/apiKeyEnv is not supported for provider "dazzi"/,
+		);
 	});
 
 	it("returns false for an explicit disable", () => {
