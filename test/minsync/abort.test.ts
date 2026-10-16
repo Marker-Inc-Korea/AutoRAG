@@ -347,7 +347,9 @@ process.exit(6);
 			searchPaths: [join(root, "docs")],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
-			minSync: { binaryPath: binary, autoInstall: false },
+			jikji: false,
+			everything: false,
+			minSync: { binaryPath: binary, autoInstall: false, embedder: { id: "native:Qwen/Qwen3-Embedding-0.6B" } },
 			fsearch: false,
 		});
 
