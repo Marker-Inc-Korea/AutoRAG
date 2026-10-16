@@ -29,3 +29,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .fastembed_cache/
+
+# Generated jikji artifacts (embed absolute checkout paths); never track
+.jikji/
+.jikji_agent_map.md
