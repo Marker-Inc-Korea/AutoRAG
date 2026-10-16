@@ -184,7 +184,6 @@ describe("buildSystemPrompt per-datasource tools", () => {
 	it("lists generated datasource tools with their connection instead of as caller tools", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["search_datasource_kakao_work", "my_custom_tool"],
-			manifests: [],
 			jikjiIndexingEnabled: false,
 			modelId: "test-model",
 		});

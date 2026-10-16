@@ -1,4 +1,3 @@
-import type { StoreManifest } from "../manifest/types.ts";
 import { FENCING_GUARD_LINE } from "../p2p/injection-classifier.ts";
 import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
@@ -8,7 +7,6 @@ export interface SystemPromptConfig {
 	toolNames: string[];
 	modelId?: string;
 	memoryEntries?: readonly unknown[];
-	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly DatasourceAgentSkill[];
 	retrievedContentGuard?: boolean;
@@ -93,12 +91,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			.map((name) => `- **${name}**: caller-provided tool`),
 	].filter((line): line is string => line !== undefined);
 
-	const manifests =
-		config.manifests.length === 0
-			? ""
-			: `\n## Indexed Stores\n\n${config.manifests
-					.map((manifest) => `- **${manifest.name}**: ${manifest.description ?? "indexed document store"}`)
-					.join("\n")}\n`;
 	const datasourceSkills = buildDatasourceSkillsPrompt(config.datasourceSkills ?? []);
 	const noSearchTools =
 		toolLines.length === 0
@@ -221,7 +213,6 @@ Retrieval memory holds evidence that earlier searches found for similar question
 ${jikji}
 ${everything}
 ${fsearch}
-${manifests}
 ## Output Format
 
 Your answer is your final reply, written as plain text, never as a tool call. Cite evidence inline with the ids the retrieval tools print next to each result:

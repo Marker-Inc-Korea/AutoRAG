@@ -108,6 +108,15 @@ Guidance:
 
 ## Query pipeline (routing, decomposition, datasource check, follow-up check)
 
+> **Conversations.** The pipeline below runs only for the first query of an
+> interactive conversation (and for every programmatic `searchDocuments()` call
+> outside a bound TUI session). Every later query in the same session is a
+> plain agent turn: no Jev branch, decomposition, datasource check, baseline
+> prefetch, fast answer, or follow-up check. The model sees the whole
+> conversation, answers from evidence it already gathered when that suffices,
+> and otherwise searches by tool call. Earlier `[eN]` evidence ids stay valid.
+> `/new` starts a fresh conversation with the full pipeline again.
+
 Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
 search **before** the fast answer. Jev answers two typed questions about the
 user question in one batched call:

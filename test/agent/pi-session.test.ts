@@ -706,37 +706,30 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
-	it("verifies a steered direct question without the previous query's answer as its draft", async () => {
-		// A steer typed while Jev routes a direct question skips the direct
-		// prompt. The bound session still ends on the previous query's answer,
-		// which must never be presented as this question's first draft.
-		const verificationPrompts: string[] = [];
-		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID, 2);
-		const tui = await tuiAgent(
-			[
-				fauxAssistantMessage("FIRST QUERY ANSWER.", { stopReason: "stop" }),
-				(context) => {
-					for (const message of context.messages) {
-						if (message.role === "user" && textOf(message.content).startsWith("Original query:"))
-							verificationPrompts.push(textOf(message.content));
-					}
-					return fauxAssistantMessage("Leonardo da Vinci.", { stopReason: "stop" });
-				},
-			],
-			routing.backend,
+	it("steers a follow-up turn like the first query: the steer reaches the model inside the same turn", async () => {
+		const seen: string[] = [];
+		const held = heldStep(
+			fauxAssistantMessage([fauxToolCall("search_custom", { query: "mona lisa" })], { stopReason: "toolUse" }),
 		);
+		const tui = await tuiAgent([
+			fauxAssistantMessage("FIRST QUERY ANSWER.", { stopReason: "stop" }),
+			held.held,
+			seeingStep("Leonardo.", seen),
+		]);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await tui.agent.waitForIdle();
 			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
-			await routing.entered;
-			await tui.session.prompt("Answer in one name.", { source: "interactive" });
-			routing.release();
+			await held.entered;
+			await tui.session.prompt("Answer in one name.", { source: "interactive", streamingBehavior: "steer" });
+			held.release();
 			await tui.agent.waitForIdle();
 
-			expect(verificationPrompts).toHaveLength(1);
-			expect(verificationPrompts[0]).toContain("Original query: Who painted the Mona Lisa?");
-			expect(verificationPrompts[0]).not.toContain("FIRST QUERY ANSWER");
+			expect(seen[0]).toContain("Answer in one name.");
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" && message.stopReason === "stop" ? [textOf(message.content)] : [],
+			);
+			expect(answers).toEqual(["FIRST QUERY ANSWER.", "Leonardo."]);
 		} finally {
 			await tui.dispose();
 		}
@@ -857,5 +850,82 @@ describe("AutoRAG pi coding-agent host", () => {
 		} finally {
 			registration.unregister();
 		}
+	});
+
+	describe("follow-up turns in one conversation", () => {
+		/** Counts Jev judge calls so a test can see whether a turn went through the gate. */
+		function countingJev(inner: JevBackend): { backend: JevBackend; calls: () => number } {
+			let calls = 0;
+			return {
+				backend: {
+					name: inner.name,
+					judge(request) {
+						calls += 1;
+						return inner.judge(request);
+					},
+				},
+				calls: () => calls,
+			};
+		}
+
+		it("answers the second query in the same session without the Jev gate or a second search pipeline", async () => {
+			const seen: string[] = [];
+			const jev = countingJev(jevRoute("direct"));
+			const tui = await tuiAgent(
+				[seeingStep("Paris.", seen), seeingStep("About 2.1 million people.", seen)],
+				jev.backend,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+				const afterFirst = jev.calls();
+				expect(afterFirst).toBeGreaterThan(0);
+
+				await tui.session.prompt("How many people live there?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+
+				// No Jev routing, decomposition, datasource or follow-up check ran for turn two.
+				expect(jev.calls()).toBe(afterFirst);
+				// One model call: no baseline prefetch, fast answer, or verification pass.
+				expect(tui.registration.state.callCount).toBe(2);
+				expect(seen[1]).toContain("How many people live there?");
+				expect(seen[1]).not.toContain("Baseline retrieval evidence");
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("lets the model search by tool call on a follow-up", async () => {
+			const seen: string[] = [];
+			const jev = countingJev(jevRoute("direct"));
+			const tui = await tuiAgent(
+				[
+					seeingStep("Paris.", seen),
+					fauxAssistantMessage([fauxToolCall("search_custom", { query: "population of paris" })], {
+						stopReason: "toolUse",
+					}),
+					seeingStep("About 2.1 million.", seen),
+				],
+				jev.backend,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+				const afterFirst = jev.calls();
+
+				await tui.session.prompt("How many people live there?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+
+				expect(jev.calls()).toBe(afterFirst);
+				expect(tui.registration.state.callCount).toBe(3);
+				expect(tui.session.messages.some((message) => message.role === "toolResult")).toBe(true);
+				const answers = tui.session.messages.flatMap((message) =>
+					message.role === "assistant" && message.stopReason === "stop" ? [textOf(message.content)] : [],
+				);
+				expect(answers).toEqual(["Paris.", "About 2.1 million."]);
+			} finally {
+				await tui.dispose();
+			}
+		});
 	});
 });

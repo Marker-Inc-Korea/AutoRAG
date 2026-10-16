@@ -38,6 +38,7 @@ import {
 	type JikjiFindResult,
 	type JikjiHandoffAction,
 	type JikjiOptions,
+	type JikjiPrepareOptions,
 	type JikjiPrepareResult,
 	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
@@ -45,7 +46,6 @@ import {
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
-import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
@@ -412,6 +412,12 @@ export interface AutoRAGRefreshOptions {
 	readonly signal?: AbortSignal;
 	/** Called while the parse and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
 	readonly onProgress?: (progress: AutoRAGRefreshProgress) => void;
+	/**
+	 * Per-root `jikji prepare` controls: a hard `timeoutMs` wall per root and a
+	 * `parseTimeout` (seconds, forwarded to `--parse-timeout`). Unset values fall
+	 * back to the `jikji` client options. Cancel through the refresh `signal`.
+	 */
+	readonly jikjiPrepare?: Omit<JikjiPrepareOptions, "signal">;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -563,7 +569,6 @@ export interface AutoRAGAgentOptions {
 	providerApiKeys?: Readonly<Record<string, string>>;
 	searchPaths: string[];
 	languages?: readonly LanguageTag[];
-	manifestDir?: string;
 	memoryPath?: string;
 	workspacePath?: string;
 	tools?: AgentTool[];
@@ -895,7 +900,7 @@ export class AutoRAGAgent {
 	private readonly refreshLimits: AutoRAGRefreshLimits;
 
 	constructor(options: AutoRAGAgentOptions) {
-		const { manifestDir, memoryPath } = options;
+		const { memoryPath } = options;
 		this.configuredModel = options.model;
 		this.remoteSession = options.remoteSession ?? false;
 		this.searchTimeoutMs = options.searchTimeoutMs ?? (this.remoteSession ? 120_000 : 10 * 60 * 1000);
@@ -914,7 +919,6 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
-		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceRetry = options.datasourceRetry ?? {};
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -1150,7 +1154,6 @@ export class AutoRAGAgent {
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
-			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
 			retrievedContentGuard: false,
@@ -1852,11 +1855,19 @@ export class AutoRAGAgent {
 		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
 		this.activeRetrievalOptions = options;
 
+		// A later turn of an interactive conversation is a plain agent turn: the
+		// model searches by tool call when it needs to, and answers from evidence
+		// already in the transcript when it does not. Only the first turn runs the
+		// Jev gate and the baseline pipeline.
+		const conversational = this.isConversationTurn();
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
-		this.evidenceLedger.clear();
-		this.evidenceOrigins.clear();
+		// Evidence ids stay valid across a conversation: the transcript still holds the earlier [eN] citations.
+		if (!conversational) {
+			this.evidenceLedger.clear();
+			this.evidenceOrigins.clear();
+		}
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
@@ -1948,7 +1959,6 @@ export class AutoRAGAgent {
 						// citations against the evidence ledger.
 						// With Jev enabled, Jev first picks a direct answer (intrinsic knowledge)
 						// or local search, and whether the question needs decomposition.
-						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						const activeSession = session;
 						const sessionAgent = activeSession.piSession;
 						const transcript = (): readonly AgentMessage[] =>
@@ -1958,6 +1968,24 @@ export class AutoRAGAgent {
 							if (sessionAgent !== undefined) sessionAgent.setThinkingLevel(clamped);
 							else activeSession.agent.state.thinkingLevel = clamped;
 						};
+						if (conversational) {
+							setThinking(this.finalThinkingLevel);
+							await activeSession.prompt(this.buildConversationTurnPrompt(trimmedQuery, options));
+							// A steer typed after the turn's last model request is still owed an answer.
+							while (
+								!this.interactive.userAborted &&
+								!planAbort.signal.aborted &&
+								this.interactive.queuedSteers.length > 0
+							) {
+								await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+							}
+							steering.acceptingSteers = false;
+							if (this.interactive.userAborted) return;
+							const turnText = finalAnswerText(transcript());
+							if (turnText !== undefined) captured = this.deriveAnswer(turnText);
+							return;
+						}
+						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
 							// Self-configuration: no retrieval and no fast answer. The model
 							// gets the full setup skill and edits the config itself, then
@@ -2868,6 +2896,42 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * True when the bound interactive session already holds an assistant turn:
+	 * the query continues a conversation instead of opening one. Read from the
+	 * transcript, so a fresh session (`/new`) starts over with the full pipeline.
+	 */
+	private isConversationTurn(): boolean {
+		if (this.remoteSession || this.boundPiRuntime === undefined) return false;
+		return this.boundPiRuntime.session.messages.some((message) => message.role === "assistant");
+	}
+
+	/**
+	 * Prompt for a follow-up turn of a conversation. No baseline is injected and
+	 * no verification pass follows: the model decides, per question, between
+	 * answering from what the conversation already established and searching.
+	 */
+	buildConversationTurnPrompt(query: string, options: RetrievalOptions): string {
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Follow-up in this conversation: ${query}${limit}${scope}\n\n` +
+			`First decide whether the evidence and answers already in this conversation settle it. If they do, answer from them without searching; their [eN] ids are still valid to cite. ` +
+			`If they do not, or the question concerns something not yet looked up, search with the retrieval tools (rewrite the question into self-contained queries using the conversation context), then answer. ` +
+			`${this.discoveryHint((tools) => `When exploring local files and folders, use ${tools} rather than exploratory bash commands. `)}${this.webFallbackHint()}` +
+			`Never answer from memory about the user's own files, chats, records, or recent facts: search first.\n\n` +
+			`Formatting and content rules for the answer:\n` +
+			`- Answer the question directly and concisely; use bullet points only when they help. Do not include file paths, datasource descriptions, or retrieval mechanics.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
+			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n\n` +
+			`Do not use broad grep/find or recursive filesystem scans. Avoid repeating near-identical queries; once more searching stops surfacing new evidence, conclude from what you have. ` +
+			`If more search is needed, first write a brief 1\u20132 line progress update, then call retrieval tools. ` +
+			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
+		);
+	}
+
+	/**
 	 * Prompt for a question Jev routed to a direct answer: general knowledge or
 	 * small talk. No retrieval ran and no verification phase follows, so the
 	 * reply is the final answer.
@@ -3069,7 +3133,9 @@ export class AutoRAGAgent {
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
 			const jikji =
-				allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare(signal) : undefined;
+				allMethods || wants("jikji") || wants("minsync")
+					? await this.executeJikjiPrepare({ ...opts?.jikjiPrepare, ...(signal === undefined ? {} : { signal }) })
+					: undefined;
 			signal?.throwIfAborted();
 			// On Windows, the bundled Everything instance indexes the same local
 			// roots by name so the agent can locate files instantly.
@@ -3481,8 +3547,8 @@ export class AutoRAGAgent {
 		await this.fsearchClient?.stop();
 	}
 
-	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
-		const results = await this.executeJikjiPrepare();
+	async prepareJikji(options?: JikjiPrepareOptions): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
+		const results = await this.executeJikjiPrepare(options);
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
 	}
 
@@ -3493,14 +3559,17 @@ export class AutoRAGAgent {
 	 * but `JikjiClient` runs them one at a time, because every root shares one
 	 * central SQLite file that fails with "database is locked" under concurrent
 	 * writers. Nested and duplicate roots are skipped: upstream rejects
-	 * overlapping roots and the outer root's index already covers them.
+	 * overlapping roots and the outer root's index already covers them. A failed
+	 * or timed-out root is a degraded result (reported as a diagnostic), never a
+	 * rejection, so the refresh still finishes. `jikji.parseTimeout` /
+	 * `jikji.timeoutMs` / `jikji.prepareTimeoutMsPerFile` apply to every root.
 	 */
-	private async executeJikjiPrepare(signal?: AbortSignal): Promise<readonly JikjiPrepareResult[] | undefined> {
+	private async executeJikjiPrepare(
+		options: JikjiPrepareOptions = {},
+	): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
-		return Promise.all(
-			this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, signal === undefined ? {} : { signal })),
-		);
+		return Promise.all(this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, options)));
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {

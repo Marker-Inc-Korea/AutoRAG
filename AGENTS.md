@@ -457,7 +457,7 @@ Agent Tools                 AutoRAGAgent (customized Pi agent)
 │ bash / jikji_find │       │ Retrieval Memory (judged evidence)│
 │ search_all_docs   │  ───▶ │ Curation Layer (LLM extraction)   │
 │ semantic_search   │       │ check_memory (advisory reference) │
-│ search_datasource │       │ Manifest System (indexed stores)  │
+│ search_datasource │       │ Datasource Skills (ext. stores)   │
 │ scan_duplicates   │       │ Retrieval Registry (pluggable)    │
 │ peer_targets      │       │ Result Merger (cross-method)      │
 └──────────────────┘       └──────────────────────────────────┘
@@ -582,7 +582,6 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 | `src/memory/check-memory-tool.ts` | `check_memory` tool (pi-agent-core AgentTool) |
 | `src/agent/evidence-judgment.ts` | Post-answer Jev step: one batched evidence-support call, the 0.7 threshold, and fallback |
 | `src/agent/evidence-origins.ts` | Maps a cited evidence ref back to the search query and method that surfaced it |
-| `src/manifest/loader.ts` | YAML/JSON manifest loader for indexed data stores |
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
