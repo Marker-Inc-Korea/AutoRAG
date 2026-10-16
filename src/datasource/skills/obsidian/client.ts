@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
@@ -362,6 +363,7 @@ function normalizeHit(raw: unknown): QmdSearchHit | undefined {
 	const docid = stringField(raw, "docid") ?? stringField(raw, "id");
 	const file = stringField(raw, "file") ?? stringField(raw, "path") ?? stringField(raw, "displayPath");
 	const title = stringField(raw, "title");
+	const line = numberField(raw, "line");
 	const content =
 		stringField(raw, "snippet") ??
 		stringField(raw, "content") ??
@@ -370,12 +372,13 @@ function normalizeHit(raw: unknown): QmdSearchHit | undefined {
 		title ??
 		file ??
 		"";
-	const chunkId = toChunkId(docid, file, title);
+	const chunkId = toChunkId(docid, file, title, line, content);
 	if (chunkId.length === 0) return undefined;
 	const metadata: Record<string, unknown> = {};
 	if (file !== undefined) metadata.path = file;
 	if (title !== undefined) metadata.title = title;
 	if (docid !== undefined) metadata.docid = docid;
+	if (line !== undefined) metadata.line = line;
 	return {
 		chunkId,
 		score,
@@ -387,20 +390,33 @@ function normalizeHit(raw: unknown): QmdSearchHit | undefined {
 	};
 }
 
-function toChunkId(docid: string | undefined, file: string | undefined, title: string | undefined): string {
-	if (docid !== undefined && docid.length > 0) return docid.replace(/^#/, "");
-	if (file !== undefined && file.length > 0) {
-		return stripEdgeDashes(
+// qmd 2.8.3 returns at most one row per note per search method (FTS matches at
+// the document level and vector search dedupes by filepath), so the same note
+// can arrive from both `search` and `vsearch` with different passages. The
+// `-L`/`-S` suffix keeps those cross-method passages as distinct chunk IDs.
+function toChunkId(
+	docid: string | undefined,
+	file: string | undefined,
+	title: string | undefined,
+	line: number | undefined,
+	content: string,
+): string {
+	let documentId = "";
+	if (docid !== undefined && docid.length > 0) documentId = docid.replace(/^#/, "");
+	else if (file !== undefined && file.length > 0) {
+		documentId = stripEdgeDashes(
 			file
 				.replace(/^qmd:\/\//, "")
 				.replace(/\\/g, "/")
 				.replace(/[^A-Za-z0-9._/-]+/g, "-"),
 		).slice(0, 120);
+	} else if (title !== undefined && title.length > 0) {
+		documentId = stripEdgeDashes(title.toLowerCase().replace(/[^a-z0-9._-]+/g, "-")).slice(0, 80);
 	}
-	if (title !== undefined && title.length > 0) {
-		return stripEdgeDashes(title.toLowerCase().replace(/[^a-z0-9._-]+/g, "-")).slice(0, 80);
-	}
-	return "";
+	if (documentId.length === 0) return "";
+	const passageId =
+		line === undefined ? `S${createHash("sha256").update(content).digest("hex").slice(0, 16)}` : `L${line}`;
+	return `${documentId}-${passageId}`;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

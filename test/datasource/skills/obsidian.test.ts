@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,7 @@ import type {
 	QmdSearchResult,
 	QmdUpdateResult,
 } from "../../../src/datasource/skills/obsidian/types.ts";
+import { ResultMerger } from "../../../src/retrieval/merger.ts";
 
 let root: string;
 
@@ -198,6 +200,104 @@ describe("Obsidian retrieval methods", () => {
 });
 
 describe("QmdClient", () => {
+	// qmd 2.8.3 emits one row per note per method, so the same docid can arrive
+	// from `search` and `vsearch` with different passages; the -L/-S suffix
+	// keeps those cross-method passages as distinct chunk identities.
+	it("keeps same-note passages from separate qmd methods distinct through merging", async () => {
+		const binaryPath = join(root, "qmd-cross-method-passages");
+		const hitsByMode: Record<string, Record<string, unknown>> = {
+			search: {
+				docid: "#a13360",
+				file: "qmd://vault/long.md",
+				line: 1,
+				score: 1,
+				title: "BM25 passage",
+				snippet: "passage from lexical search",
+			},
+			vsearch: {
+				docid: "#a13360",
+				file: "qmd://vault/long.md",
+				line: 24,
+				score: 1,
+				title: "Vector passage",
+				snippet: "passage from semantic search",
+			},
+		};
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node\nconst mode = process.argv[2];\nprocess.stdout.write(JSON.stringify([${JSON.stringify(hitsByMode)}[mode]]));\n`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const client = new QmdClient({ binaryPath, collectionName: "vault" });
+		const bm25 = await new ObsidianBm25Method({ client, instanceId: "vault" }).retrieve("passage", {
+			topK: 5,
+		});
+		const semantic = await new ObsidianSemanticMethod({ client, instanceId: "vault" }).retrieve("passage", {
+			topK: 5,
+		});
+
+		expect(bm25).toHaveLength(1);
+		expect(semantic).toHaveLength(1);
+		expect(bm25[0]?.source).toBe("/obsidian/vault/chunks/a13360-L1");
+		expect(semantic[0]?.source).toBe("/obsidian/vault/chunks/a13360-L24");
+		expect(bm25[0]?.metadata?.line).toBe(1);
+		expect(semantic[0]?.metadata?.line).toBe(24);
+
+		const merged = new ResultMerger().merge(
+			new Map([
+				["obsidian-bm25", bm25],
+				["obsidian-semantic", semantic],
+			]),
+			{ topK: 5, dedup: true },
+		);
+		expect(merged.map((hit) => hit.content)).toEqual(["passage from lexical search", "passage from semantic search"]);
+	});
+
+	it("uses snippet hashes with file-derived IDs when qmd omits line and docid", async () => {
+		const binaryPath = join(root, "qmd-cross-method-snippets");
+		const hitsByMode: Record<string, Record<string, unknown>> = {
+			search: {
+				file: "notes/a.md",
+				score: 1,
+				snippet: "first excerpt",
+			},
+			vsearch: {
+				file: "notes/a.md",
+				score: 1,
+				snippet: "second excerpt",
+			},
+		};
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node\nconst mode = process.argv[2];\nprocess.stdout.write(JSON.stringify([${JSON.stringify(hitsByMode)}[mode]]));\n`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const client = new QmdClient({ binaryPath, collectionName: "vault" });
+		const bm25 = await new ObsidianBm25Method({ client, instanceId: "vault" }).retrieve("excerpt", {
+			topK: 5,
+		});
+		const semantic = await new ObsidianSemanticMethod({ client, instanceId: "vault" }).retrieve("excerpt", {
+			topK: 5,
+		});
+
+		const firstSnippetHash = createHash("sha256").update("first excerpt").digest("hex").slice(0, 16);
+		const secondSnippetHash = createHash("sha256").update("second excerpt").digest("hex").slice(0, 16);
+		expect(bm25[0]?.source).toBe(`/obsidian/vault/chunks/notes/a.md-S${firstSnippetHash}`);
+		expect(semantic[0]?.source).toBe(`/obsidian/vault/chunks/notes/a.md-S${secondSnippetHash}`);
+		expect(bm25[0]?.source).not.toBe(semantic[0]?.source);
+
+		const merged = new ResultMerger().merge(
+			new Map([
+				["obsidian-bm25", bm25],
+				["obsidian-semantic", semantic],
+			]),
+			{ topK: 5, dedup: true },
+		);
+		expect(merged.map((hit) => hit.content)).toEqual(["first excerpt", "second excerpt"]);
+	});
+
 	it("writes isolated index.yml and parses search JSON from a fake binary", async () => {
 		const binDir = join(root, "bin");
 		const binaryPath = join(binDir, "qmd");
@@ -249,7 +349,11 @@ process.exit(0);
 		const search = await client.search("search", "hello", { topK: 5 });
 		expect(search.ok).toBe(true);
 		if (search.ok) {
-			expect(search.hits[0]).toMatchObject({ chunkId: "deadbe", content: "hello vault", score: 0.8 });
+			expect(search.hits[0]).toMatchObject({
+				chunkId: expect.stringMatching(/^deadbe-S[a-f0-9]{16}$/),
+				content: "hello vault",
+				score: 0.8,
+			});
 		}
 
 		const calls = readFileSync(logPath, "utf8")
@@ -387,7 +491,7 @@ descendant.on("spawn", () => {
 
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		expect(result.hits[0]?.chunkId).toBe("descendant");
+		expect(result.hits[0]?.chunkId).toMatch(/^descendant-S[a-f0-9]{16}$/);
 		const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
 		const pidText = pidMatch?.[1];
 		if (pidText === undefined) throw new Error("qmd fixture did not report its descendant PID");
