@@ -19,6 +19,7 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-warning"
 	| "caller-tool-dropped"
 	| "minsync-staging-excluded"
+	| "minsync-file-skipped"
 	| "minsync-sync-failed"
 	| "minsync-lock-held"
 	| "embedder-unavailable"

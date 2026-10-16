@@ -54,6 +54,7 @@ import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
 	type MinSyncDiagnostic,
+	type MinSyncFileFailure,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -3156,6 +3157,7 @@ export class AutoRAGAgent {
 					...summary.diagnostics,
 					...minsyncDiagnostics,
 					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
+					...fileSkippedDiagnostics(minsync?.filesFailed),
 					...everythingDiagnostics,
 					...fsearchDiagnostics,
 				],
@@ -4082,6 +4084,16 @@ function stagingExcludedDiagnostics(excluded: readonly string[] | undefined): Se
 		severity: "warning",
 		message: "Excluded from the MinSync index: this file name cannot be represented as a canonical source id.",
 		source,
+	}));
+}
+
+/** Files MinSync skipped on a partial sync (exit 6): searchable only from older chunks until the next sync retries them. */
+function fileSkippedDiagnostics(failed: readonly MinSyncFileFailure[] | undefined): SearchDocumentDiagnostic[] {
+	return (failed ?? []).map((failure) => ({
+		code: "minsync-file-skipped",
+		severity: "warning",
+		message: `MinSync skipped this file at the ${failure.stage} stage and will retry it on the next sync: ${sanitizeDiagnosticMessage(failure.error)}`,
+		source: failure.path,
 	}));
 }
 

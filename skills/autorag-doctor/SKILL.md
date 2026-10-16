@@ -221,6 +221,7 @@ to retry those files once without re-indexing healthy ones.
 | `stale-index` | Sources changed since last refresh | `autorag refresh --method parsed,minsync` |
 | `index-not-ready` | Index missing or never built | `autorag refresh --json` |
 | `minsync-sync-failed` | MinSync indexing failed; the message carries MinSync's own reason | Fix the reported cause, then `autorag refresh --method minsync` |
+| `minsync-file-skipped` | MinSync skipped one file (unreadable, unparsable, or rejected by the embedder) and kept its older chunks; retried on the next sync | Fix that file's permissions/content, then `autorag refresh --method minsync` |
 | `minsync-lock-held` | Another `minsync` run holds `.minsync/lock`, often an orphan left by a killed host; retryable | Wait for it to finish or stop that `minsync` process, then `autorag refresh --method minsync` |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check cargo, retry refresh |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
