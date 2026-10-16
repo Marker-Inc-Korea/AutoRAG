@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CrawlerDatasourceSkill, CrawlerSkillClient } from "../../../src/datasource/crawler-skill.ts";
 import type { CrawlerSearchResult, CrawlerSyncResult } from "../../../src/datasource/crawler-types.ts";
 import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
+import { LazykatokSkill, type LazykatokSkillClient } from "../../../src/datasource/skills/lazykatok/index.ts";
 import { SlackSkill } from "../../../src/datasource/skills/slack/index.ts";
 import { TelecrawlSkill } from "../../../src/datasource/skills/telecrawl/index.ts";
 import { WacrawlSkill } from "../../../src/datasource/skills/wacrawl/index.ts";
@@ -420,5 +421,93 @@ describe("telegram/whatsapp: CLI and sidecar agree on message identity", () => {
 		expect(embedded).toEqual(["Family\nrelease on sunday"]);
 		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "whatsapp-sidecar-bm25");
 		expect((await bm25?.retrieve("release", { topK: 5 }))?.map((hit) => hit.content)).toEqual(["release on sunday"]);
+	});
+});
+
+describe("kakao: LazykatokSkill with a read-only sidecar", () => {
+	function seedKakaoArchive(file: string): void {
+		const db = new DatabaseSync(file);
+		db.exec(`
+			create table chunks (
+				chunk_id text primary key,
+				account_hash text not null,
+				chat_id text not null,
+				chat_name text not null,
+				sender_nickname text not null,
+				started_at text not null,
+				ended_at text not null,
+				text text not null,
+				message_count integer not null
+			);
+			create virtual table chunks_fts using fts5(chunk_id unindexed, text);
+			insert into chunks values ('chunk_1', 'acct', 'room_1', '오픈소스 개발과제', '정철현', '2026-04-13T05:57:50+00:00', '2026-04-13T05:57:50+00:00', 'we ship the release friday', 3);
+			insert into chunks values ('chunk_2', 'acct', 'room_2', '점심방', '김민수', '2026-04-14T03:00:00+00:00', '2026-04-14T03:00:00+00:00', 'pizza for lunch', 1);
+			insert into chunks_fts (rowid, chunk_id, text) select rowid, chunk_id, text from chunks;
+		`);
+		db.close();
+	}
+
+	it("runs doctor -> sync -> sidecar.sync() without calling lazykatok's native fastembed index", async () => {
+		const archive = join(root, "archive.sqlite3");
+		seedKakaoArchive(archive);
+		let nativeIndexCalled = false;
+		const client: LazykatokSkillClient = {
+			doctor: async () => ({ ok: true, data: { ready: true }, stdout: "", stderr: "", code: 0 }),
+			sync: async () => ({
+				ok: true,
+				data: { synced: true, messageCount: 4, metadata: { chunks: 2 } },
+				stdout: "",
+				stderr: "",
+				code: 0,
+			}),
+			index: async () => {
+				nativeIndexCalled = true;
+				throw new Error("native lazykatok index must not run when sidecar owns embeddings");
+			},
+			search: async () => ({
+				ok: true,
+				hits: [
+					{
+						chunkId: "chunk_1",
+						content: "we ship the release friday",
+						score: 1,
+						metadata: { chatName: "오픈소스 개발과제" },
+					},
+				],
+				data: { hits: [] },
+				stdout: "",
+				stderr: "",
+				code: 0,
+			}),
+		};
+		const skill = new LazykatokSkill({
+			client,
+			instanceId: "default",
+			sidecar: {
+				descriptor: CRAWLER_DESCRIPTORS.kakao,
+				crawlerDbPath: archive,
+				sidecarDbPath: join(root, "kakao-sidecar.sqlite"),
+				embedder,
+			},
+		});
+		try {
+			const methods = skill.retrievalMethods().map((method) => method.describe().name);
+			expect(methods).toEqual(["kakao-bm25", "kakao-sidecar-bm25", "kakao-semantic", "kakao-hybrid"]);
+
+			const indexed = await skill.index();
+			expect(nativeIndexCalled).toBe(false);
+			expect(indexed).toMatchObject({ ok: true, chunkCount: 2, diagnostics: [] });
+
+			const [cliMethod, sidecarBm25, , hybrid] = skill.retrievalMethods();
+			const fromCli = (await cliMethod?.retrieve("release", { topK: 3 }))?.[0];
+			const fromSidecar = (await sidecarBm25?.retrieve("release", { topK: 3 }))?.[0];
+			expect(fromSidecar?.id).toBe(fromCli?.id);
+			expect(fromSidecar?.source).toBe("/kakao/default/chunks/chunk_1");
+
+			const hybridHits = await hybrid?.retrieve("release deploy", { topK: 3 });
+			expect(hybridHits?.[0]?.content).toBe("we ship the release friday");
+		} finally {
+			skill.close();
+		}
 	});
 });
