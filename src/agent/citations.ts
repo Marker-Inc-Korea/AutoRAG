@@ -37,15 +37,56 @@ function digitsEndAt(text: string, from: number): number {
 }
 
 /**
- * `[2011] SGHC 222`, `[1999] 2 SLR 392`: a bracketed number that the sentence
- * keeps reading through (a space, then a letter or digit) is part of a law-report
- * or year reference, not a citation. A citation sits at the end of a clause:
- * punctuation, a line break, another marker, or the end of the text follows it.
+ * `[2011] SGHC 222`, `[1999] 2 SLR 392`, `**[18]** "In assessing..."`: a
+ * bracketed number that the sentence keeps reading through (optional closing
+ * emphasis/colon, a space, optional opening quote/emphasis, then a letter or
+ * digit) is part of a law-report reference or paragraph heading, not a
+ * citation. A citation sits at the end of a clause: punctuation, a line break,
+ * another marker, or the end of the text follows it.
  */
 function continuesAsProse(answer: string, from: number): boolean {
-	if (answer[from] !== " " && answer[from] !== "\u00a0") return false;
-	const next = answer.codePointAt(from + 1);
+	let cursor = from;
+	while (cursor < answer.length && (answer[cursor] === "*" || answer[cursor] === "_" || answer[cursor] === ":")) {
+		cursor += 1;
+	}
+	if (answer[cursor] !== " " && answer[cursor] !== "\u00a0") return false;
+	cursor += 1;
+	while (
+		cursor < answer.length &&
+		(answer[cursor] === "*" ||
+			answer[cursor] === "_" ||
+			answer[cursor] === '"' ||
+			answer[cursor] === "'" ||
+			answer[cursor] === "\u201c" ||
+			answer[cursor] === "\u2018")
+	) {
+		cursor += 1;
+	}
+	const next = answer.codePointAt(cursor);
 	return next !== undefined && /[\p{L}\p{N}]/u.test(String.fromCodePoint(next));
+}
+
+const PINPOINT_PREFIX = /(?:^|[^\p{L}\p{N}])(?:at|paras?|paragraphs?)[ \t\u00a0]+$/iu;
+
+/**
+ * Legal pinpoint paragraph references such as `At [18],`, `at [18]–[22]`, or
+ * `para [18]` are part of a case citation deliverable, not source markers.
+ */
+function isLegalPinpoint(answer: string, openIndex: number, afterCloseIndex: number): boolean {
+	const nextChar = answer[afterCloseIndex];
+	if (
+		(nextChar === "-" || nextChar === "\u2013" || nextChar === "\u2014") &&
+		answer[afterCloseIndex + 1] === "[" &&
+		digitsEndAt(answer, afterCloseIndex + 2) > afterCloseIndex + 2
+	) {
+		return true;
+	}
+	const prevChar = openIndex > 0 ? answer[openIndex - 1] : undefined;
+	if ((prevChar === "-" || prevChar === "\u2013" || prevChar === "\u2014") && answer[openIndex - 2] === "]") {
+		return true;
+	}
+	const prefixWindow = answer.slice(Math.max(0, openIndex - 20), openIndex);
+	return PINPOINT_PREFIX.test(prefixWindow);
 }
 
 /**
@@ -129,7 +170,8 @@ export function answerMarkers(answer: string, isFile: (path: string) => boolean 
 				digitsEnd > index + 1 &&
 				answer[digitsEnd] === "]" &&
 				answer[digitsEnd + 1] !== "(" &&
-				!continuesAsProse(answer, digitsEnd + 1)
+				!continuesAsProse(answer, digitsEnd + 1) &&
+				!isLegalPinpoint(answer, index, digitsEnd + 1)
 			) {
 				markers.push({
 					kind: "number",

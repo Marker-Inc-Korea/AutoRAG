@@ -102,6 +102,16 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toContain("Read before curating");
 	});
 
+	it("instructs outputting requested deliverables directly instead of advice on how to write them (#1832)", () => {
+		const text = prompt();
+		expect(text).toContain("Deliverables and artifacts");
+		expect(text).toContain("finished artifact itself in the answer");
+		expect(text).toContain("instead of describing how to produce it");
+		expect(text).toContain(
+			'The 5-bullet cap and the "direct answer only" wording do not apply to a requested artifact',
+		);
+	});
+
 	it("instructs resolving conflicting information in favor of the freshest data", () => {
 		const text = prompt();
 		expect(text).toContain("treat the freshest (most recent) information as authoritative");

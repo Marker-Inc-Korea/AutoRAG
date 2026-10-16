@@ -67,6 +67,13 @@ describe("answerMarkers", () => {
 		expect(answerMarkers("see [1999] 2 SLR 392")).toEqual([]);
 	});
 
+	it("leaves legal paragraph headings and pinpoint references as prose (#1832)", () => {
+		expect(answerMarkers("**[18]** In assessing division of matrimonial assets")).toEqual([]);
+		expect(answerMarkers('> **[18]** "In assessing division of matrimonial assets"')).toEqual([]);
+		expect(answerMarkers("At [18], Choo Han Teck J held that")).toEqual([]);
+		expect(answerMarkers("see [2024] SGHCF 24 at [18]–[22].")).toEqual([]);
+	});
+
 	it("still reads a numeric marker that ends a clause as a marker", () => {
 		expect(answerMarkers("held so [3]. Next [4]\n[5], [6]")).toHaveLength(4);
 	});
