@@ -12,7 +12,7 @@ function prompt(
 		"check_memory",
 	],
 ) {
-	return buildSystemPrompt({ toolNames, manifests: [], jikjiIndexingEnabled: true, modelId: "test-model" });
+	return buildSystemPrompt({ toolNames, jikjiIndexingEnabled: true, modelId: "test-model" });
 }
 
 describe("buildSystemPrompt single-agent contract", () => {
@@ -46,7 +46,6 @@ describe("buildSystemPrompt single-agent contract", () => {
 		});
 		const prompt = buildSystemPrompt({
 			toolNames: ["search_datasource_cloud_drive", "load_datasource_skill"],
-			manifests: [],
 			datasourceSkills: [toDatasourceAgentSkill(skill.skillManifest())],
 		});
 
@@ -79,7 +78,6 @@ describe("buildSystemPrompt single-agent contract", () => {
 				"search_datasource_company_onedrive",
 				"load_datasource_skill",
 			],
-			manifests: [],
 			datasourceSkills: [personal, work].map((skill) => toDatasourceAgentSkill(skill.skillManifest())),
 		});
 
