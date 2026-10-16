@@ -54,7 +54,7 @@ export type SearchDocumentDiagnosticCode =
 	| "unknown-datasource-skill"
 	| "no-final-answer"
 	| "model-request-failed"
-	| "search-timeout"
+	| "tool-call-burst"
 	| "query-routed"
 	| "query-route-fallback"
 	| "query-decomposition-failed"
