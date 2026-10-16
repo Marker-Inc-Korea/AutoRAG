@@ -132,7 +132,6 @@ const EMBEDDED_AUTH_MARKER = "<autorag-embedded-model>";
 
 function modelConfig(model: Model<Api>, configuredApiKey?: string): Parameters<ModelRuntime["registerProvider"]>[1] {
 	return {
-		name: model.name,
 		baseUrl: model.baseUrl,
 		api: model.api,
 		...(configuredApiKey === undefined ? {} : { apiKey: configuredApiKey }),
