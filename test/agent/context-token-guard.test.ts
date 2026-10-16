@@ -241,7 +241,7 @@ describe("context token guard", () => {
 		const guarded = await transform(messages);
 		expect(resultText(guarded[0])).toContain("AutoRAG context guard");
 	});
-	it("trims when reported context exceeds the budget", () => {
+	it("never replaces the user's query with the marker when reported usage exceeds the budget", () => {
 		const messages: AgentMessage[] = [
 			{
 				role: "assistant",
@@ -265,9 +265,59 @@ describe("context token guard", () => {
 
 		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
 		const user = guarded[1];
+
+		expect(user?.role === "user" && user.content).toBe("latest question");
+	});
+
+	it("keeps the user's query when bulky tool results exhaust the budget", () => {
+		const messages: AgentMessage[] = [
+			{ role: "user", content: "장원영 집 잘사냐?", timestamp: Date.now() },
+			{
+				role: "toolResult",
+				toolCallId: "call-1",
+				toolName: "bash",
+				content: [{ type: "text", text: "large command output ".repeat(1_000) }],
+				isError: false,
+				timestamp: Date.now(),
+			},
+			{
+				role: "toolResult",
+				toolCallId: "call-2",
+				toolName: "bash",
+				content: [{ type: "text", text: "more command output ".repeat(1_000) }],
+				isError: false,
+				timestamp: Date.now(),
+			},
+		];
+
+		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
+
+		expect(guarded[0]).toEqual(messages[0]);
+		expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
+	});
+
+	it("keeps the query of a long user prompt as an excerpt when the budget is exhausted", () => {
+		const query = "Answer this original query immediately: 장원영 집 잘사냐?";
+		const messages: AgentMessage[] = [
+			{ role: "user", content: `${query}\n\n${"filler rule ".repeat(5_000)}`, timestamp: Date.now() },
+		];
+
+		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages, false, 280);
+		const user = guarded[0];
 		const text = user?.role === "user" && typeof user.content === "string" ? user.content : "";
 
-		expect(text).toContain("AutoRAG context guard");
-		expect(estimateContextMessageTokens(guarded, false)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
+		expect(text.startsWith(query)).toBe(true);
+	});
+
+	it("does not let a catalog maxTokens near the context window zero the input budget", () => {
+		const window = { ...model, contextWindow: 262_144, maxTokens: 235_929 };
+		const messages: AgentMessage[] = [
+			{ role: "user", content: "장원영 집 잘사냐?", timestamp: Date.now() },
+			retrievalMessage(["evidence ".repeat(40)]),
+		];
+
+		const guarded = guardAgentContextMessages(window, messages, false, 10_000);
+
+		expect(guarded).toBe(messages);
 	});
 });
