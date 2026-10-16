@@ -589,7 +589,7 @@ export interface AutoRAGAgentOptions {
 	 * `searchPaths`). Enabled by default on Windows; ignored elsewhere.
 	 * `false` disables it. The remaining fields are test seams.
 	 */
-	everything?: Omit<EverythingClientOptions, "root" | "folders"> | false;
+	everything?: Omit<EverythingClientOptions, "root" | "folders" | "excludeFolders"> | false;
 	/**
 	 * macOS/Linux-only instant file/folder name search through the user's
 	 * fsearch-cli (FSearch, GPL — spawned as a separate process, never
@@ -994,6 +994,7 @@ export class AutoRAGAgent {
 				...(options.everything ?? {}),
 				root: this.workspaceProjectRoot,
 				folders: this.searchPaths,
+				excludeFolders: this.excludePaths,
 			});
 			if (everythingClient.isSupported()) this.everythingClient = everythingClient;
 		}

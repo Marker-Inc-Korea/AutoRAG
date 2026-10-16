@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import {
 	type EnsureEverythingBinariesResult,
 	type EverythingBinaryResolutionMode,
@@ -107,6 +108,8 @@ export interface EverythingClientOptions extends EverythingOptions {
 	readonly root: string;
 	/** Folders Everything indexes (the configured search paths). */
 	readonly folders: readonly string[];
+	/** Exact file paths or directory subtrees omitted from search results. */
+	readonly excludeFolders?: readonly string[];
 	readonly platform?: NodeJS.Platform;
 	/**
 	 * Resolve the bundled executables. `"cached"` (queries and stop) must
@@ -124,6 +127,7 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 20_000;
 const DEFAULT_INDEX_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const DEFAULT_MAX_RESULTS = 100;
+const MAX_FILTER_CANDIDATES = 1000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+\.\d+$/;
 
@@ -253,6 +257,7 @@ export class EverythingClient {
 	private readonly run: EverythingRunner;
 	private readonly launch: EverythingLauncher;
 	private readonly stateDir: string;
+	private readonly isExcludedPath: (path: string) => boolean;
 	private binaries: EnsureEverythingBinariesResult | undefined;
 	private operation: Promise<unknown> = Promise.resolve();
 
@@ -263,6 +268,7 @@ export class EverythingClient {
 		this.run = options.run ?? runProcess;
 		this.launch = options.launch ?? launchDetached;
 		this.stateDir = join(options.root, ".autorag", "everything");
+		this.isExcludedPath = createPathExclusionMatcher(options.excludeFolders ?? [], "win32");
 	}
 
 	isSupported(): boolean {
@@ -289,6 +295,9 @@ export class EverythingClient {
 			}
 			const es = { ok: true as const, esPath: binaries.esPath };
 			const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+			if ((this.options.excludeFolders?.length ?? 0) > 0) {
+				return this.searchWithExclusions(es.esPath, request, timeoutMs);
+			}
 			const args = buildEverythingSearchArgs(this.instanceName, request, timeoutMs);
 			// ES needs a moment beyond its own -timeout to print the error.
 			const result = await this.run(es.esPath, args, timeoutMs + 5_000);
@@ -299,6 +308,54 @@ export class EverythingClient {
 				return { ok: false, reason: "search-failed", message: (error as Error).message };
 			}
 		});
+	}
+
+	/** Filter stale index hits and individual files before applying the requested page. */
+	private async searchWithExclusions(
+		esPath: string,
+		request: EverythingSearchRequest,
+		timeoutMs: number,
+	): Promise<EverythingSearchResult> {
+		const deadline = Date.now() + timeoutMs;
+		const offset = request.offset ?? 0;
+		const maxResults = request.maxResults ?? DEFAULT_MAX_RESULTS;
+		const results: EverythingEntry[] = [];
+		let skipped = 0;
+		let nativeOffset = 0;
+		const timedOut = (): EverythingFailure => ({
+			ok: false,
+			reason: "search-failed",
+			message: `Everything search exceeded ${timeoutMs}ms while filtering excluded paths; narrow the query or increase the Everything timeout.`,
+		});
+		for (;;) {
+			const remainingMs = deadline - Date.now();
+			if (remainingMs <= 0) return timedOut();
+			const args = buildEverythingSearchArgs(
+				this.instanceName,
+				{ ...request, offset: nativeOffset, maxResults: MAX_FILTER_CANDIDATES },
+				remainingMs,
+			);
+			const response = await this.run(esPath, args, remainingMs + 5_000);
+			if (response.code !== 0) return this.failure("search-failed", esPath, args, response);
+			if (Date.now() >= deadline) return timedOut();
+			let entries: EverythingEntry[];
+			try {
+				entries = parseEverythingJson(response.stdout);
+			} catch (error) {
+				return { ok: false, reason: "search-failed", message: (error as Error).message };
+			}
+			for (const entry of entries) {
+				if (this.isExcludedPath(entry.path)) continue;
+				if (skipped < offset) {
+					skipped += 1;
+					continue;
+				}
+				results.push(entry);
+				if (results.length >= maxResults) return { ok: true, results };
+			}
+			if (entries.length < MAX_FILTER_CANDIDATES) return { ok: true, results };
+			nativeOffset += entries.length;
+		}
 	}
 
 	/**
@@ -392,6 +449,7 @@ export class EverythingClient {
 					...new Set([
 						join(this.options.root, ".autorag"),
 						...this.options.folders.map((folder) => join(folder, ".autorag")),
+						...(this.options.excludeFolders ?? []),
 					]),
 				],
 			}),

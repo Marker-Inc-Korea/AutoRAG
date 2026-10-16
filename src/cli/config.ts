@@ -367,7 +367,8 @@ function migrateLegacyConfig(configPath: string, legacyPath: string): Partial<Cl
 	const migratedPathsUnchanged =
 		legacy?.workspacePath === migrated.workspacePath &&
 		legacy?.memoryPath === migrated.memoryPath &&
-		JSON.stringify(legacy?.searchPaths) === JSON.stringify(migrated.searchPaths);
+		JSON.stringify(legacy?.searchPaths) === JSON.stringify(migrated.searchPaths) &&
+		JSON.stringify(legacy?.excludePaths) === JSON.stringify(migrated.excludePaths);
 	const migratedBytes = migratedPathsUnchanged ? legacyBytes : `${JSON.stringify(migrated, null, 2)}\n`;
 	mkdirSync(dirname(configPath), { recursive: true });
 	const lock = acquireConfigWriteLock(configPath);
@@ -410,6 +411,14 @@ function resolveSearchPaths(searchPaths: readonly string[], origin: string): str
 	return searchPaths.map((searchPath) => resolvePersistedPath(searchPath, origin));
 }
 
+function resolveExcludePaths(value: unknown, origin: string): string[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value) || value.some((path) => typeof path !== "string" || path.length === 0)) {
+		throw new ConfigError("Config field 'excludePaths' must be a non-empty string array");
+	}
+	return resolveSearchPaths(value, origin);
+}
+
 function resolvePersistedPath(path: string, origin: string): string {
 	return isAbsolute(path) ? path : resolve(origin, path);
 }
@@ -417,12 +426,14 @@ function resolvePersistedPath(path: string, origin: string): string {
 /** Normalize inherited legacy paths against the legacy workspace, not the caller's cwd. */
 export function normalizeLegacyConfigPaths(partial: Partial<CliConfig>, origin: string): Partial<CliConfig> {
 	const workspacePath = resolvePersistedPath(partial.workspacePath ?? ".", origin);
+	const excludePaths = resolveExcludePaths(partial.excludePaths, workspacePath);
 	return {
 		...partial,
 		workspacePath,
 		...(partial.searchPaths === undefined
 			? {}
 			: { searchPaths: resolveSearchPaths(partial.searchPaths, workspacePath) }),
+		...(excludePaths === undefined ? {} : { excludePaths }),
 		...(partial.memoryPath === undefined
 			? {}
 			: { memoryPath: resolvePersistedPath(partial.memoryPath, workspacePath) }),
@@ -1065,16 +1076,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const fileSearchPaths = file.searchPaths
 		? resolveSearchPaths(file.searchPaths, fileWorkspacePath ?? configOrigin)
 		: undefined;
-	if (
-		file.excludePaths !== undefined &&
-		(!Array.isArray(file.excludePaths) ||
-			file.excludePaths.some((path) => typeof path !== "string" || path.length === 0))
-	) {
-		throw new ConfigError("Config field 'excludePaths' must be a non-empty string array");
-	}
-	const fileExcludePaths = file.excludePaths
-		? resolveSearchPaths(file.excludePaths, fileWorkspacePath ?? configOrigin)
-		: undefined;
+	const fileExcludePaths = resolveExcludePaths(file.excludePaths, fileWorkspacePath ?? configOrigin);
 	const searchPaths = flagSearchPaths ?? envSearchPaths ?? fileSearchPaths ?? defaultSearchPaths;
 
 	const flagWorkspacePath = flagString(flags, "workspace");
@@ -2127,7 +2129,7 @@ export function writeDefaultConfig(
 	full.jikji = partial.jikji ?? {};
 	full.dupey = partial.dupey ?? { enabled: true };
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
-	if (partial.excludePaths !== undefined) full.excludePaths = resolveSearchPaths(partial.excludePaths, workspacePath);
+	if (partial.excludePaths !== undefined) full.excludePaths = resolveExcludePaths(partial.excludePaths, workspacePath);
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
