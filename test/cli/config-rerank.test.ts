@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildAgentOptions, type CliConfig, ConfigError, normalizeRerankConfig } from "../../src/cli/config.ts";
 import {
-	DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
-	DEFAULT_AUTORAG_RERANK_MODEL,
+	DEFAULT_DAZZI_RERANK_MODEL,
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
@@ -51,13 +50,18 @@ describe("normalizeRerankConfig", () => {
 		});
 	});
 
-	it("fills the autorag provider's own model and key env, not OpenRouter's", () => {
-		expect(normalizeRerankConfig({ provider: "autorag" }, "rerank")).toEqual({
-			provider: "autorag",
-			model: DEFAULT_AUTORAG_RERANK_MODEL,
-			apiKeyEnv: DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
+	it("fills the dazzi provider's own model and no key env (it uses the /login credential)", () => {
+		expect(normalizeRerankConfig({ provider: "dazzi" }, "rerank")).toEqual({
+			provider: "dazzi",
+			model: DEFAULT_DAZZI_RERANK_MODEL,
 			topN: DEFAULT_RERANK_TOP_N,
 		});
+	});
+
+	it("rejects apiKeyEnv for the dazzi provider instead of silently ignoring it", () => {
+		expect(() => normalizeRerankConfig({ provider: "dazzi", apiKeyEnv: "DAZZI_KEY" }, "rerank")).toThrow(
+			/apiKeyEnv is not supported for provider "dazzi"/,
+		);
 	});
 
 	it("returns false for an explicit disable", () => {

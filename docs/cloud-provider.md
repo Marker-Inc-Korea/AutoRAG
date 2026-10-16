@@ -1,7 +1,7 @@
-# Hosted AutoRAG provider (`autorag`)
+# Hosted Dazzi Models provider (`dazzi`)
 
-AutoRAG registers the hosted **AutoRAG** plan (Dazzi) as a first-class model provider
-named `autorag`. The provider is available to `autorag tui`, `autorag search`,
+AutoRAG registers the hosted **Dazzi Models** plan as a first-class model provider
+named `dazzi`. The provider is available to `autorag tui`, `autorag search`,
 `autorag serve`, `autorag health`, the `AutoRAGAgent` library path, and the Pi
 interactive session.
 
@@ -10,8 +10,7 @@ The server exposes an OpenAI Responses API surface under `<root>/v1`:
 | Capability | How it is provided |
 |---|---|
 | Streaming, tools, usage | Pi's built-in `openai-responses` API (`api: "openai-responses"`, `baseUrl: "<root>/v1"`). No custom stream code. |
-| Login | OAuth2 authorization code + PKCE (S256) against `<root>/desktop/authorize?client=agent`, with a loopback redirect on `127.0.0.1`. Token exchange at `POST <root>/api/desktop/token`. |
-| Headless auth | `AUTORAG_API_KEY` is used as the bearer key; no login required. |
+| Login | OAuth2 authorization code + PKCE (S256) against `<root>/desktop/authorize?client=agent`, with a loopback redirect on `127.0.0.1`. Token exchange at `POST <root>/api/desktop/token`. This is the **only** way to authenticate. |
 | Model catalog | The **chat** catalog is discovered live from `GET <root>/v1/models` — no chat model id is hardcoded. The Jev id (`jev-1.13`) and the default reranker are the ids the server lists under `GET <root>/v1/models?operation=jev\|rerank`; Jev and rerankers are not chat LLMs (the 2026+ model rule covers chat LLMs only). |
 
 ## Sign in
@@ -21,67 +20,58 @@ autorag tui
 /login
 ```
 
-Choose **AutoRAG**. A browser opens `<root>/desktop/authorize`; on success it is
+Choose **Dazzi Models**. A browser opens `<root>/desktop/authorize`; on success it is
 redirected to `http://127.0.0.1:<ephemeral port>/callback` and shows
-"Signed in to AutoRAG. You can close this tab." The loopback listener closes after
-the first callback, after a 5-minute timeout, or on cancellation.
+"Signed in to Dazzi Models. You can close this tab." The loopback listener closes
+after the first callback, after a 5-minute timeout, or on cancellation.
 
 If the browser cannot reach this machine (remote shell, container, another host),
 paste the final redirect URL — or just the `code` — into the prompt the login
 shows. Both paths are raced; whichever finishes first wins. `state` is always
 verified, and a mismatch aborts the login.
 
-The returned token is a long-lived, revocable API key: there is no refresh token
-and no expiry. Revocation shows up as HTTP 401 on the next request; run `/login`
-again.
+The credential `/login` stores in Pi's `auth.json` is the **only** credential. The
+model provider, Jev, and rerank all read that same entry. The token is long-lived
+and revocable: there is no refresh token and no expiry. Revocation shows up as
+HTTP 401 on the next request; run `/login` again.
 
-### Headless (no login)
-
-```bash
-export AUTORAG_API_KEY=dz_...
-```
-
-AutoRAG declares `$AUTORAG_API_KEY` as the provider key only when the variable is
-set in the process environment at startup, so it is authorized without `/login`.
-When it is unset the provider is OAuth-only: `/login` lists AutoRAG and `/model`
-refreshes cleanly instead of reporting "Could not refresh autorag". A stored
-credential from `/login` takes precedence over the environment variable; log out
-from the Pi UI to fall back to it.
+There is no API-key environment variable. `AUTORAG_API_KEY` is not read, and
+`rerank.apiKeyEnv` / `model.apiKeyEnv` are not used for `dazzi`. A headless login
+flow (no browser on any reachable machine) is not available yet; it is tracked in
+[#1913](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1913).
 
 ## Environment variables
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `AUTORAG_BASE_URL` | `https://api.dazziapp.com` | Server **root** (not the `/v1` path). The API base is `<root>/v1`. |
-| `AUTORAG_API_KEY` | – | Headless API key. |
 
 ## Choose a model
 
-After login (or with `AUTORAG_API_KEY` set), the models the server returns for your
-plan appear in the model selector (`/model`) and in `autorag models list`. Select one
-as `autorag/<model-id>`.
+After login, the models the server returns for your plan appear in the model
+selector (`/model`) and in `autorag models list`. Select one as `dazzi/<model-id>`.
 
 On a fresh agent home there is no catalog snapshot yet, so pin the model with an
-explicit endpoint — this is the headless configuration:
+explicit endpoint:
 
 ```json
 {
   "model": {
-    "provider": "autorag",
+    "provider": "dazzi",
     "id": "anthropic/claude-haiku-5.5",
     "baseUrl": "https://api.dazziapp.com/v1",
-    "api": "openai-responses",
-    "apiKeyEnv": "AUTORAG_API_KEY"
+    "api": "openai-responses"
   }
 }
 ```
 
-Once a TUI `/login` or a model refresh has persisted the snapshot, the
-`provider`/`id` shorthand resolves as well:
+The credential is still the stored login: no key is spelled out in the config. Once
+a TUI `/login` or a model refresh has persisted the snapshot, the `provider`/`id`
+shorthand resolves as well:
 
 ```json
 {
-  "model": { "provider": "autorag", "id": "anthropic/claude-haiku-5.5" }
+  "model": { "provider": "dazzi", "id": "anthropic/claude-haiku-5.5" }
 }
 ```
 
@@ -101,33 +91,33 @@ Catalog fields are mapped as follows:
 The catalog is persisted after any refresh (a `/login`, or a normal interactive
 startup). Model resolution for the CLI and library paths runs with
 `allowModelNetwork: false`, so it restores the persisted snapshot instead of
-calling the server. That keeps `model: { provider: "autorag", id }` resolvable
+calling the server. That keeps `model: { provider: "dazzi", id }` resolvable
 offline **once a snapshot exists**.
 
 A brand-new agent home has no snapshot to restore, and offline resolution never
 reaches the network, so the shorthand alone fails with
-`Unknown configured model: autorag/<id>`. Use the explicit-endpoint shape above
+`Unknown configured model: dazzi/<id>`. Use the explicit-endpoint shape above
 until a `/login` or refresh has populated the snapshot.
 
 ### When you are not signed in
 
 The provider still registers: it appears under `/login`, contributes no models, and
-makes no network call. Nothing crashes; the model list simply has no `autorag`
-entries.
+makes no network call. `/model` refreshes without an error; the model list simply
+has no `dazzi` entries. Jev and rerank report a named "needs a sign-in" error
+instead of silently degrading.
 
 ### Explicit configured endpoint
 
-The fresh-headless shape above is an explicit OpenAI-compatible endpoint:
-`baseUrl`, `api`, and the environment-variable name are spelled out, so the model
-resolves without a catalog snapshot. It keeps resolving exactly as before: the
-explicit `baseUrl` wins over the registered provider's endpoint, and the key is
-read from the named environment variable.
+The fresh-start shape above is an explicit OpenAI-compatible endpoint: `baseUrl`
+and `api` are spelled out, so the model resolves without a catalog snapshot. The
+explicit `baseUrl` wins over the registered provider's endpoint, and the bearer
+token is the stored `/login` credential.
 
 ### Request size
 
 The hosted API rejects a request body above about 4.49 MB with HTTP 413. Every
-`autorag` model, whether it comes from the live catalog, a snapshot, or an explicit
-endpoint, declares `inputLimits` (`AUTORAG_INPUT_LIMITS` in `src/cloud/config.ts`):
+`dazzi` model, whether it comes from the live catalog, a snapshot, or an explicit
+endpoint, declares `inputLimits` (`DAZZI_INPUT_LIMITS` in `src/cloud/config.ts`):
 a 3.5 MB transcript cap and a 1 MB cap for each image.
 
 pi keeps every image a tool returned and resends all of them on each later turn, so
@@ -140,27 +130,27 @@ any model that declares them.
 
 ## Jev and rerank on the hosted plan
 
-The same account key serves Jev and the rerank stage, so a hosted setup needs no
+The same sign-in serves Jev and the rerank stage, so a hosted setup needs no
 other credential:
 
 ```json
 {
-  "jev": { "backend": "autorag", "model": "jev-1.13" },
-  "rerank": { "provider": "autorag", "model": "qwen/qwen3-reranker-8b" }
+  "jev": { "backend": "dazzi", "model": "jev-1.13" },
+  "rerank": { "provider": "dazzi", "model": "qwen/qwen3-reranker-8b" }
 }
 ```
 
-| Capability | Endpoint | Default model | Key env |
+| Capability | Endpoint | Default model | Credential |
 |---|---|---|---|
-| Jev (`jev.backend: "autorag"`) | `POST <root>/v1/jev` (Jev's native dialect) | `jev-1.13` | `AUTORAG_API_KEY` |
-| Rerank (`rerank.provider: "autorag"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | `qwen/qwen3-reranker-8b` | `AUTORAG_API_KEY` |
+| Jev (`jev.backend: "dazzi"`) | `POST <root>/v1/jev` (Jev's native dialect) | `jev-1.13` | stored `/login` |
+| Rerank (`rerank.provider: "dazzi"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | `qwen/qwen3-reranker-8b` | stored `/login` |
 
-Both read `AUTORAG_BASE_URL` for the server root. An explicit
-`rerank.baseUrl`, `rerank.apiKeyEnv`, or `rerank.model` (and `jev.model`)
-overrides the defaults; with no `AUTORAG_API_KEY` the backend reports a named,
-non-silent unavailability instead of silently degrading.
+Both read `AUTORAG_BASE_URL` for the server root. An explicit `rerank.baseUrl` or
+`rerank.model` (and `jev.model`) overrides the defaults. `rerank.apiKeyEnv` is
+rejected for `dazzi` rather than ignored. Without a stored login the backend
+reports a named, non-silent "needs a sign-in" error instead of silently degrading.
 
-A `rerank.baseUrl` for `provider: "autorag"` is the API base **including**
+A `rerank.baseUrl` for `provider: "dazzi"` is the API base **including**
 `/v1`, e.g. `https://api.dazziapp.com/v1`, because the rerank client appends
 `/rerank`. `AUTORAG_BASE_URL` stays the server **root** without `/v1`
 (`https://api.dazziapp.com`), and the derived rerank base is `<root>/v1` — a root
@@ -169,6 +159,7 @@ that already ends in `/v1` is not doubled.
 ## Implementation
 
 The provider lives in `src/cloud/`. A single registration point,
-`registerAutoRAGProvider(runtime)`, is called where each Pi `ModelRuntime` is
+`registerDazziProvider(runtime)`, is called where each Pi `ModelRuntime` is
 created (`src/cli/config.ts`, `src/agent/pi-session.ts`, and
-`src/cli/commands/models.ts` for `autorag models list`).
+`src/cli/commands/models.ts` for `autorag models list`). `readDazziLoginToken`
+(`src/cloud/credential.ts`) reads the stored login for Jev and rerank.

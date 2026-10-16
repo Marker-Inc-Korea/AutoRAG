@@ -13,8 +13,9 @@ import {
 } from "../agent/local-model.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
-import { AUTORAG_INPUT_LIMITS, PROVIDER_ID as AUTORAG_PROVIDER_ID } from "../cloud/config.ts";
-import { registerAutoRAGProvider } from "../cloud/provider.ts";
+import { DAZZI_INPUT_LIMITS, PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
+import { readDazziLoginToken } from "../cloud/credential.ts";
+import { registerDazziProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
@@ -100,12 +101,12 @@ export interface WebSearchCliConfig {
  * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
  * it explicitly. Secrets never appear here: `jev-use` reads the backend
  * credential from its own environment variable (`TYPESAFE_API_KEY`,
- * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted AutoRAG
- * `autorag` backend reads `AUTORAG_API_KEY`.
+ * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted Dazzi Models
+ * `dazzi` backend uses the credential stored by `/login`.
  */
 export interface JevCliConfig {
 	enabled?: boolean;
-	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `autorag`); omit to let the first credential present win. */
+	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `dazzi`); omit to let the first credential present win. */
 	backend?: JevBackendName;
 	/** Model id sent with every call, e.g. `jev-latest`. */
 	model?: string;
@@ -121,21 +122,22 @@ export interface QueryDecompositionConfig {
 
 /**
  * Post-merge reranking config. Routes merged evidence through a dedicated
- * rerank model. `provider` is `openrouter` (default) or the hosted AutoRAG
- * plan (`autorag`); each provider supplies its own default `model` and
- * `apiKeyEnv`. Secrets never appear here — only the environment-variable name
- * that holds the provider API key.
+ * rerank model. `provider` is `openrouter` (default) or the hosted Dazzi Models
+ * plan (`dazzi`); each provider supplies its own default `model`. OpenRouter
+ * reads its key from `apiKeyEnv`; Dazzi uses the credential stored by `/login`.
+ * Secrets never appear here — only the environment-variable name that holds a
+ * provider API key.
  */
 export interface RerankConfig {
 	/** `false` disables reranking. Missing means enabled when the block is present. */
 	enabled?: boolean;
-	/** Provider id (`openrouter` or `autorag`). @default "openrouter" */
+	/** Provider id (`openrouter` or `dazzi`). @default "openrouter" */
 	provider?: string;
-	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`autorag`) */
+	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`dazzi`) */
 	model?: string;
-	/** Environment variable holding the provider API key. @default "OPENROUTER_API_KEY" (`openrouter`) / "AUTORAG_API_KEY" (`autorag`) */
+	/** Environment variable holding the provider API key (`openrouter` only). @default "OPENROUTER_API_KEY" */
 	apiKeyEnv?: string;
-	/** Override the provider base URL (e.g. a gateway); for `autorag`, the API base including `/v1`. */
+	/** Override the provider base URL (e.g. a gateway); for `dazzi`, the API base including `/v1`. */
 	baseUrl?: string;
 	/** Return only the top N merged results. @default 25 (DEFAULT_RERANK_TOP_N) */
 	topN?: number;
@@ -517,6 +519,11 @@ function modelReference(value: unknown, path: string): AgentModelConfig | undefi
 		out.baseUrl = record.baseUrl.trim();
 	}
 	if (record.apiKeyEnv !== undefined) {
+		if (out.provider === DAZZI_PROVIDER_ID) {
+			throw new ConfigError(
+				`${path}.apiKeyEnv is not supported for provider "${DAZZI_PROVIDER_ID}": it uses the credential stored by /login`,
+			);
+		}
 		if (typeof record.apiKeyEnv !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(record.apiKeyEnv)) {
 			throw new ConfigError(`${path}.apiKeyEnv must match /^[A-Za-z_][A-Za-z0-9_]*$/`);
 		}
@@ -1175,8 +1182,8 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 	confidenceThreshold: true,
 };
 
-/** Jev backends AutoRAG can build: jev-use's own plus the hosted AutoRAG plan. */
-const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "autorag"];
+/** Jev backends AutoRAG can build: jev-use's own plus the hosted Dazzi Models plan. */
+const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "dazzi"];
 
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
@@ -1350,10 +1357,11 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	if (!SUPPORTED_RERANK_PROVIDERS.includes(provider)) {
 		throw new ConfigError(`${path}.provider must be one of: ${SUPPORTED_RERANK_PROVIDERS.join(", ")}`);
 	}
+	const defaultApiKeyEnv = defaultRerankApiKeyEnv(provider);
 	const out: RerankConfig = {
 		provider,
 		model: defaultRerankModel(provider),
-		apiKeyEnv: defaultRerankApiKeyEnv(provider),
+		...(defaultApiKeyEnv !== undefined ? { apiKeyEnv: defaultApiKeyEnv } : {}),
 		topN: DEFAULT_RERANK_TOP_N,
 	};
 	if (record.enabled !== undefined) {
@@ -1367,6 +1375,11 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 		out.model = record.model.trim();
 	}
 	if (record.apiKeyEnv !== undefined) {
+		if (defaultApiKeyEnv === undefined) {
+			throw new ConfigError(
+				`${path}.apiKeyEnv is not supported for provider "${provider}": it uses the credential stored by /login`,
+			);
+		}
 		if (typeof record.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(record.apiKeyEnv)) {
 			throw new ConfigError(`${path}.apiKeyEnv must match ${API_KEY_ENV_PATTERN}`);
 		}
@@ -1502,7 +1515,7 @@ function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUr
 		contextWindow: reference.contextWindow ?? 128_000,
 		maxTokens: reference.maxTokens ?? 16_384,
 		// The hosted plan's limits hold even before its catalog is loaded.
-		...(reference.provider === AUTORAG_PROVIDER_ID ? { inputLimits: AUTORAG_INPUT_LIMITS } : {}),
+		...(reference.provider === DAZZI_PROVIDER_ID ? { inputLimits: DAZZI_INPUT_LIMITS } : {}),
 	};
 }
 
@@ -1589,10 +1602,10 @@ function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
 			modelsPath: join(agentDir, "models.json"),
 			allowModelNetwork: false,
 		});
-		// Register the hosted AutoRAG plan so `model: { provider: "autorag", id }`
+		// Register the hosted Dazzi Models plan so `model: { provider: "dazzi", id }`
 		// resolves; the cache-only refresh below loads the persisted catalog
 		// snapshot and never touches the network.
-		await registerAutoRAGProvider(runtime);
+		await registerDazziProvider(runtime);
 		return runtime;
 	})();
 	modelRuntimeCache.set(agentDir, created);
@@ -1735,7 +1748,16 @@ function resolveConfiguredEndpointAuth(
 	reference: AgentModelConfig & { baseUrl: string },
 	model: Model<Api>,
 	env: NodeJS.ProcessEnv,
+	agentDir: string,
 ): ResolvedModelAuth {
+	// Dazzi Models authenticates only with the credential `/login` stored; there
+	// is no environment-variable key for it.
+	if (model.provider === DAZZI_PROVIDER_ID) {
+		const token = readDazziLoginToken(agentDir);
+		return token === undefined
+			? { present: false, source: "none" }
+			: { apiKey: token, providerApiKeys: { [model.provider]: token }, present: true, source: "pi_auth" };
+	}
 	const envName = configuredApiKeyEnv(reference);
 	const value = env[envName];
 	const providerApiKeys = typeof value === "string" && value.length > 0 ? { [model.provider]: value } : undefined;
@@ -1813,7 +1835,7 @@ async function resolveAgentModelCore(
 			catalog: catalogModel !== undefined,
 			local: undefined,
 			env,
-			auth: resolveConfiguredEndpointAuth(modelRef, model, env),
+			auth: resolveConfiguredEndpointAuth(modelRef, model, env, resolveAgentDir(options)),
 		};
 	}
 

@@ -1,15 +1,14 @@
-/** Provider identity and endpoint configuration for the hosted AutoRAG (Dazzi) plan. */
+/** Provider identity and endpoint configuration for the hosted Dazzi Models plan. */
 
 import type { ModelInputLimits } from "@earendil-works/pi-ai";
 
-export const PROVIDER_ID = "autorag";
-export const PROVIDER_NAME = "AutoRAG";
+export const PROVIDER_ID = "dazzi";
+export const PROVIDER_NAME = "Dazzi Models";
 
 /** Server root, e.g. `https://api.dazziapp.com`. The API lives under `<root>/v1`. */
 export const DEFAULT_BASE_URL = "https://api.dazziapp.com";
 
 export const AUTORAG_BASE_URL_ENV = "AUTORAG_BASE_URL";
-export const AUTORAG_API_KEY_ENV = "AUTORAG_API_KEY";
 
 /** Server paths appended to the normalized server root. */
 export const API_PATH = "/v1";
@@ -27,19 +26,13 @@ export const TOKEN_PATH = "/api/desktop/token";
  * cap leaves headroom for the tool declarations and request framing the
  * transcript size does not count; the resize cap keeps one image well below it.
  */
-export const AUTORAG_INPUT_LIMITS = {
+export const DAZZI_INPUT_LIMITS = {
 	maxRequestBytes: 3_500_000,
 	images: { resize: { maxBytes: 1_000_000 } },
 } as const satisfies ModelInputLimits;
 
 /** OAuth client identifier for the AutoRAG agent (Pi-compatible hosts use `pi`). */
 export const OAUTH_CLIENT_ID = "agent";
-
-/**
- * Value used for `ProviderConfig.apiKey`. Pi resolves `$NAME` from the
- * environment, so `AUTORAG_API_KEY` enables a headless, login-free setup.
- */
-export const API_KEY_CONFIG_VALUE = `$${AUTORAG_API_KEY_ENV}`;
 
 /** Trim whitespace and trailing slashes so path concatenation is unambiguous. */
 export function normalizeBaseUrl(value: string): string {

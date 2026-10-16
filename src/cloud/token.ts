@@ -1,5 +1,5 @@
 import { normalizeBaseUrl, TOKEN_PATH } from "./config.ts";
-import { AutoragHttpError, AutoragOAuthError, extractErrorPayload } from "./errors.ts";
+import { DazziHttpError, DazziOAuthError, extractErrorPayload } from "./errors.ts";
 
 export interface TokenResponse {
 	accessToken: string;
@@ -17,10 +17,10 @@ export interface ExchangeCodeOptions {
 }
 
 /** Map a failed token-exchange response to an error carrying the HTTP status and server code. */
-export function mapTokenExchangeError(status: number, body: unknown): AutoragHttpError {
+export function mapTokenExchangeError(status: number, body: unknown): DazziHttpError {
 	const payload = extractErrorPayload(body);
 	const reason = payload.message ?? "the server returned no error message";
-	return new AutoragHttpError(`AutoRAG token exchange failed (HTTP ${status}): ${reason}`, {
+	return new DazziHttpError(`Dazzi Models token exchange failed (HTTP ${status}): ${reason}`, {
 		status,
 		code: payload.code,
 		type: payload.type,
@@ -48,9 +48,9 @@ export async function exchangeCodeForToken(options: ExchangeCodeOptions): Promis
 		});
 	} catch (cause) {
 		if (options.signal?.aborted) {
-			throw new AutoragOAuthError("AutoRAG sign-in was cancelled.", { cause });
+			throw new DazziOAuthError("Dazzi Models sign-in was cancelled.", { cause });
 		}
-		throw new AutoragOAuthError(`AutoRAG token exchange could not reach ${normalizeBaseUrl(options.baseUrl)}.`, {
+		throw new DazziOAuthError(`Dazzi Models token exchange could not reach ${normalizeBaseUrl(options.baseUrl)}.`, {
 			cause,
 		});
 	}
@@ -66,7 +66,7 @@ export async function exchangeCodeForToken(options: ExchangeCodeOptions): Promis
 
 	const accessToken = readAccessToken(body);
 	if (accessToken === undefined) {
-		throw new AutoragOAuthError("AutoRAG token exchange succeeded but returned no access token.");
+		throw new DazziOAuthError("Dazzi Models token exchange succeeded but returned no access token.");
 	}
 	const email = readEmail(body);
 	return email === undefined ? { accessToken } : { accessToken, email };

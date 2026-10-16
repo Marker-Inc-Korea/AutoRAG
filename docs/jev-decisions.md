@@ -41,17 +41,17 @@ searches keep working.
 
 `jev-use` resolves the backend from the environment. Set `JEV_BACKEND` to force
 one, or leave it unset to let the first credential present win, in the order
-TypeSafe -> OpenRouter -> Vercel AI Gateway. `autorag` is not resolved by
-`jev-use`: `backend: "autorag"` (or `JEV_BACKEND=autorag`, with `options.backend`
-unset) builds the hosted AutoRAG (Dazzi) backend in AutoRAG itself, using
-`AUTORAG_API_KEY` and the server root at `AUTORAG_BASE_URL`.
+TypeSafe -> OpenRouter -> Vercel AI Gateway. `dazzi` is not resolved by
+`jev-use`: `backend: "dazzi"` (or `JEV_BACKEND=dazzi`, with `options.backend`
+unset) builds the hosted Dazzi Models backend in AutoRAG itself, using the
+credential stored by `/login` and the server root at `AUTORAG_BASE_URL`.
 
-| `backend`    | Credential environment variable                     | Model id on the wire |
+| `backend`    | Credential                                          | Model id on the wire |
 | ------------ | --------------------------------------------------- | -------------------- |
 | `typesafe`   | `TYPESAFE_API_KEY`                                  | `jev-1.13.0`         |
 | `openrouter` | `OPENROUTER_API_KEY`                                | `typesafe/jev-1.13`  |
 | `vercel`     | `AI_GATEWAY_API_KEY`                                | `typesafe-ai/jev`    |
-| `autorag`    | `AUTORAG_API_KEY`                                   | `jev-1.13`           |
+| `dazzi`      | stored `/login` credential                          | `jev-1.13`           |
 
 `JEV_MODEL` overrides the wire model id, and `JEV_BACKEND=mock` runs a keyless
 dry run (used by the offline tests).
@@ -65,7 +65,7 @@ returns HTTP 400. Set `model` to override the pin.
 | Field                 | Meaning                                                                 |
 | --------------------- | ----------------------------------------------------------------------- |
 | `enabled`             | `false` disables Jev (same as `"jev": false`).                          |
-| `backend`             | `openrouter` (default), `typesafe`, `vercel`, or `autorag`.            |
+| `backend`             | `openrouter` (default), `typesafe`, `vercel`, or `dazzi`.              |
 | `model`               | Wire model id sent with every call. Omit for the backend default.       |
 | `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
 

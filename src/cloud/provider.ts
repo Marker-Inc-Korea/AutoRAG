@@ -1,29 +1,21 @@
 /**
- * The hosted AutoRAG (Dazzi) plan as a first-class model provider named
- * `autorag`.
+ * The hosted Dazzi Models plan as a first-class model provider named `dazzi`.
  *
  * The server exposes an OpenAI Responses API surface under `<root>/v1`. Login
- * is OAuth2 authorization-code + PKCE over a loopback redirect (or the headless
- * `AUTORAG_API_KEY`), and the model catalog is discovered live from
+ * is OAuth2 authorization-code + PKCE over a loopback redirect and is the only
+ * way to authenticate; the model catalog is discovered live from
  * `GET <root>/v1/models` — no model id is ever hardcoded here. Streaming is
  * delegated to Pi's built-in `openai-responses` API implementation.
  */
 
 import type { RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ModelRuntime, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import {
-	API_KEY_CONFIG_VALUE,
-	API_PATH,
-	AUTORAG_API_KEY_ENV,
-	PROVIDER_ID,
-	PROVIDER_NAME,
-	resolveBaseUrl,
-} from "./config.ts";
+import { API_PATH, PROVIDER_ID, PROVIDER_NAME, resolveBaseUrl } from "./config.ts";
 import { buildStoreEntry, fetchModels, modelsFromStore, resolveCredentialKey } from "./models.ts";
-import { loginAutorag, refreshAutoragCredentials } from "./oauth-login.ts";
+import { loginDazzi, refreshDazziCredentials } from "./oauth-login.ts";
 
 /** Injection seam for tests and hosts that resolve configuration themselves. */
-export type AutoragEnv = Record<string, string | undefined>;
+export type DazziEnv = Record<string, string | undefined>;
 
 interface Endpoints {
 	/** Server root, used for OAuth endpoints. */
@@ -39,7 +31,7 @@ interface Endpoints {
  * credential (or without network access) the last persisted catalog, if any,
  * is restored; a failed fetch keeps the previous list instead of blanking it.
  */
-export async function refreshAutoragModels(
+export async function refreshDazziModels(
 	context: RefreshModelsContext,
 	endpoints: Endpoints,
 ): Promise<ProviderModelConfig[]> {
@@ -65,42 +57,38 @@ export async function refreshAutoragModels(
 }
 
 /**
- * Build the `ProviderConfig` handed to `ModelRuntime.registerProvider("autorag", ...)`.
+ * Build the `ProviderConfig` handed to `ModelRuntime.registerProvider("dazzi", ...)`.
  *
- * The headless `$AUTORAG_API_KEY` reference is declared only when the variable
- * is set. Pi resolves a declared reference on every catalog refresh and throws
- * when it is unset, which made `/model` report "Could not refresh autorag" for
- * every signed-out user. Without it the provider is OAuth-only: `/login` works
- * and a signed-out refresh restores the persisted snapshot without an error.
+ * No `apiKey` is declared: the provider is OAuth-only, so a signed-out refresh
+ * restores the persisted snapshot without an error and `/login` still lists
+ * Dazzi Models.
  */
-export function createAutoRAGProviderConfig(env: AutoragEnv = process.env): ProviderConfig {
+export function createDazziProviderConfig(env: DazziEnv = process.env): ProviderConfig {
 	const baseUrl = resolveBaseUrl(env);
 	const endpoints: Endpoints = { baseUrl, apiBaseUrl: `${baseUrl}${API_PATH}` };
-	const hasEnvKey = (env[AUTORAG_API_KEY_ENV] ?? "").trim() !== "";
 	return {
 		name: PROVIDER_NAME,
 		baseUrl: endpoints.apiBaseUrl,
 		api: "openai-responses",
-		...(hasEnvKey ? { apiKey: API_KEY_CONFIG_VALUE } : {}),
 		oauth: {
 			name: PROVIDER_NAME,
-			login: (callbacks) => loginAutorag(callbacks, { baseUrl }),
-			refreshToken: async (credentials) => refreshAutoragCredentials(credentials),
+			login: (callbacks) => loginDazzi(callbacks, { baseUrl }),
+			refreshToken: async (credentials) => refreshDazziCredentials(credentials),
 			getApiKey: (credentials) => credentials.access,
 		},
-		refreshModels: (context) => refreshAutoragModels(context, endpoints),
+		refreshModels: (context) => refreshDazziModels(context, endpoints),
 	};
 }
 
 /**
- * The single registration point: register `autorag` on a Pi `ModelRuntime`.
+ * The single registration point: register `dazzi` on a Pi `ModelRuntime`.
  *
- * Runs even when the user is not signed in, so `/login` lists AutoRAG. The
+ * Runs even when the user is not signed in, so `/login` lists Dazzi Models. The
  * awaited cache-only refresh loads the persisted catalog snapshot (offline and
  * with `allowModelNetwork:false`); it makes no network call, so a signed-out
  * provider contributes no models and nothing here reaches the network.
  */
-export async function registerAutoRAGProvider(runtime: ModelRuntime, env: AutoragEnv = process.env): Promise<void> {
-	runtime.registerProvider(PROVIDER_ID, createAutoRAGProviderConfig(env));
+export async function registerDazziProvider(runtime: ModelRuntime, env: DazziEnv = process.env): Promise<void> {
+	runtime.registerProvider(PROVIDER_ID, createDazziProviderConfig(env));
 	await runtime.refresh({ allowNetwork: false, providers: [PROVIDER_ID] });
 }

@@ -839,7 +839,7 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
-	it("registers the hosted autorag provider on the session model runtime", async () => {
+	it("registers the hosted dazzi provider on the session model runtime", async () => {
 		const registration = registerFauxProvider({ api: `faux-${Date.now()}`, models: [{ id: "pi-provider-test" }] });
 		try {
 			const session = await createAutoRAGPiSession({
@@ -849,10 +849,10 @@ describe("AutoRAG pi coding-agent host", () => {
 				getSystemPrompt: () => "AutoRAG system prompt",
 				customTools: [],
 			});
-			const provider = session.session.modelRuntime.getProvider("autorag");
-			expect(provider?.name).toBe("AutoRAG");
+			const provider = session.session.modelRuntime.getProvider("dazzi");
+			expect(provider?.name).toBe("Dazzi Models");
 			expect(provider?.baseUrl).toMatch(/\/v1$/);
-			expect(provider?.auth.oauth?.name).toBe("AutoRAG");
+			expect(provider?.auth.oauth?.name).toBe("Dazzi Models");
 			session.session.dispose();
 		} finally {
 			registration.unregister();

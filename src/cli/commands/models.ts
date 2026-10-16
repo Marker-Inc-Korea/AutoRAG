@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { registerAutoRAGProvider } from "../../cloud/provider.ts";
+import { registerDazziProvider } from "../../cloud/provider.ts";
 import { importModel, prefetchModel, verifyModel } from "../../embedding-runtime/index.ts";
 import type { ProfileId } from "../../embedding-runtime/types.ts";
 import { renderError } from "../output.ts";
@@ -49,9 +49,9 @@ async function listModelCatalog(options: ModelCatalogOptions): Promise<readonly 
 		modelsPath: join(agentDir, "models.json"),
 		allowModelNetwork: false,
 	});
-	// Register the hosted AutoRAG plan so `--provider autorag` sees its
+	// Register the hosted Dazzi Models plan so `--provider dazzi` sees its
 	// persisted catalog snapshot; the registration refresh is cache-only.
-	await registerAutoRAGProvider(runtime);
+	await registerDazziProvider(runtime);
 	const key = (provider: string, id: string): string => `${provider}/${id}`;
 	let availableKeys = new Set<string>();
 	try {

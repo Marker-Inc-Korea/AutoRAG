@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCallbackInput, parseCallbackQuery, requireAuthorizationCode } from "../../src/cloud/callback.ts";
-import { AutoragOAuthError } from "../../src/cloud/errors.ts";
+import { DazziOAuthError } from "../../src/cloud/errors.ts";
 
 const state = "expected-state";
 
@@ -33,7 +33,7 @@ describe("parseCallbackInput", () => {
 	});
 
 	it("rejects empty input", () => {
-		expect(() => parseCallbackInput("   ")).toThrow(AutoragOAuthError);
+		expect(() => parseCallbackInput("   ")).toThrow(DazziOAuthError);
 	});
 });
 

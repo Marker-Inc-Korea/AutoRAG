@@ -36,9 +36,9 @@ describe("jev CLI config", () => {
 		expect(opts.jev).toEqual({ backend: "openrouter", model: "jev-1.13", confidenceThreshold: 0.7 });
 	});
 
-	it("accepts the hosted AutoRAG backend", () => {
-		expect(buildAgentOptions(baseConfig({ backend: "autorag", model: "jev-1.13" })).jev).toEqual({
-			backend: "autorag",
+	it("accepts the hosted Dazzi Models backend", () => {
+		expect(buildAgentOptions(baseConfig({ backend: "dazzi", model: "jev-1.13" })).jev).toEqual({
+			backend: "dazzi",
 			model: "jev-1.13",
 		});
 	});
