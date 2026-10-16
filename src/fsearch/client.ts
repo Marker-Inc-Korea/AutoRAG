@@ -271,6 +271,7 @@ export class FSearchClient {
 	private readonly launch: FSearchLauncher;
 	private readonly isAlive: (pid: number) => boolean;
 	private readonly kill: (pid: number) => void;
+	private readonly isExcludedPath: (path: string) => boolean;
 	private readonly stateDir: string;
 	private readonly dbPath: string;
 	private readonly pidPath: string;
@@ -284,6 +285,7 @@ export class FSearchClient {
 		this.launch = options.launch ?? launchDetached;
 		this.isAlive = options.isProcessAlive ?? defaultIsProcessAlive;
 		this.kill = options.killProcess ?? ((pid) => process.kill(pid, "SIGTERM"));
+		this.isExcludedPath = createPathExclusionMatcher(options.excludeFolders ?? []);
 		this.stateDir = join(options.root, ".autorag", "fsearch");
 		this.dbPath = join(this.stateDir, "fsearch.db");
 		this.pidPath = join(this.stateDir, "watch.pid");
@@ -342,7 +344,7 @@ export class FSearchClient {
 			}
 			let entries = parsed.entries;
 			if (hasExclusions) {
-				const isExcluded = createPathExclusionMatcher(this.options.excludeFolders ?? []);
+				const isExcluded = this.isExcludedPath;
 				entries = entries.filter((entry) => !isExcluded(entry.path));
 			}
 			if (request.path !== undefined) {
@@ -357,7 +359,11 @@ export class FSearchClient {
 				backend: "fsearch-cli",
 				results: entries,
 				total: parsed.total,
-				...(hasExclusions && parsed.total !== undefined && parsed.total > parsed.entries.length
+				// A full page is an exact prefix of the ordered matches; only a short page can miss later candidates.
+				...(hasExclusions &&
+				parsed.total !== undefined &&
+				parsed.total > parsed.entries.length &&
+				entries.length < maxResults
 					? {
 							truncated: true,
 							note: `FSearch checked ${parsed.entries.length} of ${parsed.total} native matches before exclusions (candidate limit ${MAX_RESULTS_CAP}); results may be incomplete. Narrow the query.`,

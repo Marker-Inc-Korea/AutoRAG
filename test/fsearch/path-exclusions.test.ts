@@ -170,6 +170,18 @@ describe("FSearchClient path exclusions", () => {
 		expect(searches[0][searches[0].indexOf("--limit") + 1]).toBe("1000");
 	});
 
+	it("does not report truncation when the returned page is full despite more native matches", async () => {
+		const excluded = join(docs, "private.txt");
+		const allowed = Array.from({ length: 1500 }, (_, index) => join(docs, `public-${index}.txt`));
+		const { client } = nativeClient([excluded, ...allowed], [excluded]);
+		const result = await client.search({ query: ".txt", maxResults: 100 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual(allowed.slice(0, 100));
+		expect(result.truncated).toBeUndefined();
+		expect(result.note).toBeUndefined();
+	});
+
 	it("does not report truncation when the native pool exactly fits the cap", async () => {
 		const excluded = join(docs, "private.txt");
 		const paths = [excluded, ...Array.from({ length: 999 }, (_, index) => join(docs, `${index}.txt`))];
