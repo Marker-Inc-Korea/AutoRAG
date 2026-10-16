@@ -6,6 +6,7 @@ import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -17,9 +18,9 @@ import { LazykatokBm25Method, type LazykatokSearchClient, LazykatokSemanticMetho
 import type { LazykatokDoctorResult, LazykatokIndexResult, LazykatokSyncResult } from "./types.ts";
 
 export interface LazykatokSkillClient extends LazykatokSearchClient {
-	doctor(): Promise<LazykatokDoctorResult>;
-	sync(): Promise<LazykatokSyncResult>;
-	index(): Promise<LazykatokIndexResult>;
+	doctor(signal?: AbortSignal): Promise<LazykatokDoctorResult>;
+	sync(signal?: AbortSignal): Promise<LazykatokSyncResult>;
+	index(signal?: AbortSignal): Promise<LazykatokIndexResult>;
 }
 
 export interface LazykatokSkillOptions {
@@ -79,13 +80,13 @@ export class LazykatokSkill implements DatasourceSkill {
 		};
 	}
 
-	async index(): Promise<DatasourceIndexResult> {
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		try {
-			const doctor = await this.client.doctor();
+			const doctor = await this.client.doctor(options?.signal);
 			if (!doctor.ok) return this.fail("datasource-unavailable", doctor);
-			const sync = await this.client.sync();
+			const sync = await this.client.sync(options?.signal);
 			if (!sync.ok) return this.fail("datasource-index-failed", sync);
-			const indexResult = await this.client.index();
+			const indexResult = await this.client.index(options?.signal);
 			if (!indexResult.ok) return this.fail("datasource-index-failed", indexResult);
 			this.lastIndexedAt = Date.now();
 			const chunkCount =
