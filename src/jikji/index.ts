@@ -20,7 +20,7 @@ export {
 	lookupExecutableInPath,
 } from "./installer.ts";
 export type { JikjiSourceRoot } from "./path-map.ts";
-export { mapJikjiPath, planJikjiSourceRoots, resolveReturnedPath } from "./path-map.ts";
+export { mapJikjiPath, outermostJikjiRoots, planJikjiSourceRoots, resolveReturnedPath } from "./path-map.ts";
 export type {
 	JikjiAnswerPack,
 	JikjiCandidate,

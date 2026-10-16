@@ -15,7 +15,7 @@ import { KORDOC_IMAGE_EXTENSIONS } from "../parser/kordoc.ts";
 import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
-import type { ParseOutput } from "../parser/types.ts";
+import type { ParseOutput, Parser } from "../parser/types.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
 import {
@@ -88,6 +88,11 @@ export interface ParsedMirrorSyncOptions {
 	readonly excludeSourcePaths?: ReadonlySet<string>;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Retry sources that previously failed to parse or read once, ignoring their skip records.
+	 * Healthy, unchanged mirrors are still left alone (unlike `force`).
+	 */
+	readonly retrySkipped?: boolean;
 	/**
 	 * Stops the sync between files and kills an in-flight parse worker. The sync rejects with the signal's
 	 * reason after checkpointing the mirror, so finished files are not re-parsed next time.
@@ -232,6 +237,32 @@ async function withTransientRetry<T>(operation: () => T | Promise<T>, retries: n
 
 const STANDALONE_OCR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(KORDOC_IMAGE_EXTENSIONS);
 
+type RetryableSkipReason = "parser-failed" | "source-unreadable";
+
+const RETRYABLE_SKIP_MESSAGES: Readonly<Record<RetryableSkipReason, string>> = {
+	"parser-failed": PARSER_FAILURE_MESSAGE,
+	"source-unreadable":
+		"The source could not be read (permission denied); it is skipped until it changes or is retried.",
+};
+
+/**
+ * Whether a recorded skip still stands for this source: same mtime, size, parser name and parser
+ * version. Only retryable reasons qualify; the others are re-derived cheaply from config and stat
+ * every run. A record without a parser stamp predates this policy and is retried once, which then
+ * stamps it.
+ */
+function isSkipHonored(
+	skip: ParsedMirrorSkipEntry,
+	entry: CurrentEntry,
+	parser: Parser,
+	retryPass: boolean,
+): skip is ParsedMirrorSkipEntry & { readonly reason: RetryableSkipReason } {
+	if (retryPass) return false;
+	if (skip.reason !== "parser-failed" && skip.reason !== "source-unreadable") return false;
+	if (skip.sourceMtimeNs !== entry.mtimeNs || skip.sourceSizeBytes !== entry.sizeBytes) return false;
+	return skip.parserName === parser.name && skip.parserVersion === parser.version;
+}
+
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	if (options.parserOptions !== undefined) validateIsolationOptions(options.parserOptions);
 	if (options.signal?.aborted) throw abortReason(options.signal);
@@ -292,7 +323,10 @@ async function syncWithRegistry(
 	const transientRetries = Math.max(0, options.transientRetries ?? DEFAULT_TRANSIENT_RETRIES);
 	const transientBackoffMs = options.transientRetryBackoffMs ?? DEFAULT_TRANSIENT_BACKOFF_MS;
 
-	const recordSkip = (entry: CurrentEntry, reason: ParsedMirrorSkipReason): void => {
+	const retryPass = options.force === true || options.retrySkipped === true;
+
+	/** `parser` stamps a retryable skip so a later refresh can honor it while the parser is unchanged. */
+	const recordSkip = (entry: CurrentEntry, reason: ParsedMirrorSkipReason, parser?: Parser): void => {
 		nextSkipped[entry.virtualPath] = {
 			virtualPath: entry.virtualPath,
 			sourcePath: entry.sourcePath,
@@ -300,6 +334,7 @@ async function syncWithRegistry(
 			sourceMtimeNs: entry.mtimeNs,
 			sourceSizeBytes: entry.sizeBytes,
 			updatedAt: new Date().toISOString(),
+			...(parser === undefined ? {} : { parserName: parser.name, parserVersion: parser.version }),
 		};
 	};
 
@@ -323,17 +358,19 @@ async function syncWithRegistry(
 	};
 
 	// Isolate one file's failure: drop its stale mirror, count the skip, surface one diagnostic, and
-	// keep going. A `skipReason` persists the skip so an unchanged file is not retried; read and
-	// write failures pass none, so a later refresh tries the file again.
+	// keep going. A `skipReason` persists the skip so an unchanged file is not retried; `parser`
+	// stamps a retryable one. Transient read and write failures pass none, so a later refresh
+	// tries the file again.
 	const skipFile = (
 		entry: CurrentEntry,
 		diagnostic: Omit<ParsedMirrorDiagnostic, "source">,
 		skipReason?: ParsedMirrorSkipReason,
+		parser?: Parser,
 	): void => {
 		deleted += removePrevious(options.root, previous, entry.virtualPath);
 		handledPrevious.add(entry.virtualPath);
 		skipped += 1;
-		if (skipReason !== undefined) recordSkip(entry, skipReason);
+		if (skipReason !== undefined) recordSkip(entry, skipReason, parser);
 		diagnostics.push({ ...diagnostic, source: entry.virtualPath });
 		sinceCheckpoint += 1;
 		if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
@@ -398,6 +435,22 @@ async function syncWithRegistry(
 			continue;
 		}
 
+		const previousSkip = previous.skipped?.[entry.virtualPath];
+		if (previousSkip !== undefined && isSkipHonored(previousSkip, entry, parser, retryPass)) {
+			// Same source and parser: keep the record and do not read or parse the file again.
+			deleted += removePrevious(options.root, previous, entry.virtualPath);
+			handledPrevious.add(entry.virtualPath);
+			skipped += 1;
+			nextSkipped[entry.virtualPath] = previousSkip;
+			diagnostics.push({
+				code: previousSkip.reason,
+				severity: "warning",
+				message: RETRYABLE_SKIP_MESSAGES[previousSkip.reason],
+				source: entry.virtualPath,
+			});
+			continue;
+		}
+
 		const previousEntry = previous.entries[entry.virtualPath];
 		const outputPath = parsedOutputPath(options.root, entry.virtualPath);
 		const unchanged =
@@ -414,7 +467,10 @@ async function syncWithRegistry(
 			try {
 				bytes = await withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs);
 			} catch (error) {
-				skipFile(entry, sourceReadFailure(error));
+				// A vanished source has nothing to retry; an unreadable one is honored like a parser failure
+				// so a permission problem is not re-hit on every refresh.
+				const failure = sourceReadFailure(error);
+				skipFile(entry, failure, failure.code === "source-unreadable" ? "source-unreadable" : undefined, parser);
 				continue;
 			}
 
@@ -452,6 +508,7 @@ async function syncWithRegistry(
 									: PARSER_FAILURE_MESSAGE,
 						},
 						"parser-failed",
+						parser,
 					);
 				} else {
 					// A parser bug or a third-party plain Error. The message is withheld: it may name a path.
@@ -606,8 +663,10 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		const prevSkip = previous.skipped?.[entry.virtualPath];
 		// A "user-excluded" skip only suppresses staleness while the path stays excluded;
 		// reaching here means it was re-included, so the mirror must be rebuilt and the
-		// source counts as newly added (no mirror entry exists for it).
-		const honoredSkip = prevSkip?.reason === "user-excluded" ? undefined : prevSkip;
+		// source counts as newly added (no mirror entry exists for it). A "source-unreadable"
+		// skip only paces refresh retries: the source was never indexed, so it stays reported.
+		const honoredSkip =
+			prevSkip?.reason === "user-excluded" || prevSkip?.reason === "source-unreadable" ? undefined : prevSkip;
 		if (
 			honoredSkip !== undefined &&
 			honoredSkip.sourceMtimeNs === entry.mtimeNs &&

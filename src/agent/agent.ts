@@ -40,6 +40,7 @@ import {
 	type JikjiPrepareResult,
 	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
+	outermostJikjiRoots,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
@@ -397,6 +398,11 @@ export interface AutoRAGRefreshProgress {
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/**
+	 * Retry sources previously skipped as parser-failed or source-unreadable once, ignoring their
+	 * skip records. Unlike `force`, healthy unchanged mirrors are not re-parsed.
+	 */
+	readonly retrySkipped?: boolean;
 	/**
 	 * Cancels the refresh. It is checked between files and between phases, and it kills an in-flight parse
 	 * worker and the MinSync, Jikji and datasource child processes. `refresh` then rejects with the signal's
@@ -818,6 +824,8 @@ export class AutoRAGAgent {
 	};
 
 	private readonly searchPaths: string[];
+	/** Roots handed to Jikji: duplicates and roots nested in another root are dropped (see `outermostJikjiRoots`). */
+	private readonly jikjiRoots: readonly string[];
 	private readonly configuredSearchPaths: readonly string[];
 	readonly languages: readonly LanguageTag[];
 	private retrievalScopeBindings: readonly RetrievalScopeBinding[];
@@ -908,6 +916,7 @@ export class AutoRAGAgent {
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.languages = options.languages ?? DEFAULT_LANGUAGES;
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
+		this.jikjiRoots = outermostJikjiRoots(this.searchPaths);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
 		this.retrievalScopeBindings = buildRetrievalScopeBindings(
 			this.workspaceProjectRoot,
@@ -3015,6 +3024,7 @@ export class AutoRAGAgent {
 		try {
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
+						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
@@ -3386,7 +3396,7 @@ export class AutoRAGAgent {
 
 	async syncParsedMirrors(
 		force = false,
-		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress"> = {},
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
@@ -3495,14 +3505,17 @@ export class AutoRAGAgent {
 	/**
 	 * Build or incrementally update every root's Jikji index. Called only by
 	 * refresh/watch (and the explicit `prepareJikji()` API), never by a query:
-	 * `jikji prepare` reuses unchanged documents, and roots run in parallel so
-	 * one slow root does not serialize the rest.
+	 * `jikji prepare` reuses unchanged documents. Roots are submitted together
+	 * but `JikjiClient` runs them one at a time, because every root shares one
+	 * central SQLite file that fails with "database is locked" under concurrent
+	 * writers. Nested and duplicate roots are skipped: upstream rejects
+	 * overlapping roots and the outer root's index already covers them.
 	 */
 	private async executeJikjiPrepare(signal?: AbortSignal): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
 		return Promise.all(
-			this.searchPaths.map((sourcePath) => client.prepare(sourcePath, signal === undefined ? {} : { signal })),
+			this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, signal === undefined ? {} : { signal })),
 		);
 	}
 
@@ -3536,7 +3549,7 @@ export class AutoRAGAgent {
 		if (this.jikjiClient === undefined) {
 			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
 		}
-		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
+		const sourceRoots = planJikjiSourceRoots(this.jikjiRoots);
 		const findOpts: JikjiFindOptions = {
 			topK: opts?.topK,
 			first: opts?.first,
@@ -3545,7 +3558,7 @@ export class AutoRAGAgent {
 		const diagnostics: JikjiDiagnostic[] = [];
 		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
 		const searchResults = await Promise.all(
-			this.searchPaths.map(async (sourcePath) => {
+			this.jikjiRoots.map(async (sourcePath) => {
 				const result: JikjiFindResult = await this.jikjiClient!.find(sourcePath, query, findOpts);
 				return { sourcePath, result };
 			}),
@@ -3559,7 +3572,7 @@ export class AutoRAGAgent {
 			}
 		}
 		if (okPacks.length === 0) {
-			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.searchPaths, perRoot: [] };
+			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.jikjiRoots, perRoot: [] };
 		}
 
 		// Per-root policy summaries, captured BEFORE the least-privilege merge.
@@ -3574,7 +3587,7 @@ export class AutoRAGAgent {
 
 		const policy = this.mergePolicy(okPacks.map((entry) => entry.pack));
 		const merged = this.mergeAnswerPacks(okPacks, sourceRoots, policy);
-		return { answerPack: merged, policy, diagnostics, roots: this.searchPaths, perRoot };
+		return { answerPack: merged, policy, diagnostics, roots: this.jikjiRoots, perRoot };
 	}
 
 	/**
