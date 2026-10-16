@@ -250,6 +250,7 @@ posixOnly("refresh cancellation", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			minSync: { binaryPath: binary, autoInstall: false },
+			jikji: false,
 			fsearch: false,
 		});
 		const controller = new AbortController();
@@ -269,6 +270,7 @@ posixOnly("refresh cancellation", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			minSync: { binaryPath: binary, autoInstall: false },
+			jikji: false,
 			fsearch: false,
 		});
 
