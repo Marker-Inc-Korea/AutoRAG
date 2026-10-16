@@ -1,5 +1,5 @@
 FROM node:24-bookworm AS node
-FROM oven/bun:1.3.14 AS bun
+FROM oven/bun:1.4.2 AS bun
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive

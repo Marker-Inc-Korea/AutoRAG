@@ -12,7 +12,7 @@ function prompt(
 		"check_memory",
 	],
 ) {
-	return buildSystemPrompt({ toolNames, manifests: [], jikjiIndexingEnabled: true, modelId: "test-model" });
+	return buildSystemPrompt({ toolNames, jikjiIndexingEnabled: true, modelId: "test-model" });
 }
 
 describe("buildSystemPrompt single-agent contract", () => {
@@ -46,7 +46,6 @@ describe("buildSystemPrompt single-agent contract", () => {
 		});
 		const prompt = buildSystemPrompt({
 			toolNames: ["search_datasource_cloud_drive", "load_datasource_skill"],
-			manifests: [],
 			datasourceSkills: [toDatasourceAgentSkill(skill.skillManifest())],
 		});
 
@@ -79,7 +78,6 @@ describe("buildSystemPrompt single-agent contract", () => {
 				"search_datasource_company_onedrive",
 				"load_datasource_skill",
 			],
-			manifests: [],
 			datasourceSkills: [personal, work].map((skill) => toDatasourceAgentSkill(skill.skillManifest())),
 		});
 
@@ -104,6 +102,39 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toContain("Read before curating");
 	});
 
+	it("keeps 5-bullet and direct-answer rules by default and instructs producing deliverables as context-aligned files (#1832)", () => {
+		const text = prompt([
+			"bash",
+			"read",
+			"write",
+			"edit",
+			"grep",
+			"find",
+			"ls",
+			"search_all_documents",
+			"semantic_search_local_docs",
+			"check_memory",
+		]);
+		expect(text).toContain("Unless the user explicitly requests");
+		expect(text).toContain("at most 5 bullet points");
+		expect(text).toContain("Deliverables and artifacts");
+		expect(text).toContain("produce the finished, ready-to-use artifact as a file");
+		expect(text).toContain("aligned with the context and domain");
+		expect(text).toContain("clearly stating the created file's exact path/location");
+		expect(text).toContain("never cite the newly created deliverable file itself as `[file:...]`");
+		expect(text).toContain("- **write**:");
+		expect(text).not.toContain("caller-provided tool");
+
+		const remoteText = buildSystemPrompt({
+			toolNames: ["bash", "read", "write", "edit", "grep", "find", "ls", "search_all_documents"],
+			modelId: "test-model",
+			remoteSession: true,
+		});
+		expect(remoteText).not.toContain("- **write**:");
+		expect(remoteText).not.toContain("- **edit**:");
+		expect(remoteText).not.toContain("caller-provided tool");
+	});
+
 	it("instructs resolving conflicting information in favor of the freshest data", () => {
 		const text = prompt();
 		expect(text).toContain("treat the freshest (most recent) information as authoritative");
@@ -116,6 +147,13 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("two-phase loop");
 		expect(text).toContain("PLAN & FAST ANSWER");
 		expect(text).toContain("EXPLORE & RETRIEVE");
+	});
+
+	it("tells the model later messages continue the conversation and that evidence ids last all of it", () => {
+		const text = prompt();
+		expect(text).toContain("Every user message after the first continues the same conversation");
+		expect(text).toContain("cite any id a retrieval tool printed in this conversation, including in earlier turns");
+		expect(text).not.toContain("in this run");
 	});
 
 	it("instructs actively using Jikji when exploring local files and folders", () => {

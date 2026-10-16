@@ -53,7 +53,6 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 			minSync: { autoInstall: false },
 			dupey: false,
 			datasourceSkills: [skill],
-			searchTimeoutMs: 30_000,
 		});
 		const response = await agent.searchDocuments("Which refund exceptions require approval before payout?", { topK: 1, scope: "/mailcrawl/personal/**" });
 		if (response.results[0]?.source !== "/mailcrawl/personal/chunks/msg-1:latest:0") throw new Error("AutoRAG agent source mapping failed");

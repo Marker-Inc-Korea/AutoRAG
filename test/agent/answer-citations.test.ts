@@ -67,8 +67,30 @@ describe("answerMarkers", () => {
 		expect(answerMarkers("see [1999] 2 SLR 392")).toEqual([]);
 	});
 
-	it("still reads a numeric marker that ends a clause as a marker", () => {
+	it("leaves legal paragraph headings and pinpoint references as prose (#1832)", () => {
+		expect(answerMarkers("**[18]** In assessing division of matrimonial assets")).toEqual([]);
+		expect(answerMarkers('> **[18]** "In assessing division of matrimonial assets"')).toEqual([]);
+		expect(answerMarkers("**[18]**: The court applied the structured approach.")).toEqual([]);
+		expect(answerMarkers("At [18], Choo Han Teck J held that")).toEqual([]);
+		expect(answerMarkers("At [18] and [22], the court held that")).toEqual([]);
+		expect(answerMarkers("see [2024] SGHCF 24 at [18]–[22].")).toEqual([]);
+		expect(answerMarkers("see [2024] SGHCF 24 at [18] – [22].")).toEqual([]);
+		expect(answerMarkers("see [2024] SGHCF 24 at [18], [22], and [25].")).toEqual([]);
+		expect(answerMarkers("see WXY v ZAB at [18].")).toEqual([]);
+		expect(answerMarkers("under para. [18] and paras [22], [24].")).toEqual([]);
+	});
+
+	it("still reads a numeric marker that ends a clause (including after ordinary 'at', colon, or bold) as a marker", () => {
 		expect(answerMarkers("held so [3]. Next [4]\n[5], [6]")).toHaveLength(4);
+		expect(answerMarkers("The cap is the rate they agreed at [99].")).toEqual([
+			{ kind: "number", start: 34, end: 39, number: 99 },
+		]);
+		expect(answerMarkers("The policy states as follows [99]: all requests need approval.")).toEqual([
+			{ kind: "number", start: 28, end: 33, number: 99 },
+		]);
+		expect(answerMarkers("**The cap is 28% [99]** Next sentence.")).toEqual([
+			{ kind: "number", start: 16, end: 21, number: 99 },
+		]);
 	});
 });
 

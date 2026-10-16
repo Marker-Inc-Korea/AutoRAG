@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { AutoragHttpError, AutoragOAuthError } from "../../src/cloud/errors.ts";
+import { DazziHttpError, DazziOAuthError } from "../../src/cloud/errors.ts";
 import { exchangeCodeForToken, mapTokenExchangeError } from "../../src/cloud/token.ts";
 import { rejectionOf } from "./helpers/assertions.ts";
 import { type FakeServer, startFakeServer } from "./helpers/fake-server.ts";
@@ -58,7 +58,7 @@ describe("exchangeCodeForToken", () => {
 
 		const failure = await rejectionOf(exchangeCodeForToken({ ...request, baseUrl: server.url }));
 
-		expect(failure).toBeInstanceOf(AutoragHttpError);
+		expect(failure).toBeInstanceOf(DazziHttpError);
 		expect(failure).toMatchObject({ status: 400, code: "invalid_code", type: "invalid_request_error" });
 		expect(failure.message).toContain("Invalid code");
 	});
@@ -68,7 +68,7 @@ describe("exchangeCodeForToken", () => {
 
 		const failure = await rejectionOf(exchangeCodeForToken({ ...request, baseUrl: server.url }));
 
-		expect(failure).toBeInstanceOf(AutoragHttpError);
+		expect(failure).toBeInstanceOf(DazziHttpError);
 		expect(failure).toMatchObject({ status: 401 });
 		expect(failure.message).toContain("no error message");
 	});
@@ -85,7 +85,7 @@ describe("exchangeCodeForToken", () => {
 
 		await expect(
 			exchangeCodeForToken({ ...request, baseUrl: "http://127.0.0.1:1", fetchImpl: failingFetch }),
-		).rejects.toThrow(AutoragOAuthError);
+		).rejects.toThrow(DazziOAuthError);
 	});
 
 	it("reports cancellation through the abort signal", async () => {
@@ -104,7 +104,7 @@ describe("exchangeCodeForToken", () => {
 			}),
 		);
 
-		expect(failure).toBeInstanceOf(AutoragOAuthError);
+		expect(failure).toBeInstanceOf(DazziOAuthError);
 		expect(failure.message).toContain("cancelled");
 	});
 });
@@ -114,7 +114,7 @@ describe("mapTokenExchangeError", () => {
 		const error = mapTokenExchangeError(403, {
 			error: { message: "Plan does not allow this", code: "forbidden", type: "permission_error" },
 		});
-		expect(error.message).toBe("AutoRAG token exchange failed (HTTP 403): Plan does not allow this");
+		expect(error.message).toBe("Dazzi Models token exchange failed (HTTP 403): Plan does not allow this");
 		expect(error.code).toBe("forbidden");
 		expect(error.type).toBe("permission_error");
 	});

@@ -6,8 +6,7 @@ export { RetrievalMethodRegistry } from "./registry.ts";
 export {
 	type CreateRerankerOptions,
 	createReranker,
-	DEFAULT_AUTORAG_RERANK_API_KEY_ENV,
-	DEFAULT_AUTORAG_RERANK_MODEL,
+	DEFAULT_DAZZI_RERANK_MODEL,
 	DEFAULT_RERANK_API_KEY_ENV,
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,

@@ -79,21 +79,19 @@ describe("system prompt Everything guidance", () => {
 	it("documents Everything only when the tool is available", () => {
 		const withTool = buildSystemPrompt({
 			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME],
-			manifests: [],
 		});
 		expect(withTool).toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**:`);
 		expect(withTool).toContain("## Windows Everything File-Name Search");
 		expect(withTool).toContain("ext:");
 		expect(withTool).not.toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**: caller-provided tool`);
 
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash"], manifests: [] });
+		const withoutTool = buildSystemPrompt({ toolNames: ["bash"] });
 		expect(withoutTool).not.toContain("Everything");
 	});
 
 	it("routes file discovery to everything_search instead of a jikji_find tool that is not registered", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME, "search_all_documents"],
-			manifests: [],
 		});
 		expect(prompt).not.toContain("jikji_find");
 		expect(prompt).toContain("use `everything_search` actively to locate relevant files and folders");
@@ -102,7 +100,6 @@ describe("system prompt Everything guidance", () => {
 	it("names both discovery tools when Jikji and Everything are registered", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["bash", "jikji_find", EVERYTHING_SEARCH_TOOL_NAME],
-			manifests: [],
 			jikjiIndexingEnabled: true,
 		});
 		expect(prompt).toMatch(/`jikji_find`[^\n]*`everything_search`|`everything_search`[^\n]*`jikji_find`/);

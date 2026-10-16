@@ -52,6 +52,13 @@ describe("parseArgs", () => {
 		expect(parsed.positionals).toEqual(["search", "hello", "world"]);
 	});
 
+	it("treats --retry-failed as a boolean flag", () => {
+		const parsed = parseArgs(["refresh", "--retry-failed", "--method", "parsed"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["retry-failed"]).toBe(true);
+		expect(parsed.flags.method).toBe("parsed");
+	});
+
 	it("parses boolean and value flags", () => {
 		const parsed = parseArgs(["refresh", "--force", "--config", "a.json", "--json"]);
 		if ("error" in parsed) throw new Error(parsed.error);

@@ -30,14 +30,14 @@ function writeConfig(extra: Record<string, unknown>): string {
 }
 
 describe("P2pConfig normalization", () => {
-	it("defaults when p2p key absent (injectionClassifier true, piiNer false, searchTimeoutMs 120000)", () => {
+	it("defaults when p2p key absent (injectionClassifier true, piiNer false, no search timeout)", () => {
 		const path = writeConfig({});
 		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
 		expect(config.p2p).toBeDefined();
 		expect(config.p2p!.enabled).toBe(false);
 		expect(config.p2p!.injectionClassifier).toBe(true);
 		expect(config.p2p!.piiNer).toBe(false);
-		expect(config.p2p!.searchTimeoutMs).toBe(120000);
+		expect(config.p2p).not.toHaveProperty("searchTimeoutMs");
 	});
 
 	it("sets enabled to true when explicitly true in config", () => {
@@ -73,24 +73,10 @@ describe("P2pConfig normalization", () => {
 		expect(() => resolveConfig({ flags: { config: path }, cwd: root, env: {} })).toThrow(ConfigError);
 	});
 
-	it("rejects searchTimeoutMs below 5000", () => {
-		const path = writeConfig({ p2p: { searchTimeoutMs: 1000 } });
-		expect(() => resolveConfig({ flags: { config: path }, cwd: root, env: {} })).toThrow(ConfigError);
-	});
-
-	it("rejects searchTimeoutMs above 600000", () => {
-		const path = writeConfig({ p2p: { searchTimeoutMs: 700000 } });
-		expect(() => resolveConfig({ flags: { config: path }, cwd: root, env: {} })).toThrow(ConfigError);
-	});
-
-	it("accepts searchTimeoutMs at boundary values 5000 and 600000", () => {
-		const path1 = writeConfig({ p2p: { searchTimeoutMs: 5000 } });
-		const config1 = resolveConfig({ flags: { config: path1 }, cwd: root, env: {} });
-		expect(config1.p2p!.searchTimeoutMs).toBe(5000);
-
-		const path2 = writeConfig({ p2p: { searchTimeoutMs: 600000 } });
-		const config2 = resolveConfig({ flags: { config: path2 }, cwd: root, env: {} });
-		expect(config2.p2p!.searchTimeoutMs).toBe(600000);
+	it("ignores a legacy searchTimeoutMs instead of rejecting existing configs", () => {
+		const path = writeConfig({ p2p: { searchTimeoutMs: 120000 } });
+		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
+		expect(config.p2p).not.toHaveProperty("searchTimeoutMs");
 	});
 
 	it("rejects unknown keys with typed error", () => {

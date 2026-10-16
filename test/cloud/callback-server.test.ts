@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { startCallbackServer } from "../../src/cloud/callback-server.ts";
-import { AutoragOAuthError } from "../../src/cloud/errors.ts";
+import { DazziOAuthError } from "../../src/cloud/errors.ts";
 import { rejectionOf } from "./helpers/assertions.ts";
 import { expectConnectionRefused } from "./helpers/fake-server.ts";
 
@@ -16,7 +16,7 @@ describe("startCallbackServer", () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get("content-type")).toContain("text/html");
-		expect(html).toContain("Signed in to AutoRAG. You can close this tab.");
+		expect(html).toContain("Signed in to Dazzi Models. You can close this tab.");
 
 		const params = await server.waitForCallback();
 		expect(params.get("code")).toBe("abc");
@@ -75,7 +75,7 @@ describe("startCallbackServer", () => {
 		server.close();
 
 		const failure = await rejectionOf(waiting);
-		expect(failure).toBeInstanceOf(AutoragOAuthError);
+		expect(failure).toBeInstanceOf(DazziOAuthError);
 		await expectConnectionRefused(server.redirectUri);
 	});
 

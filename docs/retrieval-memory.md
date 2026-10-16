@@ -41,7 +41,7 @@ reports on AutoRAG's own settings, not retrieved evidence, so it is never
 judged or stored.
 
 Before judgment, each inline citation in the answer (`[e3]`, `[file:<path>]`) is
-resolved against the run's `EvidenceLedger`: retrieval-issued ids attach the
+resolved against the conversation's `EvidenceLedger`: retrieval-issued ids attach the
 harness-recorded source, method, and chunk, not model-written text. The origin
 index then recovers the query that retrieved that chunk. Local files read
 outside retrieval may be cited by absolute path; remote sessions cannot. A

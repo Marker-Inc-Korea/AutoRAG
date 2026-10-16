@@ -136,12 +136,13 @@ does, and searches them right alongside your files:
   File contents are never sent to a remote embedder.
 - **Keys stay encrypted.** Sign-in tokens and API keys live in the system's
   encrypted store, never in a config file.
-- **Bring your own model.** Use the [hosted AutoRAG plan](#hosted-autorag-plan),
+- **Bring your own model.** Use the [hosted Dazzi Models plan](#hosted-dazzi-models-plan),
   or connect your own provider key and pay the provider directly.
 
 > [!TIP]
-> **The app's source lives in [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app)**
-> (Electron + React, AGPL-3.0). It depends on `@autorag/librarian` from this
+> **The Dazzi desktop app's source lives in [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app)**
+> (Electron + React, [Fair Source](https://fair.io/) under `FSL-1.1-MIT`). It
+> depends on the open-source `@autorag/librarian` engine (Apache-2.0) from this
 > repository; build, run, and file app issues there.
 
 ### One engine, every surface
@@ -150,7 +151,7 @@ The app is one way in. The same librarian runs everywhere else:
 
 | Surface | Use it for | Start here |
 |---|---|---|
-| **Desktop app** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) |
+| **Desktop app (Dazzi)** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) (Fair Source, FSL-1.1-MIT) |
 | **Terminal UI** | Interactive, steerable search sessions | [`autorag tui`](#2-search-from-cli) |
 | **CLI** | Scripts, indexing, health checks | [CLI Command Reference](#cli-command-reference) |
 | **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](#autorag-lite-mcp-server) |
@@ -186,7 +187,7 @@ Three principles drive every design decision in AutoRAG Agent:
 
 1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
-2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (OpenRouter, `voyageai/rerank-3-lite` by default) is an opt-in extra.
+2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (the hosted Dazzi Models reranker when signed in, else OpenRouter `voyageai/rerank-3-lite`) is an opt-in extra.
 
 3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (BM25, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
 
@@ -323,6 +324,26 @@ Tesseract. Set `parserOptions.ocr.cachePath` to store the Tesseract models
 elsewhere, or `KORDOC_OFFLINE=1` to block the built-in model download. An
 explicit `parserOptions.kordoc.ocr` overrides the language-based choice.
 
+### Bounding and cancelling a parse
+
+`kordoc` (PDF, HWP/HWPX, DOCX, XLSX/XLS, images), `.pptx` and `.eml` parse in a worker
+thread during a refresh, so one corrupt or hostile file cannot hang or crash the run. A
+`Promise.race` deadline cannot stop a synchronous parse; terminating the worker can.
+
+| `parserOptions` key | Default | Effect |
+|---|---|---|
+| `fileTimeoutMs` | `120000` | Per-file deadline. A parse still running is killed with its worker. |
+| `maxHeapMb` | Node's default | V8 old-generation limit for the worker. An out-of-memory parse is caught, not a host crash. |
+
+A timeout, a heap overrun and a worker crash each become one `parser-failed` skip for that
+file; the diagnostic message says which. The rest of the corpus is still indexed. Plain-text
+files and parsers configured with a function (`parserOptions.kordoc.parse`, a custom OCR
+provider) parse in-process.
+
+```json
+{ "parserOptions": { "fileTimeoutMs": 60000, "maxHeapMb": 2048 } }
+```
+
 Photos and videos are also reachable through two other paths that are not part
 of this switch: the `clawgallery` datasource (captions and visual search over its
 own folders) and Jikji's media index (`jikji.enableMediaIndex`, file facts such as
@@ -393,6 +414,32 @@ await run;
 ```
 
 `steer()` reaches the search's next model request (also between phases), cuts in-flight retrieval and the baseline prefetch short, and always runs verification, whose prompt restates the correction. It returns `false` when no search is running, the search was stopped, or it is past its last model request; ask the text as a new question then.
+
+A refresh can be cancelled and observed from code:
+
+```typescript
+const controller = new AbortController();
+try {
+  await agent.refresh(false, {
+    signal: controller.signal, // controller.abort() stops it
+    onProgress: ({ phase, processed, total, currentVirtualPath }) => {
+      console.log(`${phase} ${processed}/${total}`, currentVirtualPath ?? "");
+    },
+  });
+} catch (error) {
+  if (controller.signal.aborted) console.log("refresh cancelled");
+  else throw error;
+}
+```
+
+`signal` is checked between files and between phases, kills an in-flight parse worker, and
+terminates the MinSync, Jikji and datasource child processes (and their descendants). The
+refresh then rejects with the signal's reason and is recorded as `failed`; files already
+mirrored are kept and not re-parsed on the next run. `onProgress` reports `parsed`
+(`processed`/`total` are files, `currentVirtualPath` is the file about to be processed) and
+`datasources` (`processed`/`total` are datasource skills). During the parse phase
+`.autorag/refresh-progress.json` also carries the running `sourceFiles.total` and
+`parsedCounts`. Without these options a refresh behaves as before.
 
 ---
 
@@ -523,7 +570,7 @@ Do not copy or retain the removed `autorag-lite-search` skill.
    ```
 4. **Safety Guidelines for Agents:**
    - **Never delete, move, or modify original user documents.**
-   - AutoRAG writes index artifacts strictly into `<workspace>/.autorag/` and `.jikji/` caches.
+   - AutoRAG writes index artifacts into `<workspace>/.autorag/` and Jikji's central store (`<OS data dir>/jikji/`, override with `JIKJI_DATA_DIR`). Jikji also drops a `.jikji_agent_map.md` guide into each indexed root.
    - Never print or leak API keys, tokens, or credential values into stdout or logs.
 
 ---
@@ -555,73 +602,69 @@ For configuration syntax and connector details, see [docs/datasource-skills.md](
 
 ---
 
-## Hosted AutoRAG Plan
+## Hosted Dazzi Models Plan
 
-AutoRAG can run on the hosted **AutoRAG** plan as a first-class model provider named
-`autorag`. The provider speaks the server's OpenAI Responses API surface (`<root>/v1`),
+AutoRAG can run on the hosted **Dazzi Models** plan as a first-class model provider named
+`dazzi`. The provider speaks the server's OpenAI Responses API surface (`<root>/v1`),
 so streaming, tool calls, and usage are handled by Pi's built-in `openai-responses`
 implementation, and the model catalog is discovered live from the server — no model id
 is baked into AutoRAG.
 
-Sign in from the interactive TUI:
+Sign in from the interactive TUI. Login is the only way to authenticate; there is no API-key
+environment variable:
 
 ```text
 autorag tui
-/login          # choose "AutoRAG"; the browser completes a PKCE login
+/login          # choose "Dazzi Models"; the browser completes a PKCE login
 ```
 
-Headless (no browser) with a long-lived API key:
-
-```bash
-export AUTORAG_API_KEY=dz_...
-```
+The provider, Jev, and rerank all use the credential `/login` stores. A login flow for
+machines with no browser is not available yet and is tracked in [#1913](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1913).
 
 On a fresh agent home, pin the model with an explicit endpoint so it resolves
-offline without a catalog snapshot — this is the headless configuration:
+offline without a catalog snapshot:
 
 ```json
 {
   "model": {
-    "provider": "autorag",
+    "provider": "dazzi",
     "id": "anthropic/claude-haiku-5.5",
     "baseUrl": "https://api.dazziapp.com/v1",
-    "api": "openai-responses",
-    "apiKeyEnv": "AUTORAG_API_KEY"
+    "api": "openai-responses"
   }
 }
 ```
 
-The `provider`/`id`-only shorthand (`{ "provider": "autorag", "id": "anthropic/claude-haiku-5.5" }`)
+The `provider`/`id`-only shorthand (`{ "provider": "dazzi", "id": "anthropic/claude-haiku-5.5" }`)
 only resolves once a TUI `/login` or a model refresh has persisted the catalog
 snapshot; with no snapshot there is nothing to restore offline, and resolution
-fails with `Unknown configured model: autorag/<id>`.
+fails with `Unknown configured model: dazzi/<id>`.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `AUTORAG_BASE_URL` | `https://api.dazziapp.com` | Server **root** (not the `/v1` path); the API base is `<root>/v1`. |
-| `AUTORAG_API_KEY` | – | Headless API key. A stored `/login` credential takes precedence. |
 
 The catalog is persisted after a `/login` (or any model refresh), so the
-`provider`/`id` shorthand `model: { provider: "autorag", id }`
+`provider`/`id` shorthand `model: { provider: "dazzi", id }`
 keeps resolving offline. When you are not signed in the provider still registers — it appears under
 `/login`, contributes no models, and makes no network call. See
-[Hosted AutoRAG provider](docs/cloud-provider.md) for the full flow.
+[Hosted Dazzi Models provider](docs/cloud-provider.md) for the full flow.
 
-The same plan can also serve the **Jev** judgment model and **rerank** stage, so
+The same sign-in can also serve the **Jev** judgment model and **rerank** stage, so
 the whole librarian loop runs on the hosted account:
 
 ```json
 {
-  "jev": { "backend": "autorag", "model": "jev-1.13" },
-  "rerank": { "provider": "autorag", "model": "qwen/qwen3-reranker-8b" }
+  "jev": { "backend": "dazzi", "model": "jev-1.13" },
+  "rerank": { "provider": "dazzi", "model": "qwen/qwen3-reranker-8b" }
 }
 ```
 
-`jev.backend: "autorag"` posts Jev's native dialect to `<root>/v1/jev`
-(default model `jev-1.13`); `rerank.provider: "autorag"` reranks against
-`<root>/v1/rerank` (default model `qwen/qwen3-reranker-8b`). Both read the
-account key from `AUTORAG_API_KEY`, and an explicit `rerank.baseUrl`,
-`rerank.apiKeyEnv`, or `rerank.model` still overrides the defaults.
+`jev.backend: "dazzi"` posts Jev's native dialect to `<root>/v1/jev`
+(default model `jev-1.13`); `rerank.provider: "dazzi"` reranks against
+`<root>/v1/rerank` (default model `qwen/qwen3-reranker-8b`). Both use the stored
+`/login` credential, and an explicit `rerank.baseUrl` or `rerank.model` still overrides
+the defaults.
 
 ---
 
@@ -631,9 +674,9 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and local embedding verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model card: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md).
-- **[Hosted AutoRAG Provider](docs/cloud-provider.md):** The hosted `autorag` model provider — PKCE `/login`, `AUTORAG_API_KEY`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
+- **[Hosted Dazzi Models Provider](docs/cloud-provider.md):** The hosted `dazzi` model provider — PKCE `/login`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
-- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via OpenRouter: it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
+- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[P2P SimpleX Sharing & Path Standard](docs/p2p-path-standard.md):** Decentralized peer query sharing with SimpleX, PII redaction, and approval queues.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
@@ -703,8 +746,9 @@ Common failures and their fix:
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync binary missing (search and refresh fail with `MinSync is required ...`) | — | `cargo install minsync`, or leave `minSync.autoInstall` on and re-run refresh |
 | Jikji missing | `jikji-unavailable` | check the Rust toolchain, re-run refresh |
+| Jikji prepare of a large root times out (`the Jikji prepare run timed out`) | `jikji-prepare-failed` | the refresh still finishes and the other roots are indexed. There is no fixed total wall: the per-root hang guard is `jikji.timeoutMs` (60 s base) plus `jikji.prepareTimeoutMsPerFile` ms per file under the root (default: `jikji.parseTimeout`, 5 s), uncapped, so a huge root is not cut by its size and only a run stuck beyond every file hitting its parse limit is killed. Set `prepareTimeoutMsPerFile: 0` for a flat `timeoutMs` wall. `jikji.parseTimeout` (seconds) is the per-file limit, forwarded to `jikji prepare --parse-timeout`; jikji skips a file that exceeds it. A timeout kills jikji's whole process group |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
-| Every search does a full local search and verification, even for small talk | `query-route-fallback` | set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
+| Every search does a full local search and verification, even for small talk | `query-route-fallback` | sign in to Dazzi Models with `/login`, or set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 
 Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, `qmd status`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
 

@@ -17,17 +17,6 @@ afterEach(() => {
 });
 
 describe("Full flow integration", () => {
-	it("agent creates with manifests and includes them in system prompt", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			manifestDir: "test/fixtures/manifests",
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("codebase-vectors");
-		expect(prompt).toContain("documentation-index");
-	});
-
 	it("agent runs with mandatory retrieval tools", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

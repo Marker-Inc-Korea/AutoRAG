@@ -14,6 +14,7 @@ import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -125,9 +126,9 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		};
 	}
 
-	async index(): Promise<DatasourceIndexResult> {
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		try {
-			const result = await this.client.sync();
+			const result = await this.client.sync(options?.signal);
 			if (!result.ok) return this.fail(failureCode(result.reason), result.reason);
 			this.lastIndexedAt = Date.now();
 			return {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { AUTORAG_INPUT_LIMITS } from "../../src/cloud/config.ts";
-import { AutoragHttpError } from "../../src/cloud/errors.ts";
+import { DAZZI_INPUT_LIMITS } from "../../src/cloud/config.ts";
+import { DazziHttpError } from "../../src/cloud/errors.ts";
 import {
 	buildStoreEntry,
 	DEFAULT_CONTEXT_WINDOW,
@@ -46,7 +46,7 @@ describe("mapServerModel", () => {
 			reasoning: true,
 			contextWindow: 1_000_000,
 			maxTokens: 32_000,
-			inputLimits: AUTORAG_INPUT_LIMITS,
+			inputLimits: DAZZI_INPUT_LIMITS,
 		});
 	});
 
@@ -60,7 +60,7 @@ describe("mapServerModel", () => {
 			reasoning: false,
 			contextWindow: DEFAULT_CONTEXT_WINDOW,
 			maxTokens: DEFAULT_MAX_TOKENS,
-			inputLimits: AUTORAG_INPUT_LIMITS,
+			inputLimits: DAZZI_INPUT_LIMITS,
 		});
 	});
 
@@ -91,9 +91,9 @@ describe("fetchModels", () => {
 			body: { error: { message: "Unauthorized", code: "unauthorized" } },
 		}));
 		const failure = await rejectionOf(fetchModels({ baseUrl: server.url, apiKey: "dz_stale" }));
-		expect(failure).toBeInstanceOf(AutoragHttpError);
+		expect(failure).toBeInstanceOf(DazziHttpError);
 		expect(failure.message).toMatch(/HTTP 401/);
-		expect((failure as AutoragHttpError).status).toBe(401);
+		expect((failure as DazziHttpError).status).toBe(401);
 	});
 
 	it("wraps a connection failure", async () => {
@@ -102,7 +102,7 @@ describe("fetchModels", () => {
 
 	it("maps non-401 errors with the server message", () => {
 		const error = mapModelsError(500, { error: { message: "boom" } });
-		expect(error.message).toBe("AutoRAG model listing failed (HTTP 500): boom");
+		expect(error.message).toBe("Dazzi Models model listing failed (HTTP 500): boom");
 	});
 });
 
@@ -121,12 +121,12 @@ describe("resolveCredentialKey", () => {
 describe("catalog persistence round trip", () => {
 	it("restores models from a stored snapshot", () => {
 		const models = mapServerModels({ object: "list", data: [catalogEntry] });
-		const entry = buildStoreEntry(models, "autorag", "https://api.dazziapp.com/v1");
+		const entry = buildStoreEntry(models, "dazzi", "https://api.dazziapp.com/v1");
 
 		expect(entry.models).toHaveLength(1);
 		expect(entry.models[0]).toMatchObject({
 			type: "chat",
-			provider: "autorag",
+			provider: "dazzi",
 			api: "openai-responses",
 			baseUrl: "https://api.dazziapp.com/v1",
 			contextWindow: 1_000_000,
@@ -143,7 +143,7 @@ describe("catalog persistence round trip", () => {
 					id: "vendor/model-alpha",
 					name: "Model Alpha",
 					api: "openai-responses",
-					provider: "autorag",
+					provider: "dazzi",
 					baseUrl: "https://api.dazziapp.com/v1",
 					input: ["text", "image"],
 					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -154,7 +154,7 @@ describe("catalog persistence round trip", () => {
 			],
 		});
 
-		expect(model?.inputLimits).toEqual(AUTORAG_INPUT_LIMITS);
+		expect(model?.inputLimits).toEqual(DAZZI_INPUT_LIMITS);
 	});
 
 	it("returns nothing for a missing snapshot", () => {

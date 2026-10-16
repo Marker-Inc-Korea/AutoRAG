@@ -154,7 +154,7 @@ export function deriveResultsFromAnswer(
 					{
 						code: "citation-without-result",
 						severity: "warning",
-						message: `Dropped ${dropped.size} answer citation(s) that matched no evidence retrieved in this run: ${[...dropped].join(", ")}. Every remaining citation resolves to a recorded source.`,
+						message: `Dropped ${dropped.size} answer citation(s) that matched no evidence retrieved in this conversation: ${[...dropped].join(", ")}. Every remaining citation resolves to a recorded source.`,
 						source: "agent",
 					},
 				];

@@ -14,10 +14,10 @@ export interface LoginOptions {
 }
 
 /**
- * AutoRAG tokens are long-lived revocable API keys: there is no refresh token
+ * Dazzi Models tokens are long-lived revocable API keys: there is no refresh token
  * and no expiry, so a refresh returns the stored credentials unchanged.
  */
-export function refreshAutoragCredentials(credentials: OAuthCredentials): OAuthCredentials {
+export function refreshDazziCredentials(credentials: OAuthCredentials): OAuthCredentials {
 	return credentials;
 }
 
@@ -29,7 +29,7 @@ export function refreshAutoragCredentials(credentials: OAuthCredentials): OAuthC
  * the final redirect URL (or the bare code) into the prompt instead; both paths
  * are raced and the first result wins.
  */
-export async function loginAutorag(callbacks: OAuthLoginCallbacks, options: LoginOptions): Promise<OAuthCredentials> {
+export async function loginDazzi(callbacks: OAuthLoginCallbacks, options: LoginOptions): Promise<OAuthCredentials> {
 	const { verifier, challenge } = createPkcePair();
 	const state = createState();
 	const server = await startCallbackServer({
@@ -46,16 +46,16 @@ export async function loginAutorag(callbacks: OAuthLoginCallbacks, options: Logi
 				state,
 				codeChallenge: challenge,
 			}),
-			instructions: `Waiting for the AutoRAG sign-in callback on ${server.redirectUri}. If the browser cannot reach this machine, paste the final redirect URL or the code instead.`,
+			instructions: `Waiting for the Dazzi Models sign-in callback on ${server.redirectUri}. If the browser cannot reach this machine, paste the final redirect URL or the code instead.`,
 		});
-		callbacks.onProgress?.(`Listening for the AutoRAG sign-in callback on ${server.redirectUri}`);
+		callbacks.onProgress?.(`Listening for the Dazzi Models sign-in callback on ${server.redirectUri}`);
 
 		const outcome = await Promise.race([
 			server.waitForCallback().then((params) => ({ params }) as const),
 			callbacks
 				.onPrompt({
 					message:
-						"Complete the AutoRAG sign-in in your browser, or paste the final redirect URL / authorization code here:",
+						"Complete the Dazzi Models sign-in in your browser, or paste the final redirect URL / authorization code here:",
 					placeholder: server.redirectUri,
 					allowEmpty: true,
 				})

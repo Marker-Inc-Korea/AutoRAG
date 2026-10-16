@@ -13,6 +13,7 @@ import { createSearchAllDocumentsTool } from "../../src/agent/search-all-tool.ts
 import type { SearchDocumentRetrievalTraceEntry } from "../../src/agent/search-documents.ts";
 import { createSearchMinSyncDocumentsTool } from "../../src/agent/search-minsync-tool.ts";
 import { createSingleDatasourceSearchTools } from "../../src/agent/search-single-datasource-tool.ts";
+import type { ToolBurstGuardOptions } from "../../src/agent/tool-burst-guard.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import { jikjiFindDiagnostic } from "../../src/jikji/diagnostics.ts";
 import type { JikjiAnswerPack, JikjiDiagnostic, JikjiFindResult } from "../../src/jikji/index.ts";
@@ -79,7 +80,6 @@ const skill: DatasourceSkill = {
 interface Internals {
 	innerAgent: { state: { tools: { name: string }[] } };
 	tools: AgentTool[];
-	searchToolCallCount: number;
 	retrievalTrace: SearchDocumentRetrievalTraceEntry[];
 	activeSession?: { abort(): Promise<void> };
 	jikjiReady: boolean;
@@ -88,7 +88,7 @@ interface Internals {
 
 function setup(
 	toolOrFactory: AgentTool | ((agent: AutoRAGAgent) => AgentTool),
-	maxSearchToolCalls = 64,
+	toolCallBurstGuard: ToolBurstGuardOptions | false | undefined = undefined,
 	searchPaths = [root],
 ) {
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "followup" }] });
@@ -103,7 +103,7 @@ function setup(
 		everything: false,
 		webSearch: false,
 		datasourceSkills: [skill],
-		maxSearchToolCalls,
+		toolCallBurstGuard,
 	});
 	const tool = typeof toolOrFactory === "function" ? toolOrFactory(agent) : toolOrFactory;
 	const internal = agent as unknown as Internals;
@@ -280,7 +280,6 @@ describe("records the retrieval trace for search tools", () => {
 			events.push(event);
 		});
 		await agent.searchDocuments(query);
-		expect(internal.searchToolCallCount).toBe(1);
 		const ends = events.filter(
 			(event): event is Extract<AgentEvent, { type: "tool_execution_end" }> =>
 				event.type === "tool_execution_end" && event.toolName === tool.name,
@@ -339,7 +338,10 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 			mkdirSync(healthyRoot);
 			mkdirSync(otherRoot);
 			writeFileSync(join(healthyRoot, "refund.txt"), hit.content);
-			const { agent, internal, registration, tool } = setup(createJikjiFindTool, 64, [healthyRoot, otherRoot]);
+			const { agent, internal, registration, tool } = setup(createJikjiFindTool, undefined, [
+				healthyRoot,
+				otherRoot,
+			]);
 			const pack: JikjiAnswerPack = {
 				answerPaths: ["refund.txt"],
 				paths: ["refund.txt"],
@@ -372,7 +374,6 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 			};
 			agent.subscribe(collect);
 			await agent.searchDocuments(query);
-			expect(internal.searchToolCallCount).toBe(1);
 			expect(ends).toHaveLength(1);
 			expect(ends[0]?.isError).toBe(false);
 			const details = ends[0]?.result.details as JikjiFindDetails;
@@ -395,10 +396,10 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 	);
 });
 
-it("still exhausts the tool budget and preserves the empty trace", async () => {
+it("aborts a runaway tool loop and preserves the retrieval trace", async () => {
 	const tool = allTool([], [diagnostic]);
-	const { agent, internal, registration } = setup(tool, 1);
-	// The budget aborts the run after the one tool call; with no answer message
+	const { agent, internal, registration } = setup(tool, { maxCalls: 1, windowMs: 60_000 });
+	// The guard aborts the run at the first call of the burst; with no answer message
 	// the run resolves degraded and keeps the retrieval trace.
 	registration.setResponses([fauxAssistantMessage([fauxToolCall(tool.name, { query })], { stopReason: "toolUse" })]);
 	let abortCalls = 0;
@@ -413,7 +414,7 @@ it("still exhausts the tool budget and preserves the empty trace", async () => {
 	});
 	const response = await agent.searchDocuments(query);
 	expect(abortCalls).toBe(1);
-	expect(internal.searchToolCallCount).toBe(1);
+	expect(response.diagnostics).toContainEqual(expect.objectContaining({ code: "tool-call-burst" }));
 	expect(response.retrievalTrace).toEqual([{ tool: tool.name, query, resultCount: 0, results: [] }]);
 });
 

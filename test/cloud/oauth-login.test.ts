@@ -1,7 +1,7 @@
 import type { OAuthLoginCallbacks, OAuthPrompt } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { AutoragHttpError } from "../../src/cloud/errors.ts";
-import { loginAutorag, refreshAutoragCredentials } from "../../src/cloud/oauth-login.ts";
+import { DazziHttpError } from "../../src/cloud/errors.ts";
+import { loginDazzi, refreshDazziCredentials } from "../../src/cloud/oauth-login.ts";
 import { createCodeChallenge } from "../../src/cloud/pkce.ts";
 import { rejectionOf } from "./helpers/assertions.ts";
 import { expectConnectionRefused, type FakeServer, startFakeServer } from "./helpers/fake-server.ts";
@@ -50,14 +50,14 @@ function redirectUriOf(authorizeUrl: string): string {
 	return new URL(authorizeUrl).searchParams.get("redirect_uri")!;
 }
 
-describe("loginAutorag", () => {
+describe("loginDazzi", () => {
 	it("completes the PKCE flow through the loopback callback", async () => {
 		tokenServer = await startFakeServer(() => ({
 			body: { access_token: "dz_token", token_type: "Bearer", email: "user@example.com" },
 		}));
 
 		const probe = createProbe();
-		const login = loginAutorag(probe.callbacks, { baseUrl: tokenServer.url });
+		const login = loginDazzi(probe.callbacks, { baseUrl: tokenServer.url });
 		const authorizeUrl = new URL(await probe.authorized);
 
 		expect(authorizeUrl.searchParams.get("client")).toBe("agent");
@@ -68,7 +68,7 @@ describe("loginAutorag", () => {
 		expect(probe.prompts[0]!.placeholder).toBe(redirectUri);
 
 		const response = await fetch(`${redirectUri}?code=dz-code&state=${state}`);
-		expect(await response.text()).toContain("Signed in to AutoRAG");
+		expect(await response.text()).toContain("Signed in to Dazzi Models");
 
 		const credentials = await login;
 		expect(credentials).toMatchObject({ access: "dz_token", refresh: "", email: "user@example.com" });
@@ -98,7 +98,7 @@ describe("loginAutorag", () => {
 			},
 		});
 
-		const credentials = await loginAutorag(probe.callbacks, { baseUrl: tokenServer.url });
+		const credentials = await loginDazzi(probe.callbacks, { baseUrl: tokenServer.url });
 
 		expect(credentials.access).toBe("dz_manual");
 		expect(probe.prompts).toHaveLength(1);
@@ -116,14 +116,14 @@ describe("loginAutorag", () => {
 			},
 		});
 
-		await expect(loginAutorag(probe.callbacks, { baseUrl: tokenServer.url })).rejects.toThrow(/state mismatch/);
+		await expect(loginDazzi(probe.callbacks, { baseUrl: tokenServer.url })).rejects.toThrow(/state mismatch/);
 		expect(tokenServer.requests).toHaveLength(0);
 	});
 
 	it("ignores a forged loopback callback and still completes on the genuine one", async () => {
 		tokenServer = await startFakeServer(() => ({ body: { access_token: "dz_token" } }));
 		const probe = createProbe();
-		const login = loginAutorag(probe.callbacks, { baseUrl: tokenServer.url });
+		const login = loginDazzi(probe.callbacks, { baseUrl: tokenServer.url });
 		const authorizeUrl = new URL(await probe.authorized);
 		const redirectUri = redirectUriOf(authorizeUrl.toString());
 		const state = authorizeUrl.searchParams.get("state")!;
@@ -142,7 +142,7 @@ describe("loginAutorag", () => {
 	it("rejects an access_denied callback", async () => {
 		tokenServer = await startFakeServer(() => ({ body: { access_token: "nope" } }));
 		const probe = createProbe();
-		const login = loginAutorag(probe.callbacks, { baseUrl: tokenServer.url });
+		const login = loginDazzi(probe.callbacks, { baseUrl: tokenServer.url });
 		const rejection = expect(login).rejects.toThrow(/cancelled/);
 		const authorizeUrl = await probe.authorized;
 
@@ -160,7 +160,7 @@ describe("loginAutorag", () => {
 			body: { error: { message: "Invalid code", type: "invalid_request_error", code: "invalid_code" } },
 		}));
 		const probe = createProbe();
-		const login = loginAutorag(probe.callbacks, { baseUrl: tokenServer.url });
+		const login = loginDazzi(probe.callbacks, { baseUrl: tokenServer.url });
 		const settled = rejectionOf(login);
 		const authorizeUrl = await probe.authorized;
 
@@ -169,14 +169,14 @@ describe("loginAutorag", () => {
 		);
 
 		const failure = await settled;
-		expect(failure).toBeInstanceOf(AutoragHttpError);
+		expect(failure).toBeInstanceOf(DazziHttpError);
 		expect(failure).toMatchObject({ status: 400, code: "invalid_code" });
 	});
 
 	// Exercises the loopback wait budget itself, so a real (short) timer is required here.
 	it("times out and closes the loopback listener", async () => {
 		const probe = createProbe();
-		const login = loginAutorag(probe.callbacks, { baseUrl: "http://127.0.0.1:1", timeoutMs: 30 });
+		const login = loginDazzi(probe.callbacks, { baseUrl: "http://127.0.0.1:1", timeoutMs: 30 });
 		const rejection = expect(login).rejects.toThrow(/timed out/);
 		const authorizeUrl = await probe.authorized;
 
@@ -187,7 +187,7 @@ describe("loginAutorag", () => {
 	it("aborts when the caller cancels", async () => {
 		const controller = new AbortController();
 		const probe = createProbe({ signal: controller.signal });
-		const login = loginAutorag(probe.callbacks, { baseUrl: "http://127.0.0.1:1" });
+		const login = loginDazzi(probe.callbacks, { baseUrl: "http://127.0.0.1:1" });
 		const rejection = expect(login).rejects.toThrow(/cancelled/);
 		await probe.authorized;
 
@@ -197,9 +197,9 @@ describe("loginAutorag", () => {
 	});
 });
 
-describe("refreshAutoragCredentials", () => {
+describe("refreshDazziCredentials", () => {
 	it("returns the credential unchanged", () => {
 		const credentials = { access: "dz", refresh: "", expires: Number.MAX_SAFE_INTEGER };
-		expect(refreshAutoragCredentials(credentials)).toBe(credentials);
+		expect(refreshDazziCredentials(credentials)).toBe(credentials);
 	});
 });

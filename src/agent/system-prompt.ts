@@ -1,6 +1,11 @@
-import type { StoreManifest } from "../manifest/types.ts";
 import { FENCING_GUARD_LINE } from "../p2p/injection-classifier.ts";
-import { ANSWER_CITATION_RULE, ANSWER_IMAGE_DELTA_RULE, ANSWER_IMAGE_EMBED_RULE } from "./answer-guidelines.ts";
+import {
+	ANSWER_CITATION_RULE,
+	ANSWER_DELIVERABLE_DELTA_RULE,
+	ANSWER_DELIVERABLE_RULE,
+	ANSWER_IMAGE_DELTA_RULE,
+	ANSWER_IMAGE_EMBED_RULE,
+} from "./answer-guidelines.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
@@ -8,7 +13,6 @@ export interface SystemPromptConfig {
 	toolNames: string[];
 	modelId?: string;
 	memoryEntries?: readonly unknown[];
-	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly DatasourceAgentSkill[];
 	retrievedContentGuard?: boolean;
@@ -31,6 +35,20 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"bash",
 			"read and inspect configured document collections with ls, find, grep, cat, and similar tools, and — in local sessions — organize local files when the user asks (rename, move, copy, create folders, move to trash)",
 		),
+		...(config.remoteSession
+			? []
+			: [
+					toolLine(
+						config,
+						"write",
+						"create a new file in local sessions — use this to produce requested deliverables and artifacts in a file format aligned with the request and context without overwriting existing source files",
+					),
+					toolLine(
+						config,
+						"edit",
+						"surgically update an existing deliverable or config file when the user asks (local sessions only)",
+					),
+				]),
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(
 			config,
@@ -75,6 +93,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 				(name) =>
 					![
 						"bash",
+						"read",
+						"write",
+						"edit",
+						"grep",
+						"find",
+						"ls",
 						"jikji_find",
 						"everything_search",
 						"fsearch_search",
@@ -93,12 +117,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			.map((name) => `- **${name}**: caller-provided tool`),
 	].filter((line): line is string => line !== undefined);
 
-	const manifests =
-		config.manifests.length === 0
-			? ""
-			: `\n## Indexed Stores\n\n${config.manifests
-					.map((manifest) => `- **${manifest.name}**: ${manifest.description ?? "indexed document store"}`)
-					.join("\n")}\n`;
 	const datasourceSkills = buildDatasourceSkillsPrompt(config.datasourceSkills ?? []);
 	const noSearchTools =
 		toolLines.length === 0
@@ -178,13 +196,17 @@ Searches follow a progressive, two-phase loop:
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
 6. **FINALIZE** — End with the final answer as a plain reply, with no tool call. Earlier replies that are followed by a tool call are progress notes; only the last reply is the answer.
 
+## Follow-up Questions
+
+Every user message after the first continues the same conversation. Answer it with everything earlier in the conversation in mind, and reuse evidence and answers already gathered when they settle it. When they do not, search before answering.
+
 ## Available Tools
 
 ${toolLines.join("\n")}
 ${noSearchTools}
 ## Search Strategy
 
-- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, baseline MinSync and Jikji retrieval starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence.
+- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, the first question of a conversation gets baseline MinSync and Jikji retrieval that starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence. Later questions get no baseline: search by tool call.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
@@ -221,20 +243,20 @@ Retrieval memory holds evidence that earlier searches found for similar question
 ${jikji}
 ${everything}
 ${fsearch}
-${manifests}
 ## Output Format
 
 Your answer is your final reply, written as plain text, never as a tool call. Cite evidence inline with the ids the retrieval tools print next to each result:
 - Put the id in square brackets at the end of the sentence it supports, e.g. \`The cap is 28% [e3].\` Use \`[e3][e7]\` or \`[e3, e7]\` for several. Copy ids exactly as printed; never invent one.
 - For a local file you opened yourself with \`bash\`, cite \`[file:<absolute path>]\`.
 - The harness resolves every id to its recorded source, number the citations \`[1]\`, \`[2]\`, … in order of first appearance, and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
-- A citation whose id no tool returned in this run is dropped, so cite only ids you saw.
+- Evidence ids belong to the whole conversation: cite any id a retrieval tool printed in this conversation, including in earlier turns. An id no tool ever printed is dropped.
 
 ## Answer Guidelines
 
 - **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
-- **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
-- **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
+- **Bullet-point core answer**: Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
+- **Direct answer only**: Unless the user explicitly requests otherwise, the caller only needs the direct answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
+- ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}
 - ${ANSWER_CITATION_RULE}
 - ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}
 - **No per-source negative reports**: Never report individual negative findings per source (e.g. "no information found in Slack" or "checked Drive but found nothing"). Simply omit unproductive sources from the answer and focus on what was found or provide a concise overall conclusion.

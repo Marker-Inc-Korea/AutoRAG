@@ -3,6 +3,7 @@ export {
 	type AutoRAGAgentOptions,
 	type AutoRAGRefreshComponentStatus,
 	type AutoRAGRefreshOptions,
+	type AutoRAGRefreshProgress,
 	type AutoRAGRefreshResult,
 	type AutoRAGRefreshStatus,
 	type AutoRAGWatchRefreshHandle,
@@ -39,7 +40,6 @@ export * from "./dupey/index.ts";
 export * from "./everything/index.ts";
 export * from "./fsearch/index.ts";
 export * from "./jikji/index.ts";
-export * from "./manifest/index.ts";
 export { type AutoRAGMcpServerOptions, createAutoRAGMcpServer } from "./mcp/server.ts";
 export * from "./memory/index.ts";
 export * from "./minsync/index.ts";

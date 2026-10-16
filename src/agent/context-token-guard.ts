@@ -3,6 +3,15 @@ import type { AssistantMessage, Model, SystemMessage } from "@earendil-works/pi-
 import { calculateContextTokens, estimateTokens } from "@earendil-works/pi-coding-agent";
 
 const CONTEXT_HEADROOM = 1.2;
+/**
+ * Most output tokens ever held back from the input budget. pi clamps each
+ * request's `max_tokens` to the room left in the context window, so reserving a
+ * catalog `maxTokens` that approaches the window (OpenRouter and Fireworks list
+ * many such models) would zero the input budget and wipe the whole transcript.
+ */
+const MAX_OUTPUT_RESERVE_TOKENS = 32_000;
+/** The user's query keeps at least this many tokens even when the budget is exhausted. */
+const MIN_QUERY_TOKENS = 2_000;
 const GUARD_MARKER = "[AutoRAG context guard: omitted context to stay within the model context budget.]";
 const RETRIEVAL_TOOL_PREFIX = "search_datasource_";
 const RETRIEVAL_TOOL_NAMES: Record<string, true> = {
@@ -61,7 +70,11 @@ export function guardAgentContextMessages(
 	}
 
 	const usableContext = Math.floor(model.contextWindow / CONTEXT_HEADROOM);
-	const outputReserve = Math.min(usableContext, Number.isFinite(model.maxTokens) ? Math.max(0, model.maxTokens) : 0);
+	const outputReserve = Math.min(
+		Math.floor(usableContext / 4),
+		MAX_OUTPUT_RESERVE_TOKENS,
+		Number.isFinite(model.maxTokens) ? Math.max(0, model.maxTokens) : 0,
+	);
 	const inputBudget = Math.max(0, usableContext - outputReserve);
 	// The context event's messages exclude the system prompt and tool declarations, and
 	// provider-reported usage counts them while a plain estimate does not. Every
@@ -149,54 +162,53 @@ export function estimateContextMessageTokens(messages: readonly AgentMessage[], 
 	return messages.reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
 
+/**
+ * Last resort once no whole candidate can be dropped. Bulk context shrinks
+ * first (older turns, then the newest tool result, then the system prompt), and
+ * the user's current query is only ever head/tail-excerpted, never replaced by
+ * the marker, so the model always still sees what was asked.
+ */
 function trimFixedContext(messages: AgentMessage[], inputBudget: number): AgentMessage[] {
 	const trimmed = messages.slice();
 	const lastIndex = trimmed.length - 1;
-	const shrinkable = trimmed
-		.map((message, index) => ({ message, index }))
-		.filter(({ index, message }) => index !== lastIndex && message.role !== "system");
+	const queryIndex = trimmed.reduce((found, message, index) => (message.role === "user" ? index : found), -1);
+	const fits = (): boolean => estimateContextMessageTokens(trimmed, false) <= inputBudget;
+	const fitInto = (index: number, floorTokens: number): void => {
+		const message = trimmed[index];
+		if (message === undefined) return;
+		const others = trimmed.reduce(
+			(total, other, i) => (i === index ? total : total + estimateMessageTokens(other)),
+			0,
+		);
+		trimmed[index] = fitMessageToTokens(message, Math.max(floorTokens, inputBudget - others));
+	};
 
-	for (const { message, index } of shrinkable) {
+	for (const [index, message] of trimmed.entries()) {
+		if (index === lastIndex || index === queryIndex || message.role === "system") continue;
 		const replacement = replaceMessageWithMarker(message);
 		if (replacement === message || estimateMessageTokens(replacement) >= estimateMessageTokens(message)) continue;
 		trimmed[index] = replacement;
-		if (estimateContextMessageTokens(trimmed, false) <= inputBudget) return trimmed;
+		if (fits()) return trimmed;
 	}
 
-	const lastMessage = trimmed[lastIndex];
-	if (lastMessage !== undefined && lastMessage.role !== "system") {
-		const replacement = replaceMessageWithMarker(lastMessage);
-		if (replacement !== lastMessage) {
-			trimmed[lastIndex] = replacement;
-			if (estimateContextMessageTokens(trimmed, false) <= inputBudget) return trimmed;
-		}
-		const fixedWithoutLast = trimmed.reduce(
-			(total, message, index) => (index === lastIndex ? total : total + estimateMessageTokens(message)),
-			0,
-		);
-		if (fixedWithoutLast < inputBudget) {
-			const fitted = fitMessageToTokens(lastMessage, inputBudget - fixedWithoutLast);
-			if (fitted !== lastMessage) {
-				trimmed[lastIndex] = fitted;
-				if (estimateContextMessageTokens(trimmed, false) <= inputBudget) return trimmed;
-			}
-		}
+	if (lastIndex !== queryIndex && trimmed[lastIndex]?.role !== "system") {
+		fitInto(lastIndex, 0);
+		if (fits()) return trimmed;
 	}
 
 	for (const [index, message] of trimmed.entries()) {
 		if (message.role !== "system") continue;
-		const replacement = replaceMessageWithMarker(message);
-		if (replacement === message || estimateMessageTokens(replacement) >= estimateMessageTokens(message)) continue;
-		trimmed[index] = replacement;
-		if (estimateContextMessageTokens(trimmed, false) <= inputBudget) return trimmed;
+		fitInto(index, 0);
+		if (fits()) return trimmed;
 	}
 
+	if (queryIndex >= 0) fitInto(queryIndex, MIN_QUERY_TOKENS);
 	return trimmed;
 }
 
 function fitMessageToTokens(message: AgentMessage, maxTokens: number): AgentMessage {
 	const original = textContent(message);
-	if (original === undefined) return message;
+	if (original === undefined) return stripNonTextContent(message);
 	const marker = `\n\n${GUARD_MARKER}\n`;
 	let low = 0;
 	let high = original.length;
@@ -212,6 +224,22 @@ function fitMessageToTokens(message: AgentMessage, maxTokens: number): AgentMess
 		}
 	}
 	return best;
+}
+
+/**
+ * A user message mixing text with images: keep every text block (the query) and
+ * stand in for each image with the marker. Anything else is replaced whole.
+ */
+function stripNonTextContent(message: AgentMessage): AgentMessage {
+	if (message.role !== "user" || typeof message.content === "string") return replaceMessageWithMarker(message);
+	const marker = `\n\n${GUARD_MARKER}\n`;
+	let replacedImage = false;
+	const content = message.content.map((block) => {
+		if (block.type === "text") return block;
+		replacedImage = true;
+		return { type: "text" as const, text: marker };
+	});
+	return replacedImage ? { ...message, content } : message;
 }
 
 function excerpt(text: string, maxChars: number, marker: string): string {
