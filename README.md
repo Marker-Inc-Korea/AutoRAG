@@ -550,7 +550,7 @@ Do not copy or retain the removed `autorag-lite-search` skill.
    ```
 4. **Safety Guidelines for Agents:**
    - **Never delete, move, or modify original user documents.**
-   - AutoRAG writes index artifacts strictly into `<workspace>/.autorag/` and `.jikji/` caches.
+   - AutoRAG writes index artifacts into `<workspace>/.autorag/` and Jikji's central store (`<OS data dir>/jikji/`, override with `JIKJI_DATA_DIR`). Jikji also drops a `.jikji_agent_map.md` guide into each indexed root.
    - Never print or leak API keys, tokens, or credential values into stdout or logs.
 
 ---
