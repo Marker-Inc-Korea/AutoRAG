@@ -13,7 +13,7 @@ import {
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
-import { abortError, type ProcessResult, spawnProcess } from "./process.ts";
+import { type ProcessResult, spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
 export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
@@ -175,7 +175,6 @@ export class MinSyncClient {
 	}
 
 	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		if (signal?.aborted) throw abortError(signal);
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		let effective: {
 			config: MinSyncEmbedderConfig;

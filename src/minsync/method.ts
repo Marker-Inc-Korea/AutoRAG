@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
 import { ensureRuntime } from "../embedding-runtime/index.ts";
+import { abortReason } from "../process/abort-reason.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -13,7 +14,6 @@ import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
 import { minSyncBinaryMissingError, minSyncInstallFailedError } from "./errors.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
-import { abortError } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 
@@ -138,8 +138,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
-		// A sync queued behind another one must not stage or install once its caller gave up.
-		if (signal?.aborted) throw abortError(signal);
+		if (signal?.aborted) throw abortReason(signal);
 		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };

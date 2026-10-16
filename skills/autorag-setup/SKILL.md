@@ -164,15 +164,21 @@ GitHub release into `<workspace>/.autorag/bin` (`minSync.autoInstall` defaults
 to true), and Jikji installs `jikji-cli` through cargo (`jikji.autoInstall`
 defaults to true; requires the Rust toolchain). Set `"autoInstall": false` only
 when managing the binary yourself. Refresh is incremental: MinSync syncs only
-changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Roots
-prepare in parallel.
+changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Jikji
+roots prepare one at a time (they share one central SQLite file that rejects
+concurrent writers). A search root nested inside, or duplicating, another root
+is skipped for Jikji because the outer root's index already covers it.
 
-Jikji stores its prepared corpus metadata in a hidden `.jikji` directory
-inside each indexed source root — that is Jikji's native index layout and
-intended behavior, not a misplaced artifact. Tell the user before the first
-`refresh` that `<root>/.jikji` will be created inside every approved document
-root (one per root, alongside the documents), and never delete or edit its
-contents; removing it only forces a full Jikji re-prepare on the next refresh.
+Jikji keeps its prepared corpus (search index, parsed text, wiki, routes) in one
+central store, not inside your documents: `<OS data dir>/jikji/index.sqlite`
+plus `<OS data dir>/jikji/roots/<id>/` (macOS `~/Library/Application Support`,
+Linux `$XDG_DATA_HOME` or `~/.local/share`, Windows `%LOCALAPPDATA%`; override
+with the `JIKJI_DATA_DIR` environment variable). The only file `refresh` adds
+inside an approved document root is the `.jikji_agent_map.md` guide. Tell the
+user that before the first `refresh`, and never delete or edit Jikji's central
+store by hand; removing it only forces a full Jikji re-prepare on the next
+refresh. Older Jikji versions wrote a `<root>/.jikji` directory instead; such a
+leftover is now unused and safe for the user to delete.
 
 Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
 `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
@@ -216,8 +222,9 @@ size must be positive integers, and the dimension must match the embedder
 Leave both enabled. They are the recommended setup: they make simple questions
 fast and multi-part questions thorough.
 
-- **Jev** (`jev`, default `{ "backend": "openrouter" }`, model
-  `typesafe/jev-1.13`) runs before the fast answer. It routes each question to
+- **Jev** (`jev`, default `{ "backend": "dazzi" }` when signed in to Dazzi
+  Models, else `{ "backend": "openrouter" }`; model `jev-1.13` on Dazzi,
+  `typesafe/jev-1.13` on OpenRouter) runs before the fast answer. It routes each question to
   local search, web search, a direct answer (general knowledge or small
   talk skips retrieval entirely), or the `config` branch, and decides whether
   to decompose it. On
@@ -232,14 +239,16 @@ fast and multi-part questions thorough.
   decides whether verification is needed, so a complete, evidence-backed fast
   answer ends the run.
 - **Question decomposition** (`queryDecomposition`, default model
+  `dazzi/openai/gpt-6-luna` when signed in to Dazzi Models, else
   `openrouter/qwen/qwen3.7-flash`) splits a multi-part question into at most
   five search queries that run in parallel.
 
-Both use the user's `OPENROUTER_API_KEY`; confirm it is set (`test -n
-"$OPENROUTER_API_KEY"`, never print it) and tell the user Jev routing is on.
-Without the key, routing falls back to a single local search and the run
-always verifies, so searches still work. A `query-route-fallback` diagnostic
-(`autorag search --debug`) shows that state.
+Both need a credential for the chosen backend: a Dazzi Models `/login` (check with
+`autorag models list --provider dazzi --available`), or the user's
+`OPENROUTER_API_KEY` (`test -n "$OPENROUTER_API_KEY"`, never print it). Tell the
+user Jev routing is on. Without a credential, routing falls back to a single
+local search and the run always verifies, so searches still work. A
+`query-route-fallback` diagnostic (`autorag search --debug`) shows that state.
 
 ```json
 {
@@ -308,6 +317,22 @@ and are never settable from model/tool arguments: `maxDocuments`,
 `maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
 `bandwidthLimit`, and `dryRun` (cloud-drive/rclone). `maxContentChars` defaults
 to 20000 for RSS and 100000 for Spotlight and cloud-drive.
+
+### Refresh safety limits
+
+`refresh` guards the parsed-mirror refresh against deleting a corpus because a
+search root became unavailable. Every field is optional; unknown keys fail
+config resolution.
+
+| Field | Default | Controls |
+|---|---|---|
+| `maxDeleteRatio` | 0.3 | Largest share (0–1) of indexed documents one refresh may delete; a bigger deletion above 100 documents is suppressed (`mass-delete-suppressed`) unless the refresh is forced |
+| `maxScannedEntries` | 2000000 | Directory entries examined per search root before `walk-truncated` |
+| `maxDepth` | 64 | Deepest directory level walked below a root before `walk-truncated` |
+
+A root that is missing, unlistable, or empty while it previously held documents
+keeps its mirrors and reports `search-root-unavailable`; see
+`docs/minsync-setup.md`.
 
 ## Probe and configure datasource skills (setup wizard)
 

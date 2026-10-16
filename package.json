@@ -36,7 +36,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/core.ts src/cli/index.ts src/mcp/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "build": "bun build src/index.ts src/core.ts src/cli/index.ts src/mcp/index.ts src/parser/parse-worker.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",
@@ -69,8 +69,7 @@
     "slides-grab": "^1.5.2",
     "smol-toml": "1.9.1",
     "tesseract.js": "^7.0.0",
-    "typebox": "^1.3.37",
-    "yaml": "^2.9.1"
+    "typebox": "^1.3.37"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
@@ -80,6 +79,7 @@
     "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "yaml": "^2.9.1"
   }
 }

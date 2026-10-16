@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { AutoragOAuthError } from "./errors.ts";
+import { DazziOAuthError } from "./errors.ts";
 
 /** Path the browser is redirected to on the loopback listener. */
 export const CALLBACK_PATH = "/callback";
@@ -47,15 +47,15 @@ function createDeferred<T>(): Deferred<T> {
 
 function renderCallbackPage(failed: boolean): string {
 	const message = failed
-		? "AutoRAG sign-in did not complete. You can close this tab and try again."
-		: "Signed in to AutoRAG. You can close this tab.";
+		? "Dazzi Models sign-in did not complete. You can close this tab and try again."
+		: "Signed in to Dazzi Models. You can close this tab.";
 	return [
 		"<!doctype html>",
 		'<html lang="en">',
 		"<head>",
 		'<meta charset="utf-8">',
 		'<meta name="viewport" content="width=device-width, initial-scale=1">',
-		"<title>AutoRAG</title>",
+		"<title>Dazzi Models</title>",
 		"</head>",
 		'<body style="font-family: system-ui, sans-serif; margin: 4rem auto; max-width: 32rem; text-align: center;">',
 		`<p>${message}</p>`,
@@ -101,7 +101,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
 		callback.reject(error);
 	}
 	function onAbort(): void {
-		fail(new AutoragOAuthError("AutoRAG sign-in was cancelled."));
+		fail(new DazziOAuthError("Dazzi Models sign-in was cancelled."));
 	}
 
 	server.on("request", (req, res) => {
@@ -152,7 +152,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
 		const port = typeof address === "object" && address !== null ? address.port : 0;
 		const redirectUri = `http://${host}:${port}${CALLBACK_PATH}`;
 		timer = setTimeout(
-			() => fail(new AutoragOAuthError("AutoRAG sign-in timed out waiting for the browser callback.")),
+			() => fail(new DazziOAuthError("Dazzi Models sign-in timed out waiting for the browser callback.")),
 			timeoutMs,
 		);
 		if (options.signal?.aborted) onAbort();
@@ -163,7 +163,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
 			redirectUri,
 			waitForCallback: () => callback.promise,
 			close: () => {
-				if (!finished) fail(new AutoragOAuthError("AutoRAG sign-in was cancelled."));
+				if (!finished) fail(new DazziOAuthError("Dazzi Models sign-in was cancelled."));
 			},
 		});
 	});

@@ -1,40 +1,40 @@
 /**
- * Error types for the hosted AutoRAG (Dazzi) provider.
+ * Error types for the hosted Dazzi Models provider.
  *
  * Messages never contain credentials, authorization headers, or provider
  * payloads; they are safe to surface in the CLI UI and in test assertions.
  */
 
-/** Base class for every error raised by the AutoRAG provider. */
-export class AutoragError extends Error {
+/** Base class for every error raised by the Dazzi Models provider. */
+export class DazziError extends Error {
 	constructor(message: string, options?: { cause?: unknown }) {
 		super(message, options);
-		this.name = "AutoragError";
+		this.name = "DazziError";
 	}
 }
 
 /** Raised for OAuth/PKCE/callback failures. */
-export class AutoragOAuthError extends AutoragError {
+export class DazziOAuthError extends DazziError {
 	constructor(message: string, options?: { cause?: unknown }) {
 		super(message, options);
-		this.name = "AutoragOAuthError";
+		this.name = "DazziOAuthError";
 	}
 }
 
 /**
- * Raised when an HTTP call to AutoRAG fails.
+ * Raised when an HTTP call to Dazzi Models fails.
  *
  * `status` is the HTTP status code, `code`/`type` come from the OpenAI-shaped
  * error body when the server supplies them.
  */
-export class AutoragHttpError extends AutoragError {
+export class DazziHttpError extends DazziError {
 	readonly status: number;
 	readonly code?: string;
 	readonly type?: string;
 
 	constructor(message: string, options: { status: number; code?: string; type?: string; cause?: unknown }) {
 		super(message, { cause: options.cause });
-		this.name = "AutoragHttpError";
+		this.name = "DazziHttpError";
 		this.status = options.status;
 		if (options.code !== undefined) this.code = options.code;
 		if (options.type !== undefined) this.type = options.type;
