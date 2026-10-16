@@ -153,25 +153,27 @@ describe("slack: the archive follows slacrawl's own configuration", () => {
 });
 
 describe("buildDatasourceSkills: sidecar by default", () => {
-	it.each(["slack", "telegram", "whatsapp"] as const)(
+	it.each(["slack", "telegram", "whatsapp", "kakao"] as const)(
 		"%s: a plain connection gets BM25, semantic and hybrid",
 		(name) => {
 			const { skills } = buildDatasourceSkills({ [name]: {} }, "/tmp/ws-never-created");
 			const methods = skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name));
-			expect(methods).toEqual([`${name}-fts`, `${name}-sidecar-bm25`, `${name}-semantic`, `${name}-hybrid`]);
+			const cliLexical = name === "kakao" ? "kakao-bm25" : `${name}-fts`;
+			expect(methods).toEqual([cliLexical, `${name}-sidecar-bm25`, `${name}-semantic`, `${name}-hybrid`]);
 		},
 	);
 
-	it.each(["slack", "telegram", "whatsapp"] as const)(
+	it.each(["slack", "telegram", "whatsapp", "kakao"] as const)(
 		"%s: connector.sidecar=false restores the CLI-only behavior",
 		(name) => {
 			const { skills } = buildDatasourceSkills(
 				{ [name]: { connector: { sidecar: false } } },
 				"/tmp/ws-never-created",
 			);
-			expect(skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name))).toEqual([
-				`${name}-fts`,
-			]);
+			const expected = name === "kakao" ? ["kakao-bm25", "kakao-semantic"] : [`${name}-fts`];
+			expect(skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name))).toEqual(
+				expected,
+			);
 		},
 	);
 
