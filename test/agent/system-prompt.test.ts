@@ -102,7 +102,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toContain("Read before curating");
 	});
 
-	it("keeps 5-bullet and direct-answer rules by default and instructs producing deliverables in the answer and as context-aligned files (#1832)", () => {
+	it("keeps 5-bullet and direct-answer rules by default and instructs producing deliverables as context-aligned files (#1832)", () => {
 		const text = prompt([
 			"bash",
 			"read",
@@ -118,9 +118,10 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("Unless the user explicitly requests");
 		expect(text).toContain("at most 5 bullet points");
 		expect(text).toContain("Deliverables and artifacts");
-		expect(text).toContain("include the complete, ready-to-use artifact directly in your answer");
-		expect(text).toContain("save the finished artifact as a new file using `write`");
+		expect(text).toContain("produce the finished, ready-to-use artifact as a file");
 		expect(text).toContain("aligned with the context and domain");
+		expect(text).toContain("clearly stating the created file's exact path/location");
+		expect(text).toContain("never cite the newly created deliverable file itself as `[file:...]`");
 		expect(text).toContain("- **write**:");
 		expect(text).not.toContain("caller-provided tool");
 
