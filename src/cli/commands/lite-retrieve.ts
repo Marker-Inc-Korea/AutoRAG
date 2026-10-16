@@ -239,6 +239,16 @@ function staleSourceDiagnostics(
 function refreshFailureDiagnostic(result: AutoRAGRefreshResult): LiteRetrieveDiagnostic | undefined {
 	if (result.minsync === undefined || result.minsync.ok !== false) return undefined;
 	const reason = result.minsync.reason;
+	// A held lock is retryable and has its own code; "lock-held" alone tells the caller nothing.
+	const lockHeld = result.minsync.diagnostics?.find((diagnostic) => diagnostic.code === "minsync-lock-held");
+	if (lockHeld !== undefined) {
+		return {
+			code: "minsync-lock-held",
+			severity: "warning",
+			message: `MinSync was not refreshed during this run: ${lockHeld.message}`,
+			...(reason === undefined ? {} : { reason }),
+		};
+	}
 	return {
 		code: "minsync-sync-failed",
 		severity: "warning",

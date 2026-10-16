@@ -4214,7 +4214,9 @@ function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocume
 			? "embedder-unavailable"
 			: diag.code === "embedding-identity-mismatch"
 				? "embedding-identity-mismatch"
-				: "minsync-sync-failed";
+				: diag.code === "minsync-lock-held"
+					? "minsync-lock-held"
+					: "minsync-sync-failed";
 	return {
 		code,
 		severity: ok ? "info" : "error",
