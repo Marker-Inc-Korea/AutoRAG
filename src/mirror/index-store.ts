@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "./atomic-write.ts";
 import { parsedMirrorIndexPath } from "./paths.ts";
 
 export interface ParsedMirrorEntry {
@@ -14,12 +13,20 @@ export interface ParsedMirrorEntry {
 }
 
 /** Why refresh deliberately left a source out of the parsed mirror. */
-export type ParsedMirrorSkipReason = "duplicate-excluded" | "user-excluded" | "parser-skipped" | "parser-failed";
+export type ParsedMirrorSkipReason =
+	| "duplicate-excluded"
+	| "user-excluded"
+	| "parser-skipped"
+	| "parser-failed"
+	| "source-unreadable";
 
 /**
  * A source the last refresh decided not to mirror, pinned to the exact version it
  * decided on. Staleness checks compare against this record instead of re-deriving
  * the decision, so a deliberately skipped file is not reported as a new source.
+ *
+ * Retryable skips (`parser-failed`, `source-unreadable`) also carry the parser stamp, so refresh
+ * can honor the record without reading or parsing the file again.
  */
 export interface ParsedMirrorSkipEntry {
 	readonly virtualPath: string;
@@ -28,6 +35,10 @@ export interface ParsedMirrorSkipEntry {
 	readonly sourceMtimeNs: number;
 	readonly sourceSizeBytes: number;
 	readonly updatedAt: string;
+	/** `Parser.name` the skip was decided with. */
+	readonly parserName?: string;
+	/** `Parser.version` the skip was decided with. Absent on records written before version stamps. */
+	readonly parserVersion?: string;
 }
 
 export interface ParsedMirrorIndex {
@@ -49,11 +60,7 @@ export function loadMirrorIndex(root: string): ParsedMirrorIndex {
 }
 
 export function saveMirrorIndex(root: string, index: ParsedMirrorIndex): void {
-	const path = parsedMirrorIndexPath(root);
-	mkdirSync(dirname(path), { recursive: true });
-	const tmp = `${path}.${randomUUID()}.tmp`;
-	writeFileSync(tmp, `${JSON.stringify(index, null, 2)}\n`);
-	renameSync(tmp, path);
+	writeFileAtomic(parsedMirrorIndexPath(root), `${JSON.stringify(index, null, 2)}\n`);
 }
 
 function isParsedMirrorIndex(value: unknown): value is ParsedMirrorIndex {
@@ -77,7 +84,9 @@ function isParsedMirrorSkipEntry(value: unknown): value is ParsedMirrorSkipEntry
 		isParsedMirrorSkipReason(value.reason) &&
 		typeof value.sourceMtimeNs === "number" &&
 		typeof value.sourceSizeBytes === "number" &&
-		typeof value.updatedAt === "string"
+		typeof value.updatedAt === "string" &&
+		(value.parserName === undefined || typeof value.parserName === "string") &&
+		(value.parserVersion === undefined || typeof value.parserVersion === "string")
 	);
 }
 
@@ -86,7 +95,8 @@ function isParsedMirrorSkipReason(value: unknown): value is ParsedMirrorSkipReas
 		value === "duplicate-excluded" ||
 		value === "user-excluded" ||
 		value === "parser-skipped" ||
-		value === "parser-failed"
+		value === "parser-failed" ||
+		value === "source-unreadable"
 	);
 }
 

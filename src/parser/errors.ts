@@ -16,3 +16,20 @@ function messageFrom(cause: unknown): string {
 	if (typeof cause === "string") return cause;
 	return "unknown parser failure";
 }
+
+export type ParseIsolationFailureCode = "PARSE_TIMEOUT" | "WORKER_OOM" | "WORKER_CRASHED";
+
+/**
+ * Why an isolated parse worker was lost. Carried as the `cause` of a
+ * {@link ParseError} so a timeout, an out-of-memory kill, and a crash stay
+ * distinguishable from a parser's own failure.
+ */
+export class ParseIsolationError extends Error {
+	readonly code: ParseIsolationFailureCode;
+
+	constructor(code: ParseIsolationFailureCode, message: string) {
+		super(message);
+		this.name = "ParseIsolationError";
+		this.code = code;
+	}
+}

@@ -3,6 +3,7 @@ export {
 	type AutoRAGAgentOptions,
 	type AutoRAGRefreshComponentStatus,
 	type AutoRAGRefreshOptions,
+	type AutoRAGRefreshProgress,
 	type AutoRAGRefreshResult,
 	type AutoRAGRefreshStatus,
 	type AutoRAGWatchRefreshHandle,

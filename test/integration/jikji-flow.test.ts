@@ -305,6 +305,32 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(loggedArgs().map((args) => args[0])).toEqual(["find"]);
 	});
 
+	// Upstream Jikji (main) rejects `prepare` on a root that overlaps an already
+	// indexed one, and two prepares of the same root contend for its lock.
+	it("prepares and searches only the outermost of nested or duplicated search roots", async () => {
+		const nested = join(docs, "sub");
+		mkdirSync(nested, { recursive: true });
+		writeFileSync(join(nested, "deep.txt"), "Nested document.\n");
+		writeFakeJikji();
+		const agent = new AutoRAGAgent({
+			searchPaths: [nested, docs, docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+			everything: false,
+			fsearch: false,
+		});
+
+		const prepared = await agent.prepareJikji();
+		await agent.findJikji("Q3 report");
+
+		const calls = loggedArgs();
+		expect(prepared).toHaveLength(1);
+		expect(calls.filter((args) => args[0] === "prepare").map((args) => args[1])).toEqual([realpathSync(docs)]);
+		expect(calls.filter((args) => args[0] === "find").map((args) => args[1])).toEqual([realpathSync(docs)]);
+	});
+
 	it("drops user-excluded paths from the merged Jikji answer pack", async () => {
 		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
 		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");

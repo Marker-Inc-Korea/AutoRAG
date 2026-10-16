@@ -4,6 +4,7 @@ import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -72,9 +73,9 @@ export class MailcrawlSkill implements DatasourceSkill {
 			lastIndexedAt: this.lastIndexedAt,
 		};
 	}
-	async index(): Promise<DatasourceIndexResult> {
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		try {
-			const result = await this.client.sync();
+			const result = await this.client.sync(options?.signal);
 			if (!result.ok) {
 				return this.fail(
 					result.reason === "binary-missing" || result.reason === "spawn-error" || result.reason === "timeout"
@@ -85,7 +86,7 @@ export class MailcrawlSkill implements DatasourceSkill {
 					result.reason,
 				);
 			}
-			const indexed = await this.client.index();
+			const indexed = await this.client.index(options?.signal);
 			const diagnostics: DatasourceDiagnostic[] = [];
 			if (!indexed.ok) {
 				diagnostics.push({
