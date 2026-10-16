@@ -12,6 +12,27 @@ export function planJikjiSourceRoots(searchPaths: readonly string[]): readonly J
 	}));
 }
 
+/**
+ * Reduce search roots to the ones Jikji should index and query: duplicates
+ * collapse to their first occurrence and a root nested inside another root is
+ * dropped, because the outer root's index already covers it. Upstream Jikji
+ * rejects `prepare` on a root that overlaps an indexed one, so passing nested
+ * roots through only produces failed refreshes and duplicate answer paths.
+ * Input order is preserved for the survivors.
+ */
+export function outermostJikjiRoots(searchPaths: readonly string[]): readonly string[] {
+	const unique = [...new Set(searchPaths.map((searchPath) => resolve(searchPath)))];
+	return unique.filter(
+		(candidate) =>
+			!unique.some((other) => {
+				if (other === candidate) return false;
+				// Exact-prefix match on a separator boundary: `/docs` contains
+				// `/docs/..cache` but not `/docs-2`.
+				return candidate.startsWith(other.endsWith(sep) ? other : `${other}${sep}`);
+			}),
+	);
+}
+
 export function mapJikjiPath(sourceRoot: SourceRoot, returnedPath: string): string | undefined {
 	const resolved = resolveReturnedPath(sourceRoot.rootPath, returnedPath);
 	if (resolved === undefined || !isWithinRoot(sourceRoot.rootPath, resolved)) return undefined;

@@ -304,6 +304,26 @@ Tesseract. Set `parserOptions.ocr.cachePath` to store the Tesseract models
 elsewhere, or `KORDOC_OFFLINE=1` to block the built-in model download. An
 explicit `parserOptions.kordoc.ocr` overrides the language-based choice.
 
+### Bounding and cancelling a parse
+
+`kordoc` (PDF, HWP/HWPX, DOCX, XLSX/XLS, images), `.pptx` and `.eml` parse in a worker
+thread during a refresh, so one corrupt or hostile file cannot hang or crash the run. A
+`Promise.race` deadline cannot stop a synchronous parse; terminating the worker can.
+
+| `parserOptions` key | Default | Effect |
+|---|---|---|
+| `fileTimeoutMs` | `120000` | Per-file deadline. A parse still running is killed with its worker. |
+| `maxHeapMb` | Node's default | V8 old-generation limit for the worker. An out-of-memory parse is caught, not a host crash. |
+
+A timeout, a heap overrun and a worker crash each become one `parser-failed` skip for that
+file; the diagnostic message says which. The rest of the corpus is still indexed. Plain-text
+files and parsers configured with a function (`parserOptions.kordoc.parse`, a custom OCR
+provider) parse in-process.
+
+```json
+{ "parserOptions": { "fileTimeoutMs": 60000, "maxHeapMb": 2048 } }
+```
+
 Photos and videos are also reachable through two other paths that are not part
 of this switch: the `clawgallery` datasource (captions and visual search over its
 own folders) and Jikji's media index (`jikji.enableMediaIndex`, file facts such as
@@ -374,6 +394,32 @@ await run;
 ```
 
 `steer()` reaches the search's next model request (also between phases), cuts in-flight retrieval and the baseline prefetch short, and always runs verification, whose prompt restates the correction. It returns `false` when no search is running, the search was stopped, or it is past its last model request; ask the text as a new question then.
+
+A refresh can be cancelled and observed from code:
+
+```typescript
+const controller = new AbortController();
+try {
+  await agent.refresh(false, {
+    signal: controller.signal, // controller.abort() stops it
+    onProgress: ({ phase, processed, total, currentVirtualPath }) => {
+      console.log(`${phase} ${processed}/${total}`, currentVirtualPath ?? "");
+    },
+  });
+} catch (error) {
+  if (controller.signal.aborted) console.log("refresh cancelled");
+  else throw error;
+}
+```
+
+`signal` is checked between files and between phases, kills an in-flight parse worker, and
+terminates the MinSync, Jikji and datasource child processes (and their descendants). The
+refresh then rejects with the signal's reason and is recorded as `failed`; files already
+mirrored are kept and not re-parsed on the next run. `onProgress` reports `parsed`
+(`processed`/`total` are files, `currentVirtualPath` is the file about to be processed) and
+`datasources` (`processed`/`total` are datasource skills). During the parse phase
+`.autorag/refresh-progress.json` also carries the running `sourceFiles.total` and
+`parsedCounts`. Without these options a refresh behaves as before.
 
 ---
 
@@ -504,7 +550,7 @@ Do not copy or retain the removed `autorag-lite-search` skill.
    ```
 4. **Safety Guidelines for Agents:**
    - **Never delete, move, or modify original user documents.**
-   - AutoRAG writes index artifacts strictly into `<workspace>/.autorag/` and `.jikji/` caches.
+   - AutoRAG writes index artifacts into `<workspace>/.autorag/` and Jikji's central store (`<OS data dir>/jikji/`, override with `JIKJI_DATA_DIR`). Jikji also drops a `.jikji_agent_map.md` guide into each indexed root.
    - Never print or leak API keys, tokens, or credential values into stdout or logs.
 
 ---
@@ -680,6 +726,7 @@ Common failures and their fix:
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync binary missing (search and refresh fail with `MinSync is required ...`) | — | `cargo install minsync`, or leave `minSync.autoInstall` on and re-run refresh |
 | Jikji missing | `jikji-unavailable` | check the Rust toolchain, re-run refresh |
+| Jikji prepare of a large root times out (`the Jikji prepare run timed out`) | `jikji-prepare-failed` | the refresh still finishes and the other roots are indexed. There is no fixed total wall: the per-root hang guard is `jikji.timeoutMs` (60 s base) plus `jikji.prepareTimeoutMsPerFile` ms per file under the root (default: `jikji.parseTimeout`, 5 s), uncapped, so a huge root is not cut by its size and only a run stuck beyond every file hitting its parse limit is killed. Set `prepareTimeoutMsPerFile: 0` for a flat `timeoutMs` wall. `jikji.parseTimeout` (seconds) is the per-file limit, forwarded to `jikji prepare --parse-timeout`; jikji skips a file that exceeds it. A timeout kills jikji's whole process group |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
 | Every search does a full local search and verification, even for small talk | `query-route-fallback` | sign in to Dazzi Models with `/login`, or set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 

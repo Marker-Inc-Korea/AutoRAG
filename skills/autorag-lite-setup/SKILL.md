@@ -19,7 +19,7 @@ Use `autorag-setup` instead when the model-backed librarian must be configured.
   environment-variable names such as `tokenEnv` or `apiKeyEnv`.
 - Never move, rename, edit, or delete source documents. Lite commands write
   indexes only under the configured workspace `.autorag/` directory and
-  Jikji's per-source `.jikji/` caches.
+  Jikji's central store (`<OS data dir>/jikji/`).
 - Do not index system trees, app bundles, caches, credential stores,
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.
