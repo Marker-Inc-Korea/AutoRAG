@@ -104,6 +104,7 @@ async function tuiAgent(
 		agent,
 		registration,
 		session: hosted.runtime.session,
+		runtime: hosted.runtime,
 		/** Feeds one terminal key sequence through the bound listeners, as the TUI does before the editor sees it. */
 		pressKey: (data: string): boolean => [...keyListeners].some((listener) => listener(data)?.consume === true),
 		dispose: async () => {
@@ -204,6 +205,90 @@ function heldStep(step: FauxResponseStep) {
 	return { held, entered, release: () => release() };
 }
 
+/** A datasource skill whose only retrieval method is `method`. */
+function datasourceSkill(datasourceId: string, method: RetrievalMethod): DatasourceSkill {
+	return {
+		describe: () => ({
+			name: datasourceId,
+			type: "chat",
+			description: `${datasourceId} test datasource`,
+			capabilities: ["keyword"],
+			status: "active",
+			datasourceId,
+			tags: [datasourceId],
+		}),
+		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
+		skillManifest: () => ({
+			name: `datasource-${datasourceId}`,
+			description: `Search ${datasourceId}.`,
+			content: `# ${datasourceId}`,
+		}),
+		index: async () => ({
+			ok: true,
+			instanceId: "default",
+			skill: datasourceId,
+			chunkCount: 0,
+			indexedAt: 1,
+			diagnostics: [],
+		}),
+		retrievalMethods: () => [method],
+		describeSources: () => [],
+	};
+}
+
+/** A datasource whose n-th search returns the n-th scripted batch of chunks (the last batch repeats). */
+function scriptedDatasource(datasourceId: string, batches: readonly (readonly RetrievalChunk[])[]) {
+	let searches = 0;
+	const method: RetrievalMethod = {
+		describe: () => ({
+			name: `${datasourceId}.keyword`,
+			type: "bm25",
+			description: `${datasourceId} test method`,
+			status: "active",
+			capabilities: ["keyword"],
+			datasourceId,
+		}),
+		async retrieve(): Promise<RetrievalResult[]> {
+			const batch = batches[Math.min(searches++, batches.length - 1)] ?? [];
+			return batch.map((chunk, index) => ({
+				id: `${datasourceId}:${searches}:${index}`,
+				source: chunk.source,
+				content: chunk.content,
+				score: 1,
+				metadata: {},
+			}));
+		},
+	};
+	return datasourceSkill(datasourceId, method);
+}
+
+interface RetrievalChunk {
+	readonly source: string;
+	readonly content: string;
+}
+
+/** The user message the model is about to answer, exactly as it reached the model. */
+function lastUserText(messages: readonly { role: string; content: unknown }[]): string {
+	const last = [...messages].reverse().find((message) => message.role === "user");
+	return last === undefined ? "" : textOf(last.content as string | readonly { type: string; text?: string }[]);
+}
+
+/**
+ * A faux step answering `answer(ids)`, where `ids` are the evidence ids the tool results in the
+ * transcript printed so far; the user message it answers is recorded in `seen`.
+ */
+function citingStep(answer: (ids: readonly string[]) => string, seen: string[] = []): FauxResponseStep {
+	return (context) => {
+		seen.push(lastUserText(context.messages));
+		const ids = context.messages.flatMap((message) =>
+			message.role === "toolResult"
+				? [...textOf(message.content).matchAll(/\[(e\d+)\]/gu)].map((match) => match[1] as string)
+				: [],
+		);
+		return fauxAssistantMessage(answer(ids), { stopReason: "stop" });
+	};
+}
+
 /** A datasource whose retrieval stays in flight until released or aborted through its signal. */
 function slowDatasource(datasourceId: string) {
 	let markEntered = (): void => {};
@@ -237,33 +322,7 @@ function slowDatasource(datasourceId: string) {
 			return [];
 		},
 	};
-	const skill: DatasourceSkill = {
-		describe: () => ({
-			name: datasourceId,
-			type: "chat",
-			description: `${datasourceId} test datasource`,
-			capabilities: ["keyword"],
-			status: "active",
-			datasourceId,
-			tags: [datasourceId],
-		}),
-		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
-		skillManifest: () => ({
-			name: `datasource-${datasourceId}`,
-			description: `Search ${datasourceId}.`,
-			content: `# ${datasourceId}`,
-		}),
-		index: async () => ({
-			ok: true,
-			instanceId: "default",
-			skill: datasourceId,
-			chunkCount: 0,
-			indexedAt: 1,
-			diagnostics: [],
-		}),
-		retrievalMethods: () => [method],
-		describeSources: () => [],
-	};
+	const skill = datasourceSkill(datasourceId, method);
 	return { skill, entered, aborted: () => aborted, release: () => release() };
 }
 
@@ -908,7 +967,8 @@ describe("AutoRAG pi coding-agent host", () => {
 				expect(jev.calls()).toBe(afterFirst);
 				// One model call: no baseline prefetch, fast answer, or verification pass.
 				expect(tui.registration.state.callCount).toBe(2);
-				expect(seen[1]).toContain("How many people live there?");
+				// The follow-up reaches the model exactly as typed: no envelope around it.
+				expect(seen[1]).toBe("How many people live there?");
 				expect(seen[1]).not.toContain("Baseline retrieval evidence");
 			} finally {
 				await tui.dispose();
@@ -945,6 +1005,92 @@ describe("AutoRAG pi coding-agent host", () => {
 				expect(answers).toEqual(["Paris.", "About 2.1 million."]);
 			} finally {
 				await tui.dispose();
+			}
+		});
+
+		it("resolves evidence ids from any earlier turn, however many searches came in between", async () => {
+			const seen: string[] = [];
+			const kakao = scriptedDatasource("kakao", [
+				[{ source: "/kakao/room/a.txt", content: "alpha fact" }],
+				[{ source: "/kakao/room/b.txt", content: "beta fact" }],
+			]);
+			const search = fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+				stopReason: "toolUse",
+			});
+			const tui = await tuiAgent(
+				[
+					search,
+					citingStep((ids) => `Alpha [${ids[0]}].`, seen),
+					search,
+					citingStep((ids) => `Beta [${ids[1]}].`, seen),
+					citingStep((ids) => `Alpha [${ids[0]}] and beta [${ids[1]}].`, seen),
+				],
+				jevRoute("direct"),
+				{ datasourceSkills: [kakao] },
+			);
+			try {
+				await tui.agent.searchDocuments("what is alpha?");
+				await tui.agent.searchDocuments("what is beta?");
+				const third = await tui.agent.searchDocuments("how do they relate?");
+
+				expect(seen.at(-1)).toBe("how do they relate?");
+				expect(third.results.map((result) => result.title)).toEqual(["a.txt", "b.txt"]);
+				expect(third.diagnostics?.some((diagnostic) => diagnostic.code === "citation-without-result")).toBe(false);
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("keeps earlier ids resolvable and never reissues one when the conversation is resumed in a new process", async () => {
+			const first = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `Alpha [${ids[0]}].`),
+				],
+				jevRoute("direct"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
+					],
+				},
+			);
+			let sessionFile: string | undefined;
+			try {
+				const answered = await first.agent.searchDocuments("what is alpha?");
+				expect(answered.results.map((result) => result.title)).toEqual(["a.txt"]);
+				sessionFile = first.session.sessionFile;
+			} finally {
+				await first.dispose();
+			}
+			if (sessionFile === undefined) throw new Error("expected a persisted pi session");
+
+			// A fresh agent, as after a restart: its ledger starts empty and counts from e1.
+			const resumed = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `Old [${ids[0]}], new [${ids[1]}].`),
+				],
+				jevRoute("direct"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
+					],
+				},
+			);
+			try {
+				await resumed.runtime.switchSession(sessionFile);
+				// What InteractiveMode does after switching sessions: rebind, which starts the new session.
+				await resumed.runtime.session.bindExtensions({ uiContext: noUi() });
+
+				const response = await resumed.agent.searchDocuments("and what about beta?");
+
+				expect(response.results.map((result) => result.title)).toEqual(["a.txt", "b.txt"]);
+			} finally {
+				await resumed.dispose();
 			}
 		});
 	});
