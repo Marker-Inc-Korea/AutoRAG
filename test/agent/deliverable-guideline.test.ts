@@ -20,10 +20,10 @@ import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 //    on how to write it), while keeping the reply concise.
 const REQUIRED_PHRASES = [
 	"if the user asks you to draft, write, generate, or prepare a deliverable or artifact",
-	"produce the finished, ready-to-use artifact as a file",
+	"include the complete, ready-to-use artifact directly in your answer",
+	"save the finished artifact as a new file using `write`",
 	"aligned with the context and domain",
 	"instead of merely describing how to produce it",
-	"Unless the user explicitly requests otherwise, keep the reply text itself within the at-most-5-bullet direct-answer format",
 ] as const;
 
 function expectDeliverableRule(text: string): void {
@@ -108,23 +108,31 @@ describe("answer deliverable/artifact guideline (#1832)", () => {
 			expect(text).toContain("Unless the user explicitly requests");
 		}
 
+		const completeWithFastDraft = agent.buildRefinementPrompt(
+			query,
+			{},
+			"How to reply to Ms. Tan: 1. Acknowledge receipt [e1].",
+			false,
+		);
 		const delta = agent.buildRefinementPrompt(
 			query,
 			{},
 			"How to reply to Ms. Tan: 1. Acknowledge receipt [e1].",
 			true,
 		);
-		expectDeliverableRule(delta);
-		expect(delta).toContain(
-			"If a deliverable or artifact was requested and the first answer could not write the file yet (or only gave advice about it), create the complete context-aligned deliverable file now during verification and report the delta concisely.",
-		);
+		for (const text of [completeWithFastDraft, delta]) {
+			expectDeliverableRule(text);
+			expect(text).toContain(
+				"If a deliverable or artifact was requested and the first answer could not write the file yet (the fast phase runs without tool calls) or omitted/abridged the artifact or only gave advice about it, create the complete context-aligned deliverable file now (in local sessions) and include the complete ready-to-use artifact in your answer.",
+			);
+		}
 	});
 
 	it("states the deliverable-file rule in the report answer schema", () => {
 		expectDeliverableRule(answerDescription(reportSchema));
 	});
 
-	it("writes a context-aligned deliverable file via the write tool during verification and returns a concise bullet-point answer with citations", async () => {
+	it("writes a context-aligned deliverable file via the write tool during verification and includes the complete artifact with citations in the answer", async () => {
 		const seenPrompts: string[] = [];
 		const emailPath = join(docs, "tan-email.txt");
 		const deliverablePath = join(root, "reply-to-ms-tan.eml");
@@ -175,6 +183,8 @@ describe("answer deliverable/artifact guideline (#1832)", () => {
 				[
 					`- Prepared the ready-to-send professional reply email covering Ms. Tan Mei Ling's legal aid application (S5634567B) for the s 379 Penal Code charge [file:${emailPath}].`,
 					`- Confirms representation ahead of the upcoming mention date and outlines next steps [file:${emailPath}].`,
+					"",
+					draftEmailContent,
 				].join("\n"),
 				{ stopReason: "stop" },
 			),
@@ -189,6 +199,8 @@ describe("answer deliverable/artifact guideline (#1832)", () => {
 		for (const prompt of seenPrompts) expectDeliverableRule(prompt);
 		expect(existsSync(deliverablePath)).toBe(true);
 		expect(readFileSync(deliverablePath, "utf8")).toContain("Dear Ms. Sarah Tan,");
+		expect(response.answer).toContain("Subject: Re: Legal Aid Application – Tan Mei Ling (S5634567B)");
+		expect(response.answer).toContain("Dear Ms. Sarah Tan,");
 		expect(response.answer).toContain("[1]");
 		expect(response.results[0]?.source).toBe(emailPath);
 	});

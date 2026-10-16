@@ -1156,8 +1156,11 @@ export class AutoRAGAgent {
 		this.tools = tools;
 		// pi registers the jev tool from its extension; AutoRAG still lists the
 		// name so the prompt advertises it and reserved-name checks cover it.
+		const builtinToolNames = this.remoteSession
+			? PI_BUILTIN_TOOL_NAMES.filter((name) => name !== "write" && name !== "edit")
+			: PI_BUILTIN_TOOL_NAMES;
 		const toolNames = [
-			...PI_BUILTIN_TOOL_NAMES,
+			...builtinToolNames,
 			...tools.map((tool) => tool.name),
 			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
 		];
@@ -1174,7 +1177,7 @@ export class AutoRAGAgent {
 		this.innerAgent = {
 			state: {
 				systemPrompt,
-				tools: [...PI_BUILTIN_TOOL_NAMES.map((name) => ({ name })), ...tools],
+				tools: [...builtinToolNames.map((name) => ({ name })), ...tools],
 				messages: [],
 			},
 			transformContext: (messages) => this.withMemoryContext(messages),
@@ -1582,6 +1585,7 @@ export class AutoRAGAgent {
 				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
 			],
 			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
+			remoteSession: this.remoteSession,
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
@@ -2937,7 +2941,7 @@ export class AutoRAGAgent {
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- ${ANSWER_DELIVERABLE_RULE}\n` +
+				`- ${ANSWER_DELIVERABLE_RULE}${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}\n` +
 				`- ${ANSWER_CITATION_RULE}\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +

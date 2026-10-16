@@ -24,20 +24,20 @@ export const ANSWER_CITATION_RULE =
 
 /**
  * Deliverable/artifact rule (issue #1832). The 5-bullet cap and direct-answer
- * format remain the default for the reply text unless the user explicitly asks
- * otherwise; when the caller requests a deliverable (a reply email, letter,
- * legal opinion, summary document, insertable case citation block, checklist,
- * report, or workflow document), the agent produces the finished artifact as a
- * file aligned with the context and domain rather than dumping raw prose or
- * merely giving advice on how to write it.
+ * format remain the default unless the user explicitly asks otherwise; when the
+ * caller requests a deliverable (a reply email, letter, legal opinion, summary
+ * document, insertable case citation block, checklist, report, or workflow
+ * document), the agent includes the finished artifact directly in the answer
+ * and — in local sessions — also writes it as a context-aligned plain-text file
+ * via `write` or `edit`, while citing only the underlying source evidence.
  */
 export const ANSWER_DELIVERABLE_RULE =
-	'**Deliverables and artifacts**: if the user asks you to draft, write, generate, or prepare a deliverable or artifact (a reply email, letter, legal opinion, summary document, standard-format case citation block, checklist, report, or workflow document — including requests phrased as "how should I reply..." to a specific message), produce the finished, ready-to-use artifact as a file (using `write` or `edit` in local sessions, without overwriting existing source files) in a file format, extension, and structure aligned with the context and domain (e.g. `.eml` or `.md`/`.txt` with headers for an email reply; `.md`, `.txt`, `.docx`, or `.hwp` matching workspace conventions for a legal opinion, insertable case-citation block, or summary document; `.csv` or `.json` for structured tabular data), containing the complete unabridged artifact (including required precedent passages, pinpoint paragraphs, and standard-format citations), instead of merely describing how to produce it. Unless the user explicitly requests otherwise, keep the reply text itself within the at-most-5-bullet direct-answer format summarizing the deliverable produced and its core contents with inline evidence citations.';
+	'**Deliverables and artifacts**: if the user asks you to draft, write, generate, or prepare a deliverable or artifact (a reply email, letter, legal opinion, summary document, standard-format case citation block, checklist, report, or workflow document — including requests phrased as "how should I reply..." to a specific message), include the complete, ready-to-use artifact directly in your answer (relaxing the 5-bullet cap as needed to present the full artifact, including required headers, precedent passages, pinpoint paragraphs, and standard-format citations, while keeping the core takeaway in at most 5 bullet points and keeping source file paths and retrieval mechanics out) instead of merely describing how to produce it. During verification or full-search turns in local sessions, also save the finished artifact as a new file using `write` (or `edit` when updating an existing deliverable the user named, without overwriting existing source files) in a plain-text format and extension aligned with the context and domain (e.g. `.eml` or `.md`/`.txt` with headers for an email reply; `.md` or `.txt` for a legal opinion, insertable case-citation block, or summary document; `.csv` or `.json` for structured tabular data); cite only the underlying source evidence (`[eN]` or `[file:<source path>]`) and never cite the newly created deliverable file itself.';
 
 /**
- * Delta (verification) answers must create the context-aligned deliverable file
- * if the first answer could not write it yet (the fast phase runs with tool
- * calls disabled) or only gave advice about it.
+ * Verification-phase deliverable rule: create the context-aligned deliverable
+ * file (in local sessions) and output the complete artifact if the fast-phase
+ * draft could not write the file yet or only gave advice about it.
  */
 export const ANSWER_DELIVERABLE_DELTA_RULE =
-	"If a deliverable or artifact was requested and the first answer could not write the file yet (or only gave advice about it), create the complete context-aligned deliverable file now during verification and report the delta concisely.";
+	"If a deliverable or artifact was requested and the first answer could not write the file yet (the fast phase runs without tool calls) or omitted/abridged the artifact or only gave advice about it, create the complete context-aligned deliverable file now (in local sessions) and include the complete ready-to-use artifact in your answer.";

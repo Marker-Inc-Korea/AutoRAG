@@ -38,17 +38,37 @@ function digitsEndAt(text: string, from: number): number {
 
 /**
  * `[2011] SGHC 222`, `[1999] 2 SLR 392`, `**[18]** "In assessing..."`: a
- * bracketed number that the sentence keeps reading through (optional closing
- * emphasis/colon, a space, optional opening quote/emphasis, then a letter or
- * digit) is part of a law-report reference or paragraph heading, not a
- * citation. A citation sits at the end of a clause: punctuation, a line break,
- * another marker, or the end of the text follows it.
+ * bracketed number that the sentence keeps reading through (a space, or
+ * matching closing emphasis/heading colon at line start followed by a space,
+ * optional opening quote/emphasis, then a letter or digit) is part of a
+ * law-report reference or paragraph heading, not a citation. A citation sits at
+ * the end of a clause: punctuation, a line break, another marker, or the end of
+ * the text follows it.
  */
-function continuesAsProse(answer: string, from: number): boolean {
+function continuesAsProse(answer: string, openIndex: number, from: number): boolean {
 	let cursor = from;
-	while (cursor < answer.length && (answer[cursor] === "*" || answer[cursor] === "_" || answer[cursor] === ":")) {
-		cursor += 1;
+	let leadingEmphasis = 0;
+	while (
+		openIndex - 1 - leadingEmphasis >= 0 &&
+		(answer[openIndex - 1 - leadingEmphasis] === "*" || answer[openIndex - 1 - leadingEmphasis] === "_")
+	) {
+		leadingEmphasis += 1;
 	}
+	if (leadingEmphasis > 0) {
+		let trailingEmphasis = 0;
+		while (
+			cursor + trailingEmphasis < answer.length &&
+			trailingEmphasis < leadingEmphasis &&
+			answer[cursor + trailingEmphasis] === answer[openIndex - 1 - trailingEmphasis]
+		) {
+			trailingEmphasis += 1;
+		}
+		if (trailingEmphasis === leadingEmphasis) cursor += trailingEmphasis;
+	}
+	const tokenStart = openIndex - leadingEmphasis;
+	const linePrefix = answer.slice(answer.lastIndexOf("\n", tokenStart - 1) + 1, tokenStart);
+	const atHeadingStart = /^[ \t>*-]*$/u.test(linePrefix);
+	if (atHeadingStart && answer[cursor] === ":") cursor += 1;
 	if (answer[cursor] !== " " && answer[cursor] !== "\u00a0") return false;
 	cursor += 1;
 	while (
@@ -66,27 +86,29 @@ function continuesAsProse(answer: string, from: number): boolean {
 	return next !== undefined && /[\p{L}\p{N}]/u.test(String.fromCodePoint(next));
 }
 
-const PINPOINT_PREFIX = /(?:^|[^\p{L}\p{N}])(?:at|paras?|paragraphs?)[ \t\u00a0]+$/iu;
+const PARA_PINPOINT_PREFIX =
+	/(?:^|[^\p{L}\p{N}])(?:paras?\.?|paragraphs?)(?:[ \t\u00a0]+\[\d+\][ \t\u00a0]*(?:[-–—]|,(?:[ \t\u00a0]*(?:and|or)\b)?|and\b|or\b))*[ \t\u00a0]*$/iu;
+const CLAUSE_START_AT_PREFIX =
+	/(?:^|[\n.!?؛;:()]|[>*-])[ \t\u00a0]*At(?:[ \t\u00a0]+\[\d+\][ \t\u00a0]*(?:[-–—]|,(?:[ \t\u00a0]*(?:and|or)\b)?|and\b|or\b))*[ \t\u00a0]+$/u;
+const CASE_CITATION_AT_PREFIX =
+	/(?:\[\d{4}\][^\n.;]*?|\b(?:v|vs\.?)\s+[^\n.;]{1,60}?|\bs(?:ection)?[ \t\u00a0]+\d+[A-Za-z]?(?:\(\d+\))?[^\n.;]{0,30}?)[ \t\u00a0]+at(?:[ \t\u00a0]+\[\d+\][ \t\u00a0]*(?:[-–—]|,(?:[ \t\u00a0]*(?:and|or)\b)?|and\b|or\b))*[ \t\u00a0]+$/iu;
+const PINPOINT_RANGE_AHEAD = /^[ \t\u00a0]*[-–—][ \t\u00a0]*\[\d+\]/u;
+const PINPOINT_RANGE_BEHIND = /\[\d+\][ \t\u00a0]*[-–—][ \t\u00a0]*$/u;
 
 /**
- * Legal pinpoint paragraph references such as `At [18],`, `at [18]–[22]`, or
- * `para [18]` are part of a case citation deliverable, not source markers.
+ * Legal pinpoint paragraph references such as `At [18],`, `at [18]–[22]`,
+ * `[2024] SGHCF 24 at [18], [22]`, or `para. [18]` are part of a case citation
+ * deliverable, not source markers.
  */
 function isLegalPinpoint(answer: string, openIndex: number, afterCloseIndex: number): boolean {
-	const nextChar = answer[afterCloseIndex];
-	if (
-		(nextChar === "-" || nextChar === "\u2013" || nextChar === "\u2014") &&
-		answer[afterCloseIndex + 1] === "[" &&
-		digitsEndAt(answer, afterCloseIndex + 2) > afterCloseIndex + 2
-	) {
-		return true;
-	}
-	const prevChar = openIndex > 0 ? answer[openIndex - 1] : undefined;
-	if ((prevChar === "-" || prevChar === "\u2013" || prevChar === "\u2014") && answer[openIndex - 2] === "]") {
-		return true;
-	}
-	const prefixWindow = answer.slice(Math.max(0, openIndex - 20), openIndex);
-	return PINPOINT_PREFIX.test(prefixWindow);
+	if (PINPOINT_RANGE_AHEAD.test(answer.slice(afterCloseIndex, afterCloseIndex + 16))) return true;
+	if (PINPOINT_RANGE_BEHIND.test(answer.slice(Math.max(0, openIndex - 16), openIndex))) return true;
+	const prefixWindow = answer.slice(Math.max(0, openIndex - 120), openIndex);
+	return (
+		PARA_PINPOINT_PREFIX.test(prefixWindow) ||
+		CLAUSE_START_AT_PREFIX.test(prefixWindow) ||
+		CASE_CITATION_AT_PREFIX.test(prefixWindow)
+	);
 }
 
 /**
@@ -170,7 +192,7 @@ export function answerMarkers(answer: string, isFile: (path: string) => boolean 
 				digitsEnd > index + 1 &&
 				answer[digitsEnd] === "]" &&
 				answer[digitsEnd + 1] !== "(" &&
-				!continuesAsProse(answer, digitsEnd + 1) &&
+				!continuesAsProse(answer, index, digitsEnd + 1) &&
 				!isLegalPinpoint(answer, index, digitsEnd + 1)
 			) {
 				markers.push({

@@ -93,8 +93,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 				(name) =>
 					![
 						"bash",
+						"read",
 						"write",
 						"edit",
+						"grep",
+						"find",
+						"ls",
 						"jikji_find",
 						"everything_search",
 						"fsearch_search",
