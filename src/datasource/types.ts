@@ -142,6 +142,11 @@ export interface DatasourceIndexOk {
 	readonly chunkCount: number;
 	readonly indexedAt: number;
 	readonly diagnostics: readonly DatasourceDiagnostic[];
+	/**
+	 * Total `index()` calls it took (set only when the refresh retried; a
+	 * first-time success omits it).
+	 */
+	readonly attempts?: number;
 }
 
 /** Failed indexing outcome. Never thrown; returned with diagnostics. */
@@ -154,6 +159,8 @@ export interface DatasourceIndexFail {
 	readonly error?: string;
 	readonly code?: DatasourceDiagnosticCode;
 	readonly message?: string;
+	/** Total `index()` calls made before this result was reported (set by the refresh retry policy). */
+	readonly attempts?: number;
 }
 
 /**

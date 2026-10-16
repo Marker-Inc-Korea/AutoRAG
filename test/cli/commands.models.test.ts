@@ -73,12 +73,10 @@ describe("models commands", () => {
 		expect(listModels).toHaveBeenCalledWith({ provider: "openai", available: true });
 	});
 
-	it("lists a seeded autorag catalog snapshot from a fresh agent home", async () => {
+	it("lists a seeded dazzi catalog snapshot, available once signed in", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "autorag-models-"));
 		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-		const previousKey = process.env.AUTORAG_API_KEY;
 		process.env.PI_CODING_AGENT_DIR = agentDir;
-		process.env.AUTORAG_API_KEY = "dz_test_key";
 		try {
 			const models = mapServerModels({
 				object: "list",
@@ -93,17 +91,23 @@ describe("models commands", () => {
 			});
 			writeFileSync(
 				join(agentDir, "models-store.json"),
-				JSON.stringify({ autorag: buildStoreEntry(models, "autorag", "https://api.dazziapp.com/v1") }),
+				JSON.stringify({ dazzi: buildStoreEntry(models, "dazzi", "https://api.dazziapp.com/v1") }),
+			);
+			writeFileSync(
+				join(agentDir, "auth.json"),
+				JSON.stringify({
+					dazzi: { type: "oauth", access: "dz_login", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+				}),
 			);
 
-			const { ctx, stdout } = context(["list"], { provider: "autorag", json: true });
+			const { ctx, stdout } = context(["list"], { provider: "dazzi", json: true });
 			expect(await runModels(ctx)).toBe(0);
 
 			const parsed = JSON.parse(stdout[0]) as { count: number; models: unknown[] };
 			expect(parsed.count).toBe(1);
 			expect(parsed.models).toEqual([
 				{
-					provider: "autorag",
+					provider: "dazzi",
 					id: "anthropic/claude-haiku-5.5",
 					name: "Claude Haiku 5.5",
 					api: "openai-responses",
@@ -113,8 +117,6 @@ describe("models commands", () => {
 		} finally {
 			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-			if (previousKey === undefined) delete process.env.AUTORAG_API_KEY;
-			else process.env.AUTORAG_API_KEY = previousKey;
 			rmSync(agentDir, { recursive: true, force: true });
 		}
 	});

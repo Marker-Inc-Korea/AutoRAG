@@ -18,7 +18,11 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 		const agent = new AutoRAGAgent(buildAgentOptions(config));
 		const methods = parseMethodFlag(ctx.flags.method);
-		const result = await agent.refresh(ctx.flags.force === true, methods ? { methods } : undefined);
+		const options = {
+			...(methods ? { methods } : {}),
+			...(ctx.flags["retry-failed"] === true ? { retrySkipped: true } : {}),
+		};
+		const result = await agent.refresh(ctx.flags.force === true, options);
 		ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
 		return 0;
 	} catch (error) {

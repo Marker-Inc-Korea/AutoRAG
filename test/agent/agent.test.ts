@@ -269,21 +269,10 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("search_custom");
 	});
 
-	it("includes manifest descriptions in system prompt when manifestDir provided", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			manifestDir: "test/fixtures/manifests",
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("codebase-vectors");
-	});
-
 	it("system prompt references provided tools", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["grep", "find", "read", "ls", "check_memory"],
 			memoryEntries: [],
-			manifests: [],
 		});
 		expect(prompt).toContain("grep");
 		expect(prompt).toContain("find");
@@ -295,7 +284,6 @@ describe("AutoRAGAgent", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["check_memory"],
 			memoryEntries: [],
-			manifests: [],
 		});
 		expect(prompt).toContain("bash");
 		expect(prompt).not.toContain("read_file");

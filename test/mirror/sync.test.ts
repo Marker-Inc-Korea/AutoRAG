@@ -26,6 +26,7 @@ import {
 } from "../../src/mirror/index.ts";
 import {
 	createDefaultParserRegistry,
+	ParseError,
 	type ParseInput,
 	type ParseOutput,
 	ParserRegistry,
@@ -579,6 +580,231 @@ describe("mirror staleness decisions", () => {
 			code: "stale-index",
 			source: "/docs/private.txt",
 			reason: "source-added",
+		});
+	});
+});
+
+/**
+ * Issue #1891: a source the last refresh could not parse (or read) must not be
+ * read and parsed again on every refresh while nothing about it has changed.
+ */
+describe("skipped-source retry policy", () => {
+	/** Fails every `.txt` it is handed with a typed ParseError and counts its attempts. */
+	class FailingParser extends PlainTextParser {
+		readonly attempted: string[] = [];
+		failing = true;
+		version = "1";
+
+		async parse(input: ParseInput): Promise<ParseOutput> {
+			this.attempted.push(input.virtualPath);
+			if (this.failing && input.virtualPath.endsWith(".txt")) {
+				throw new ParseError(this.name, input.virtualPath, new Error("corrupt"));
+			}
+			return super.parse(input);
+		}
+	}
+
+	function refresh(parser: FailingParser, extra: { retrySkipped?: boolean; force?: boolean } = {}) {
+		return syncParsedMirrors({ root, searchPaths: [source], registry: new ParserRegistry([parser]), ...extra });
+	}
+
+	function skipRecord(virtualPath: string) {
+		return requireValue(loadMirrorIndex(root).skipped?.[virtualPath], `skip record ${virtualPath}`);
+	}
+
+	it("does not parse a parser-failed source again while it is unchanged", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+
+		await refresh(parser);
+		const second = await refresh(parser);
+
+		expect(parser.attempted).toEqual(["/docs/bad.txt"]);
+		expect(second).toMatchObject({ scanned: 1, written: 0, skipped: 1 });
+		expect(second.diagnostics.filter((d) => d.code === "parser-failed").map((d) => d.source)).toEqual([
+			"/docs/bad.txt",
+		]);
+		expect(skipRecord("/docs/bad.txt").reason).toBe("parser-failed");
+	});
+
+	it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"does not even read a parser-failed source while the skip is honored",
+		async () => {
+			const file = join(source, "bad.txt");
+			writeFileSync(file, "broken\n");
+			const parser = new FailingParser();
+			await refresh(parser);
+
+			chmodSync(file, 0o000);
+			try {
+				const second = await refresh(parser);
+				expect(second.diagnostics.map((d) => d.code)).toEqual(["parser-failed"]);
+			} finally {
+				chmodSync(file, 0o644);
+			}
+		},
+	);
+
+	it("keeps indexing healthy siblings while a failed source is honored", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		writeFileSync(join(source, "good.md"), "# Good\n");
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([parser]),
+		});
+
+		expect(parser.attempted.filter((path) => path === "/docs/bad.txt")).toHaveLength(1);
+		expect(result).toMatchObject({ scanned: 2, written: 1, skipped: 1 });
+		expect(loadMirrorIndex(root).entries["/docs/good.md"]).toBeDefined();
+	});
+
+	it("retries immediately when the source changed after it failed", async () => {
+		const file = join(source, "bad.txt");
+		writeFileSync(file, "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+
+		writeFileSync(file, "still broken, but different\n");
+		await refresh(parser);
+
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("indexes a previously failed source once a retry succeeds and drops its skip record", async () => {
+		writeFileSync(join(source, "bad.txt"), "recoverable\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+
+		parser.failing = false;
+		const result = await refresh(parser, { retrySkipped: true });
+
+		expect(result).toMatchObject({ written: 1, skipped: 0 });
+		expect(loadMirrorIndex(root).skipped?.["/docs/bad.txt"]).toBeUndefined();
+		expect(loadMirrorIndex(root).entries["/docs/bad.txt"]).toBeDefined();
+	});
+
+	it("re-parses previously skipped sources once with retrySkipped, and only those", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		writeFileSync(join(source, "good.md"), "# Good\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		const goodParsed = (): number => parser.attempted.filter((path) => path === "/docs/good.md").length;
+		expect(parser.attempted).toEqual(["/docs/bad.txt", "/docs/good.md"]);
+
+		await refresh(parser, { retrySkipped: true });
+		expect(parser.attempted.filter((path) => path === "/docs/bad.txt")).toHaveLength(2);
+		expect(goodParsed()).toBe(1);
+
+		// The forced retry pass is one-shot: the next plain refresh honors the new record again.
+		await refresh(parser);
+		expect(parser.attempted.filter((path) => path === "/docs/bad.txt")).toHaveLength(2);
+	});
+
+	it("re-parses previously skipped sources with force", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+
+		await refresh(parser, { force: true });
+
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("retries a skipped source exactly once after the parser version changes", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(1);
+
+		parser.version = "2";
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+		expect(skipRecord("/docs/bad.txt")).toMatchObject({ parserVersion: "2" });
+
+		// Still failing at version 2: re-skipped, not retried again.
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("retries a skip record written before parser versions were stamped", async () => {
+		const file = join(source, "bad.txt");
+		writeFileSync(file, "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		const { parserVersion: _version, ...legacy } = skipRecord("/docs/bad.txt");
+		saveMirrorIndex(root, { version: 1, entries: {}, skipped: { "/docs/bad.txt": legacy } });
+
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+		expect(skipRecord("/docs/bad.txt").parserVersion).toBe("1");
+
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("keeps unchanged detectMirrorStaleness output for a honored failed source", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		await refresh(parser);
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([parser]),
+		});
+
+		expect(diagnostics).toEqual([]);
+	});
+
+	describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("unreadable sources", () => {
+		it("does not read an unreadable source again while it is unchanged", async () => {
+			const file = join(source, "locked.txt");
+			writeFileSync(file, "secret\n");
+			chmodSync(file, 0o000);
+			const parser = new FailingParser();
+			parser.failing = false;
+			try {
+				const first = await refresh(parser);
+				expect(first.diagnostics.map((d) => d.code)).toEqual(["source-unreadable"]);
+				expect(skipRecord("/docs/locked.txt")).toMatchObject({ reason: "source-unreadable" });
+
+				// Readable again but unchanged since the failure (chmod does not touch mtime/size): honored.
+				chmodSync(file, 0o644);
+				const second = await refresh(parser);
+				expect(second).toMatchObject({ written: 0, skipped: 1 });
+				expect(second.diagnostics.map((d) => d.code)).toEqual(["source-unreadable"]);
+				expect(JSON.stringify(second.diagnostics)).not.toContain(root);
+
+				const third = await refresh(parser, { retrySkipped: true });
+				expect(third).toMatchObject({ written: 1, skipped: 0 });
+				expect(loadMirrorIndex(root).skipped?.["/docs/locked.txt"]).toBeUndefined();
+			} finally {
+				chmodSync(file, 0o644);
+			}
+		});
+
+		it("still reports an unreadable source as stale, as before skip records existed for it", async () => {
+			const file = join(source, "locked.txt");
+			writeFileSync(file, "secret\n");
+			chmodSync(file, 0o000);
+			const parser = new FailingParser();
+			try {
+				await refresh(parser);
+				const diagnostics = await detectMirrorStaleness({
+					root,
+					searchPaths: [source],
+					registry: new ParserRegistry([parser]),
+				});
+				expect(diagnostics).toHaveLength(1);
+				expect(diagnostics[0]).toMatchObject({ code: "stale-index", reason: "source-added" });
+			} finally {
+				chmodSync(file, 0o644);
+			}
 		});
 	});
 });

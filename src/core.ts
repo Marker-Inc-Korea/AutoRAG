@@ -17,6 +17,7 @@ import {
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
 import type { EverythingSearchRequest, EverythingSearchResult } from "./everything/index.ts";
 import type { FSearchSearchRequest, FSearchSearchResult } from "./fsearch/index.ts";
+import type { JikjiPrepareOptions } from "./jikji/index.ts";
 import type { MemorySchema } from "./memory/memory.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import type { MinSyncSyncResult } from "./minsync/types.ts";
@@ -85,8 +86,8 @@ export class AutoRAGLite {
 	}
 
 	/** Run the configured Jikji preparer without constructing a model. */
-	prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
-		return this.agent.prepareJikji();
+	prepareJikji(options?: JikjiPrepareOptions): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
+		return this.agent.prepareJikji(options);
 	}
 
 	/** Start an opt-in incremental filesystem refresh watcher. */

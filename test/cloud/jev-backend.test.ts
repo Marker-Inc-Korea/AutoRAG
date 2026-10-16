@@ -1,8 +1,30 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BackendError } from "jev-use";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
-import { AUTORAG_DEFAULT_JEV_MODEL, AutoragJevBackend } from "../../src/cloud/jev-backend.ts";
+import { DAZZI_LOGIN_REQUIRED_MESSAGE } from "../../src/cloud/credential.ts";
+import { DAZZI_DEFAULT_JEV_MODEL, DazziJevBackend } from "../../src/cloud/jev-backend.ts";
 import { startFakeServer } from "./helpers/fake-server.ts";
+
+let agentDir: string;
+
+beforeEach(() => {
+	agentDir = mkdtempSync(join(tmpdir(), "autorag-jev-dazzi-"));
+});
+
+afterEach(() => {
+	rmSync(agentDir, { recursive: true, force: true });
+});
+
+/** Store a `/login` credential the way Pi does. */
+function signIn(token = "dz_login"): void {
+	writeFileSync(
+		join(agentDir, "auth.json"),
+		JSON.stringify({ dazzi: { type: "oauth", access: token, refresh: "", expires: Number.MAX_SAFE_INTEGER } }),
+	);
+}
 
 /** Narrow a parsed JSON body to a plain object for field reads in assertions. */
 function jsonObject(value: unknown): Record<string, unknown> | undefined {
@@ -11,13 +33,13 @@ function jsonObject(value: unknown): Record<string, unknown> | undefined {
 		: undefined;
 }
 
-describe("AutoragJevBackend", () => {
+describe("DazziJevBackend", () => {
 	it("posts the native dialect to <root>/v1/jev with the account bearer key", async () => {
 		const server = await startFakeServer(() => ({
-			body: { model: AUTORAG_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.98 } } },
+			body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.98 } } },
 		}));
 		try {
-			const backend = new AutoragJevBackend({ apiKey: "dz_test", baseUrl: server.url });
+			const backend = new DazziJevBackend({ apiKey: "dz_test", baseUrl: server.url });
 			await backend.judge({
 				state: { task: "summarize the report" },
 				questions: [{ id: "q0", type: "noul", question: "Is the summary complete?" }],
@@ -27,7 +49,7 @@ describe("AutoragJevBackend", () => {
 			expect(request?.url).toBe("/v1/jev");
 			expect(request?.headers.authorization).toBe("Bearer dz_test");
 			expect(request?.json).toEqual({
-				model: AUTORAG_DEFAULT_JEV_MODEL,
+				model: DAZZI_DEFAULT_JEV_MODEL,
 				state: '{"task":"summarize the report"}',
 				questions: { q0: { type: "noul", instructions: "Is the summary complete?" } },
 			});
@@ -41,7 +63,7 @@ describe("AutoragJevBackend", () => {
 			body: { model: "custom", answers: { q0: { type: "noul", noul: 0.5 } } },
 		}));
 		try {
-			const backend = new AutoragJevBackend({ apiKey: "dz_test", baseUrl: server.url });
+			const backend = new DazziJevBackend({ apiKey: "dz_test", baseUrl: server.url });
 			await backend.judge({
 				state: ["a", "b"],
 				questions: [{ id: "q0", type: "noul", question: "ok?" }],
@@ -58,7 +80,7 @@ describe("AutoragJevBackend", () => {
 	it("parses noul, choice, and score answers in question order", async () => {
 		const server = await startFakeServer(() => ({
 			body: {
-				model: AUTORAG_DEFAULT_JEV_MODEL,
+				model: DAZZI_DEFAULT_JEV_MODEL,
 				answers: {
 					n: { type: "noul", noul: 0.98 },
 					c: { type: "choice", choice: "b", probabilities: { a: 0.1, b: 0.9 }, confidence: 0.9 },
@@ -73,7 +95,7 @@ describe("AutoragJevBackend", () => {
 			},
 		}));
 		try {
-			const backend = new AutoragJevBackend({ apiKey: "dz_test", baseUrl: server.url });
+			const backend = new DazziJevBackend({ apiKey: "dz_test", baseUrl: server.url });
 			const response = await backend.judge({
 				state: "s",
 				questions: [
@@ -104,15 +126,15 @@ describe("AutoragJevBackend", () => {
 			body: { error: { message: "invalid API key", type: "invalid_request_error", code: "unauthorized" } },
 		}));
 		try {
-			const backend = new AutoragJevBackend({ apiKey: "dz_bad", baseUrl: server.url });
+			const backend = new DazziJevBackend({ apiKey: "dz_bad", baseUrl: server.url });
 			const failure = await backend
 				.judge({ state: "s", questions: [{ id: "q0", type: "noul", question: "ok?" }] })
 				.catch((error: unknown) => error);
 			expect(failure).toBeInstanceOf(BackendError);
 			const error = failure as BackendError;
-			expect(error.backend).toBe("autorag");
+			expect(error.backend).toBe("dazzi");
 			expect(error.status).toBe(401);
-			expect(error.message).toContain("[autorag]");
+			expect(error.message).toContain("[dazzi]");
 			expect(error.message).toContain("HTTP 401");
 			expect(error.message).toContain("invalid API key");
 			expect(server.requests).toHaveLength(1);
@@ -132,10 +154,10 @@ describe("AutoragJevBackend", () => {
 					headers: { "retry-after": "0" },
 				};
 			}
-			return { body: { model: AUTORAG_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.7 } } } };
+			return { body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.7 } } } };
 		});
 		try {
-			const backend = new AutoragJevBackend({ apiKey: "dz_test", baseUrl: server.url });
+			const backend = new DazziJevBackend({ apiKey: "dz_test", baseUrl: server.url });
 			const response = await backend.judge({
 				state: "s",
 				questions: [{ id: "q0", type: "noul", question: "ok?" }],
@@ -147,24 +169,38 @@ describe("AutoragJevBackend", () => {
 		}
 	});
 
-	it("throws a named, non-silent error when the account key is missing", () => {
-		expect(() => new AutoragJevBackend({ env: {} })).toThrow(/AUTORAG_API_KEY/);
+	it("reads the bearer token from the stored login credential", async () => {
+		signIn("dz_login");
+		const server = await startFakeServer(() => ({
+			body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.5 } } },
+		}));
+		try {
+			const backend = new DazziJevBackend({ agentDir, baseUrl: server.url });
+			await backend.judge({ state: "s", questions: [{ id: "q0", type: "noul", question: "ok?" }] });
+			expect(server.requests[0]?.headers.authorization).toBe("Bearer dz_login");
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("throws a named, non-silent error when not signed in, even if AUTORAG_API_KEY is set", () => {
+		expect(() => new DazziJevBackend({ agentDir, env: { AUTORAG_API_KEY: "dz_env" } })).toThrow(
+			DAZZI_LOGIN_REQUIRED_MESSAGE,
+		);
 	});
 });
 
-describe("createJevJudge with the autorag backend", () => {
+describe("createJevJudge with the dazzi backend", () => {
 	it("escalates an unreachable backend with a readable hint instead of throwing", async () => {
+		signIn("dz_bad");
 		const server = await startFakeServer(() => ({
 			status: 401,
 			body: { error: { message: "invalid API key", type: "invalid_request_error" } },
 		}));
 		try {
-			const judge = createJevJudge({
-				backend: "autorag",
-				env: { AUTORAG_API_KEY: "dz_bad", AUTORAG_BASE_URL: server.url },
-			});
+			const judge = createJevJudge({ backend: "dazzi", agentDir, env: { AUTORAG_BASE_URL: server.url } });
 			const judgment = await judge({ task: "x" }, [{ type: "noul", question: "Is it done?" }]);
-			expect(judgment.backend).toBe("autorag");
+			expect(judgment.backend).toBe("dazzi");
 			expect(judgment.escalated).toBe(true);
 			expect(judgment.verdicts[0]?.reason).toBe("unreachable");
 			expect(judgment.verdicts[0]?.hint).toContain("HTTP 401");
@@ -173,45 +209,45 @@ describe("createJevJudge with the autorag backend", () => {
 		}
 	});
 
-	it("rejects on first call when the account key is missing", async () => {
-		const judge = createJevJudge({ backend: "autorag", env: {} });
+	it("rejects on first call when not signed in", async () => {
+		const judge = createJevJudge({ backend: "dazzi", agentDir, env: {} });
 		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
-			/jev\.backend "autorag" needs AUTORAG_API_KEY/,
+			/jev\.backend "dazzi" needs a sign-in/,
 		);
 	});
 
-	it("builds the hosted backend from JEV_BACKEND=autorag when no backend option is given", async () => {
+	it("builds the hosted backend from JEV_BACKEND=dazzi when no backend option is given", async () => {
+		signIn("dz_test");
 		const server = await startFakeServer(() => ({
-			body: { model: AUTORAG_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.8 } } },
+			body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.8 } } },
 		}));
 		try {
 			const judge = createJevJudge({
-				env: { JEV_BACKEND: "autorag", AUTORAG_API_KEY: "dz_test", AUTORAG_BASE_URL: server.url },
+				agentDir,
+				env: { JEV_BACKEND: "dazzi", AUTORAG_BASE_URL: server.url },
 			});
 			const judgment = await judge({ task: "x" }, [{ type: "noul", question: "ok?" }]);
-			expect(judgment.backend).toBe("autorag");
+			expect(judgment.backend).toBe("dazzi");
 			expect(judgment.verdicts[0]?.answer).toBe(0.8);
 		} finally {
 			await server.close();
 		}
 	});
 
-	it("reports the config-key error for JEV_BACKEND=autorag without a key", async () => {
-		const judge = createJevJudge({ env: { JEV_BACKEND: "autorag" } });
+	it("reports the sign-in error for JEV_BACKEND=dazzi when not signed in", async () => {
+		const judge = createJevJudge({ agentDir, env: { JEV_BACKEND: "dazzi" } });
 		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
-			/jev\.backend "autorag" needs AUTORAG_API_KEY/,
+			/jev\.backend "dazzi" needs a sign-in/,
 		);
 	});
 
 	it("judges a noul question through the hosted endpoint", async () => {
+		signIn("dz_test");
 		const server = await startFakeServer(() => ({
-			body: { model: AUTORAG_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.91 } } },
+			body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.91 } } },
 		}));
 		try {
-			const judge = createJevJudge({
-				backend: "autorag",
-				env: { AUTORAG_API_KEY: "dz_test", AUTORAG_BASE_URL: server.url },
-			});
+			const judge = createJevJudge({ backend: "dazzi", agentDir, env: { AUTORAG_BASE_URL: server.url } });
 			const judgment = await judge({ task: "x" }, [{ type: "noul", question: "Is it done?" }]);
 			expect(judgment.verdicts[0]?.answer).toBe(0.91);
 			expect(judgment.escalated).toBe(false);

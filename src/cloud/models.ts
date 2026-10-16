@@ -1,7 +1,7 @@
 import type { AnyModel, Credential, ModelCost, ModelsStoreEntry } from "@earendil-works/pi-ai";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { AUTORAG_INPUT_LIMITS, MODELS_PATH, normalizeBaseUrl } from "./config.ts";
-import { AutoragHttpError, AutoragOAuthError, extractErrorPayload } from "./errors.ts";
+import { DAZZI_INPUT_LIMITS, MODELS_PATH, normalizeBaseUrl } from "./config.ts";
+import { DazziHttpError, DazziOAuthError, extractErrorPayload } from "./errors.ts";
 
 /** Used when the server omits `context_window` / `max_output_tokens`. */
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -10,7 +10,7 @@ export const DEFAULT_MAX_TOKENS = 16_384;
 export interface FetchModelsOptions {
 	/** Server root, e.g. `https://api.dazziapp.com`. */
 	baseUrl: string;
-	/** Bearer token resolved from OAuth credentials or `AUTORAG_API_KEY`. */
+	/** Bearer token from the stored `/login` credential. */
 	apiKey: string;
 	signal?: AbortSignal;
 	fetchImpl?: typeof fetch;
@@ -38,9 +38,9 @@ export async function fetchModels(options: FetchModelsOptions): Promise<Provider
 		});
 	} catch (cause) {
 		if (options.signal?.aborted) {
-			throw new AutoragOAuthError("AutoRAG model refresh was cancelled.", { cause });
+			throw new DazziOAuthError("Dazzi Models model refresh was cancelled.", { cause });
 		}
-		throw new AutoragOAuthError(`AutoRAG model listing could not reach ${normalizeBaseUrl(options.baseUrl)}.`, {
+		throw new DazziOAuthError(`Dazzi Models model listing could not reach ${normalizeBaseUrl(options.baseUrl)}.`, {
 			cause,
 		});
 	}
@@ -57,17 +57,17 @@ export async function fetchModels(options: FetchModelsOptions): Promise<Provider
 }
 
 /** Map a failed `/v1/models` response; 401 means the token is invalid or revoked. */
-export function mapModelsError(status: number, body: unknown): AutoragHttpError {
+export function mapModelsError(status: number, body: unknown): DazziHttpError {
 	const payload = extractErrorPayload(body);
 	if (status === 401) {
-		return new AutoragHttpError("AutoRAG rejected the API key (HTTP 401). Run /login again or set AUTORAG_API_KEY.", {
+		return new DazziHttpError("Dazzi Models rejected the sign-in token (HTTP 401). Run /login again.", {
 			status,
 			code: payload.code ?? "unauthorized",
 			type: payload.type,
 		});
 	}
 	const reason = payload.message ?? "the server returned no error message";
-	return new AutoragHttpError(`AutoRAG model listing failed (HTTP ${status}): ${reason}`, {
+	return new DazziHttpError(`Dazzi Models model listing failed (HTTP ${status}): ${reason}`, {
 		status,
 		code: payload.code,
 		type: payload.type,
@@ -88,7 +88,7 @@ export function mapServerModels(payload: unknown): ProviderModelConfig[] {
 	return models;
 }
 
-/** Map a single AutoRAG model record; returns `undefined` when it has no usable id. */
+/** Map a single Dazzi Models record; returns `undefined` when it has no usable id. */
 export function mapServerModel(entry: Record<string, unknown>): ProviderModelConfig | undefined {
 	const id = readString(entry.id);
 	if (id === undefined) return undefined;
@@ -101,7 +101,7 @@ export function mapServerModel(entry: Record<string, unknown>): ProviderModelCon
 		reasoning: entry.reasoning === true,
 		contextWindow: readPositiveNumber(entry.context_window) ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: readPositiveNumber(entry.max_output_tokens) ?? DEFAULT_MAX_TOKENS,
-		inputLimits: AUTORAG_INPUT_LIMITS,
+		inputLimits: DAZZI_INPUT_LIMITS,
 	};
 }
 
@@ -147,7 +147,7 @@ export function modelsFromStore(stored: ModelsStoreEntry | undefined): ProviderM
 			contextWindow: entry.contextWindow,
 			maxTokens: entry.maxTokens,
 			// Limits belong to the server, not the snapshot: older snapshots lack them.
-			inputLimits: AUTORAG_INPUT_LIMITS,
+			inputLimits: DAZZI_INPUT_LIMITS,
 		});
 	}
 	return models;

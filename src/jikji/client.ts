@@ -1,11 +1,12 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
-import { terminateProcessTree } from "../process/terminate-tree.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
+import { countFiles, scaledPrepareTimeoutMs } from "./prepare-budget.ts";
+import { SerialQueue } from "./serial-queue.ts";
 import type {
 	JikjiFailureReason,
 	JikjiFindOptions,
@@ -17,7 +18,12 @@ import type {
 
 const DEFAULT_BINARY = "jikji";
 const DEFAULT_TIMEOUT_MS = 60_000;
+/** `jikji prepare --parse-timeout` default (seconds): the per-file limit jikji enforces itself. */
+const DEFAULT_PARSE_TIMEOUT_SECONDS = 5;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
+
+/** Result of a call whose signal aborted while it was still queued: nothing was spawned. */
+const ABORTED_BEFORE_START: ProcessResult = { ok: false, reason: "aborted", stdout: "", stderr: "", code: null };
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -39,20 +45,23 @@ type SpawnJikjiRequest = {
 	readonly args: readonly string[];
 	readonly signal?: AbortSignal;
 	readonly cwd?: string;
+	/** Wall for this process; falls back to `options.timeoutMs`, then 60 s. */
+	readonly timeoutMs?: number;
 };
 
 export class JikjiClient {
 	private readonly options: JikjiOptions;
 	private resolvedCommand: string | undefined;
 	private installCommandInFlight: Promise<string> | undefined;
+	// Every jikji process writes one central SQLite file with no busy timeout,
+	// so concurrent writers fail with "database is locked". Writers are
+	// serialized per kind: prepares queue behind each other, finds queue behind
+	// each other, and a query never waits behind a minutes-long refresh.
+	private readonly prepareQueue = new SerialQueue();
+	private readonly findQueue = new SerialQueue();
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
-	}
-
-	/** Jikji stores prepared corpus metadata under a hidden directory in each root. */
-	isPrepared(root: string): boolean {
-		return existsSync(join(root, ".jikji", "doc_meta")) || existsSync(join(root, ".jikji", "doc_text"));
 	}
 
 	/**
@@ -111,11 +120,19 @@ export class JikjiClient {
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
-		const result = await this.spawn({
-			command: await this.resolveCommand(),
-			args: buildPrepareArgs(this.options, root),
-			signal: options.signal,
-		});
+		const clientOptions: JikjiOptions =
+			options.parseTimeout === undefined ? this.options : { ...this.options, parseTimeout: options.parseTimeout };
+		const result = await this.prepareQueue.run(
+			async () =>
+				this.spawn({
+					command: await this.resolveCommand(),
+					args: buildPrepareArgs(clientOptions, root),
+					signal: options.signal,
+					// Sized when the root's turn starts, so queue wait never eats the budget.
+					timeoutMs: options.timeoutMs ?? (await this.prepareTimeoutMs(root, clientOptions, options.signal)),
+				}),
+			{ signal: options.signal, value: ABORTED_BEFORE_START },
+		);
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -134,11 +151,15 @@ export class JikjiClient {
 	}
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
-		const result = await this.spawn({
-			command: await this.resolveCommand({ install: false }),
-			args: buildFindArgs(root, query, options),
-			signal: options.signal,
-		});
+		const result = await this.findQueue.run(
+			async () =>
+				this.spawn({
+					command: await this.resolveCommand({ install: false }),
+					args: buildFindArgs(root, query, options),
+					signal: options.signal,
+				}),
+			{ signal: options.signal, value: ABORTED_BEFORE_START },
+		);
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -167,6 +188,27 @@ export class JikjiClient {
 		};
 	}
 
+	/**
+	 * Hang guard for one root, never a fixed total wall: `timeoutMs` (base) plus a
+	 * per-file slice for every file under the root, so a very large root is not
+	 * cut by its size. The slice defaults to the per-file parse limit
+	 * (`parseTimeout`, seconds) that jikji itself enforces by skipping the file,
+	 * so only a run that outlives even an all-files-hit-the-limit budget is
+	 * killed (reported as a degraded root). `prepareTimeoutMsPerFile` overrides
+	 * the slice; `0` restores a flat `timeoutMs` wall. A per-call `timeoutMs`
+	 * bypasses all of this.
+	 */
+	private async prepareTimeoutMs(
+		root: string,
+		options: JikjiOptions,
+		signal: AbortSignal | undefined,
+	): Promise<number | undefined> {
+		const perFile = options.prepareTimeoutMsPerFile ?? (options.parseTimeout ?? DEFAULT_PARSE_TIMEOUT_SECONDS) * 1000;
+		if (perFile <= 0) return undefined;
+		const files = await countFiles(root, options.includeHidden === true, signal);
+		return scaledPrepareTimeoutMs(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, perFile, files);
+	}
+
 	private async spawn(request: Omit<SpawnJikjiRequest, "options">): Promise<ProcessResult> {
 		return spawnJikji({
 			...request,
@@ -188,6 +230,11 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 		const child = spawn(portable.command, [...portable.args], {
 			env: controlledEnv(options.env),
 			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+			// POSIX: lead our own process group so terminateProcessTree can reap
+			// descendants that inherited the pipes (#1578 hang class). Windows keeps
+			// the parent/child chain that `taskkill /t` walks.
+			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 			// A signal-bearing run leads its own process group on POSIX so an abort reaches descendants too.
 			...(request.signal !== undefined && process.platform !== "win32" ? { detached: true } : {}),
@@ -196,10 +243,29 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
 		let finalReason: JikjiFailureReason | undefined;
-		const timeout = setTimeout(() => {
-			finalReason = "timeout";
-			terminate(child);
-		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
+		const settleWith = (result: ProcessResult): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			clearTimeout(pipeGuard);
+			request.signal?.removeEventListener("abort", abortHandler);
+			resolve(result);
+		};
+		const finish = (code: number | null): void => {
+			if (finalReason !== undefined) {
+				settleWith({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
+				return;
+			}
+			settleWith({ ok: code === 0, stdout: stdout.text, stderr: stderr.text, code });
+		};
+		const timeout = setTimeout(
+			() => {
+				finalReason = "timeout";
+				terminate(child);
+			},
+			request.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		);
 		const abortHandler = (): void => {
 			finalReason = "aborted";
 			terminateProcessTree(child);
@@ -222,24 +288,18 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 				terminate(child);
 			}
 		});
+		child.on("exit", () => {
+			if (settled) return;
+			// The direct child can exit while a descendant still holds the pipes it
+			// inherited, which keeps "close" from firing. Reap the group, then bound
+			// the wait for the stream release.
+			terminate(child);
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
+		});
 		child.on("error", (error) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			request.signal?.removeEventListener("abort", abortHandler);
-			resolve({ ok: false, reason: "spawn-error", stdout: stdout.text, stderr: error.message, code: null });
+			settleWith({ ok: false, reason: "spawn-error", stdout: stdout.text, stderr: error.message, code: null });
 		});
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			request.signal?.removeEventListener("abort", abortHandler);
-			if (finalReason !== undefined) {
-				resolve({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
-				return;
-			}
-			resolve({ ok: code === 0, stdout: stdout.text, stderr: stderr.text, code });
-		});
+		child.on("close", (code) => finish(code));
 	});
 }
 
@@ -271,7 +331,14 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 }
 
 function buildFindArgs(root: string, query: string, options: JikjiFindOptions): readonly string[] {
-	const args = ["find", root, query, "--json"];
+	// `jikji find` otherwise spawns a detached `jikji prepare <root>` when the
+	// index is changed or stale. That would index during a query and, because
+	// the detached child omits `--no-agent-rules`, rewrite AGENTS.md /
+	// CLAUDE.md / .cursorrules in the user's source root.
+	// Not covered: upstream's synchronous reindex when a query returns no paths
+	// has no CLI opt-out (jikji 0.1.1 and main). Observed: it does not rewrite
+	// AGENTS.md / CLAUDE.md / .cursorrules.
+	const args = ["find", root, query, "--json", "--no-background-refresh"];
 	if (options.topK !== undefined) args.push("--top-k", String(options.topK));
 	if (options.first === true) args.push("--first");
 	if (options.fresh === true) args.push("--fresh");
@@ -292,7 +359,7 @@ function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined
 }
 
 function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
+	terminateProcessTree(child);
 }
 
 function appendBounded(state: BufferState, chunk: string, maxBytes: number): BufferState {

@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
+import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
@@ -37,13 +38,14 @@ import {
 	type JikjiFindResult,
 	type JikjiHandoffAction,
 	type JikjiOptions,
+	type JikjiPrepareOptions,
 	type JikjiPrepareResult,
 	type JikjiSourceRoot,
 	normalizeJikjiAnswerPath,
+	outermostJikjiRoots,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
-import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
@@ -398,6 +400,11 @@ export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
 	/**
+	 * Retry sources previously skipped as parser-failed or source-unreadable once, ignoring their
+	 * skip records. Unlike `force`, healthy unchanged mirrors are not re-parsed.
+	 */
+	readonly retrySkipped?: boolean;
+	/**
 	 * Cancels the refresh. It is checked between files and between phases, and it kills an in-flight parse
 	 * worker and the MinSync, Jikji and datasource child processes. `refresh` then rejects with the signal's
 	 * reason and records the run as failed; mirror entries written before the abort are kept.
@@ -405,6 +412,12 @@ export interface AutoRAGRefreshOptions {
 	readonly signal?: AbortSignal;
 	/** Called while the parse and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
 	readonly onProgress?: (progress: AutoRAGRefreshProgress) => void;
+	/**
+	 * Per-root `jikji prepare` controls: a hard `timeoutMs` wall per root and a
+	 * `parseTimeout` (seconds, forwarded to `--parse-timeout`). Unset values fall
+	 * back to the `jikji` client options. Cancel through the refresh `signal`.
+	 */
+	readonly jikjiPrepare?: Omit<JikjiPrepareOptions, "signal">;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -556,7 +569,6 @@ export interface AutoRAGAgentOptions {
 	providerApiKeys?: Readonly<Record<string, string>>;
 	searchPaths: string[];
 	languages?: readonly LanguageTag[];
-	manifestDir?: string;
 	memoryPath?: string;
 	workspacePath?: string;
 	tools?: AgentTool[];
@@ -647,6 +659,12 @@ export interface AutoRAGAgentOptions {
 	/** Parsed-mirror refresh limits and retry tuning. See {@link AutoRAGRefreshLimits}. */
 	refresh?: AutoRAGRefreshLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
+	/**
+	 * Retry/backoff for datasource `index()` during refresh: 2 retries with
+	 * jittered exponential backoff by default, applied only to failures the
+	 * skill marks retryable. `maxRetries: 0` disables retrying.
+	 */
+	datasourceRetry?: DatasourceRetryOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
 	/** Maximum time a model/tool search may run before it is aborted. */
@@ -682,9 +700,9 @@ export interface RerankAgentOptions {
 	provider?: string;
 	/** Wire model id. @default "voyageai/rerank-3-lite" */
 	model?: string;
-	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. */
+	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. Not used by the `dazzi` provider. */
 	apiKey?: string;
-	/** Environment variable holding the provider API key. */
+	/** Environment variable holding the provider API key. Not used by the `dazzi` provider, which uses the `/login` credential. */
 	apiKeyEnv?: string;
 	/** Override the provider base URL. */
 	baseUrl?: string;
@@ -818,6 +836,8 @@ export class AutoRAGAgent {
 	};
 
 	private readonly searchPaths: string[];
+	/** Roots handed to Jikji: duplicates and roots nested in another root are dropped (see `outermostJikjiRoots`). */
+	private readonly jikjiRoots: readonly string[];
 	private readonly configuredSearchPaths: readonly string[];
 	readonly languages: readonly LanguageTag[];
 	private retrievalScopeBindings: readonly RetrievalScopeBinding[];
@@ -834,6 +854,7 @@ export class AutoRAGAgent {
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	private readonly datasourceRetry: DatasourceRetryOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
@@ -879,7 +900,7 @@ export class AutoRAGAgent {
 	private readonly refreshLimits: AutoRAGRefreshLimits;
 
 	constructor(options: AutoRAGAgentOptions) {
-		const { manifestDir, memoryPath } = options;
+		const { memoryPath } = options;
 		this.configuredModel = options.model;
 		this.remoteSession = options.remoteSession ?? false;
 		this.searchTimeoutMs = options.searchTimeoutMs ?? (this.remoteSession ? 120_000 : 10 * 60 * 1000);
@@ -898,8 +919,8 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
-		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
+		this.datasourceRetry = options.datasourceRetry ?? {};
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
 			normalizeVirtualPath(`/${skill.describe().name}`),
 		);
@@ -908,6 +929,7 @@ export class AutoRAGAgent {
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.languages = options.languages ?? DEFAULT_LANGUAGES;
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
+		this.jikjiRoots = outermostJikjiRoots(this.searchPaths);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
 		this.retrievalScopeBindings = buildRetrievalScopeBindings(
 			this.workspaceProjectRoot,
@@ -921,7 +943,11 @@ export class AutoRAGAgent {
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
 		this.refreshLimits = validateRefreshLimits(options.refresh);
-		this.reranker = createReranker(options.rerank === false || options.rerank === undefined ? false : options.rerank);
+		this.reranker = createReranker(
+			options.rerank === false || options.rerank === undefined
+				? false
+				: { ...options.rerank, agentDir: options.piAgentDir },
+		);
 		this.rerankTopN =
 			options.rerank === false || options.rerank === undefined
 				? undefined
@@ -1013,7 +1039,7 @@ export class AutoRAGAgent {
 		this.jevJudge =
 			options.jev === undefined || options.jev === false || this.remoteSession
 				? undefined
-				: createJevJudge(options.jev);
+				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
 		this.selfConfig = this.jevJudge === undefined || this.remoteSession ? undefined : options.selfConfig;
 		this.queryDecompositionModel =
@@ -1132,7 +1158,6 @@ export class AutoRAGAgent {
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
-			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
 			retrievedContentGuard: false,
@@ -1834,11 +1859,19 @@ export class AutoRAGAgent {
 		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
 		this.activeRetrievalOptions = options;
 
+		// A later turn of an interactive conversation is a plain agent turn: the
+		// model searches by tool call when it needs to, and answers from evidence
+		// already in the transcript when it does not. Only the first turn runs the
+		// Jev gate and the baseline pipeline.
+		const conversational = this.isConversationTurn();
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
-		this.evidenceLedger.clear();
-		this.evidenceOrigins.clear();
+		// Evidence ids stay valid across a conversation: the transcript still holds the earlier [eN] citations.
+		if (!conversational) {
+			this.evidenceLedger.clear();
+			this.evidenceOrigins.clear();
+		}
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
@@ -1930,7 +1963,6 @@ export class AutoRAGAgent {
 						// citations against the evidence ledger.
 						// With Jev enabled, Jev first picks a direct answer (intrinsic knowledge)
 						// or local search, and whether the question needs decomposition.
-						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						const activeSession = session;
 						const sessionAgent = activeSession.piSession;
 						const transcript = (): readonly AgentMessage[] =>
@@ -1940,6 +1972,24 @@ export class AutoRAGAgent {
 							if (sessionAgent !== undefined) sessionAgent.setThinkingLevel(clamped);
 							else activeSession.agent.state.thinkingLevel = clamped;
 						};
+						if (conversational) {
+							setThinking(this.finalThinkingLevel);
+							await activeSession.prompt(this.buildConversationTurnPrompt(trimmedQuery, options));
+							// A steer typed after the turn's last model request is still owed an answer.
+							while (
+								!this.interactive.userAborted &&
+								!planAbort.signal.aborted &&
+								this.interactive.queuedSteers.length > 0
+							) {
+								await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+							}
+							steering.acceptingSteers = false;
+							if (this.interactive.userAborted) return;
+							const turnText = finalAnswerText(transcript());
+							if (turnText !== undefined) captured = this.deriveAnswer(turnText);
+							return;
+						}
+						const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
 						if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
 							// Self-configuration: no retrieval and no fast answer. The model
 							// gets the full setup skill and edits the config itself, then
@@ -2431,32 +2481,7 @@ export class AutoRAGAgent {
 		for (const [position, skill] of this.datasourceSkills.entries()) {
 			signal?.throwIfAborted();
 			onProgress?.({ phase: "datasources", processed: position, total });
-			try {
-				results.push(await skill.index(signal === undefined ? undefined : { signal }));
-				signal?.throwIfAborted();
-			} catch (error) {
-				// A cancelled refresh is not a failed datasource: stop instead of recording a fake failure.
-				signal?.throwIfAborted();
-				const descriptor = skill.describe();
-				results.push({
-					ok: false,
-					instanceId: descriptor.instanceId ?? "default",
-					skill: descriptor.name,
-					indexedAt: Date.now(),
-					diagnostics: [
-						{
-							code: "datasource-index-failed",
-							severity: "error",
-							message: error instanceof Error ? error.message : "Datasource indexing failed.",
-							source: descriptor.name,
-							instanceId: descriptor.instanceId,
-						},
-					],
-					error: "datasource-index-failed",
-					code: "datasource-index-failed",
-					message: error instanceof Error ? error.message : "Datasource indexing failed.",
-				});
-			}
+			results.push(await indexWithRetry(skill, this.datasourceRetry, signal));
 		}
 		onProgress?.({ phase: "datasources", processed: total, total });
 		return results;
@@ -2875,6 +2900,42 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * True when the bound interactive session already holds an assistant turn:
+	 * the query continues a conversation instead of opening one. Read from the
+	 * transcript, so a fresh session (`/new`) starts over with the full pipeline.
+	 */
+	private isConversationTurn(): boolean {
+		if (this.remoteSession || this.boundPiRuntime === undefined) return false;
+		return this.boundPiRuntime.session.messages.some((message) => message.role === "assistant");
+	}
+
+	/**
+	 * Prompt for a follow-up turn of a conversation. No baseline is injected and
+	 * no verification pass follows: the model decides, per question, between
+	 * answering from what the conversation already established and searching.
+	 */
+	buildConversationTurnPrompt(query: string, options: RetrievalOptions): string {
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Follow-up in this conversation: ${query}${limit}${scope}\n\n` +
+			`First decide whether the evidence and answers already in this conversation settle it. If they do, answer from them without searching; their [eN] ids are still valid to cite. ` +
+			`If they do not, or the question concerns something not yet looked up, search with the retrieval tools (rewrite the question into self-contained queries using the conversation context), then answer. ` +
+			`${this.discoveryHint((tools) => `When exploring local files and folders, use ${tools} rather than exploratory bash commands. `)}${this.webFallbackHint()}` +
+			`Never answer from memory about the user's own files, chats, records, or recent facts: search first.\n\n` +
+			`Formatting and content rules for the answer:\n` +
+			`- Answer the question directly and concisely; use bullet points only when they help. Do not include file paths, datasource descriptions, or retrieval mechanics.\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
+			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
+			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
+			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n\n` +
+			`Do not use broad grep/find or recursive filesystem scans. Avoid repeating near-identical queries; once more searching stops surfacing new evidence, conclude from what you have. ` +
+			`If more search is needed, first write a brief 1\u20132 line progress update, then call retrieval tools. ` +
+			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
+		);
+	}
+
+	/**
 	 * Prompt for a question Jev routed to a direct answer: general knowledge or
 	 * small talk. No retrieval ran and no verification phase follows, so the
 	 * reply is the final answer.
@@ -3015,6 +3076,7 @@ export class AutoRAGAgent {
 		try {
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
+						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
@@ -3075,7 +3137,9 @@ export class AutoRAGAgent {
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
 			const jikji =
-				allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare(signal) : undefined;
+				allMethods || wants("jikji") || wants("minsync")
+					? await this.executeJikjiPrepare({ ...opts?.jikjiPrepare, ...(signal === undefined ? {} : { signal }) })
+					: undefined;
 			signal?.throwIfAborted();
 			// On Windows, the bundled Everything instance indexes the same local
 			// roots by name so the agent can locate files instantly.
@@ -3386,7 +3450,7 @@ export class AutoRAGAgent {
 
 	async syncParsedMirrors(
 		force = false,
-		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress"> = {},
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
@@ -3487,23 +3551,29 @@ export class AutoRAGAgent {
 		await this.fsearchClient?.stop();
 	}
 
-	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
-		const results = await this.executeJikjiPrepare();
+	async prepareJikji(options?: JikjiPrepareOptions): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
+		const results = await this.executeJikjiPrepare(options);
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
 	}
 
 	/**
 	 * Build or incrementally update every root's Jikji index. Called only by
 	 * refresh/watch (and the explicit `prepareJikji()` API), never by a query:
-	 * `jikji prepare` reuses unchanged documents, and roots run in parallel so
-	 * one slow root does not serialize the rest.
+	 * `jikji prepare` reuses unchanged documents. Roots are submitted together
+	 * but `JikjiClient` runs them one at a time, because every root shares one
+	 * central SQLite file that fails with "database is locked" under concurrent
+	 * writers. Nested and duplicate roots are skipped: upstream rejects
+	 * overlapping roots and the outer root's index already covers them. A failed
+	 * or timed-out root is a degraded result (reported as a diagnostic), never a
+	 * rejection, so the refresh still finishes. `jikji.parseTimeout` /
+	 * `jikji.timeoutMs` / `jikji.prepareTimeoutMsPerFile` apply to every root.
 	 */
-	private async executeJikjiPrepare(signal?: AbortSignal): Promise<readonly JikjiPrepareResult[] | undefined> {
+	private async executeJikjiPrepare(
+		options: JikjiPrepareOptions = {},
+	): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
-		return Promise.all(
-			this.searchPaths.map((sourcePath) => client.prepare(sourcePath, signal === undefined ? {} : { signal })),
-		);
+		return Promise.all(this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, options)));
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
@@ -3536,7 +3606,7 @@ export class AutoRAGAgent {
 		if (this.jikjiClient === undefined) {
 			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
 		}
-		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
+		const sourceRoots = planJikjiSourceRoots(this.jikjiRoots);
 		const findOpts: JikjiFindOptions = {
 			topK: opts?.topK,
 			first: opts?.first,
@@ -3545,7 +3615,7 @@ export class AutoRAGAgent {
 		const diagnostics: JikjiDiagnostic[] = [];
 		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
 		const searchResults = await Promise.all(
-			this.searchPaths.map(async (sourcePath) => {
+			this.jikjiRoots.map(async (sourcePath) => {
 				const result: JikjiFindResult = await this.jikjiClient!.find(sourcePath, query, findOpts);
 				return { sourcePath, result };
 			}),
@@ -3559,7 +3629,7 @@ export class AutoRAGAgent {
 			}
 		}
 		if (okPacks.length === 0) {
-			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.searchPaths, perRoot: [] };
+			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.jikjiRoots, perRoot: [] };
 		}
 
 		// Per-root policy summaries, captured BEFORE the least-privilege merge.
@@ -3574,7 +3644,7 @@ export class AutoRAGAgent {
 
 		const policy = this.mergePolicy(okPacks.map((entry) => entry.pack));
 		const merged = this.mergeAnswerPacks(okPacks, sourceRoots, policy);
-		return { answerPack: merged, policy, diagnostics, roots: this.searchPaths, perRoot };
+		return { answerPack: merged, policy, diagnostics, roots: this.jikjiRoots, perRoot };
 	}
 
 	/**
