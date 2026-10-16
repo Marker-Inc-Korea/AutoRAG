@@ -14,7 +14,7 @@ import {
 import { minSyncBinaryMissingError } from "./errors.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
-import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncFileFailure, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
 export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
 	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.";
@@ -41,6 +41,9 @@ const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** `minsync sync` exits 3 with "another sync is in progress" while another run holds `.minsync/lock`. */
 const MINSYNC_LOCK_HELD_EXIT_CODE = 3;
+
+/** `minsync sync` exits 6 when it completed but skipped files it could not read, chunk, or embed (`partial: true`). */
+const MINSYNC_PARTIAL_SYNC_EXIT_CODE = 6;
 
 export class MinSyncQueryError extends Error {
 	readonly code: number | null;
@@ -346,7 +349,9 @@ export class MinSyncClient {
 			restoreConfig();
 			return this.lockHeldResult(result.stderr);
 		}
-		if (!result.ok) {
+		const partial =
+			!result.ok && result.code === MINSYNC_PARTIAL_SYNC_EXIT_CODE ? readPartialSync(result.stdout) : undefined;
+		if (!result.ok && partial === undefined) {
 			restoreConfig();
 			return {
 				ok: false,
@@ -365,10 +370,12 @@ export class MinSyncClient {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
 		if (effective.identity) this.writeIdentity(effective.identity);
+		const filesFailed = partial?.filesFailed ?? [];
 		return {
 			ok: true,
 			synced: readSyncedCount(result.stdout),
 			workspacePath: this.workspacePath,
+			...(filesFailed.length > 0 ? { filesFailed } : {}),
 			...(identityChanged
 				? {
 						diagnostic: {
@@ -409,6 +416,19 @@ function readConfigSnapshot(configPath: string): string | undefined {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw error;
 	}
+}
+
+function readPartialSync(stdout: string): { readonly filesFailed: readonly MinSyncFileFailure[] } | undefined {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed) || parsed.partial !== true) return undefined;
+	const failures = Array.isArray(parsed.files_failed) ? parsed.files_failed : [];
+	return {
+		filesFailed: failures.filter(isRecord).map((failure) => ({
+			path: typeof failure.path === "string" ? failure.path : "(unknown)",
+			stage: typeof failure.stage === "string" ? failure.stage : "unknown",
+			error: typeof failure.error === "string" ? failure.error : "unknown error",
+		})),
+	};
 }
 
 function readSyncedCount(stdout: string): number {

@@ -43,6 +43,14 @@ export interface MinSyncSyncResult {
 	 * unindexable document is never dropped silently.
 	 */
 	readonly stagingExcluded?: readonly string[];
+	/** Files MinSync skipped (exit 6, `partial`); the sync itself completed and the next sync retries them. */
+	readonly filesFailed?: readonly MinSyncFileFailure[];
+}
+
+export interface MinSyncFileFailure {
+	readonly path: string;
+	readonly stage: string;
+	readonly error: string;
 }
 
 export type MinSyncDiagnosticCode =

@@ -81,7 +81,7 @@ if (args[0] === "sync") {
 	chmodSync(binary, 0o755);
 }
 
-/** `heldAt` picks the command that hits the lock; real MinSync 0.4.7 exits 3 from both `check` and `sync`. */
+/** `heldAt` picks the command that hits the lock; real MinSync 0.4.8 exits 3 from both `check` and `sync`. */
 function writeLockHeldBinary(heldAt: "check" | "sync" = "sync"): void {
 	writeFileSync(
 		binary,
@@ -240,6 +240,49 @@ process.exit(1);
 
 		expect(result).toMatchObject({ ok: false, reason: "sync-failed", diagnostic: { code: "sync-failed" } });
 	});
+
+	it("treats MinSync's partial exit (6) as a completed sync and names the skipped files", async () => {
+		mkdirSync(join(workspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+writeFileSync(".minsync/cursor.json", "{}");
+console.log(JSON.stringify({ files_processed: 2, partial: true, files_failed: [{ path: "files/a.md", stage: "read", error: "Permission denied" }] }));
+process.exit(6);
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({
+			ok: true,
+			synced: 2,
+			filesFailed: [{ path: "files/a.md", stage: "read", error: "Permission denied" }],
+		});
+	});
+
+	it("keeps exit 6 without a partial report as sync-failed", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+console.error("unexpected");
+process.exit(6);
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
+	});
 });
 
 posixOnly("refresh cancellation", () => {
@@ -280,6 +323,40 @@ posixOnly("refresh cancellation", () => {
 		const codes = result.diagnostics.map((diagnostic) => diagnostic.code);
 		expect(codes).toContain("minsync-lock-held");
 		expect(codes).not.toContain("minsync-sync-failed");
+	});
+
+	it("reports a partial MinSync sync as ok with one minsync-file-skipped warning per skipped file", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "init") {
+  mkdirSync(".minsync", { recursive: true });
+  writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
+  process.exit(0);
+}
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+writeFileSync(".minsync/cursor.json", "{}");
+console.log(JSON.stringify({ files_processed: 1, partial: true, files_failed: [{ path: "files/docs/a.txt.md", stage: "read", error: "Permission denied" }] }));
+process.exit(6);
+`,
+		);
+		chmodSync(binary, 0o755);
+		const agent = new AutoRAGAgent({
+			searchPaths: [join(root, "docs")],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { binaryPath: binary, autoInstall: false },
+			fsearch: false,
+		});
+
+		const result = await agent.refresh(false, { methods: ["minsync"] });
+
+		expect(result.minsync).toMatchObject({ ok: true });
+		const skipped = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-file-skipped");
+		expect(skipped).toEqual([expect.objectContaining({ severity: "warning", source: "files/docs/a.txt.md" })]);
+		expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("minsync-sync-failed");
 	});
 });
 

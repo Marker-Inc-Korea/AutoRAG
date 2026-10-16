@@ -215,6 +215,16 @@ host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
 retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
 of a generic `minsync-sync-failed`.
 
+## Skipped files (partial sync)
+
+MinSync 0.4.8 skips a file it cannot read, chunk, or embed instead of aborting
+the sync, and exits 6 with `partial: true` and a `files_failed` list. AutoRAG
+treats that as a completed sync (`minsync.ok: true`) and reports each skipped
+file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
+inside the MinSync workspace. MinSync keeps the file's previous chunks and
+retries it on the next sync. Only an exit 6 without a `partial` report is a
+`minsync-sync-failed`.
+
 ## Migration and failure behavior
 
 A MinSync workspace keeps its state in the `.minsync` subdirectory of
