@@ -21,7 +21,7 @@ E2E_MODE ?= cold
 export QA_IMAGE QA_PLATFORM QA_DOCKERFILE QA_CONTAINER_HOME QA_MODEL_ENV
 export E2E_ROOT E2E_MODE E2E_EMBEDDER E2E_DATASOURCES E2E_ARGS
 
-.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain qa-image qa-shell e2e-live e2e-live-cold e2e-live-docker
+.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain qa-image qa-shell tui e2e-live e2e-live-cold e2e-live-docker
 
 help:
 	@printf '%s\n' \
@@ -39,6 +39,7 @@ help:
 		'make e2e-live-cold Run cold live-E2E (delete state, rebuild)' \
 		'make e2e-live-docker Run live-E2E inside an isolated Docker home' \
 		'make qa-shell       Open an isolated Docker shell for manual QA' \
+		'make tui           Run autorag tui from local sources (TUI_ARGS=<flags>)' \
 		'make ci            Run lint, typecheck, tests, and build locally' \
 		'make supply-chain  Run license, NOTICE, and local CycloneDX gates' \
 		'' \
@@ -71,6 +72,11 @@ test:
 	bun run test
 
 test-all: test
+
+# Runs the checked-out sources directly (no build step), so it always
+# reflects the current branch. Pass flags with TUI_ARGS='--help'.
+tui:
+	bun src/cli/index.ts tui $(TUI_ARGS)
 
 qa-image:
 	node scripts/manual-qa/docker-qa.mjs build
