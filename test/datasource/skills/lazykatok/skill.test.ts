@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AliasedDatasourceSkill } from "../../../../src/datasource/aliased-skill.ts";
 import { LazykatokSkill, type LazykatokSkillClient } from "../../../../src/datasource/skills/lazykatok/skill.ts";
 import type {
 	LazykatokFailureReason,
@@ -246,7 +247,7 @@ describe("LazykatokSkill index", () => {
 });
 
 describe("LazykatokSkill retrievalMethods", () => {
-	it("returns kakao-bm25 and kakao-semantic methods sharing the client and instance", async () => {
+	it("returns lexical, semantic and hybrid methods sharing the client and instance", async () => {
 		const stub = new StubSkillClient();
 		stub.searchResult = okSearch(HITS);
 		const skill = new LazykatokSkill({
@@ -257,14 +258,39 @@ describe("LazykatokSkill retrievalMethods", () => {
 		const methods = skill.retrievalMethods();
 		const descriptors = methods.map((m) => m.describe());
 
-		expect(descriptors.map((d) => d.name)).toEqual(["kakao-bm25", "kakao-semantic"]);
-		expect(descriptors.map((d) => d.type)).toEqual(["bm25", "vector"]);
+		expect(descriptors.map((d) => d.name)).toEqual(["kakao-bm25", "kakao-semantic", "kakao-hybrid"]);
+		expect(descriptors.map((d) => d.type)).toEqual(["bm25", "vector", "hybrid"]);
 		expect(descriptors.every((d) => d.datasourceId === "kakao")).toBe(true);
+		expect(skill.describe().capabilities).toContain("hybrid");
 
 		const [bm25] = methods;
 		const results = await bm25.retrieve("refund", { topK: 1 });
 		expect(results.map((r) => r.source)).toEqual(["/kakao/default/chunks/chunk-001"]);
 		expect(results[0]?.metadata).toMatchObject({ method: "kakao-bm25", instanceId: "default" });
+	});
+
+	it("fuses the supported CLI modes and preserves connection aliases", async () => {
+		const stub = new StubSkillClient();
+		stub.searchResult = okSearch(HITS);
+		const search = vi.spyOn(stub, "search");
+		const skill = new AliasedDatasourceSkill(new LazykatokSkill({ client: asClient(stub), tags: ["team"] }), {
+			alias: "work-kakao",
+		});
+		const hybrid = skill.retrievalMethods().find((method) => method.describe().type === "hybrid");
+		expect(hybrid?.describe()).toMatchObject({
+			name: "work-kakao-hybrid",
+			datasourceId: "work-kakao",
+			tags: ["team"],
+		});
+		const results = await hybrid!.retrieve("refund", { topK: 1 });
+		expect(search).toHaveBeenCalledWith("keyword", "refund", expect.objectContaining({ topK: 3 }));
+		expect(search).toHaveBeenCalledWith("semantic", "refund", expect.objectContaining({ topK: 3 }));
+		expect(search).toHaveBeenCalledTimes(2);
+		expect(results).toHaveLength(1);
+		expect(results[0]).toMatchObject({
+			source: "/work-kakao/default/chunks/chunk-001",
+			metadata: { method: "work-kakao-hybrid", datasourceId: "work-kakao", instanceId: "default" },
+		});
 	});
 
 	it("degrades to [] when the underlying search fails", async () => {

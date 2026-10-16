@@ -14,6 +14,7 @@ import {
 	type Embedder,
 	type GatewayEmbedderOptions,
 } from "../../../embedding-runtime/gateway-embedder.ts";
+import { FusedRetrievalMethod } from "../../../retrieval/fused-method.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { boundDiagnosticText, sanitizeIdSegment } from "../../connector.ts";
 import {
@@ -29,7 +30,7 @@ export const GITHUB_GIST_SKILL_DEFINITION: ConnectorSkillDefinition = {
 	skillName: "github-gist",
 	skillType: "github-gist",
 	description: "GitHub Gist datasource (authenticated account)",
-	capabilities: ["gists", "api", "polling", "incremental", "lexical", "semantic"],
+	capabilities: ["gists", "api", "polling", "incremental", "lexical", "semantic", "hybrid"],
 	defaultTags: ["github", "gists"],
 	contentType: "gist",
 	manifestDescription:
@@ -79,7 +80,16 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 						gistDatasourceDir(options.workspaceRoot, GITHUB_GIST_SKILL_DEFINITION.skillName, instanceId),
 						"state.json",
 					));
-		super(GITHUB_GIST_SKILL_DEFINITION, {
+		const definition =
+			semantic?.enabled === false
+				? {
+						...GITHUB_GIST_SKILL_DEFINITION,
+						capabilities: GITHUB_GIST_SKILL_DEFINITION.capabilities.filter(
+							(capability) => capability !== "semantic" && capability !== "hybrid",
+						),
+					}
+				: GITHUB_GIST_SKILL_DEFINITION;
+		super(definition, {
 			...rest,
 			connector:
 				connector ??
@@ -134,6 +144,17 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 
 	override retrievalMethods(): readonly RetrievalMethod[] {
 		const methods = super.retrievalMethods();
-		return this.semanticMethod === undefined ? methods : [...methods, this.semanticMethod];
+		if (this.semanticMethod === undefined) return methods;
+		const lexical = methods.find((method) => method.describe().type === "bm25");
+		if (lexical === undefined) return [...methods, this.semanticMethod];
+		return [
+			...methods,
+			this.semanticMethod,
+			new FusedRetrievalMethod({
+				name: `${this.describe().name}-hybrid`,
+				lexical,
+				semantic: this.semanticMethod,
+			}),
+		];
 	}
 }

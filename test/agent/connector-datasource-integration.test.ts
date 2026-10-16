@@ -276,7 +276,11 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		});
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 1 });
 		const methods = skill.retrievalMethods();
-		expect(methods.map((method) => method.describe().name)).toEqual(["obsidian-bm25", "obsidian-semantic"]);
+		expect(methods.map((method) => method.describe().name)).toEqual([
+			"obsidian-bm25",
+			"obsidian-semantic",
+			"obsidian-hybrid",
+		]);
 		const hits = await methods[0]?.retrieve("release September", { topK: 5 });
 		expect(hits?.length).toBe(1);
 		expect(hits?.[0]?.source).toBe("/obsidian/vault-1/chunks/note");

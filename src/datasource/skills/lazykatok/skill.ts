@@ -1,3 +1,4 @@
+import { FusedRetrievalMethod } from "../../../retrieval/fused-method.ts";
 import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { connectorSyncTimeoutHint } from "../../connector-timeouts.ts";
@@ -62,7 +63,7 @@ export class LazykatokSkill implements DatasourceSkill {
 			id: KAKAO_DATASOURCE_ID,
 			type: KAKAO_SKILL_TYPE,
 			description: "KakaoTalk datasource via the external lazykatok CLI",
-			capabilities: ["chat", "external-cli", "polling", "bm25", "semantic"],
+			capabilities: ["chat", "external-cli", "polling", "bm25", "semantic", "hybrid"],
 			tags: this.tags,
 			status: "active",
 			requiresExternalCli: true,
@@ -119,9 +120,16 @@ export class LazykatokSkill implements DatasourceSkill {
 	}
 
 	retrievalMethods(): readonly RetrievalMethod[] {
+		const lexical = new LazykatokBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags });
+		const semantic = new LazykatokSemanticMethod({
+			client: this.client,
+			instanceId: this.instanceId,
+			tags: this.tags,
+		});
 		return [
-			new LazykatokBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-			new LazykatokSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
+			lexical,
+			semantic,
+			new FusedRetrievalMethod({ name: `${KAKAO_DATASOURCE_ID}-hybrid`, lexical, semantic }),
 		];
 	}
 
