@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
+import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
@@ -651,6 +652,12 @@ export interface AutoRAGAgentOptions {
 	/** Parsed-mirror refresh limits and retry tuning. See {@link AutoRAGRefreshLimits}. */
 	refresh?: AutoRAGRefreshLimits;
 	datasourceSkills?: readonly DatasourceSkill[];
+	/**
+	 * Retry/backoff for datasource `index()` during refresh: 2 retries with
+	 * jittered exponential backoff by default, applied only to failures the
+	 * skill marks retryable. `maxRetries: 0` disables retrying.
+	 */
+	datasourceRetry?: DatasourceRetryOptions;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
 	/** Maximum time a model/tool search may run before it is aborted. */
@@ -840,6 +847,7 @@ export class AutoRAGAgent {
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	private readonly datasourceRetry: DatasourceRetryOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
@@ -905,6 +913,7 @@ export class AutoRAGAgent {
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
 		this.datasourceSkills = options.datasourceSkills ?? [];
+		this.datasourceRetry = options.datasourceRetry ?? {};
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
 			normalizeVirtualPath(`/${skill.describe().name}`),
 		);
@@ -2436,32 +2445,7 @@ export class AutoRAGAgent {
 		for (const [position, skill] of this.datasourceSkills.entries()) {
 			signal?.throwIfAborted();
 			onProgress?.({ phase: "datasources", processed: position, total });
-			try {
-				results.push(await skill.index(signal === undefined ? undefined : { signal }));
-				signal?.throwIfAborted();
-			} catch (error) {
-				// A cancelled refresh is not a failed datasource: stop instead of recording a fake failure.
-				signal?.throwIfAborted();
-				const descriptor = skill.describe();
-				results.push({
-					ok: false,
-					instanceId: descriptor.instanceId ?? "default",
-					skill: descriptor.name,
-					indexedAt: Date.now(),
-					diagnostics: [
-						{
-							code: "datasource-index-failed",
-							severity: "error",
-							message: error instanceof Error ? error.message : "Datasource indexing failed.",
-							source: descriptor.name,
-							instanceId: descriptor.instanceId,
-						},
-					],
-					error: "datasource-index-failed",
-					code: "datasource-index-failed",
-					message: error instanceof Error ? error.message : "Datasource indexing failed.",
-				});
-			}
+			results.push(await indexWithRetry(skill, this.datasourceRetry, signal));
 		}
 		onProgress?.({ phase: "datasources", processed: total, total });
 		return results;
