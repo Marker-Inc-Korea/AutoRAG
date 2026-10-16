@@ -106,6 +106,7 @@ import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./every
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
+import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import {
 	createJevExtension,
@@ -817,7 +818,11 @@ export class AutoRAGAgent {
 	private activeRunAbort: AbortController | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
 	private retrievalTrace: SearchDocumentRetrievalTraceEntry[] = [];
-	/** Evidence every retrieval tool returned this run; the answer's inline `[eN]` citations resolve against it. */
+	/**
+	 * Evidence the retrieval tools returned; the answer's inline `[eN]` citations resolve against it. A bound
+	 * interactive session keeps it for the whole conversation and persists it with the transcript; any other
+	 * run starts from an empty ledger.
+	 */
 	private readonly evidenceLedger = new EvidenceLedger();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
@@ -1565,9 +1570,11 @@ export class AutoRAGAgent {
 			onInput: (input, pi) => this.routeInteractiveInput(input, pi),
 			isSearchRunning: () => this.interactive.run !== undefined,
 			onKey: (key) => this.handleInteractiveKey(key),
-			...(this.jevExtension !== undefined
-				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
-				: {}),
+			extensionFactories: [
+				createEvidencePersistence(this.evidenceLedger),
+				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
+			],
+			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 		});
 		this.boundPiRuntime = runtime.runtime;
@@ -1860,18 +1867,18 @@ export class AutoRAGAgent {
 		this.activeRetrievalOptions = options;
 
 		// A later turn of an interactive conversation is a plain agent turn: the
-		// model searches by tool call when it needs to, and answers from evidence
-		// already in the transcript when it does not. Only the first turn runs the
+		// user's message reaches the model as typed, and the model answers from
+		// the conversation or searches by tool call. Only the first turn runs the
 		// Jev gate and the baseline pipeline.
 		const conversational = this.isConversationTurn();
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
 		this.retrievalTrace = [];
-		// Evidence ids stay valid across a conversation: the transcript still holds the earlier [eN] citations.
-		if (!conversational) {
-			this.evidenceLedger.clear();
-			this.evidenceOrigins.clear();
-		}
+		// A conversation keeps one evidence ledger for its whole life: the transcript still shows the earlier
+		// [eN] ids, and the session rebuilds the ledger on resume, /new, and tree moves. Only a run that owns
+		// no transcript starts over.
+		if (this.boundPiRuntime === undefined) this.evidenceLedger.clear();
+		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
@@ -1974,7 +1981,7 @@ export class AutoRAGAgent {
 						};
 						if (conversational) {
 							setThinking(this.finalThinkingLevel);
-							await activeSession.prompt(this.buildConversationTurnPrompt(trimmedQuery, options));
+							await activeSession.prompt(trimmedQuery);
 							// A steer typed after the turn's last model request is still owed an answer.
 							while (
 								!this.interactive.userAborted &&
@@ -2907,32 +2914,6 @@ export class AutoRAGAgent {
 	private isConversationTurn(): boolean {
 		if (this.remoteSession || this.boundPiRuntime === undefined) return false;
 		return this.boundPiRuntime.session.messages.some((message) => message.role === "assistant");
-	}
-
-	/**
-	 * Prompt for a follow-up turn of a conversation. No baseline is injected and
-	 * no verification pass follows: the model decides, per question, between
-	 * answering from what the conversation already established and searching.
-	 */
-	buildConversationTurnPrompt(query: string, options: RetrievalOptions): string {
-		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
-		return (
-			`Follow-up in this conversation: ${query}${limit}${scope}\n\n` +
-			`First decide whether the evidence and answers already in this conversation settle it. If they do, answer from them without searching; their [eN] ids are still valid to cite. ` +
-			`If they do not, or the question concerns something not yet looked up, search with the retrieval tools (rewrite the question into self-contained queries using the conversation context), then answer. ` +
-			`${this.discoveryHint((tools) => `When exploring local files and folders, use ${tools} rather than exploratory bash commands. `)}${this.webFallbackHint()}` +
-			`Never answer from memory about the user's own files, chats, records, or recent facts: search first.\n\n` +
-			`Formatting and content rules for the answer:\n` +
-			`- Answer the question directly and concisely; use bullet points only when they help. Do not include file paths, datasource descriptions, or retrieval mechanics.\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n\n` +
-			`Do not use broad grep/find or recursive filesystem scans. Avoid repeating near-identical queries; once more searching stops surfacing new evidence, conclude from what you have. ` +
-			`If more search is needed, first write a brief 1\u20132 line progress update, then call retrieval tools. ` +
-			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
-		);
 	}
 
 	/**

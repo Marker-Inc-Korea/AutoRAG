@@ -124,10 +124,14 @@ Guidance:
 > **Conversations.** The pipeline below runs only for the first query of an
 > interactive conversation (and for every programmatic `searchDocuments()` call
 > outside a bound TUI session). Every later query in the same session is a
-> plain agent turn: no Jev branch, decomposition, datasource check, baseline
-> prefetch, fast answer, or follow-up check. The model sees the whole
-> conversation, answers from evidence it already gathered when that suffices,
-> and otherwise searches by tool call. Earlier `[eN]` evidence ids stay valid.
+> plain agent turn: the user's message reaches the model exactly as typed, with
+> no Jev branch, decomposition, datasource check, baseline prefetch, fast
+> answer, follow-up check, or per-turn instruction wrapper. The system prompt
+> tells the model that later messages continue the conversation; it answers
+> from evidence it already gathered when that suffices, and otherwise searches
+> by tool call. Evidence ids are numbered across the whole conversation and
+> saved in the session file, so an `[eN]` the model saw in any earlier turn
+> resolves after any number of turns or searches, and after `/resume`.
 > `/new` starts a fresh conversation with the full pipeline again.
 
 Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
