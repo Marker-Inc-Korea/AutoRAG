@@ -65,6 +65,10 @@ Every non-merge commit in a pull request must carry a `Signed-off-by:` trailer w
 
 Squash merges to `main` are still required, and force-pushing your own feature branch to fix sign-off is allowed (see CONTRIBUTING.md).
 
+### Merging (binding)
+
+Never merge a PR on your own initiative. Merge only when the user explicitly asks for it in the current session. When they do, and the `--admin` flag is available to the authenticated account, use it: `gh pr merge <n> --squash --admin`. If `--admin` is not permitted, say so and stop; do not work around branch protection by other means.
+
 ## Manual QA on a shared machine (binding)
 
 The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, the embedding-model cache, TUI sessions, P2P policy). The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
