@@ -102,14 +102,21 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toContain("Read before curating");
 	});
 
-	it("instructs outputting requested deliverables directly instead of advice on how to write them (#1832)", () => {
-		const text = prompt();
+	it("keeps 5-bullet and direct-answer rules by default and instructs producing deliverables as context-aligned files (#1832)", () => {
+		const text = prompt([
+			"bash",
+			"write",
+			"edit",
+			"search_all_documents",
+			"semantic_search_local_docs",
+			"check_memory",
+		]);
+		expect(text).toContain("Unless the user explicitly requests");
+		expect(text).toContain("at most 5 bullet points");
 		expect(text).toContain("Deliverables and artifacts");
-		expect(text).toContain("finished artifact itself in the answer");
-		expect(text).toContain("instead of describing how to produce it");
-		expect(text).toContain(
-			'The 5-bullet cap and the "direct answer only" wording do not apply to a requested artifact',
-		);
+		expect(text).toContain("produce the finished, ready-to-use artifact as a file");
+		expect(text).toContain("aligned with the context and domain");
+		expect(text).toContain("- **write**:");
 	});
 
 	it("instructs resolving conflicting information in favor of the freshest data", () => {

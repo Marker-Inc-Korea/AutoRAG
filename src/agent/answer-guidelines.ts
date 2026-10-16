@@ -23,19 +23,21 @@ export const ANSWER_CITATION_RULE =
 	"**Citations**: cite supporting evidence inline with the evidence id shown next to each retrieved result, in square brackets (e.g. [e3], or [e3][e7] for two). Copy ids exactly; never invent one. For a local file you opened yourself with `bash`, cite `[file:<absolute path>]`. Cite the evidence that backs a sentence at the end of that sentence. Do not cite numbers, paths, or anything else.";
 
 /**
- * Deliverable/artifact exception to the 5-bullet cap and question-answering
- * shape (issue #1832). When the caller asks for a finished deliverable (a reply
- * email, letter, legal opinion, summary document, insertable case citation,
- * checklist, or workflow summary), every prompt that shapes the answer instructs
- * the model to produce the finished artifact itself rather than advice about how
- * to write it.
+ * Deliverable/artifact rule (issue #1832). The 5-bullet cap and direct-answer
+ * format remain the default for the reply text unless the user explicitly asks
+ * otherwise; when the caller requests a deliverable (a reply email, letter,
+ * legal opinion, summary document, insertable case citation block, checklist,
+ * report, or workflow document), the agent produces the finished artifact as a
+ * file aligned with the context and domain rather than dumping raw prose or
+ * merely giving advice on how to write it.
  */
 export const ANSWER_DELIVERABLE_RULE =
-	'**Deliverables and artifacts**: if the user asks you to draft, write, generate, or prepare something (a reply, letter, email, opinion, summary document, citation block, checklist, or workflow summary) — including requests phrased as "how should I reply..." to a specific message — put the finished artifact itself in the answer — ready to use — instead of describing how to produce it. The 5-bullet cap and the "direct answer only" wording do not apply to a requested artifact; keep paths and retrieval mechanics out, but do not compress away the artifact or omit required precedent passages, paragraphs, or standard-format citations.';
+	'**Deliverables and artifacts**: if the user asks you to draft, write, generate, or prepare a deliverable or artifact (a reply email, letter, legal opinion, summary document, standard-format case citation block, checklist, report, or workflow document — including requests phrased as "how should I reply..." to a specific message), produce the finished, ready-to-use artifact as a file (using `write` or `edit` in local sessions, without overwriting existing source files) in a file format, extension, and structure aligned with the context and domain (e.g. `.eml` or `.md`/`.txt` with headers for an email reply; `.md`, `.txt`, `.docx`, or `.hwp` matching workspace conventions for a legal opinion, insertable case-citation block, or summary document; `.csv` or `.json` for structured tabular data), containing the complete unabridged artifact (including required precedent passages, pinpoint paragraphs, and standard-format citations), instead of merely describing how to produce it. Unless the user explicitly requests otherwise, keep the reply text itself within the at-most-5-bullet direct-answer format summarizing the deliverable produced and its core contents with inline evidence citations.';
 
 /**
- * Delta (verification) answers must still deliver the full artifact if the
- * first answer omitted it or only gave advice about it.
+ * Delta (verification) answers must create the context-aligned deliverable file
+ * if the first answer could not write it yet (the fast phase runs with tool
+ * calls disabled) or only gave advice about it.
  */
 export const ANSWER_DELIVERABLE_DELTA_RULE =
-	"If the first answer omitted a requested artifact or only described how to write it, output the complete ready-to-use artifact now.";
+	"If a deliverable or artifact was requested and the first answer could not write the file yet (or only gave advice about it), create the complete context-aligned deliverable file now during verification and report the delta concisely.";

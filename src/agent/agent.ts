@@ -2852,8 +2852,8 @@ export class AutoRAGAgent {
 			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
-			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- ${ANSWER_DELIVERABLE_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
@@ -2935,8 +2935,8 @@ export class AutoRAGAgent {
 				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
-				`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-				`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- ${ANSWER_DELIVERABLE_RULE}\n` +
 				`- ${ANSWER_CITATION_RULE}\n` +
 				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
@@ -2966,8 +2966,8 @@ export class AutoRAGAgent {
 			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop.\n\n` +
 			`Formatting and content rules for the answer:\n` +
-			`- Provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- Answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
+			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- ${ANSWER_DELIVERABLE_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +

@@ -35,6 +35,20 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"bash",
 			"read and inspect configured document collections with ls, find, grep, cat, and similar tools, and — in local sessions — organize local files when the user asks (rename, move, copy, create folders, move to trash)",
 		),
+		...(config.remoteSession
+			? []
+			: [
+					toolLine(
+						config,
+						"write",
+						"create a new file in local sessions — use this to produce requested deliverables and artifacts in a file format aligned with the request and context without overwriting existing source files",
+					),
+					toolLine(
+						config,
+						"edit",
+						"surgically update an existing deliverable or config file when the user asks (local sessions only)",
+					),
+				]),
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(
 			config,
@@ -79,6 +93,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 				(name) =>
 					![
 						"bash",
+						"write",
+						"edit",
 						"jikji_find",
 						"everything_search",
 						"fsearch_search",
@@ -234,8 +250,8 @@ Your answer is your final reply, written as plain text, never as a tool call. Ci
 ## Answer Guidelines
 
 - **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
-- **Bullet-point core answer**: Provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
-- **Direct answer only**: The caller only needs the answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
+- **Bullet-point core answer**: Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
+- **Direct answer only**: Unless the user explicitly requests otherwise, the caller only needs the direct answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
 - ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}
 - ${ANSWER_CITATION_RULE}
 - ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}

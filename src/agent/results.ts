@@ -25,7 +25,7 @@ const evidenceRefSchema = Type.Object({
 });
 
 const answerSchema = Type.String({
-	description: `Answer for the caller. At most 5 bullet points (plus optional explanation), unless a deliverable/artifact is requested; reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the deliverable and image-embed exceptions below. ${ANSWER_DELIVERABLE_RULE} ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
+	description: `Answer for the caller. Unless the user explicitly requests otherwise, provide at most 5 bullet points (plus optional explanation) and answer directly; reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_DELIVERABLE_RULE} ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
 });
 
 const warningsSchema = Type.Optional(
