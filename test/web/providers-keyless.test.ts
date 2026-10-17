@@ -107,6 +107,41 @@ describe("Startpage provider", () => {
 	});
 });
 
+describe("Startpage Anubis proof-of-work wall", () => {
+	const anubisPage =
+		"<html><head><title>Making sure you're not a bot!</title></head><body>" +
+		'<script id="anubis_version" type="application/json">"v1.26.4"</script>' +
+		'<script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"fast"}}</script></body></html>';
+
+	it("surfaces an Anubis challenge as a 429 instead of an empty result", async () => {
+		const fetchMock: FetchImpl = (input) =>
+			input.toString() === "https://www.startpage.com/" ? response(anubisPage) : response(anubisPage);
+		await expect(searchStartpage({ query: "anubis", fetch: fetchMock })).rejects.toMatchObject({
+			provider: "startpage",
+			status: 429,
+		});
+	});
+
+	it("does not lift form tokens from an Anubis-fronted homepage", async () => {
+		const calls: Array<{ url: string; init?: RequestInit }> = [];
+		const fetchMock: FetchImpl = (input, init) => {
+			calls.push({ url: input.toString(), init });
+			return response(`${anubisPage}<form action="/sp/search"><input type="hidden" name="sc" value="stale"></form>`);
+		};
+		await expect(searchStartpage({ query: "anubis", fetch: fetchMock })).rejects.toMatchObject({ status: 429 });
+		expect(calls[1]?.init?.method ?? "GET").toBe("GET");
+	});
+
+	it("still parses a normal results page that merely mentions anubis in prose", async () => {
+		const fetchMock: FetchImpl = (_input, init) =>
+			init?.method === "POST"
+				? response(startpageResult("https://example.com/anubis", "Anubis the jackal god", "anubis_challenge docs"))
+				: response('<form action="/sp/search"><input type="hidden" name="sc" value="t"></form>');
+		const result = await searchStartpage({ query: "anubis", fetch: fetchMock });
+		expect(result.sources.map((source) => source.url)).toEqual(["https://example.com/anubis"]);
+	});
+});
+
 describe("Google provider", () => {
 	it("unwraps redirect URLs, maps recency, normalizes snippets, deduplicates, and clamps count", async () => {
 		let requested = "";

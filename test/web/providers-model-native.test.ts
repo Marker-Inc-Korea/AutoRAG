@@ -7,7 +7,9 @@
  * provider `fetch` injection seam; no network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { executeWebSearch } from "../../src/web/search/index.ts";
 import { modelNativeAuthFromAgentModel, resolveModelNativeCredential } from "../../src/web/search/model-auth.ts";
+import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { AnthropicProvider } from "../../src/web/search/providers/anthropic.ts";
 import type { FetchImpl } from "../../src/web/search/providers/base.ts";
 import { CodexProvider } from "../../src/web/search/providers/codex.ts";
@@ -15,7 +17,7 @@ import { GeminiProvider } from "../../src/web/search/providers/gemini.ts";
 import { ParallelProvider } from "../../src/web/search/providers/parallel.ts";
 import { PerplexityProvider } from "../../src/web/search/providers/perplexity.ts";
 import { XaiProvider } from "../../src/web/search/providers/xai.ts";
-import { isSearchProviderId, SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
+import { isSearchProviderId, SEARCH_PROVIDER_ORDER, SearchProviderError } from "../../src/web/search/types.ts";
 
 const MODEL_ENV_NAMES = [
 	"ANTHROPIC_API_KEY",
@@ -31,6 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	clearRegisteredSearchProviders();
 	for (const name of MODEL_ENV_NAMES) {
 		const value = originalEnv[name];
 		if (value === undefined) delete process.env[name];
@@ -64,18 +67,27 @@ function stubFetchSse(events: unknown[]): { fetch: FetchImpl; calls: Array<{ url
 	return { fetch: fetchImpl, calls };
 }
 
-describe("chain order: credential-reusing and keyless providers lead", () => {
-	it("model-native and keyless providers precede the scraped engines", () => {
-		const scraped = SEARCH_PROVIDER_ORDER.indexOf("startpage");
-		for (const id of ["gemini", "anthropic", "codex", "xai", "perplexity", "parallel"] as const) {
+describe("chain order: credential-reusing and healthy keyless providers lead", () => {
+	const indexOf = (id: (typeof SEARCH_PROVIDER_ORDER)[number]) => SEARCH_PROVIDER_ORDER.indexOf(id);
+
+	it("model-native providers come first, then parallel and duckduckgo, then the rest", () => {
+		for (const id of ["gemini", "anthropic", "codex", "xai"] as const) {
 			expect(isSearchProviderId(id), `${id} must be a recognized provider id`).toBe(true);
-			expect(SEARCH_PROVIDER_ORDER.indexOf(id), `${id} must precede scraped engines`).toBeLessThan(scraped);
-			expect(SEARCH_PROVIDER_ORDER.indexOf(id), `${id} must precede the public fan-out`).toBeLessThan(
-				SEARCH_PROVIDER_ORDER.indexOf("public"),
-			);
+			for (const healthy of ["parallel", "duckduckgo"] as const) {
+				expect(indexOf(id), `${id} must precede ${healthy}`).toBeLessThan(indexOf(healthy));
+			}
 		}
-		// Model-native reuse outranks the anonymous/keyless fallbacks.
-		expect(SEARCH_PROVIDER_ORDER.indexOf("anthropic")).toBeLessThan(SEARCH_PROVIDER_ORDER.indexOf("perplexity"));
+		for (const healthy of ["parallel", "duckduckgo"] as const) {
+			for (const flaky of ["perplexity", "startpage", "ecosia", "google", "mojeek"] as const) {
+				expect(indexOf(healthy), `${healthy} must precede ${flaky}`).toBeLessThan(indexOf(flaky));
+			}
+		}
+	});
+
+	it("keeps the public fan-out last and a configured SearXNG ahead of the scrapers", () => {
+		expect(SEARCH_PROVIDER_ORDER.at(-1)).toBe("public");
+		expect(indexOf("parallel")).toBeLessThan(indexOf("searxng"));
+		expect(indexOf("searxng")).toBeLessThan(indexOf("perplexity"));
 	});
 });
 
@@ -187,26 +199,93 @@ describe("PerplexityProvider (anonymous ask)", () => {
 		expect(response.sources.map((source) => source.url)).toContain("https://r.example/");
 	});
 
-	it("treats a localized (Korean) sign-up deflection as a provider failure", async () => {
+	it("rejects a localized (Korean) sign-up deflection that carries no sources", async () => {
 		const { fetch: fetchImpl } = stubFetchSse([
 			{
 				blocks: [{ intended_usage: "ask_text", markdown_block: { chunks: ["가입한 뒤 요청을 다시 보내주세요."] } }],
 				final: true,
 			},
 		]);
-		await expect(new PerplexityProvider().search({ query: "수시 원서접수", fetch: fetchImpl })).rejects.toThrow(
-			/deflected/,
-		);
+		await expect(
+			new PerplexityProvider().search({ query: "수시 원서접수", fetch: fetchImpl }),
+		).rejects.toBeInstanceOf(SearchProviderError);
 	});
 
-	it("treats the anonymous sign-up deflection as a provider failure", async () => {
+	it("rejects an English sign-up deflection that carries no sources", async () => {
 		const { fetch: fetchImpl } = stubFetchSse([
 			{
 				blocks: [{ intended_usage: "ask_text", markdown_block: { chunks: ["Sign up and repeat your request."] } }],
 				final: true,
 			},
 		]);
-		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toThrow(/deflected/);
+		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toBeInstanceOf(
+			SearchProviderError,
+		);
+	});
+
+	it("rejects a localized (Czech) sign-up wall that no keyword pattern matches", async () => {
+		const { fetch: fetchImpl } = stubFetchSse([
+			{
+				blocks: [
+					{
+						intended_usage: "ask_text",
+						markdown_block: { chunks: ["Zaregistrujte se a zopakujte svůj požadavek."] },
+					},
+				],
+				final: true,
+			},
+		]);
+		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toMatchObject({
+			name: "SearchProviderError",
+			provider: "perplexity",
+			status: 403,
+		});
+	});
+
+	it("rejects a non-deflection answer that has no verifiable web sources", async () => {
+		const { fetch: fetchImpl } = stubFetchSse([
+			{
+				blocks: [{ intended_usage: "ask_text", markdown_block: { chunks: ["The answer from memory."] } }],
+				final: true,
+			},
+		]);
+		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toBeInstanceOf(
+			SearchProviderError,
+		);
+	});
+
+	it("advances the default chain to the next provider instead of stopping on a zero-source answer", async () => {
+		registerSearchProvider(new PerplexityProvider());
+		registerSearchProvider({
+			id: "parallel",
+			label: "Fake parallel",
+			isAvailable: () => true,
+			search: async () => ({
+				provider: "parallel",
+				sources: [{ title: "Real", url: "https://example.com/real", snippet: "real result" }],
+			}),
+		});
+		const { fetch: fetchImpl } = stubFetchSse([
+			{
+				blocks: [
+					{
+						intended_usage: "ask_text",
+						markdown_block: { chunks: ["Zaregistrujte se a zopakujte svůj požadavek."] },
+					},
+				],
+				final: true,
+			},
+		]);
+		const result = await executeWebSearch(
+			{ query: "q" },
+			{
+				order: ["perplexity", "parallel"],
+				exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "perplexity" && id !== "parallel"),
+				fetch: fetchImpl,
+			},
+		);
+		expect(result.details.response.provider).toBe("parallel");
+		expect(result.details.response.sources.map((source) => source.url)).toEqual(["https://example.com/real"]);
 	});
 });
 
