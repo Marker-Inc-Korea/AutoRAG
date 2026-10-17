@@ -10,14 +10,20 @@
  * search-provider env var unset and no model credential, `web_search` must
  * return real results from a plain residential connection on REPEATED runs
  * (not 1-in-2). The chain achieves that without any key through the
- * always-on routes (perplexity anonymous, parallel MCP), model-native
- * reuse when the agent's model credential exists, and headless-browser
- * escalation for bot-challenged scraped engines.
+ * always-on routes that live probing shows to be healthy (parallel MCP, then
+ * the DuckDuckGo HTML form — issue #1931), model-native reuse when the
+ * agent's model credential exists, and headless-browser escalation for
+ * bot-challenged scraped engines. Perplexity (anonymous sign-up wall) and
+ * Startpage (Anubis PoW) trail the chain and must fail loudly, never
+ * "succeed" with zero sources.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { renderUrl } from "../../src/web/fetch/render.ts";
 import { ensureWebSearchBrowserLoader, getWebSearchBrowserDiagnostic } from "../../src/web/search/browser-loader.ts";
 import { executeWebSearch } from "../../src/web/search/index.ts";
+import { PerplexityProvider } from "../../src/web/search/providers/perplexity.ts";
+import { StartpageProvider } from "../../src/web/search/providers/startpage.ts";
+import { SearchProviderError } from "../../src/web/search/types.ts";
 
 const LIVE = process.env.AUTORAG_WEB_LIVE === "1";
 
@@ -33,8 +39,13 @@ const MODEL_CREDENTIAL_ENVS = [
 	"XAI_API_KEY",
 ] as const;
 
-/** Providers allowed to win the auto chain with zero credentials of any kind. */
-const ZERO_CREDENTIAL_PROVIDERS = ["perplexity", "parallel", "startpage", "duckduckgo", "ecosia", "google", "mojeek"];
+/**
+ * Providers allowed to win the auto chain with zero credentials of any kind.
+ * `parallel` and `duckduckgo` lead the keyless chain; the rest only win when
+ * both are down on the current egress IP.
+ */
+const ZERO_CREDENTIAL_PROVIDERS = ["parallel", "duckduckgo", "perplexity", "startpage", "ecosia", "google", "mojeek"];
+const HEALTHY_LEAD_PROVIDERS = ["parallel", "duckduckgo"];
 
 const savedModelEnv = new Map<string, string | undefined>();
 
@@ -78,6 +89,60 @@ describe.skipIf(!LIVE)("web tools live e2e (real internet)", () => {
 			).toContain(result.details.response.provider);
 		}
 	}, 240_000);
+
+	it("web_search answers from a healthy lead provider without paying the Perplexity/Startpage fallback tax", async () => {
+		for (const name of GATED_PROVIDER_ENVS) {
+			expect(process.env[name], `${name} must be unset for the credential-free proof`).toBeUndefined();
+		}
+		neutralizeModelCredentials();
+		const queries = [
+			"2026년 한국은행 기준금리",
+			"Electron 41 release notes",
+			"TypeScript 5.8 release notes",
+			"Bun 1.4 release features",
+			"Playwright Electron _electron launch",
+		];
+		const latencies: number[] = [];
+		for (const query of queries) {
+			const startedAt = performance.now();
+			const result = await executeWebSearch({ query }, { timeoutMs: 60_000 });
+			latencies.push(performance.now() - startedAt);
+			expect(result.details.error, `"${query}" must succeed`).toBeUndefined();
+			expect(result.details.response.sources.length, `"${query}" must register sources`).toBeGreaterThan(0);
+			expect(HEALTHY_LEAD_PROVIDERS, `"${query}" winner ${result.details.response.provider}`).toContain(
+				result.details.response.provider,
+			);
+		}
+		const mean = latencies.reduce((sum, value) => sum + value, 0) / latencies.length;
+		// Issue #1931 measured 4,065 ms on the old order and 820 ms on the new one.
+		expect(mean, `mean latency ${Math.round(mean)} ms over ${latencies.map(Math.round).join("/")}`).toBeLessThan(
+			3_000,
+		);
+	}, 300_000);
+
+	it("anonymous Perplexity returns web sources or fails with a provider error, never a zero-source success", async () => {
+		try {
+			const response = await new PerplexityProvider().search({
+				query: "Electron 41 release notes",
+				timeoutMs: 30_000,
+			});
+			expect(response.sources.length).toBeGreaterThan(0);
+		} catch (error) {
+			expect(error).toBeInstanceOf(SearchProviderError);
+		}
+	}, 60_000);
+
+	it("Startpage returns results or a challenge/HTTP provider error, never a silent empty page", async () => {
+		try {
+			const response = await new StartpageProvider().search({
+				query: "Electron 41 release notes",
+				timeoutMs: 30_000,
+			});
+			expect(response.sources.length).toBeGreaterThan(0);
+		} catch (error) {
+			expect(error).toBeInstanceOf(SearchProviderError);
+		}
+	}, 60_000);
 
 	it("headless-browser escalation is either armed or an explicit diagnostic, never a crash", async () => {
 		const installed = await ensureWebSearchBrowserLoader();

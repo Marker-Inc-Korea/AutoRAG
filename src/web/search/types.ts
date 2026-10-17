@@ -40,11 +40,6 @@ export const SEARCH_PROVIDER_OPTIONS = [
 		description: "xAI Responses web_search via the agent's xAI model credentials (XAI_API_KEY)",
 	},
 	{
-		value: "perplexity",
-		label: "Perplexity",
-		description: "Anonymous Perplexity ask endpoint; no key or signup required",
-	},
-	{
 		value: "parallel",
 		label: "Parallel",
 		description: "Parallel's keyless web search MCP endpoint; no key or signup required",
@@ -55,14 +50,19 @@ export const SEARCH_PROVIDER_OPTIONS = [
 		description: "Advanced: requires a self-hosted SEARXNG_ENDPOINT; never part of the default experience",
 	},
 	{
-		value: "startpage",
-		label: "Startpage",
-		description: "Credential-free scrape of Startpage (Google-backed) results; may be bot-challenged",
-	},
-	{
 		value: "duckduckgo",
 		label: "DuckDuckGo",
 		description: "Credential-free best-effort fallback; may be bot-challenged on datacenter/shared-egress IPs",
+	},
+	{
+		value: "perplexity",
+		label: "Perplexity",
+		description: "Anonymous Perplexity ask endpoint; no key or signup required",
+	},
+	{
+		value: "startpage",
+		label: "Startpage",
+		description: "Credential-free scrape of Startpage (Google-backed) results; may be bot-challenged",
 	},
 	{
 		value: "ecosia",
@@ -98,8 +98,12 @@ export type SearchProviderId = Exclude<(typeof SEARCH_PROVIDER_OPTIONS)[number][
 /**
  * Auto-resolution priority order. Derived from {@link SEARCH_PROVIDER_OPTIONS}
  * (minus `auto`) so any dropdown/setting and `resolveProviderChain()` share
- * one source of truth and never drift apart: credential-free and
- * model-credential-reusing providers first, then the scraped engines, with
+ * one source of truth and never drift apart: model-credential-reusing
+ * providers first, then the keyless routes that live probing shows to be
+ * healthy and fast (`parallel`, `duckduckgo`; `searxng` sits between them
+ * and is skipped unless an endpoint is configured), then the routes that
+ * are routinely walled for anonymous clients (`perplexity` sign-up wall,
+ * `startpage` Anubis PoW, `ecosia`/`google`/`mojeek` bot challenges), with
  * the public fan-out last (explicit selection only).
  */
 export const SEARCH_PROVIDER_ORDER: readonly SearchProviderId[] = SEARCH_PROVIDER_OPTIONS.flatMap((option) =>

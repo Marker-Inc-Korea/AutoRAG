@@ -605,9 +605,10 @@ export interface AutoRAGAgentOptions {
 	 * provider-chain web module. Default enabled and credential-free: the
 	 * chain leads with providers that need no user-issued key — model-native
 	 * search reusing the agent's own model credentials (Gemini grounding,
-	 * Anthropic/OpenAI/xAI web_search), the anonymous Perplexity ask
-	 * endpoint, and Parallel's keyless MCP — then scraped engines with
-	 * headless-browser escalation for bot challenges. A self-hosted
+	 * Anthropic/OpenAI/xAI web_search), Parallel's keyless MCP, and the
+	 * DuckDuckGo HTML form — then the anonymous Perplexity ask endpoint and
+	 * the other scraped engines with headless-browser escalation for bot
+	 * challenges. A self-hosted
 	 * SEARXNG_ENDPOINT is the only env-gated option. `false` disables both
 	 * tools. The `fetch` sub-option tunes or disables `web_fetch` alone.
 	 * Web tools are always omitted for remote P2P sessions.
