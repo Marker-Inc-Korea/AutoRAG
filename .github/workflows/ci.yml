@@ -81,6 +81,9 @@ jobs:
 
   compatibility:
     name: compatibility (${{ matrix.os }})
+    # macOS/Windows runners are the slowest part of PR CI and their checks
+    # duplicate the ubuntu build job; run them only on merges into main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
