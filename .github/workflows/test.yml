@@ -1,13 +1,9 @@
 name: Legacy Unit Test
 
+# Main push only: the heavyweight uv sync (gpu/ko/parse/ja extras) + full
+# pytest run is reserved for merges into main, not every legacy PR.
 on:
     push:
-        branches:
-            - main
-        paths:
-            - "legacy/**"
-            - ".github/workflows/test.yml"
-    pull_request:
         branches:
             - main
         paths:
