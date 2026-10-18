@@ -69,7 +69,7 @@ export class FusedRetrievalMethod implements RetrievalMethod {
 		// Nothing survived to fuse or fall back to. If an input failed, surface it:
 		// retrieveWithDiagnostics then reports this surface instead of returning an
 		// empty list that reads like a successful search with no matches. This is the
-		// only signal a hybrid-only selection (`methods: ["kakao-hybrid"]`) gets.
+		// only signal a hybrid-only selection (`methods: ["obsidian-hybrid"]`) gets.
 		if (nonempty.length === 0 && failures.length > 0) {
 			const reasons = failures.map((failure) => failure.reason);
 			throw new AggregateError(reasons, reasons.map(describeRetrievalError).join("\n"));

@@ -743,7 +743,7 @@ process.exit(1);
 				LAZYKATOK_FAKE_OUTPUT: jsonEnv({ hits: [{ chunkId: "c1", score: 1, content: "hi" }] }),
 			});
 
-			const result = await client.search("semantic", "q");
+			const result = await client.search("hybrid", "q");
 
 			expect(result.ok).toBe(true);
 			if (!result.ok) return;

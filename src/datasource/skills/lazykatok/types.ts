@@ -6,8 +6,9 @@ import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
  *
  * - `semantic` — dense vector similarity over indexed chunks.
  * - `keyword`  — exact / tokenized keyword matching.
+ * - `hybrid`   — fused semantic + keyword scores.
  */
-export type LazykatokSearchMode = "semantic" | "keyword";
+export type LazykatokSearchMode = "semantic" | "keyword" | "hybrid";
 
 /**
  * Configuration for {@link LazykatokClient}. All fields optional; sensible defaults
