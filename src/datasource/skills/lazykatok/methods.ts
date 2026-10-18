@@ -6,7 +6,14 @@ import type {
 } from "../../../retrieval/types.ts";
 import { datasourceCliError } from "../../errors.ts";
 import { lazykatokSourcePath } from "./paths.ts";
-import type { LazykatokHit, LazykatokSearchMode, LazykatokSearchOptions, LazykatokSearchResult } from "./types.ts";
+import type {
+	LazykatokChunk,
+	LazykatokHit,
+	LazykatokParentResult,
+	LazykatokSearchMode,
+	LazykatokSearchOptions,
+	LazykatokSearchResult,
+} from "./types.ts";
 
 /**
  * Narrow client surface required by the KakaoTalk retrieval methods.
@@ -92,6 +99,113 @@ export class LazykatokSemanticMethod implements RetrievalMethod {
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		return retrieveLazykatok(this.client, "semantic", "kakao-semantic", this.instanceId, query, options);
 	}
+}
+
+/** Narrow client surface that resolves a micro-chunk to its parent window. */
+export interface LazykatokParentClient {
+	parent(chunkId: string, signal?: AbortSignal): Promise<LazykatokParentResult>;
+}
+
+export interface LazykatokWindowBm25Options {
+	readonly client: LazykatokSearchClient & LazykatokParentClient;
+	readonly instanceId: string;
+	readonly tags?: readonly string[];
+}
+
+/** Parent-window lookups run at most this many `lazykatok` processes at a time. */
+const PARENT_LOOKUP_CONCURRENCY = 8;
+
+/**
+ * BM25 retrieval whose hits are lifted to the parent windows the semantic
+ * index ranks. lazykatok searches keywords over micro-chunks (`chunk_…`) but
+ * semantic search over the parent windows that contain them (`window_…`), so
+ * the two rankings only share an identity once each keyword chunk is treated as
+ * a hit on its parent window. Several chunks of one window collapse to the
+ * window's best-ranked chunk. This is the lexical input of `kakao-hybrid`; it
+ * is not registered as a standalone method.
+ *
+ * A chunk whose parent lookup fails keeps its own chunk identity so a transient
+ * failure cannot drop it. When every lookup fails the first failure is thrown:
+ * a lexical ranking that never reaches window identity is not usable to fuse.
+ */
+export class LazykatokWindowBm25Method implements RetrievalMethod {
+	private readonly chunks: LazykatokBm25Method;
+	private readonly client: LazykatokParentClient;
+	private readonly instanceId: string;
+
+	constructor(options: LazykatokWindowBm25Options) {
+		this.chunks = new LazykatokBm25Method(options);
+		this.client = options.client;
+		this.instanceId = options.instanceId;
+	}
+
+	describe(): RetrievalMethodDescriptor {
+		return {
+			...this.chunks.describe(),
+			description: "BM25 lexical retrieval over KakaoTalk chat chunks, lifted to their parent windows",
+		};
+	}
+
+	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		const chunkHits = await this.chunks.retrieve(query, options);
+		if (chunkHits.length === 0) return [];
+		const chunkIds = [...new Set(chunkHits.map(chunkIdOf))];
+		const parents = await resolveParents(this.client, chunkIds, options.signal);
+		const failures = [...parents.values()].filter((parent) => !parent.ok);
+		const firstFailure = failures[0];
+		if (firstFailure !== undefined && !firstFailure.ok && failures.length === parents.size) {
+			throw datasourceCliError(KAKAO_DATASOURCE_ID, "chunk parent", firstFailure);
+		}
+		const lifted = new Map<string, RetrievalResult>();
+		for (const hit of chunkHits) {
+			const parent = parents.get(chunkIdOf(hit));
+			const window = parent?.ok ? parent.data[0] : undefined;
+			const result = window === undefined ? hit : this.toWindowHit(hit, window);
+			if (!lifted.has(result.id)) lifted.set(result.id, result);
+		}
+		return [...lifted.values()];
+	}
+
+	private toWindowHit(chunkHit: RetrievalResult, window: LazykatokChunk): RetrievalResult {
+		return {
+			id: `kakao:${this.instanceId}:${window.chunkId}`,
+			content: window.content,
+			source: lazykatokSourcePath(this.instanceId, window.chunkId),
+			score: chunkHit.score,
+			metadata: {
+				...window.metadata,
+				method: chunkHit.metadata?.method,
+				datasourceId: KAKAO_DATASOURCE_ID,
+				instanceId: this.instanceId,
+				mode: "keyword",
+				chunkId: window.chunkId,
+				matchedChunkId: chunkIdOf(chunkHit),
+			},
+		};
+	}
+}
+
+function chunkIdOf(hit: RetrievalResult): string {
+	return String(hit.metadata?.chunkId);
+}
+
+async function resolveParents(
+	client: LazykatokParentClient,
+	chunkIds: readonly string[],
+	signal: AbortSignal | undefined,
+): Promise<Map<string, LazykatokParentResult>> {
+	const parents = new Map<string, LazykatokParentResult>();
+	let next = 0;
+	const worker = async (): Promise<void> => {
+		while (next < chunkIds.length) {
+			signal?.throwIfAborted();
+			const chunkId = chunkIds[next++]!;
+			parents.set(chunkId, await client.parent(chunkId, signal));
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(PARENT_LOOKUP_CONCURRENCY, chunkIds.length) }, worker));
+	signal?.throwIfAborted();
+	return parents;
 }
 
 async function retrieveLazykatok(

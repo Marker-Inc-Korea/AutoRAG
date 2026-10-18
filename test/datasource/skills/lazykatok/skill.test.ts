@@ -246,7 +246,7 @@ describe("LazykatokSkill index", () => {
 });
 
 describe("LazykatokSkill retrievalMethods", () => {
-	it("returns kakao-bm25 and kakao-semantic methods sharing the client and instance", async () => {
+	it("returns kakao-bm25, kakao-semantic and kakao-hybrid methods sharing the client and instance", async () => {
 		const stub = new StubSkillClient();
 		stub.searchResult = okSearch(HITS);
 		const skill = new LazykatokSkill({
@@ -257,8 +257,8 @@ describe("LazykatokSkill retrievalMethods", () => {
 		const methods = skill.retrievalMethods();
 		const descriptors = methods.map((m) => m.describe());
 
-		expect(descriptors.map((d) => d.name)).toEqual(["kakao-bm25", "kakao-semantic"]);
-		expect(descriptors.map((d) => d.type)).toEqual(["bm25", "vector"]);
+		expect(descriptors.map((d) => d.name)).toEqual(["kakao-bm25", "kakao-semantic", "kakao-hybrid"]);
+		expect(descriptors.map((d) => d.type)).toEqual(["bm25", "vector", "hybrid"]);
 		expect(descriptors.every((d) => d.datasourceId === "kakao")).toBe(true);
 
 		const [bm25] = methods;

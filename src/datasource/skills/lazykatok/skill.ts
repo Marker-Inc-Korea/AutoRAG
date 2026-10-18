@@ -1,3 +1,4 @@
+import { FusedRetrievalMethod } from "../../../retrieval/fused-method.ts";
 import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { connectorSyncTimeoutHint } from "../../connector-timeouts.ts";
@@ -13,10 +14,16 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
-import { LazykatokBm25Method, type LazykatokSearchClient, LazykatokSemanticMethod } from "./methods.ts";
+import {
+	LazykatokBm25Method,
+	type LazykatokParentClient,
+	type LazykatokSearchClient,
+	LazykatokSemanticMethod,
+	LazykatokWindowBm25Method,
+} from "./methods.ts";
 import type { LazykatokDoctorResult, LazykatokIndexResult, LazykatokSyncResult } from "./types.ts";
 
-export interface LazykatokSkillClient extends LazykatokSearchClient {
+export interface LazykatokSkillClient extends LazykatokSearchClient, LazykatokParentClient {
 	doctor(): Promise<LazykatokDoctorResult>;
 	sync(): Promise<LazykatokSyncResult>;
 	index(): Promise<LazykatokIndexResult>;
@@ -61,7 +68,7 @@ export class LazykatokSkill implements DatasourceSkill {
 			id: KAKAO_DATASOURCE_ID,
 			type: KAKAO_SKILL_TYPE,
 			description: "KakaoTalk datasource via the external lazykatok CLI",
-			capabilities: ["chat", "external-cli", "polling", "bm25", "semantic"],
+			capabilities: ["chat", "external-cli", "polling", "bm25", "semantic", "hybrid"],
 			tags: this.tags,
 			status: "active",
 			requiresExternalCli: true,
@@ -118,9 +125,18 @@ export class LazykatokSkill implements DatasourceSkill {
 	}
 
 	retrievalMethods(): readonly RetrievalMethod[] {
+		const options = { client: this.client, instanceId: this.instanceId, tags: this.tags };
+		const semantic = new LazykatokSemanticMethod(options);
 		return [
-			new LazykatokBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-			new LazykatokSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
+			new LazykatokBm25Method(options),
+			semantic,
+			// lazykatok has no native hybrid mode, and its keyword and semantic rankings
+			// use different units: lift keyword chunks to their parent windows first.
+			new FusedRetrievalMethod({
+				name: `${KAKAO_DATASOURCE_ID}-hybrid`,
+				lexical: new LazykatokWindowBm25Method(options),
+				semantic,
+			}),
 		];
 	}
 

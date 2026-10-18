@@ -364,13 +364,12 @@ autorag refresh --method datasources
 
 ## Hybrid fusion over existing methods
 
-Obsidian and GitHub Gists expose an additional hybrid method over
-their existing lexical and semantic retrieval. KakaoTalk is not included: its
-lexical hits are micro-chunks while its semantic hits are parent windows, so the
-two rankings have no shared evidence identity to fuse on.
+KakaoTalk, Obsidian, and GitHub Gists expose an additional hybrid method over
+their existing lexical and semantic retrieval:
 
 | Datasource | Hybrid method | Inputs |
 |---|---|---|
+| KakaoTalk | `kakao-hybrid` | `kakao-bm25` hits lifted to their parent windows + `kakao-semantic` (see [KakaoTalk via lazykatok](#kakaotalk-via-lazykatok)) |
 | Obsidian | `obsidian-hybrid` | `obsidian-bm25` + `obsidian-semantic` (`qmd search` and `qmd vsearch`) |
 | GitHub Gists | `github-gist-hybrid` | `github-gist-lexical` + `github-gist-semantic`, when semantic retrieval is enabled |
 
@@ -395,7 +394,7 @@ No new index or native hybrid CLI mode is required.
 The standalone methods remain registered. Single-datasource search and
 `search_all_documents` still run all registered methods and use the normal
 cross-method merger. The hybrid method makes its own two input requests, so
-Obsidian makes an additional lexical and semantic CLI call
+KakaoTalk and Obsidian each make an additional lexical and semantic CLI call
 during that fan-out.
 
 ## Hybrid search for chat crawlers (sidecar)
@@ -605,6 +604,19 @@ searching.
 ## KakaoTalk via lazykatok
 
 KakaoTalk support is implemented through the external [`lazykatok`](https://github.com/changeroa/lazykatok) CLI.
+
+`kakao-hybrid` is built in AutoRAG; it does not pass `--mode hybrid` to lazykatok.
+lazykatok ranks keywords over micro-chunks (`chunk_…`) but semantic search over
+the parent windows that contain them (`window_…`). To give the two rankings a
+shared identity, each keyword chunk is looked up with `lazykatok chunk parent`
+and treated as a hit on its parent window (several chunks of one window count
+once, at the best chunk's rank), then fused with the semantic windows by
+[RRF](#hybrid-fusion-over-existing-methods). Fused hits are window hits: their
+text is the whole window. A chunk whose parent lookup fails keeps its own chunk
+identity; if every lookup fails the keyword input counts as failed and the
+semantic ranking is used alone. Lookups run at most 8 at a time, one per
+distinct keyword chunk (up to `topK * 3`), so a hybrid call spawns several
+short `lazykatok` processes in addition to the two searches.
 
 Rules:
 
