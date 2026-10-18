@@ -52,6 +52,13 @@ describe("parseArgs", () => {
 		expect(parsed.positionals).toEqual(["search", "hello", "world"]);
 	});
 
+	it("treats --retry-failed as a boolean flag", () => {
+		const parsed = parseArgs(["refresh", "--retry-failed", "--method", "parsed"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["retry-failed"]).toBe(true);
+		expect(parsed.flags.method).toBe("parsed");
+	});
+
 	it("parses boolean and value flags", () => {
 		const parsed = parseArgs(["refresh", "--force", "--config", "a.json", "--json"]);
 		if ("error" in parsed) throw new Error(parsed.error);
@@ -65,6 +72,29 @@ describe("parseArgs", () => {
 		if ("error" in parsed) throw new Error(parsed.error);
 		expect(parsed.flags["top-k"]).toBe("5");
 	});
+
+	it("collects repeated exclusions without splitting paths or changing ordinary flags", () => {
+		const parsed = parseArgs([
+			"init",
+			"--exclude=docs/private, archived",
+			"--exclude",
+			"build outputs",
+			"--workspace",
+			"old",
+			"--workspace=new",
+		]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.repeatedFlags).toEqual({ exclude: ["docs/private, archived", "build outputs"] });
+		expect(parsed.flags.exclude).toBe("build outputs");
+		expect(parsed.flags.workspace).toBe("new");
+	});
+
+	it.each([["--exclude"], ["--exclude", "--force"], ["--exclude="], ["--exclude", ""], ["--exclude=   "]])(
+		"rejects an exclusion without a non-empty path: %j",
+		(...flags) => {
+			expect(parseArgs(["init", ...flags])).toHaveProperty("error");
+		},
+	);
 
 	it("keeps two-word command sub-words as positionals", () => {
 		const parsed = parseArgs(["memory", "inspect"]);
@@ -130,6 +160,29 @@ describe("parseMethodFlag", () => {
 describe("main routing", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it.each([["init"], ["lite", "init"]])("forwards repeated exclusions through %j", async (...command) => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-init-exclude-test-"));
+		try {
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			const configPath = join(root, "config.json");
+			const paths = [join(root, "private, notes"), join(root, "build outputs")];
+			const code = await main([
+				...command,
+				"--config",
+				configPath,
+				"--workspace",
+				root,
+				"--exclude",
+				paths[0],
+				`--exclude=${paths[1]}`,
+			]);
+			expect(code).toBe(0);
+			expect(JSON.parse(readFileSync(configPath, "utf8")).excludePaths).toEqual(paths);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("prints usage and exits 0 for --help", async () => {

@@ -34,6 +34,7 @@ import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -159,11 +160,11 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 		};
 	}
 
-	async index(): Promise<DatasourceIndexResult> {
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		this.lastPolledAt = Date.now();
 		let fetched: Awaited<ReturnType<DatasourceConnector["fetch"]>>;
 		try {
-			fetched = await this.connector.fetch();
+			fetched = await this.connector.fetch(options?.signal);
 		} catch {
 			return this.fail("datasource-unavailable", "connector failed unexpectedly");
 		}

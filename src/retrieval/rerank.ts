@@ -13,7 +13,8 @@
  */
 
 import { OpenRouter } from "@openrouter/sdk";
-import { API_PATH, PROVIDER_ID as AUTORAG_PROVIDER_ID, resolveBaseUrl } from "../cloud/config.ts";
+import { API_PATH, PROVIDER_ID as DAZZI_PROVIDER_ID, resolveBaseUrl } from "../cloud/config.ts";
+import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "../cloud/credential.ts";
 import type { RetrievalResult } from "./types.ts";
 
 /** Default rerank model routed through OpenRouter. */
@@ -23,26 +24,27 @@ export const DEFAULT_RERANK_PROVIDER = "openrouter";
 /** Default environment variable holding the OpenRouter API key. */
 export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
 /**
- * Default rerank model for the hosted AutoRAG (Dazzi) provider — the id the
+ * Default rerank model for the hosted Dazzi Models provider — the id the
  * server lists under `GET <root>/v1/models?operation=rerank`. Rerankers are not
  * chat LLMs, so the project's 2026+ model rule does not cover them.
  */
-export const DEFAULT_AUTORAG_RERANK_MODEL = "qwen/qwen3-reranker-8b";
-/** Environment variable holding the AutoRAG account key for the `autorag` rerank provider. */
-export const DEFAULT_AUTORAG_RERANK_API_KEY_ENV = "AUTORAG_API_KEY";
+export const DEFAULT_DAZZI_RERANK_MODEL = "qwen/qwen3-reranker-8b";
 /** Default number of merged chunks kept after reranking. */
 export const DEFAULT_RERANK_TOP_N = 25;
 /** Rerank providers {@link createReranker} can build. */
-export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER, AUTORAG_PROVIDER_ID];
+export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER, DAZZI_PROVIDER_ID];
 
 /** Default wire model for a rerank provider. */
 export function defaultRerankModel(provider: string): string {
-	return provider === AUTORAG_PROVIDER_ID ? DEFAULT_AUTORAG_RERANK_MODEL : DEFAULT_RERANK_MODEL;
+	return provider === DAZZI_PROVIDER_ID ? DEFAULT_DAZZI_RERANK_MODEL : DEFAULT_RERANK_MODEL;
 }
 
-/** Default API-key environment variable for a rerank provider. */
-export function defaultRerankApiKeyEnv(provider: string): string {
-	return provider === AUTORAG_PROVIDER_ID ? DEFAULT_AUTORAG_RERANK_API_KEY_ENV : DEFAULT_RERANK_API_KEY_ENV;
+/**
+ * Default API-key environment variable for a rerank provider, or `undefined`
+ * for Dazzi Models, which authenticates with the stored `/login` credential.
+ */
+export function defaultRerankApiKeyEnv(provider: string): string | undefined {
+	return provider === DAZZI_PROVIDER_ID ? undefined : DEFAULT_RERANK_API_KEY_ENV;
 }
 
 /** Static description of a reranker, used for diagnostics and inspection. */
@@ -109,10 +111,15 @@ export interface OpenRouterRerankerOptions {
 	readonly provider?: string;
 	/** Wire model id. @default DEFAULT_RERANK_MODEL */
 	readonly model?: string;
-	/** API key. When omitted, read from `apiKeyEnv` in the environment. */
+	/**
+	 * API key. When omitted, `openrouter` reads `apiKeyEnv` from the environment
+	 * and `dazzi` uses the stored `/login` credential.
+	 */
 	readonly apiKey?: string;
-	/** Environment variable holding the API key. @default DEFAULT_RERANK_API_KEY_ENV */
+	/** Environment variable holding the API key (`openrouter` only). @default DEFAULT_RERANK_API_KEY_ENV */
 	readonly apiKeyEnv?: string;
+	/** Pi agent home whose `auth.json` holds the Dazzi `/login` credential (`dazzi` only). Default: Pi's agent dir. */
+	readonly agentDir?: string;
 	/** Override the OpenRouter base URL (e.g. a self-hosted or gateway endpoint). */
 	readonly baseUrl?: string;
 	/** Per-request timeout in milliseconds. */
@@ -146,7 +153,7 @@ export function createReranker(config: CreateRerankerOptions | false | undefined
 }
 
 /** `<root>/v1`, tolerating an `AUTORAG_BASE_URL` that already carries the API path. */
-function autoragApiBaseUrl(env: NodeJS.ProcessEnv): string {
+function dazziApiBaseUrl(env: NodeJS.ProcessEnv): string {
 	const root = resolveBaseUrl(env);
 	return root.endsWith(API_PATH) ? root : `${root}${API_PATH}`;
 }
@@ -154,9 +161,9 @@ function autoragApiBaseUrl(env: NodeJS.ProcessEnv): string {
 /**
  * Reranker backed by an OpenRouter-compatible rerank router.
  *
- * OpenRouter is the default provider; the hosted AutoRAG (Dazzi) plan serves the
+ * OpenRouter is the default provider; the hosted Dazzi Models plan serves the
  * same wire shape at `<root>/v1/rerank`, so {@link createReranker} reuses this
- * client with that base URL and key env. Documents are sent as their `content`;
+ * client with that base URL and the stored login token. Documents are sent as their `content`;
  * the original `RetrievalResult` for each returned index is preserved and
  * re-scored with the provider's relevance score.
  */
@@ -174,13 +181,18 @@ export class OpenRouterReranker implements Reranker {
 			return;
 		}
 		const env = options.env ?? process.env;
+		const isDazzi = this.provider === DAZZI_PROVIDER_ID;
 		const apiKeyEnv = options.apiKeyEnv ?? defaultRerankApiKeyEnv(this.provider);
-		const apiKey = options.apiKey ?? env[apiKeyEnv];
+		const apiKey =
+			options.apiKey ??
+			(isDazzi ? readDazziLoginToken(options.agentDir) : apiKeyEnv === undefined ? undefined : env[apiKeyEnv]);
 		if (apiKey === undefined || apiKey.length === 0) {
-			this.unavailableReason = `no API key: set ${apiKeyEnv} or configure rerank.apiKeyEnv`;
+			this.unavailableReason = isDazzi
+				? DAZZI_LOGIN_REQUIRED_MESSAGE
+				: `no API key: set ${apiKeyEnv} or configure rerank.apiKeyEnv`;
 			return;
 		}
-		const baseUrl = options.baseUrl ?? (this.provider === AUTORAG_PROVIDER_ID ? autoragApiBaseUrl(env) : undefined);
+		const baseUrl = options.baseUrl ?? (isDazzi ? dazziApiBaseUrl(env) : undefined);
 		const sdkOptions: ConstructorParameters<typeof OpenRouter>[0] = { apiKey };
 		if (baseUrl !== undefined) sdkOptions.serverURL = baseUrl;
 		if (options.timeoutMs !== undefined) sdkOptions.timeoutMs = options.timeoutMs;

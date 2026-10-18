@@ -8,16 +8,26 @@ import { buildAgentOptions, resolveConfig } from "../../src/cli/config.ts";
 
 let root: string;
 let previousHome: string | undefined;
+let previousAutoRagHome: string | undefined;
+let previousAutoRagConfig: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-init-"));
 	previousHome = process.env.HOME;
+	previousAutoRagHome = process.env.AUTORAG_HOME;
+	previousAutoRagConfig = process.env.AUTORAG_CONFIG;
 	process.env.HOME = join(root, "home");
+	process.env.AUTORAG_HOME = join(root, "home", ".autorag");
+	delete process.env.AUTORAG_CONFIG;
 });
 
 afterEach(() => {
 	if (previousHome === undefined) delete process.env.HOME;
 	else process.env.HOME = previousHome;
+	if (previousAutoRagHome === undefined) delete process.env.AUTORAG_HOME;
+	else process.env.AUTORAG_HOME = previousAutoRagHome;
+	if (previousAutoRagConfig === undefined) delete process.env.AUTORAG_CONFIG;
+	else process.env.AUTORAG_CONFIG = previousAutoRagConfig;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -61,6 +71,41 @@ describe("runInit", () => {
 		expect(config.model).toBeUndefined();
 		expect(config.jikji).toEqual({});
 		expect(config.excludeExactDuplicates).toBe(true);
+		expect(config.excludePaths).toBeUndefined();
+	});
+
+	it("resolves exclusions against the invocation cwd and keeps them stable across reloads", async () => {
+		const initCwd = join(root, "project");
+		const workspace = join(root, "workspace");
+		const expected = [join(initCwd, "docs", "private, notes"), join(root, "generated")];
+		const code = await runInit(
+			makeCtx({
+				cwd: initCwd,
+				flags: { workspace, exclude: expected[1] },
+				repeatedFlags: { exclude: [join("docs", "private, notes"), expected[1]] },
+			}),
+		);
+		expect(code).toBe(0);
+		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).excludePaths).toEqual(expected);
+		const resolved = resolveConfig({
+			flags: { config: homeConfigPath() },
+			env: { HOME: process.env.HOME },
+			cwd: join(root, "other"),
+		});
+		expect(resolved.excludePaths).toEqual(expected);
+		expect(buildAgentOptions(resolved).excludePaths).toEqual(expected);
+	});
+
+	it("accepts a single exclusion from a direct command context", async () => {
+		expect(await runInit(makeCtx({ flags: { exclude: "private notes" } }))).toBe(0);
+		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).excludePaths).toEqual([join(root, "private notes")]);
+	});
+
+	it.each(["", "   ", true])("rejects an empty exclusion without writing config: %j", async (exclude) => {
+		const stderr: string[] = [];
+		expect(await runInit(makeCtx({ flags: { exclude }, stderr: (line) => stderr.push(line) }))).toBe(2);
+		expect(stderr.join("\n")).toContain("--exclude");
+		expect(existsSync(homeConfigPath())).toBe(false);
 	});
 
 	it("preserves a migrated legacy model unless explicitly overridden", async () => {
@@ -128,10 +173,16 @@ describe("runInit", () => {
 		const expectedWorkspace = join(legacyCwd, "workspace");
 		const expectedSearch = join(expectedWorkspace, "docs");
 		const expectedMemory = join(expectedWorkspace, "memory.json");
+		const expectedExclusion = join(expectedWorkspace, "docs", "private.txt");
 		mkdirSync(legacyCwd, { recursive: true });
 		writeFileSync(
 			join(legacyCwd, "autorag.config.json"),
-			JSON.stringify({ workspacePath: "workspace", searchPaths: ["docs"], memoryPath: "memory.json" }),
+			JSON.stringify({
+				workspacePath: "workspace",
+				searchPaths: ["docs"],
+				memoryPath: "memory.json",
+				excludePaths: ["docs/private.txt"],
+			}),
 			"utf8",
 		);
 
@@ -143,6 +194,7 @@ describe("runInit", () => {
 			workspacePath: expectedWorkspace,
 			searchPaths: [expectedSearch],
 			memoryPath: expectedMemory,
+			excludePaths: [expectedExclusion],
 		};
 
 		expect(initCode).toBe(0);
@@ -156,10 +208,16 @@ describe("runInit", () => {
 		const explicitWorkspace = join(root, "explicit-workspace");
 		const explicitSearch = join(root, "explicit-docs");
 		const explicitMemory = join(root, "explicit-memory.json");
+		const explicitExclusion = join(root, "explicit-private.txt");
 		mkdirSync(legacyCwd, { recursive: true });
 		writeFileSync(
 			join(legacyCwd, "autorag.config.json"),
-			JSON.stringify({ workspacePath: "workspace", searchPaths: ["docs"], memoryPath: "memory.json" }),
+			JSON.stringify({
+				workspacePath: "workspace",
+				searchPaths: ["docs"],
+				memoryPath: "memory.json",
+				excludePaths: ["docs/private.txt"],
+			}),
 			"utf8",
 		);
 
@@ -170,6 +228,7 @@ describe("runInit", () => {
 					workspace: explicitWorkspace,
 					"search-paths": explicitSearch,
 					"memory-path": explicitMemory,
+					exclude: explicitExclusion,
 				},
 			}),
 		);
@@ -179,7 +238,44 @@ describe("runInit", () => {
 			workspacePath: explicitWorkspace,
 			searchPaths: [explicitSearch],
 			memoryPath: explicitMemory,
+			excludePaths: [explicitExclusion],
 		});
+	});
+
+	it("keeps inherited exclusions anchored to the legacy workspace when init overrides workspace", async () => {
+		const legacyCwd = join(root, "legacy-cwd");
+		const workspace = join(root, "new-workspace");
+		mkdirSync(legacyCwd, { recursive: true });
+		writeFileSync(
+			join(legacyCwd, "autorag.config.json"),
+			JSON.stringify({ workspacePath: "old-workspace", excludePaths: ["private.txt"] }),
+		);
+
+		expect(await runInit(makeCtx({ cwd: legacyCwd, flags: { workspace } }))).toBe(0);
+		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8"))).toMatchObject({
+			workspacePath: workspace,
+			excludePaths: [join(legacyCwd, "old-workspace", "private.txt")],
+		});
+	});
+
+	it("rejects empty inherited exclusions before writing a migrated config", async () => {
+		writeFileSync(join(root, "autorag.config.json"), JSON.stringify({ excludePaths: [""] }));
+		const stderr: string[] = [];
+		expect(await runInit(makeCtx({ stderr: (line) => stderr.push(line) }))).toBe(2);
+		expect(stderr.join("\n")).toContain("excludePaths");
+		expect(existsSync(homeConfigPath())).toBe(false);
+	});
+
+	it.each([false, true])("validates legacy exclusions before normalization (readOnly=%s)", (readOnly) => {
+		const configHome = join(root, "config-home");
+		const legacyPath = join(root, "autorag.config.json");
+		const legacyBytes = JSON.stringify({ excludePaths: [""] });
+		writeFileSync(legacyPath, legacyBytes);
+		expect(() => resolveConfig({ flags: {}, env: { HOME: configHome }, cwd: root, readOnly })).toThrow(
+			"excludePaths",
+		);
+		expect(readFileSync(legacyPath, "utf8")).toBe(legacyBytes);
+		expect(existsSync(join(configHome, ".autorag", "config.json"))).toBe(false);
 	});
 
 	it("writes autorag.config.json with the provided keys folded in", async () => {

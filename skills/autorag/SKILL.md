@@ -16,7 +16,8 @@ sources, judges evidence, and curates the final answer. There is no subagent or
 separate model role.
 
 AutoRAG reads source documents and writes indexes only under the configured
-workspace `.autorag/` directory and Jikji's per-source `.jikji/` caches. Never
+workspace `.autorag/` directory and Jikji's central store (`<OS data dir>/jikji/`,
+plus a `.jikji_agent_map.md` guide in each indexed root). Never
 move, rename, edit, or delete source files.
 
 ## Preflight

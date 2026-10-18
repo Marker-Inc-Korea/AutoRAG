@@ -46,6 +46,7 @@ export type {
 	MinSyncChunkerConfig,
 	MinSyncDiagnostic,
 	MinSyncEmbedderConfig,
+	MinSyncFileFailure,
 	MinSyncOptions,
 	MinSyncQueryHit,
 	MinSyncSyncResult,

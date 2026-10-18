@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -79,21 +79,19 @@ describe("system prompt Everything guidance", () => {
 	it("documents Everything only when the tool is available", () => {
 		const withTool = buildSystemPrompt({
 			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME],
-			manifests: [],
 		});
 		expect(withTool).toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**:`);
 		expect(withTool).toContain("## Windows Everything File-Name Search");
 		expect(withTool).toContain("ext:");
 		expect(withTool).not.toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**: caller-provided tool`);
 
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash"], manifests: [] });
+		const withoutTool = buildSystemPrompt({ toolNames: ["bash"] });
 		expect(withoutTool).not.toContain("Everything");
 	});
 
 	it("routes file discovery to everything_search instead of a jikji_find tool that is not registered", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME, "search_all_documents"],
-			manifests: [],
 		});
 		expect(prompt).not.toContain("jikji_find");
 		expect(prompt).toContain("use `everything_search` actively to locate relevant files and folders");
@@ -102,7 +100,6 @@ describe("system prompt Everything guidance", () => {
 	it("names both discovery tools when Jikji and Everything are registered", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["bash", "jikji_find", EVERYTHING_SEARCH_TOOL_NAME],
-			manifests: [],
 			jikjiIndexingEnabled: true,
 		});
 		expect(prompt).toMatch(/`jikji_find`[^\n]*`everything_search`|`everything_search`[^\n]*`jikji_find`/);
@@ -141,9 +138,10 @@ describe("AutoRAGAgent Everything wiring", () => {
 		return { code: 0, stdout: "", stderr: "" };
 	};
 
-	function windowsAgent() {
+	function windowsAgent(options: { readonly excludePaths?: readonly string[]; readonly run?: EverythingRunner } = {}) {
 		return new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
+			excludePaths: options.excludePaths,
 			workspacePath: tmpDir,
 			memoryPath: join(tmpDir, "memory.json"),
 			minSync: { autoInstall: false },
@@ -157,7 +155,7 @@ describe("AutoRAGAgent Everything wiring", () => {
 					esPath: "C:\\c\\es.exe",
 					source: "cached",
 				}),
-				run: fakeRunner,
+				run: options.run ?? fakeRunner,
 				launch: () => {},
 			},
 		});
@@ -167,6 +165,29 @@ describe("AutoRAGAgent Everything wiring", () => {
 		const agent = windowsAgent();
 		expect(toolNames(agent)).toContain(EVERYTHING_SEARCH_TOOL_NAME);
 		expect(agent.getSystemPrompt()).toContain("## Windows Everything File-Name Search");
+	});
+
+	it("passes configured file and folder exclusions to Everything search", async () => {
+		// The agent canonicalizes excludePaths with realpath before handing them
+		// to Everything, so the fake Everything entries must use the canonical
+		// root too. On macOS the tmpdir lives under the /var -> /private/var
+		// symlink, so raw join(tmpDir, ...) paths would never match.
+		const root = realpathSync(tmpDir);
+		const excludedFolder = join(root, "private");
+		const excludedFile = join(root, "secret.txt");
+		const keptFile = join(root, "private-copy", "kept.txt");
+		const paths = [join(excludedFolder, "hidden.txt"), excludedFile, keptFile];
+		const agent = windowsAgent({
+			excludePaths: [excludedFolder, excludedFile],
+			run: async (command, args, timeoutMs) =>
+				args.includes("-json")
+					? { code: 0, stdout: JSON.stringify(paths.map((filename) => ({ filename }))), stderr: "" }
+					: fakeRunner(command, args, timeoutMs),
+		});
+		const result = await agent.searchEverything({ query: "*.txt" });
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((entry) => entry.path)).toEqual([keptFile]);
 	});
 
 	it("omits Everything on non-Windows hosts and when disabled", () => {

@@ -22,7 +22,7 @@ export interface FakeServer {
 	close(): Promise<void>;
 }
 
-/** Local HTTP server standing in for the hosted AutoRAG API in unit tests. */
+/** Local HTTP server standing in for the hosted Dazzi Models API in unit tests. */
 export async function startFakeServer(handler: (request: FakeRequest) => FakeResponse): Promise<FakeServer> {
 	const requests: FakeRequest[] = [];
 	const server = createServer((req, res) => {

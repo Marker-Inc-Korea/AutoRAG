@@ -13,7 +13,8 @@ Usage: autorag lite <subcommand> [args] [flags]
 Subcommands:
   autorag lite init
                        Write the configured model-free lifecycle config
-                       (--search-paths PATHS  --workspace DIR  --memory-path FILE  --force)
+                       (--search-paths PATHS  --exclude PATH  --workspace DIR  --memory-path FILE  --force)
+                       --exclude may be repeated; relative paths use the current directory
   autorag lite refresh Run an incremental index refresh (no model required)
                        (--full  --force  --method minsync,parsed,datasources,jikji,everything,fsearch,all)
   autorag lite watch  Watch configured roots (or --once for one refresh tick)

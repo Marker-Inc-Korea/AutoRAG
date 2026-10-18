@@ -577,3 +577,111 @@ describe("CrawlerSidecar robustness", () => {
 		sidecar.close();
 	});
 });
+
+describe("CrawlerSidecar kakao descriptor", () => {
+	function seedKakao(
+		rows: readonly {
+			chunkId: string;
+			chatId: string;
+			chatName: string;
+			sender: string;
+			startedAt: string;
+			text: string;
+		}[],
+	): void {
+		const db = new DatabaseSync(crawlerDb);
+		db.exec(`
+			create table chunks (
+				chunk_id text primary key,
+				account_hash text not null,
+				chat_id text not null,
+				chat_name text not null,
+				sender_nickname text not null,
+				started_at text not null,
+				ended_at text not null,
+				text text not null,
+				message_count integer not null
+			);
+			create virtual table chunks_fts using fts5(chunk_id unindexed, text);
+		`);
+		const insertChunk = db.prepare(
+			"insert into chunks (chunk_id, account_hash, chat_id, chat_name, sender_nickname, started_at, ended_at, text, message_count) values (?, 'acct', ?, ?, ?, ?, ?, ?, 1)",
+		);
+		const insertFts = db.prepare("insert into chunks_fts (rowid, chunk_id, text) values (?, ?, ?)");
+		for (const row of rows) {
+			const res = insertChunk.run(
+				row.chunkId,
+				row.chatId,
+				row.chatName,
+				row.sender,
+				row.startedAt,
+				row.startedAt,
+				row.text,
+			);
+			insertFts.run(res.lastInsertRowid, row.chunkId, row.text);
+		}
+		db.close();
+	}
+
+	it("indexes and searches lazykatok chunks with BM25, semantic and hybrid while preserving ISO timestamps and chat metadata", async () => {
+		seedKakao([
+			{
+				chunkId: "chunk_1",
+				chatId: "room_eng",
+				chatName: "오픈소스 개발과제",
+				sender: "정철현",
+				startedAt: "2026-04-13T05:57:50+00:00",
+				text: "we will ship the release tonight",
+			},
+			{
+				chunkId: "chunk_2",
+				chatId: "room_lunch",
+				chatName: "점심방",
+				sender: "김민수",
+				startedAt: "2026-04-14T03:00:00+00:00",
+				text: "pizza for lunch today",
+			},
+			{
+				chunkId: "chunk_feed",
+				chatId: "room_eng",
+				chatName: "오픈소스 개발과제",
+				sender: "정철현",
+				startedAt: "2026-04-13T06:00:00+00:00",
+				text: '{"logId":3809217410566397952,"byHost":false,"hidden":true,"feedType":14}',
+			},
+			{
+				chunkId: "chunk_voip",
+				chatId: "room_eng",
+				chatName: "오픈소스 개발과제",
+				sender: "정철현",
+				startedAt: "2026-04-13T06:01:00+00:00",
+				text: '{"type":"bye","csIP":"121.53.219.109","csPort":12029}',
+			},
+		]);
+		const sidecar = new CrawlerSidecar({
+			descriptor: CRAWLER_DESCRIPTORS.kakao,
+			crawlerDbPath: crawlerDb,
+			sidecarDbPath: sidecarDb,
+			embedder: vocabEmbedder(VOCAB),
+		});
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 2, remaining: 0 });
+		const lexical = sidecar.searchLexical("release", 5);
+		expect(lexical).toHaveLength(1);
+		expect(lexical[0]).toMatchObject({
+			key: "chunk_1",
+			content: "we will ship the release tonight",
+			title: "오픈소스 개발과제",
+			publishedAt: Date.parse("2026-04-13T05:57:50+00:00"),
+			metadata: {
+				chatId: "room_eng",
+				chatName: "오픈소스 개발과제",
+				senderNickname: "정철현",
+				startedAt: "2026-04-13T05:57:50+00:00",
+				endedAt: "2026-04-13T05:57:50+00:00",
+			},
+		});
+		const hybrid = await sidecar.searchHybrid("deploy ship", 5);
+		expect(hybrid[0]?.key).toBe("chunk_1");
+		sidecar.close();
+	});
+});

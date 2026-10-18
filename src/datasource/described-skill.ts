@@ -1,5 +1,6 @@
 import type { RetrievalMethod } from "../retrieval/types.ts";
 import type {
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -29,8 +30,8 @@ export class DescribedDatasourceSkill implements DatasourceSkill {
 		return this.skill.polling();
 	}
 
-	index(): Promise<DatasourceIndexResult> {
-		return this.skill.index();
+	index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
+		return this.skill.index(options);
 	}
 
 	retrievalMethods(): readonly RetrievalMethod[] {

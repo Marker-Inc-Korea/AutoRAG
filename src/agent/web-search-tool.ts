@@ -3,8 +3,8 @@
  *
  * LLM-facing wrapper around the oh-my-pi-style provider chain in
  * `src/web/search/`: credential-free end to end (model-native search on the
- * agent's own model credential, the anonymous Perplexity ask endpoint,
- * Parallel's keyless MCP, then the scraped engines), where quota/auth/bot
+ * agent's own model credential, Parallel's keyless MCP, DuckDuckGo, then
+ * the anonymous Perplexity ask endpoint and the other scraped engines), where quota/auth/bot
  * failures automatically fall back down the chain. The model only supplies
  * `query` plus optional hints; provider selection and credentials are never
  * exposed through tool arguments.

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { LanguageError, parseLanguageList } from "../../language.ts";
 import {
 	type CliConfig,
@@ -29,6 +29,22 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			.split(",")
 			.map((entry) => entry.trim())
 			.filter((entry) => entry.length > 0);
+	}
+	const excludedPaths =
+		ctx.repeatedFlags?.exclude ?? (typeof flags.exclude === "string" ? [flags.exclude] : undefined);
+	if (flags.exclude !== undefined || excludedPaths !== undefined) {
+		if (
+			excludedPaths === undefined ||
+			excludedPaths.length === 0 ||
+			excludedPaths.some((path) => path.trim().length === 0)
+		) {
+			ctx.stderr(
+				renderError(new ConfigError("--exclude requires a non-empty path"), { json: ctx.json, debug: ctx.debug }),
+			);
+			return 2;
+		}
+		// CLI paths are relative to the invocation, even when --workspace points elsewhere.
+		partial.excludePaths = excludedPaths.map((path) => resolve(ctx.cwd, path));
 	}
 	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];
@@ -101,6 +117,7 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			const legacy = JSON.parse(readFileSync(legacyPath, "utf8")) as Partial<CliConfig>;
 			const normalizedLegacy = normalizeLegacyConfigPaths(legacy, dirname(legacyPath));
 			partial.searchPaths ??= normalizedLegacy.searchPaths;
+			partial.excludePaths ??= normalizedLegacy.excludePaths;
 			partial.workspacePath ??= normalizedLegacy.workspacePath;
 			partial.memoryPath ??= normalizedLegacy.memoryPath;
 			partial.model ??= legacy.model;

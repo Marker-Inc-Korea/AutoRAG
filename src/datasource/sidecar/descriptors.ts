@@ -174,11 +174,34 @@ function chatCrawler(id: string): CrawlerDescriptor {
 	};
 }
 
+const kakao: CrawlerDescriptor = {
+	id: "kakao",
+	keyExpression: "m.chunk_id",
+	chunkId: (key) => key,
+	fromClause: "chunks m",
+	liveWhere:
+		"length(trim(coalesce(m.text, ''))) > 0 and not (json_valid(m.text) and (json_extract(m.text, '$.feedType') is not null or json_extract(m.text, '$.csIP') is not null))",
+	textExpression: "coalesce(m.text, '')",
+	titleExpression: "m.chat_name",
+	epochSecondsExpression: "unixepoch(m.started_at)",
+	fts: { table: "chunks_fts", joinOn: "chunks_fts.rowid = m.rowid" },
+	metadata: [
+		{ sql: "m.chat_id", key: "chatId" },
+		{ sql: "m.chat_name", key: "chatName" },
+		{ sql: "m.sender_nickname", key: "senderNickname" },
+		{ sql: "m.started_at", key: "startedAt" },
+		{ sql: "m.ended_at", key: "endedAt" },
+	],
+	channelIdExpression: "m.chat_id",
+	channelNameExpression: "m.chat_name",
+	hierarchy: (metadata) => ["chats", str(metadata.chatName) ?? str(metadata.chatId) ?? "unknown"],
+};
+
 export const CRAWLER_DESCRIPTORS = {
 	slack,
 	telegram: chatCrawler("telegram"),
 	whatsapp: chatCrawler("whatsapp"),
 	discord: discordDescriptor,
+	kakao,
 } as const satisfies Readonly<Record<string, CrawlerDescriptor>>;
-
 export type SidecarCrawlerId = keyof typeof CRAWLER_DESCRIPTORS;

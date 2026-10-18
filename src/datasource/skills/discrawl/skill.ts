@@ -6,6 +6,7 @@ import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -31,9 +32,9 @@ import type {
 import { DEFAULT_DISCRAWL_EMBEDDING_MODEL, DEFAULT_DISCRAWL_MODE, ENGLISH_ONLY_EMBEDDING_MODELS } from "./types.ts";
 
 export interface DiscrawlSkillClient extends DiscrawlSearchClient, DiscrawlStatusClient {
-	doctor(): Promise<DiscrawlDoctorResult>;
-	sync(): Promise<DiscrawlSyncResult>;
-	embed(limit?: number, rebuild?: boolean): Promise<DiscrawlEmbedResult>;
+	doctor(signal?: AbortSignal): Promise<DiscrawlDoctorResult>;
+	sync(signal?: AbortSignal): Promise<DiscrawlSyncResult>;
+	embed(limit?: number, rebuild?: boolean, signal?: AbortSignal): Promise<DiscrawlEmbedResult>;
 	prepareEmbeddings?(): Promise<boolean>;
 }
 
@@ -148,7 +149,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 		};
 	}
 
-	async index(): Promise<DatasourceIndexResult> {
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		const diagnostics: DatasourceDiagnostic[] = [];
 
 		let rebuildEmbeddings = false;
@@ -168,7 +169,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 
 		let doctor: DiscrawlDoctorResult;
 		try {
-			doctor = await this.client.doctor();
+			doctor = await this.client.doctor(options?.signal);
 		} catch {
 			return this.fail("datasource-unavailable", "discrawl doctor failed unexpectedly", diagnostics);
 		}
@@ -181,14 +182,14 @@ export class DiscrawlSkill implements DatasourceSkill {
 
 		let sync: DiscrawlSyncResult;
 		try {
-			sync = await this.client.sync();
+			sync = await this.client.sync(options?.signal);
 		} catch {
 			return this.fail("datasource-index-failed", "discrawl sync failed unexpectedly", diagnostics);
 		}
 		if (!sync.ok) return this.fail(failureCode(sync, "datasource-index-failed"), describe(sync), diagnostics);
 
 		if (doctor.data.embeddingsOk) {
-			const embed = await this.runEmbed(rebuildEmbeddings);
+			const embed = await this.runEmbed(rebuildEmbeddings, options?.signal);
 			if (embed !== undefined) diagnostics.push(embed);
 		} else {
 			diagnostics.push({
@@ -327,10 +328,10 @@ export class DiscrawlSkill implements DatasourceSkill {
 		};
 	}
 
-	private async runEmbed(rebuild = false): Promise<DatasourceDiagnostic | undefined> {
+	private async runEmbed(rebuild = false, signal?: AbortSignal): Promise<DatasourceDiagnostic | undefined> {
 		let embed: DiscrawlEmbedResult;
 		try {
-			embed = await this.client.embed(this.embedLimit, rebuild);
+			embed = await this.client.embed(this.embedLimit, rebuild, signal);
 		} catch {
 			return {
 				code: "datasource-index-failed",

@@ -39,6 +39,44 @@ autorag gateway stop
 when available, health, and sanitized failure details. `gateway stop` stops
 the owned child process and removes its pid/lock state.
 
+## Excluding files and folders
+
+Exclude generated workspaces, archives, or individual files before the first
+refresh by repeating `--exclude`:
+
+```bash
+autorag init --search-paths /path/to/docs \
+  --exclude "/path/to/docs/Build output" \
+  --exclude "/path/to/docs/Archive, old"
+autorag refresh
+```
+
+Each `--exclude` argument is one complete path; spaces and commas are preserved.
+Relative CLI paths resolve from the current directory, even when `--workspace`
+points elsewhere. The generated config stores absolute paths.
+
+For an existing config, add or edit `excludePaths`, preserving the other settings:
+
+```json
+{
+  "searchPaths": ["/path/to/docs"],
+  "excludePaths": ["/path/to/docs/Build output", "/path/to/docs/private-notes.txt"]
+}
+```
+
+Each entry excludes that exact file or directory and all descendants of an
+excluded directory. Entries are literal paths, not glob patterns. Relative paths
+in JSON resolve against the configured `workspacePath`, or the config file's
+directory when `workspacePath` is absent.
+
+Run `autorag refresh` after editing the config to remove excluded documents from
+the parsed mirror and update the indexes. Native fsearch and Everything results
+are filtered before pagination, including exact file exclusions and stale index
+entries. Native filename indexes may retain metadata for individually excluded
+files; the result filter prevents those entries from appearing in searches.
+The fsearch filesystem fallback applies exclusions before walking a subtree, so
+excluded contents do not consume its traversal budget.
+
 ## Selecting a profile
 
 The default profile is Qwen3-Embedding-0.6B at 1024 dimensions; it is the only
@@ -137,11 +175,93 @@ diagnostic `source` is the virtual path, and the message is the underlying
 filesystem error. Refresh removes any previous mirror for that path and
 continues with the remaining files. These transient reads are not stored as
 skip records, so a later refresh tries the source again once it can be read.
-Unexpected read errors, parser bugs, and mirror or index write failures still
-stop the refresh.
+Any other read error, a parser that throws something other than `ParseError`, and
+a failed mirror write are also isolated to the one file. Each is skipped and the
+refresh continues:
 
-`AutoRAGAgent.refresh()` and `getRefreshStatus()` expose both codes through
-the public `SearchDocumentDiagnosticCode` type, alongside parser diagnostics.
+| Code | Severity | Cause |
+| --- | --- | --- |
+| `source-read-failed` | warning | Read error not listed above (`EMFILE`, `EIO`, `EBUSY`, `ETIMEDOUT`, …); `reason` carries the errno code. |
+| `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
+| `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
+
+`EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
+(50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
+`refresh.transientRetries` config key (default `3`, `0` disables retries):
+
+```json
+{ "refresh": { "transientRetries": 3 } }
+```
+
+Like `source-unreadable`, these skips are not persisted, so the next refresh
+tries the file again. Mirror writes go through a temp file that is removed on
+any failure, so a failed write never leaves a `*.tmp` orphan.
+
+A write failure that makes the workspace itself unusable (`ENOSPC`, `EDQUOT`,
+`EACCES`, `EPERM`, `EROFS`) is not a per-file problem and aborts the refresh with
+a `MirrorWorkspaceError` naming the workspace. Files already mirrored in that run
+stay in the index, so the next refresh resumes incrementally.
+
+`AutoRAGAgent.refresh()` and `getRefreshStatus()` expose all of these codes
+through the public `SearchDocumentDiagnosticCode` type, alongside parser
+diagnostics.
+
+### Unavailable search roots and mass deletions
+
+Parsed refresh never treats a search root it cannot see as proof that its
+documents are gone. Before walking, each root is probed. A root that no longer
+exists (`gone`), is no longer a directory (`not-a-directory`), cannot be listed
+(`unreadable`), or is empty although it previously held indexed documents
+(`empty`) is skipped: its previous mirrors and skip records stay untouched and
+refresh records one `search-root-unavailable` warning whose `source` is the
+opaque root prefix (for example `/docs`) and whose `reason` is one of the four
+values. `deleted-mirror` is never emitted for these roots. Healthy roots in the
+same refresh are still indexed and still delete their genuinely stale mirrors.
+A forced refresh (`force`) treats an empty root as intentionally emptied.
+
+A refresh that would delete more than `refresh.maxDeleteRatio` (default `0.3`)
+of the indexed documents, and more than 100 of them, is refused: nothing is
+deleted and one `mass-delete-suppressed` warning is recorded. The next refresh
+repeats the check; a forced refresh (`autorag refresh --force`) deletes them.
+
+The directory walk is bounded by `refresh.maxScannedEntries` (default
+`2000000` entries per root) and `refresh.maxDepth` (default `64`). Hitting
+either records a `walk-truncated` warning (`reason` `max-entries` or
+`max-depth`) and keeps mirrors for anything the walk did not reach. A single
+unreadable subdirectory records `directory-unreadable` with the opaque virtual
+path of that directory, keeps the mirrors beneath it, and does not stop its
+siblings from indexing.
+
+```json
+{ "refresh": { "maxDeleteRatio": 0.3, "maxScannedEntries": 2000000, "maxDepth": 64 } }
+```
+
+## Cancelling a refresh
+
+`AutoRAGAgent.refresh(force, { signal })` forwards the signal to the MinSync
+`init`, `check`, and `sync` processes. Aborting stops the running `minsync` and
+every descendant it started (SIGTERM to the process group, SIGKILL after 5
+seconds), restores the `config.toml` this run rewrote, and rejects `refresh`
+with the signal's reason. On POSIX each MinSync process leads its own process
+group, so the host also reaps it on SIGINT, SIGTERM, SIGHUP, and exit; Windows
+uses `taskkill /t`. A run without a signal behaves as before. Only the MinSync
+phase observes the signal; parse, datasource, and Jikji phases do not yet.
+
+A `minsync` run that outlives its host (for example after `SIGKILL` of the
+host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
+`sync` exits 3 with `another sync is in progress`, which AutoRAG reports as the
+retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
+of a generic `minsync-sync-failed`.
+
+## Skipped files (partial sync)
+
+MinSync 0.4.8 skips a file it cannot read, chunk, or embed instead of aborting
+the sync, and exits 6 with `partial: true` and a `files_failed` list. AutoRAG
+treats that as a completed sync (`minsync.ok: true`) and reports each skipped
+file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
+inside the MinSync workspace. MinSync keeps the file's previous chunks and
+retries it on the next sync. Only an exit 6 without a `partial` report is a
+`minsync-sync-failed`.
 
 ## Migration and failure behavior
 
