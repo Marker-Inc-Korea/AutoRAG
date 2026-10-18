@@ -48,8 +48,8 @@ export interface MinSyncSyncResult {
 	/** Files MinSync skipped (exit 6, `partial`); the sync itself completed and the next sync retries them. */
 	readonly filesFailed?: readonly MinSyncFileFailure[];
 	/**
-	 * Set when the tokenizer the languages call for needs the Kiwi native library and it was not found, so the index
-	 * was built with whitespace tokenization instead. The sync itself succeeded.
+	 * Set when the multilingual tokenizer needs the Kiwi native library and it was not found, so the index was
+	 * built with whitespace tokenization instead. The sync itself succeeded.
 	 */
 	readonly lexicalFallback?: { readonly requested: MinSyncLexicalLanguage; readonly used: MinSyncLexicalLanguage };
 }

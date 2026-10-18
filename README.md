@@ -199,7 +199,7 @@ AutoRAG Agent orchestrates five integrated subsystems:
 
 1. **Retrieval Memory (`check_memory`):** After each answer, cited evidence Jev judges to genuinely support it is stored in `~/.autorag/memory.json`. Later searches receive this conversation's evidence, similar past questions, and long-term insights as **advisory reference** — it never reorders results or overrides current evidence. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 2. **Pluggable Multi-Method Retrieval:**
-   - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors. The tokenizer follows your `languages` setting: with the [Kiwi](https://github.com/bab2min/Kiwi) library installed, Korean (the default `ko,en`) is analyzed into morphemes, so `인증서를` finds `인증서`; without it AutoRAG warns and tokenizes on whitespace. See [docs/minsync-setup.md](docs/minsync-setup.md#bm25-language).
+   - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors. AutoRAG always uses MinSync's `multilingual` tokenizer, which keeps each original word and adds Korean morphemes (via the [Kiwi](https://github.com/bab2min/Kiwi) library), so both `연구목표` and `인증서를` → `인증서` match; without Kiwi AutoRAG warns and tokenizes on whitespace. See [docs/minsync-setup.md](docs/minsync-setup.md#bm25-tokenizer).
    - **Semantic Vector Search:** Dense vector retrieval over CDC chunks via the built-in embedding gateway.
    - **Hybrid Search:** Combines BM25 and vector ranking via Reciprocal Rank Fusion (RRF).
    - **Jikji Find-First Discovery:** Local CLI-backed fast discovery answer packs.

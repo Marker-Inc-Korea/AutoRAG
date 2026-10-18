@@ -1,7 +1,6 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
 import { ensureRuntime } from "../embedding-runtime/index.ts";
-import type { LanguageTag } from "../language.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
@@ -14,7 +13,6 @@ import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
 import { minSyncBinaryMissingError, minSyncInstallFailedError } from "./errors.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
-import { type MinSyncLexicalLanguage, minSyncLexicalLanguage } from "./lexical-language.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
@@ -28,11 +26,6 @@ export interface MinSyncVectorMethodOptions {
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
-	/**
-	 * The corpus languages (AutoRAG's global `languages` setting). They select MinSync's BM25 tokenizer, so
-	 * Korean text is analyzed into morphemes instead of split on whitespace. Omitted: MinSync keeps its own default.
-	 */
-	readonly languages?: readonly LanguageTag[];
 	readonly mode?: MinSyncQueryMode;
 	readonly runtime?: MinSyncRuntime;
 	/** Default `topK` used when the caller omits one. Default 50. */
@@ -91,7 +84,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
-	private readonly lexicalLanguage: MinSyncLexicalLanguage | undefined;
 	private readonly mode: MinSyncQueryMode;
 	private readonly runtime: MinSyncRuntime | undefined;
 	private readonly defaultTopK: number;
@@ -105,7 +97,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
-		this.lexicalLanguage = options.languages === undefined ? undefined : minSyncLexicalLanguage(options.languages);
 		this.defaultTopK = options.defaultTopK ?? 50;
 		this.scopedTopK = options.scopedTopK ?? 100;
 		this.mode = options.mode ?? "vector";
@@ -157,7 +148,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
-			lexicalLanguage: this.lexicalLanguage,
 			runtime: this.runtime,
 		});
 		return withExcluded(await client.sync(force, signal));

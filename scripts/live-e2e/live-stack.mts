@@ -31,8 +31,8 @@ const refresh = await agent.refresh(mode === "cold", { methods: ["parsed", "mins
 if (refresh.minsync?.ok !== true) throw new Error(`minsync-${refresh.minsync?.reason ?? "unready"}`);
 if (!existsSync(cursorPath)) throw new Error("minsync-cursor-missing");
 // The Korean fixture holds only suffixed forms of 인증서 (인증서를, 인증서는). Its bare stem reaches the fixture through
-// BM25 only when the agent built the index with the Korean tokenizer, which the default `languages` (ko, en) selects
-// and which needs Kiwi on the host. Without Kiwi the sync falls back to whitespace tokenization and the lane is a SKIP.
+// BM25 only when the agent built the index with the multilingual tokenizer, which AutoRAG always selects and which
+// needs Kiwi on the host. Without Kiwi the sync falls back to whitespace tokenization and the lane is a SKIP.
 const koreanLane = resolveKoreanLexicalLane(
 	refresh.minsync.lexicalFallback,
 	process.env.AUTORAG_LIVE_E2E_KIWI === "required",

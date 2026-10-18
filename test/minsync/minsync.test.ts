@@ -285,7 +285,9 @@ describe("MinSyncVectorMethod", () => {
 
 		// Then
 		expect(result).toMatchObject({ synced: 1 });
-		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["init", "--format", "json"], cwd: minSyncCwd() }));
+		expect(loggedCalls()).toContainEqual(
+			JSON.stringify({ args: ["init", "--format", "json", "--language", "multilingual"], cwd: minSyncCwd() }),
+		);
 		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["check", "--format", "json"], cwd: minSyncCwd() }));
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({ args: ["sync", "--full", "--format", "json"], cwd: minSyncCwd() }),
@@ -1761,7 +1763,7 @@ dimension = 768
 	});
 });
 
-describe("MinSync lexical (BM25) language", () => {
+describe("MinSync lexical (BM25) tokenizer", () => {
 	function callArgs(command: string): readonly string[] | undefined {
 		return loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[] })
@@ -1789,12 +1791,20 @@ describe("MinSync lexical (BM25) language", () => {
 		return parsed.lexical?.language;
 	}
 
-	function methodFor(languages?: readonly ("ko" | "en" | "ja")[]): MinSyncVectorMethod {
-		return new MinSyncVectorMethod({
-			binaryPath: minsyncBinary,
-			root,
-			workspacePath: minsyncWorkspace,
+	function method(): MinSyncVectorMethod {
+		return new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+	}
+
+	function agentWith(languages?: readonly ("ko" | "en" | "ja")[]): AutoRAGAgent {
+		return new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
 			...(languages === undefined ? {} : { languages }),
+			jikji: false,
+			everything: false,
+			fsearch: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
 		});
 	}
 
@@ -1802,93 +1812,79 @@ describe("MinSync lexical (BM25) language", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it("initializes Korean BM25 tokenization when the languages include ko", async () => {
+	it("initializes MinSync with the multilingual tokenizer", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		const result = await methodFor(["ko", "en"]).sync();
+		const result = await method().sync();
 
-		expect(languageFlag(callArgs("init"))).toBe("ko");
-		expect(configuredLanguage()).toBe("ko");
+		expect(languageFlag(callArgs("init"))).toBe("multilingual");
+		expect(configuredLanguage()).toBe("multilingual");
 		expect(result.lexicalFallback).toBeUndefined();
 	});
 
-	it("falls back to whitespace tokenization when the Kiwi library the Korean tokenizer needs is missing", async () => {
+	it("uses the multilingual tokenizer whatever languages the agent is configured with", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await agentWith().refresh(false, { methods: ["minsync"] });
+		expect(languageFlag(callArgs("init"))).toBe("multilingual");
+
+		rmSync(join(minsyncWorkspace, ".minsync"), { recursive: true, force: true });
+		rmSync(logPath);
+		await agentWith(["en"]).refresh(false, { methods: ["minsync"] });
+		expect(languageFlag(callArgs("init"))).toBe("multilingual");
+	});
+
+	it("falls back to whitespace tokenization when the Kiwi library the tokenizer needs is missing", async () => {
 		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		const result = await methodFor(["ko", "en"]).sync();
+		const result = await method().sync();
 
-		expect(result).toMatchObject({ ok: true, lexicalFallback: { requested: "ko", used: "simple" } });
+		expect(result).toMatchObject({ ok: true, lexicalFallback: { requested: "multilingual", used: "simple" } });
 		expect(languageFlag(callArgs("init"))).toBe("simple");
 		expect(configuredLanguage()).toBe("simple");
 	});
 
-	it("keeps an index already built with the Korean tokenizer instead of rebuilding it on a missing Kiwi", async () => {
+	it("keeps an index already built with the multilingual tokenizer instead of rebuilding it on a missing Kiwi", async () => {
 		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
-		writeWorkspaceConfig('[lexical]\nlanguage = "ko"\n');
+		writeWorkspaceConfig('[lexical]\nlanguage = "multilingual"\n');
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		const result = await methodFor(["ko", "en"]).sync();
+		const result = await method().sync();
 
-		expect(configuredLanguage()).toBe("ko");
+		expect(configuredLanguage()).toBe("multilingual");
 		expect(result.lexicalFallback).toBeUndefined();
 	});
 
 	it("reports the fallback as a refresh warning naming what to install", async () => {
 		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
 		writeFakeMinSync(JSON.stringify({ results: [] }));
-		const agent = new AutoRAGAgent({
-			searchPaths: [source],
-			memoryPath: join(root, "memory.json"),
-			workspacePath: root,
-			jikji: false,
-			everything: false,
-			fsearch: false,
-			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
-		});
 
-		const refresh = await agent.refresh(false, { methods: ["minsync"] });
+		const refresh = await agentWith().refresh(false, { methods: ["minsync"] });
 
 		const warning = refresh.diagnostics.find((diagnostic) => diagnostic.code === "lexical-tokenizer-unavailable");
 		expect(warning).toMatchObject({ severity: "warning", source: "minsync" });
 		expect(warning?.message).toContain("KIWI_LIBRARY_PATH");
 	});
 
-	it("initializes whitespace tokenization when no configured language has an analyzer", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-
-		await methodFor(["en"]).sync();
-
-		expect(languageFlag(callArgs("init"))).toBe("simple");
-	});
-
-	it("leaves the tokenizer to MinSync when the caller configures no languages", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-
-		await methodFor().sync();
-
-		expect(callArgs("init")).not.toContain("--language");
-	});
-
-	it("points an existing workspace at the configured tokenizer without re-initializing it", async () => {
+	it("points an existing workspace at the multilingual tokenizer without re-initializing it", async () => {
 		writeWorkspaceConfig('[lexical]\nlanguage = "simple"\n');
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		const result = await methodFor(["ko", "en"]).sync();
+		const result = await method().sync();
 
 		expect(result).toMatchObject({ ok: true });
 		expect(callArgs("init")).toBeUndefined();
 		expect(callArgs("sync")).toBeDefined();
-		expect(configuredLanguage()).toBe("ko");
+		expect(configuredLanguage()).toBe("multilingual");
 	});
 
 	it("adds the tokenizer to a config written before MinSync had a lexical section", async () => {
 		writeWorkspaceConfig("[chunker.options]\nmax_chunk_size = 4096\n");
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		await methodFor(["ko"]).sync();
+		await method().sync();
 
-		expect(configuredLanguage()).toBe("ko");
+		expect(configuredLanguage()).toBe("multilingual");
 	});
 
 	it("restores the previous tokenizer when the rebuild fails", async () => {
@@ -1906,45 +1902,10 @@ if (args[0] === "sync") process.exit(1);
 		);
 		chmodSync(minsyncBinary, 0o755);
 
-		const result = await methodFor(["ko"]).sync();
+		const result = await method().sync();
 
 		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
 		expect(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")).toBe(original);
-	});
-
-	it("derives the tokenizer from the agent's global languages, defaulting to Korean + English", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-		const agent = new AutoRAGAgent({
-			searchPaths: [source],
-			memoryPath: join(root, "memory.json"),
-			workspacePath: root,
-			jikji: false,
-			everything: false,
-			fsearch: false,
-			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
-		});
-
-		await agent.refresh(false, { methods: ["minsync"] });
-
-		expect(languageFlag(callArgs("init"))).toBe("ko");
-	});
-
-	it("follows an explicit agent language list", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-		const agent = new AutoRAGAgent({
-			searchPaths: [source],
-			memoryPath: join(root, "memory.json"),
-			workspacePath: root,
-			languages: ["ja", "en"],
-			jikji: false,
-			everything: false,
-			fsearch: false,
-			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
-		});
-
-		await agent.refresh(false, { methods: ["minsync"] });
-
-		expect(languageFlag(callArgs("init"))).toBe("ja");
 	});
 
 	it("rewriteEmbedderConfig writes only the lexical language when asked", () => {
@@ -1954,13 +1915,13 @@ if (args[0] === "sync") process.exit(1);
 			'[embedder]\nid = "old-id"\n\n[lexical]\nlanguage = "simple"\n',
 		);
 
-		rewriteEmbedderConfig(minsyncWorkspace, {}, { lexicalLanguage: "ko" });
+		rewriteEmbedderConfig(minsyncWorkspace, {}, { lexicalLanguage: "multilingual" });
 
 		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
 			string,
 			Record<string, unknown>
 		>;
-		expect(rewritten.lexical?.language).toBe("ko");
+		expect(rewritten.lexical?.language).toBe("multilingual");
 		expect(rewritten.embedder?.id).toBe("old-id");
 	});
 });

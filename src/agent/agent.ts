@@ -581,8 +581,7 @@ export interface AutoRAGAgentOptions {
 	memoryPath?: string;
 	workspacePath?: string;
 	tools?: AgentTool[];
-	/** `languages` comes from the agent-level `languages` option, so it is not settable here. */
-	minSync?: Omit<MinSyncVectorMethodOptions, "root" | "languages">;
+	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
 	jikji?: JikjiOptions | false;
 	/**
 	 * Windows-only instant file/folder name search through the bundled
@@ -972,7 +971,6 @@ export class AutoRAGAgent {
 			root: this.workspaceProjectRoot,
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
-			languages: this.languages,
 		};
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
 		this.methodRegistry.register(this.minSyncMethod);
