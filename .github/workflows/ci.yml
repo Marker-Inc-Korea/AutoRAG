@@ -81,6 +81,9 @@ jobs:
 
   compatibility:
     name: compatibility (${{ matrix.os }})
+    # Cross-platform legs are not required checks (ruleset requires only
+    # "build" and "dco"), so skip the whole job on PRs and verify after merge.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
