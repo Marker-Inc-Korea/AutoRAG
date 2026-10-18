@@ -87,7 +87,9 @@ appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, cwd: process.c
 
 if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
-  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
+  const languageIndex = args.indexOf("--language");
+  const lexical = languageIndex === -1 ? "" : "\\n[lexical]\\nlanguage = \\"" + args[languageIndex + 1] + "\\"\\n";
+  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n" + lexical);
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
 }
@@ -1756,5 +1758,209 @@ dimension = 768
 		expect(rewritten.embedder?.query_prefix).toBeUndefined();
 		expect(rewritten.embedder?.passage_prefix).toBeUndefined();
 		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(1024);
+	});
+});
+
+describe("MinSync lexical (BM25) language", () => {
+	function callArgs(command: string): readonly string[] | undefined {
+		return loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[] })
+			.find((call) => call.args[0] === command)?.args;
+	}
+
+	function languageFlag(args: readonly string[] | undefined): string | undefined {
+		const index = args?.indexOf("--language") ?? -1;
+		return index === -1 ? undefined : args?.[index + 1];
+	}
+
+	/** An initialized and already-synced workspace, as an earlier refresh leaves it. */
+	function writeWorkspaceConfig(toml: string): void {
+		const dir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(minSyncConfigPath(minsyncWorkspace), toml);
+		writeFileSync(join(dir, "cursor.json"), "{}");
+	}
+
+	function configuredLanguage(): unknown {
+		const parsed = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		return parsed.lexical?.language;
+	}
+
+	function methodFor(languages?: readonly ("ko" | "en" | "ja")[]): MinSyncVectorMethod {
+		return new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			...(languages === undefined ? {} : { languages }),
+		});
+	}
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it("initializes Korean BM25 tokenization when the languages include ko", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const result = await methodFor(["ko", "en"]).sync();
+
+		expect(languageFlag(callArgs("init"))).toBe("ko");
+		expect(configuredLanguage()).toBe("ko");
+		expect(result.lexicalFallback).toBeUndefined();
+	});
+
+	it("falls back to whitespace tokenization when the Kiwi library the Korean tokenizer needs is missing", async () => {
+		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const result = await methodFor(["ko", "en"]).sync();
+
+		expect(result).toMatchObject({ ok: true, lexicalFallback: { requested: "ko", used: "simple" } });
+		expect(languageFlag(callArgs("init"))).toBe("simple");
+		expect(configuredLanguage()).toBe("simple");
+	});
+
+	it("keeps an index already built with the Korean tokenizer instead of rebuilding it on a missing Kiwi", async () => {
+		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
+		writeWorkspaceConfig('[lexical]\nlanguage = "ko"\n');
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const result = await methodFor(["ko", "en"]).sync();
+
+		expect(configuredLanguage()).toBe("ko");
+		expect(result.lexicalFallback).toBeUndefined();
+	});
+
+	it("reports the fallback as a refresh warning naming what to install", async () => {
+		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const agent = new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			everything: false,
+			fsearch: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
+		});
+
+		const refresh = await agent.refresh(false, { methods: ["minsync"] });
+
+		const warning = refresh.diagnostics.find((diagnostic) => diagnostic.code === "lexical-tokenizer-unavailable");
+		expect(warning).toMatchObject({ severity: "warning", source: "minsync" });
+		expect(warning?.message).toContain("KIWI_LIBRARY_PATH");
+	});
+
+	it("initializes whitespace tokenization when no configured language has an analyzer", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		await methodFor(["en"]).sync();
+
+		expect(languageFlag(callArgs("init"))).toBe("simple");
+	});
+
+	it("leaves the tokenizer to MinSync when the caller configures no languages", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		await methodFor().sync();
+
+		expect(callArgs("init")).not.toContain("--language");
+	});
+
+	it("points an existing workspace at the configured tokenizer without re-initializing it", async () => {
+		writeWorkspaceConfig('[lexical]\nlanguage = "simple"\n');
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const result = await methodFor(["ko", "en"]).sync();
+
+		expect(result).toMatchObject({ ok: true });
+		expect(callArgs("init")).toBeUndefined();
+		expect(callArgs("sync")).toBeDefined();
+		expect(configuredLanguage()).toBe("ko");
+	});
+
+	it("adds the tokenizer to a config written before MinSync had a lexical section", async () => {
+		writeWorkspaceConfig("[chunker.options]\nmax_chunk_size = 4096\n");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		await methodFor(["ko"]).sync();
+
+		expect(configuredLanguage()).toBe("ko");
+	});
+
+	it("restores the previous tokenizer when the rebuild fails", async () => {
+		writeWorkspaceConfig('[lexical]\nlanguage = "simple"\n');
+		const original = readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8");
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
+if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
+if (args[0] === "sync") process.exit(1);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+
+		const result = await methodFor(["ko"]).sync();
+
+		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
+		expect(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")).toBe(original);
+	});
+
+	it("derives the tokenizer from the agent's global languages, defaulting to Korean + English", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const agent = new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			everything: false,
+			fsearch: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
+		});
+
+		await agent.refresh(false, { methods: ["minsync"] });
+
+		expect(languageFlag(callArgs("init"))).toBe("ko");
+	});
+
+	it("follows an explicit agent language list", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const agent = new AutoRAGAgent({
+			searchPaths: [source],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			languages: ["ja", "en"],
+			jikji: false,
+			everything: false,
+			fsearch: false,
+			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
+		});
+
+		await agent.refresh(false, { methods: ["minsync"] });
+
+		expect(languageFlag(callArgs("init"))).toBe("ja");
+	});
+
+	it("rewriteEmbedderConfig writes only the lexical language when asked", () => {
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			'[embedder]\nid = "old-id"\n\n[lexical]\nlanguage = "simple"\n',
+		);
+
+		rewriteEmbedderConfig(minsyncWorkspace, {}, { lexicalLanguage: "ko" });
+
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(rewritten.lexical?.language).toBe("ko");
+		expect(rewritten.embedder?.id).toBe("old-id");
 	});
 });

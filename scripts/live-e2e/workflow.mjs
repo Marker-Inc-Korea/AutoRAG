@@ -42,6 +42,37 @@ export function buildLiveStackOptions(root, workspace) {
 export function assertAbsoluteReadableSource(source) { if (!isAbsolute(source)) throw new Error("source-not-absolute"); accessSync(source, constants.R_OK); return realpathSync(source); }
 
 /**
+ * `minsync query --mode bm25 --format json` for a bare Korean stem. The fixture only contains suffixed forms of the
+ * stem (인증서를, 인증서는), so a whitespace-only tokenizer finds nothing; reaching the fixture proves the Korean
+ * analyzer was applied to the index the agent built.
+ */
+export function assertKoreanLexicalHit(stdout, fixtureName) {
+	let parsed;
+	try {
+		parsed = JSON.parse(stdout);
+	} catch {
+		throw new Error("korean-lexical-unparseable");
+	}
+	const hits = Array.isArray(parsed) ? parsed : parsed?.results;
+	if (!Array.isArray(hits)) throw new Error("korean-lexical-unparseable");
+	if (!hits.some((hit) => typeof hit?.path === "string" && hit.path.endsWith(`${fixtureName}.md`))) {
+		throw new Error("korean-lexical-stem-miss");
+	}
+	return true;
+}
+
+/**
+ * Whether the Korean stem lane can be asserted. A sync that fell back to whitespace tokenization (no Kiwi on the
+ * host) skips the lane with a reason, which the result records as SKIP and never as PASS. Where Kiwi is required
+ * (the Docker QA image provisions it) a fallback means the image is broken, so it fails instead of skipping.
+ */
+export function resolveKoreanLexicalLane(lexicalFallback, kiwiRequired) {
+	if (lexicalFallback === undefined) return "assert";
+	if (kiwiRequired) throw new Error("korean-lexical-kiwi-missing");
+	return "skip";
+}
+
+/**
  * A healthy `autorag lite retrieve --json` run: the envelope answers, and it
  * states that nothing was skipped. `unsearched` must be present even when empty
  * — that is the field a caller checks before trusting the result set.

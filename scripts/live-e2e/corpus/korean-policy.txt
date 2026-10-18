@@ -1,0 +1,4 @@
+AutoRAG live-e2e Korean lexical fixture.
+
+회사 인증서를 갱신하는 절차를 설명합니다. 인증서는 매년 만료됩니다.
+환불정책과배송안내입니다.

@@ -1,7 +1,7 @@
 {
   "mode": "warm",
   "root": "/e2e-root",
-  "startedAt": "2026-10-04T13:43:27.685Z",
+  "startedAt": "2026-10-18T05:08:48.569Z",
   "commands": [
     {
       "command": [
@@ -59,7 +59,7 @@
   },
   "refresh": {
     "parsed": {
-      "scanned": 1,
+      "scanned": 2,
       "written": 0,
       "skipped": 0
     },
@@ -70,12 +70,17 @@
   },
   "cursorPath": "/workspace/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
+  "koreanLexical": {
+    "status": "PASS",
+    "query": "인증서",
+    "fixture": "korean-policy.txt"
+  },
   "hit": {
     "source": "/e2e-root/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
-    "score": 1
+    "score": 0
   },
   "status": {
     "state": "success",
@@ -90,7 +95,7 @@
       "exitCode": 0,
       "ok": true,
       "stale": false,
-      "resultCount": 1,
+      "resultCount": 2,
       "unsearched": [],
       "sourceMatched": "/e2e-root/corpus/sample.txt"
     }
@@ -111,7 +116,7 @@
     "skip": 0,
     "fail": 0
   },
-  "finishedAt": "2026-10-04T13:44:10.927Z",
+  "finishedAt": "2026-10-18T05:09:40.778Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",

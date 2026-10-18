@@ -16,7 +16,7 @@ const GLOBAL_FLAGS = `Global flags (accepted for every command):
   --debug                   Reveal opaque internal diagnostics (never filesystem paths)
   --config <path>           Use a specific config file
   --search-paths <csv>      Folders to index/search (also AUTORAG_SEARCH_PATHS)
-  --languages <csv>         OCR/parser languages (also AUTORAG_LANGUAGES)
+  --languages <csv>         Corpus languages: OCR engine and BM25 tokenizer (also AUTORAG_LANGUAGES)
   --workspace <dir>         Workspace that owns .autorag state
   --memory-path <file>      Retrieval memory file
   --model-provider <name>   Override the model provider (where a model is resolved)
@@ -41,7 +41,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --search-paths <csv>          Folders to index/search",
 		"  --exclude <path>              Exclude a file or folder (repeatable; relative to the current directory)",
-		"  --languages <csv>             OCR/parser languages",
+		"  --languages <csv>             Corpus languages: OCR engine and BM25 tokenizer",
 		"  --workspace <dir>             Workspace that owns .autorag state",
 		"  --memory-path <file>          Retrieval memory file",
 		"  --model-provider <name>       Librarian model provider",

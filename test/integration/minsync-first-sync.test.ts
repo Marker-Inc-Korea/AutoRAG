@@ -176,7 +176,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(hits.map((hit) => hit.source)).toEqual([realpathSync(join(docs, "handbook.txt"))]);
 		const commands = loggedCommands();
 		expect(commands.slice(0, 3)).toEqual([
-			["init", "--format", "json"],
+			["init", "--format", "json", "--language", "ko"],
 			["check", "--format", "json"],
 			["sync", "--full", "--format", "json"],
 		]);
@@ -236,7 +236,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(refresh.minsync).toMatchObject({ ok: false, synced: 0, reason: "check-failed" });
 		expect(JSON.stringify(refresh.minsync)).not.toContain(root);
 		expect(loggedCommands()).toEqual([
-			["init", "--format", "json"],
+			["init", "--format", "json", "--language", "ko"],
 			["check", "--format", "json"],
 		]);
 		expect((await agent.getRefreshStatus()).components.minsync).toBe("degraded");
@@ -254,7 +254,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 			reason: "check-failed: embedder unavailable",
 		});
 		expect(loggedCommands()).toEqual([
-			["init", "--format", "json"],
+			["init", "--format", "json", "--language", "ko"],
 			["check", "--format", "json"],
 		]);
 	});
@@ -269,7 +269,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(first.minsync).toMatchObject({ ok: false, synced: 0 });
 		expect(second.minsync).toMatchObject({ ok: true, synced: 1 });
 		expect(loggedCommands()).toEqual([
-			["init", "--format", "json"],
+			["init", "--format", "json", "--language", "ko"],
 			["check", "--format", "json"],
 			["check", "--format", "json"],
 			["sync", "--full", "--format", "json"],

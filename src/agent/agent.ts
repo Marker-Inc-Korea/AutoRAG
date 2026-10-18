@@ -581,7 +581,8 @@ export interface AutoRAGAgentOptions {
 	memoryPath?: string;
 	workspacePath?: string;
 	tools?: AgentTool[];
-	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
+	/** `languages` comes from the agent-level `languages` option, so it is not settable here. */
+	minSync?: Omit<MinSyncVectorMethodOptions, "root" | "languages">;
 	jikji?: JikjiOptions | false;
 	/**
 	 * Windows-only instant file/folder name search through the bundled
@@ -971,6 +972,7 @@ export class AutoRAGAgent {
 			root: this.workspaceProjectRoot,
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
+			languages: this.languages,
 		};
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
 		this.methodRegistry.register(this.minSyncMethod);
@@ -4181,9 +4183,18 @@ function fsearchRefreshDiagnostics(fsearch: AutoRAGFSearchRefreshResult | undefi
  */
 function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): SearchDocumentDiagnostic[] {
 	if (!minsync) return [];
-	if (minsync.diagnostic) return [toMinSyncDiagnostic(minsync.diagnostic, minsync.ok)];
-	if (!minsync.ok && minsync.reason) return [toMinSyncReasonDiagnostic(minsync.reason)];
-	return [];
+	const diagnostics: SearchDocumentDiagnostic[] = [];
+	if (minsync.diagnostic) diagnostics.push(toMinSyncDiagnostic(minsync.diagnostic, minsync.ok));
+	else if (!minsync.ok && minsync.reason) diagnostics.push(toMinSyncReasonDiagnostic(minsync.reason));
+	if (minsync.lexicalFallback) {
+		diagnostics.push({
+			code: "lexical-tokenizer-unavailable",
+			severity: "warning",
+			message: `The "${minsync.lexicalFallback.requested}" BM25 tokenizer needs the Kiwi native library and model, which were not found, so MinSync tokenizes on whitespace and a Korean word with a particle (인증서를) does not match its stem (인증서). Install Kiwi (set KIWI_LIBRARY_PATH and KIWI_MODEL_PATH, or install it under ~/.local/kiwi), then refresh again.`,
+			source: "minsync",
+		});
+	}
+	return diagnostics;
 }
 
 function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocumentDiagnostic {

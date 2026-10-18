@@ -112,6 +112,59 @@ The exact model and runtime URLs, revisions, SHA-256 values, archive members,
 and notices are in [`licenses/embedding-assets.json`](../licenses/embedding-assets.json).
 Mutable model weights are not in the npm package.
 
+## BM25 language
+
+MinSync tokenizes text before indexing it and before every BM25 query. Without
+a language analyzer a Korean word is split on whitespace only, so `인증서를`
+never matches a query for `인증서`. AutoRAG therefore derives MinSync's
+`[lexical].language` from the global `languages` setting (`languages` in
+`config.json`, `--languages`, or `AUTORAG_LANGUAGES`; default `ko,en`):
+
+| `languages` contains | MinSync tokenizer |
+| --- | --- |
+| only languages without an analyzer (`en`, `fr`, `de`, `ru`, ...) | `simple` (whitespace) |
+| `ko` (alone or with such languages, so the default `ko,en`) | `ko` (Kiwi morphemes) |
+| `ja` | `ja` |
+| `zh-hans` and/or `zh-hant` | `zh` |
+| `ar` | `ar` |
+| more than one of `ko`, `ja`, `zh-*`, `ar` | `multilingual` |
+
+Every analyzer also indexes Latin words case-insensitively, so an English query
+still matches inside a Korean workspace. `multilingual` runs every analyzer over
+every document: it costs index size and adds some cross-script noise, so it is
+chosen only when the configured languages really span several of those scripts.
+
+### Kiwi is required for `ko`
+
+The `ko` and `multilingual` tokenizers load the [Kiwi](https://github.com/bab2min/Kiwi)
+native library and its base model at run time. Neither ships with MinSync or
+AutoRAG, and without them every sync that has to tokenize Korean text fails.
+AutoRAG therefore uses `ko` only when it finds both, by the same rules as
+MinSync's `kiwi-rs` loader: `KIWI_LIBRARY_PATH` and `KIWI_MODEL_PATH` when set
+(an explicit path is never second-guessed), otherwise the per-user install
+`~/.local/kiwi` (`%LOCALAPPDATA%\kiwi` on Windows) and the usual system
+directories (`/usr/local`, `/usr`, `/opt/homebrew`). A library that only the OS
+loader's own search path can find is not probed; set `KIWI_LIBRARY_PATH` for it.
+
+When Kiwi is missing, a new workspace is created with `simple` and `autorag
+refresh` reports a `lexical-tokenizer-unavailable` warning that names what to
+install, instead of failing. The next refresh after Kiwi is installed switches
+the workspace to `ko`. A workspace that is already on `ko` is never switched
+back on a missing Kiwi, since that would re-embed every chunk; its sync reports
+MinSync's own error instead.
+
+### Changing the tokenizer
+
+A new workspace is initialized with the chosen tokenizer. For an existing
+workspace, `autorag refresh` writes it to `[lexical].language` in
+`.minsync/config.toml`. MinSync records the tokenizer an index was built with
+in its cursor; when the two differ, its next `sync` deletes and re-indexes every
+chunk, re-embedding them as well, not only rebuilding the BM25 lane. A refresh
+that fails or is cancelled restores the previous `config.toml`, so the rebuild
+is retried by the next refresh. Every workspace created before this setting
+existed used `simple`, so upgrading to the `ko` default re-indexes it once
+(when Kiwi is present).
+
 ## Chunk size
 
 MinSync defaults to `max_chunk_size = 4096`. Smaller-context local models may

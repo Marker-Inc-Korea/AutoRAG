@@ -4,6 +4,10 @@
 		{
 			"path": "corpus/sample.txt",
 			"sha256": "f3c8d1ca355dfb13868bd4dadc6a3a11a96da55e4d5f6d35bf5d5585da755c9f"
+		},
+		{
+			"path": "corpus/korean-policy.txt",
+			"sha256": "841821d0d407b9298f1eab4f57e41aabb247556add3e3315dc04c58b7773b320"
 		}
 	]
 }
