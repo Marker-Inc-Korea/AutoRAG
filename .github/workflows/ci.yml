@@ -81,12 +81,10 @@ jobs:
 
   compatibility:
     name: compatibility (${{ matrix.os }})
-    # The repository ruleset requires "compatibility (macos-latest)" and
-    # "compatibility (windows-latest)" on every PR, so both matrix legs must
-    # exist and report there. On pull_request events they run as no-ops on
-    # ubuntu-latest; real cross-platform checks only run on pushes to main
-    # (the workflow's push trigger is main-only).
-    runs-on: ${{ github.event_name == 'push' && matrix.os || 'ubuntu-latest' }}
+    # Cross-platform legs are not required checks (ruleset requires only
+    # "build" and "dco"), so skip the whole job on PRs and verify after merge.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -94,15 +92,9 @@ jobs:
           - macos-latest
           - windows-latest
     steps:
-      - name: Skip cross-platform CI
-        if: github.event_name != 'push' || steps.filter.outputs.autorag != 'true'
-        run: echo "Cross-platform checks run only on pushes to main with AutoRAG 2.0 changes."
-
       - uses: actions/checkout@v7
-        if: github.event_name == 'push'
 
       - uses: dorny/paths-filter@v4
-        if: github.event_name == 'push'
         id: filter
         with:
           filters: |
@@ -118,6 +110,10 @@ jobs:
               - 'biome.json'
               - 'vitest.config.ts'
               - '.github/workflows/ci.yml'
+
+      - name: Skip cross-platform CI
+        if: steps.filter.outputs.autorag != 'true'
+        run: echo "No AutoRAG 2.0 paths in this diff; skipping cross-platform checks."
 
       - name: Install ripgrep and fd on macOS
         if: steps.filter.outputs.autorag == 'true' && runner.os == 'macOS'
