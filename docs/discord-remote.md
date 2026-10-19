@@ -13,8 +13,10 @@ the channel.
 | Message in the session channel | Runs as a question through AutoRAG's two-phase search. While a search runs the extension replies "Still processing"; it does not steer |
 | Reply to an agent question | Answers `discord_ask_user_question` |
 
-The reply is posted once, when the whole search settles, so it carries the verified final
-answer rather than the first phase's. Discord cannot start a session from nothing: a local
+When a search has two phases, the fast answer is posted as soon as verification starts, and
+the verified final answer follows once the search settles, with a ping to the asker. A
+single-phase search posts one reply. Tool-call labels are posted live in between.
+Discord cannot start a session from nothing: a local
 `autorag tui --discord` process must be running. Image upload (`discord_send_image`) is
 registered by the extension but deliberately **not** enabled: it uploads a local file path
 chosen by the model.

@@ -52,9 +52,12 @@ async function startFakes(): Promise<() => Promise<void>> {
 		await fake.waitForPost((post) => post.content.includes("not on the allow-list"), 30_000);
 		result.strangerRejected = true;
 		fake.sendUserMessage(channelId, ALLOWED, "Where is the handbook?");
-		const reply = await fake.waitForPost((post) => post.content.includes("QA-ANSWER"), 60_000);
+		const reply = await fake.waitForPost((post) => post.content.includes(`<@${ALLOWED}>`), 60_000);
 		result.reply = reply.content;
 		result.pingedAsker = reply.content.includes(`<@${ALLOWED}>`);
+		const answers = fake.posted.filter((post) => post.content.includes("QA-ANSWER"));
+		// The earlier phase shows up first, without the ping; the final answer pings the asker.
+		result.fastAnswerShownFirst = answers.length === 2 && !answers[0]?.content.includes(`<@${ALLOWED}>`);
 		result.posts = fake.posted.map((post) => post.content);
 	} catch (error) {
 		result.error = String(error);
@@ -135,7 +138,7 @@ async function orchestrate(): Promise<number> {
 	child.kill("SIGTERM");
 	const result = existsSync(resultPath) ? JSON.parse(readFileSync(resultPath, "utf8")) : undefined;
 	console.log(JSON.stringify(result, null, 2));
-	const ok = result !== undefined && result.error === undefined && result.strangerRejected === true && result.pingedAsker === true;
+	const ok = result !== undefined && result.error === undefined && result.strangerRejected === true && result.pingedAsker === true && result.fastAnswerShownFirst === true;
 	if (!ok) console.error(`FAIL (child exit ${exitCode})\n--- tui output tail ---\n${output.slice(-3000)}`);
 	else console.log("PASS");
 	rmSync(root, { recursive: true, force: true });

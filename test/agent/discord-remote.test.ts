@@ -159,7 +159,7 @@ describe("Discord remote control", () => {
 		}
 	});
 
-	it("posts only the verified final answer of a two-phase search, once", async () => {
+	it("shows the fast answer while verification runs, then the final answer pinging the asker", async () => {
 		writeDiscordConfig([ALLOWED]);
 		const tui = await discordAgent(["Fast answer: Lyon.", "Verified: Paris."], {
 			discordRemote: true,
@@ -171,9 +171,8 @@ describe("Discord remote control", () => {
 			fake.sendUserMessage(fake.sessionChannelId as string, ALLOWED, "Capital of France?");
 			await fake.waitForPost((post) => post.content.includes("Verified: Paris."));
 			await tui.agent.waitForIdle();
-			const replies = fake.posted.filter((post) => post.content.includes("Paris") || post.content.includes("Lyon"));
-			expect(replies).toHaveLength(1);
-			expect(replies[0]?.content).not.toContain("Lyon");
+			const answers = fake.posted.filter((post) => post.content.includes("Paris") || post.content.includes("Lyon"));
+			expect(answers.map((post) => post.content)).toEqual(["Fast answer: Lyon.", `<@${ALLOWED}> Verified: Paris.`]);
 		} finally {
 			await tui.dispose();
 		}
