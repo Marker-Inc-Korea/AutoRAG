@@ -381,6 +381,42 @@ slacrawl search -workspace T0123456789 <term>   # must print rows before wiring 
 autorag refresh --method datasources
 ```
 
+## Hybrid fusion over existing methods
+
+Obsidian and GitHub Gists expose an additional hybrid method over
+their existing lexical and semantic retrieval. KakaoTalk is not included: its
+lexical hits are micro-chunks while its semantic hits are parent windows, so the
+two rankings have no shared evidence identity to fuse on.
+
+| Datasource | Hybrid method | Inputs |
+|---|---|---|
+| Obsidian | `obsidian-hybrid` | `obsidian-bm25` + `obsidian-semantic` (`qmd search` and `qmd vsearch`) |
+| GitHub Gists | `github-gist-hybrid` | `github-gist-lexical` + `github-gist-semantic`, when semantic retrieval is enabled |
+
+Each hybrid call searches both inputs in parallel with `topK * 3` candidates
+per input, combines their ranks with reciprocal rank fusion (RRF, k=60), and
+returns at most `topK` results (default 20). A chunk found by both methods gets
+credit from both rankings. Evidence identity is the pair of `source` and `id`,
+so distinct chunks and sources stay distinct; native source paths and metadata
+are preserved. Every fused hit carries `metadata.method` set to the hybrid
+method name and `metadata.mode` set to `hybrid`, never the first-seen input's
+`keyword` or `semantic` value.
+
+If one input fails, hybrid keeps the other input's ranking. If both fail — or
+one fails and the other returns no matches, leaving no ranking to fall back to —
+the original errors reach the retrieval pipeline's diagnostics (and its
+`unsearched` surfaces), so a hybrid-only selection such as
+`methods: ["obsidian-hybrid"]` still reports the failure instead of an empty
+result. If both inputs succeed but match nothing, hybrid returns no results and
+no diagnostic. Cancellation is propagated rather than treated as a fallback.
+No new index or native hybrid CLI mode is required.
+
+The standalone methods remain registered. Single-datasource search and
+`search_all_documents` still run all registered methods and use the normal
+cross-method merger. The hybrid method makes its own two input requests, so
+Obsidian makes an additional lexical and semantic CLI call
+during that fan-out.
+
 ## Hybrid search for chat crawlers (sidecar)
 
 `slack`, `telegram`, and `whatsapp` get BM25-ranked, semantic, and hybrid retrieval **by default**, through a
@@ -673,7 +709,8 @@ deleted Gists are removed from the index.
 Set `GITHUB_TOKEN` (or the environment variable named by `connector.tokenEnv`);
 if it is unavailable, authentication falls back to the `gh` CLI login. The
 token is not stored in the index or configuration. Search supports lexical
-BM25 and semantic retrieval through the local loopback embedding gateway;
+BM25, semantic retrieval through the local loopback embedding gateway, and
+[hybrid RRF](#hybrid-fusion-over-existing-methods) over those two rankings;
 Gist content stays on the machine for embeddings. If embeddings are
 unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
 Set `connector.semantic: false` (or `{ "enabled": false }`) to keep Gists

@@ -1,3 +1,4 @@
+import { FusedRetrievalMethod } from "../../../retrieval/fused-method.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
@@ -82,7 +83,7 @@ export class ObsidianSkill implements DatasourceSkill {
 			id: OBSIDIAN_DATASOURCE_ID,
 			type: OBSIDIAN_SKILL_TYPE,
 			description: "Obsidian vault datasource via the external qmd CLI",
-			capabilities: ["notes", "external-cli", "polling", "bm25", "semantic", "incremental"],
+			capabilities: ["notes", "external-cli", "polling", "bm25", "semantic", "hybrid", "incremental"],
 			tags: this.tags,
 			status: "active",
 			requiresExternalCli: true,
@@ -148,9 +149,16 @@ export class ObsidianSkill implements DatasourceSkill {
 	}
 
 	retrievalMethods(): readonly RetrievalMethod[] {
+		const lexical = new ObsidianBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags });
+		const semantic = new ObsidianSemanticMethod({
+			client: this.client,
+			instanceId: this.instanceId,
+			tags: this.tags,
+		});
 		return [
-			new ObsidianBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-			new ObsidianSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
+			lexical,
+			semantic,
+			new FusedRetrievalMethod({ name: `${OBSIDIAN_DATASOURCE_ID}-hybrid`, lexical, semantic }),
 		];
 	}
 

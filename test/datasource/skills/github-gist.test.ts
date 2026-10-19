@@ -258,6 +258,38 @@ describe("GitHubGistSkill", () => {
 		});
 	}
 
+	it.each([true, false])("registers hybrid only when semantic retrieval is enabled (%s)", (enabled) => {
+		const skill = new GitHubGistSkill({ semantic: { enabled, embedder: stubEmbedder() } });
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual(
+			enabled ? ["github-gist-lexical", "github-gist-semantic", "github-gist-hybrid"] : ["github-gist-lexical"],
+		);
+		expect(skill.describe().capabilities.includes("semantic")).toBe(enabled);
+		expect(skill.describe().capabilities.includes("hybrid")).toBe(enabled);
+	});
+
+	it("registers and retrieves hybrid results under a configured datasource alias", async () => {
+		const skill = new GitHubGistSkill({
+			skillName: "work-gists",
+			instanceId: "account-a",
+			tags: ["work"],
+			semantic: { embedder: stubEmbedder() },
+			connector: new GitHubGistConnector({ ...NO_TOKEN, token: "t", fetchImpl: listMock(GIST_LIST).fetchImpl }),
+		});
+		expect((await skill.index()).ok).toBe(true);
+		const hybrid = skill.retrievalMethods().find((method) => method.describe().type === "hybrid");
+		expect(hybrid?.describe()).toMatchObject({
+			name: "work-gists-hybrid",
+			datasourceId: "work-gists",
+			tags: ["work"],
+		});
+		const hits = await hybrid!.retrieve("tokenizer benchmark", { topK: 2, scope: "/work-gists/account-a" });
+		expect(hits).toHaveLength(2);
+		expect(new Set(hits.map((hit) => `${hit.source}\0${hit.id}`)).size).toBe(2);
+		expect(hits[0]?.source).toMatch(/^\/work-gists\/account-a\/chunks\/g1/);
+		expect(hits.every((hit) => hit.metadata.method === "work-gists-hybrid")).toBe(true);
+		await expect(hybrid!.retrieve("tokenizer benchmark", { topK: 2, scope: "/other-account" })).resolves.toEqual([]);
+	});
+
 	it("indexes gists and retrieves them lexically with opaque sources", async () => {
 		const skill = skillWithMock(tempWorkspace(), GIST_LIST);
 		const result = await skill.index();
@@ -428,5 +460,11 @@ describe("GitHubGistSkill semantic retrieval", () => {
 		const semantic = skill.retrievalMethods().find((m) => m.describe().name === "github-gist-semantic");
 		const hits = await semantic!.retrieve("anything", { topK: 5 });
 		expect(hits).toEqual([]);
+		const hybrid = skill.retrievalMethods().find((method) => method.describe().type === "hybrid");
+		const lexical = skill.retrievalMethods().find((method) => method.describe().type === "bm25");
+		const lexicalHits = await lexical!.retrieve("tokenizer benchmark", { topK: 5 });
+		const hybridHits = await hybrid!.retrieve("tokenizer benchmark", { topK: 5 });
+		expect(lexicalHits.length).toBeGreaterThan(0);
+		expect(hybridHits.map((hit) => hit.id)).toEqual(lexicalHits.map((hit) => hit.id));
 	});
 });

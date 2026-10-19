@@ -103,6 +103,24 @@ try {
 		check("semantic: VFS gist ranked for paraphrased query", vfs !== undefined, vfs?.source);
 	}
 
+	// Hybrid RRF over the lexical and semantic rankings (requires the semantic side).
+	const hybrid = skill.retrievalMethods().find((method) => method.describe().name === "github-gist-hybrid");
+	check("hybrid method registered (semantic enabled)", hybrid !== undefined);
+	if (hybrid !== undefined) {
+		const hits = await hybrid.retrieve("Virtual File System", { topK: 5, scope: "/github-gist/**" });
+		check(
+			"hybrid: fused lexical+semantic returns gist hits via github-gist-hybrid",
+			hits.length > 0 && hits.every((hit) => hit.source.startsWith("/github-gist/")),
+			hits[0]?.source,
+		);
+		check(
+			"hybrid: hits ranked as hybrid fusion",
+			hits.every(
+				(hit) => String(hit.metadata.method) === "github-gist-hybrid" && String(hit.metadata.mode) === "hybrid",
+			),
+		);
+	}
+
 	console.log(failures === 0 ? "\nLIVE QA PASSED" : `\nLIVE QA: ${failures} failure(s)`);
 	if (failures > 0) process.exitCode = 1;
 } finally {
