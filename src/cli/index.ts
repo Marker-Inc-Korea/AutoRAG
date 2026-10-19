@@ -25,6 +25,7 @@ const BOOLEAN_FLAGS = new Set([
 	"available",
 	"whatsapp",
 	"telegram",
+	"discord",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",

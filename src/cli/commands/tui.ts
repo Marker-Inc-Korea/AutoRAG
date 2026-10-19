@@ -49,6 +49,7 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 		renderAutoRAGUpdateNotice(await checkAutoRAGUpdate({ currentVersion: readPackageVersion() }));
 	// Opt-in: the bridge opens an outbound Telegram poller once `/telegram-connect` runs.
 	if (ctx.flags.telegram === true) options.telegram = true;
+	if (ctx.flags.discord === true) options.discordRemote = true;
 	const thinking = parseThinkingFlags(ctx.flags);
 	if (thinking !== undefined) options.thinking = thinking;
 	const resolved = await resolveTuiAgentModel(config);
