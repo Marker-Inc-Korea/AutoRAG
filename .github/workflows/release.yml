@@ -77,10 +77,12 @@ jobs:
             - name: Stage GitHub Release assets
               run: bun scripts/supply-chain/stage-release-assets.ts --out release-assets --sbom-dir sboms --embedding-assets
 
+            # Authenticates via npm Trusted Publishing (OIDC, id-token: write); no npm
+            # token is stored. The npm package settings must list Marker-Inc-Korea/AutoRAG
+            # with workflow release.yml as the trusted publisher. Needs npm >= 11.5.1
+            # (bundled with Node 24).
             - name: Publish to npm
               run: npm publish --provenance --access public
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
             - name: Create GitHub release
               uses: softprops/action-gh-release@v3
