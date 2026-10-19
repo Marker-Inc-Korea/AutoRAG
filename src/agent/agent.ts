@@ -704,6 +704,13 @@ export interface AutoRAGAgentOptions {
 	 * a launch.
 	 */
 	updateNotice?: () => Promise<string | undefined>;
+	/**
+	 * Load the `@llblab/pi-telegram` bridge into the interactive session so a
+	 * paired Telegram chat can start, steer, and read answers from it. The
+	 * bridge adds `/telegram-setup` and `/telegram-connect`; its bot token and
+	 * owner pairing live in pi's `telegram.json`, never in AutoRAG config.
+	 */
+	telegram?: boolean;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -894,6 +901,7 @@ export class AutoRAGAgent {
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
+	private readonly telegram: boolean;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** Embeds past questions for similar-question search; undefined keeps memory search keyword-only. */
 	private readonly memoryEmbedder: Embedder | undefined;
@@ -926,6 +934,7 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
+		this.telegram = options.telegram === true;
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceRetry = options.datasourceRetry ?? {};
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -1556,6 +1565,8 @@ export class AutoRAGAgent {
 
 	async createPiInteractiveRuntime(): Promise<AutoRAGPiInteractiveRuntime> {
 		const resolved = this.configuredModel === undefined ? undefined : await this.resolveSessionModel();
+		// Loaded on demand: the bridge is large and most sessions never enable it.
+		const telegramBridge = this.telegram ? (await import("@llblab/pi-telegram")).default : undefined;
 		const runtime = await createAutoRAGPiInteractiveRuntime({
 			cwd: this.workspaceProjectRoot,
 			agentDir: this.piAgentDir,
@@ -1585,6 +1596,7 @@ export class AutoRAGAgent {
 			extensionFactories: [
 				createEvidencePersistence(this.evidenceLedger),
 				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
+				...(telegramBridge !== undefined ? [telegramBridge] : []),
 			],
 			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
 			remoteSession: this.remoteSession,

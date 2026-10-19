@@ -357,7 +357,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	watch: ["--once", "--immediate", "--debounce-ms"],
 	health: ["--skip-probes", "--timeout-ms"],
 	duplicates: ["DIR"],
-	tui: ["Usage: autorag tui"],
+	tui: ["Usage: autorag tui", "--telegram", "/telegram-connect"],
 	serve: ["--port", "--force"],
 	p2p: ["peers", "requests", "--contact-id"],
 	models: ["prefetch", "import", "verify", "--profile"],
@@ -459,6 +459,13 @@ describe("two-phase thinking flags", () => {
 		const parsed = parseArgs(["tui", "--fast-thinking=high"]);
 		if ("error" in parsed) throw new Error(parsed.error);
 		expect(parsed.flags["fast-thinking"]).toBe("high");
+	});
+
+	it("accepts --telegram as a boolean flag on the tui command", () => {
+		const parsed = parseArgs(["tui", "--telegram", "--fast-thinking", "low"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags.telegram).toBe(true);
+		expect(parsed.flags["fast-thinking"]).toBe("low");
 	});
 
 	it("routes the thinking flags past argument parsing in main", async () => {

@@ -23,6 +23,7 @@ const BOOLEAN_FLAGS = new Set([
 	"strict",
 	"refresh",
 	"available",
+	"telegram",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
