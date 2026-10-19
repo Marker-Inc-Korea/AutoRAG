@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Embedder, EmbeddingIdentity } from "../../src/embedding-runtime/gateway-embedder.ts";
+import type { Embedder, EmbeddingIdentity } from "../../src/embedding/embedder.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
 import {
 	findSimilarQuestions,

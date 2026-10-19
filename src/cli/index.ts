@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { releaseRuntimeHandles } from "../embedding-runtime/index.ts";
+import { releaseEmbedders } from "../embedding/index.ts";
 import { commandUsage } from "./command-help.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
@@ -85,7 +85,6 @@ const COMMANDS = [
 	"p2p",
 	"lite",
 	"models",
-	"gateway",
 	"update-check",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
@@ -135,9 +134,6 @@ Commands:
   p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
   p2p policy unset     Remove a sharing rule by key
   models list          List chat models from the pi runtime (--provider ID --available)
-  models prefetch|import|verify
-                       Manage verified embedding model cache (--profile ID)
-  gateway status|stop  Inspect or stop the on-demand embedding gateway (--format json)
   update-check         Compare the running autorag against the published npm version
 
 Setup:
@@ -292,10 +288,6 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 			const { runModels } = await import("./commands/models.ts");
 			return runModels(ctx);
 		}
-		case "gateway": {
-			const { runGateway } = await import("./commands/gateway.ts");
-			return runGateway(ctx);
-		}
 		case "update-check": {
 			const { runUpdateCheck } = await import("./commands/update-check.ts");
 			return runUpdateCheck(ctx);
@@ -349,11 +341,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 		process.stderr.write(`${renderError(error, { json, debug })}\n`);
 		return 1;
 	} finally {
-		// The local embedding gateway listens on loopback for the whole run, so a
-		// command that used it would keep the process alive after its output is
-		// written (and after its answer is already on stdout). Release it here, where
-		// every command is covered, and the shared supervisor's model stays warm.
-		await releaseRuntimeHandles();
+		// MinSync's in-process model runs native threads that would keep the process alive after its answer
+		// is on stdout. Unload it here, where every command is covered; a `minsync serve` daemon is MinSync's
+		// own process and is left to stop itself when idle.
+		await releaseEmbedders();
 	}
 }
 

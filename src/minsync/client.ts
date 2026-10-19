@@ -1,6 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
 import {
 	configuredLexicalLanguage,
 	configuredMaxChunkSize,
@@ -19,22 +18,11 @@ import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncFileFailure, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
-export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
-	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.";
-
-export interface MinSyncRuntime {
-	ensureRuntime(options?: {
-		readonly profileId?: MinSyncEmbedderConfig["profile"];
-		readonly cachedOnly?: boolean;
-	}): Promise<EnsuredRuntime>;
-}
-
 export interface MinSyncClientOptions {
 	readonly binaryPath: string;
 	readonly workspacePath: string;
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
-	readonly runtime?: MinSyncRuntime;
 }
 
 /** MinSync's native query modes: vector, BM25, and hybrid. */
@@ -70,96 +58,38 @@ export class MinSyncClient {
 	private readonly workspacePath: string;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
-	private readonly runtime: MinSyncRuntime | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
-		this.runtime = options.runtime;
 	}
 
-	private async effectiveEmbedder(): Promise<{
-		config: MinSyncEmbedderConfig;
-		identity?: MinSyncEmbeddingIdentity;
-		runtimeUnavailable?: boolean;
-		runtimeReason?: string;
-	}> {
+	/**
+	 * What MinSync is told to embed with. No `id`, or a `native:` id, is MinSync's own Qwen3 engine, which
+	 * MinSync provisions and runs (in-process, or through a `minsync serve` daemon it finds on its own).
+	 * Anything else is an endpoint the operator configured, passed through untouched.
+	 */
+	private effectiveEmbedder(): { config: MinSyncEmbedderConfig; identity?: MinSyncEmbeddingIdentity } {
 		const configured = this.embedder;
-		const isExplicitNative = configured?.id?.startsWith("native:");
-		// A configured profile keeps the gateway, even when the config also carries the
-		// profile's model id: `autorag setup` wrote both before native became the default.
-		const isExplicitRemoteOrTei =
-			configured?.baseUrl !== undefined ||
-			(configured?.id !== undefined && !isExplicitNative && configured.profile === undefined);
-		const useRuntime =
-			this.runtime !== undefined &&
-			!isExplicitNative &&
-			!isExplicitRemoteOrTei &&
-			(configured?.profile !== undefined || (configured === undefined && this.runtime !== undefined));
-		if (!useRuntime) {
-			if (
-				configured?.baseUrl === undefined &&
-				(configured === undefined || isExplicitNative || configured.id === undefined)
-			) {
-				const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
-				const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
-				return {
-					config: {
-						...configured,
-						id,
-						dimension,
-					},
-					identity: {
-						provider: "native",
-						model: id.startsWith("native:") ? id.slice("native:".length) : id,
-						artifactRevision: "default",
-						dimension,
-						queryPrefix: configured?.queryPrefix ?? "",
-						passagePrefix: configured?.passagePrefix ?? "",
-						runtimeBuild: "minsync-native",
-					},
-				};
-			}
-			return { config: configured ?? {} };
-		}
-		try {
-			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile, cachedOnly: true });
-			if (!ensured) throw new Error("Embedding runtime did not return a runtime");
-			return {
-				config: {
-					id: `tei:${ensured.profile.model}`,
-					baseUrl: ensured.baseUrl,
-					dimension: ensured.profile.dimension,
-					queryPrefix: ensured.profile.queryPrefix,
-					passagePrefix: ensured.profile.passagePrefix,
-					// A profile selects the embedding model only. Batching, concurrency,
-					// retry, and timeout settings belong to the operator, so they must
-					// still reach MinSync's config instead of falling back to MinSync's
-					// own defaults.
-					...(configured?.batchSize !== undefined ? { batchSize: configured.batchSize } : {}),
-					...(configured?.maxRetries !== undefined ? { maxRetries: configured.maxRetries } : {}),
-					...(configured?.maxConcurrent !== undefined ? { maxConcurrent: configured.maxConcurrent } : {}),
-					...(configured?.timeoutMs !== undefined ? { timeoutMs: configured.timeoutMs } : {}),
-				},
-				identity: {
-					provider: ensured.identity.provider,
-					model: ensured.identity.model,
-					artifactRevision: ensured.identity.modelRevision,
-					dimension: ensured.identity.dimension,
-					queryPrefix: ensured.profile.queryPrefix,
-					passagePrefix: ensured.profile.passagePrefix,
-					runtimeBuild: ensured.identity.runtimeBuild,
-				},
-			};
-		} catch (error) {
-			return {
-				config: {},
-				runtimeUnavailable: true,
-				runtimeReason: error instanceof Error ? error.message : undefined,
-			};
-		}
+		const isNative =
+			configured?.baseUrl === undefined && (configured?.id === undefined || configured.id.startsWith("native:"));
+		if (!isNative) return { config: configured ?? {} };
+		const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
+		const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
+		return {
+			config: { ...configured, id, dimension },
+			identity: {
+				provider: "native",
+				model: id.slice("native:".length),
+				artifactRevision: "default",
+				dimension,
+				queryPrefix: configured?.queryPrefix ?? "",
+				passagePrefix: configured?.passagePrefix ?? "",
+				runtimeBuild: "minsync-native",
+			},
+		};
 	}
 
 	private readIdentity(): MinSyncEmbeddingIdentity | undefined {
@@ -182,35 +112,17 @@ export class MinSyncClient {
 
 	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
-		let effective: {
-			config: MinSyncEmbedderConfig;
-			identity?: MinSyncEmbeddingIdentity;
-			runtimeUnavailable?: boolean;
-			runtimeReason?: string;
-		} = { config: {} };
+		const effective = this.effectiveEmbedder();
 		try {
-			effective = await this.effectiveEmbedder();
-			if (effective.runtimeUnavailable)
-				throw new Error(
-					effective.runtimeReason ??
-						"Semantic embedder is unavailable; run autorag models prefetch (or models import).",
-				);
 			await ensureLocalEmbedder({ baseUrl: effective.config.baseUrl, timeoutMs: effective.config.timeoutMs });
 		} catch (error) {
+			const reason = error instanceof Error ? error.message : "Semantic embedder is unavailable.";
 			return {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason:
-					error instanceof Error
-						? error.message
-						: (effective.runtimeReason ??
-							"Semantic embedder is unavailable; run autorag models prefetch (or models import)."),
-				diagnostic: {
-					code: "embedder-unavailable",
-					message: "Semantic embedder is unavailable; run autorag models prefetch (or models import).",
-					retryable: true,
-				},
+				reason,
+				diagnostic: { code: "embedder-unavailable", message: reason, retryable: true },
 			};
 		}
 		const embedder = effective.config;
@@ -354,8 +266,8 @@ export class MinSyncClient {
 				workspacePath: this.workspacePath,
 				reason: checkFailure,
 				diagnostic: {
-					// Only an embedder preflight failure points at the embedder; a vector
-					// store or generic preflight failure must not send users to `models prefetch`.
+					// Only an embedder preflight failure is an embedder problem; a vector store or generic
+					// preflight failure is not.
 					code: checkFailure.includes("embedder") ? "embedder-unavailable" : "sync-failed",
 					message: checkFailure,
 					retryable: true,
@@ -427,7 +339,19 @@ export class MinSyncClient {
 		args: readonly string[],
 		options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
 	): Promise<ProcessResult> {
-		return spawnProcess(this.binaryPath, args, this.workspacePath, options);
+		return spawnProcess(this.binaryPath, args, this.workspacePath, { ...options, env: this.childEnv() });
+	}
+
+	/**
+	 * MinSync's `openai:` embedder reads its bearer token from `OPENAI_API_KEY` only. The operator names the
+	 * variable that holds their key with `apiKeyEnv`, so that value is what the child receives as
+	 * `OPENAI_API_KEY`. A local `native:` embedder needs no key and the environment is left as it is.
+	 */
+	private childEnv(): NodeJS.ProcessEnv | undefined {
+		const name = this.embedder?.apiKeyEnv;
+		if (name === undefined || !API_KEY_ENV_PATTERN.test(name)) return undefined;
+		const key = process.env[name];
+		return key === undefined || key.length === 0 ? undefined : { ...process.env, OPENAI_API_KEY: key };
 	}
 }
 

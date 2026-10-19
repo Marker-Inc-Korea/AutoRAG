@@ -61,7 +61,7 @@ export function spawnProcess(
 	command: string,
 	args: readonly string[],
 	cwd: string,
-	options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
+	options: { readonly timeoutMs?: number; readonly signal?: AbortSignal; readonly env?: NodeJS.ProcessEnv } = {},
 ): Promise<ProcessResult> {
 	// Executor form: the ES2022 lib this package targets has no Promise.withResolvers.
 	return new Promise((resolve, reject) => {
@@ -74,6 +74,7 @@ export function spawnProcess(
 		const posix = process.platform !== "win32";
 		const child = spawn(portable.command, [...portable.args], {
 			cwd,
+			...(options.env === undefined ? {} : { env: options.env }),
 			// POSIX: lead a process group so terminateProcessTree reaches every
 			// descendant with kill(-pid). Windows: keep the parent/child chain
 			// that `taskkill /t` walks.

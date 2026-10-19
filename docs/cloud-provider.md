@@ -145,10 +145,12 @@ has; `autorag init` writes the signed-in or signed-out set once, when it creates
 the file. The chat default needs a catalog snapshot (a prior `/login` or refresh);
 without one it is skipped.
 
-**Embeddings are not part of this.** They stay on the local gateway
-(`qwen3-embedding-0.6b`) by default. Sending corpus text to a remote embedder
-requires an explicit opt-in, the hosted embeddings endpoint is Pro-only, and
-making it the default would send every indexed document off the machine.
+**Embeddings are not part of this.** They stay on MinSync's local
+Qwen3-Embedding-0.6B engine (1024 dimensions) by default, through a
+`minsync serve` daemon or MinSync's in-process engine. Sending corpus text to a
+remote embedder requires an explicit remote `minSync.embedder` endpoint, the
+hosted embeddings endpoint is Pro-only, and making it the default would send
+every indexed document off the machine.
 
 ## Jev and rerank on the hosted plan
 

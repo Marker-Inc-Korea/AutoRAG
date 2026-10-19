@@ -1,6 +1,6 @@
 ---
 name: autorag-doctor
-description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding gateway, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the gateway will not start, or the user asks to check, diagnose, verify, or repair AutoRAG.
+description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
 license: Apache-2.0
 ---
 
@@ -29,7 +29,7 @@ Always finish with the status table in [Report](#report).
 ```bash
 autorag status --json
 autorag health --json
-autorag gateway status --format json
+autorag setup --format json
 ```
 
 - `status` reports `state`, `stale`, `diagnostics`, and per-component state for
@@ -38,8 +38,11 @@ autorag gateway status --format json
 - `health` resolves the single search model and does one live completion probe.
   `--skip-probes` only proves config shape, never live access; do not claim a
   healthy model from it.
-- The gateway is on-demand: `stopped` is normal when nothing is embedding.
-  `unavailable` **while** a refresh is running is a real failure.
+- `setup --format json` reports `embedding.backend` (`remote`, `daemon`, or
+  `in-process`), the resolved `provider`/`model`/`dimension`, `daemonStarted`,
+  and `daemonError` when MinSync's in-process engine took over. A daemon is
+  on-demand: absent while nothing is embedding is normal; `embedder-unavailable`
+  **while** a refresh is running is a real failure.
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`,
@@ -129,19 +132,27 @@ autorag search "summarize the collection" --top-k 3 --json --debug
 
 ## 4. Repair playbook
 
-### Orphan lock
+### Stuck embedding daemon
 
-The embedding runtime keeps `embedding-runtime.lock`, `embedding-runtime.pid`,
-and `embedding-runtime.port` in `AUTORAG_HOME`. It reclaims them automatically
-when the recorded PID is dead; a `lock-conflict` means the PID is **alive**.
+AutoRAG owns no lock or pid file for embeddings. A running `minsync serve`
+publishes `host`, `port`, and `pid` under `~/.cache/minsync/serve/<instance>/`
+and removes them on a clean stop. A leftover file from a crashed daemon is
+harmless: AutoRAG only adopts a daemon whose `GET /health` answers as a loopback
+server of the wanted model, so a stale entry is skipped.
 
 ```bash
-autorag gateway status --format json
-autorag gateway stop
+ls ~/.cache/minsync/serve/* 2>/dev/null
+autorag setup --format json
 ```
 
-Only when `gateway stop` cannot clear it, and the recorded PID is confirmed
-dead (`kill -0 PID` fails), remove the three files by hand and retry.
+To diagnose a daemon that will not start, run `minsync serve` by hand in the
+workspace and read its own error; `setup --format json` reports the resolved
+`embedding.backend` and a `daemonError` when MinSync's in-process engine took
+over instead. When no daemon answers and the in-process addon
+(`@nomadamas/minsync-native`) is missing, that is the `embedder-unavailable`
+state; stop an orphaned daemon by the pid from
+`~/.cache/minsync/serve/<instance>/pid` after confirming no live refresh holds
+it.
 
 Index locks are owned by their engines: MinSync/tantivy locks under
 `<workspace>/.autorag/`, and per-CLI locks such as
@@ -152,11 +163,12 @@ that holds it.
 ### Orphan process
 
 ```bash
-pgrep -fl 'autorag|autorag-gateway|minsync' | grep -v pgrep
+pgrep -fl 'autorag|minsync' | grep -v pgrep
 ```
 
-A refresh that was killed mid-run can leave the gateway or a `minsync` child
-alive. Stop the gateway with `autorag gateway stop` first; only kill a PID
+A refresh that was killed mid-run can leave a `minsync serve` daemon or a
+`minsync` child alive. A daemon idle-stops itself; stop a confirmed orphan by
+the pid from `~/.cache/minsync/serve/<instance>/pid`, and only kill a PID
 directly when it is confirmed orphaned (no parent CLI, no live refresh).
 Re-run `autorag status --json` afterwards to confirm `inFlight: false`.
 
@@ -167,16 +179,21 @@ were built with a different embedder than the configured one. Vectors of two
 different dimensions can never be compared, so the index must be rebuilt:
 
 ```bash
-autorag models prefetch --profile qwen3-embedding-0.6b
 autorag index rebuild --method minsync
 ```
 
-The current default is the local `native:Qwen/Qwen3-Embedding-0.6B` runtime at
-1024 dimensions. A workspace still pinned to the legacy 768-dimension
-Ollama/TEI path must be reindexed explicitly, or pinned to an explicit profile.
-Changing `embedder.dimension` in config **without** a rebuild leaves retrieval
-silently empty. Keep embeddings local; do not point the embedder at a remote
-endpoint to work around a local failure.
+The default is MinSync's local `Qwen/Qwen3-Embedding-0.6B` engine at 1024
+dimensions, reached through a running `minsync serve` daemon or, failing that,
+MinSync's in-process engine. Both report one identity (`provider: minsync`), so
+a store never re-embeds because the daemon appeared or went away. Vectors
+written by the removed local Q8_0 gateway engine are **not** compatible: their
+identity changed, so the memory store (`memory.json.vectors.db`), chat-sidecar
+semantic DBs, and the gist `vectors.json` re-embed on the next refresh, while a
+MinSync workspace created through the old gateway profile needs
+`autorag index rebuild --method minsync` (or
+`autorag index reset --method minsync --yes` then refresh). Changing the
+embedder's `dimension` in config **without** a rebuild leaves retrieval silently
+empty.
 
 ### Stale index
 
@@ -227,8 +244,7 @@ to retry those files once without re-indexing healthy ones.
 | `jikji-unavailable` | Jikji binary missing or install failed | Check cargo, retry refresh |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
-| `embedder-unavailable` | Embedding gateway or runtime down | `autorag gateway status --format json` |
-| `lock-conflict` | Another runtime holds the lock | `autorag gateway stop` |
+| `embedder-unavailable` | No remote endpoint answered, no daemon could start, and the in-process addon is missing or failed | Run `minsync serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
 | `datasource-index-failed` | Backing CLI failed to index | Run that CLI's own doctor |
 | `datasource-empty` | Store has no matching content | Re-sync with the CLI, or accept as empty |
 | `unknown-datasource-skill` | Config name is not a known template | Fix the name or add `"type"` |

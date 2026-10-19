@@ -7,12 +7,13 @@ const response = (body: unknown, status = 200): FetchResponse => ({
 	status,
 	json: async () => body,
 });
+/** What `minsync serve` answers on GET /health. */
 const readyFetch = async (): Promise<FetchResponse> =>
 	response({
 		status: "ok",
-		profileId: "qwen3-embedding-0.6b",
-		model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+		model_id: "Qwen/Qwen3-Embedding-0.6B",
 		dimension: 1024,
+		instance: "Qwen-Qwen3-Embedding-0.6B-9f552f9783e1",
 	});
 
 const optionalBinaries = Object.freeze({
@@ -33,7 +34,7 @@ describe("live-e2e preflight", () => {
 			binaries: optionalBinaries,
 		});
 		expect(result.verdict).toBe("refused");
-		expect(result.code).toBe("live-e2e-non-loopback-gateway");
+		expect(result.code).toBe("live-e2e-non-loopback-embedding");
 	});
 
 	it("refuses OpenAI egress without echoing the credential", async () => {

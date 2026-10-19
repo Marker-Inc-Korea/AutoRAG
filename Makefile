@@ -12,14 +12,13 @@ QA_PLATFORM ?= linux/amd64
 QA_DOCKERFILE ?= scripts/ci/qa.Dockerfile
 QA_CONTAINER_HOME ?= /tmp/autorag-home
 QA_MODEL_ENV ?= OPENAI_API_KEY AUTORAG_OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY GOOGLE_API_KEY OPENROUTER_API_KEY FIREWORKS_API_KEY XAI_API_KEY MISTRAL_API_KEY GROQ_API_KEY AZURE_OPENAI_API_KEY
-E2E_EMBEDDER ?= native
 E2E_MODE ?= cold
 
 # Recipes read these through make's own environment, never by splicing the
 # values into recipe shell source: a value containing $(...) or quotes must
 # stay data, not become executable shell code.
 export QA_IMAGE QA_PLATFORM QA_DOCKERFILE QA_CONTAINER_HOME QA_MODEL_ENV
-export E2E_ROOT E2E_MODE E2E_EMBEDDER E2E_DATASOURCES E2E_ARGS
+export E2E_ROOT E2E_MODE E2E_DATASOURCES E2E_ARGS
 
 .PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain qa-image qa-shell tui e2e-live e2e-live-cold e2e-live-docker
 
@@ -46,7 +45,6 @@ help:
 		'  E2E_ROOT=<root>  Shared corpus root (default: current repo path;' \
 		'                   honors AUTORAG_LIVE_E2E_ROOT if set)' \
 		'  E2E_ARGS=<args>  Extra runner arguments (quoted words supported)' \
-		'  E2E_EMBEDDER=native|gateway  Live-E2E embedder (default native)' \
 		'  QA_MODEL_ENV=<names>  Model credential allowlist; set empty to' \
 		'                   forward none' \
 		'  E2E_DATASOURCES  Lane selection (default: local,configured = every lane;' \

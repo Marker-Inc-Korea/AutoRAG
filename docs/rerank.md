@@ -15,9 +15,9 @@ otherwise. The choice is made by `autorag init` when it writes the `rerank`
 block; a config file with no `rerank` block leaves reranking off, and an
 existing block keeps what it says.
 
-Local-first is no longer a contract: the local embedding gateway remains the
-zero-configuration default, and remote reranking (or remote embedding) is an
-explicit, trusted-config opt-in. Nothing falls back between providers silently.
+Local-first is no longer a contract: the local MinSync embedder remains the
+zero-configuration default, and remote reranking (or a remote
+`minSync.embedder`) is an explicit, trusted-config opt-in. Nothing falls back between providers silently.
 
 ## Configuration
 
@@ -38,7 +38,7 @@ explicit, trusted-config opt-in. Nothing falls back between providers silently.
 | `provider` | string | `openrouter` | Rerank provider id — `openrouter` or `dazzi` (any other value is a config error) |
 | `model` | string | `voyageai/rerank-3-lite` (`openrouter`) / `qwen/qwen3-reranker-8b` (`dazzi`) | Provider wire model id |
 | `apiKeyEnv` | string | `OPENROUTER_API_KEY` (`openrouter`); not supported for `dazzi` | Env var holding the provider API key (never the secret itself). `dazzi` uses the credential stored by `/login`, and setting `apiKeyEnv` with it is a config error |
-| `baseUrl` | string | provider default | Override the provider base URL (e.g. a gateway or self-hosted endpoint); for `dazzi` this is the API base **including** `/v1` |
+| `baseUrl` | string | provider default | Override the provider base URL (e.g. a proxy or self-hosted endpoint); for `dazzi` this is the API base **including** `/v1` |
 | `topN` | positive integer | `25` | Keep only the top N merged results after reranking |
 | `timeoutMs` | positive integer | SDK default | Per-request timeout |
 

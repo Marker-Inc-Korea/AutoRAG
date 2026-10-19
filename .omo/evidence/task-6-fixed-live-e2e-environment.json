@@ -1,7 +1,7 @@
 {
   "mode": "warm",
-  "root": "/e2e-root",
-  "startedAt": "2026-10-18T09:52:27.608Z",
+  "root": "/tmp/autorag-live-e2e-root",
+  "startedAt": "2026-10-19T15:40:28.060Z",
   "commands": [
     {
       "command": [
@@ -9,7 +9,7 @@
         "scripts/live-e2e/runner.mjs",
         "verify-corpus",
         "--root",
-        "/e2e-root"
+        "/tmp/autorag-live-e2e-root"
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
@@ -20,9 +20,9 @@
         "bun",
         "scripts/live-e2e/live-stack.mts",
         "--root",
-        "/e2e-root",
+        "/tmp/autorag-live-e2e-root",
         "--workspace",
-        "/workspace/.autorag-e2e/workspace",
+        "/Volumes/SSD1/5/AutoRAG/.autorag-e2e/workspace",
         "--mode",
         "warm"
       ],
@@ -41,7 +41,7 @@
       "status": "PASS",
       "reason": "absolute corpus source is readable",
       "evidence": {
-        "source": "/e2e-root/corpus/sample.txt",
+        "source": "/tmp/autorag-live-e2e-root/corpus/sample.txt",
         "identity": "local:corpus/sample.txt",
         "sourceAbsolute": true,
         "sourceReadable": true,
@@ -57,6 +57,40 @@
     "lockReleased": true,
     "cloneStateRemoved": false
   },
+  "preflight": {
+    "verdict": "ready",
+    "exitCode": 0,
+    "endpoint": "http://127.0.0.1:60002/",
+    "openaiKeyPresent": false,
+    "embedding": {
+      "status": "ready",
+      "expectedModel": "Qwen/Qwen3-Embedding-0.6B",
+      "dimension": 1024
+    },
+    "lanes": {
+      "lazykatok": {
+        "status": "READY"
+      },
+      "discrawl": {
+        "status": "READY"
+      },
+      "qmd": {
+        "status": "READY"
+      },
+      "rclone": {
+        "status": "READY"
+      },
+      "mailcrawl": {
+        "status": "READY"
+      },
+      "jikji": {
+        "status": "READY"
+      },
+      "minsync": {
+        "status": "READY"
+      }
+    }
+  },
   "refresh": {
     "parsed": {
       "scanned": 2,
@@ -65,10 +99,10 @@
     },
     "minsync": {
       "ok": true,
-      "synced": 2
+      "synced": 3
     }
   },
-  "cursorPath": "/workspace/.autorag-e2e/workspace/.minsync/cursor.json",
+  "cursorPath": "/Volumes/SSD1/5/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
   "koreanLexical": {
     "status": "PASS",
@@ -76,7 +110,7 @@
     "fixture": "korean-policy.txt"
   },
   "hit": {
-    "source": "/e2e-root/corpus/sample.txt",
+    "source": "/private/tmp/autorag-live-e2e-root/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
@@ -87,7 +121,7 @@
     "stale": false,
     "components": {
       "minsync": "ready",
-      "fsearch": "unavailable"
+      "fsearch": "ready"
     }
   },
   "liteRetrieve": {
@@ -97,16 +131,46 @@
       "stale": false,
       "resultCount": 2,
       "unsearched": [],
-      "sourceMatched": "/e2e-root/corpus/sample.txt"
+      "sourceMatched": "/private/tmp/autorag-live-e2e-root/corpus/sample.txt"
+    },
+    "embedderDown": {
+      "exitCode": 0,
+      "ok": true,
+      "unsearched": [
+        {
+          "surface": "minsync",
+          "methods": [
+            "minsync"
+          ],
+          "reason": "MinSyncQueryError: 2026-10-19T15:40:41.417664Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:41.713006Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:42.422303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:43.821951Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "retrieval-method-failed",
+          "severity": "warning",
+          "message": "Retrieval method \"minsync\" failed and was skipped; partial results from other methods were used: MinSyncQueryError: 2026-10-19T15:40:41.417664Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:41.713006Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:42.422303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:43.821951Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n",
+          "source": "minsync",
+          "reason": "MinSyncQueryError: 2026-10-19T15:40:41.417664Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:41.713006Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:42.422303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:43.821951Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n"
+        }
+      ],
+      "skippedSurface": "minsync",
+      "skippedMethods": [
+        "minsync"
+      ],
+      "reasonVerbatim": "MinSyncQueryError: 2026-10-19T15:40:41.417664Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:41.713006Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:42.422303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n2026-10-19T15:40:43.821951Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)\n",
+      "humanWarningWithoutDebug": [
+        "warning: not searched: minsync (minsync): MinSyncQueryError: 2026-10-19T15:40:48.057556Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:60019/v1/embeddings)"
+      ]
     }
   },
   "embedding": {
+    "endpoint": "http://127.0.0.1:60002",
     "model": "Qwen/Qwen3-Embedding-0.6B",
-    "profileId": "qwen3-embedding-0.6b",
     "dimension": 1024,
     "queryPrefix": "",
     "passagePrefix": "",
-    "loopbackOnly": false
+    "loopbackOnly": true
   },
   "openaiKeyPresent": false,
   "incremental": true,
@@ -116,7 +180,7 @@
     "skip": 0,
     "fail": 0
   },
-  "finishedAt": "2026-10-18T09:53:19.034Z",
+  "finishedAt": "2026-10-19T15:40:55.175Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",

@@ -249,13 +249,14 @@ describe("parent-agent skill docs", () => {
 		expect(setup).toMatch(/Do not present legacy\n`\.doc` as a supported parsed format/s);
 	});
 
-	it("documents Qwen3 native embeddings as default and demotes Ollama/EmbeddingGemma to legacy/QA", () => {
+	it("names Qwen3 at 1024 dimensions as the default embedding and never tells users to manage a model cache", () => {
 		for (const name of ["autorag-setup", "autorag-lite-setup"] as const) {
 			const skill = readSkill(name);
 			expect(skill).toMatch(/Qwen3/);
 			expect(skill).toMatch(/1024/);
-			expect(skill).not.toMatch(/MinSync's default embedder is local EmbeddingGemma/);
-			expect(skill).toMatch(/legacy Ollama\/TEI/i);
+			// The removed `models prefetch|import|verify` and `gateway` commands must not be taught.
+			expect(skill).not.toMatch(/autorag models (prefetch|import|verify)/);
+			expect(skill).not.toMatch(/autorag gateway/);
 		}
 	});
 
@@ -266,6 +267,6 @@ describe("parent-agent skill docs", () => {
 		expect(setup).toMatch(/Discord uses discrawl's local\s+desktop wiretap archive/);
 		const mainSkill = readSkill("autorag");
 		expect(mainSkill).toContain("autorag setup --format json");
-		expect(mainSkill).toMatch(/`setup`.*`gateway`/);
+		expect(mainSkill).not.toMatch(/autorag gateway/);
 	});
 });

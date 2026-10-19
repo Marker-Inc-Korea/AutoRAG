@@ -341,13 +341,12 @@ const COMMANDS_WITH_OWN_HELP = [
 	"serve",
 	"p2p",
 	"models",
-	"gateway",
 ] as const;
 
 /** Tokens each command's own help must name so it cannot be the global list. */
 const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], readonly string[]> = {
 	init: ["--search-paths", "--workspace", "--memory-path", "--force"],
-	setup: ["--search-paths", "--workspace", "--profile", "--format json"],
+	setup: ["--search-paths", "--workspace", "--format json"],
 	refresh: ["--method", "--force"],
 	status: ["Usage: autorag status"],
 	search: ["--top-k", "--scope", "--fast-thinking", "--final-thinking"],
@@ -360,8 +359,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	tui: ["Usage: autorag tui"],
 	serve: ["--port", "--force"],
 	p2p: ["peers", "requests", "--contact-id"],
-	models: ["prefetch", "import", "verify", "--profile"],
-	gateway: ["status", "stop"],
+	models: ["list", "--provider", "--available"],
 };
 
 const GLOBAL_USAGE_HEADER = "Usage: autorag <command> [args] [flags]";

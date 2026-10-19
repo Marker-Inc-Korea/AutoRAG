@@ -80,6 +80,8 @@ type SpawnRequest = {
  */
 export class DiscrawlClient {
 	private readonly options: DiscrawlOptions;
+	/** The runtime the managed config currently points at; its key variable is the one child env passes through. */
+	private resolvedRuntime: DiscrawlEmbeddingRuntime | undefined;
 
 	constructor(options: DiscrawlOptions = {}) {
 		this.options = options;
@@ -111,8 +113,10 @@ export class DiscrawlClient {
 	}
 
 	async prepareEmbeddings(): Promise<boolean> {
-		const runtime = this.options.embeddingRuntime;
+		const source = this.options.embeddingRuntime;
+		const runtime = typeof source === "function" ? await source() : source;
 		if (runtime === undefined) return false;
+		this.resolvedRuntime = runtime;
 		const configured = await this.configureEmbeddings(runtime);
 		if (!configured.configured) return false;
 		const metadata = await this.metadata();
@@ -121,7 +125,9 @@ export class DiscrawlClient {
 			configured.rebuildRequired ||
 			(metadata.data.embeddingProvider !== undefined && metadata.data.embeddingProvider !== runtime.provider) ||
 			(metadata.data.embeddingModel !== undefined && metadata.data.embeddingModel !== runtime.model) ||
-			(metadata.data.embeddingDimensions !== undefined && metadata.data.embeddingDimensions !== runtime.dimensions)
+			(runtime.dimensions !== undefined &&
+				metadata.data.embeddingDimensions !== undefined &&
+				metadata.data.embeddingDimensions !== runtime.dimensions)
 		);
 	}
 
@@ -199,7 +205,7 @@ export class DiscrawlClient {
 		if (violatingKey !== undefined) {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
-		const env = controlledEnv(this.options.env);
+		const env = controlledEnv(this.options.env, this.resolvedRuntime);
 		return spawnDiscrawl({
 			options: this.options,
 			args: [...commonArgs(this.options), ...args],
@@ -221,10 +227,14 @@ export function discrawlWorkspace(options: DiscrawlOptions): string | undefined 
  */
 function commonArgs(options: DiscrawlOptions): readonly string[] {
 	if (options.configPath !== undefined) return ["--config", options.configPath];
-	if (options.embeddingRuntime !== undefined && (options.workspacePath ?? options.root) !== undefined) {
+	if (hasManagedConfig(options) && (options.workspacePath ?? options.root) !== undefined) {
 		return ["--config", managedConfigPath((options.workspacePath ?? options.root) as string)];
 	}
 	return [];
+}
+
+function hasManagedConfig(options: DiscrawlOptions): boolean {
+	return options.embeddingRuntime !== undefined;
 }
 
 function managedConfigPath(workspace: string): string {
@@ -325,7 +335,8 @@ function managedDiscrawlConfig(runtime: DiscrawlEmbeddingRuntime): string {
 		`provider = ${JSON.stringify(runtime.provider)}`,
 		`model = ${JSON.stringify(runtime.model)}`,
 		`base_url = ${JSON.stringify(runtime.baseUrl)}`,
-		`dimensions = ${runtime.dimensions}`,
+		...(runtime.dimensions === undefined ? [] : [`dimensions = ${runtime.dimensions}`]),
+		...(runtime.apiKeyEnv === undefined ? [] : [`api_key_env = ${JSON.stringify(runtime.apiKeyEnv)}`]),
 		"",
 	].join("\n");
 }
@@ -343,10 +354,21 @@ function parseManagedEmbedding(config: string): { provider?: string; model?: str
 	};
 }
 
-function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
+/**
+ * The child gets an allowlisted environment plus, for a remote embedding endpoint, exactly the one variable
+ * the operator's `minSync.embedder.apiKeyEnv` names: discrawl reads its bearer token from the variable its
+ * managed config points at, and no other credential in the parent environment reaches it.
+ */
+function controlledEnv(
+	configuredEnv: Readonly<Record<string, string | undefined>> | undefined,
+	embedding?: DiscrawlEmbeddingRuntime,
+): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(process.env)) {
-		if (value !== undefined && isAllowedDiscrawlEnvKey(key)) env[key] = value;
+		if (value !== undefined && (isAllowedDiscrawlEnvKey(key) || key === embedding?.apiKeyEnv)) env[key] = value;
+	}
+	if (embedding?.apiKeyEnv !== undefined && embedding.apiKeyValue !== undefined) {
+		env[embedding.apiKeyEnv] = embedding.apiKeyValue;
 	}
 	for (const [key, value] of Object.entries(configuredEnv ?? {})) {
 		if (value === undefined) {

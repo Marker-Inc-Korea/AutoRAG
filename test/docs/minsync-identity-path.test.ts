@@ -8,7 +8,7 @@ import { minSyncWorkspaceRoot } from "../../src/minsync/paths.ts";
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 /** Docs that describe the MinSync workspace layout for operators. */
-const DOCS = ["docs/minsync-setup.md", "docs/embedding-runtime.md"] as const;
+const DOCS = ["docs/minsync-setup.md"] as const;
 
 const WORKSPACE = "<workspace>";
 

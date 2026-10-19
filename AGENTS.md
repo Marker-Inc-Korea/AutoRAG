@@ -14,7 +14,7 @@ Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay withi
 - Adding or committing secrets (`.env`, `*.key`, tokens, cookies, private corpus dumps)
 - Rewriting git history
 - Attaching `node_modules` to releases
-- Sending corpus text to a remote provider without an explicit trusted-config opt-in (remote embedders and rerankers are supported; the local gateway remains the zero-config default)
+- Sending corpus text to a remote provider without an explicit trusted-config opt-in (remote embedders and rerankers are supported; the local MinSync embedder remains the zero-config default)
 - Hard-coding provider credentials in config files or argv; store only environment-variable, keychain, or profile references
 - Creating git worktrees (this clone is the isolation boundary)
 
@@ -24,7 +24,7 @@ Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay withi
 
 ### Ask first
 
-A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding profile or its license, and P2P default changes.
+A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding backend change or its license, and P2P default changes.
 
 ## Git Workflow (binding)
 
@@ -71,7 +71,7 @@ Never merge a PR on your own initiative. Merge only when the user explicitly ask
 
 ## Manual QA on a shared machine (binding)
 
-The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, the embedding-model cache, TUI sessions, P2P policy). The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
+The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, TUI sessions, P2P policy). MinSync's model cache is separate and shared at `~/.cache/minsync/models`. The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
 
 That home belongs to the maintainer, not to your task. Every write your QA makes there silently changes every other clone, every app checkout, and the real setup. This already happened more than once: an ad-hoc QA step ran `autorag init --workspace "$TMP" --search-paths "$TMP/docs" --force` with no `--config` and no `AUTORAG_HOME`. `--workspace` does not move the config, so `--force` replaced the real `~/.autorag/config.json`. It dropped every configured datasource and pointed search at a temp directory that was deleted minutes later. From then on, every search on the machine, the desktop app included, failed with `AutoRAG search root does not exist: /var/folders/.../tmp.XXXX/docs` (#1743).
 
@@ -90,7 +90,7 @@ Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
    A tool that starts a fresh shell per call (an agent `bash` tool, `tool.bash`, `Bun.$`, `spawn`) does not inherit a previous call's `export`. Repeat the exports in each call, or pass them through `env`.
 3. **`--workspace` is not isolation.** It moves the workspace only. The config path comes from `--config`, then `AUTORAG_CONFIG`, then `$AUTORAG_HOME/config.json`, then `~/.autorag/config.json`. Never run `autorag init --force` (or anything else that writes config) unless `AUTORAG_CONFIG` or `--config` points inside your temp root.
 4. **Check before you write.** Right before the first command that writes config, confirm the target is yours: `echo "$AUTORAG_CONFIG"` must print a path under `$QA_ROOT`. If it is empty or under `$HOME/.autorag`, stop.
-5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' gateways and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
+5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' `minsync serve` daemons and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
 6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
 
 The fixed live-E2E runner below is clone-local, but host execution still exposes the
@@ -111,9 +111,10 @@ The container sets an ephemeral `HOME`, `AUTORAG_HOME`, and `AUTORAG_CONFIG`,
 bind-mounts this clone at `/workspace`, and does not mount the host `~/.autorag`
 or native datasource stores. Only the model credential allowlist in `QA_MODEL_ENV`
 is forwarded; set it empty (`QA_MODEL_ENV=`) to forward no credentials at all.
-Live E2E defaults to the local native MinSync embedder; set `E2E_EMBEDDER=gateway`
-only when the Docker image has a compatible gateway runtime. Use `QA_PLATFORM`
-and `QA_MODEL_ENV` to select a supported architecture or credential allowlist.
+The live runner starts a `minsync serve` daemon for the run, checks its `/health`
+endpoint for `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions, and stops it after
+the run. Use `QA_PLATFORM` and `QA_MODEL_ENV` to select a supported architecture
+or credential allowlist.
 The live target keeps runner state inside the clone's `.autorag-e2e` directory;
 evidence remains in the mounted clone under `.omo/evidence`.
 
@@ -180,13 +181,12 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- The gateway profile pinned in the clone-local `.autorag-e2e` home. The
-  workflow self-ensures this via `autorag models prefetch --profile qwen3-embedding-0.6b`
-  before starting the gateway; no manual Ollama serve, TEI adapter, or model
-  pull is required.
-- `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings are local
-  only; do not configure a remote embedding endpoint or send corpus text off
-  the machine.
+- MinSync 0.4.11 or newer on `PATH`. The runner starts a `minsync serve` daemon
+  for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
+  model pull is required.
+- `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings stay local
+  during live E2E: do not configure a remote `minSync.embedder` endpoint or
+  send corpus text off the machine.
 
 Run the cold path (fresh runner state and core local-file/MinSync verification):
 
@@ -239,14 +239,17 @@ Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`
 ## Required MinSync Live QA
 
 When validating local-file retrieval changes, run a real semantic query
-through the product default gateway path. The local gateway is the default;
-a remote embedding service is used only when the operator explicitly
-configures one.
+through the shared embedder. The local MinSync backend is the default; a remote
+embedding service is used only when the operator explicitly configures
+`minSync.embedder`.
 
-The default product path uses the AutoRAG-owned `autorag-gateway` with the
-`qwen3-embedding-0.6b` profile (1024 dimensions, no query/passage prefixes).
-The gateway is started on demand by the semantic MinSync path and stays
-loopback-only.
+The default product path uses MinSync's Qwen3-Embedding-0.6B engine (1024
+dimensions, no query/passage prefixes). Vectors come from a loopback
+`minsync serve` daemon when one answers, otherwise from MinSync's in-process
+engine through the optional `@nomadamas/minsync-native` addon. `autorag refresh`
+starts a daemon when none answers and stays loopback-only; a search never
+starts one. `autorag setup` reports the resolved `embedding.backend` (`daemon`,
+`in-process`, or `remote`) with the provider, model, and dimension.
 
 Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag` (see the manual-QA rules above):
 
@@ -261,10 +264,7 @@ printf '%s\n' \
   > "$WORKSPACE/docs/refund-policy.txt"
 
 cd "$WORKSPACE"
-# Pin the model to the local cache (no Ollama, no adapter)
-autorag models prefetch --profile qwen3-embedding-0.6b
-
-# Init with the default gateway profile
+# Init with the default local MinSync embedder
 autorag init \
   --search-paths "$WORKSPACE/docs" \
   --force
@@ -280,11 +280,12 @@ The QA gate is not complete until all of the following are observed:
 2. The semantic query returns a hit for the fixture document.
 3. AutoRAG maps that hit to an OS-absolute original `source` path.
 4. `fs.existsSync(source)` and reading `source` succeed.
-5. The run used the local gateway (no remote embedding endpoint configured).
+5. The run used a local backend (`daemon` or `in-process`), with no remote
+   `minSync.embedder` endpoint configured.
 
-If the model prefetch fails, the gateway is unavailable, or MinSync reports a
-semantic failure, report the exact blocking diagnostic and do not claim live
-MinSync verification.
+If MinSync is missing, no daemon answers and the in-process addon is absent or
+fails (`embedder-unavailable`), or MinSync reports a semantic failure, report
+the exact blocking diagnostic and do not claim live MinSync verification.
 
 ### Legacy/manual variant (Ollama + TEI adapter)
 
@@ -316,7 +317,7 @@ autorag search --json "semantic question about refund approval"
 The adapter translates MinSync's `POST /embed` request to Ollama's
 `POST /api/embeddings` request and returns the TEI response shape (a bare JSON
 array of embedding arrays). Do not use this variant as a fresh-install
-requirement or as an implicit fallback from the gateway.
+requirement or as an implicit fallback from the MinSync embedder.
 
 Docker can reproduce the Linux job on macOS, Linux, or Windows hosts. The
 `test-linux` target uses an isolated container volume for `node_modules`, so it
@@ -356,7 +357,7 @@ with any of them should be rejected or reshaped:
    stay with the tool that owns them.
 2. **Just works — no RAG degree required.** A non-developer installs it and
    it works: minimal configuration, no pipeline tuning, no vector-DB
-   operations, no OpenAI keys. The local embedder (EmbeddingGemma via Ollama)
+   operations, no OpenAI keys. The local MinSync embedder (Qwen3-Embedding-0.6B)
    and MinSync auto-install handle the "RAG plumbing" invisibly.
 3. **Fast by design.** One configured model owns the whole loop; retrieval
    runs locally over MinSync CDC chunks (BM25 / vector / hybrid); interactive

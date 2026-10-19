@@ -56,7 +56,12 @@ export interface DiscrawlEmbeddingRuntime {
 	readonly provider: string;
 	readonly model: string;
 	readonly baseUrl: string;
-	readonly dimensions: number;
+	/** Omitted when the endpoint's dimension is not known; discrawl infers it from the first response. */
+	readonly dimensions?: number;
+	/** Name of the environment variable that holds the bearer token (remote endpoints). Never the token. */
+	readonly apiKeyEnv?: string;
+	/** A non-secret placeholder for a keyless local daemon, passed to the child only. Never set for a remote endpoint. */
+	readonly apiKeyValue?: string;
 	readonly identity?: string;
 }
 
@@ -94,8 +99,11 @@ export interface DiscrawlOptions {
 	readonly guildId?: string;
 	/** Embedding provider understood by the native discrawl configuration. */
 	readonly embeddingProvider?: string;
-	/** AutoRAG-owned runtime to write into a managed workspace config. */
-	readonly embeddingRuntime?: DiscrawlEmbeddingRuntime;
+	/**
+	 * Where discrawl should embed, written into a managed workspace config. A function is evaluated on each
+	 * `prepareEmbeddings`, because the endpoint of a `minsync serve` daemon exists only while it runs.
+	 */
+	readonly embeddingRuntime?: DiscrawlEmbeddingRuntime | (() => Promise<DiscrawlEmbeddingRuntime | undefined>);
 	/**
 	 * Embedding model understood by the native discrawl configuration.
 	 * English-only models are accepted but reported through a diagnostic.

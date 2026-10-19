@@ -131,9 +131,10 @@ does, and searches them right alongside your files:
 
 ### Private by design
 
-- **Embedded on your machine.** Document understanding runs on the local
-  [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md) model.
-  File contents are never sent to a remote embedder.
+- **Embedded on your machine.** Semantic indexing runs on MinSync's local
+  Qwen3-Embedding-0.6B engine (1024 dimensions), which MinSync provisions and
+  runs; AutoRAG owns no embedding model. File contents are never sent to a
+  remote embedder unless you explicitly configure a remote `minSync.embedder`.
 - **Keys stay encrypted.** Sign-in tokens and API keys live in the system's
   encrypted store, never in a config file.
 - **Bring your own model.** Use the [hosted Dazzi Models plan](#hosted-dazzi-models-plan),
@@ -187,7 +188,7 @@ Three principles drive every design decision in AutoRAG Agent:
 
 1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
-2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding gateway](docs/embedding-runtime.md) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (the hosted Dazzi Models reranker when signed in, else OpenRouter `voyageai/rerank-3-lite`) is an opt-in extra.
+2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding backend](docs/minsync-setup.md#embedding-backends) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (the hosted Dazzi Models reranker when signed in, else OpenRouter `voyageai/rerank-3-lite`) is an opt-in extra.
 
 3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (BM25, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
 
@@ -200,7 +201,7 @@ AutoRAG Agent orchestrates five integrated subsystems:
 1. **Retrieval Memory (`check_memory`):** After each answer, cited evidence Jev judges to genuinely support it is stored in `~/.autorag/memory.json`. Later searches receive this conversation's evidence, similar past questions, and long-term insights as **advisory reference** — it never reorders results or overrides current evidence. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 2. **Pluggable Multi-Method Retrieval:**
    - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors. AutoRAG always uses MinSync's `multilingual` tokenizer, which keeps each original word and adds Korean morphemes (via the [Kiwi](https://github.com/bab2min/Kiwi) library), so both `연구목표` and `인증서를` → `인증서` match; without Kiwi AutoRAG warns and tokenizes on whitespace. See [docs/minsync-setup.md](docs/minsync-setup.md#bm25-tokenizer).
-   - **Semantic Vector Search:** Dense vector retrieval over CDC chunks via the built-in embedding gateway.
+   - **Semantic Vector Search:** Dense vector retrieval over CDC chunks via the shared MinSync embedder.
    - **Hybrid Search:** Combines BM25 and vector ranking via Reciprocal Rank Fusion (RRF).
    - **Jikji Find-First Discovery:** Local CLI-backed fast discovery answer packs.
    - **Everything File-Name Search (Windows):** The bundled [voidtools Everything](https://www.voidtools.com/) indexes file and folder names under your search roots so the agent finds files by name, extension, path, size, or date instantly (`everything_search`).
@@ -672,8 +673,7 @@ the defaults.
 
 Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 
-- **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and local embedding verification.
-- **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model card: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md).
+- **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, embedding backends (remote, `minsync serve` daemon, in-process addon), and local verification.
 - **[Hosted Dazzi Models Provider](docs/cloud-provider.md):** The hosted `dazzi` model provider — PKCE `/login`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
@@ -700,7 +700,7 @@ AutoRAG Agent is an open-source project built by the community. We welcome contr
 AutoRAG Agent stands on the shoulders of fantastic open-source projects:
 
 - **[Pi Framework](https://github.com/earendil-works/pi-mono)** by [@earendil-works](https://github.com/earendil-works) — The foundational agent framework powering AutoRAG's reasoning loop.
-- **[MinSync](https://github.com/Marker-Inc-Korea/minsync)** — Ultra-fast incremental Change Data Capture (CDC) chunking and local BM25/vector indexing.
+- **[MinSync](https://github.com/Marker-Inc-Korea/minsync)** — Ultra-fast incremental Change Data Capture (CDC) chunking, local BM25/vector indexing, and the Qwen3-Embedding-0.6B embedding engine.
 - **[Jikji](https://github.com/NomaDamas/jikji)** by [NomaDamas](https://github.com/NomaDamas) — High-performance find-first local document discovery.
 - **[Everything](https://www.voidtools.com/)** and **[ES](https://github.com/voidtools/ES)** by voidtools (David Carpenter) — Instant Windows file-name indexing and its command-line interface, bundled under the MIT License.
 - **[FSearch](https://github.com/cboxdoerfer/fsearch)** and **[fsearch-cli](https://github.com/NomaDamas/fsearch-mac)** — Everything-style file-name search for macOS/Linux (GPL-2.0-or-later). Never bundled or linked: users install fsearch-cli separately and AutoRAG spawns it as a separate process (mere aggregation per the FSF GPL FAQ).
@@ -712,14 +712,14 @@ AutoRAG Agent stands on the shoulders of fantastic open-source projects:
 
 ## Troubleshooting
 
-When search returns nothing, a datasource disappears from results, refresh hangs, or the gateway will not start, run the **`autorag-doctor`** agent skill (`skills/autorag-doctor/SKILL.md`). Point your coding agent at it and say *"check AutoRAG"* — it walks the full diagnose-and-repair procedure and ends with a per-datasource status table showing what is indexed and what actually returns hits.
+When search returns nothing, a datasource disappears from results, refresh hangs, or the embedder is unavailable, run the **`autorag-doctor`** agent skill (`skills/autorag-doctor/SKILL.md`). Point your coding agent at it and say *"check AutoRAG"* — it walks the full diagnose-and-repair procedure and ends with a per-datasource status table showing what is indexed and what actually returns hits.
 
 The first three commands cover most of it:
 
 ```bash
 autorag status --json          # freshness, per-component state, diagnostics
 autorag health --json          # model resolution + one live completion probe
-autorag gateway status --format json   # on-demand embedding runtime
+autorag setup                   # resolves the embedding backend and reports it
 ```
 
 Indexing is not the same thing as searchability, so always confirm retrieval
@@ -740,8 +740,8 @@ Common failures and their fix:
 | Symptom | Diagnostic code | Fix |
 |---|---|---|
 | Results are missing recent files | `stale-index` | `autorag refresh --method parsed,minsync --json` |
-| Semantic search returns nothing after changing the embedder | `embedding-identity-mismatch` | `autorag index rebuild --method minsync` |
-| Gateway will not start, a previous run was killed | `lock-conflict` | `autorag gateway stop`, then retry |
+| Semantic search returns nothing after changing the embedder, or after moving off the old embedding gateway | `embedding-identity-mismatch` | `autorag index rebuild --method minsync` |
+| No remote endpoint answers, no `minsync serve` daemon could start, and the in-process addon is missing or failed | `embedder-unavailable` | run `minsync serve` by hand to see its own error, install MinSync, install the optional `@nomadamas/minsync-native` addon, or configure a remote `minSync.embedder` |
 | A datasource is healthy in its own CLI but absent from results | — | confirm it is configured under `datasources` and connected through its native CLI |
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync binary missing (search and refresh fail with `MinSync is required ...`) | — | `cargo install minsync`, or leave `minSync.autoInstall` on and re-run refresh |

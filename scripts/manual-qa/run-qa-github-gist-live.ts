@@ -1,12 +1,13 @@
 /**
  * Live manual QA for the github-gist datasource (issue #1588): the real
  * GitHub REST API with the gh CLI's authenticated token, incremental
- * re-index, lexical search, and semantic search through the real loopback
- * autorag-gateway (qwen3-embedding-0.6b). The token is never printed or
- * persisted by this script; embeddings stay on the local machine.
+ * re-index, lexical search, and semantic search through MinSync's Qwen3
+ * (a running `minsync serve` daemon, started here when none runs). The token
+ * is never printed or persisted by this script; embeddings stay on the local
+ * machine.
  *
- * Prerequisites: `gh auth login` with the `gist` scope. The embedding model
- * is prefetched automatically on first run (pinned cache download).
+ * Prerequisites: `gh auth login` with the `gist` scope and the `minsync`
+ * binary on PATH. MinSync downloads the embedding model on first use.
  *
  * Run: bun scripts/manual-qa/run-qa-github-gist-live.ts
  */
@@ -16,7 +17,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { releaseRuntimeHandles, stopRuntime } from "../../src/embedding-runtime/index.ts";
+import { createEmbedderFromConfig, releaseEmbedders } from "../../src/embedding/index.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { GitHubGistSkill } from "../../src/datasource/skills/github-gist/index.ts";
 
@@ -42,7 +43,11 @@ try {
 	check("gh CLI authenticated (token resolves)", ghAuthed);
 	if (!ghAuthed) throw new Error("gh auth token failed; run gh auth login with the gist scope");
 
-	const { skills, unknown } = buildDatasourceSkills({ "github-gist": { connector: {} } }, tmpRoot);
+	// The same embedder `refresh` would use: it starts the daemon here and falls back to in-process.
+	const embedder = createEmbedderFromConfig({ root: tmpRoot });
+	const ready = await embedder.ensureReady();
+	console.log(`embedding backend: ${ready.backend}${ready.daemonError ? ` (daemon: ${ready.daemonError})` : ""}`);
+	const { skills, unknown } = buildDatasourceSkills({ "github-gist": { connector: {} } }, tmpRoot, { embedder });
 	check("factory builds github-gist skill", skills.length === 1 && unknown.length === 0);
 	const skill = skills[0] as GitHubGistSkill;
 
@@ -89,13 +94,13 @@ try {
 		);
 	}
 
-	// Semantic path through the real loopback gateway (lazy ensure, cachedOnly).
+	// Semantic path through MinSync Qwen3 (daemon preferred, in-process otherwise).
 	const semantic = skill.retrievalMethods().find((method) => method.describe().name === "github-gist-semantic");
 	check("semantic method registered", semantic !== undefined);
 	if (semantic !== undefined) {
 		const hits = await semantic.retrieve("파일 시스템을 추상화해서 구현하는 방법", { topK: 5 });
 		check(
-			"semantic: Korean paraphrase query returns gist hits via local gateway",
+			"semantic: Korean paraphrase query returns gist hits via MinSync Qwen3",
 			hits.length > 0 && hits.every((hit) => hit.source.startsWith("/github-gist/")),
 			hits[0] ? `${hits[0].source} score=${hits[0].score.toFixed(3)}` : "no hits",
 		);
@@ -106,7 +111,6 @@ try {
 	console.log(failures === 0 ? "\nLIVE QA PASSED" : `\nLIVE QA: ${failures} failure(s)`);
 	if (failures > 0) process.exitCode = 1;
 } finally {
-	await releaseRuntimeHandles().catch(() => { });
-	await stopRuntime().catch(() => { });
+	await releaseEmbedders().catch(() => { });
 	rmSync(tmpRoot, { recursive: true, force: true });
 }

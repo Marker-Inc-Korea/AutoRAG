@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitHubGistConnector } from "../../../src/datasource/skills/github-gist/connector.ts";
 import { GitHubGistSkill } from "../../../src/datasource/skills/github-gist/skill.ts";
-import type { Embedder } from "../../../src/embedding-runtime/gateway-embedder.ts";
+import type { Embedder } from "../../../src/embedding/embedder.ts";
 import { createMockFetch } from "../../fixtures/mock-fetch.ts";
 
 const GIST_LIST = [

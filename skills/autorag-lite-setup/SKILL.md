@@ -168,14 +168,14 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --jso
   MinSync and Jikji auto-install during refresh (never during a query). If they
   are missing or broken, run a full refresh or return to setup rather than
   silently degrading to lexical-only search.
-- MinSync's default embedder is in-process native Qwen3 embeddings
-  (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.11): no
-  embedder flags, no API key, and no external daemon (such as Ollama) are
-  needed, and no corpus text leaves the machine. For gateway-profiled
-  embeddings, prefetch with `autorag models prefetch --profile qwen3-embedding-0.6b`.
-  The legacy Ollama/TEI adapter path (EmbeddingGemma, 768 dimensions) is for
-  manual QA only. Override the embedder only when intentionally using a
-  different provider.
+- AutoRAG owns no embedding model; MinSync provisions
+  `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions) in `~/.cache/minsync/models`. A
+  configured remote `minSync.embedder` is used first; otherwise a running
+  `minsync serve` daemon (started by `refresh`/`watch`, never by a search), and
+  failing that MinSync's in-process engine via the optional
+  `@nomadamas/minsync-native` addon. The local default needs no embedder flags
+  and no API key. Override the embedder only when intentionally using a remote
+  provider.
 - Exact duplicate exclusion during refresh is enabled by default via the
   external `dupey` CLI. Install dupey during setup when it is missing
   (`command -v dupey || cargo install dupey --locked`) and tell the user the feature is

@@ -1,12 +1,16 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
-import { createEmbeddingRuntime, type RuntimeStatus } from "../embedding-runtime/index.ts";
-import { resolveProfile } from "../embedding-runtime/manifest.ts";
-import type { ProfileId } from "../embedding-runtime/types.ts";
+import {
+	createEmbedderFromConfig,
+	type EmbeddingBackend,
+	type EmbeddingIdentity,
+	type ManagedEmbedder,
+} from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { DEFAULT_MINSYNC_EMBEDDER_DIMENSION, DEFAULT_MINSYNC_EMBEDDER_ID } from "../minsync/embedder-config.ts";
-import { readRawConfigObject, writeConfigObject } from "./config.ts";
+import type { MinSyncEmbedderConfig } from "../minsync/types.ts";
+import { normalizeEmbedder, readRawConfigObject, writeConfigObject } from "./config.ts";
 
 export type SetupDatasourceState = "configured" | "skipped" | "blocked";
 export interface SetupDatasourceReport {
@@ -14,44 +18,40 @@ export interface SetupDatasourceReport {
 	readonly state: SetupDatasourceState;
 	readonly reason?: string;
 }
+export interface SetupEmbeddingReport {
+	/** Where text is embedded: a configured remote endpoint, MinSync's `minsync serve` daemon, or MinSync in-process. */
+	readonly backend?: EmbeddingBackend;
+	readonly daemonStarted?: boolean;
+	/** Why the daemon was not used, when MinSync's in-process engine took over. */
+	readonly daemonError?: string;
+	readonly provider?: string;
+	readonly model?: string;
+	readonly dimension?: number;
+	/** Why no embedding backend is available. */
+	readonly reason?: string;
+}
 export interface SetupReport {
 	readonly ok: boolean;
 	readonly mode: "semantic" | "bm25";
-	readonly runtime: {
-		readonly state: string;
-		readonly health: boolean;
-		readonly model: string;
-		readonly reason?: string;
-	};
-	readonly model: { readonly valid: boolean; readonly profile: ProfileId };
+	readonly embedding: SetupEmbeddingReport;
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
 	readonly changed: boolean;
 }
 
-export interface SetupRuntime {
-	runtimeStatus(): Promise<RuntimeStatus>;
-	verifyModel(profileId?: ProfileId): Promise<{ profileId: ProfileId; path: string; hash: string }>;
-	ensureRuntime?(input?: { profileId?: ProfileId }): Promise<{
-		baseUrl: string;
-		profile: ReturnType<typeof resolveProfile>;
-		identity: { provider: string; model: string; dimension: number; profileId: ProfileId };
-	}>;
-	releaseRuntimeHandles?(): Promise<void>;
-}
 export interface SetupDeps {
-	readonly runtime?: SetupRuntime;
+	/** Embedding backend probe; defaults to the one built from the config's `minSync.embedder`. */
+	readonly embedder?: ManagedEmbedder;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly pathExists?: (path: string) => boolean;
 	readonly executable?: (name: string) => string | undefined;
 	readonly acquireLock?: (path: string) => FileLockHandle;
 }
 
-const PROFILE: ProfileId = "qwen3-embedding-0.6b";
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 const REMEDIATION =
-	"Semantic embeddings are unavailable. Run `autorag models prefetch` or `autorag models import <file>`, then run `autorag setup` again.";
+	"Semantic embeddings are unavailable. Install MinSync (`cargo install minsync`) so AutoRAG can start `minsync serve` or use its in-process engine, or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
 const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	kakao: "lazykatok",
 	lark: "lark-cli",
@@ -165,7 +165,6 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 export async function runSetup(options: {
 	configPath: string;
 	workspacePath: string;
-	profileId?: ProfileId;
 	deps?: SetupDeps;
 }): Promise<SetupReport> {
 	const env = options.deps?.env ?? process.env;
@@ -178,28 +177,43 @@ export async function runSetup(options: {
 			retryMs: 10,
 			timeoutError: () => new Error("Timed out waiting for setup lock"),
 		});
-	let runtime: SetupRuntime | undefined;
+	let embedder: ManagedEmbedder | undefined;
 	try {
 		const raw = readRawConfigObject(options.configPath);
-		const configuredProfile = (raw.minSync as Record<string, unknown> | undefined)?.embedder;
-		const profileId =
-			options.profileId ??
-			(configuredProfile &&
-			typeof configuredProfile === "object" &&
-			typeof (configuredProfile as Record<string, unknown>).profile === "string"
-				? ((configuredProfile as Record<string, unknown>).profile as ProfileId)
-				: PROFILE);
-		runtime =
-			options.deps?.runtime ??
-			createEmbeddingRuntime({ cacheRoot: home, offline: env.AUTORAG_OFFLINE === "1", fetch: fetch });
-		const [runtimeResult, modelResult] = await Promise.allSettled([
-			runtime.runtimeStatus(),
-			runtime.verifyModel(profileId),
-		]);
-		const runtimeStatus = runtimeResult.status === "fulfilled" ? runtimeResult.value : undefined;
-		const runtimeFailure = runtimeResult.status === "rejected" ? safeReason(runtimeResult.reason) : undefined;
-		const modelValid = modelResult.status === "fulfilled";
-		const profile = resolveProfile(profileId);
+		const rawMinSync = raw.minSync && typeof raw.minSync === "object" ? (raw.minSync as Record<string, unknown>) : {};
+		let configuredEmbedder: MinSyncEmbedderConfig | undefined;
+		try {
+			configuredEmbedder = normalizeEmbedder(rawMinSync.embedder, "minSync.embedder");
+		} catch {
+			configuredEmbedder = undefined;
+		}
+		embedder =
+			options.deps?.embedder ??
+			createEmbedderFromConfig({
+				embedder: configuredEmbedder,
+				root: options.workspacePath,
+				minSyncWorkspace: typeof rawMinSync.workspacePath === "string" ? rawMinSync.workspacePath : undefined,
+				autoInstall: rawMinSync.autoInstall !== false,
+				env,
+			});
+		let embedding: SetupEmbeddingReport;
+		try {
+			const ready = await embedder.ensureReady();
+			const identity: EmbeddingIdentity = await embedder.identity();
+			embedding = {
+				backend: ready.backend,
+				daemonStarted: ready.daemonStarted,
+				...(ready.daemonError === undefined ? {} : { daemonError: safeReason(ready.daemonError) }),
+				provider: identity.provider,
+				model: identity.model,
+				dimension: identity.dimension,
+			};
+		} catch (error) {
+			// Embedding startup is independent from datasource probes: the report stays useful in BM25 mode,
+			// but the failure reason must reach the caller instead of being discarded.
+			embedding = { reason: safeReason(error) };
+		}
+		const semantic = embedding.backend !== undefined;
 		const datasources: SetupDatasourceReport[] = [];
 		const source = (raw.datasources ?? {}) as Record<string, unknown>;
 		const exists = options.deps?.pathExists ?? existsSync;
@@ -258,88 +272,44 @@ export async function runSetup(options: {
 				continue;
 			}
 			const semanticDatasource = new Set(["discord", "kakao", "slack", "telegram", "whatsapp", "mailcrawl"]);
-			if (semanticDatasource.has(type) && !modelValid) {
+			if (semanticDatasource.has(type) && !semantic) {
 				datasources.push({ name, state: "blocked", reason: "embedding model is unavailable" });
 			} else {
 				datasources.push({ name, state: "configured" });
 			}
 		}
 		let changed = false;
-		if (modelValid) {
-			const minSync = raw.minSync && typeof raw.minSync === "object" ? (raw.minSync as Record<string, unknown>) : {};
-			const embedder =
-				minSync.embedder && typeof minSync.embedder === "object"
-					? (minSync.embedder as Record<string, unknown>)
-					: {};
-			// An existing embedder is operator-owned, including remote endpoints and
-			// dimensions. Only create the supported local profile when absent.
-			const nextEmbedder =
-				Object.keys(embedder).length > 0
-					? embedder
-					: options.profileId !== undefined
-						? {
-								id: profile.model,
-								profile: profile.profileId,
-								dimension: profile.dimension,
-								queryPrefix: profile.queryPrefix,
-								passagePrefix: profile.passagePrefix,
-							}
-						: {
-								id: DEFAULT_MINSYNC_EMBEDDER_ID,
-								dimension: DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
-							};
+		// An existing embedder block is operator-owned, including remote endpoints and dimensions. Only an
+		// absent one is created, and it names MinSync's own local default rather than any AutoRAG runtime.
+		if (
+			semantic &&
+			Object.keys(rawMinSync.embedder && typeof rawMinSync.embedder === "object" ? rawMinSync.embedder : {})
+				.length === 0
+		) {
 			const next = {
 				...raw,
 				minSync: {
-					...minSync,
+					...rawMinSync,
 					enabled: true,
-					autoInstall: minSync.autoInstall !== false,
-					embedder: nextEmbedder,
+					autoInstall: rawMinSync.autoInstall !== false,
+					embedder: { id: DEFAULT_MINSYNC_EMBEDDER_ID, dimension: DEFAULT_MINSYNC_EMBEDDER_DIMENSION },
 				},
 			};
-			if (JSON.stringify(next) !== JSON.stringify(raw)) {
-				lock.assertOwned();
-				writeConfigObject(options.configPath, next);
-				changed = true;
-			}
+			lock.assertOwned();
+			writeConfigObject(options.configPath, next);
+			changed = true;
 		}
-		let effectiveRuntimeStatus = runtimeStatus;
-		let startupFailure: string | undefined;
-		if (modelValid && effectiveRuntimeStatus?.health.ok !== true && runtime.ensureRuntime !== undefined) {
-			try {
-				await runtime.ensureRuntime({ profileId });
-				effectiveRuntimeStatus = await runtime.runtimeStatus();
-			} catch (error) {
-				// Runtime startup is independent from model verification and datasource probes.
-				// The report remains useful in BM25 mode when startup is unavailable, but the
-				// failure reason must reach the caller instead of being discarded.
-				startupFailure = safeReason(error);
-			}
-		}
-		const semantic = modelValid && effectiveRuntimeStatus?.health.ok === true;
-		const healthFailure =
-			effectiveRuntimeStatus !== undefined && effectiveRuntimeStatus.health.ok === false
-				? effectiveRuntimeStatus.health.message
-				: undefined;
-		const runtimeReason = startupFailure ?? runtimeFailure ?? healthFailure;
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
-			runtime: {
-				state: effectiveRuntimeStatus?.state ?? runtimeFailure ?? "unavailable",
-				health: effectiveRuntimeStatus?.health.ok === true,
-				model: profile.model,
-				...(runtimeReason === undefined ? {} : { reason: runtimeReason }),
-			},
-			model: { valid: modelValid, profile: profile.profileId },
+			embedding,
 			datasources,
 			...(semantic ? {} : { remediation: REMEDIATION }),
 			changed,
 		};
 	} finally {
 		lock.release();
-		if (options.deps?.runtime === undefined && runtime && typeof runtime.releaseRuntimeHandles === "function") {
-			await runtime.releaseRuntimeHandles();
-		}
+		// A caller-supplied embedder belongs to the caller; one built here is released with the process.
+		if (options.deps?.embedder === undefined) await embedder?.close();
 	}
 }

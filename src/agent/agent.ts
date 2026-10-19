@@ -12,7 +12,7 @@ import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
-import { createGatewayEmbedder, type Embedder } from "../embedding-runtime/gateway-embedder.ts";
+import { createEmbedderFromConfig, type Embedder, type ManagedEmbedder } from "../embedding/index.ts";
 import {
 	EverythingClient,
 	type EverythingClientOptions,
@@ -638,8 +638,14 @@ export interface AutoRAGAgentOptions {
 	 */
 	jev?: JevToolOptions | false;
 	/**
+	 * The embedder shared by memory and the datasources. Omitted, it is built from `minSync.embedder`: a
+	 * configured remote endpoint, else MinSync's `minsync serve` daemon, else MinSync's in-process engine.
+	 * `refresh` brings it up (starting the daemon when none runs); a search only reads from it.
+	 */
+	embedder?: ManagedEmbedder;
+	/**
 	 * Embedder used to find similar past questions in memory (semantic half of
-	 * the hybrid search). Defaults to the local embedding gateway; `false` keeps
+	 * the hybrid search). Defaults to the shared {@link AutoRAGAgentOptions.embedder}; `false` keeps
 	 * memory search keyword-only.
 	 */
 	memoryEmbedder?: Embedder | false;
@@ -896,6 +902,7 @@ export class AutoRAGAgent {
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** Embeds past questions for similar-question search; undefined keeps memory search keyword-only. */
+	private readonly embedder: ManagedEmbedder;
 	private readonly memoryEmbedder: Embedder | undefined;
 	private readonly memoryVectorPath: string;
 	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
@@ -1013,8 +1020,18 @@ export class AutoRAGAgent {
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
 		this.memoryVectorPath = memoryVectorStorePath(memPath);
-		this.memoryEmbedder =
-			options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? createGatewayEmbedder());
+		this.embedder =
+			options.embedder ??
+			createEmbedderFromConfig({
+				embedder: options.minSync?.embedder,
+				root: options.workspacePath ?? process.cwd(),
+				...(options.minSync?.workspacePath === undefined
+					? {}
+					: { minSyncWorkspace: options.minSync.workspacePath }),
+				...(options.minSync?.binaryPath === undefined ? {} : { binaryPath: options.minSync.binaryPath }),
+				...(options.minSync?.autoInstall === undefined ? {} : { autoInstall: options.minSync.autoInstall }),
+			});
+		this.memoryEmbedder = options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? this.embedder);
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		// Remote peers never read retrieval memory: past judged evidence may come

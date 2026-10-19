@@ -4,16 +4,16 @@
  * A small persisted vector sidecar (`vectors.json`) mirrors the chunk store:
  * entries are keyed by chunk id with a content hash so unchanged chunks are
  * never re-embedded, removed chunks are pruned, and an embedding-identity
- * change (provider/model/dimension) forces a full re-embed. The default
- * embedder talks to the loopback autorag-gateway (`ensureRuntime` with
- * `cachedOnly`, then `POST /v1/embeddings`); tests inject a stub. Every
- * failure degrades — indexing stays lexical-only and retrieval returns [].
+ * change (provider/model/dimension) forces a full re-embed. The embedder is
+ * the one AutoRAG shares with every consumer (MinSync's daemon or in-process
+ * engine, or the configured remote endpoint). Every failure degrades —
+ * indexing stays lexical-only and retrieval returns [].
  */
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Embedder, EmbeddingIdentity } from "../../../embedding-runtime/gateway-embedder.ts";
+import type { Embedder, EmbeddingIdentity } from "../../../embedding/embedder.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,

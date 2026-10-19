@@ -4,12 +4,13 @@ AutoRAG uses MinSync for local lexical BM25, semantic vector, and hybrid
 retrieval over parsed document mirrors. MinSync remains the owner of its
 workspace, chunks, vectors, cursor, and embedding identity.
 
-## Default path: the AutoRAG gateway
+## MinSync owns the embedding model
 
-The product default is the AutoRAG-owned `autorag-gateway` path. On a new
-workspace, MinSync starts the local gateway on demand and uses the
-`qwen3-embedding-0.6b` profile (1024 dimensions). No Ollama installation, TEI
-adapter, API key, endpoint, or model selection is required.
+AutoRAG owns no embedding model, no llama.cpp, and no GGUF assets, and it does
+not download, cache, import, or verify model weights. MinSync provisions
+Qwen3-Embedding-0.6B (1024 dimensions) in its own cache at
+`~/.cache/minsync/models` and runs the engine. No Ollama installation, TEI
+adapter, API key, or endpoint is required for the default local path.
 
 MinSync is required. AutoRAG auto-installs its binary when no usable executable
 is found on `PATH` or in the workspace cache. If the binary is missing or its
@@ -17,7 +18,10 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync` when auto-install cannot run.
+yourself with `cargo install minsync` when auto-install cannot run. MinSync
+0.4.11 on Apple Silicon and Linux needs rustc 1.96 or newer, because its
+dependency `candle-core` requires NEON f16 support; AutoRAG's installer pins
+MinSync 0.4.11.
 
 A normal setup is:
 
@@ -27,17 +31,67 @@ autorag refresh --method parsed,minsync --json
 autorag search --json "semantic question about the documents"
 ```
 
-The gateway is loopback-only and is started by the semantic MinSync path. To
-inspect or stop it:
+`autorag refresh`, `autorag watch`, and `autorag setup` start a loopback
+`minsync serve` daemon when none answers. A search or query never starts one:
+it reads the prebuilt indexes and starts no indexing infrastructure.
+`autorag setup` reports the resolved backend (`daemon`, `in-process`, or
+`remote`), whether it started a daemon, and the provider, model, and dimension.
 
-```bash
-autorag gateway status --format json
-autorag gateway stop
-```
+## Embedding backends
 
-`gateway status` reports the supervisor state, profile, model, backend, port
-when available, health, and sanitized failure details. `gateway stop` stops
-the owned child process and removes its pid/lock state.
+One shared embedder serves everything that embeds inside AutoRAG: MinSync
+indexing and query, memory similar-question search, the chat-crawler sidecars
+(Slack, Telegram, WhatsApp, Kakao), the github-gist vector index, and the
+endpoint external CLIs such as discrawl are pointed at. AutoRAG resolves it in
+this order:
+
+1. **Remote endpoint.** If `minSync.embedder` names a remote endpoint, that
+   endpoint is used for everything. No daemon is started and no local model is
+   loaded. `id` names the protocol and model (`openai:<model>`, `tei:<model>`,
+   or any id together with `baseUrl`). OpenAI uses
+   `POST {baseUrl}/v1/embeddings`; TEI uses `POST {baseUrl}/embed`. `openai:`
+   without a `baseUrl` means `https://api.openai.com`. Optional fields:
+   `apiKeyEnv` (the name of an environment variable holding the bearer token,
+   never the token), `dimension`, `batchSize`, and `timeoutMs`.
+2. **`minsync serve` daemon.** Otherwise a running daemon is preferred. It is
+   loopback only and requires MinSync 0.4.11 or newer. It serves TEI
+   `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`, and exits
+   after 300 s idle by default. Running instances are discovered through
+   `~/.cache/minsync/serve/<instance>/` (`host`, `port`, `pid`, `lock`).
+   `autorag refresh`, `autorag watch`, and `autorag setup` start it detached
+   when none answers; a search never does.
+3. **In-process engine.** When no daemon answers and none could be started,
+   AutoRAG-owned consumers use MinSync's in-process engine through the optional
+   Node-API addon `@nomadamas/minsync-native`. It runs the same engine and
+   weights, so vectors are bit-for-bit identical to the daemon's. The addon is
+   loaded lazily and is not bundled; when it is absent, the error says so. The
+   `minsync` CLI independently adopts a running daemon for `native:`
+   workspaces and otherwise falls back in-process (`MINSYNC_SERVER=off`
+   disables adoption).
+
+The reported identity is provider `minsync`, model
+`Qwen/Qwen3-Embedding-0.6B`, and dimension `1024`.
+
+### Rebuilding after the old embedding gateway
+
+Daemon and in-process vectors are identical, so stores keyed on that identity
+do not re-embed when the daemon appears or disappears. The vectors from the
+removed llama-server runtime are not compatible.
+
+- Memory vector stores (`memory.json.vectors.db`), chat-sidecar semantic
+  stores, and the github-gist `vectors.json` re-embed automatically on the next
+  refresh because their recorded identity changed.
+- A MinSync workspace created through the old gateway profile
+  (`minSync.embedder.id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf"`, or an old
+  `profile` field) must be rebuilt explicitly:
+
+  ```bash
+  autorag index rebuild --method minsync
+  ```
+
+  `autorag index reset --method minsync --yes` followed by
+  `autorag refresh --method minsync` has the same effect. Legacy `profile` and
+  `.gguf` ids in `config.json` are ignored on read, without an error.
 
 ## Excluding files and folders
 
@@ -77,40 +131,22 @@ files; the result filter prevents those entries from appearing in searches.
 The fsearch filesystem fallback applies exclusions before walking a subtree, so
 excluded contents do not consume its traversal budget.
 
-## Selecting a profile
+## MinSync model cache
 
-The default profile is Qwen3-Embedding-0.6B at 1024 dimensions; it is the only
-bundled runtime profile. A 768-dimensional workspace cannot be kept by profile
-selection anymore: reindex for the default profile, or pin an explicit legacy
-Ollama/TEI embedder endpoint (`minSync.embedder.id` and `baseUrl`, or the
+MinSync provisions Qwen3-Embedding-0.6B at 1024 dimensions in
+`~/.cache/minsync/models`. The daemon and the in-process addon read that cache;
+AutoRAG makes no model download of its own. There is no `AUTORAG_HOME` model or
+runtime cache and no AutoRAG prefetch, import, or verify command for embedding
+weights: those commands were removed with the old runtime. `autorag models
+list` lists chat models only.
+
+A 768-dimensional workspace cannot be kept by choosing a profile: reindex for
+the default MinSync identity, or configure an explicit Ollama/TEI endpoint
+(`minSync.embedder.id` and `baseUrl`, or the
 `--embedder-id`/`--embedder-base-url` init flags documented below). AutoRAG
 writes only the supported MinSync embedder fields and does not write secrets.
-
-## Model cache and offline operation
-
-The runtime cache root is `~/.autorag` on macOS and `%USERPROFILE%\\.autorag` on
-Windows; `AUTORAG_HOME` overrides it. The cache downloader stores verified
-assets under the cache root's `models/` directory. Downloads use a `.part` file
-and an atomic rename. A failed or corrupt download is removed rather than
-treated as a usable model.
-
-Use the CLI to fetch, import, or verify a pinned model:
-
-```bash
-autorag models prefetch --profile qwen3-embedding-0.6b
-autorag models import /path/to/Qwen3-Embedding-0.6B-Q8_0.gguf --profile qwen3-embedding-0.6b
-autorag models verify --profile qwen3-embedding-0.6b
-```
-
-`import` verifies the source file against the selected profile hash before
-placing it in the cache. `verify` never downloads a missing asset. The runtime
-API also accepts `offline: true`; in that mode a missing or corrupt model or
-runtime asset returns an `offline-missing` diagnostic and makes no network
-request. Offline import works when the source file is already available.
-
-The exact model and runtime URLs, revisions, SHA-256 values, archive members,
-and notices are in [`licenses/embedding-assets.json`](../licenses/embedding-assets.json).
-Mutable model weights are not in the npm package.
+The weights are MinSync's dependency and are not part of the AutoRAG npm
+package.
 
 ## BM25 tokenizer
 
@@ -216,12 +252,13 @@ autorag refresh --method parsed,minsync --json
 ```
 
 Do not use this adapter path as a fresh-install requirement or as an implicit
-fallback from the gateway. AutoRAG never silently switches an existing vector
-store between Ollama/TEI and the shared runtime.
+fallback from the MinSync embedder. AutoRAG never silently switches an existing
+vector store between Ollama/TEI and MinSync's local embedder.
 
 Direct Ollama OpenAI-compatible embedding endpoints are also operator-managed
-legacy configuration, not the AutoRAG default. An explicit external endpoint
-remains authoritative and is not overwritten by the shared runtime.
+legacy configuration, not the AutoRAG default. An explicit external
+`minSync.embedder` endpoint remains authoritative and is not overwritten by the
+daemon or the in-process engine.
 
 ## Refresh diagnostics
 
@@ -338,22 +375,22 @@ An explicit `minSync.workspacePath` setting replaces the default
 under that configured path instead.
 
 The identity includes provider, model, immutable model revision, dimension,
-query prefix, passage prefix, and runtime build. A mismatch requires a full
-reindex. Existing 768-dimensional Ollama/TEI stores must therefore be handled
-by either:
+query prefix, and passage prefix. A mismatch requires a full reindex. Existing
+768-dimensional Ollama/TEI stores, and MinSync workspaces created through the
+old embedding gateway, must therefore be handled by either:
 
 - an explicit `autorag index reset --method minsync --yes` followed by
   `autorag refresh --method minsync`; or
 - an explicit Ollama/TEI `minSync.embedder.id` and `baseUrl`, followed by
-  refresh and identity validation.
+  refresh and identity validation; or
+- `autorag index rebuild --method minsync` for a workspace whose identity came
+  from the old embedding gateway (see [Embedding backends](#embedding-backends)).
 
 A dimension mismatch is detected before vector reuse. MinSync reports a typed
 semantic failure rather than mixing vector dimensions. When semantic
 infrastructure is unavailable, the lexical/BM25 lane remains usable; hybrid
 retrieval can fall back to BM25 and reports the degraded semantic diagnostic.
 
-The legacy migration diagnostic is:
-
-```text
-This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.
-```
+An identity mismatch is reported as the `embedding-identity-mismatch`
+diagnostic; the fix is a full reindex of the affected store
+(`autorag index rebuild --method minsync`).

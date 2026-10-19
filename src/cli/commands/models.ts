@@ -1,8 +1,6 @@
 import { join } from "node:path";
 import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { registerDazziProvider } from "../../cloud/provider.ts";
-import { importModel, prefetchModel, verifyModel } from "../../embedding-runtime/index.ts";
-import type { ProfileId } from "../../embedding-runtime/types.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -28,12 +26,6 @@ export interface ModelCatalogOptions {
 }
 
 export interface ModelsCommandDeps {
-	prefetchModel?: (profileId?: ProfileId) => Promise<{ profileId: ProfileId; path: string }>;
-	importModel?: (
-		profileId: ProfileId | undefined,
-		sourcePath: string,
-	) => Promise<{ profileId: ProfileId; path: string }>;
-	verifyModel?: (profileId?: ProfileId) => Promise<{ profileId: ProfileId; path: string; hash: string }>;
 	listModels?: (options: ModelCatalogOptions) => Promise<readonly ModelCatalogEntry[]>;
 }
 
@@ -75,22 +67,9 @@ async function listModelCatalog(options: ModelCatalogOptions): Promise<readonly 
 		.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id));
 }
 
-function profile(ctx: CommandContext): ProfileId | undefined {
-	const value = ctx.flags.profile;
-	return typeof value === "string" ? (value as ProfileId) : undefined;
-}
-
 function flagString(flags: CommandContext["flags"], name: string): string | undefined {
 	const value = flags[name];
 	return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function output(ctx: CommandContext, result: unknown, action: string): void {
-	ctx.stdout(
-		ctx.json || ctx.flags.format === "json"
-			? JSON.stringify({ ok: true, action, ...((result ?? {}) as object) }, null, 2)
-			: `models: ${action}`,
-	);
 }
 
 async function runList(ctx: CommandContext, deps: ModelsCommandDeps): Promise<number> {
@@ -129,26 +108,7 @@ export async function runModels(ctx: CommandContext, deps: ModelsCommandDeps = {
 		if (sub === "list" || sub === "ls") {
 			return await runList(ctx, deps);
 		}
-		if (sub === "prefetch") {
-			const result = await (deps.prefetchModel ?? prefetchModel)(profile(ctx));
-			output(ctx, result, "prefetch");
-			return 0;
-		}
-		if (sub === "import") {
-			const source = ctx.positionals[1];
-			if (!source) throw new UsageError("Usage: autorag models import <path> [--profile <id>]");
-			const result = await (deps.importModel ?? importModel)(profile(ctx), source);
-			output(ctx, result, "import");
-			return 0;
-		}
-		if (sub === "verify") {
-			const result = await (deps.verifyModel ?? verifyModel)(profile(ctx));
-			output(ctx, result, "verify");
-			return 0;
-		}
-		throw new UsageError(
-			"Usage: autorag models list [--provider <id>] [--available] | prefetch | import <path> | verify [--profile <id>]",
-		);
+		throw new UsageError("Usage: autorag models list [--provider <id>] [--available]");
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json || ctx.flags.format === "json", debug: ctx.debug }));
 		return error instanceof UsageError ? 2 : 1;

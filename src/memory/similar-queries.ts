@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Embedder, EmbeddingIdentity } from "../embedding-runtime/gateway-embedder.ts";
+import type { Embedder, EmbeddingIdentity } from "../embedding/embedder.ts";
 import { bm25Scores } from "../retrieval/bm25.ts";
 import type { JudgedEvidenceRecord } from "./judged-evidence.ts";
 
