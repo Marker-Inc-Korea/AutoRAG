@@ -390,6 +390,33 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
+	it("starts the interactive session on the configured model, not pi's own pick", async () => {
+		const registration = registerFauxProvider({
+			api: `faux-configured-${Date.now()}`,
+			models: [{ id: "configured-model" }],
+		});
+		try {
+			const model = registration.getModel();
+			const runtime = await createAutoRAGPiInteractiveRuntime({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				sessionDir: join(root, "sessions"),
+				model,
+				getSystemPrompt: () => "interactive prompt",
+				customTools: [],
+				onInput: () => ({ kind: "handled" }),
+			});
+			try {
+				expect(runtime.runtime.session.model?.provider).toBe(model.provider);
+				expect(runtime.runtime.session.model?.id).toBe("configured-model");
+			} finally {
+				await runtime.dispose();
+			}
+		} finally {
+			registration.unregister();
+		}
+	});
+
 	it("lets pi choose the interactive model when AutoRAG has no configured model", async () => {
 		const runtime = await createAutoRAGPiInteractiveRuntime({
 			cwd: root,

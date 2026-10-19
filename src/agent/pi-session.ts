@@ -470,6 +470,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 			services,
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
+			model: options.model,
 			customTools: options.customTools.map(toToolDefinition),
 			tools: [
 				...PI_BUILTIN_TOOL_NAMES,
