@@ -10,7 +10,7 @@ the channel.
 
 | From Discord | Effect |
 |---|---|
-| Message in the session channel | Runs as a question through AutoRAG's two-phase search (a steer if a search is already running) |
+| Message in the session channel | Runs as a question through AutoRAG's two-phase search. While a search runs the extension replies "Still processing"; it does not steer |
 | Reply to an agent question | Answers `discord_ask_user_question` |
 
 The reply is posted once, when the whole search settles, so it carries the verified final
