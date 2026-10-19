@@ -201,6 +201,10 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --fast-thinking <lvl>  Thinking level for the fast first answer",
 		"  --final-thinking <lvl> Thinking level for the verified answer",
+		"  --whatsapp             Control this session from WhatsApp (installs whatsapp-pi;",
+		"                         pair once with /whatsapp, allow your contact there). Messages",
+		"                         from allowed chats run as questions; answers go back to the chat",
+		"  --whatsapp-group <jid> With --whatsapp, answer only this WhatsApp group",
 	]),
 	serve: usage([
 		"autorag serve - P2P peer query server over SimpleX",

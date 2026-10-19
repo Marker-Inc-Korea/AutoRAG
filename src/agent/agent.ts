@@ -693,6 +693,10 @@ export interface AutoRAGAgentOptions {
 	 * a launch.
 	 */
 	updateNotice?: () => Promise<string | undefined>;
+	/** Extension entry files (installed pi packages) loaded into the interactive session. */
+	piExtensionPaths?: readonly string[];
+	/** Flag values for the flags those extensions register. */
+	piExtensionFlags?: Readonly<Record<string, string | boolean>>;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -885,6 +889,8 @@ export class AutoRAGAgent {
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
+	private readonly piExtensionPaths: readonly string[] | undefined;
+	private readonly piExtensionFlags: Readonly<Record<string, string | boolean>> | undefined;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** Embeds past questions for similar-question search; undefined keeps memory search keyword-only. */
 	private readonly memoryEmbedder: Embedder | undefined;
@@ -924,6 +930,8 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
+		this.piExtensionPaths = options.piExtensionPaths;
+		this.piExtensionFlags = options.piExtensionFlags;
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceRetry = options.datasourceRetry ?? {};
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -1442,7 +1450,7 @@ export class AutoRAGAgent {
 			return {
 				agent: session.agent,
 				piSession: session,
-				prompt: async (prompt) => session.prompt(prompt, { source: "extension" }),
+				prompt: async (prompt) => session.prompt(prompt, { source: "rpc" }),
 				abort: async () => session.abort(),
 				dispose: () => {},
 			};
@@ -1468,7 +1476,7 @@ export class AutoRAGAgent {
 		return {
 			agent,
 			piSession: piSession.session,
-			prompt: async (prompt) => piSession.session.prompt(prompt, { source: "extension" }),
+			prompt: async (prompt) => piSession.session.prompt(prompt, { source: "rpc" }),
 			abort: async () => piSession.session.abort(),
 			dispose: () => piSession.session.dispose(),
 		};
@@ -1576,6 +1584,8 @@ export class AutoRAGAgent {
 			],
 			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
+			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
+			...(this.piExtensionFlags === undefined ? {} : { extensionFlags: this.piExtensionFlags }),
 		});
 		this.boundPiRuntime = runtime.runtime;
 		const dispose = runtime.dispose;

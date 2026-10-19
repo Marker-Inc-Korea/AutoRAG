@@ -53,6 +53,10 @@ export interface AutoRAGPiSessionOptions {
 	 * extension. Each factory registers its tools, commands, and events with pi.
 	 */
 	readonly extensionFactories?: readonly ExtensionFactory[];
+	/** Extension entry files (e.g. an installed pi package's extension) loaded into the interactive session. */
+	readonly extensionPaths?: readonly string[];
+	/** CLI-style flag values for the flags those extensions register (`--name` / `--name value`). */
+	readonly extensionFlags?: Readonly<Record<string, string | boolean>>;
 	/**
 	 * Tool names registered by {@link extensionFactories}. pi's `tools`
 	 * allow-list keeps only named tools active, so every extension tool that
@@ -281,7 +285,9 @@ function createAutoRAGInteractiveExtension(
 		}
 		pi.on("input", (event) => {
 			const text = event.text.trim();
-			if (event.source !== "interactive" || text.length === 0) return undefined;
+			// "rpc" marks the harness's own search prompts; typed ("interactive") and
+			// extension-injected ("extension", e.g. a chat bridge) input is the user's.
+			if (event.source === "rpc" || text.length === 0) return undefined;
 			// A "/" line is pi's (commands, skills, templates), except during a search:
 			// handed back to pi then, it would start pi's own prompt on the bound
 			// session outside the search. Registered commands never reach this
@@ -404,7 +410,11 @@ export async function createAutoRAGPiInteractiveRuntime(
 			agentDir: runtimeAgentDir,
 			modelRuntime,
 			settingsManager,
+			...(options.extensionFlags === undefined
+				? {}
+				: { extensionFlagValues: new Map(Object.entries(options.extensionFlags)) }),
 			resourceLoaderOptions: {
+				...(options.extensionPaths === undefined ? {} : { additionalExtensionPaths: [...options.extensionPaths] }),
 				extensionFactories: [
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,

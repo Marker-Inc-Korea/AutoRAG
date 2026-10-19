@@ -5,6 +5,7 @@ import { buildAgentOptions, resolveAgentModel, resolveConfig, resolveQueryDecomp
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
 import { readPackageVersion } from "../version.ts";
+import { resolveWhatsAppExtension } from "../whatsapp-extension.ts";
 import type { CommandContext } from "./types.ts";
 
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -54,6 +55,11 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 		options.model = resolved.model;
 		if (resolved.apiKey !== undefined) options.apiKey = resolved.apiKey;
 		if (resolved.providerApiKeys !== undefined) options.providerApiKeys = resolved.providerApiKeys;
+	}
+	const whatsapp = await resolveWhatsAppExtension({ flags: ctx.flags, cwd: ctx.cwd });
+	if (whatsapp !== undefined) {
+		options.piExtensionPaths = whatsapp.paths;
+		options.piExtensionFlags = whatsapp.flags;
 	}
 	const decompositionModel = await resolveQueryDecompositionModel(config);
 	if (decompositionModel !== undefined) options.queryDecomposition = decompositionModel;

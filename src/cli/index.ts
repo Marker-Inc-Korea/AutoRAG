@@ -23,6 +23,7 @@ const BOOLEAN_FLAGS = new Set([
 	"strict",
 	"refresh",
 	"available",
+	"whatsapp",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -65,6 +66,7 @@ const VALUE_FLAGS = new Set([
 	"provider",
 	"fast-thinking",
 	"final-thinking",
+	"whatsapp-group",
 ]);
 
 const COMMANDS = [
@@ -122,6 +124,7 @@ Commands:
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
+                       (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
   serve                Start the P2P peer query server over SimpleX
                        (--port N  --force)
   p2p                  SimpleX peer trust management
