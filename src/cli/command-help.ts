@@ -205,6 +205,10 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --telegram             Load the Telegram bridge (@llblab/pi-telegram) so a paired",
 		"                         Telegram chat can ask, steer, and read answers. In-session:",
 		"                         /telegram-setup (bot token), /telegram-connect, /telegram-status",
+		"  --whatsapp             Control this session from WhatsApp (installs whatsapp-pi;",
+		"                         pair once with /whatsapp, allow your contact there). Messages",
+		"                         from allowed chats run as questions; answers go back to the chat",
+		"  --whatsapp-group <jid> With --whatsapp, answer only this WhatsApp group",
 	]),
 	serve: usage([
 		"autorag serve - P2P peer query server over SimpleX",

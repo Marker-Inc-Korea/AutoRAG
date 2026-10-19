@@ -228,9 +228,12 @@ Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi u
 | Messenger | Status | Start here |
 |---|---|---|
 | **Telegram** | Supported | [`autorag tui --telegram`](docs/telegram.md) |
+| **WhatsApp** | Supported (unofficial client) | [`autorag tui --whatsapp`](docs/whatsapp.md) |
 | Discord, Slack, others | Not supported yet | |
 
 Telegram runs through the [`@llblab/pi-telegram`](https://github.com/llblab/pi-telegram) bridge inside a running `autorag tui` session: questions you send the bot get the same routing and two-phase search as the terminal. Setup, commands, and keeping it running are in [docs/telegram.md](docs/telegram.md).
+
+WhatsApp runs through the pinned [`whatsapp-pi`](https://www.npmjs.com/package/whatsapp-pi) extension the same way; see [docs/whatsapp.md](docs/whatsapp.md).
 
 ## Installation & Setup
 
@@ -464,7 +467,7 @@ mirrored are kept and not re-parsed on the next run. `onProgress` reports `parse
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
 | `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
-| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); `--telegram` adds the Telegram remote-control bridge |
+| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); `--telegram` / `--whatsapp` add the Telegram / WhatsApp remote-control bridges |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
 | `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |

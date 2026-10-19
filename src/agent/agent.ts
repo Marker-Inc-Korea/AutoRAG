@@ -704,6 +704,10 @@ export interface AutoRAGAgentOptions {
 	 * a launch.
 	 */
 	updateNotice?: () => Promise<string | undefined>;
+	/** Extension entry files (installed pi packages) loaded into the interactive session. */
+	piExtensionPaths?: readonly string[];
+	/** Flag values for the flags those extensions register. */
+	piExtensionFlags?: Readonly<Record<string, string | boolean>>;
 	/**
 	 * Load the `@llblab/pi-telegram` bridge into the interactive session so a
 	 * paired Telegram chat can start, steer, and read answers from it. The
@@ -901,6 +905,8 @@ export class AutoRAGAgent {
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
+	private readonly piExtensionPaths: readonly string[] | undefined;
+	private readonly piExtensionFlags: Readonly<Record<string, string | boolean>> | undefined;
 	private readonly telegram: boolean;
 	private boundPiRuntime: AutoRAGPiInteractiveRuntime["runtime"] | undefined;
 	/** Embeds past questions for similar-question search; undefined keeps memory search keyword-only. */
@@ -934,6 +940,8 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
+		this.piExtensionPaths = options.piExtensionPaths;
+		this.piExtensionFlags = options.piExtensionFlags;
 		this.telegram = options.telegram === true;
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceRetry = options.datasourceRetry ?? {};
@@ -1601,6 +1609,8 @@ export class AutoRAGAgent {
 			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
 			remoteSession: this.remoteSession,
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
+			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
+			...(this.piExtensionFlags === undefined ? {} : { extensionFlags: this.piExtensionFlags }),
 		});
 		this.boundPiRuntime = runtime.runtime;
 		const dispose = runtime.dispose;

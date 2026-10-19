@@ -53,6 +53,10 @@ export interface AutoRAGPiSessionOptions {
 	 * extension. Each factory registers its tools, commands, and events with pi.
 	 */
 	readonly extensionFactories?: readonly ExtensionFactory[];
+	/** Extension entry files (e.g. an installed pi package's extension) loaded into the interactive session. */
+	readonly extensionPaths?: readonly string[];
+	/** CLI-style flag values for the flags those extensions register (`--name` / `--name value`). */
+	readonly extensionFlags?: Readonly<Record<string, string | boolean>>;
 	/**
 	 * Tool names registered by {@link extensionFactories}. pi's `tools`
 	 * allow-list keeps only named tools active, so every extension tool that
@@ -255,6 +259,9 @@ function interactiveKeyOf(data: string): AutoRAGInteractiveKey | undefined {
  */
 export const TELEGRAM_INPUT_PREFIX = "[telegram]";
 
+/** `whatsapp-pi` frames every inbound chat message as `Message from <name> (<number>)`. */
+export const WHATSAPP_INPUT_PREFIX = "Message from ";
+
 /**
  * The user's own words from a bridged Telegram prompt: the bridge's `[telegram]`
  * prefix and its `[time]` line are envelope, not the question, so a Telegram
@@ -268,11 +275,17 @@ export function stripTelegramEnvelope(text: string): string {
 		.trim();
 }
 
-/** The text of a user-typed input (terminal or bridged Telegram chat), or `undefined` for AutoRAG's and pi's own prompts. */
+/**
+ * The text of a user input (terminal, or a chat bridge such as Telegram or WhatsApp), or `undefined`
+ * for AutoRAG's own phase prompts (`source: "rpc"`) and pi's own extension prompts.
+ */
 function userInputText(event: { readonly source: string; readonly text: string }): string | undefined {
 	if (event.source === "interactive") return event.text.trim();
 	if (event.source === "extension" && event.text.trimStart().startsWith(TELEGRAM_INPUT_PREFIX)) {
 		return stripTelegramEnvelope(event.text);
+	}
+	if (event.source === "extension" && event.text.trimStart().startsWith(WHATSAPP_INPUT_PREFIX)) {
+		return event.text.trim();
 	}
 	return undefined;
 }
@@ -435,7 +448,11 @@ export async function createAutoRAGPiInteractiveRuntime(
 			agentDir: runtimeAgentDir,
 			modelRuntime,
 			settingsManager,
+			...(options.extensionFlags === undefined
+				? {}
+				: { extensionFlagValues: new Map(Object.entries(options.extensionFlags)) }),
 			resourceLoaderOptions: {
+				...(options.extensionPaths === undefined ? {} : { additionalExtensionPaths: [...options.extensionPaths] }),
 				extensionFactories: [
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,
