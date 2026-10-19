@@ -1,0 +1,1 @@
+# Jikji LLM Wiki Schema

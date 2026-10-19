@@ -1973,6 +1973,29 @@ export async function resolveAgentModel(
 }
 
 /**
+ * Model for `autorag tui`. Same chain as {@link resolveAgentModel} (config model,
+ * then Pi's settings default, then the signed-in Dazzi default) except that it
+ * never falls back to the local runtime: with nothing to resolve it returns
+ * undefined, so Pi's native `/login` and `/model` flows own first launch.
+ */
+export async function resolveTuiAgentModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<ResolvedAgentModel | undefined> {
+	if (config.model !== undefined) return resolveAgentModel(config, options);
+	const env = options.env ?? process.env;
+	const runtime = options.runtime ?? (await getModelRuntime(resolveAgentDir(options)));
+	const model = (await resolvePiDefaultModel(runtime, options)) ?? resolveDazziDefaultModel(runtime, options);
+	if (model === undefined) return undefined;
+	const auth = await resolveCatalogAuth(runtime, model, env);
+	return {
+		model,
+		...(auth.apiKey !== undefined ? { apiKey: auth.apiKey } : {}),
+		...(auth.providerApiKeys !== undefined ? { providerApiKeys: auth.providerApiKeys } : {}),
+	};
+}
+
+/**
  * Check that a config file still resolves to a callable model, the way the
  * next `autorag` launch will read it: invalid JSON, a schema error, or a model
  * id that neither the pi catalog nor a declared endpoint knows is a problem.
