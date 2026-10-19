@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
 import {
+	configuredLexicalLanguage,
 	configuredMaxChunkSize,
 	configuredVectorDimension,
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
@@ -12,6 +13,8 @@ import {
 	rewriteEmbedderConfig,
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
+import { kiwiAvailable } from "./kiwi.ts";
+import { MINSYNC_LEXICAL_LANGUAGE, type MinSyncLexicalLanguage } from "./lexical-language.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncFileFailure, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
@@ -235,6 +238,7 @@ export class MinSyncClient {
 		// process timeout so a long sync always runs to completion; only the
 		// caller's `signal` can stop them, and it takes the whole process tree.
 		const spawnOptions = signal === undefined ? {} : { signal };
+		const lexical = this.resolveLexicalLanguage();
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
 
 		if (!initialized) {
@@ -242,6 +246,7 @@ export class MinSyncClient {
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
+			initArgs.push("--language", lexical.language);
 			const init = await this.spawn(initArgs, spawnOptions);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
@@ -258,27 +263,44 @@ export class MinSyncClient {
 		const dimensionChanged =
 			embedder.dimension !== undefined && configuredVectorDimension(this.workspacePath) !== embedder.dimension;
 		const configPath = minSyncConfigPath(this.workspacePath);
-		const shouldRewriteConfig =
-			this.embedder !== undefined || this.maxChunkSize !== undefined || effective.identity !== undefined;
-		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
-		const configRewritten =
-			shouldRewriteConfig &&
-			rewriteEmbedderConfig(this.workspacePath, embedder, { maxChunkSize: this.maxChunkSize });
+		const originalConfig = readConfigSnapshot(configPath);
+		const configRewritten = rewriteEmbedderConfig(this.workspacePath, embedder, {
+			maxChunkSize: this.maxChunkSize,
+			lexicalLanguage: lexical.language,
+		});
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
 		try {
-			return await this.checkAndSync(
+			const result = await this.checkAndSync(
 				force || chunkSizeChanged || dimensionChanged,
 				signal,
 				effective,
 				restoreConfig,
 			);
+			return result.ok && lexical.fallback !== undefined ? { ...result, lexicalFallback: lexical.fallback } : result;
 		} catch (error) {
 			// An aborted run must not leave this run's embedder settings in the managed config.
 			restoreConfig();
 			throw error;
 		}
+	}
+
+	/**
+	 * The tokenizer to run this sync with: always {@link MINSYNC_LEXICAL_LANGUAGE}, which fails every sync when the
+	 * Kiwi native library is missing. A workspace that is new, or tokenized differently, then gets whitespace
+	 * tokenization instead and the sync reports `lexicalFallback`. An index already built with the multilingual
+	 * tokenizer is left alone: switching it would re-embed every chunk, and the probe can miss a library that the OS
+	 * loader finds on its own.
+	 */
+	private resolveLexicalLanguage(): {
+		readonly language: MinSyncLexicalLanguage;
+		readonly fallback?: { readonly requested: MinSyncLexicalLanguage; readonly used: MinSyncLexicalLanguage };
+	} {
+		const requested = MINSYNC_LEXICAL_LANGUAGE;
+		if (kiwiAvailable() || configuredLexicalLanguage(this.workspacePath) === requested)
+			return { language: requested };
+		return { language: "simple", fallback: { requested, used: "simple" } };
 	}
 
 	private lockHeldResult(stderr: string): MinSyncSyncResult {

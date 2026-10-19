@@ -719,6 +719,9 @@ token is not stored in the index or configuration. Search supports lexical
 BM25 and semantic retrieval through the local loopback embedding gateway;
 Gist content stays on the machine for embeddings. If embeddings are
 unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
+Set `connector.semantic: false` (or `{ "enabled": false }`) to keep Gists
+lexical-only: no embedding calls, no vector index, and no
+`<name>-semantic` method.
 Result sources are `/github-gist/<instance>/chunks/<chunk-id>` (opaque
 datasource identities, not filesystem paths); metadata retains the Gist ID
 and URL. For the live QA harness, see

@@ -3,10 +3,12 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
+	assertKoreanLexicalHit,
 	assertLiteRetrieveHealthy,
 	assertLiteRetrieveReportsSkippedSurface,
 	buildLiveStackOptions,
 	REPO_ROOT,
+	resolveKoreanLexicalLane,
 } from "./workflow.mjs";
 
 const args = process.argv.slice(2);
@@ -28,6 +30,24 @@ const agent = new AutoRAGAgent(buildLiveStackOptions(root, workspace));
 const refresh = await agent.refresh(mode === "cold", { methods: ["parsed", "minsync"] });
 if (refresh.minsync?.ok !== true) throw new Error(`minsync-${refresh.minsync?.reason ?? "unready"}`);
 if (!existsSync(cursorPath)) throw new Error("minsync-cursor-missing");
+// The Korean fixture holds only suffixed forms of 인증서 (인증서를, 인증서는). Its bare stem reaches the fixture through
+// BM25 only when the agent built the index with the multilingual tokenizer, which AutoRAG always selects and which
+// needs Kiwi on the host. Without Kiwi the sync falls back to whitespace tokenization and the lane is a SKIP.
+const koreanLane = resolveKoreanLexicalLane(
+	refresh.minsync.lexicalFallback,
+	process.env.AUTORAG_LIVE_E2E_KIWI === "required",
+);
+if (koreanLane === "assert") {
+	const minsyncExecutable = process.platform === "win32" ? "minsync.exe" : "minsync";
+	const cachedMinsync = join(workspace, ".autorag", "bin", minsyncExecutable);
+	const koreanQuery = spawnSync(
+		existsSync(cachedMinsync) ? cachedMinsync : minsyncExecutable,
+		["query", "--mode", "bm25", "--format", "json", "-k", "5", "인증서"],
+		{ cwd: workspace, encoding: "utf8", timeout: 60_000 },
+	);
+	if (koreanQuery.status !== 0) throw new Error(`korean-lexical-query-exit-${koreanQuery.status}`);
+	assertKoreanLexicalHit(koreanQuery.stdout, "korean-policy.txt");
+}
 const hits = await agent.retrieve("semantic question about the sample corpus", { topK: 5 });
 const hit = hits.find((result) => result.source === resolve(source));
 if (!hit) throw new Error("semantic-hit-source-mismatch");
@@ -117,6 +137,10 @@ const result = {
 	refresh: { parsed: { scanned: refresh.scanned, written: refresh.written, skipped: refresh.skipped }, minsync: refresh.minsync },
 	cursorPath: resolve(cursorPath),
 	cursorExists: true,
+	koreanLexical:
+		koreanLane === "assert"
+			? { status: "PASS", query: "인증서", fixture: "korean-policy.txt" }
+			: { status: "SKIP", reason: "kiwi-unavailable", lexicalFallback: refresh.minsync.lexicalFallback },
 	hit: { source: hit.source, sourceAbsolute: true, sourceExists: true, sourceReadable: true, score: hit.score },
 	status: { state: status.state, stale: status.stale, components: status.components },
 	liteRetrieve: {
