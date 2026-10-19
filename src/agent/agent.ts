@@ -694,9 +694,8 @@ export interface AutoRAGAgentOptions {
 	/**
 	 * Control the interactive (TUI) session from Discord through the
 	 * `pi-discord-remote` extension: a session channel is created on launch, and
-	 * allow-listed users' messages run as questions or steers; the final answer is
-	 * posted back. Needs `~/.pi/agent/pi-discord-remote/config.json` (or
-	 * `DISCORD_TOKEN` + `DISCORD_GUILD_ID`) with a non-empty `allowedUserIds`.
+	 * allowed users' messages run as questions; the final answer is posted back. Needs `~/.pi/agent/pi-discord-remote/config.json` (or
+	 * `DISCORD_TOKEN` + `DISCORD_GUILD_ID`).
 	 * Ignored for remote sessions. Default false.
 	 */
 	discordRemote?: boolean;

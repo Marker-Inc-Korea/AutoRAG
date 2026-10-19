@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import installDiscordRemote from "pi-discord-remote";
-import { loadConfig } from "pi-discord-remote/dist/config.js";
 
 /** Tools the `pi-discord-remote` extension registers; pi's allow-list must name them to keep them active. */
 export const DISCORD_REMOTE_TOOL_NAMES = ["discord_ask_user_question", "discord_send_image"] as const;
@@ -29,14 +28,10 @@ type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<vo
  *
  * Two behaviors differ from running it as a plain pi package:
  * - Discord messages enter through {@link DiscordRemoteHooks.submit}, so they run
- *   AutoRAG's two-phase search (and steer a running one) instead of a bare pi turn.
+ *   AutoRAG's two-phase search instead of a bare pi turn.
  * - The extension replies on `agent_end`, which AutoRAG's search fires once per
  *   phase. The reply is held until the whole search settles, so Discord gets the
  *   final answer rather than the first phase's.
- *
- * The extension's own config (`~/.pi/agent/pi-discord-remote/config.json`) must
- * carry a non-empty `allowedUserIds`: the session has shell access, and an empty
- * allow-list means every member of the guild controls it.
  */
 export function createDiscordRemoteExtension(hooks: DiscordRemoteHooks): ExtensionFactory {
 	return (pi) => {
@@ -82,21 +77,6 @@ export function createDiscordRemoteExtension(hooks: DiscordRemoteHooks): Extensi
 		installDiscordRemote(guarded);
 		pi.on("session_start", async (event, ctx) => {
 			if (event.reason === "reload" || command === undefined) return;
-			const config = await loadConfig();
-			if (config === null) {
-				ctx.ui.notify(
-					"Discord remote: no config. Run /pi-discord-remote setup, or set DISCORD_TOKEN and DISCORD_GUILD_ID.",
-					"error",
-				);
-				return;
-			}
-			if (config.allowedUserIds === undefined || config.allowedUserIds.length === 0) {
-				ctx.ui.notify(
-					"Discord remote refused: allowedUserIds is empty, so every guild member would control a session with shell access. Set it via /pi-discord-remote setup.",
-					"error",
-				);
-				return;
-			}
 			await command("start", ctx as unknown as ExtensionCommandContext);
 		});
 	};

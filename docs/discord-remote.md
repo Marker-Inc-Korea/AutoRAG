@@ -31,9 +31,9 @@ chosen by the model.
 
 3. `autorag tui --discord`
 
-`allowedUserIds` is **required**. The session has shell access, so with an empty list every
-member of the guild would control it; AutoRAG refuses to connect and says why.
-`DISCORD_TOKEN` / `DISCORD_GUILD_ID` can replace token and guild, but not the allow-list.
+`allowedUserIds` is the extension's own allow-list (empty means every guild member can
+send messages). AutoRAG adds no check on top of it. `DISCORD_TOKEN` / `DISCORD_GUILD_ID`
+can replace token and guild.
 
 ## Tests
 

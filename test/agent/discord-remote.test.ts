@@ -193,18 +193,6 @@ describe("Discord remote control", () => {
 		}
 	});
 
-	it("refuses to connect when the allow-list is empty", async () => {
-		writeDiscordConfig([]);
-		const tui = await discordAgent(["unused"]);
-		try {
-			expect(tui.notices.join("\n")).toContain("allowedUserIds is empty");
-			expect(fake.channels.size).toBe(0);
-			expect(fake.identifiedWithToken).toBeUndefined();
-		} finally {
-			await tui.dispose();
-		}
-	});
-
 	it("does not touch Discord unless enabled", async () => {
 		writeDiscordConfig([ALLOWED]);
 		const tui = await discordAgent(["unused"], { discordRemote: false });
