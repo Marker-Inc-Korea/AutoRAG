@@ -1,9 +1,29 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DiscrawlClient, nativeGatewayBaseUrl } from "../../../../src/datasource/skills/discrawl/client.ts";
 import type { DiscrawlOptions } from "../../../../src/datasource/skills/discrawl/types.ts";
+
+/** kill(pid, 0) is true for zombies until init reaps them. Those are not running. */
+function posixProcessIsRunnable(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+		throw error;
+	}
+	try {
+		const stat = execFileSync("ps", ["-p", String(pid), "-o", "stat="], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return stat.length > 0 && stat.charAt(0) !== "Z";
+	} catch {
+		return false;
+	}
+}
 
 function stubBinary(script: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "discrawl-stub-"));
@@ -157,13 +177,9 @@ process.exit(0);
 			if (!result.ok) return;
 			const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
 			if (pidMatch?.[1] === undefined) throw new Error("discrawl fixture did not report its descendant PID");
-			try {
-				process.kill(Number(pidMatch[1]), 0);
-			} catch (error) {
-				if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
-				throw error;
+			if (posixProcessIsRunnable(Number(pidMatch[1]))) {
+				throw new Error(`discrawl descendant ${pidMatch[1]} survived after the client settled`);
 			}
-			throw new Error(`discrawl descendant ${pidMatch[1]} survived after the client settled`);
 		} finally {
 			clearTimeout(bound);
 		}
