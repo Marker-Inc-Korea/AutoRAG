@@ -9,7 +9,8 @@ A question you send the bot runs through the same Jev routing and two-phase sear
 | Messenger | Status |
 |---|---|
 | Telegram | Supported |
-| Discord, Slack, others | Not supported |
+| Discord | Supported, see [discord.md](discord.md) |
+| Slack, others | Not supported |
 
 ## Requirements
 

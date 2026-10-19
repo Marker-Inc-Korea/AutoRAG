@@ -104,6 +104,7 @@ import {
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
+import { createDiscordRemoteExtension, DISCORD_REMOTE_TOOL_NAMES } from "./discord-remote.ts";
 import {
 	createScanDuplicateDocumentsTool,
 	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
@@ -690,6 +691,14 @@ export interface AutoRAGAgentOptions {
 	peerQuery?: PeerQueryOptions | false;
 	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
 	remoteSession?: boolean;
+	/**
+	 * Control the interactive (TUI) session from Discord through the
+	 * `pi-discord-remote` extension: a session channel is created on launch, and
+	 * allowed users' messages run as questions; the final answer is posted back. Needs `~/.pi/agent/pi-discord-remote/config.json` (or
+	 * `DISCORD_TOKEN` + `DISCORD_GUILD_ID`).
+	 * Ignored for remote sessions. Default false.
+	 */
+	discordRemote?: boolean;
 	/** Per-phase thinking levels for the two-phase (fast → verification) search. */
 	thinking?: AutoRAGThinkingOptions;
 	/** pi agent directory for auth/models/extensions. Defaults to ~/.pi/agent. */
@@ -922,6 +931,7 @@ export class AutoRAGAgent {
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
 	/** True when this agent was constructed for an untrusted remote peer. */
 	readonly remoteSession: boolean;
+	private readonly discordRemote: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private readonly toolBurstGuard: ToolBurstGuard;
 	private readonly limits: ResolvedRetrievalLimits;
@@ -931,6 +941,7 @@ export class AutoRAGAgent {
 		const { memoryPath } = options;
 		this.configuredModel = options.model;
 		this.remoteSession = options.remoteSession ?? false;
+		this.discordRemote = (options.discordRemote ?? false) && !this.remoteSession;
 		this.toolBurstGuard = new ToolBurstGuard(options.toolCallBurstGuard);
 		this.fastThinkingLevel = options.thinking?.fast ?? "off";
 		this.finalThinkingLevel = options.thinking?.final ?? "high";
@@ -1605,8 +1616,12 @@ export class AutoRAGAgent {
 				createEvidencePersistence(this.evidenceLedger),
 				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
 				...(telegramBridge !== undefined ? [telegramBridge] : []),
+				...(this.discordRemote ? [this.discordRemoteExtension()] : []),
 			],
-			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
+			extensionToolNames: [
+				...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
+				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
+			],
 			remoteSession: this.remoteSession,
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
@@ -1621,6 +1636,23 @@ export class AutoRAGAgent {
 				await dispose();
 			},
 		};
+	}
+
+	/**
+	 * Discord messages enter the same machinery as typed input: a new search when
+	 * idle, a steer of the running one otherwise (queued as a follow-up question
+	 * once the search can no longer take it).
+	 */
+	private discordRemoteExtension(): ExtensionFactory {
+		return createDiscordRemoteExtension({
+			submit: (text, pi) => {
+				const state = this.interactive;
+				if (state.run === undefined) this.startInteractiveQuery(text, pi);
+				else if (!this.steer(text)) state.followUps.push(text);
+			},
+			isRunning: () => this.interactive.run !== undefined,
+			onRunSettled: (callback) => void this.waitForIdle().then(callback),
+		});
 	}
 
 	/**
