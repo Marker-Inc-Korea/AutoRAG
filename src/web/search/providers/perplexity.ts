@@ -19,8 +19,6 @@ import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./u
 
 const PERPLEXITY_ASK_URL = "https://www.perplexity.ai/rest/sse/perplexity_ask";
 const API_VERSION = "2.18";
-const DEFLECTION_PATTERN =
-	/sign up|log in|create an account|verify you are human|are you a robot|가입|로그인|회원 ?가입/i;
 const MAX_ERROR_BYTES = 8 * 1024;
 const ANONYMOUS_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -298,11 +296,17 @@ export class PerplexityProvider extends SearchProvider {
 
 		const sources = [...sourcesByUrl.values()];
 		// Anonymous soft wall: the backend answers deflections like "Sign up
-		// and repeat your request" with a 200 stream and zero sources. That is
-		// not a search result — fail so the chain advances to the next
-		// provider instead of presenting the deflection as an answer.
-		if (sources.length === 0 && DEFLECTION_PATTERN.test(answer)) {
-			throw new SearchProviderError("perplexity", "Perplexity anonymous ask was deflected with a sign-up wall", 403);
+		// and repeat your request" with a 200 stream, zero sources, and text
+		// localized to the caller's IP, so no keyword list can recognize it.
+		// A response without a single web source has nothing the evidence
+		// ledger can register and is not a search result — fail so the chain
+		// advances to the next provider.
+		if (sources.length === 0) {
+			throw new SearchProviderError(
+				"perplexity",
+				`Perplexity anonymous ask returned no web sources (sign-up wall or conversational deflection): ${answer.slice(0, 120)}`,
+				403,
+			);
 		}
 		const numResults = params.numSearchResults ?? params.limit;
 		return {

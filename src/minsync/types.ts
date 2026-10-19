@@ -1,5 +1,7 @@
 /** Embedder configuration for MinSync vector indexing. Shared by config and method layers. */
 
+import type { MinSyncLexicalLanguage } from "./lexical-language.ts";
+
 export interface MinSyncEmbedderConfig {
 	/** Select an AutoRAG-owned embedding runtime profile. */
 	readonly profile?: "qwen3-embedding-0.6b";
@@ -43,11 +45,25 @@ export interface MinSyncSyncResult {
 	 * unindexable document is never dropped silently.
 	 */
 	readonly stagingExcluded?: readonly string[];
+	/** Files MinSync skipped (exit 6, `partial`); the sync itself completed and the next sync retries them. */
+	readonly filesFailed?: readonly MinSyncFileFailure[];
+	/**
+	 * Set when the multilingual tokenizer needs the Kiwi native library and it was not found, so the index was
+	 * built with whitespace tokenization instead. The sync itself succeeded.
+	 */
+	readonly lexicalFallback?: { readonly requested: MinSyncLexicalLanguage; readonly used: MinSyncLexicalLanguage };
+}
+
+export interface MinSyncFileFailure {
+	readonly path: string;
+	readonly stage: string;
+	readonly error: string;
 }
 
 export type MinSyncDiagnosticCode =
 	| "embedder-unavailable"
 	| "sync-failed"
+	| "minsync-lock-held"
 	| "no-hit"
 	| "embedding-identity-mismatch"
 	| "migration-required";

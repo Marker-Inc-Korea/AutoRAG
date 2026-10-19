@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.10.1",
+  "version": "2.10.5",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
@@ -55,6 +55,7 @@
     "@earendil-works/pi-ai": "^1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0",
     "@earendil-works/pi-tui": "1.2.0",
+    "@llblab/pi-telegram": "0.57.2",
     "@modelcontextprotocol/server": "^2.3.1",
     "@openrouter/sdk": "^1.4.25",
     "chardet": "^2.2.0",

@@ -189,7 +189,6 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 		const agent = new AutoRAGAgent({
 			...buildAgentOptions(config),
 			remoteSession: true,
-			searchTimeoutMs: p2p.searchTimeoutMs,
 			...(resolvedModel !== undefined
 				? {
 						model: resolvedModel.model,
@@ -230,7 +229,6 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 				? { injectionClassifierModel: createInjectionClassifierModel(resolvedModel) }
 				: {}),
 			pseudonymize: p2p.piiNer,
-			searchTimeoutMs: p2p.searchTimeoutMs,
 			...(p2p.quotas !== undefined ? { quotas: p2p.quotas } : {}),
 		} as StartSimplexPeerServerOptions);
 	} catch (error) {

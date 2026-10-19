@@ -2,6 +2,8 @@ import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { connectorSyncTimeoutHint } from "../../connector-timeouts.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { CrawlerSidecar, type CrawlerSidecarOptions, type SidecarSyncResult } from "../../sidecar/index.ts";
+import { SidecarRetrievalMethod } from "../../sidecar/methods.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
@@ -16,7 +18,6 @@ import type {
 } from "../../types.ts";
 import { LazykatokBm25Method, type LazykatokSearchClient, LazykatokSemanticMethod } from "./methods.ts";
 import type { LazykatokDoctorResult, LazykatokIndexResult, LazykatokSyncResult } from "./types.ts";
-
 export interface LazykatokSkillClient extends LazykatokSearchClient {
 	doctor(signal?: AbortSignal): Promise<LazykatokDoctorResult>;
 	sync(signal?: AbortSignal): Promise<LazykatokSyncResult>;
@@ -30,6 +31,14 @@ export interface LazykatokSkillOptions {
 	readonly pollingIntervalMs?: number;
 	readonly tags?: readonly string[];
 	readonly lastIndexedAt?: number;
+	readonly channelIds?: readonly string[];
+	readonly channelNames?: readonly string[];
+	/**
+	 * Opt-in read-only sidecar over lazykatok's own SQLite archive (`archive.sqlite3`):
+	 * adds BM25-ranked, semantic and hybrid methods backed by AutoRAG's shared embedder
+	 * without running `lazykatok index`'s native fastembed pipeline.
+	 */
+	readonly sidecar?: CrawlerSidecarOptions;
 }
 
 const KAKAO_DATASOURCE_ID = "kakao";
@@ -44,6 +53,7 @@ export class LazykatokSkill implements DatasourceSkill {
 	private readonly instances: readonly string[];
 	private readonly pollingIntervalMs: number;
 	private readonly tags: readonly string[];
+	private readonly sidecar: CrawlerSidecar | undefined;
 	private lastIndexedAt: number | undefined;
 
 	constructor(options: LazykatokSkillOptions) {
@@ -54,6 +64,14 @@ export class LazykatokSkill implements DatasourceSkill {
 		this.pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
 		this.tags = options.tags ?? DEFAULT_KAKAO_TAGS;
 		this.lastIndexedAt = options.lastIndexedAt;
+		this.sidecar =
+			options.sidecar === undefined
+				? undefined
+				: new CrawlerSidecar({
+						...options.sidecar,
+						channelIds: options.channelIds ?? options.sidecar.channelIds ?? [],
+						channelNames: options.channelNames ?? options.sidecar.channelNames ?? [],
+					});
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -86,6 +104,17 @@ export class LazykatokSkill implements DatasourceSkill {
 			if (!doctor.ok) return this.fail("datasource-unavailable", doctor);
 			const sync = await this.client.sync(options?.signal);
 			if (!sync.ok) return this.fail("datasource-index-failed", sync);
+			if (this.sidecar !== undefined) {
+				this.lastIndexedAt = Date.now();
+				return {
+					ok: true,
+					instanceId: this.instanceId,
+					skill: KAKAO_DATASOURCE_ID,
+					chunkCount: syncChunkCount(sync),
+					indexedAt: this.lastIndexedAt,
+					diagnostics: await this.syncSidecar(),
+				};
+			}
 			const indexResult = await this.client.index(options?.signal);
 			if (!indexResult.ok) return this.fail("datasource-index-failed", indexResult);
 			this.lastIndexedAt = Date.now();
@@ -118,11 +147,75 @@ export class LazykatokSkill implements DatasourceSkill {
 		}
 	}
 
+	/** Release the sidecar's database handles. Safe to call repeatedly; later use reopens them. */
+	close(): void {
+		this.sidecar?.close();
+	}
+
 	retrievalMethods(): readonly RetrievalMethod[] {
+		const cliBm25 = new LazykatokBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags });
+		const { sidecar } = this;
+		if (sidecar === undefined) {
+			return [
+				cliBm25,
+				new LazykatokSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
+			];
+		}
+		const shared = {
+			sidecar,
+			descriptor: sidecar.descriptor,
+			datasourceId: KAKAO_DATASOURCE_ID,
+			skillType: KAKAO_SKILL_TYPE,
+			instanceId: this.instanceId,
+			tags: this.tags,
+		};
+		const bm25 = new SidecarRetrievalMethod({ ...shared, mode: "bm25" });
+		if (!sidecar.semanticEnabled) return [cliBm25, bm25];
 		return [
-			new LazykatokBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-			new LazykatokSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
+			cliBm25,
+			bm25,
+			new SidecarRetrievalMethod({ ...shared, mode: "semantic" }),
+			new SidecarRetrievalMethod({ ...shared, mode: "hybrid" }),
 		];
+	}
+
+	private async syncSidecar(): Promise<DatasourceDiagnostic[]> {
+		if (this.sidecar === undefined || !this.sidecar.semanticEnabled) return [];
+		const base = { instanceId: this.instanceId, source: KAKAO_DATASOURCE_ID } as const;
+		let result: SidecarSyncResult;
+		try {
+			result = await this.sidecar.sync();
+		} catch (error) {
+			result = { ok: false, message: error instanceof Error ? error.message : String(error) };
+		}
+		if (!result.ok) {
+			return [
+				{
+					code: "datasource-index-failed",
+					severity: "warning",
+					message: `semantic-unavailable: ${result.message}`.slice(0, 300),
+					...base,
+				},
+			];
+		}
+		const diagnostics: DatasourceDiagnostic[] = [];
+		if (result.skipped > 0) {
+			diagnostics.push({
+				code: "datasource-index-partial",
+				severity: "warning",
+				message: `semantic index skipped ${result.skipped} message(s) the embedder rejected; they stay searchable by BM25 and are retried when edited`,
+				...base,
+			});
+		}
+		if (result.remaining > 0) {
+			diagnostics.push({
+				code: "datasource-index-partial",
+				severity: "info",
+				message: `semantic index catching up: ${result.embedded} embedded this refresh, ${result.remaining} remaining; hybrid search uses BM25 for the rest until a later refresh`,
+				...base,
+			});
+		}
+		return diagnostics;
 	}
 
 	describeSources(): readonly SourceDescription[] {
@@ -212,6 +305,17 @@ export class LazykatokSkill implements DatasourceSkill {
 			message,
 		};
 	}
+}
+
+function syncChunkCount(sync: LazykatokSyncResult): number {
+	if (!("data" in sync) || typeof sync.data !== "object" || sync.data === null) return 0;
+	const meta =
+		"metadata" in sync.data && typeof sync.data.metadata === "object" && sync.data.metadata !== null
+			? (sync.data.metadata as Record<string, unknown>)
+			: undefined;
+	if (typeof meta?.chunks === "number") return meta.chunks;
+	if ("messageCount" in sync.data && typeof sync.data.messageCount === "number") return sync.data.messageCount;
+	return 0;
 }
 
 // The lazykatok CLI's stderr reaches the operator verbatim, paths included — the

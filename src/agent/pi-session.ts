@@ -250,6 +250,46 @@ function interactiveKeyOf(data: string): AutoRAGInteractiveKey | undefined {
 	return undefined;
 }
 
+/**
+ * Prefix `@llblab/pi-telegram` puts on every prompt it injects from a Telegram
+ * chat. The bridge hands them to pi through `pi.sendUserMessage`, so pi tags
+ * them `source: "extension"`, the same source AutoRAG's own phase prompts use.
+ * The prefix is what tells a person typing on a phone from AutoRAG talking to
+ * itself.
+ */
+export const TELEGRAM_INPUT_PREFIX = "[telegram]";
+
+/** `whatsapp-pi` frames every inbound chat message as `Message from <name> (<number>)`. */
+export const WHATSAPP_INPUT_PREFIX = "Message from ";
+
+/**
+ * The user's own words from a bridged Telegram prompt: the bridge's `[telegram]`
+ * prefix and its `[time]` line are envelope, not the question, so a Telegram
+ * question reaches the librarian exactly as the same text typed in the TUI.
+ * Attachment blocks stay: they are part of what the user sent.
+ */
+export function stripTelegramEnvelope(text: string): string {
+	return text
+		.replace(/^\s*\[telegram\]\s?/u, "")
+		.replace(/\n*\[time\][^\n]*/gu, "")
+		.trim();
+}
+
+/**
+ * The text of a user input (terminal, or a chat bridge such as Telegram or WhatsApp), or `undefined`
+ * for AutoRAG's own phase prompts (`source: "rpc"`) and pi's own extension prompts.
+ */
+function userInputText(event: { readonly source: string; readonly text: string }): string | undefined {
+	if (event.source === "interactive") return event.text.trim();
+	if (event.source === "extension" && event.text.trimStart().startsWith(TELEGRAM_INPUT_PREFIX)) {
+		return stripTelegramEnvelope(event.text);
+	}
+	if (event.source === "extension" && event.text.trimStart().startsWith(WHATSAPP_INPUT_PREFIX)) {
+		return event.text.trim();
+	}
+	return undefined;
+}
+
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
@@ -284,10 +324,8 @@ function createAutoRAGInteractiveExtension(
 			});
 		}
 		pi.on("input", (event) => {
-			const text = event.text.trim();
-			// "rpc" marks the harness's own search prompts; typed ("interactive") and
-			// extension-injected ("extension", e.g. a chat bridge) input is the user's.
-			if (event.source === "rpc" || text.length === 0) return undefined;
+			const text = userInputText(event);
+			if (text === undefined || text.length === 0) return undefined;
 			// A "/" line is pi's (commands, skills, templates), except during a search:
 			// handed back to pi then, it would start pi's own prompt on the bound
 			// session outside the search. Registered commands never reach this

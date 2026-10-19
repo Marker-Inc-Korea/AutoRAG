@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import { walkFileSearch } from "./walk.ts";
 
 /**
@@ -73,7 +74,7 @@ export type FSearchSearchResult =
 			readonly ok: true;
 			readonly backend: FSearchBackend;
 			readonly results: readonly FSearchEntry[];
-			/** Total matches reported by fsearch-cli (may exceed results length). */
+			/** Total matches reported by fsearch-cli before client-side filtering. */
 			readonly total?: number;
 			readonly truncated?: boolean;
 			/** Degradation note, e.g. why the slow walk answered instead. */
@@ -121,7 +122,7 @@ export interface FSearchClientOptions extends FSearchOptions {
 	readonly root: string;
 	/** Folders FSearch indexes (the configured search paths). */
 	readonly folders: readonly string[];
-	/** Additional configured folders omitted from the index. */
+	/** Exact files or directory subtrees omitted from search results. */
 	readonly excludeFolders?: readonly string[];
 	readonly platform?: NodeJS.Platform;
 	readonly run?: FSearchRunner;
@@ -270,6 +271,7 @@ export class FSearchClient {
 	private readonly launch: FSearchLauncher;
 	private readonly isAlive: (pid: number) => boolean;
 	private readonly kill: (pid: number) => void;
+	private readonly isExcludedPath: (path: string) => boolean;
 	private readonly stateDir: string;
 	private readonly dbPath: string;
 	private readonly pidPath: string;
@@ -283,6 +285,7 @@ export class FSearchClient {
 		this.launch = options.launch ?? launchDetached;
 		this.isAlive = options.isProcessAlive ?? defaultIsProcessAlive;
 		this.kill = options.killProcess ?? ((pid) => process.kill(pid, "SIGTERM"));
+		this.isExcludedPath = createPathExclusionMatcher(options.excludeFolders ?? []);
 		this.stateDir = join(options.root, ".autorag", "fsearch");
 		this.dbPath = join(this.stateDir, "fsearch.db");
 		this.pidPath = join(this.stateDir, "watch.pid");
@@ -311,6 +314,7 @@ export class FSearchClient {
 				// Issue #1763 graceful fallback: bounded slow walk.
 				try {
 					const walked = await walkFileSearch(this.options.folders, request, {
+						excludeFolders: this.options.excludeFolders,
 						maxVisited: this.options.walkMaxVisited,
 						deadlineMs: this.options.walkDeadlineMs,
 					});
@@ -325,7 +329,11 @@ export class FSearchClient {
 					return { ok: false, reason: "search-failed", message: (error as Error).message };
 				}
 			}
-			const args = buildFSearchSearchArgs(this.dbPath, this.socketPath(), request);
+			const hasExclusions = (this.options.excludeFolders?.length ?? 0) > 0;
+			// Native --exclude-path only excludes directories. Fetch the same bounded
+			// pool as a path-filtered search, then exclude files before paging locally.
+			const nativeRequest = hasExclusions ? { ...request, offset: 0, maxResults: MAX_RESULTS_CAP } : request;
+			const args = buildFSearchSearchArgs(this.dbPath, this.socketPath(), nativeRequest);
 			const result = await this.run(binary.path, args, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 			if (result.code !== 0) return this.failure("search-failed", binary.path, args, result);
 			let parsed: { entries: FSearchEntry[]; total: number | undefined };
@@ -335,6 +343,10 @@ export class FSearchClient {
 				return { ok: false, reason: "search-failed", message: (error as Error).message };
 			}
 			let entries = parsed.entries;
+			if (hasExclusions) {
+				const isExcluded = this.isExcludedPath;
+				entries = entries.filter((entry) => !isExcluded(entry.path));
+			}
 			if (request.path !== undefined) {
 				const prefix = request.path.endsWith(sep) ? request.path : `${request.path}${sep}`;
 				entries = entries.filter((entry) => entry.path === request.path || entry.path.startsWith(prefix));
@@ -342,7 +354,22 @@ export class FSearchClient {
 			if (request.offset !== undefined && request.offset > 0) entries = entries.slice(request.offset);
 			const maxResults = Math.min(request.maxResults ?? DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP);
 			if (entries.length > maxResults) entries = entries.slice(0, maxResults);
-			return { ok: true, backend: "fsearch-cli", results: entries, total: parsed.total };
+			return {
+				ok: true,
+				backend: "fsearch-cli",
+				results: entries,
+				total: parsed.total,
+				// A full page is an exact prefix of the ordered matches; only a short page can miss later candidates.
+				...(hasExclusions &&
+				parsed.total !== undefined &&
+				parsed.total > parsed.entries.length &&
+				entries.length < maxResults
+					? {
+							truncated: true,
+							note: `FSearch checked ${parsed.entries.length} of ${parsed.total} native matches before exclusions (candidate limit ${MAX_RESULTS_CAP}); results may be incomplete. Narrow the query.`,
+						}
+					: {}),
+			};
 		});
 	}
 

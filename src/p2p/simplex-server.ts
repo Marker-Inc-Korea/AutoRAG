@@ -43,7 +43,6 @@ import {
  */
 
 const DEFAULT_QUEUE_DEPTH = 8;
-const DEFAULT_SEARCH_TIMEOUT_MS = 120_000;
 /**
  * SimpleX message bodies have no documented byte cap, but the wire envelope
  * stays bounded so a malformed or hostile payload cannot exhaust the peer.
@@ -256,7 +255,6 @@ export interface StartSimplexPeerServerOptions {
 	readonly injectionClassifier?: boolean;
 	readonly injectionClassifierModel?: InjectionClassifierModel;
 	readonly buildPeerResponse?: PeerResponseBuilder;
-	readonly searchTimeoutMs?: number;
 	readonly pseudonymize?: boolean;
 	readonly logger?: (entry: SimplexPeerLog) => void;
 }
@@ -451,8 +449,7 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 					peerFingerprint: String(peerContactId),
 					resolvePolicy,
 					observedSources,
-					searchTimeoutMs: options.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
-				} as RetrievalOptions),
+				}),
 			);
 		} catch (error) {
 			const code = error instanceof QueueFullError ? "queue-full" : "internal-error";

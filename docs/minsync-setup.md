@@ -39,6 +39,44 @@ autorag gateway stop
 when available, health, and sanitized failure details. `gateway stop` stops
 the owned child process and removes its pid/lock state.
 
+## Excluding files and folders
+
+Exclude generated workspaces, archives, or individual files before the first
+refresh by repeating `--exclude`:
+
+```bash
+autorag init --search-paths /path/to/docs \
+  --exclude "/path/to/docs/Build output" \
+  --exclude "/path/to/docs/Archive, old"
+autorag refresh
+```
+
+Each `--exclude` argument is one complete path; spaces and commas are preserved.
+Relative CLI paths resolve from the current directory, even when `--workspace`
+points elsewhere. The generated config stores absolute paths.
+
+For an existing config, add or edit `excludePaths`, preserving the other settings:
+
+```json
+{
+  "searchPaths": ["/path/to/docs"],
+  "excludePaths": ["/path/to/docs/Build output", "/path/to/docs/private-notes.txt"]
+}
+```
+
+Each entry excludes that exact file or directory and all descendants of an
+excluded directory. Entries are literal paths, not glob patterns. Relative paths
+in JSON resolve against the configured `workspacePath`, or the config file's
+directory when `workspacePath` is absent.
+
+Run `autorag refresh` after editing the config to remove excluded documents from
+the parsed mirror and update the indexes. Native fsearch and Everything results
+are filtered before pagination, including exact file exclusions and stale index
+entries. Native filename indexes may retain metadata for individually excluded
+files; the result filter prevents those entries from appearing in searches.
+The fsearch filesystem fallback applies exclusions before walking a subtree, so
+excluded contents do not consume its traversal budget.
+
 ## Selecting a profile
 
 The default profile is Qwen3-Embedding-0.6B at 1024 dimensions; it is the only
@@ -73,6 +111,64 @@ request. Offline import works when the source file is already available.
 The exact model and runtime URLs, revisions, SHA-256 values, archive members,
 and notices are in [`licenses/embedding-assets.json`](../licenses/embedding-assets.json).
 Mutable model weights are not in the npm package.
+
+## BM25 tokenizer
+
+MinSync tokenizes text before indexing it and before every BM25 query. Its
+default, `simple`, splits on whitespace only, so a Korean word with a particle
+(`인증서를`) never matches a query for its stem (`인증서`), and `환불정책과` never
+matches `환불`.
+
+AutoRAG always sets MinSync's `[lexical].language` to `multilingual`, whatever
+the global `languages` setting says; `languages` only drives OCR. `multilingual`
+indexes the original whitespace-separated words together with the morphemes
+from Kiwi (Korean) and the other analyzers' tokens, so an exact term such as a
+compound (`연구목표`) and an inflected form (`인증서를`) both match, and Latin
+words stay case-insensitive. MinSync's `ko` preset indexes the morphemes only:
+a compound then exists only as its pieces, and exact-term queries lose to
+documents that merely contain both pieces. AutoRAG never selects `ko`.
+
+Measured on a sample of real Korean documents (410 documents, BM25 only, queries
+sampled from the documents themselves, top-5 precision / top-50 recall):
+
+| Queries | `simple` | `ko` | `multilingual` |
+| --- | --- | --- | --- |
+| 60 stems that also occur with particles or endings | 0.18 / 0.10 | 0.45 / 0.67 | 0.54 / 0.77 |
+| 40 exact words and compounds | 0.97 / 0.93 | 0.59 / 0.79 | 0.89 / 0.98 |
+
+Tokenizing is slower than whitespace splitting: indexing 5,456 chunks took
+about 36 s with `multilingual` against 2 s with `simple`.
+
+### Kiwi is required
+
+`multilingual` loads the [Kiwi](https://github.com/bab2min/Kiwi) native library
+and its base model at run time. Neither ships with MinSync or AutoRAG, and
+without them every sync fails. AutoRAG therefore uses `multilingual` only when
+it finds both, by the same rules as MinSync's `kiwi-rs` loader:
+`KIWI_LIBRARY_PATH` and `KIWI_MODEL_PATH` when set (an explicit path is never
+second-guessed), otherwise the per-user install `~/.local/kiwi`
+(`%LOCALAPPDATA%\kiwi` on Windows) and the usual system directories
+(`/usr/local`, `/usr`, `/opt/homebrew`). A library that only the OS loader's own
+search path can find is not probed; set `KIWI_LIBRARY_PATH` for it.
+
+When Kiwi is missing, a new workspace is created with `simple` and `autorag
+refresh` reports a `lexical-tokenizer-unavailable` warning that names what to
+install, instead of failing. This applies to every corpus, including an
+English-only one. The next refresh after Kiwi is installed switches the
+workspace to `multilingual`. A workspace that is already on `multilingual` is
+never switched back on a missing Kiwi, since that would re-embed every chunk;
+its sync reports MinSync's own error instead.
+
+### Changing the tokenizer
+
+A new workspace is initialized with `multilingual`. For an existing workspace,
+`autorag refresh` writes it to `[lexical].language` in `.minsync/config.toml`.
+MinSync records the tokenizer an index was built with in its cursor; when the
+two differ, its next `sync` deletes and re-indexes every chunk, re-embedding
+them as well, not only rebuilding the BM25 lane. A refresh that fails or is
+cancelled restores the previous `config.toml`, so the rebuild is retried by the
+next refresh. Every workspace created before this change used `simple`, so
+upgrading re-indexes it once (when Kiwi is present).
 
 ## Chunk size
 
@@ -197,6 +293,33 @@ siblings from indexing.
 ```json
 { "refresh": { "maxDeleteRatio": 0.3, "maxScannedEntries": 2000000, "maxDepth": 64 } }
 ```
+
+## Cancelling a refresh
+
+`AutoRAGAgent.refresh(force, { signal })` forwards the signal to the MinSync
+`init`, `check`, and `sync` processes. Aborting stops the running `minsync` and
+every descendant it started (SIGTERM to the process group, SIGKILL after 5
+seconds), restores the `config.toml` this run rewrote, and rejects `refresh`
+with the signal's reason. On POSIX each MinSync process leads its own process
+group, so the host also reaps it on SIGINT, SIGTERM, SIGHUP, and exit; Windows
+uses `taskkill /t`. A run without a signal behaves as before. Only the MinSync
+phase observes the signal; parse, datasource, and Jikji phases do not yet.
+
+A `minsync` run that outlives its host (for example after `SIGKILL` of the
+host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
+`sync` exits 3 with `another sync is in progress`, which AutoRAG reports as the
+retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
+of a generic `minsync-sync-failed`.
+
+## Skipped files (partial sync)
+
+MinSync 0.4.8 skips a file it cannot read, chunk, or embed instead of aborting
+the sync, and exits 6 with `partial: true` and a `files_failed` list. AutoRAG
+treats that as a completed sync (`minsync.ok: true`) and reports each skipped
+file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
+inside the MinSync workspace. MinSync keeps the file's previous chunks and
+retries it on the next sync. Only an exit 6 without a `partial` report is a
+`minsync-sync-failed`.
 
 ## Migration and failure behavior
 

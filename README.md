@@ -140,8 +140,9 @@ does, and searches them right alongside your files:
   or connect your own provider key and pay the provider directly.
 
 > [!TIP]
-> **The app's source lives in [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app)**
-> (Electron + React, AGPL-3.0). It depends on `@autorag/librarian` from this
+> **The Dazzi desktop app's source lives in [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app)**
+> (Electron + React, [Fair Source](https://fair.io/) under `FSL-1.1-MIT`). It
+> depends on the open-source `@autorag/librarian` engine (Apache-2.0) from this
 > repository; build, run, and file app issues there.
 
 ### One engine, every surface
@@ -150,8 +151,9 @@ The app is one way in. The same librarian runs everywhere else:
 
 | Surface | Use it for | Start here |
 |---|---|---|
-| **Desktop app** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) |
+| **Desktop app (Dazzi)** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) (Fair Source, FSL-1.1-MIT) |
 | **Terminal UI** | Interactive, steerable search sessions | [`autorag tui`](#2-search-from-cli) |
+| **Messenger** | Asking the librarian from a chat app | [Telegram](#messenger-connections) |
 | **CLI** | Scripts, indexing, health checks | [CLI Command Reference](#cli-command-reference) |
 | **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](#autorag-lite-mcp-server) |
 | **TypeScript API** | Embedding the librarian in your own app | [Programmatic usage](#3-programmatic-usage-typescript-api) |
@@ -198,7 +200,7 @@ AutoRAG Agent orchestrates five integrated subsystems:
 
 1. **Retrieval Memory (`check_memory`):** After each answer, cited evidence Jev judges to genuinely support it is stored in `~/.autorag/memory.json`. Later searches receive this conversation's evidence, similar past questions, and long-term insights as **advisory reference** — it never reorders results or overrides current evidence. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 2. **Pluggable Multi-Method Retrieval:**
-   - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors.
+   - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors. AutoRAG always uses MinSync's `multilingual` tokenizer, which keeps each original word and adds Korean morphemes (via the [Kiwi](https://github.com/bab2min/Kiwi) library), so both `연구목표` and `인증서를` → `인증서` match; without Kiwi AutoRAG warns and tokenizes on whitespace. See [docs/minsync-setup.md](docs/minsync-setup.md#bm25-tokenizer).
    - **Semantic Vector Search:** Dense vector retrieval over CDC chunks via the built-in embedding gateway.
    - **Hybrid Search:** Combines BM25 and vector ranking via Reciprocal Rank Fusion (RRF).
    - **Jikji Find-First Discovery:** Local CLI-backed fast discovery answer packs.
@@ -217,11 +219,21 @@ The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG libra
 
 Typing while a search runs works like steering one of Pi's own turns. **Enter** steers the running search: AutoRAG treats the text as a correction of a search that is going wrong, delivers it before the search's next model request (also between phases, where no turn is streaming), cuts in-flight retrieval short so the correction lands promptly, and always runs the verification phase so the answer reflects the correction. **Alt+Enter** queues a new question that runs after the current search answers. **Esc** stops the search instead of letting it continue into its next phase. Pi's registered `/` commands still run during a search; any other line starting with `/` (a path, for example) is a steer like any other text. A query typed after a search answers is a new search in the same session, as before.
 
-**Remote control from WhatsApp.** `autorag tui --whatsapp [--whatsapp-group <jid>]` installs the most-installed pi WhatsApp package ([`whatsapp-pi`](https://www.npmjs.com/package/whatsapp-pi), pinned) into Pi's agent dir and loads it into the session. Run `/whatsapp` once to scan the pairing QR and allow your contact (or group); after that, messages from allowed chats run as ordinary questions through AutoRAG's two-phase search (a message sent mid-search queues behind it), and every answer is sent back to the chat. Only allow-listed chats can drive the session, and WhatsApp content is untrusted input to the model: allow only chats you control. `whatsapp-pi` drives an unofficial WhatsApp Web client, which can get an account restricted.
-
 Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi update`" banner (Pi is a bundled host, not a separate install) and instead checks the published `@autorag/librarian` release, showing a one-line notice in the session when a newer version exists. Set `AUTORAG_NO_UPDATE_CHECK=1` to skip the lookup; `AUTORAG_UPDATE_CHECK_URL` overrides the registry endpoint.
 
 ---
+
+## Messenger Connections
+
+| Messenger | Status | Start here |
+|---|---|---|
+| **Telegram** | Supported | [`autorag tui --telegram`](docs/telegram.md) |
+| **WhatsApp** | Supported (unofficial client) | [`autorag tui --whatsapp`](docs/whatsapp.md) |
+| Discord, Slack, others | Not supported yet | |
+
+Telegram runs through the [`@llblab/pi-telegram`](https://github.com/llblab/pi-telegram) bridge inside a running `autorag tui` session: questions you send the bot get the same routing and two-phase search as the terminal. Setup, commands, and keeping it running are in [docs/telegram.md](docs/telegram.md).
+
+WhatsApp runs through the pinned [`whatsapp-pi`](https://www.npmjs.com/package/whatsapp-pi) extension the same way; see [docs/whatsapp.md](docs/whatsapp.md).
 
 ## Installation & Setup
 
@@ -264,6 +276,25 @@ autorag refresh
 # Check indexing health
 autorag status
 ```
+
+### Excluding files and folders
+
+Leave generated workspaces or archives out when initializing:
+
+```bash
+autorag init --search-paths "$HOME/Documents" \
+  --exclude "$HOME/Documents/Build output" \
+  --exclude "$HOME/Documents/Archive, old"
+```
+
+Repeat `--exclude` for each file or folder. Each argument is one complete path,
+including spaces and commas; relative paths resolve from the current directory.
+Excluding a folder also excludes its descendants. Paths are literal, not globs.
+
+For an existing configuration, edit its `excludePaths` array and run
+`autorag refresh` to update the indexes. File-name search applies exclusions to
+native fsearch and Everything results as well as the filesystem walk. See the
+[exclusion configuration examples](docs/minsync-setup.md#excluding-files-and-folders).
 
 ### Document languages and parsers
 
@@ -436,7 +467,7 @@ mirrored are kept and not re-parsed on the next run. `onProgress` reports `parse
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
 | `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
-| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
+| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); `--telegram` / `--whatsapp` add the Telegram / WhatsApp remote-control bridges |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
 | `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |
@@ -657,6 +688,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and local embedding verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model card: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md).
 - **[Hosted Dazzi Models Provider](docs/cloud-provider.md):** The hosted `dazzi` model provider — PKCE `/login`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
+- **[Telegram Remote Control](docs/telegram.md):** Ask the librarian from a Telegram chat through a running `autorag tui --telegram` session: setup, commands, and keeping it alive.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.

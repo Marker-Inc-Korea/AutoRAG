@@ -73,6 +73,29 @@ describe("parseArgs", () => {
 		expect(parsed.flags["top-k"]).toBe("5");
 	});
 
+	it("collects repeated exclusions without splitting paths or changing ordinary flags", () => {
+		const parsed = parseArgs([
+			"init",
+			"--exclude=docs/private, archived",
+			"--exclude",
+			"build outputs",
+			"--workspace",
+			"old",
+			"--workspace=new",
+		]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.repeatedFlags).toEqual({ exclude: ["docs/private, archived", "build outputs"] });
+		expect(parsed.flags.exclude).toBe("build outputs");
+		expect(parsed.flags.workspace).toBe("new");
+	});
+
+	it.each([["--exclude"], ["--exclude", "--force"], ["--exclude="], ["--exclude", ""], ["--exclude=   "]])(
+		"rejects an exclusion without a non-empty path: %j",
+		(...flags) => {
+			expect(parseArgs(["init", ...flags])).toHaveProperty("error");
+		},
+	);
+
 	it("keeps two-word command sub-words as positionals", () => {
 		const parsed = parseArgs(["memory", "inspect"]);
 		if ("error" in parsed) throw new Error(parsed.error);
@@ -137,6 +160,29 @@ describe("parseMethodFlag", () => {
 describe("main routing", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it.each([["init"], ["lite", "init"]])("forwards repeated exclusions through %j", async (...command) => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-init-exclude-test-"));
+		try {
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			const configPath = join(root, "config.json");
+			const paths = [join(root, "private, notes"), join(root, "build outputs")];
+			const code = await main([
+				...command,
+				"--config",
+				configPath,
+				"--workspace",
+				root,
+				"--exclude",
+				paths[0],
+				`--exclude=${paths[1]}`,
+			]);
+			expect(code).toBe(0);
+			expect(JSON.parse(readFileSync(configPath, "utf8")).excludePaths).toEqual(paths);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("prints usage and exits 0 for --help", async () => {
@@ -311,7 +357,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	watch: ["--once", "--immediate", "--debounce-ms"],
 	health: ["--skip-probes", "--timeout-ms"],
 	duplicates: ["DIR"],
-	tui: ["Usage: autorag tui"],
+	tui: ["Usage: autorag tui", "--telegram", "/telegram-connect"],
 	serve: ["--port", "--force"],
 	p2p: ["peers", "requests", "--contact-id"],
 	models: ["prefetch", "import", "verify", "--profile"],
@@ -413,6 +459,13 @@ describe("two-phase thinking flags", () => {
 		const parsed = parseArgs(["tui", "--fast-thinking=high"]);
 		if ("error" in parsed) throw new Error(parsed.error);
 		expect(parsed.flags["fast-thinking"]).toBe("high");
+	});
+
+	it("accepts --telegram as a boolean flag on the tui command", () => {
+		const parsed = parseArgs(["tui", "--telegram", "--fast-thinking", "low"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags.telegram).toBe(true);
+		expect(parsed.flags["fast-thinking"]).toBe("low");
 	});
 
 	it("routes the thinking flags past argument parsing in main", async () => {
