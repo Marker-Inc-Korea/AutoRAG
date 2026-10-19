@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import type { FSearchEntry, FSearchSearchRequest, FSearchSort } from "./client.ts";
 
 /**
@@ -12,6 +13,8 @@ import type { FSearchEntry, FSearchSearchRequest, FSearchSort } from "./client.t
  */
 
 export interface FSearchWalkOptions {
+	/** Exact file paths or directory subtrees omitted from traversal and results. */
+	readonly excludeFolders?: readonly string[];
 	/** Directory entries to visit before giving up. Default 500k. */
 	readonly maxVisited?: number;
 	/** Wall-clock budget. Default 20s. */
@@ -50,6 +53,7 @@ export async function walkFileSearch(
 	request: FSearchSearchRequest,
 	options: FSearchWalkOptions = {},
 ): Promise<FSearchWalkResult> {
+	const isExcluded = createPathExclusionMatcher(options.excludeFolders ?? []);
 	const maxVisited = options.maxVisited ?? DEFAULT_MAX_VISITED;
 	const maxMatches = options.maxMatches ?? DEFAULT_MAX_MATCHES;
 	const deadline = Date.now() + (options.deadlineMs ?? DEFAULT_DEADLINE_MS);
@@ -75,6 +79,7 @@ export async function walkFileSearch(
 	const pending: string[] = [...folders];
 	outer: while (pending.length > 0) {
 		const dir = pending.pop()!;
+		if (isExcluded(dir)) continue;
 		if (Date.now() >= deadline) {
 			truncated = true;
 			break;
@@ -92,6 +97,7 @@ export async function walkFileSearch(
 			}
 			visited += 1;
 			const path = join(dir, dirent.name);
+			if (isExcluded(path)) continue;
 			if (dirent.isDirectory()) {
 				if (dirent.name === ".autorag") continue;
 				pending.push(path);
@@ -123,6 +129,7 @@ export async function walkFileSearch(
 	// The root folders themselves are candidates too (fsearch-cli indexes the
 	// included roots), but they carry no parent dirent, so test them here.
 	for (const folder of folders) {
+		if (isExcluded(folder)) continue;
 		if (!underPath(folder) || !matches(folder)) continue;
 		if (request.kind === "files") continue;
 		try {

@@ -166,6 +166,7 @@ export type {
 	DatasourceDiagnosticCode,
 	DatasourceIndexFail,
 	DatasourceIndexOk,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceInstance,
 	DatasourceSkill,

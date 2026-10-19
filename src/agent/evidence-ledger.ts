@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { type Static, Type } from "typebox";
+import { Value } from "typebox/value";
 import type { RetrievalResult } from "../retrieval/types.ts";
 import type { AutoRAGEvidenceRef } from "./results.ts";
 
@@ -21,9 +23,48 @@ export interface LedgerEvidenceInput {
 	readonly evidenceLocation?: string;
 }
 
-interface LedgerEntry extends LedgerEvidenceInput {
-	readonly id: string;
-	readonly retrieverMix: string[];
+/** Custom session entry type under which a conversation persists its evidence ledger. */
+export const EVIDENCE_ENTRY_TYPE = "autorag.evidence";
+
+const ledgerEntrySchema = Type.Object({
+	id: Type.String({ pattern: "^e[1-9][0-9]*$" }),
+	/** Source plus a digest of the full chunk: the same chunk retrieved again keeps its id. */
+	key: Type.String(),
+	method: Type.String(),
+	source: Type.String(),
+	content: Type.String(),
+	retrieverMix: Type.Array(Type.String()),
+	retrievalResultId: Type.Optional(Type.String()),
+	chunkIndex: Type.Optional(Type.Number()),
+	lineNumber: Type.Optional(Type.Number()),
+	parserType: Type.Optional(Type.String()),
+	documentType: Type.Optional(Type.String()),
+	documentArea: Type.Optional(Type.String()),
+	evidenceType: Type.Optional(Type.String()),
+	evidenceLocation: Type.Optional(Type.String()),
+});
+
+/** One recorded piece of evidence: what a retrieval tool returned, under the id it printed. */
+export type LedgerEntry = Static<typeof ledgerEntrySchema>;
+
+/** What a session persists under {@link EVIDENCE_ENTRY_TYPE}. */
+const persistedEvidenceSchema = Type.Object({ entries: Type.Array(Type.Unknown()) });
+
+/**
+ * Entries a session persisted under {@link EVIDENCE_ENTRY_TYPE}. A malformed
+ * entry is skipped: its id then resolves to nothing and the citation is
+ * dropped with a diagnostic, never mis-resolved.
+ */
+export function parseLedgerEntries(data: unknown): LedgerEntry[] {
+	if (!Value.Check(persistedEvidenceSchema, data)) return [];
+	return data.entries.filter((entry): entry is LedgerEntry => Value.Check(ledgerEntrySchema, entry));
+}
+
+/** Highest evidence id ordinal among `entries` (`e12` is 12); 0 when there are none. */
+export function highestOrdinal(entries: readonly LedgerEntry[]): number {
+	let highest = 0;
+	for (const entry of entries) highest = Math.max(highest, Number(entry.id.slice(1)));
+	return highest;
 }
 
 export interface LookupEvidenceOptions {
@@ -83,22 +124,30 @@ function toEvidenceRef(entry: LedgerEntry): AutoRAGEvidenceRef {
 }
 
 /**
- * Per-run record of every piece of evidence a retrieval tool returned.
+ * Record of every piece of evidence the retrieval tools returned in one
+ * conversation.
  *
  * Tools hand the model a short id (`e1`, `e2`, ...) next to each result. The
  * model cites evidence by id; the harness resolves the id back to the exact
  * source, method, content, and chunk metadata it recorded. The model never
  * retypes a path or a chunk, so it cannot misquote or invent one, and the
  * stable evidence id stored in memory is always derived from real evidence.
+ *
+ * Ids count up for as long as the process lives and are never reissued, so an
+ * id the model saw in any earlier turn keeps naming the chunk it named. The
+ * hosting session persists what {@link takeUnsaved} returns and rebuilds the
+ * ledger with {@link restore} when a conversation is resumed.
  */
 export class EvidenceLedger {
 	private entries: LedgerEntry[] = [];
 	private readonly byKey = new Map<string, LedgerEntry>();
 	private readonly byId = new Map<string, LedgerEntry>();
+	/** Entries recorded or changed since the last {@link takeUnsaved}. */
+	private readonly unsaved = new Set<LedgerEntry>();
 	/**
-	 * Ordinal of the last issued id. Survives {@link clear}: a hosted (TUI)
-	 * conversation keeps earlier runs' tool output in context, so restarting at
-	 * e1 would let a stale id silently resolve to a different chunk.
+	 * Ordinal of the last issued id. Survives {@link clear} and {@link restore}:
+	 * a conversation keeps earlier turns' tool output in context, so restarting
+	 * at e1 would let a stale id silently resolve to a different chunk.
 	 */
 	private lastOrdinal = 0;
 
@@ -112,18 +161,23 @@ export class EvidenceLedger {
 		const key = `${input.source}\0${digest}`;
 		const existing = this.byKey.get(key);
 		if (existing !== undefined) {
-			if (!existing.retrieverMix.includes(input.method)) existing.retrieverMix.push(input.method);
+			if (!existing.retrieverMix.includes(input.method)) {
+				existing.retrieverMix.push(input.method);
+				this.unsaved.add(existing);
+			}
 			return existing.id;
 		}
 		const entry: LedgerEntry = {
 			...input,
 			content,
 			id: `e${++this.lastOrdinal}`,
+			key,
 			retrieverMix: [input.method],
 		};
 		this.entries.push(entry);
 		this.byKey.set(key, entry);
 		this.byId.set(entry.id, entry);
+		this.unsaved.add(entry);
 		return entry.id;
 	}
 
@@ -172,10 +226,37 @@ export class EvidenceLedger {
 		return [];
 	}
 
-	/** Forget every recorded entry. Ids are never reissued, so a previous run's id stays unresolvable. */
+	/** Forget every recorded entry. Ids are never reissued, so a previous conversation's id stays unresolvable. */
 	clear(): void {
 		this.entries = [];
 		this.byKey.clear();
 		this.byId.clear();
+		this.unsaved.clear();
+	}
+
+	/** Entries recorded or changed since the last call, for the hosting session to persist. */
+	takeUnsaved(): LedgerEntry[] {
+		const entries = [...this.unsaved];
+		this.unsaved.clear();
+		return entries;
+	}
+
+	/**
+	 * Rebuild the ledger from persisted entries, such as the ones on the resumed
+	 * conversation branch; a later entry with the same id replaces an earlier
+	 * one. Ids keep counting past every restored id and past `ordinalFloor`, the
+	 * highest id issued anywhere in the conversation (other branches included),
+	 * so a restored ledger never reissues an id a transcript may still show.
+	 */
+	restore(entries: readonly LedgerEntry[], ordinalFloor = 0): void {
+		this.clear();
+		const latest = new Map<string, LedgerEntry>();
+		for (const entry of entries) latest.set(entry.id, { ...entry, retrieverMix: [...entry.retrieverMix] });
+		for (const entry of latest.values()) {
+			this.entries.push(entry);
+			this.byKey.set(entry.key, entry);
+			this.byId.set(entry.id, entry);
+		}
+		this.lastOrdinal = Math.max(this.lastOrdinal, ordinalFloor, highestOrdinal(this.entries));
 	}
 }

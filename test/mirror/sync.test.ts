@@ -1,4 +1,5 @@
 import {
+	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
@@ -16,6 +17,8 @@ import {
 	detectMirrorStaleness,
 	loadMirrorIndex,
 	type ParsedMirrorIndex,
+	type ParsedMirrorSyncOptions,
+	type ParsedMirrorSyncResult,
 	parsedMirrorIndexPath,
 	parsedMirrorRoot,
 	saveMirrorIndex,
@@ -23,12 +26,13 @@ import {
 } from "../../src/mirror/index.ts";
 import {
 	createDefaultParserRegistry,
+	ParseError,
 	type ParseInput,
 	type ParseOutput,
 	ParserRegistry,
 	PlainTextParser,
 } from "../../src/parser/index.ts";
-import { createXlsFixture } from "../fixtures/document-formats.ts";
+import { createDocxFixture, createXlsFixture } from "../fixtures/document-formats.ts";
 
 let root: string;
 let source: string;
@@ -208,6 +212,7 @@ describe("syncParsedMirrors", () => {
 	it("ignores poisoned stale index output paths when deleting removed files", async () => {
 		const outside = join(root, "outside-stale.md");
 		writeFileSync(outside, "do not delete\n");
+		writeFileSync(join(source, "present.txt"), "Still here\n");
 		saveMirrorIndex(root, {
 			version: 1,
 			entries: {
@@ -288,6 +293,7 @@ describe("syncParsedMirrors", () => {
 	it("returns deleted-mirror diagnostics when previously indexed files disappear", async () => {
 		const file = join(source, "gone.txt");
 		writeFileSync(file, "Bye\n");
+		writeFileSync(join(source, "present.txt"), "Still here\n");
 		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 
 		unlinkSync(file);
@@ -575,5 +581,667 @@ describe("mirror staleness decisions", () => {
 			source: "/docs/private.txt",
 			reason: "source-added",
 		});
+	});
+});
+
+/**
+ * Issue #1891: a source the last refresh could not parse (or read) must not be
+ * read and parsed again on every refresh while nothing about it has changed.
+ */
+describe("skipped-source retry policy", () => {
+	/** Fails every `.txt` it is handed with a typed ParseError and counts its attempts. */
+	class FailingParser extends PlainTextParser {
+		readonly attempted: string[] = [];
+		failing = true;
+		version = "1";
+
+		async parse(input: ParseInput): Promise<ParseOutput> {
+			this.attempted.push(input.virtualPath);
+			if (this.failing && input.virtualPath.endsWith(".txt")) {
+				throw new ParseError(this.name, input.virtualPath, new Error("corrupt"));
+			}
+			return super.parse(input);
+		}
+	}
+
+	function refresh(parser: FailingParser, extra: { retrySkipped?: boolean; force?: boolean } = {}) {
+		return syncParsedMirrors({ root, searchPaths: [source], registry: new ParserRegistry([parser]), ...extra });
+	}
+
+	function skipRecord(virtualPath: string) {
+		return requireValue(loadMirrorIndex(root).skipped?.[virtualPath], `skip record ${virtualPath}`);
+	}
+
+	it("does not parse a parser-failed source again while it is unchanged", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+
+		await refresh(parser);
+		const second = await refresh(parser);
+
+		expect(parser.attempted).toEqual(["/docs/bad.txt"]);
+		expect(second).toMatchObject({ scanned: 1, written: 0, skipped: 1 });
+		expect(second.diagnostics.filter((d) => d.code === "parser-failed").map((d) => d.source)).toEqual([
+			"/docs/bad.txt",
+		]);
+		expect(skipRecord("/docs/bad.txt").reason).toBe("parser-failed");
+	});
+
+	it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"does not even read a parser-failed source while the skip is honored",
+		async () => {
+			const file = join(source, "bad.txt");
+			writeFileSync(file, "broken\n");
+			const parser = new FailingParser();
+			await refresh(parser);
+
+			chmodSync(file, 0o000);
+			try {
+				const second = await refresh(parser);
+				expect(second.diagnostics.map((d) => d.code)).toEqual(["parser-failed"]);
+			} finally {
+				chmodSync(file, 0o644);
+			}
+		},
+	);
+
+	it("keeps indexing healthy siblings while a failed source is honored", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		writeFileSync(join(source, "good.md"), "# Good\n");
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([parser]),
+		});
+
+		expect(parser.attempted.filter((path) => path === "/docs/bad.txt")).toHaveLength(1);
+		expect(result).toMatchObject({ scanned: 2, written: 1, skipped: 1 });
+		expect(loadMirrorIndex(root).entries["/docs/good.md"]).toBeDefined();
+	});
+
+	it("retries immediately when the source changed after it failed", async () => {
+		const file = join(source, "bad.txt");
+		writeFileSync(file, "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+
+		writeFileSync(file, "still broken, but different\n");
+		await refresh(parser);
+
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("indexes a previously failed source once a retry succeeds and drops its skip record", async () => {
+		writeFileSync(join(source, "bad.txt"), "recoverable\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+
+		parser.failing = false;
+		const result = await refresh(parser, { retrySkipped: true });
+
+		expect(result).toMatchObject({ written: 1, skipped: 0 });
+		expect(loadMirrorIndex(root).skipped?.["/docs/bad.txt"]).toBeUndefined();
+		expect(loadMirrorIndex(root).entries["/docs/bad.txt"]).toBeDefined();
+	});
+
+	it("re-parses previously skipped sources once with retrySkipped, and only those", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		writeFileSync(join(source, "good.md"), "# Good\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		const goodParsed = (): number => parser.attempted.filter((path) => path === "/docs/good.md").length;
+		expect(parser.attempted).toEqual(["/docs/bad.txt", "/docs/good.md"]);
+
+		await refresh(parser, { retrySkipped: true });
+		expect(parser.attempted.filter((path) => path === "/docs/bad.txt")).toHaveLength(2);
+		expect(goodParsed()).toBe(1);
+
+		// The forced retry pass is one-shot: the next plain refresh honors the new record again.
+		await refresh(parser);
+		expect(parser.attempted.filter((path) => path === "/docs/bad.txt")).toHaveLength(2);
+	});
+
+	it("re-parses previously skipped sources with force", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+
+		await refresh(parser, { force: true });
+
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("retries a skipped source exactly once after the parser version changes", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(1);
+
+		parser.version = "2";
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+		expect(skipRecord("/docs/bad.txt")).toMatchObject({ parserVersion: "2" });
+
+		// Still failing at version 2: re-skipped, not retried again.
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("retries a skip record written before parser versions were stamped", async () => {
+		const file = join(source, "bad.txt");
+		writeFileSync(file, "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		const { parserVersion: _version, ...legacy } = skipRecord("/docs/bad.txt");
+		saveMirrorIndex(root, { version: 1, entries: {}, skipped: { "/docs/bad.txt": legacy } });
+
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+		expect(skipRecord("/docs/bad.txt").parserVersion).toBe("1");
+
+		await refresh(parser);
+		expect(parser.attempted).toHaveLength(2);
+	});
+
+	it("keeps unchanged detectMirrorStaleness output for a honored failed source", async () => {
+		writeFileSync(join(source, "bad.txt"), "broken\n");
+		const parser = new FailingParser();
+		await refresh(parser);
+		await refresh(parser);
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([parser]),
+		});
+
+		expect(diagnostics).toEqual([]);
+	});
+
+	describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("unreadable sources", () => {
+		it("does not read an unreadable source again while it is unchanged", async () => {
+			const file = join(source, "locked.txt");
+			writeFileSync(file, "secret\n");
+			chmodSync(file, 0o000);
+			const parser = new FailingParser();
+			parser.failing = false;
+			try {
+				const first = await refresh(parser);
+				expect(first.diagnostics.map((d) => d.code)).toEqual(["source-unreadable"]);
+				expect(skipRecord("/docs/locked.txt")).toMatchObject({ reason: "source-unreadable" });
+
+				// Readable again but unchanged since the failure (chmod does not touch mtime/size): honored.
+				chmodSync(file, 0o644);
+				const second = await refresh(parser);
+				expect(second).toMatchObject({ written: 0, skipped: 1 });
+				expect(second.diagnostics.map((d) => d.code)).toEqual(["source-unreadable"]);
+				expect(JSON.stringify(second.diagnostics)).not.toContain(root);
+
+				const third = await refresh(parser, { retrySkipped: true });
+				expect(third).toMatchObject({ written: 1, skipped: 0 });
+				expect(loadMirrorIndex(root).skipped?.["/docs/locked.txt"]).toBeUndefined();
+			} finally {
+				chmodSync(file, 0o644);
+			}
+		});
+
+		it("still reports an unreadable source as stale, as before skip records existed for it", async () => {
+			const file = join(source, "locked.txt");
+			writeFileSync(file, "secret\n");
+			chmodSync(file, 0o000);
+			const parser = new FailingParser();
+			try {
+				await refresh(parser);
+				const diagnostics = await detectMirrorStaleness({
+					root,
+					searchPaths: [source],
+					registry: new ParserRegistry([parser]),
+				});
+				expect(diagnostics).toHaveLength(1);
+				expect(diagnostics[0]).toMatchObject({ code: "stale-index", reason: "source-added" });
+			} finally {
+				chmodSync(file, 0o644);
+			}
+		});
+	});
+});
+
+describe("syncParsedMirrors: isolation, abort and progress", () => {
+	it("turns a parse past fileTimeoutMs into one parser-failed skip and finishes the rest of the corpus", async () => {
+		// A kordoc stub cannot cross the worker boundary, so this exercises the real default registry
+		// with a worker entry that spins on `spin.bin`-style names is covered in test/parser; here a
+		// real deadline of 1ms makes any worker parse of a real document time out deterministically.
+		writeFileSync(join(source, "slow.docx"), await createDocxFixture("slow"));
+		writeFileSync(join(source, "plain.txt"), "Plain survives\n");
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], parserOptions: { fileTimeoutMs: 1 } });
+		const index = loadMirrorIndex(root);
+
+		expect(result).toMatchObject({ scanned: 2, written: 1, skipped: 1 });
+		expect(result.diagnostics.filter((d) => d.code === "parser-failed")).toEqual([
+			expect.objectContaining({ source: "/docs/slow.docx", severity: "warning" }),
+		]);
+		expect(result.diagnostics.find((d) => d.code === "parser-failed")?.message).toContain("1ms");
+		expect(index.skipped?.["/docs/slow.docx"]?.reason).toBe("parser-failed");
+		expect(index.entries["/docs/plain.txt"]).toBeDefined();
+	});
+
+	it("parses documents through the isolated worker by default", async () => {
+		writeFileSync(join(source, "doc.docx"), await createDocxFixture("Worker default marker"));
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source] });
+		const outputPath = requireValue(loadMirrorIndex(root).entries["/docs/doc.docx"]?.outputPath, "docx output");
+
+		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0 });
+		expect(readFileSync(outputPath, "utf8")).toContain("Worker default marker");
+	});
+
+	it("rejects a non-positive fileTimeoutMs or maxHeapMb", async () => {
+		await expect(
+			syncParsedMirrors({ root, searchPaths: [source], parserOptions: { fileTimeoutMs: 0 } }),
+		).rejects.toThrow(/fileTimeoutMs/);
+		await expect(
+			syncParsedMirrors({ root, searchPaths: [source], parserOptions: { maxHeapMb: -1 } }),
+		).rejects.toThrow(/maxHeapMb/);
+	});
+
+	it("reports advancing processed/total progress during the parse phase", async () => {
+		for (const name of ["a", "b", "c"]) writeFileSync(join(source, `${name}.txt`), `${name}\n`);
+		const events: { processed: number; total: number; currentVirtualPath?: string }[] = [];
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			onProgress: (progress) => events.push({ ...progress }),
+		});
+
+		expect(events.every((event) => event.total === 3)).toBe(true);
+		expect(events.map((event) => event.processed)).toEqual([0, 1, 2, 3]);
+		expect(events.slice(0, 3).map((event) => event.currentVirtualPath)).toEqual([
+			"/docs/a.txt",
+			"/docs/b.txt",
+			"/docs/c.txt",
+		]);
+		expect(events[3]?.currentVirtualPath).toBeUndefined();
+	});
+
+	it("counts skipped, unchanged and excluded files as processed", async () => {
+		writeFileSync(join(source, "a.txt"), "a\n");
+		writeFileSync(join(source, "b.txt"), "b\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const events: number[] = [];
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set([join(source, "a.txt")]),
+			onProgress: (progress) => events.push(progress.processed),
+		});
+
+		expect(events).toEqual([0, 1, 2]);
+	});
+
+	it("stops between files when the signal aborts, keeps finished work checkpointed, and rethrows the reason", async () => {
+		for (const name of ["a", "b", "c"]) writeFileSync(join(source, `${name}.txt`), `${name}\n`);
+		const controller = new AbortController();
+		const reason = new Error("host cancelled");
+
+		const run = syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			signal: controller.signal,
+			onProgress: (progress) => {
+				if (progress.processed === 1) controller.abort(reason);
+			},
+		});
+
+		await expect(run).rejects.toBe(reason);
+		const index = loadMirrorIndex(root);
+		expect(Object.keys(index.entries)).toEqual(["/docs/a.txt"]);
+		expect(existsSync(requireValue(index.entries["/docs/a.txt"]?.outputPath, "a output"))).toBe(true);
+	});
+
+	it("rejects without touching the mirror when the signal is already aborted", async () => {
+		writeFileSync(join(source, "a.txt"), "a\n");
+		await expect(
+			syncParsedMirrors({
+				root,
+				searchPaths: [source],
+				registry: createDefaultParserRegistry(),
+				signal: AbortSignal.abort(),
+			}),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(existsSync(parsedMirrorIndexPath(root))).toBe(false);
+	});
+
+	it("kills an in-flight isolated parse when the signal aborts", async () => {
+		writeFileSync(join(source, "doc.docx"), await createDocxFixture("never finishes"));
+		const controller = new AbortController();
+		// Abort as soon as the file is announced, i.e. while its parse starts.
+		const run = syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			signal: controller.signal,
+			onProgress: (progress) => {
+				if (progress.currentVirtualPath === "/docs/doc.docx") queueMicrotask(() => controller.abort());
+			},
+		});
+		await expect(run).rejects.toMatchObject({ name: "AbortError" });
+		expect(loadMirrorIndex(root).entries["/docs/doc.docx"]).toBeUndefined();
+	});
+});
+
+const canChmod = process.platform !== "win32" && process.getuid?.() !== 0;
+
+function writeFiles(directory: string, count: number): void {
+	mkdirSync(directory, { recursive: true });
+	for (let index = 0; index < count; index += 1) {
+		writeFileSync(join(directory, `f${String(index).padStart(3, "0")}.txt`), `File ${index}\n`);
+	}
+}
+
+function diagnosticsWith(result: ParsedMirrorSyncResult, code: string): ParsedMirrorSyncResult["diagnostics"] {
+	return result.diagnostics.filter((diagnostic) => diagnostic.code === code);
+}
+
+describe("syncParsedMirrors search-root availability", () => {
+	async function indexOnce(searchPaths: string[] = [source]) {
+		return syncParsedMirrors({ root, searchPaths, registry: createDefaultParserRegistry() });
+	}
+
+	it("keeps every mirror when a previously populated root is emptied", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		writeFileSync(join(source, "b.txt"), "Beta\n");
+		await indexOnce();
+		const before = loadMirrorIndex(root);
+
+		unlinkSync(join(source, "a.txt"));
+		unlinkSync(join(source, "b.txt"));
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+		const unavailable = diagnosticsWith(result, "search-root-unavailable");
+		expect(unavailable).toHaveLength(1);
+		expect(unavailable[0]).toMatchObject({ severity: "warning", source: "/docs", reason: "empty" });
+		expect(JSON.stringify(unavailable)).not.toContain(root);
+		const after = loadMirrorIndex(root);
+		expect(Object.keys(after.entries).sort()).toEqual(["/docs/a.txt", "/docs/b.txt"]);
+		for (const entry of Object.values(before.entries)) expect(existsSync(entry.outputPath)).toBe(true);
+	});
+
+	it("keeps every mirror when the root directory disappeared", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+
+		rmSync(source, { recursive: true, force: true });
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "search-root-unavailable")[0]).toMatchObject({
+			severity: "warning",
+			source: "/docs",
+			reason: "gone",
+		});
+		expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+	});
+
+	it("keeps every mirror when the root path is no longer a directory", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+
+		rmSync(source, { recursive: true, force: true });
+		writeFileSync(source, "now a file\n");
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "search-root-unavailable")[0]).toMatchObject({ reason: "not-a-directory" });
+		expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+	});
+
+	it.skipIf(!canChmod)("keeps every mirror when the root cannot be listed (chmod 000 and 111)", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+
+		try {
+			for (const mode of [0o000, 0o111]) {
+				chmodSync(source, mode);
+				const result = await indexOnce();
+				expect(result.deleted).toBe(0);
+				expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+				expect(diagnosticsWith(result, "search-root-unavailable")[0]).toMatchObject({
+					severity: "warning",
+					source: "/docs",
+					reason: "unreadable",
+				});
+				expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+			}
+		} finally {
+			chmodSync(source, 0o755);
+		}
+	});
+
+	it("still removes genuinely stale mirrors in healthy roots while an unavailable root keeps its own", async () => {
+		const other = join(root, "other");
+		mkdirSync(other, { recursive: true });
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		writeFileSync(join(other, "x.txt"), "Ex\n");
+		writeFileSync(join(other, "y.txt"), "Why\n");
+		await indexOnce([source, other]);
+
+		unlinkSync(join(source, "a.txt"));
+		unlinkSync(join(other, "x.txt"));
+		unlinkSync(join(other, "y.txt"));
+		writeFileSync(join(source, "b.txt"), "Beta\n");
+		const result = await indexOnce([source, other]);
+
+		expect(result.deleted).toBe(1);
+		expect(diagnosticsWith(result, "deleted-mirror").map((d) => d.source)).toEqual(["/docs/a.txt"]);
+		expect(diagnosticsWith(result, "search-root-unavailable").map((d) => d.source)).toEqual(["/other"]);
+		expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual([
+			"/docs/b.txt",
+			"/other/x.txt",
+			"/other/y.txt",
+		]);
+	});
+
+	it("does not warn about a root that was never populated", async () => {
+		const result = await indexOnce();
+
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("indexes the root again after it comes back and deletes nothing it still has", async () => {
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		await indexOnce();
+		unlinkSync(join(source, "a.txt"));
+		await indexOnce();
+
+		writeFileSync(join(source, "a.txt"), "Alpha\n");
+		const result = await indexOnce();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "search-root-unavailable")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toEqual(["/docs/a.txt"]);
+	});
+});
+
+describe("syncParsedMirrors deletion-ratio safety valve", () => {
+	async function sync(extra: Partial<ParsedMirrorSyncOptions> = {}) {
+		return syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry(), ...extra });
+	}
+
+	function removeFirst(count: number): void {
+		for (let index = 0; index < count; index += 1) {
+			unlinkSync(join(source, `f${String(index).padStart(3, "0")}.txt`));
+		}
+	}
+
+	it("refuses to delete more than maxDeleteRatio above the 100-file floor", async () => {
+		writeFiles(source, 150);
+		await sync();
+
+		removeFirst(120);
+		const result = await sync();
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+		const suppressed = diagnosticsWith(result, "mass-delete-suppressed");
+		expect(suppressed).toHaveLength(1);
+		expect(suppressed[0]?.severity).toBe("warning");
+		expect(suppressed[0]?.message).toContain("120");
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(150);
+		for (const entry of Object.values(loadMirrorIndex(root).entries)) expect(existsSync(entry.outputPath)).toBe(true);
+	});
+
+	it("keeps suppressing on the next refresh until force is set, then deletes", async () => {
+		writeFiles(source, 150);
+		await sync();
+		removeFirst(120);
+		await sync();
+
+		const forced = await sync({ force: true });
+
+		expect(forced.deleted).toBe(120);
+		expect(diagnosticsWith(forced, "mass-delete-suppressed")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(30);
+	});
+
+	it("deletes at or below the ratio", async () => {
+		writeFiles(source, 150);
+		await sync();
+
+		removeFirst(45);
+		const result = await sync();
+
+		expect(result.deleted).toBe(45);
+		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(105);
+	});
+
+	it("honors a custom maxDeleteRatio", async () => {
+		writeFiles(source, 150);
+		await sync();
+
+		removeFirst(120);
+		const result = await sync({ maxDeleteRatio: 0.9 });
+
+		expect(result.deleted).toBe(120);
+		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
+	});
+
+	it("never suppresses deletions at or below the 100-file floor", async () => {
+		writeFiles(source, 100);
+		await sync();
+
+		removeFirst(99);
+		const result = await sync();
+
+		expect(result.deleted).toBe(99);
+		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
+	});
+});
+
+describe("syncParsedMirrors walk hardening", () => {
+	it("reports walk-truncated and keeps unseen mirrors when maxScannedEntries is hit", async () => {
+		writeFiles(source, 20);
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxScannedEntries: 5,
+		});
+
+		expect(result.scanned).toBeLessThanOrEqual(5);
+		expect(result.deleted).toBe(0);
+		const truncated = diagnosticsWith(result, "walk-truncated");
+		expect(truncated).toHaveLength(1);
+		expect(truncated[0]).toMatchObject({ severity: "warning", source: "/docs", reason: "max-entries" });
+		expect(JSON.stringify(truncated)).not.toContain(root);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(20);
+	});
+
+	it("reports walk-truncated and keeps deeper mirrors when maxDepth is hit", async () => {
+		const deep = join(source, "a", "b", "c");
+		mkdirSync(deep, { recursive: true });
+		writeFileSync(join(source, "top.txt"), "Top\n");
+		writeFileSync(join(source, "a", "mid.txt"), "Mid\n");
+		writeFileSync(join(deep, "deep.txt"), "Deep\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxDepth: 2,
+		});
+
+		expect(result.deleted).toBe(0);
+		expect(diagnosticsWith(result, "walk-truncated")[0]).toMatchObject({
+			severity: "warning",
+			source: "/docs",
+			reason: "max-depth",
+		});
+		expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual([
+			"/docs/a/b/c/deep.txt",
+			"/docs/a/mid.txt",
+			"/docs/top.txt",
+		]);
+	});
+
+	it("does not report truncation for a tree within the limits", async () => {
+		writeFiles(source, 3);
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxScannedEntries: 3,
+			maxDepth: 1,
+		});
+
+		expect(result.diagnostics).toEqual([]);
+		expect(result.scanned).toBe(3);
+	});
+
+	it.skipIf(!canChmod)("reports directory-unreadable for one subdirectory while siblings still index", async () => {
+		const locked = join(source, "locked");
+		const open = join(source, "open");
+		mkdirSync(locked, { recursive: true });
+		mkdirSync(open, { recursive: true });
+		writeFileSync(join(locked, "secret.txt"), "Secret\n");
+		writeFileSync(join(open, "one.txt"), "One\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		writeFileSync(join(open, "two.txt"), "Two\n");
+		try {
+			chmodSync(locked, 0o000);
+			const result = await syncParsedMirrors({
+				root,
+				searchPaths: [source],
+				registry: createDefaultParserRegistry(),
+			});
+
+			expect(result.deleted).toBe(0);
+			expect(diagnosticsWith(result, "deleted-mirror")).toEqual([]);
+			const unreadable = diagnosticsWith(result, "directory-unreadable");
+			expect(unreadable).toHaveLength(1);
+			expect(unreadable[0]).toMatchObject({ severity: "warning", source: "/docs/locked" });
+			expect(JSON.stringify(unreadable)).not.toContain(root);
+			expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual([
+				"/docs/locked/secret.txt",
+				"/docs/open/one.txt",
+				"/docs/open/two.txt",
+			]);
+		} finally {
+			chmodSync(locked, 0o755);
+		}
 	});
 });

@@ -63,9 +63,6 @@ License: Apache-2.0
 typebox@1.3.37
 License: MIT
 
-yaml@2.9.1
-License: ISC
-
 Embedding runtime and model notices:
 licenses/llama.cpp-MIT.txt
 licenses/qwen3-embedding-notice.txt

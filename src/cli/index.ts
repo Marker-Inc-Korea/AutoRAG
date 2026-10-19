@@ -19,6 +19,7 @@ const BOOLEAN_FLAGS = new Set([
 	"immediate",
 	"skip-probes",
 	"full",
+	"retry-failed",
 	"strict",
 	"refresh",
 	"available",
@@ -26,6 +27,7 @@ const BOOLEAN_FLAGS = new Set([
 const VALUE_FLAGS = new Set([
 	"config",
 	"search-paths",
+	"exclude",
 	"languages",
 	"workspace",
 	"memory-path",
@@ -93,6 +95,7 @@ export type { CommandName };
 interface ParsedArgs {
 	positionals: string[];
 	flags: Record<string, string | boolean>;
+	repeatedFlags?: Readonly<Record<string, readonly string[]>>;
 }
 
 const USAGE = `autorag - self-evolving librarian CLI
@@ -114,7 +117,7 @@ Commands:
   health               Check model/provider auth and completion access (no index check)
   lite init|refresh|watch|status|index|duplicates|health
                        Model-free setup, indexing, status, and datasource lifecycle
-                       (lite refresh: --full --force --method; watch: --once)
+                       (lite refresh: --full --force --retry-failed --method; watch: --once)
   lite retrieve <query>
                        Retrieve documents without model curation
                        (--top-k N  --scope SCOPE  --json  --debug)
@@ -166,6 +169,7 @@ Run: autorag <command> --help   for command-specific usage.
 export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string } {
 	const positionals: string[] = [];
 	const flags: Record<string, string | boolean> = {};
+	const repeatedFlags: Record<string, string[]> = {};
 	for (let i = 0; i < argv.length; i++) {
 		const token = argv[i];
 		if (token === "-h") {
@@ -186,22 +190,26 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 		if (!BOOLEAN_FLAGS.has(key) && !VALUE_FLAGS.has(key)) {
 			return { error: `Unknown flag: --${key}` };
 		}
-		if (eq !== -1) {
-			flags[key] = body.slice(eq + 1);
-			continue;
-		}
-		if (BOOLEAN_FLAGS.has(key)) {
+		if (eq === -1 && BOOLEAN_FLAGS.has(key)) {
 			flags[key] = true;
 			continue;
 		}
-		const next = argv[i + 1];
-		if (next === undefined || next.startsWith("--")) {
+		const value = eq === -1 ? argv[++i] : body.slice(eq + 1);
+		if (value === undefined || (eq === -1 && value.startsWith("--"))) {
 			return { error: `Flag --${key} requires a value` };
 		}
-		flags[key] = next;
-		i++;
+		if (key === "exclude") {
+			if (value.trim().length === 0) return { error: "Flag --exclude requires a non-empty path" };
+			repeatedFlags[key] ??= [];
+			repeatedFlags[key].push(value);
+		}
+		flags[key] = value;
 	}
-	return { positionals, flags };
+	return {
+		positionals,
+		flags,
+		...(Object.keys(repeatedFlags).length > 0 ? { repeatedFlags } : {}),
+	};
 }
 
 function promptYesNo(question: string): Promise<boolean> {
@@ -326,6 +334,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	const ctx: CommandContext = {
 		positionals: positionals.slice(1),
 		flags,
+		...(parsed.repeatedFlags === undefined ? {} : { repeatedFlags: parsed.repeatedFlags }),
 		json,
 		debug,
 		cwd: process.cwd(),

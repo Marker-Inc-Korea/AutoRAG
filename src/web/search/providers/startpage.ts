@@ -44,8 +44,17 @@ function normalizeText(value: string | null | undefined): string {
 	return normalizeSearchText(value) ?? "";
 }
 
+/**
+ * Anubis proof-of-work wall: the interstitial embeds its parameters in
+ * `<script id="anubis_challenge">` / `<script id="anubis_version">` and
+ * renders no results. Matching the element id keeps result pages that merely
+ * mention the word from being misread as a wall.
+ */
+const ANUBIS_CHALLENGE_PATTERN = /<script\b[^>]*\bid\s*=\s*["']anubis_(?:challenge|version)["']/i;
+
 function isChallengeResponse(page: LoadedHtmlPage): boolean {
 	if (/\/(?:errors|captcha)\//.test(page.url) || page.url.includes("/sp/captcha")) return true;
+	if (ANUBIS_CHALLENGE_PATTERN.test(page.html)) return true;
 	return page.html.includes("component---src-pages-captcha") || page.html.includes("/sp/captcha");
 }
 
@@ -169,7 +178,7 @@ async function callStartpageHtml(params: SearchParams): Promise<string> {
 	if (isChallengeResponse(page)) {
 		throw new SearchProviderError(
 			"startpage",
-			"Startpage blocked the request with a CAPTCHA challenge. Startpage rate-limits automated searches from datacenter/shared-egress IPs; try another provider such as DuckDuckGo or Mojeek, or retry later.",
+			"Startpage blocked the request with a bot challenge (CAPTCHA or Anubis proof-of-work). Startpage rate-limits automated searches from datacenter/shared-egress IPs; try another provider such as DuckDuckGo or Mojeek, or retry later.",
 			429,
 		);
 	}

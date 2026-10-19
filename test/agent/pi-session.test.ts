@@ -104,6 +104,7 @@ async function tuiAgent(
 		agent,
 		registration,
 		session: hosted.runtime.session,
+		runtime: hosted.runtime,
 		/** Feeds one terminal key sequence through the bound listeners, as the TUI does before the editor sees it. */
 		pressKey: (data: string): boolean => [...keyListeners].some((listener) => listener(data)?.consume === true),
 		dispose: async () => {
@@ -204,6 +205,90 @@ function heldStep(step: FauxResponseStep) {
 	return { held, entered, release: () => release() };
 }
 
+/** A datasource skill whose only retrieval method is `method`. */
+function datasourceSkill(datasourceId: string, method: RetrievalMethod): DatasourceSkill {
+	return {
+		describe: () => ({
+			name: datasourceId,
+			type: "chat",
+			description: `${datasourceId} test datasource`,
+			capabilities: ["keyword"],
+			status: "active",
+			datasourceId,
+			tags: [datasourceId],
+		}),
+		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
+		skillManifest: () => ({
+			name: `datasource-${datasourceId}`,
+			description: `Search ${datasourceId}.`,
+			content: `# ${datasourceId}`,
+		}),
+		index: async () => ({
+			ok: true,
+			instanceId: "default",
+			skill: datasourceId,
+			chunkCount: 0,
+			indexedAt: 1,
+			diagnostics: [],
+		}),
+		retrievalMethods: () => [method],
+		describeSources: () => [],
+	};
+}
+
+/** A datasource whose n-th search returns the n-th scripted batch of chunks (the last batch repeats). */
+function scriptedDatasource(datasourceId: string, batches: readonly (readonly RetrievalChunk[])[]) {
+	let searches = 0;
+	const method: RetrievalMethod = {
+		describe: () => ({
+			name: `${datasourceId}.keyword`,
+			type: "bm25",
+			description: `${datasourceId} test method`,
+			status: "active",
+			capabilities: ["keyword"],
+			datasourceId,
+		}),
+		async retrieve(): Promise<RetrievalResult[]> {
+			const batch = batches[Math.min(searches++, batches.length - 1)] ?? [];
+			return batch.map((chunk, index) => ({
+				id: `${datasourceId}:${searches}:${index}`,
+				source: chunk.source,
+				content: chunk.content,
+				score: 1,
+				metadata: {},
+			}));
+		},
+	};
+	return datasourceSkill(datasourceId, method);
+}
+
+interface RetrievalChunk {
+	readonly source: string;
+	readonly content: string;
+}
+
+/** The user message the model is about to answer, exactly as it reached the model. */
+function lastUserText(messages: readonly { role: string; content: unknown }[]): string {
+	const last = [...messages].reverse().find((message) => message.role === "user");
+	return last === undefined ? "" : textOf(last.content as string | readonly { type: string; text?: string }[]);
+}
+
+/**
+ * A faux step answering `answer(ids)`, where `ids` are the evidence ids the tool results in the
+ * transcript printed so far; the user message it answers is recorded in `seen`.
+ */
+function citingStep(answer: (ids: readonly string[]) => string, seen: string[] = []): FauxResponseStep {
+	return (context) => {
+		seen.push(lastUserText(context.messages));
+		const ids = context.messages.flatMap((message) =>
+			message.role === "toolResult"
+				? [...textOf(message.content).matchAll(/\[(e\d+)\]/gu)].map((match) => match[1] as string)
+				: [],
+		);
+		return fauxAssistantMessage(answer(ids), { stopReason: "stop" });
+	};
+}
+
 /** A datasource whose retrieval stays in flight until released or aborted through its signal. */
 function slowDatasource(datasourceId: string) {
 	let markEntered = (): void => {};
@@ -237,33 +322,7 @@ function slowDatasource(datasourceId: string) {
 			return [];
 		},
 	};
-	const skill: DatasourceSkill = {
-		describe: () => ({
-			name: datasourceId,
-			type: "chat",
-			description: `${datasourceId} test datasource`,
-			capabilities: ["keyword"],
-			status: "active",
-			datasourceId,
-			tags: [datasourceId],
-		}),
-		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
-		skillManifest: () => ({
-			name: `datasource-${datasourceId}`,
-			description: `Search ${datasourceId}.`,
-			content: `# ${datasourceId}`,
-		}),
-		index: async () => ({
-			ok: true,
-			instanceId: "default",
-			skill: datasourceId,
-			chunkCount: 0,
-			indexedAt: 1,
-			diagnostics: [],
-		}),
-		retrievalMethods: () => [method],
-		describeSources: () => [],
-	};
+	const skill = datasourceSkill(datasourceId, method);
 	return { skill, entered, aborted: () => aborted, release: () => release() };
 }
 
@@ -706,37 +765,30 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
-	it("verifies a steered direct question without the previous query's answer as its draft", async () => {
-		// A steer typed while Jev routes a direct question skips the direct
-		// prompt. The bound session still ends on the previous query's answer,
-		// which must never be presented as this question's first draft.
-		const verificationPrompts: string[] = [];
-		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID, 2);
-		const tui = await tuiAgent(
-			[
-				fauxAssistantMessage("FIRST QUERY ANSWER.", { stopReason: "stop" }),
-				(context) => {
-					for (const message of context.messages) {
-						if (message.role === "user" && textOf(message.content).startsWith("Original query:"))
-							verificationPrompts.push(textOf(message.content));
-					}
-					return fauxAssistantMessage("Leonardo da Vinci.", { stopReason: "stop" });
-				},
-			],
-			routing.backend,
+	it("steers a follow-up turn like the first query: the steer reaches the model inside the same turn", async () => {
+		const seen: string[] = [];
+		const held = heldStep(
+			fauxAssistantMessage([fauxToolCall("search_custom", { query: "mona lisa" })], { stopReason: "toolUse" }),
 		);
+		const tui = await tuiAgent([
+			fauxAssistantMessage("FIRST QUERY ANSWER.", { stopReason: "stop" }),
+			held.held,
+			seeingStep("Leonardo.", seen),
+		]);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await tui.agent.waitForIdle();
 			await tui.session.prompt("Who painted the Mona Lisa?", { source: "interactive" });
-			await routing.entered;
-			await tui.session.prompt("Answer in one name.", { source: "interactive" });
-			routing.release();
+			await held.entered;
+			await tui.session.prompt("Answer in one name.", { source: "interactive", streamingBehavior: "steer" });
+			held.release();
 			await tui.agent.waitForIdle();
 
-			expect(verificationPrompts).toHaveLength(1);
-			expect(verificationPrompts[0]).toContain("Original query: Who painted the Mona Lisa?");
-			expect(verificationPrompts[0]).not.toContain("FIRST QUERY ANSWER");
+			expect(seen[0]).toContain("Answer in one name.");
+			const answers = tui.session.messages.flatMap((message) =>
+				message.role === "assistant" && message.stopReason === "stop" ? [textOf(message.content)] : [],
+			);
+			expect(answers).toEqual(["FIRST QUERY ANSWER.", "Leonardo."]);
 		} finally {
 			await tui.dispose();
 		}
@@ -839,7 +891,7 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
-	it("registers the hosted autorag provider on the session model runtime", async () => {
+	it("registers the hosted dazzi provider on the session model runtime", async () => {
 		const registration = registerFauxProvider({ api: `faux-${Date.now()}`, models: [{ id: "pi-provider-test" }] });
 		try {
 			const session = await createAutoRAGPiSession({
@@ -849,13 +901,197 @@ describe("AutoRAG pi coding-agent host", () => {
 				getSystemPrompt: () => "AutoRAG system prompt",
 				customTools: [],
 			});
-			const provider = session.session.modelRuntime.getProvider("autorag");
-			expect(provider?.name).toBe("AutoRAG");
+			const provider = session.session.modelRuntime.getProvider("dazzi");
+			expect(provider?.name).toBe("Dazzi Models");
 			expect(provider?.baseUrl).toMatch(/\/v1$/);
-			expect(provider?.auth.oauth?.name).toBe("AutoRAG");
+			expect(provider?.auth.oauth?.name).toBe("Dazzi Models");
 			session.session.dispose();
 		} finally {
 			registration.unregister();
 		}
+	});
+
+	it("keeps the provider's own name when an embedded model is registered under it", async () => {
+		const registration = registerFauxProvider({ api: `faux-${Date.now()}`, models: [{ id: "pi-provider-test" }] });
+		try {
+			const model = { ...registration.getModel(), provider: "dazzi", id: "not-in-catalog", name: "Some Model Name" };
+			const session = await createAutoRAGPiSession({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				model,
+				getSystemPrompt: () => "AutoRAG system prompt",
+				customTools: [],
+			});
+			const provider = session.session.modelRuntime.getProvider("dazzi");
+			expect(provider?.name).toBe("Dazzi Models");
+			expect(provider?.auth.oauth).toBeDefined();
+			session.session.dispose();
+		} finally {
+			registration.unregister();
+		}
+	});
+
+	describe("follow-up turns in one conversation", () => {
+		/** Counts Jev judge calls so a test can see whether a turn went through the gate. */
+		function countingJev(inner: JevBackend): { backend: JevBackend; calls: () => number } {
+			let calls = 0;
+			return {
+				backend: {
+					name: inner.name,
+					judge(request) {
+						calls += 1;
+						return inner.judge(request);
+					},
+				},
+				calls: () => calls,
+			};
+		}
+
+		it("answers the second query in the same session without the Jev gate or a second search pipeline", async () => {
+			const seen: string[] = [];
+			const jev = countingJev(jevRoute("direct"));
+			const tui = await tuiAgent(
+				[seeingStep("Paris.", seen), seeingStep("About 2.1 million people.", seen)],
+				jev.backend,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+				const afterFirst = jev.calls();
+				expect(afterFirst).toBeGreaterThan(0);
+
+				await tui.session.prompt("How many people live there?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+
+				// No Jev routing, decomposition, datasource or follow-up check ran for turn two.
+				expect(jev.calls()).toBe(afterFirst);
+				// One model call: no baseline prefetch, fast answer, or verification pass.
+				expect(tui.registration.state.callCount).toBe(2);
+				// The follow-up reaches the model exactly as typed: no envelope around it.
+				expect(seen[1]).toBe("How many people live there?");
+				expect(seen[1]).not.toContain("Baseline retrieval evidence");
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("lets the model search by tool call on a follow-up", async () => {
+			const seen: string[] = [];
+			const jev = countingJev(jevRoute("direct"));
+			const tui = await tuiAgent(
+				[
+					seeingStep("Paris.", seen),
+					fauxAssistantMessage([fauxToolCall("search_custom", { query: "population of paris" })], {
+						stopReason: "toolUse",
+					}),
+					seeingStep("About 2.1 million.", seen),
+				],
+				jev.backend,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+				const afterFirst = jev.calls();
+
+				await tui.session.prompt("How many people live there?", { source: "interactive" });
+				await tui.agent.waitForIdle();
+
+				expect(jev.calls()).toBe(afterFirst);
+				expect(tui.registration.state.callCount).toBe(3);
+				expect(tui.session.messages.some((message) => message.role === "toolResult")).toBe(true);
+				const answers = tui.session.messages.flatMap((message) =>
+					message.role === "assistant" && message.stopReason === "stop" ? [textOf(message.content)] : [],
+				);
+				expect(answers).toEqual(["Paris.", "About 2.1 million."]);
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("resolves evidence ids from any earlier turn, however many searches came in between", async () => {
+			const seen: string[] = [];
+			const kakao = scriptedDatasource("kakao", [
+				[{ source: "/kakao/room/a.txt", content: "alpha fact" }],
+				[{ source: "/kakao/room/b.txt", content: "beta fact" }],
+			]);
+			const search = fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+				stopReason: "toolUse",
+			});
+			const tui = await tuiAgent(
+				[
+					search,
+					citingStep((ids) => `Alpha [${ids[0]}].`, seen),
+					search,
+					citingStep((ids) => `Beta [${ids[1]}].`, seen),
+					citingStep((ids) => `Alpha [${ids[0]}] and beta [${ids[1]}].`, seen),
+				],
+				jevRoute("direct"),
+				{ datasourceSkills: [kakao] },
+			);
+			try {
+				await tui.agent.searchDocuments("what is alpha?");
+				await tui.agent.searchDocuments("what is beta?");
+				const third = await tui.agent.searchDocuments("how do they relate?");
+
+				expect(seen.at(-1)).toBe("how do they relate?");
+				expect(third.results.map((result) => result.title)).toEqual(["a.txt", "b.txt"]);
+				expect(third.diagnostics?.some((diagnostic) => diagnostic.code === "citation-without-result")).toBe(false);
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("keeps earlier ids resolvable and never reissues one when the conversation is resumed in a new process", async () => {
+			const first = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `Alpha [${ids[0]}].`),
+				],
+				jevRoute("direct"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
+					],
+				},
+			);
+			let sessionFile: string | undefined;
+			try {
+				const answered = await first.agent.searchDocuments("what is alpha?");
+				expect(answered.results.map((result) => result.title)).toEqual(["a.txt"]);
+				sessionFile = first.session.sessionFile;
+			} finally {
+				await first.dispose();
+			}
+			if (sessionFile === undefined) throw new Error("expected a persisted pi session");
+
+			// A fresh agent, as after a restart: its ledger starts empty and counts from e1.
+			const resumed = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `Old [${ids[0]}], new [${ids[1]}].`),
+				],
+				jevRoute("direct"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
+					],
+				},
+			);
+			try {
+				await resumed.runtime.switchSession(sessionFile);
+				// What InteractiveMode does after switching sessions: rebind, which starts the new session.
+				await resumed.runtime.session.bindExtensions({ uiContext: noUi() });
+
+				const response = await resumed.agent.searchDocuments("and what about beta?");
+
+				expect(response.results.map((result) => result.title)).toEqual(["a.txt", "b.txt"]);
+			} finally {
+				await resumed.dispose();
+			}
+		});
 	});
 });

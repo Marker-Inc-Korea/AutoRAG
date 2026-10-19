@@ -192,6 +192,11 @@ Use `--force` only when incremental refresh does not clear it. For continuous
 freshness install an hourly `autorag watch --once` job (cron, launchd, systemd
 timer, or Task Scheduler).
 
+A file the parser failed on (corrupt PDF, encrypted HWP) or that was unreadable is not
+re-parsed on every refresh: it is skipped until its mtime, size or parser version changes.
+After fixing the cause (permissions, OCR setup), run `autorag refresh --retry-failed --json`
+to retry those files once without re-indexing healthy ones.
+
 ### Missing or wrong setup
 
 - `unknown-datasource-skill`: the config key is not a builtin template and has
@@ -216,6 +221,9 @@ timer, or Task Scheduler).
 | `stale-index` | Sources changed since last refresh | `autorag refresh --method parsed,minsync` |
 | `index-not-ready` | Index missing or never built | `autorag refresh --json` |
 | `minsync-sync-failed` | MinSync indexing failed; the message carries MinSync's own reason | Fix the reported cause, then `autorag refresh --method minsync` |
+| `minsync-file-skipped` | MinSync skipped one file (unreadable, unparsable, or rejected by the embedder) and kept its older chunks; retried on the next sync | Fix that file's permissions/content, then `autorag refresh --method minsync` |
+| `minsync-lock-held` | Another `minsync` run holds `.minsync/lock`, often an orphan left by a killed host; retryable | Wait for it to finish or stop that `minsync` process, then `autorag refresh --method minsync` |
+| `lexical-tokenizer-unavailable` | Warning: the BM25 tokenizer needs the Kiwi library and model, which were not found, so MinSync tokenizes on whitespace and `인증서를` does not match `인증서` | Install Kiwi (set `KIWI_LIBRARY_PATH` and `KIWI_MODEL_PATH`, or install under `~/.local/kiwi`), then `autorag refresh --method minsync` |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check cargo, retry refresh |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |

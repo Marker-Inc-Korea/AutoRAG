@@ -19,7 +19,7 @@ Use `autorag-setup` instead when the model-backed librarian must be configured.
   environment-variable names such as `tokenEnv` or `apiKeyEnv`.
 - Never move, rename, edit, or delete source documents. Lite commands write
   indexes only under the configured workspace `.autorag/` directory and
-  Jikji's per-source `.jikji/` caches.
+  Jikji's central store (`<OS data dir>/jikji/`).
 - Do not index system trees, app bundles, caches, credential stores,
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.
@@ -169,7 +169,7 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --jso
   are missing or broken, run a full refresh or return to setup rather than
   silently degrading to lexical-only search.
 - MinSync's default embedder is in-process native Qwen3 embeddings
-  (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.7): no
+  (`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.10): no
   embedder flags, no API key, and no external daemon (such as Ollama) are
   needed, and no corpus text leaves the machine. For gateway-profiled
   embeddings, prefetch with `autorag models prefetch --profile qwen3-embedding-0.6b`.

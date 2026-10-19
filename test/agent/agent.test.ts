@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
@@ -48,6 +48,7 @@ interface AgentInternals {
 		) => Promise<Array<{ role: string; content: Array<{ type: "text"; text: string }>; timestamp: number }>>;
 	};
 	tools: readonly AgentTool[];
+	createSearchSession: () => unknown;
 }
 
 function internals(agent: AutoRAGAgent): AgentInternals {
@@ -81,92 +82,177 @@ function judgedRecord(overrides: Partial<JudgedEvidenceRecord> = {}): JudgedEvid
 		...overrides,
 	};
 }
+describe("AutoRAGAgent run duration", () => {
+	it("lets a run outlast the former 10 minute search timeout without aborting it", async () => {
+		vi.useFakeTimers();
+		try {
+			let abortCalls = 0;
+			let promptStarted: () => void = () => undefined;
+			const started = new Promise<void>((resolve) => {
+				promptStarted = resolve;
+			});
+			let openGate: () => void = () => undefined;
+			const gate = new Promise<void>((resolve) => {
+				openGate = resolve;
+			});
+			const session = {
+				agent: { subscribe: () => () => undefined, state: { messages: [] } },
+				prompt: async () => {
+					promptStarted();
+					await gate;
+				},
+				abort: async () => {
+					abortCalls += 1;
+				},
+				dispose: () => undefined,
+			};
+			const agent = new AutoRAGAgent({
+				model: fakeModel(),
+				searchPaths: [FIXTURE_DIR],
+				memoryPath: join(tmpDir, "memory.json"),
+				jikji: false,
+				minSync: { autoInstall: false },
+			});
+			internals(agent).createSearchSession = () => session;
+
+			const search = agent.searchDocuments("long running query");
+			await started;
+			await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+			expect(abortCalls).toBe(0);
+
+			openGate();
+			const response = await search;
+			expect(abortCalls).toBe(0);
+			expect(response.diagnostics?.some((d) => d.code === "no-final-answer")).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
 
 describe("AutoRAGAgent", () => {
-	it("rejects a non-positive search timeout", () => {
-		expect(
-			() =>
-				new AutoRAGAgent({
-					searchPaths: [FIXTURE_DIR],
-					memoryPath: join(tmpDir, "memory.json"),
-					searchTimeoutMs: 0,
-				}),
-		).toThrow("searchTimeoutMs must be a positive finite number");
-	});
-
-	it("rejects a non-positive tool-call limit", () => {
-		expect(
-			() =>
-				new AutoRAGAgent({
-					searchPaths: [FIXTURE_DIR],
-					memoryPath: join(tmpDir, "memory.json"),
-					maxSearchToolCalls: 1.5,
-				}),
-		).toThrow("maxSearchToolCalls must be a positive integer");
-	});
-
-	it("aborts and rejects when a search exceeds its timeout", async () => {
-		let abortCalls = 0;
-		const session = {
-			agent: { subscribe: () => () => undefined, state: { messages: [] } },
-			prompt: async () => await new Promise<void>(() => undefined),
-			abort: async () => {
-				abortCalls += 1;
-			},
-			dispose: () => undefined,
-		};
-		const agent = new AutoRAGAgent({
-			model: fakeModel(),
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			searchTimeoutMs: 10,
-		});
-		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
-
-		const search = agent.searchDocuments("timeout query");
-		await expect(search).rejects.toThrow("search timed out after 10ms");
-		expect(abortCalls).toBe(1);
-	});
-
-	it("aborts a search after the configured retrieval tool-call limit", async () => {
-		let abortCalls = 0;
-		const session = {
-			agent: {
-				subscribe: (listener: (event: unknown) => void) => {
-					listener({
-						type: "tool_execution_end",
-						toolName: "semantic_search_local_docs",
-						result: { details: { method: "minsync" } },
-					});
-					return () => undefined;
+	describe("tool burst guard", () => {
+		function burstSession(events: readonly unknown[], onAbort: () => void) {
+			return {
+				agent: {
+					subscribe: (listener: (event: unknown) => void) => {
+						for (const event of events) listener(event);
+						return () => undefined;
+					},
+					state: { messages: [] },
 				},
-				state: { messages: [] },
-			},
-			prompt: async () => undefined,
-			abort: async () => {
-				abortCalls += 1;
-			},
-			dispose: () => undefined,
-		};
-		const agent = new AutoRAGAgent({
-			model: fakeModel(),
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			maxSearchToolCalls: 1,
-			jikji: false,
-			minSync: { autoInstall: false },
-		});
-		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
+				prompt: async () => undefined,
+				abort: async () => {
+					onAbort();
+				},
+				dispose: () => undefined,
+			};
+		}
 
-		const response = await agent.searchDocuments("cap query");
-		expect(response.results).toEqual([]);
-		expect(
-			response.diagnostics?.some(
-				(diagnostic) => diagnostic.code === "no-final-answer" && diagnostic.severity === "warning",
-			),
-		).toBe(true);
-		expect(response.retrievalTrace).toEqual([]);
-		expect(abortCalls).toBe(1);
+		function toolEnds(toolName: string, count: number): unknown[] {
+			return Array.from({ length: count }, (_, i) => ({
+				type: "tool_execution_end",
+				toolName,
+				toolCallId: `${toolName}-${i}`,
+				result: { details: {} },
+				isError: false,
+			}));
+		}
+
+		function burstAgent(toolCallBurstGuard: { maxCalls: number; windowMs: number } | false, session: unknown) {
+			const agent = new AutoRAGAgent({
+				model: fakeModel(),
+				searchPaths: [FIXTURE_DIR],
+				memoryPath: join(tmpDir, "memory.json"),
+				toolCallBurstGuard,
+				jikji: false,
+				minSync: { autoInstall: false },
+			});
+			internals(agent).createSearchSession = () => session;
+			return agent;
+		}
+
+		it("aborts the run when one tool is called maxCalls times inside the window", async () => {
+			let abortCalls = 0;
+			const agent = burstAgent(
+				{ maxCalls: 3, windowMs: 60_000 },
+				burstSession(toolEnds("bash", 3), () => {
+					abortCalls += 1;
+				}),
+			);
+
+			const response = await agent.searchDocuments("loop query");
+			expect(abortCalls).toBe(1);
+			expect(response.diagnostics).toContainEqual(
+				expect.objectContaining({ code: "tool-call-burst", severity: "warning" }),
+			);
+		});
+
+		it("does not abort below the burst threshold", async () => {
+			let abortCalls = 0;
+			const agent = burstAgent(
+				{ maxCalls: 3, windowMs: 60_000 },
+				burstSession(toolEnds("bash", 2), () => {
+					abortCalls += 1;
+				}),
+			);
+
+			const response = await agent.searchDocuments("fine query");
+			expect(abortCalls).toBe(0);
+			expect(response.diagnostics?.some((d) => d.code === "tool-call-burst")).toBe(false);
+		});
+
+		it("does not abort when the calls are spread over many different tools", async () => {
+			let abortCalls = 0;
+			const events = ["bash", "read", "grep", "find"].flatMap((name) => toolEnds(name, 2));
+			const agent = burstAgent(
+				{ maxCalls: 3, windowMs: 60_000 },
+				burstSession(events, () => {
+					abortCalls += 1;
+				}),
+			);
+
+			await agent.searchDocuments("many tools query");
+			expect(abortCalls).toBe(0);
+		});
+
+		it("never aborts when the guard is disabled", async () => {
+			let abortCalls = 0;
+			const agent = burstAgent(
+				false,
+				burstSession(toolEnds("bash", 500), () => {
+					abortCalls += 1;
+				}),
+			);
+
+			await agent.searchDocuments("disabled query");
+			expect(abortCalls).toBe(0);
+		});
+
+		it("rejects an invalid guard config at construction", () => {
+			expect(
+				() =>
+					new AutoRAGAgent({
+						searchPaths: [FIXTURE_DIR],
+						memoryPath: join(tmpDir, "memory.json"),
+						toolCallBurstGuard: { maxCalls: 0, windowMs: 1_000 },
+					}),
+			).toThrow("toolCallBurstGuard.maxCalls must be a positive integer");
+		});
+
+		it("re-arms for the next run", async () => {
+			let abortCalls = 0;
+			const agent = burstAgent(
+				{ maxCalls: 2, windowMs: 60_000 },
+				burstSession(toolEnds("bash", 2), () => {
+					abortCalls += 1;
+				}),
+			);
+
+			await agent.searchDocuments("first run");
+			await agent.searchDocuments("second run");
+			expect(abortCalls).toBe(2);
+		});
 	});
 
 	it("does not cap retrieval tools at three executions per source", async () => {
@@ -269,21 +355,10 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("search_custom");
 	});
 
-	it("includes manifest descriptions in system prompt when manifestDir provided", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			manifestDir: "test/fixtures/manifests",
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("codebase-vectors");
-	});
-
 	it("system prompt references provided tools", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["grep", "find", "read", "ls", "check_memory"],
 			memoryEntries: [],
-			manifests: [],
 		});
 		expect(prompt).toContain("grep");
 		expect(prompt).toContain("find");
@@ -295,7 +370,6 @@ describe("AutoRAGAgent", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["check_memory"],
 			memoryEntries: [],
-			manifests: [],
 		});
 		expect(prompt).toContain("bash");
 		expect(prompt).not.toContain("read_file");

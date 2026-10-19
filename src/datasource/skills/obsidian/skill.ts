@@ -5,6 +5,7 @@ import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
@@ -18,9 +19,9 @@ import { toQmdCollectionName } from "./paths.ts";
 import type { QmdEmbedResult, QmdEnsureResult, QmdOptions, QmdUpdateResult } from "./types.ts";
 
 export interface ObsidianSkillClient extends ObsidianSearchClient {
-	ensureCollection(): Promise<QmdEnsureResult>;
-	update(): Promise<QmdUpdateResult>;
-	embed(): Promise<QmdEmbedResult>;
+	ensureCollection(signal?: AbortSignal): Promise<QmdEnsureResult>;
+	update(signal?: AbortSignal): Promise<QmdUpdateResult>;
+	embed(signal?: AbortSignal): Promise<QmdEmbedResult>;
 }
 
 export interface ObsidianSkillOptions {
@@ -101,18 +102,18 @@ export class ObsidianSkill implements DatasourceSkill {
 		};
 	}
 
-	async index(): Promise<DatasourceIndexResult> {
+	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		try {
-			const ensure = await this.client.ensureCollection();
+			const ensure = await this.client.ensureCollection(options?.signal);
 			if (!ensure.ok) {
 				return this.fail(qmdFailureCode(ensure.reason), ensure);
 			}
-			const update = await this.client.update();
+			const update = await this.client.update(options?.signal);
 			if (!update.ok) {
 				return this.fail(qmdFailureCode(update.reason), update);
 			}
 			const diagnostics: DatasourceDiagnostic[] = [];
-			const embed = await this.client.embed();
+			const embed = await this.client.embed(options?.signal);
 			if (!embed.ok) {
 				diagnostics.push({
 					code: "datasource-index-failed",

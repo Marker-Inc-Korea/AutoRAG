@@ -43,4 +43,35 @@ describe("datasource skill factory", () => {
 		const gist = skills.find((skill) => skill.describe().name === "my-gists");
 		expect(gist?.describe().type).toBe("github-gist");
 	});
+
+	describe("github-gist semantic index", () => {
+		function gistMethodTypes(connector: Record<string, unknown>): string[] {
+			const { skills } = buildDatasourceSkills(
+				{ "my-gists": { type: "github-gist", connector: { tokenEnv: "GITHUB_GIST_TEST_UNSET", ...connector } } },
+				undefined,
+			);
+			return skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().type));
+		}
+
+		it("keeps the semantic method by default", () => {
+			expect(gistMethodTypes({})).toContain("vector");
+			expect(gistMethodTypes({})).toContain("hybrid");
+		});
+
+		it.each([
+			["connector.semantic: false", { semantic: false }],
+			["connector.semantic.enabled: false", { semantic: { enabled: false } }],
+		])("leaves only the lexical method with %s", (_label, connector) => {
+			expect(gistMethodTypes(connector)).not.toContain("vector");
+			expect(gistMethodTypes(connector)).not.toContain("hybrid");
+			expect(gistMethodTypes(connector)).toContain("bm25");
+		});
+
+		it("does not turn it off for semantic: true or an object that does not disable it", () => {
+			expect(gistMethodTypes({ semantic: true })).toContain("vector");
+			expect(gistMethodTypes({ semantic: { enabled: true } })).toContain("vector");
+			expect(gistMethodTypes({ semantic: true })).toContain("hybrid");
+			expect(gistMethodTypes({ semantic: { enabled: true } })).toContain("hybrid");
+		});
+	});
 });

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
 import {
+	configuredLexicalLanguage,
 	configuredMaxChunkSize,
 	configuredVectorDimension,
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
@@ -12,9 +13,11 @@ import {
 	rewriteEmbedderConfig,
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
+import { kiwiAvailable } from "./kiwi.ts";
+import { MINSYNC_LEXICAL_LANGUAGE, type MinSyncLexicalLanguage } from "./lexical-language.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
-import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncFileFailure, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
 export const MINSYNC_OLLAMA_MIGRATION_MESSAGE =
 	"This workspace uses the legacy 768-dimensional Ollama/TEI embedding path. Reindex explicitly, or pin an explicit Ollama/TEI embedder config before using the new default runtime.";
@@ -38,6 +41,12 @@ export interface MinSyncClientOptions {
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** `minsync sync` exits 3 with "another sync is in progress" while another run holds `.minsync/lock`. */
+const MINSYNC_LOCK_HELD_EXIT_CODE = 3;
+
+/** `minsync sync` exits 6 when it completed but skipped files it could not read, chunk, or embed (`partial: true`). */
+const MINSYNC_PARTIAL_SYNC_EXIT_CODE = 6;
 
 export class MinSyncQueryError extends Error {
 	readonly code: number | null;
@@ -171,7 +180,7 @@ export class MinSyncClient {
 		return previous === undefined || JSON.stringify(previous) !== JSON.stringify(identity);
 	}
 
-	async sync(force = false): Promise<MinSyncSyncResult> {
+	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		let effective: {
 			config: MinSyncEmbedderConfig;
@@ -226,15 +235,19 @@ export class MinSyncClient {
 		// never double as a process-wide kill timer: a full reindex legitimately
 		// runs for minutes or hours, and a small embedder timeout previously
 		// SIGTERM'd `minsync sync` mid-run. Spawn init, check, and sync without a
-		// process timeout so a long sync always runs to completion.
+		// process timeout so a long sync always runs to completion; only the
+		// caller's `signal` can stop them, and it takes the whole process tree.
+		const spawnOptions = signal === undefined ? {} : { signal };
+		const lexical = this.resolveLexicalLanguage();
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
-		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
+
 		if (!initialized) {
 			const initArgs = ["init", "--format", "json"];
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
-			const init = await this.spawn(initArgs);
+			initArgs.push("--language", lexical.language);
+			const init = await this.spawn(initArgs, spawnOptions);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
 					ok: false,
@@ -244,19 +257,80 @@ export class MinSyncClient {
 				};
 			}
 		}
-		const configuredChunkSize = configuredMaxChunkSize(this.workspacePath);
-		const configuredDimension = configuredVectorDimension(this.workspacePath);
+		// Read before the rewrite below: the rewrite changes what these report.
+		const chunkSizeChanged =
+			this.maxChunkSize !== undefined && configuredMaxChunkSize(this.workspacePath) !== this.maxChunkSize;
+		const dimensionChanged =
+			embedder.dimension !== undefined && configuredVectorDimension(this.workspacePath) !== embedder.dimension;
 		const configPath = minSyncConfigPath(this.workspacePath);
-		const shouldRewriteConfig =
-			this.embedder !== undefined || this.maxChunkSize !== undefined || effective.identity !== undefined;
-		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
-		const configRewritten =
-			shouldRewriteConfig &&
-			rewriteEmbedderConfig(this.workspacePath, embedder, { maxChunkSize: this.maxChunkSize });
+		const originalConfig = readConfigSnapshot(configPath);
+		const configRewritten = rewriteEmbedderConfig(this.workspacePath, embedder, {
+			maxChunkSize: this.maxChunkSize,
+			lexicalLanguage: lexical.language,
+		});
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
-		const check = await this.spawn(["check", "--format", "json"]);
+		try {
+			const result = await this.checkAndSync(
+				force || chunkSizeChanged || dimensionChanged,
+				signal,
+				effective,
+				restoreConfig,
+			);
+			return result.ok && lexical.fallback !== undefined ? { ...result, lexicalFallback: lexical.fallback } : result;
+		} catch (error) {
+			// An aborted run must not leave this run's embedder settings in the managed config.
+			restoreConfig();
+			throw error;
+		}
+	}
+
+	/**
+	 * The tokenizer to run this sync with: always {@link MINSYNC_LEXICAL_LANGUAGE}, which fails every sync when the
+	 * Kiwi native library is missing. A workspace that is new, or tokenized differently, then gets whitespace
+	 * tokenization instead and the sync reports `lexicalFallback`. An index already built with the multilingual
+	 * tokenizer is left alone: switching it would re-embed every chunk, and the probe can miss a library that the OS
+	 * loader finds on its own.
+	 */
+	private resolveLexicalLanguage(): {
+		readonly language: MinSyncLexicalLanguage;
+		readonly fallback?: { readonly requested: MinSyncLexicalLanguage; readonly used: MinSyncLexicalLanguage };
+	} {
+		const requested = MINSYNC_LEXICAL_LANGUAGE;
+		if (kiwiAvailable() || configuredLexicalLanguage(this.workspacePath) === requested)
+			return { language: requested };
+		return { language: "simple", fallback: { requested, used: "simple" } };
+	}
+
+	private lockHeldResult(stderr: string): MinSyncSyncResult {
+		return {
+			ok: false,
+			synced: 0,
+			workspacePath: this.workspacePath,
+			reason: "lock-held",
+			diagnostic: {
+				code: "minsync-lock-held",
+				message: stderr ? stderr.trim() : "Another MinSync sync holds the workspace lock.",
+				retryable: true,
+			},
+		};
+	}
+
+	private async checkAndSync(
+		forceFull: boolean,
+		signal: AbortSignal | undefined,
+		effective: { config: MinSyncEmbedderConfig; identity?: MinSyncEmbeddingIdentity },
+		restoreConfig: () => void,
+	): Promise<MinSyncSyncResult> {
+		const spawnOptions = signal === undefined ? {} : { signal };
+		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
+		const check = await this.spawn(["check", "--format", "json"], spawnOptions);
+		// MinSync takes the workspace lock for `check` as well as `sync`, so a held lock surfaces at either stage.
+		if (!check.ok && check.code === MINSYNC_LOCK_HELD_EXIT_CODE) {
+			restoreConfig();
+			return this.lockHeldResult(check.stderr);
+		}
 		if (!check.ok) {
 			restoreConfig();
 			return {
@@ -288,14 +362,18 @@ export class MinSyncClient {
 				},
 			};
 		}
-		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
-		const dimensionChanged = embedder.dimension !== undefined && configuredDimension !== embedder.dimension;
 		const identityChanged = effective.identity !== undefined && this.identityMismatch(effective.identity);
-		const fullReindex = force || chunkSizeChanged || dimensionChanged || identityChanged;
+		const fullReindex = forceFull || identityChanged;
 		const syncArgs =
 			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await this.spawn(syncArgs);
-		if (!result.ok) {
+		const result = await this.spawn(syncArgs, spawnOptions);
+		if (!result.ok && result.code === MINSYNC_LOCK_HELD_EXIT_CODE) {
+			restoreConfig();
+			return this.lockHeldResult(result.stderr);
+		}
+		const partial =
+			!result.ok && result.code === MINSYNC_PARTIAL_SYNC_EXIT_CODE ? readPartialSync(result.stdout) : undefined;
+		if (!result.ok && partial === undefined) {
 			restoreConfig();
 			return {
 				ok: false,
@@ -314,10 +392,12 @@ export class MinSyncClient {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
 		if (effective.identity) this.writeIdentity(effective.identity);
+		const filesFailed = partial?.filesFailed ?? [];
 		return {
 			ok: true,
 			synced: readSyncedCount(result.stdout),
 			workspacePath: this.workspacePath,
+			...(filesFailed.length > 0 ? { filesFailed } : {}),
 			...(identityChanged
 				? {
 						diagnostic: {
@@ -358,6 +438,19 @@ function readConfigSnapshot(configPath: string): string | undefined {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw error;
 	}
+}
+
+function readPartialSync(stdout: string): { readonly filesFailed: readonly MinSyncFileFailure[] } | undefined {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed) || parsed.partial !== true) return undefined;
+	const failures = Array.isArray(parsed.files_failed) ? parsed.files_failed : [];
+	return {
+		filesFailed: failures.filter(isRecord).map((failure) => ({
+			path: typeof failure.path === "string" ? failure.path : "(unknown)",
+			stage: typeof failure.stage === "string" ? failure.stage : "unknown",
+			error: typeof failure.error === "string" ? failure.error : "unknown error",
+		})),
+	};
 }
 
 function readSyncedCount(stdout: string): number {

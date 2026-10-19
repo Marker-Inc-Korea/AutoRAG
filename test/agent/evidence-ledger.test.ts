@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EvidenceLedger } from "../../src/agent/evidence-ledger.ts";
+import { EvidenceLedger, highestOrdinal, parseLedgerEntries } from "../../src/agent/evidence-ledger.ts";
 import { normalizeSessionEvidenceRef } from "../../src/memory/memory.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
 
@@ -144,6 +144,53 @@ describe("EvidenceLedger", () => {
 		const next = ledger.registerResult("tool", result("/z.txt", "z"));
 		expect(next).toBe("e2");
 		expect(ledger.lookup("e1", allowLocal)).toEqual([]);
+	});
+
+	it("restores persisted evidence under its original ids and keeps counting past them", () => {
+		const before = new EvidenceLedger();
+		before.registerResult("tool", result("/a.txt", "alpha"));
+		before.registerResult("tool", result("/b.txt", "beta"));
+		const saved = parseLedgerEntries(JSON.parse(JSON.stringify({ entries: before.takeUnsaved() })));
+
+		const after = new EvidenceLedger();
+		after.restore(saved);
+
+		expect(after.lookup("e2", allowLocal)[0]).toMatchObject({ source: "/b.txt", content: "beta" });
+		expect(after.registerResult("tool", result("/a.txt", "alpha"))).toBe("e1");
+		expect(after.registerResult("tool", result("/c.txt", "gamma"))).toBe("e3");
+	});
+
+	it("never reissues an id issued on another branch of the conversation", () => {
+		const ledger = new EvidenceLedger();
+		ledger.restore([], 7);
+
+		expect(ledger.registerResult("tool", result("/a.txt", "alpha"))).toBe("e8");
+		expect(ledger.lookup("e3", allowLocal)).toEqual([]);
+	});
+
+	it("hands out only what changed since the last save, including a new retriever on a known chunk", () => {
+		const ledger = new EvidenceLedger();
+		ledger.registerResult("tool", result("/a.txt", "alpha", { method: "bm25" }));
+		expect(ledger.takeUnsaved().map((entry) => entry.id)).toEqual(["e1"]);
+		expect(ledger.takeUnsaved()).toEqual([]);
+
+		ledger.registerResult("tool", result("/a.txt", "alpha", { method: "bm25" }));
+		expect(ledger.takeUnsaved()).toEqual([]);
+		ledger.registerResult("tool", result("/a.txt", "alpha", { method: "minsync" }));
+		const [changed] = ledger.takeUnsaved();
+		expect(changed).toMatchObject({ id: "e1", retrieverMix: ["bm25", "minsync"] });
+	});
+
+	it("skips persisted entries that are malformed instead of mis-resolving them", () => {
+		const good = new EvidenceLedger();
+		good.registerResult("tool", result("/a.txt", "alpha"));
+		const [entry] = good.takeUnsaved();
+
+		const parsed = parseLedgerEntries({ entries: [entry, { ...entry, id: "e0" }, { id: "e9" }, null, "e2"] });
+
+		expect(parsed).toEqual([entry]);
+		expect(highestOrdinal(parsed)).toBe(1);
+		expect(parseLedgerEntries("nonsense")).toEqual([]);
 	});
 
 	it("keeps the stable evidence id independent of what the model writes", () => {

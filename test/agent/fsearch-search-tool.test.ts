@@ -90,6 +90,19 @@ describe("fsearch_search tool", () => {
 		expect(text).toContain("[1] file /docs/a.txt");
 	});
 
+	it("preserves native truncation notes when exclusions leave an empty page", async () => {
+		const note = "The native candidate limit was reached; results may be incomplete. Narrow the query.";
+		const tool = createFSearchSearchTool({
+			async searchFsearch() {
+				return { ok: true, backend: "fsearch-cli", total: 1001, truncated: true, note, results: [] };
+			},
+		});
+		const result = await tool.execute("call-truncated", { query: "report" });
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain(note);
+		expect(result.details).toMatchObject({ resultCount: 0, sources: [] });
+	});
+
 	it("rejects an empty query without calling fsearch", async () => {
 		let called = false;
 		const tool = createFSearchSearchTool({
@@ -108,21 +121,19 @@ describe("system prompt FSearch guidance", () => {
 	it("documents FSearch only when the tool is available", () => {
 		const withTool = buildSystemPrompt({
 			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME],
-			manifests: [],
 		});
 		expect(withTool).toContain(`- **${FSEARCH_SEARCH_TOOL_NAME}**:`);
 		expect(withTool).toContain("## FSearch File-Name Search");
 		expect(withTool).toContain("ext:");
 		expect(withTool).not.toContain(`- **${FSEARCH_SEARCH_TOOL_NAME}**: caller-provided tool`);
 
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash"], manifests: [] });
+		const withoutTool = buildSystemPrompt({ toolNames: ["bash"] });
 		expect(withoutTool).not.toContain("FSearch");
 	});
 
 	it("routes file discovery to fsearch_search when it is the only discovery tool", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME, "search_all_documents"],
-			manifests: [],
 		});
 		expect(prompt).toContain("use `fsearch_search` actively to locate relevant files and folders");
 	});
@@ -130,7 +141,6 @@ describe("system prompt FSearch guidance", () => {
 	it("names fsearch_search alongside the other registered discovery tools", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["bash", "jikji_find", FSEARCH_SEARCH_TOOL_NAME],
-			manifests: [],
 			jikjiIndexingEnabled: true,
 		});
 		expect(prompt).toMatch(/`jikji_find`[^\n]*`fsearch_search`|`fsearch_search`[^\n]*`jikji_find`/);

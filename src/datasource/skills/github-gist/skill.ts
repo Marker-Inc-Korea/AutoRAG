@@ -22,7 +22,7 @@ import {
 	type ConnectorSkillDefinition,
 	type ConnectorSkillOptions,
 } from "../../connector-skill.ts";
-import type { DatasourceIndexResult } from "../../types.ts";
+import type { DatasourceIndexOptions, DatasourceIndexResult } from "../../types.ts";
 import { GitHubGistConnector, type GitHubGistConnectorOptions } from "./connector.ts";
 import { GistSemanticIndex, GitHubGistSemanticMethod } from "./semantic.ts";
 
@@ -122,8 +122,8 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 		}
 	}
 
-	override async index(): Promise<DatasourceIndexResult> {
-		const result = await super.index();
+	override async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
+		const result = await super.index(options);
 		if (!result.ok || this.semanticIndex === undefined || this.semanticEmbedder === undefined) return result;
 		const sync = await this.semanticIndex.sync(this.store.chunks(), this.semanticEmbedder);
 		if (sync.ok) return result;

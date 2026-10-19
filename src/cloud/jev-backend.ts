@@ -1,8 +1,8 @@
 /**
- * Jev backend for the hosted AutoRAG (Dazzi) plan.
+ * Jev backend for the hosted Dazzi Models plan.
  *
  * The server answers Jev's native dialect at `POST <root>/v1/jev` behind the
- * account bearer key (`AUTORAG_API_KEY`), returning the same `answers` map the
+ * Dazzi login token (stored by `/login`), returning the same `answers` map the
  * TypeSafe and OpenRouter backends do. `jev-use`'s package index does not
  * export its native-dialect helpers, so the small mapping and the retrying JSON
  * transport are reimplemented here against that documented dialect (covered by
@@ -22,13 +22,14 @@ import {
 	type RawAnswer,
 	type State,
 } from "jev-use";
-import { API_PATH, AUTORAG_API_KEY_ENV, resolveBaseUrl } from "./config.ts";
+import { API_PATH, resolveBaseUrl } from "./config.ts";
+import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "./credential.ts";
 
 /** API path appended to the normalized server root. */
 export const JEV_PATH = `${API_PATH}/jev`;
 
-/** Live Jev model id on the hosted AutoRAG plan. */
-export const AUTORAG_DEFAULT_JEV_MODEL = "jev-1.13";
+/** Live Jev model id on the hosted Dazzi Models plan. */
+export const DAZZI_DEFAULT_JEV_MODEL = "jev-1.13";
 
 /** Abort one attempt after this long, matching `jev-use`'s remote backends. */
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -37,15 +38,17 @@ const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;
 
-/** Options for {@link AutoragJevBackend}. */
-export interface AutoragJevBackendOptions {
-	/** Environment holding the bearer key and `AUTORAG_BASE_URL`. Default `process.env`. */
+/** Options for {@link DazziJevBackend}. */
+export interface DazziJevBackendOptions {
+	/** Environment holding `AUTORAG_BASE_URL`. Default `process.env`. */
 	readonly env?: Record<string, string | undefined>;
-	/** Explicit bearer key; when omitted, read from `AUTORAG_API_KEY`. */
+	/** Pi agent home whose `auth.json` holds the `/login` credential. Default: Pi's agent dir. */
+	readonly agentDir?: string;
+	/** Explicit bearer token (test seam); when omitted, the stored login token is used. */
 	readonly apiKey?: string;
 	/** Override the server root (test seam); defaults to `resolveBaseUrl(env)`. */
 	readonly baseUrl?: string;
-	/** Model used when a call names none. @default AUTORAG_DEFAULT_JEV_MODEL */
+	/** Model used when a call names none. @default DAZZI_DEFAULT_JEV_MODEL */
 	readonly defaultModel?: string;
 	/** Abort one attempt after this long. @default 10_000 */
 	readonly timeoutMs?: number;
@@ -83,14 +86,14 @@ interface NativeBody {
 }
 
 /**
- * Jev backend served by the hosted AutoRAG (Dazzi) plan.
+ * Jev backend served by the hosted Dazzi Models plan.
  *
  * The constructor throws a named error when no account key is configured — a
  * missing credential must be loud, never a silent fake judgment — and the retry
  * policy mirrors `jev-use`'s own remote backends (408/429/5xx, `Retry-After`).
  */
-export class AutoragJevBackend implements JevBackend {
-	readonly name = "autorag";
+export class DazziJevBackend implements JevBackend {
+	readonly name = "dazzi";
 	private readonly apiKey: string;
 	private readonly baseUrl: string;
 	private readonly defaultModel: string;
@@ -98,15 +101,15 @@ export class AutoragJevBackend implements JevBackend {
 	private readonly maxRetries: number;
 	private readonly fetchImpl: typeof fetch | undefined;
 
-	constructor(options: AutoragJevBackendOptions = {}) {
+	constructor(options: DazziJevBackendOptions = {}) {
 		const env = options.env ?? process.env;
-		const apiKey = options.apiKey ?? env[AUTORAG_API_KEY_ENV];
+		const apiKey = options.apiKey ?? readDazziLoginToken(options.agentDir);
 		if (apiKey === undefined || apiKey.trim() === "") {
-			throw new Error(`jev.backend "autorag" needs ${AUTORAG_API_KEY_ENV}.`);
+			throw new Error(`jev.backend "dazzi" needs a sign-in. ${DAZZI_LOGIN_REQUIRED_MESSAGE}`);
 		}
 		this.apiKey = apiKey;
 		this.baseUrl = options.baseUrl ?? resolveBaseUrl(env);
-		this.defaultModel = options.defaultModel ?? AUTORAG_DEFAULT_JEV_MODEL;
+		this.defaultModel = options.defaultModel ?? DAZZI_DEFAULT_JEV_MODEL;
 		this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 		this.fetchImpl = options.fetchImpl;

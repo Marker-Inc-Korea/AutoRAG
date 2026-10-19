@@ -196,27 +196,53 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.channels?.ids !== undefined ? { chatIds: config.channels.ids } : {}),
 			...larkConnectorOptions(config.connector),
 		}),
-	kakao: (config, _workspaceRoot, _registrationName) =>
-		new LazykatokSkill({
-			client: new LazykatokClient({
-				...(config.connector as LazykatokOptions),
-			}),
+	kakao: (config, workspaceRoot, registrationName) => {
+		const connector = (config.connector ?? {}) as LazykatokOptions;
+		const dataDir =
+			typeof connector.workspacePath === "string" && connector.workspacePath.length > 0
+				? connector.workspacePath
+				: join(homedir(), "Library", "Application Support", "katok");
+		const sidecar = resolveSidecarOptions({
+			descriptor: CRAWLER_DESCRIPTORS.kakao,
+			connector: config.connector,
+			workspaceRoot,
+			registrationName,
+			instanceId: config.instanceId ?? "default",
+			defaultCrawlerDb: join(dataDir, "archive.sqlite3"),
+		});
+		return new LazykatokSkill({
+			client: new LazykatokClient(connector),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
-		}),
+			channelIds: config.channels?.ids,
+			channelNames: config.channels?.names,
+			...(sidecar === undefined ? {} : { sidecar }),
+		});
+	},
 	github: (config, workspaceRoot, registrationName) =>
 		new GitHubSkill({
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions: config.connector as GitHubConnectorOptions,
 		}),
-	"github-gist": (config, workspaceRoot, registrationName) =>
-		new GitHubGistSkill({
+	"github-gist": (config, workspaceRoot, registrationName) => {
+		// `connector.semantic: false` (or `{ enabled: false }`) keeps the gist lexical-only: no
+		// vector index is built and no semantic method is registered. It is a skill option, not a
+		// connector option, so it is taken out before the connector sees the rest.
+		const { semantic, ...connectorOptions } = (config.connector ?? {}) as GitHubGistConnectorOptions & {
+			readonly semantic?: unknown;
+		};
+		const semanticOff =
+			semantic === false ||
+			(typeof semantic === "object" && semantic !== null && (semantic as { enabled?: unknown }).enabled === false);
+		return new GitHubGistSkill({
 			...common(config, workspaceRoot),
 			skillName: registrationName,
-			connectorOptions: config.connector as GitHubGistConnectorOptions,
-		}),
+			connectorOptions,
+			...(semanticOff ? { semantic: { enabled: false } } : {}),
+		});
+	},
 	"cloud-drive": (config, workspaceRoot, registrationName) =>
 		new CloudDriveSkill({
 			...common(config, workspaceRoot),

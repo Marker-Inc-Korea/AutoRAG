@@ -305,6 +305,32 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(loggedArgs().map((args) => args[0])).toEqual(["find"]);
 	});
 
+	// Upstream Jikji (main) rejects `prepare` on a root that overlaps an already
+	// indexed one, and two prepares of the same root contend for its lock.
+	it("prepares and searches only the outermost of nested or duplicated search roots", async () => {
+		const nested = join(docs, "sub");
+		mkdirSync(nested, { recursive: true });
+		writeFileSync(join(nested, "deep.txt"), "Nested document.\n");
+		writeFakeJikji();
+		const agent = new AutoRAGAgent({
+			searchPaths: [nested, docs, docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+			everything: false,
+			fsearch: false,
+		});
+
+		const prepared = await agent.prepareJikji();
+		await agent.findJikji("Q3 report");
+
+		const calls = loggedArgs();
+		expect(prepared).toHaveLength(1);
+		expect(calls.filter((args) => args[0] === "prepare").map((args) => args[1])).toEqual([realpathSync(docs)]);
+		expect(calls.filter((args) => args[0] === "find").map((args) => args[1])).toEqual([realpathSync(docs)]);
+	});
+
 	it("drops user-excluded paths from the merged Jikji answer pack", async () => {
 		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
 		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");
@@ -343,5 +369,95 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(result.answerPack?.paths).toEqual([keep]);
 		expect(result.answerPack?.candidates.map((c) => c.path)).toEqual([keep]);
 		expect(result.answerPack?.evidencePack.map((e) => e.path)).toEqual([keep]);
+	});
+});
+
+describe("AutoRAGAgent Jikji prepare budget and lifecycle (#1894)", () => {
+	function writeBehaviorJikji(body: string): void {
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, at: Date.now() }) + "\\n");
+${body}
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+	}
+
+	function agentFor(searchPaths: string[], jikji: Record<string, unknown> = {}): AutoRAGAgent {
+		return new AutoRAGAgent({
+			searchPaths,
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath, ...jikji },
+			everything: false,
+			fsearch: false,
+		});
+	}
+
+	it("reports a timed-out root as a diagnostic and still finishes the refresh", { timeout: 30_000 }, async () => {
+		writeBehaviorJikji("await new Promise(() => setInterval(() => undefined, 1000));");
+		const agent = agentFor([docs], { timeoutMs: 300 });
+
+		await expect(agent.refresh(true)).resolves.toBeDefined();
+
+		const status = await agent.getRefreshStatus();
+		const diag = status.diagnostics.find((item) => item.source === "jikji");
+		expect(diag?.code).toBe("jikji-prepare-failed");
+		expect(diag?.message).toMatch(/timed out/);
+		expect(diag?.message).not.toContain(root);
+	});
+
+	it("forwards refresh jikjiPrepare.parseTimeout to the CLI for every root", async () => {
+		const second = join(root, "docs2");
+		mkdirSync(second, { recursive: true });
+		writeFakeJikji();
+		const agent = agentFor([docs, second]);
+
+		await agent.refresh(true, { jikjiPrepare: { parseTimeout: 90 } });
+
+		const prepareCalls = loggedArgs().filter((args) => args[0] === "prepare");
+		expect(prepareCalls).toHaveLength(2);
+		for (const call of prepareCalls) {
+			const flag = call.indexOf("--parse-timeout");
+			expect(flag).toBeGreaterThan(-1);
+			expect(call[flag + 1]).toBe("90");
+		}
+	});
+
+	it("forwards a configured jikji.parseTimeout without a per-call option", async () => {
+		writeFakeJikji();
+		const agent = agentFor([docs], { parseTimeout: 45 });
+
+		await agent.prepareJikji();
+
+		const call = loggedArgs().find((args) => args[0] === "prepare") ?? [];
+		expect(call).toEqual(expect.arrayContaining(["--parse-timeout", "45"]));
+	});
+
+	it("aborts the in-flight root and the queued one through the host signal", { timeout: 30_000 }, async () => {
+		writeBehaviorJikji("await new Promise(() => setInterval(() => undefined, 1000));");
+		const second = join(root, "docs2");
+		mkdirSync(second, { recursive: true });
+		const agent = agentFor([docs, second], { timeoutMs: 25_000 });
+		const controller = new AbortController();
+
+		const pending = agent.prepareJikji({ signal: controller.signal });
+		const deadline = Date.now() + 10_000;
+		while (Date.now() < deadline) {
+			try {
+				if (loggedArgs().length >= 1) break;
+			} catch {
+				// log not created yet
+			}
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+		controller.abort();
+
+		const results = await pending;
+		expect(results?.map((result) => (result.ok ? "ok" : result.reason))).toEqual(["aborted", "aborted"]);
 	});
 });

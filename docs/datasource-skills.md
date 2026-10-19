@@ -144,6 +144,25 @@ progress. Raise the budget per connection:
 A `sync`/`index` diagnostic ending in `timeout` carries a hint naming
 `connector.indexTimeoutMs` and the restart behaviour.
 
+## Index retry and backoff
+
+A refresh retries a failed (or thrown) datasource `index()` with jittered
+exponential backoff: 2 retries (3 calls in total), about 1 s then 2 s, capped at
+30 s. Failures are not classified: error codes differ per datasource, so every
+failure is retried alike. Once the retries are used up that datasource is
+reported as failed and the refresh moves on to the next one. A timed-out step
+still restarts from scratch each attempt (see above), so a first sync that needs
+longer than the budget still fails after three tries — raise
+`connector.indexTimeoutMs`.
+
+The result gains `attempts` (total `index()` calls; absent on a first-time
+success). An exhausted failure's message/last diagnostic ends with
+`(gave up after N attempts)`; a late success adds an info diagnostic naming the
+last error. Override with `AutoRAGAgent` option
+`datasourceRetry: { maxRetries, baseDelayMs, maxDelayMs }`; `maxRetries: 0`
+disables retrying. Process-tree termination of a timed-out CLI is tracked
+separately (#1587, #1586).
+
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
@@ -694,6 +713,9 @@ BM25, semantic retrieval through the local loopback embedding gateway, and
 [hybrid RRF](#hybrid-fusion-over-existing-methods) over those two rankings;
 Gist content stays on the machine for embeddings. If embeddings are
 unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
+Set `connector.semantic: false` (or `{ "enabled": false }`) to keep Gists
+lexical-only: no embedding calls, no vector index, and no
+`<name>-semantic` method.
 Result sources are `/github-gist/<instance>/chunks/<chunk-id>` (opaque
 datasource identities, not filesystem paths); metadata retains the Gist ID
 and URL. For the live QA harness, see
