@@ -4,6 +4,11 @@ import type { AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 
 export function buildLiveStackOptions(root: string, workspace: string): AutoRAGAgentOptions;
 export function assertAbsoluteReadableSource(source: string): string;
+export function assertKoreanLexicalHit(stdout: string, fixtureName: string): boolean;
+export function resolveKoreanLexicalLane(
+	lexicalFallback: Readonly<{ requested: string; used: string }> | undefined,
+	kiwiRequired: boolean,
+): "assert" | "skip";
 
 export interface LiteRetrieveUnsearchedEntry {
 	readonly surface: string;
