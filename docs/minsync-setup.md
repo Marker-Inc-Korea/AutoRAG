@@ -313,7 +313,7 @@ of a generic `minsync-sync-failed`.
 
 ## Skipped files (partial sync)
 
-MinSync 0.4.8 skips a file it cannot read, chunk, or embed instead of aborting
+MinSync 0.4.11 skips a file it cannot read, chunk, or embed instead of aborting
 the sync, and exits 6 with `partial: true` and a `files_failed` list. AutoRAG
 treats that as a completed sync (`minsync.ok: true`) and reports each skipped
 file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
