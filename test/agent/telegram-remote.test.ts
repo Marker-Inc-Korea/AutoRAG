@@ -146,7 +146,12 @@ describe("Telegram remote control of the librarian", () => {
 			const prompts = tg.session.messages.flatMap((message) =>
 				message.role === "user" ? [JSON.stringify(message.content)] : [],
 			);
-			expect(prompts.join("\n")).toContain("Answer this query directly from your own general knowledge");
+			// Same prompt a terminal user gets: the bridge's envelope never reaches the model or the session name.
+			expect(prompts.join("\n")).toContain(
+				"Answer this query directly from your own general knowledge: What is the capital of France?",
+			);
+			expect(prompts.join("\n")).not.toMatch(/\[telegram\]|\[time\]/u);
+			expect(tg.session.sessionName).toBe("What is the capital of France?");
 		} finally {
 			await tg.dispose();
 		}

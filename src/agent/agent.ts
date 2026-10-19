@@ -934,7 +934,7 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
-		this.telegram = options.telegram === true && !this.remoteSession;
+		this.telegram = options.telegram === true;
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceRetry = options.datasourceRetry ?? {};
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>

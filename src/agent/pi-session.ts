@@ -255,11 +255,26 @@ function interactiveKeyOf(data: string): AutoRAGInteractiveKey | undefined {
  */
 export const TELEGRAM_INPUT_PREFIX = "[telegram]";
 
-/** Whether `input` was typed by the user: in pi's terminal, or in a bridged Telegram chat. */
-function isUserInput(event: { readonly source: string; readonly text: string }): boolean {
-	return (
-		event.source === "interactive" || (event.source === "extension" && event.text.startsWith(TELEGRAM_INPUT_PREFIX))
-	);
+/**
+ * The user's own words from a bridged Telegram prompt: the bridge's `[telegram]`
+ * prefix and its `[time]` line are envelope, not the question, so a Telegram
+ * question reaches the librarian exactly as the same text typed in the TUI.
+ * Attachment blocks stay: they are part of what the user sent.
+ */
+export function stripTelegramEnvelope(text: string): string {
+	return text
+		.replace(/^\s*\[telegram\]\s?/u, "")
+		.replace(/\n*\[time\][^\n]*/gu, "")
+		.trim();
+}
+
+/** The text of a user-typed input (terminal or bridged Telegram chat), or `undefined` for AutoRAG's and pi's own prompts. */
+function userInputText(event: { readonly source: string; readonly text: string }): string | undefined {
+	if (event.source === "interactive") return event.text.trim();
+	if (event.source === "extension" && event.text.trimStart().startsWith(TELEGRAM_INPUT_PREFIX)) {
+		return stripTelegramEnvelope(event.text);
+	}
+	return undefined;
 }
 
 function createAutoRAGInteractiveExtension(
@@ -296,8 +311,8 @@ function createAutoRAGInteractiveExtension(
 			});
 		}
 		pi.on("input", (event) => {
-			const text = event.text.trim();
-			if (!isUserInput(event) || text.length === 0) return undefined;
+			const text = userInputText(event);
+			if (text === undefined || text.length === 0) return undefined;
 			// A "/" line is pi's (commands, skills, templates), except during a search:
 			// handed back to pi then, it would start pi's own prompt on the bound
 			// session outside the search. Registered commands never reach this
