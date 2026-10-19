@@ -153,7 +153,7 @@ The app is one way in. The same librarian runs everywhere else:
 |---|---|---|
 | **Desktop app (Dazzi)** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) (Fair Source, FSL-1.1-MIT) |
 | **Terminal UI** | Interactive, steerable search sessions | [`autorag tui`](#2-search-from-cli) |
-| **Messenger** | Asking the librarian from a chat app | [Telegram](#messenger-connections) |
+| **Messenger** | Asking the librarian from a chat app | [Telegram, Discord](#messenger-connections) |
 | **CLI** | Scripts, indexing, health checks | [CLI Command Reference](#cli-command-reference) |
 | **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](#autorag-lite-mcp-server) |
 | **TypeScript API** | Embedding the librarian in your own app | [Programmatic usage](#3-programmatic-usage-typescript-api) |
@@ -229,11 +229,14 @@ Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi u
 |---|---|---|
 | **Telegram** | Supported | [`autorag tui --telegram`](docs/telegram.md) |
 | **WhatsApp** | Supported (unofficial client) | [`autorag tui --whatsapp`](docs/whatsapp.md) |
-| Discord, Slack, others | Not supported yet | |
+| **Discord** | Supported (no steering yet) | [`autorag tui --discord`](docs/discord.md) |
+| Slack, others | Not supported yet | |
 
 Telegram runs through the [`@llblab/pi-telegram`](https://github.com/llblab/pi-telegram) bridge inside a running `autorag tui` session: questions you send the bot get the same routing and two-phase search as the terminal. Setup, commands, and keeping it running are in [docs/telegram.md](docs/telegram.md).
 
 WhatsApp runs through the pinned [`whatsapp-pi`](https://www.npmjs.com/package/whatsapp-pi) extension the same way; see [docs/whatsapp.md](docs/whatsapp.md).
+
+Discord runs through the [`pi-discord-remote`](https://pi.dev/packages/pi-discord-remote) extension and creates one channel per TUI session; the fast answer and the verified final answer are posted as they land. Setup, permissions, and limits are in [docs/discord.md](docs/discord.md).
 
 ## Installation & Setup
 
@@ -467,7 +470,7 @@ mirrored are kept and not re-parsed on the next run. `onProgress` reports `parse
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
 | `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
-| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); `--telegram` / `--whatsapp` add the Telegram / WhatsApp remote-control bridges |
+| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); `--telegram` / `--whatsapp` / `--discord` add the Telegram / WhatsApp / Discord remote-control bridges |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
 | `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |
@@ -688,6 +691,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[MinSync Setup & Embedding QA](docs/minsync-setup.md):** Automatic binary installation, CDC chunking, and local embedding verification.
 - **[Local Embedding Runtime & Gateway](docs/embedding-runtime.md):** AutoRAG-owned local gateway, model prefetching, and zero-egress semantic search. Model card: [`qwen3-embedding-0.6b`](docs/model-cards/qwen3-embedding-0.6b.md).
 - **[Hosted Dazzi Models Provider](docs/cloud-provider.md):** The hosted `dazzi` model provider — PKCE `/login`, `AUTORAG_BASE_URL`, live model discovery, and offline catalog snapshots.
+- **[Discord Remote Control](docs/discord.md):** Ask the librarian from a Discord channel through a running `autorag tui --discord` session: bot setup, permissions, and limits.
 - **[Telegram Remote Control](docs/telegram.md):** Ask the librarian from a Telegram chat through a running `autorag tui --telegram` session: setup, commands, and keeping it alive.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
