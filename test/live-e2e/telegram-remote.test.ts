@@ -31,11 +31,9 @@ beforeEach(async () => {
 	process.env.PI_TELEGRAM_NETWORK_FAMILY = "auto";
 	// Only the Telegram origin is redirected; model traffic goes to the real provider.
 	globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-		return realFetch(
-			url.startsWith("https://api.telegram.org") ? url.replace("https://api.telegram.org", fake.origin) : input,
-			init,
-		);
+		const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+		if (url.origin !== "https://api.telegram.org") return realFetch(input, init);
+		return realFetch(`${fake.origin}${url.pathname}${url.search}`, init);
 	}) as typeof fetch;
 });
 

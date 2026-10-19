@@ -62,9 +62,9 @@ export class FakeTelegramApi {
 					res.setHeader("content-type", "application/json");
 					res.end(JSON.stringify(payload));
 				},
-				(error: unknown) => {
+				() => {
 					res.statusCode = 500;
-					res.end(String(error));
+					res.end();
 				},
 			);
 		});

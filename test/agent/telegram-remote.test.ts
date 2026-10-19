@@ -35,7 +35,9 @@ beforeEach(async () => {
 	// The bridge hard-codes api.telegram.org; point only that origin at the local fake.
 	globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-		return realFetch(url.replace("https://api.telegram.org", fake.origin), init);
+		const parsed = new URL(url);
+		if (parsed.origin !== "https://api.telegram.org") return realFetch(input, init);
+		return realFetch(`${fake.origin}${parsed.pathname}${parsed.search}`, init);
 	}) as typeof fetch;
 });
 
