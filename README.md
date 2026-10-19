@@ -218,6 +218,8 @@ The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG libra
 
 Typing while a search runs works like steering one of Pi's own turns. **Enter** steers the running search: AutoRAG treats the text as a correction of a search that is going wrong, delivers it before the search's next model request (also between phases, where no turn is streaming), cuts in-flight retrieval short so the correction lands promptly, and always runs the verification phase so the answer reflects the correction. **Alt+Enter** queues a new question that runs after the current search answers. **Esc** stops the search instead of letting it continue into its next phase. Pi's registered `/` commands still run during a search; any other line starting with `/` (a path, for example) is a steer like any other text. A query typed after a search answers is a new search in the same session, as before.
 
+**Remote control from Telegram.** `autorag tui --telegram` loads [`@llblab/pi-telegram`](https://github.com/llblab/pi-telegram), the most-installed Pi extension for driving a live session from a chat app (about 13.8k npm downloads a month; the leading Discord extension, `pi-discord-remote`, has about 200). Create a bot with [@BotFather](https://t.me/BotFather), then run `/telegram-setup` (paste the token) and `/telegram-connect` in the TUI, and send `/start` to the bot from your own account: the first account to pair becomes the only allowed owner. From then on a message you send the bot is a question to the librarian. It runs through the same Jev routing and two-phase search as a message typed in the terminal, a message sent while a search runs steers it, and the answer comes back in the chat. The bridge only polls Telegram outbound (no inbound port). Bot token and owner pairing are stored in Pi's `telegram.json` under the agent directory, never in AutoRAG config. `--telegram` is off by default and ignored for remote peer sessions.
+
 Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi update`" banner (Pi is a bundled host, not a separate install) and instead checks the published `@autorag/librarian` release, showing a one-line notice in the session when a newer version exists. Set `AUTORAG_NO_UPDATE_CHECK=1` to skip the lookup; `AUTORAG_UPDATE_CHECK_URL` overrides the registry endpoint.
 
 ---
@@ -454,7 +456,7 @@ mirrored are kept and not re-parsed on the next run. `onProgress` reports `parse
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
 | `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
 | `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
-| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …) |
+| `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); `--telegram` adds the Telegram remote-control bridge |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
 | `autorag lite ...` | CLI bootstrap, indexing repair, terminal maintenance, and fallback interface; agents use MCP for normal Lite operation |
 | `autorag memory inspect` | Render a read-only, path-opaque snapshot of retrieval memory (judged evidence, curated results, evidence chunks, insights); model-free |

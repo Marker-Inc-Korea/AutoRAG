@@ -246,6 +246,22 @@ function interactiveKeyOf(data: string): AutoRAGInteractiveKey | undefined {
 	return undefined;
 }
 
+/**
+ * Prefix `@llblab/pi-telegram` puts on every prompt it injects from a Telegram
+ * chat. The bridge hands them to pi through `pi.sendUserMessage`, so pi tags
+ * them `source: "extension"`, the same source AutoRAG's own phase prompts use.
+ * The prefix is what tells a person typing on a phone from AutoRAG talking to
+ * itself.
+ */
+export const TELEGRAM_INPUT_PREFIX = "[telegram]";
+
+/** Whether `input` was typed by the user: in pi's terminal, or in a bridged Telegram chat. */
+function isUserInput(event: { readonly source: string; readonly text: string }): boolean {
+	return (
+		event.source === "interactive" || (event.source === "extension" && event.text.startsWith(TELEGRAM_INPUT_PREFIX))
+	);
+}
+
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
@@ -281,7 +297,7 @@ function createAutoRAGInteractiveExtension(
 		}
 		pi.on("input", (event) => {
 			const text = event.text.trim();
-			if (event.source !== "interactive" || text.length === 0) return undefined;
+			if (!isUserInput(event) || text.length === 0) return undefined;
 			// A "/" line is pi's (commands, skills, templates), except during a search:
 			// handed back to pi then, it would start pi's own prompt on the bound
 			// session outside the search. Registered commands never reach this

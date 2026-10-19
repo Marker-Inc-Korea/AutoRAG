@@ -202,6 +202,9 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --fast-thinking <lvl>  Thinking level for the fast first answer",
 		"  --final-thinking <lvl> Thinking level for the verified answer",
+		"  --telegram             Load the Telegram bridge (@llblab/pi-telegram) so a paired",
+		"                         Telegram chat can ask, steer, and read answers. In-session:",
+		"                         /telegram-setup (bot token), /telegram-connect, /telegram-status",
 	]),
 	serve: usage([
 		"autorag serve - P2P peer query server over SimpleX",
