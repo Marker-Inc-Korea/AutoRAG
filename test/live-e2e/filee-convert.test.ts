@@ -12,7 +12,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { convertAndRelate, convertWithFilee, type FileeCliOptions, listFileeFormats } from "../../src/convert/index.ts";
 import { scanWithDupey } from "../../src/dupey/index.ts";
@@ -133,7 +133,7 @@ describe.skipIf(!LIVE)("live: convert_files with real filee + dupey", () => {
 		const scan = await scanWithDupey(dir);
 		const family = scan.families.find((candidate) => candidate.files.some((file) => file.endsWith("report.docx")));
 		expect(family).toBeDefined();
-		const members = (family?.files ?? []).map((file) => file.split("/").pop());
+		const members = (family?.files ?? []).map((file) => basename(file));
 		expect(members).toEqual(expect.arrayContaining(["report.docx", "report.hwpx", "report.txt"]));
 		expect(members).not.toContain("report.html");
 		const edge = family?.edges.find(
