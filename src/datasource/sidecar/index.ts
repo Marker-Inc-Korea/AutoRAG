@@ -17,7 +17,7 @@ import { mkdirSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import type { Embedder, EmbeddingIdentity } from "../../embedding-runtime/gateway-embedder.ts";
+import type { Embedder, EmbeddingIdentity } from "../../embedding/embedder.ts";
 import type { CrawlerDescriptor } from "./descriptors.ts";
 import {
 	decodeVector,

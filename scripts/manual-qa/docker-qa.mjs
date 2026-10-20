@@ -27,10 +27,8 @@ const RESERVED_ENV_NAMES = new Set([
 	"AUTORAG_CONFIG",
 	"E2E_DATASOURCES",
 	"E2E_MODE",
-	"E2E_EMBEDDER",
 	"E2E_ARGS",
 	"QA_MODEL_ENV",
-	"AUTORAG_LIVE_E2E_EMBEDDER",
 	"AUTORAG_LIVE_E2E_KIWI",
 	"AUTORAG_LIVE_E2E_GIT_SHA",
 	"AUTORAG_LIVE_E2E_GIT_DIRTY",
@@ -175,11 +173,6 @@ function runLive() {
 		console.error(`E2E_MODE must be "cold" or "warm", got: ${mode}`);
 		return 2;
 	}
-	const embedder = process.env.E2E_EMBEDDER?.trim() || "native";
-	if (embedder !== "native" && embedder !== "gateway") {
-		console.error(`E2E_EMBEDDER must be "native" or "gateway", got: ${embedder}`);
-		return 2;
-	}
 	let runnerArgs;
 	try {
 		runnerArgs = parseRunnerArgs(process.env.E2E_ARGS ?? "");
@@ -204,8 +197,6 @@ function runLive() {
 	args.push(
 		"--env",
 		`E2E_DATASOURCES=${process.env.E2E_DATASOURCES ?? ""}`,
-		"--env",
-		`AUTORAG_LIVE_E2E_EMBEDDER=${embedder}`,
 		// The QA image provisions Kiwi, so a whitespace fallback inside it is a broken image, not a skippable lane.
 		"--env",
 		"AUTORAG_LIVE_E2E_KIWI=required",

@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
 import { CrawlerSidecar } from "../../../src/datasource/sidecar/index.ts";
-import type { Embedder } from "../../../src/embedding-runtime/gateway-embedder.ts";
+import type { Embedder } from "../../../src/embedding/embedder.ts";
 
 let root: string;
 let crawlerDb: string;

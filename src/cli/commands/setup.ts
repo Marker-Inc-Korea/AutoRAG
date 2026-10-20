@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { releaseRuntimeHandles } from "../../embedding-runtime/index.ts";
 import { resolveConfigPath, resolveConfigReadOnly, writeDefaultConfig } from "../config.ts";
 import { renderError } from "../output.ts";
 import { runSetup } from "../setup.ts";
@@ -25,22 +24,21 @@ export async function runSetupCommand(ctx: CommandContext): Promise<number> {
 		const report = await runSetup({
 			configPath: resolved.configPath,
 			workspacePath: resolvedConfig.workspacePath,
-			...(typeof ctx.flags.profile === "string" ? { profileId: ctx.flags.profile as "qwen3-embedding-0.6b" } : {}),
 		});
 		ctx.stdout(ctx.json || ctx.flags.format === "json" ? JSON.stringify(report, null, 2) : renderSetup(report));
 		return report.ok ? 0 : 1;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 1;
-	} finally {
-		await releaseRuntimeHandles();
 	}
 }
 function renderSetup(report: Awaited<ReturnType<typeof runSetup>>): string {
 	return [
 		`setup: ${report.mode}`,
-		`model: ${report.model.valid ? "ready" : "blocked"}`,
-		...(report.runtime.reason ? [`runtime: ${report.runtime.reason}`] : []),
+		report.embedding.backend === undefined
+			? "embedding: blocked"
+			: `embedding: ${report.embedding.backend} (${report.embedding.provider}/${report.embedding.model}, ${report.embedding.dimension}d)`,
+		...(report.embedding.reason ? [`embedding: ${report.embedding.reason}`] : []),
 		...report.datasources.map((d) => `  ${d.name}: ${d.state}${d.reason ? ` (${d.reason})` : ""}`),
 		...(report.remediation ? [`remediation: ${report.remediation}`] : []),
 	].join("\n");

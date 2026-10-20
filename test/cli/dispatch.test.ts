@@ -339,13 +339,12 @@ const COMMANDS_WITH_OWN_HELP = [
 	"duplicates",
 	"tui",
 	"models",
-	"gateway",
 ] as const;
 
 /** Tokens each command's own help must name so it cannot be the global list. */
 const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], readonly string[]> = {
 	init: ["--search-paths", "--workspace", "--memory-path", "--force"],
-	setup: ["--search-paths", "--workspace", "--profile", "--format json"],
+	setup: ["--search-paths", "--workspace", "--format json"],
 	refresh: ["--method", "--force"],
 	status: ["Usage: autorag status"],
 	search: ["--top-k", "--scope", "--fast-thinking", "--final-thinking"],
@@ -356,8 +355,7 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	health: ["--skip-probes", "--timeout-ms"],
 	duplicates: ["DIR"],
 	tui: ["Usage: autorag tui", "--telegram", "/telegram-connect"],
-	models: ["prefetch", "import", "verify", "--profile"],
-	gateway: ["status", "stop"],
+	models: ["list", "--provider", "--available"],
 };
 
 const GLOBAL_USAGE_HEADER = "Usage: autorag <command> [args] [flags]";

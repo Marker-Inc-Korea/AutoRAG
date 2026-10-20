@@ -635,6 +635,28 @@ describe("single-model CLI config", () => {
 		expect(() => normalizeEmbedder({ dimension: 0 }, "minSync.embedder")).toThrow(ConfigError);
 	});
 
+	it("reads a config written for the removed llama-server runtime without failing, keeping what still applies", () => {
+		// `autorag setup --profile` used to write `{ id: <gguf file>, profile, dimension, prefixes }`. The profile
+		// and the GGUF id name a runtime that no longer exists; dropping them lets the embedder fall back to
+		// MinSync's own Qwen3, while the dimension and prefixes the operator may have tuned are preserved.
+		expect(
+			normalizeEmbedder(
+				{
+					id: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+					profile: "qwen3-embedding-0.6b",
+					dimension: 1024,
+					queryPrefix: "q:",
+					passagePrefix: "p:",
+				},
+				"minSync.embedder",
+			),
+		).toEqual({ dimension: 1024, queryPrefix: "q:", passagePrefix: "p:" });
+	});
+
+	it("keeps rejecting an unknown embedder field", () => {
+		expect(() => normalizeEmbedder({ extraArgs: ["--x"] }, "minSync.embedder")).toThrow(ConfigError);
+	});
+
 	it("validates the MinSync chunk size", () => {
 		expect(normalizeIndexingConfig({ minSync: { maxChunkSize: 1000 } }).minSync.maxChunkSize).toBe(1000);
 		expect(() => normalizeIndexingConfig({ minSync: { maxChunkSize: 0 } })).toThrow(ConfigError);

@@ -13,7 +13,7 @@ through notcrawl.
 Issue #1477 adds the live ClawGallery CLI path.
 Issue #1496 adds the live mailcrawl local email CLI path.
 Issue #1588 adds the live github-gist path (authenticated account gists,
-incremental cursor sync, lexical + local-gateway semantic search).
+incremental cursor sync, lexical + local MinSync semantic search).
 Issue #1672 adds Lark/Feishu remote search through `lark-cli` (no local
 archive). A real tenant run needs `lark-cli auth login` and must not copy
 tenant content into CI fixtures.
@@ -46,9 +46,10 @@ synthetic store inside the container or accept `SKIP`.
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
-| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.2.0` fixture sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.2.2` fixture sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `test/datasource/embedding-env.test.ts` | Real child-process boundary for mailcrawl and lazykatok on the shared embedder: provider/URL/model/dimension env, remote key hand-over and egress opt-in, index-only daemon start, BM25 untouched, no native fallback when no endpoint exists, TEI refused for lazykatok | `bunx vitest run test/datasource/embedding-env.test.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
-| `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the local embedding gateway (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
+| `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the shared MinSync embedder (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |

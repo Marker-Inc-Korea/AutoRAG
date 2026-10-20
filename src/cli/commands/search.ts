@@ -1,6 +1,6 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import type { DecompositionModel } from "../../agent/query-decomposition.ts";
-import { stopRuntime as stopEmbeddingRuntime } from "../../embedding-runtime/index.ts";
+import { releaseEmbedders } from "../../embedding/index.ts";
 import {
 	buildAgentOptions,
 	type CliConfig,
@@ -114,11 +114,10 @@ export interface SearchDeps {
 		options?: ResolveAgentModelOptions,
 	) => ResolvedAgentModel | Promise<ResolvedAgentModel>;
 	/**
-	 * Stops the on-demand embedding gateway so the process can exit. Without
-	 * this the semantic MinSync path's loopback gateway keeps the event loop
-	 * alive after the search completes and the CLI never exits.
+	 * Unloads MinSync's in-process embedding model so the process can exit. Without this the model's
+	 * native threads keep the event loop alive after the search completes and the CLI never exits.
 	 */
-	stopRuntime?: () => Promise<void>;
+	releaseEmbedders?: () => Promise<void>;
 }
 
 interface SearchOptions {
@@ -227,7 +226,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	}
 
 	const options = buildSearchOptions(ctx.flags);
-	const stopRuntime = deps.stopRuntime ?? stopEmbeddingRuntime;
+	const release = deps.releaseEmbedders ?? releaseEmbedders;
 	try {
 		for await (const event of agent.searchDocumentsStream(query, options)) {
 			switch (event.type) {
@@ -249,9 +248,6 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
 		return 1;
 	} finally {
-		// The semantic MinSync path starts the loopback embedding gateway on
-		// demand; without an explicit stop it keeps the event loop alive and
-		// the CLI never exits after the answer has been printed.
-		await stopRuntime();
+		await release();
 	}
 }

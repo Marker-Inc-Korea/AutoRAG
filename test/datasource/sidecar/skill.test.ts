@@ -10,7 +10,7 @@ import { LazykatokSkill, type LazykatokSkillClient } from "../../../src/datasour
 import { SlackSkill } from "../../../src/datasource/skills/slack/index.ts";
 import { TelecrawlSkill } from "../../../src/datasource/skills/telecrawl/index.ts";
 import { WacrawlSkill } from "../../../src/datasource/skills/wacrawl/index.ts";
-import type { Embedder } from "../../../src/embedding-runtime/gateway-embedder.ts";
+import type { Embedder } from "../../../src/embedding/embedder.ts";
 
 let root: string;
 let crawlerDb: string;

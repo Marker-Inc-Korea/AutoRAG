@@ -70,7 +70,8 @@ export type SearchDocumentDiagnosticCode =
 	| "evidence-judgment-fallback"
 	| "memory-search-fallback"
 	| "self-config-unavailable"
-	| "self-config-rolled-back";
+	| "self-config-rolled-back"
+	| "embedding-unavailable";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;

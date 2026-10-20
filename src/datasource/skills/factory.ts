@@ -10,8 +10,10 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Embedder } from "../../embedding/embedder.ts";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
+import type { EmbeddingEndpointSource } from "../embedding-env.ts";
 import { resolveSidecarOptions } from "../sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
 import type { DatasourceSkill } from "../types.ts";
@@ -65,11 +67,23 @@ export interface BuildDatasourceSkillsResult {
 	readonly unknown: readonly string[];
 }
 
+/**
+ * What the shared embedding backend gives a datasource. AutoRAG-owned semantic stores (chat sidecars, the
+ * gist vector index) call the `embedder`; an external CLI that embeds for itself (discrawl) is pointed at the
+ * same backend through `discrawl`.
+ */
+export interface DatasourceEmbeddingOptions {
+	readonly embedder?: Embedder;
+	readonly discrawl?: DiscrawlEmbeddingRuntime | (() => Promise<DiscrawlEmbeddingRuntime | undefined>);
+	/** For CLIs that embed for themselves through env (mailcrawl, lazykatok): where the shared backend is. */
+	readonly cliEndpoint?: EmbeddingEndpointSource;
+}
+
 type SkillBuilder = (
 	config: DatasourceSkillConfig,
 	workspaceRoot: string | undefined,
 	registrationName: string,
-	embeddingRuntime?: DiscrawlEmbeddingRuntime,
+	embedding: DatasourceEmbeddingOptions,
 ) => DatasourceSkill | undefined;
 
 /**
@@ -82,6 +96,7 @@ function chatCrawlerArgs(
 	config: DatasourceSkillConfig,
 	workspaceRoot: string | undefined,
 	registrationName: string,
+	embedding: DatasourceEmbeddingOptions,
 ) {
 	const sidecar = resolveSidecarOptions({
 		descriptor,
@@ -90,6 +105,7 @@ function chatCrawlerArgs(
 		registrationName,
 		instanceId: config.instanceId ?? "default",
 		defaultCrawlerDb,
+		...(embedding.embedder === undefined ? {} : { embedder: embedding.embedder }),
 	});
 	return {
 		datasourceId: registrationName,
@@ -107,7 +123,7 @@ function chatCrawlerArgs(
 }
 
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
-	telegram: (config, workspaceRoot, registrationName) =>
+	telegram: (config, workspaceRoot, registrationName, embedding) =>
 		new TelecrawlSkill(
 			chatCrawlerArgs(
 				CRAWLER_DESCRIPTORS.telegram,
@@ -115,9 +131,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				config,
 				workspaceRoot,
 				registrationName,
+				embedding,
 			),
 		),
-	whatsapp: (config, workspaceRoot, registrationName) =>
+	whatsapp: (config, workspaceRoot, registrationName, embedding) =>
 		new WacrawlSkill(
 			chatCrawlerArgs(
 				CRAWLER_DESCRIPTORS.whatsapp,
@@ -125,9 +142,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				config,
 				workspaceRoot,
 				registrationName,
+				embedding,
 			),
 		),
-	slack: (config, workspaceRoot, registrationName) =>
+	slack: (config, workspaceRoot, registrationName, embedding) =>
 		new SlackSkill(
 			chatCrawlerArgs(
 				CRAWLER_DESCRIPTORS.slack,
@@ -135,9 +153,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				config,
 				workspaceRoot,
 				registrationName,
+				embedding,
 			),
 		),
-	discord: (config, workspaceRoot, registrationName, embeddingRuntime) => {
+	discord: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
 		const clientOptions: DiscrawlOptions = {
 			...connector,
@@ -152,7 +171,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			channelNames: config.channels?.names,
 			client: new DiscrawlClient({
 				...clientOptions,
-				...(embeddingRuntime === undefined ? {} : { embeddingRuntime }),
+				...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),
 			}),
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
@@ -196,7 +215,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.channels?.ids !== undefined ? { chatIds: config.channels.ids } : {}),
 			...larkConnectorOptions(config.connector),
 		}),
-	kakao: (config, workspaceRoot, registrationName) => {
+	kakao: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as LazykatokOptions;
 		const dataDir =
 			typeof connector.workspacePath === "string" && connector.workspacePath.length > 0
@@ -209,9 +228,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			registrationName,
 			instanceId: config.instanceId ?? "default",
 			defaultCrawlerDb: join(dataDir, "archive.sqlite3"),
+			...(embedding.embedder === undefined ? {} : { embedder: embedding.embedder }),
 		});
 		return new LazykatokSkill({
-			client: new LazykatokClient(connector),
+			client: new LazykatokClient({
+				...connector,
+				...(embedding.cliEndpoint === undefined ? {} : { embeddingEndpoint: embedding.cliEndpoint }),
+			}),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
@@ -226,7 +249,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as GitHubConnectorOptions,
 		}),
-	"github-gist": (config, workspaceRoot, registrationName) => {
+	"github-gist": (config, workspaceRoot, registrationName, embedding) => {
 		// `connector.semantic: false` (or `{ enabled: false }`) keeps the gist lexical-only: no
 		// vector index is built and no semantic method is registered. It is a skill option, not a
 		// connector option, so it is taken out before the connector sees the rest.
@@ -240,7 +263,11 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions,
-			...(semanticOff ? { semantic: { enabled: false } } : {}),
+			...(semanticOff
+				? { semantic: { enabled: false } }
+				: embedding.embedder === undefined
+					? {}
+					: { semantic: { embedder: embedding.embedder } }),
 		});
 	},
 	"cloud-drive": (config, workspaceRoot, registrationName) =>
@@ -258,11 +285,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
-	mailcrawl: (config, workspaceRoot, registrationName) =>
+	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
 			...(config.connector as MailcrawlOptions),
+			...(embedding.cliEndpoint === undefined ? {} : { embeddingEndpoint: embedding.cliEndpoint }),
 		}),
 	obsidian: (config, workspaceRoot, registrationName) => {
 		const connector = config.connector as
@@ -325,7 +353,7 @@ function common(config: DatasourceSkillConfig, workspaceRoot: string | undefined
 export function buildDatasourceSkills(
 	config: DatasourcesConfig | undefined,
 	workspaceRoot?: string,
-	embeddingRuntime?: DiscrawlEmbeddingRuntime,
+	embedding: DatasourceEmbeddingOptions = {},
 ): BuildDatasourceSkillsResult {
 	const skills: DatasourceSkill[] = [];
 	const unknown: string[] = [];
@@ -345,7 +373,7 @@ export function buildDatasourceSkills(
 		}
 		const normalizedEntry =
 			entry.instanceId === undefined && entry.type !== undefined ? { ...entry, instanceId: name } : entry;
-		const skill = builder(normalizedEntry, workspaceRoot, name, embeddingRuntime);
+		const skill = builder(normalizedEntry, workspaceRoot, name, embedding);
 		if (skill === undefined) {
 			unknown.push(name);
 			continue;

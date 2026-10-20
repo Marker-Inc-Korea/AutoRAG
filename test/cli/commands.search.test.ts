@@ -83,16 +83,16 @@ function completeStream(result: SearchDocumentsResponse = response, onOptions?: 
 }
 
 describe("runSearch", () => {
-	it("stops the embedding runtime after a completed search so the process can exit", async () => {
-		const stopRuntime = vi.fn(async () => {});
+	it("unloads the in-process embedding model after a completed search so the process can exit", async () => {
+		const releaseEmbedders = vi.fn(async () => {});
 		const { ctx } = context(["krill habitats"]);
-		const code = await runSearch(ctx, { agentFactory: () => completeStream(), stopRuntime });
+		const code = await runSearch(ctx, { agentFactory: () => completeStream(), releaseEmbedders });
 		expect(code).toBe(0);
-		expect(stopRuntime).toHaveBeenCalledTimes(1);
+		expect(releaseEmbedders).toHaveBeenCalledTimes(1);
 	});
 
-	it("stops the embedding runtime even when the search fails", async () => {
-		const stopRuntime = vi.fn(async () => {});
+	it("unloads the in-process embedding model even when the search fails", async () => {
+		const releaseEmbedders = vi.fn(async () => {});
 		const { ctx } = context(["krill habitats"]);
 		const code = await runSearch(ctx, {
 			agentFactory: () => ({
@@ -101,10 +101,10 @@ describe("runSearch", () => {
 					throw new Error("model exploded");
 				},
 			}),
-			stopRuntime,
+			releaseEmbedders,
 		});
 		expect(code).toBe(1);
-		expect(stopRuntime).toHaveBeenCalledTimes(1);
+		expect(releaseEmbedders).toHaveBeenCalledTimes(1);
 	});
 
 	it("reports usage for an empty query", async () => {

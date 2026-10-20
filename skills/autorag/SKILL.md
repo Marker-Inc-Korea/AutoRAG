@@ -165,8 +165,7 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 - Preserve real source mapping.
 - Prefer `--json --debug` when another agent consumes search output.
 - Do not invent CLI commands. `autorag --help` is the command list of record,
-  including the shipped `setup`, `gateway`, `models`, `tui`, and `lite`
+  including the shipped `setup`, `models`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
-  `docs/embedding-runtime.md` for the local embedding runtime
-  and gateway setup.
+  `docs/minsync-setup.md#embedding-backends` for MinSync setup and embedding-backend selection.

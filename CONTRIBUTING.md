@@ -202,14 +202,16 @@ make e2e-live      E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"   # warm run, reusing state
 - A lane whose CLI or native store is missing reports `SKIP` with a reason; an
   installed and configured lane that fails reports `FAIL`. `SKIP` is never reported as
   `PASS`.
-- The local path is the default: the `autorag-gateway` `qwen3-embedding-0.6b` profile,
-  loopback only. A remote embedding endpoint is used only when the operator explicitly
-  configures one.
+- The local path is the default: the runner starts a loopback `minsync serve` daemon
+  and checks its `/health` endpoint for `Qwen/Qwen3-Embedding-0.6B` at 1024
+  dimensions, then stops the daemon after the run. A remote embedding endpoint is
+  used only when the operator explicitly configures one in `minSync.embedder`.
 - MinSync semantic QA is only complete when you have observed all of: `refresh
   --method minsync` exiting successfully with `.minsync/cursor.json` present, a
   semantic query returning a hit for the fixture document, that hit mapped to an
-  OS-absolute original `source`, that path existing and reading back, and the local
-  gateway being the configured embedder.
+  OS-absolute original `source`, that path existing and reading back, and the
+  runner's health check confirming the local `Qwen/Qwen3-Embedding-0.6B` 1024-d
+  embedder.
 - Cleanup is limited to runner-owned state: `rm -rf .autorag-e2e` from your own clone.
   Leave lazykatok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores
   untouched, and do not stage `.debug-journal.md`.

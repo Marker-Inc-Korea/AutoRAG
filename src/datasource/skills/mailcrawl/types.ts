@@ -1,3 +1,5 @@
+import type { EmbeddingEndpointSource } from "../../embedding-env.ts";
+
 export type MailcrawlSearchMode = "keyword" | "bm25" | "semantic" | "hybrid";
 
 export interface MailcrawlSearchOptions {
@@ -24,6 +26,13 @@ export interface MailcrawlOptions {
 	readonly indexTimeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/**
+	 * Where mailcrawl gets its vectors. When set, `index` and the semantic and hybrid searches run mailcrawl's
+	 * `openai`/`tei` provider against the endpoint it returns (a `minsync serve` daemon or the operator's remote),
+	 * and mailcrawl's own native model is never used; with no endpoint those commands fail instead. Without it
+	 * mailcrawl keeps whatever embedder its own environment selects.
+	 */
+	readonly embeddingEndpoint?: EmbeddingEndpointSource;
 }
 
 export type MailcrawlFailureReason =
@@ -36,7 +45,8 @@ export type MailcrawlFailureReason =
 	| "stdout-too-large"
 	| "stderr-too-large"
 	| "invalid-output"
-	| "remote-embedding-rejected";
+	| "remote-embedding-rejected"
+	| "embedding-unavailable";
 
 export interface MailcrawlFailure {
 	readonly ok: false;

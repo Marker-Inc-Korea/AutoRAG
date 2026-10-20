@@ -189,20 +189,28 @@ is impossible, refresh continues without this optimization and the user is
 told duplicate exclusion is off. Set `"excludeExactDuplicates": false` to
 index every copy.
 
-MinSync's default embedder is in-process native Qwen3 embeddings
-(`native:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, MinSync 0.4.11). The
-default needs no embedder flags, no API key, and no external daemon (such as
-Ollama) — all embeddings run in-process locally and privately. For workspaces
-using the loopback llama-server gateway, prefetch the verified model with
-`autorag models prefetch --profile qwen3-embedding-0.6b` (or verify with
-`autorag models verify --profile qwen3-embedding-0.6b`).
+AutoRAG owns no embedding model. MinSync provisions the embedder
+(`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) in its own cache
+(`~/.cache/minsync/models`); there is no local model download and no bundled
+runtime. One shared embedder serves everything that embeds inside
+AutoRAG: MinSync indexing/query, memory similar-question search, the
+chat-crawler sidecars, the GitHub Gist vector index, and the endpoint external
+CLIs are pointed at. The default needs no embedder flags and no API key. It
+resolves in order:
 
-The legacy Ollama/TEI adapter path (EmbeddingGemma, 768 dimensions) is
-supported only for existing legacy workspaces and manual QA; do not use it as a
-fresh install default.
+1. A configured remote endpoint (`minSync.embedder`), used for everything; no
+   daemon is started and no local model is loaded.
+2. A running `minsync serve` daemon (loopback only; MinSync 0.4.11+).
+   AutoRAG never starts it: run `minsync serve --idle-timeout 0` yourself, as
+   a launchd/systemd service (see `docs/minsync-setup.md`), or press
+   Ctrl+Shift+E in `autorag tui`. `autorag setup` only reports whether it is
+   alive.
+3. MinSync's in-process engine, through the optional Node-API addon
+   `@nomadamas/minsync-native` (same engine and weights, so bit-for-bit
+   identical vectors; not bundled). Without a daemon and without the addon,
+   embedding fails with an error naming the missing package.
 
-Override the embedder only when intentionally using a different, for example
-remote, provider:
+Override the embedder only when intentionally using a remote provider:
 
 ```bash
 autorag init \
@@ -213,9 +221,14 @@ autorag init \
   --embedder-batch-size 64
 ```
 
-Only store the environment-variable name, never its value. Dimension and batch
-size must be positive integers, and the dimension must match the embedder
-(default Qwen3 is 1024; legacy EmbeddingGemma is 768; `voyageai/voyage-4-lite` via OpenRouter is 1024).
+A remote `minSync.embedder` names an `id` (`openai:<model>`, `tei:<model>`, or
+any id together with a `baseUrl`) plus optional `apiKeyEnv` (the **name** of the
+environment variable holding the bearer token), `dimension`, `batchSize`, and
+`timeoutMs`. OpenAI-protocol endpoints POST `{baseUrl}/v1/embeddings`; a `tei:`
+endpoint POSTs `{baseUrl}/embed`; `openai:` with no `baseUrl` means
+`https://api.openai.com`. Only store the environment-variable name, never its
+value. `dimension` and `batchSize` must be positive integers, and `dimension`
+must match the endpoint (the local default is 1024).
 
 ### Jev routing and question decomposition (on by default)
 
@@ -336,7 +349,7 @@ keeps its mirrors and reports `search-root-unavailable`; see
 
 ## Probe and configure datasource skills (setup wizard)
 
-Use `autorag setup` to probe the local runtime, model profile, and known
+Use `autorag setup` to probe the embedding backend, MinSync, and known
 datasources automatically:
 
 ```bash
@@ -393,13 +406,15 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration.
 
-Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.2.0` or newer)
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.2.2` or newer)
 and configured through its own Himalaya account. AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
-fails with `text array must be non-empty`. 0.2.0 defaults to the in-process
-native `Qwen/Qwen3-Embedding-0.6B` embedder and keeps vectors in LanceDB, so a
-cold cache makes the first `index` download ONNX weights and run for minutes.
+fails with `text array must be non-empty`. 0.2.2 embeds through the same
+backend as the rest of AutoRAG (a remote `minSync.embedder`, else the
+`minsync serve` daemon) instead of its own in-process model, and keeps vectors
+in LanceDB. Switching from the old native model rebuilds the semantic index on
+the next `index`. kakao needs `lazykatok` 0.3.3 or newer for the same reason.
 Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
 datasource is removed.
 
@@ -415,7 +430,8 @@ autorag refresh --json
 autorag search "summarize the collection" --top-k 3 --json --debug
 ```
 
-- `setup` probes runtime health, model profile, and datasource readiness.
+- `setup` probes the embedding backend (`embedding.backend`), MinSync, and
+  datasource readiness.
 - `status` is model-free and path-opaque.
 - `health` resolves the single model, checks credential presence, and normally
   performs one live completion probe.

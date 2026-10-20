@@ -30,7 +30,7 @@ standalone search agent?
 |---|---|
 | MCP-native access | QMD v2.8.3 (MIT, CLI+MCP), Quarry v3.2.1 (MIT, daemon+MCP), msgvault (first-party MCP), official MCP servers from Elastic (Agent Builder, 9.3 GA), OpenSearch (`/_plugins/_ml/mcp` 3.3+), Qdrant, Weaviate (`/v1/mcp`), Milvus/Zilliz, Meilisearch |
 | Local-first operation | QMD, Quarry, mcp-local-rag (383★), Kotaemon, msgvault (fully offline) |
-| Hybrid retrieval (BM25 + vector + RRF) | QMD (SQLite FTS5 + local GGUF + RRF), msgvault (FTS5 + Ollama + RRF), Quarry (Tantivy + LanceDB) — a published, copyable recipe |
+| Hybrid retrieval (BM25 + vector + RRF) | QMD (SQLite FTS5 + local model + RRF), msgvault (FTS5 + Ollama + RRF), Quarry (Tantivy + LanceDB) — a published, copyable recipe |
 | CLI surface | AnythingLLM (`any`), MFS (`mfs`), msgvault, QMD |
 | "No agent harness exists" | Negative space; absence of a feature is not user value |
 

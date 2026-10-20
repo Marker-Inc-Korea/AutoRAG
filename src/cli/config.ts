@@ -22,7 +22,10 @@ import {
 import { isDazziSignedIn, readDazziLoginToken } from "../cloud/credential.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import { embeddingEndpointSource } from "../datasource/embedding-env.ts";
+import { discrawlEmbeddingRuntimeFor } from "../datasource/skills/discrawl/embedding.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
+import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
@@ -600,8 +603,15 @@ const EMBEDDER_ALLOWLIST = new Set<string>([
 	"batchSize",
 	"maxRetries",
 	"maxConcurrent",
-	"profile",
 ]);
+
+/**
+ * `profile` selected AutoRAG's own llama-server runtime, which no longer exists. Configs written by
+ * `autorag setup` may still carry it next to the GGUF file name as `id`; both are dropped on read so the
+ * embedder falls back to MinSync's local Qwen3 instead of failing every command.
+ */
+const EMBEDDER_LEGACY_IGNORED = new Set<string>(["profile"]);
+const LEGACY_GGUF_ID_PATTERN = /\.gguf$/i;
 
 /**
  * Normalize and validate a raw MinSync embedder config object.
@@ -615,7 +625,7 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 	}
 	const record = raw as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
-		if (!EMBEDDER_ALLOWLIST.has(key)) {
+		if (!EMBEDDER_ALLOWLIST.has(key) && !EMBEDDER_LEGACY_IGNORED.has(key)) {
 			throw new ConfigError(`${path}.${key} is not a recognized embedder field`);
 		}
 	}
@@ -630,13 +640,12 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 		batchSize?: number;
 		maxRetries?: number;
 		maxConcurrent?: number;
-		profile?: MinSyncEmbedderConfig["profile"];
 	} = {};
 	if (record.id !== undefined) {
 		if (typeof record.id !== "string" || record.id.trim() === "") {
 			throw new ConfigError(`${path}.id must be a non-empty string`);
 		}
-		out.id = record.id;
+		if (!LEGACY_GGUF_ID_PATTERN.test(record.id)) out.id = record.id;
 	}
 	if (record.baseUrl !== undefined) {
 		if (typeof record.baseUrl !== "string" || record.baseUrl.trim() === "") {
@@ -661,12 +670,6 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 			throw new ConfigError(`${path}.passagePrefix must be a string`);
 		}
 		out.passagePrefix = record.passagePrefix;
-	}
-	if (record.profile !== undefined) {
-		if (record.profile !== "qwen3-embedding-0.6b") {
-			throw new ConfigError(`${path}.profile must be a supported runtime profile`);
-		}
-		out.profile = record.profile;
 	}
 	for (const field of POSITIVE_INT_FIELDS) {
 		const value = record[field];
@@ -1304,8 +1307,16 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
 	if (config.limits !== undefined) opts.limits = config.limits;
 	if (config.refresh !== undefined) opts.refresh = config.refresh;
+	// One embedder serves memory and every datasource, so a single `minSync.embedder` block (local MinSync or a
+	// remote endpoint) decides where all of AutoRAG's text is embedded.
+	const embedder = createEmbedderFromConfig({ embedder: config.minSync?.embedder });
+	opts.embedder = embedder;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
+		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath, {
+			embedder,
+			discrawl: async () => discrawlEmbeddingRuntimeFor(await embedder.describeEndpoint()),
+			cliEndpoint: embeddingEndpointSource(embedder),
+		});
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {
 			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
