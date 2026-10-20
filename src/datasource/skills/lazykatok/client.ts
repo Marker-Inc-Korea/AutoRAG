@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
+import { type EmbeddingPurpose, lazykatokEmbeddingEnv } from "../../embedding-env.ts";
 import type {
 	LazykatokChunk,
 	LazykatokChunkResult,
@@ -96,7 +97,7 @@ export class LazykatokClient {
 	}
 
 	async index(signal?: AbortSignal): Promise<LazykatokIndexResult> {
-		const result = await this.run(["index", "--json"], signal, this.syncTimeoutMs());
+		const result = await this.run(["index", "--json"], signal, this.syncTimeoutMs(), "index");
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonObject(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -111,7 +112,12 @@ export class LazykatokClient {
 	): Promise<LazykatokSearchResult> {
 		const args = ["search", mode, query, "--json"];
 		if (options?.topK !== undefined) args.push("--limit", String(options.topK));
-		const result = await this.run(args, options?.signal);
+		const result = await this.run(
+			args,
+			options?.signal,
+			undefined,
+			mode === "semantic" || mode === "hybrid" ? "query" : undefined,
+		);
 		if (!result.ok) return toFailure(result);
 		const parsed = parseJsonValue(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
@@ -152,8 +158,44 @@ export class LazykatokClient {
 	}
 
 	/** Single retrieval pipeline: build env, spawn, parse-free raw result. */
-	private async run(args: readonly string[], signal?: AbortSignal, timeoutMs?: number): Promise<ProcessResult> {
+	private async run(
+		args: readonly string[],
+		signal?: AbortSignal,
+		timeoutMs?: number,
+		embedding?: EmbeddingPurpose,
+	): Promise<ProcessResult> {
 		const env = controlledEnv(this.options.env);
+		if (embedding !== undefined && this.options.embeddingEndpoint !== undefined) {
+			// The shared backend replaces whatever embedder the environment selected: lazykatok never falls
+			// back to its own fastembed model while the operator has pointed AutoRAG at a shared one.
+			const unavailable = (stderr: string): ProcessResult => ({
+				ok: false,
+				reason: "embedding-unavailable",
+				stdout: "",
+				stderr,
+				code: null,
+			});
+			try {
+				const endpoint = await this.options.embeddingEndpoint(embedding);
+				if (endpoint === undefined) {
+					return unavailable(
+						"no embedding endpoint is available: start `minsync serve` (`autorag refresh` starts it) or set minSync.embedder to a remote endpoint",
+					);
+				}
+				const shared = lazykatokEmbeddingEnv(endpoint);
+				if (shared === undefined) {
+					return unavailable(
+						"lazykatok embeds through an OpenAI-compatible endpoint only; the configured embedding endpoint speaks TEI",
+					);
+				}
+				for (const key of Object.keys(env)) {
+					if (/^(KATOK|LAZYKATOK)_EMBED/u.test(key)) delete env[key];
+				}
+				Object.assign(env, shared);
+			} catch (error) {
+				return unavailable(error instanceof Error ? error.message : String(error));
+			}
+		}
 		// lazykatok's CLI (clap) only accepts `--data-dir`/`--config` as global
 		// options BEFORE the subcommand; appending them after `sync --json`-style
 		// args makes clap reject the invocation, so they must be prepended.

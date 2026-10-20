@@ -83,15 +83,30 @@ The zero-configuration boundary is narrow:
   only that one variable through to discrawl's environment). It checks discrawl
   metadata before asking the native CLI to rebuild. An explicit `configPath` is
   authoritative and is never rewritten.
-- **mailcrawl** keeps its own in-process native `Qwen/Qwen3-Embedding-0.6B`
-  (1024 dimensions) and speaks only a private loopback protocol. AutoRAG does
-  not rewrite mailcrawl's embedder; it forwards only a loopback
-  `MAILCRAWL_EMBED_URL` and refuses a non-loopback one. mailcrawl cannot use a
-  remote OpenAI endpoint.
-- **kakao** (lazykatok) embeds in-process with its own fastembed model
-  (`embeddinggemma-300m-q4`, 768 dimensions — a different vector space) and has
-  no endpoint setting. AutoRAG's kakao sidecar semantic search uses the shared
-  embedder instead.
+- **mailcrawl** (`@nomadamas/mailcrawl@0.2.2` or newer) and **kakao**
+  (`lazykatok` 0.3.3 or newer) embed for themselves, so AutoRAG points them at
+  the same backend through the environment variables each CLI documents, for
+  `index` and for semantic and hybrid search only (BM25 never embeds).
+  - mailcrawl runs its `openai` or `tei` provider (`MAILCRAWL_EMBEDDER_PROVIDER`,
+    `MAILCRAWL_EMBED_URL`, `MAILCRAWL_EMBED_MODEL`, `MAILCRAWL_EMBED_DIM`) at a
+    daemon or remote endpoint. A non-loopback remote also sets
+    `MAILCRAWL_EMBED_ALLOW_REMOTE`, which mailcrawl requires and which is only
+    set because the operator configured that remote.
+  - lazykatok runs its OpenAI-compatible embedder (`KATOK_EMBEDDER`,
+    `KATOK_EMBED_URL`, `KATOK_EMBED_MODEL`, `KATOK_EMBED_DIM`). It speaks
+    `/v1/embeddings` only, so a TEI remote is reported as an error rather than
+    silently falling back to fastembed.
+  - A remote key is exported to that one child as the value of the variable
+    `apiKeyEnv` names (`MAILCRAWL_EMBED_API_KEY_ENV` for mailcrawl,
+    `KATOK_EMBED_API_KEY` for lazykatok); no other credential is passed.
+  - Neither CLI falls back to its own model: `index` starts the `minsync serve`
+    daemon like `refresh` does, a search never does, and with no daemon and no
+    remote the semantic call fails with "no embedding endpoint is available"
+    while BM25 keeps working.
+  - mailcrawl identity is provider + model + dimension, and lazykatok records
+    vectors under `openai/<model>`, so an archive built with the old native
+    model rebuilds on the next `index` (`mailcrawl repair --semantic`,
+    `lazykatok wipe-index` then `index` force it).
 - **telegram**, **whatsapp**, and **slack** CLIs have no embedding; their
   AutoRAG sidecars use the shared embedder.
 - **github-gist** semantic retrieval uses the shared embedder;
@@ -181,12 +196,14 @@ separately (#1587, #1586).
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.0` or newer
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.2` or newer
 (Node.js 24+) and configure Himalaya separately; AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
 native archive. Set `connector.dataDir` only when the operator explicitly
-wants a different mailcrawl data directory.
+wants a different mailcrawl data directory. The semantic index embeds through
+the shared backend (see the embedding section above); `connector.env` embedding
+overrides are replaced for `index` and semantic search.
 
 0.2.0 replaced the semantic store and embedder contract:
 

@@ -22,6 +22,7 @@ import {
 import { isDazziSignedIn, readDazziLoginToken } from "../cloud/credential.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import { embeddingEndpointSource } from "../datasource/embedding-env.ts";
 import { discrawlEmbeddingRuntimeFor } from "../datasource/skills/discrawl/embedding.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { createEmbedderFromConfig } from "../embedding/index.ts";
@@ -1503,6 +1504,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath, {
 			embedder,
 			discrawl: async () => discrawlEmbeddingRuntimeFor(await embedder.describeEndpoint()),
+			cliEndpoint: embeddingEndpointSource(embedder),
 		});
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {

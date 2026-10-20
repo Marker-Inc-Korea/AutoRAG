@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { Embedder } from "../../embedding/embedder.ts";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
+import type { EmbeddingEndpointSource } from "../embedding-env.ts";
 import { resolveSidecarOptions } from "../sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
 import type { DatasourceSkill } from "../types.ts";
@@ -74,6 +75,8 @@ export interface BuildDatasourceSkillsResult {
 export interface DatasourceEmbeddingOptions {
 	readonly embedder?: Embedder;
 	readonly discrawl?: DiscrawlEmbeddingRuntime | (() => Promise<DiscrawlEmbeddingRuntime | undefined>);
+	/** For CLIs that embed for themselves through env (mailcrawl, lazykatok): where the shared backend is. */
+	readonly cliEndpoint?: EmbeddingEndpointSource;
 }
 
 type SkillBuilder = (
@@ -228,7 +231,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(embedding.embedder === undefined ? {} : { embedder: embedding.embedder }),
 		});
 		return new LazykatokSkill({
-			client: new LazykatokClient(connector),
+			client: new LazykatokClient({
+				...connector,
+				...(embedding.cliEndpoint === undefined ? {} : { embeddingEndpoint: embedding.cliEndpoint }),
+			}),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
@@ -279,11 +285,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
-	mailcrawl: (config, workspaceRoot, registrationName) =>
+	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
 			...(config.connector as MailcrawlOptions),
+			...(embedding.cliEndpoint === undefined ? {} : { embeddingEndpoint: embedding.cliEndpoint }),
 		}),
 	obsidian: (config, workspaceRoot, registrationName) => {
 		const connector = config.connector as
