@@ -22,16 +22,26 @@ describe("embeddingStatusText", () => {
 		expect(text({ backend: "remote", alive: true })).toBe("embedding: remote ● up");
 		expect(text({ backend: "remote", alive: false, detail: "HTTP 503" })).toBe("embedding: remote ○ down (HTTP 503)");
 		expect(text({ backend: "none", alive: false })).toBe(
-			`embedding: off ○ (${EMBEDDING_TOGGLE_KEY} starts minsync serve)`,
+			`embedding: off ○ (/embedding on, or ${EMBEDDING_TOGGLE_KEY}, starts minsync serve)`,
 		);
 	});
 });
+
+/** The part of pi's registered command the tests drive. */
+interface RegisteredCommandShape {
+	readonly handler: (args: string, ctx: ExtensionContext) => Promise<void>;
+	readonly getArgumentCompletions?: (
+		prefix: string,
+	) => { value: string }[] | null | Promise<{ value: string }[] | null>;
+}
 
 interface Harness {
 	readonly statuses: (string | undefined)[];
 	readonly notes: { readonly message: string; readonly type: string | undefined }[];
 	readonly fire: (event: "session_start" | "session_shutdown") => void;
 	readonly press: () => Promise<void>;
+	readonly run: (args: string) => Promise<void>;
+	readonly complete: (prefix: string) => Promise<{ value: string }[] | null>;
 	readonly shortcuts: string[];
 }
 
@@ -42,6 +52,7 @@ function install(
 ): Harness {
 	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
 	let shortcut: ((ctx: ExtensionContext) => Promise<void>) | undefined;
+	let command: RegisteredCommandShape | undefined;
 	const shortcuts: string[] = [];
 	const statuses: (string | undefined)[] = [];
 	const notes: { message: string; type: string | undefined }[] = [];
@@ -58,6 +69,9 @@ function install(
 			shortcuts.push(key);
 			shortcut = registration.handler;
 		},
+		registerCommand: (name: string, registration: RegisteredCommandShape) => {
+			if (name === "embedding") command = registration;
+		},
 	} as unknown as ExtensionAPI;
 	createEmbeddingControls({ embedder, ...options })(pi);
 	return {
@@ -66,6 +80,8 @@ function install(
 		shortcuts,
 		fire: (event) => handlers.get(event)?.({}, ctx),
 		press: async () => shortcut?.(ctx),
+		run: async (args) => command?.handler(args, ctx),
+		complete: async (prefix) => (await command?.getArgumentCompletions?.(prefix)) ?? null,
 	};
 }
 
@@ -203,6 +219,7 @@ describe("createEmbeddingControls", () => {
 				on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => void) =>
 					handlers.set(event, handler),
 				registerShortcut: () => undefined,
+				registerCommand: () => undefined,
 			} as unknown as ExtensionAPI;
 			createEmbeddingControls({ embedder, remote: false, resolveBinary: async () => "unused" })(pi);
 
@@ -220,6 +237,86 @@ describe("createEmbeddingControls", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	describe("/embedding", () => {
+		function localEmbedder(): ManagedEmbedder {
+			return createManagedEmbedder({
+				home,
+				inProcess: async () => {
+					throw new Error("no addon");
+				},
+			});
+		}
+
+		it("starts with `on`, is idempotent, stops with `off`, and says so when there is nothing to do", async () => {
+			const harness = install(localEmbedder(), {
+				remote: false,
+				resolveBinary: async () => writeFakeMinSyncServe(bin, { dimension: 4 }),
+			});
+			await harness.run("off");
+			expect(harness.notes.at(-1)?.message).toBe("minsync serve is not running.");
+
+			await harness.run("on");
+			expect(harness.notes.at(-1)?.message).toContain("Started minsync serve");
+			expect(await probeMinSyncDaemon({ home })).toBeDefined();
+
+			await harness.run("on");
+			expect(harness.notes.at(-1)?.message).toContain("already running");
+
+			await harness.run("off");
+			expect(harness.notes.at(-1)?.message).toContain("Stopped minsync serve");
+			expect(await probeMinSyncDaemon({ home })).toBeUndefined();
+		}, 60_000);
+
+		it("toggles with no argument and with `toggle`, exactly like the key", async () => {
+			const harness = install(localEmbedder(), {
+				remote: false,
+				resolveBinary: async () => writeFakeMinSyncServe(bin, { dimension: 4 }),
+			});
+			await harness.run("");
+			expect(await probeMinSyncDaemon({ home })).toBeDefined();
+			await harness.run("toggle");
+			expect(await probeMinSyncDaemon({ home })).toBeUndefined();
+		}, 60_000);
+
+		it("reports the backend with `status` without starting or stopping anything", async () => {
+			const harness = install(localEmbedder(), { remote: false, resolveBinary: async () => "unused" });
+			await harness.run("status");
+			expect(harness.notes.at(-1)).toMatchObject({
+				type: "warning",
+				message: expect.stringContaining("/embedding on"),
+			});
+			expect(await probeMinSyncDaemon({ home })).toBeUndefined();
+		});
+
+		it("rejects an unknown argument instead of toggling", async () => {
+			const harness = install(localEmbedder(), { remote: false, resolveBinary: async () => "unused" });
+			await harness.run("restart");
+			expect(harness.notes).toEqual([
+				{ message: 'Unknown argument "restart". Use /embedding [on|off|toggle|status].', type: "warning" },
+			]);
+			expect(await probeMinSyncDaemon({ home })).toBeUndefined();
+		});
+
+		it("only explains with a remote endpoint, but `status` still reports its /health", async () => {
+			const embedder = createManagedEmbedder({
+				remote: { baseUrl: "https://emb.example.com", model: "m", dimension: 2, protocol: "openai" },
+				fetchImpl: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+			});
+			const harness = install(embedder, { remote: true, resolveBinary: async () => "unused" });
+			await harness.run("on");
+			expect(harness.notes.at(-1)?.message).toContain("remote endpoint");
+			await harness.run("status");
+			expect(harness.notes.at(-1)).toMatchObject({ type: "info", message: expect.stringContaining("remote") });
+		});
+
+		it("completes its arguments", async () => {
+			const harness = install(localEmbedder(), { remote: false, resolveBinary: async () => "unused" });
+			expect((await harness.complete(""))?.map((item) => item.value)).toEqual(["on", "off", "toggle", "status"]);
+			expect((await harness.complete("o"))?.map((item) => item.value)).toEqual(["on", "off"]);
+			expect(await harness.complete("zzz")).toBeNull();
+		});
 	});
 
 	it("keeps a footer slot of its own", () => {

@@ -61,14 +61,16 @@ this order:
    (see [Running the embedding daemon](#running-the-embedding-daemon)); it is
    looked up again on every call, so one you start or stop while AutoRAG runs
    is noticed.
-3. **In-process engine.** When no daemon answers, AutoRAG-owned consumers use
-   MinSync's in-process engine through the optional Node-API addon
-   `@nomadamas/minsync-native`. It runs the same engine and weights, so vectors
-   are bit-for-bit identical to the daemon's. The addon is loaded lazily and is
-   not bundled (it is not on npm yet); when it is absent, the error says so. The
-   `minsync` CLI independently adopts a running daemon for `native:`
-   workspaces and otherwise falls back in-process (`MINSYNC_SERVER=off`
-   disables adoption).
+3. **In-process engine** (the optional addon, not the `minsync` CLI). When no
+   daemon answers, AutoRAG's own consumers (memory, the chat sidecars, gist,
+   discrawl) can load MinSync's embedding engine inside the AutoRAG process
+   through the Node-API addon `@nomadamas/minsync-native`. It runs the same
+   engine and weights as `minsync`, so vectors are bit-for-bit identical to
+   the daemon's. It is not bundled and not on npm yet, so today this step is
+   effectively empty and the error says so. This is separate from the `minsync`
+   CLI, which embeds in-process by itself for the MinSync datasource (it adopts
+   a running daemon for `native:` workspaces, and `MINSYNC_SERVER=off` disables
+   that).
 
 ### Running the embedding daemon
 
@@ -130,13 +132,13 @@ with `ExecStart=%h/.cargo/bin/minsync serve --idle-timeout 0 --quiet` and
 `Restart=always`, then `systemctl --user enable --now minsync-serve`.
 
 **Without a service manager**, run `minsync serve --idle-timeout 0` in a
-terminal, or press **Ctrl+Shift+E** in `autorag tui` (below).
+terminal, or press **Ctrl+Shift+E** or type `/embedding on` in `autorag tui` (below).
 
 `autorag setup` and `autorag status` report whether a backend is alive and say
 how to start one; the MCP status tool returns the same `embedding-unavailable`
 diagnostic. They only look: nothing is started.
 
-### The TUI footer and Ctrl+Shift+E
+### The TUI footer, Ctrl+Shift+E, and /embedding
 
 `autorag tui` shows the embedding state in the footer and re-checks it every
 15 s and after each toggle:
@@ -146,13 +148,18 @@ diagnostic. They only look: nothing is started.
 | `embedding: daemon ● up` | A `minsync serve` daemon answers `GET /health`. |
 | `embedding: in-process ●` | No daemon, but the in-process addon is loadable. |
 | `embedding: remote ● up` / `remote ○ down (…)` | The configured remote's `GET /health` (a 404 still counts as up, since hosted APIs have no such route; a network error or 5xx is down). |
-| `embedding: off ○ (ctrl+shift+e starts minsync serve)` | Nothing can embed. |
+| `embedding: off ○ (/embedding on, or ctrl+shift+e, starts minsync serve)` | Nothing can embed. |
 
-**Ctrl+Shift+E** starts the daemon (`minsync serve --idle-timeout 0`, so it
-stays on until you stop it) when none runs, and stops it with `SIGTERM` when
-one does. With a remote endpoint configured it only explains that there is
-nothing local to toggle. A daemon started by a launchd service is stopped by
-the key too, and launchd then restarts it (`KeepAlive`); use
+**Ctrl+Shift+E** and **`/embedding`** do the same thing. The key toggles; the
+command takes `on`, `off`, `toggle` (the default with no argument), or `status`
+(a one-line report of the backend and why it is down, without changing
+anything). The command works in terminals that do not deliver Ctrl+Shift
+combinations and autocompletes its arguments. `on` starts the daemon
+(`minsync serve --idle-timeout 0`, so it stays on until you stop it) and `off`
+stops it with `SIGTERM`; each says so when there is nothing to do. With a remote
+endpoint configured they only explain that there is no local daemon to manage,
+and `status` still reports the remote's `/health`. A daemon started by a
+launchd service is stopped too, and launchd then restarts it (`KeepAlive`); use
 `launchctl bootout` to stop it for good.
 
 The reported identity is provider `minsync`, model
