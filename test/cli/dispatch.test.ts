@@ -338,8 +338,6 @@ const COMMANDS_WITH_OWN_HELP = [
 	"health",
 	"duplicates",
 	"tui",
-	"serve",
-	"p2p",
 	"models",
 	"gateway",
 ] as const;
@@ -358,8 +356,6 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	health: ["--skip-probes", "--timeout-ms"],
 	duplicates: ["DIR"],
 	tui: ["Usage: autorag tui", "--telegram", "/telegram-connect"],
-	serve: ["--port", "--force"],
-	p2p: ["peers", "requests", "--contact-id"],
 	models: ["prefetch", "import", "verify", "--profile"],
 	gateway: ["status", "stop"],
 };

@@ -16,8 +16,7 @@ between runs.
 validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
 on top, and uses the same client for the query pipeline described below. Jev
 is **on by default**, on the hosted Dazzi Models backend when you are signed in
-(`/login`) and on OpenRouter otherwise. It is always omitted for remote P2P
-sessions because its `state` leaves the machine.
+(`/login`) and on OpenRouter otherwise.
 
 ## Defaults and opt-out
 
@@ -160,7 +159,7 @@ user question in one batched call:
      may have changed recently.
    - `config`: the user wants to view, change, or test AutoRAG's own settings
      (model, providers, API-key environment variables, Jev, search roots,
-     datasources). Offered only to local sessions, never to remote P2P peers.
+     datasources).
 2. **Decomposition** (`noul`): does the question need several search queries
    (multiple sub-questions, comparisons, several facts to confirm)? A
    probability of 0.5 or more means yes.
@@ -186,7 +185,7 @@ On the `local` branch, Jev answers one more batched call: one `noul` per
 registered datasource (configured, with retrieval methods), "Should the `<id>`
 datasource be searched to answer the user question?". The registered set comes
 from the config: `autorag search` reads it on every call, while `autorag tui`
-and `autorag serve` read it at startup, so restart them after adding,
+reads it at startup, so restart it after adding,
 disabling, or re-describing a datasource. Every datasource at 0.5 or
 above is searched with every search query (the original or the decomposed
 ones), and its chunks join Jikji and MinSync in the pool the reranker orders,
@@ -293,8 +292,7 @@ searches the original question (`query-decomposition-failed`). A failed
 datasource check searches no datasource before the fast answer
 (`datasource-selection-fallback`). Every routed run records its branch and
 queries as a `query-routed` diagnostic, and the datasource check's picks as
-`datasources-selected` (`--debug` shows both). The pipeline never runs for
-remote P2P sessions. Every search is
+`datasources-selected` (`--debug` shows both). Every search is
 two-phase (fast answer, then verification unless Jev ends the run); there is
 no single-phase mode.
 

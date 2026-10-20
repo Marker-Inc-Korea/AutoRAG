@@ -124,15 +124,6 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("never cite the newly created deliverable file itself as `[file:...]`");
 		expect(text).toContain("- **write**:");
 		expect(text).not.toContain("caller-provided tool");
-
-		const remoteText = buildSystemPrompt({
-			toolNames: ["bash", "read", "write", "edit", "grep", "find", "ls", "search_all_documents"],
-			modelId: "test-model",
-			remoteSession: true,
-		});
-		expect(remoteText).not.toContain("- **write**:");
-		expect(remoteText).not.toContain("- **edit**:");
-		expect(remoteText).not.toContain("caller-provided tool");
 	});
 
 	it("instructs resolving conflicting information in favor of the freshest data", () => {

@@ -71,11 +71,6 @@ import {
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
-import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
-import type { PolicyResolver } from "../p2p/policy-filter.ts";
-import type { SimplexQueryState } from "../p2p/simplex-query-store.ts";
-import { openPeerQueryTransport, type SimplexTransport } from "../p2p/simplex-transport.ts";
-import type { PeerQueryResponse } from "../p2p/wire.ts";
 import { type DefaultParserRegistryOptions, resolveParserOptions } from "../parser/index.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -131,7 +126,6 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
-import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
 import {
 	type AutoRAGInputDisposition,
 	type AutoRAGInteractiveInput,
@@ -143,7 +137,6 @@ import {
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
-import { createQueryPeerAgentTool, QUERY_PEER_AGENT_TOOL_NAME } from "./query-peer-tool.ts";
 import {
 	type DatasourceCandidate,
 	FALLBACK_QUERY_ROUTE,
@@ -525,31 +518,6 @@ interface RefreshState {
 	watchFailed: boolean;
 }
 
-declare module "../retrieval/types.ts" {
-	interface RetrievalOptions {
-		/** Server-only P2P policy identity; never included in model tool schemas. */
-		peerFingerprint?: string;
-		/** Server-only P2P policy resolver. */
-		resolvePolicy?: PolicyResolver;
-		/** Server-only run registry populated from observed retrieval output. */
-		observedSources?: Set<string>;
-		/** Server-only datasource source globs derived from the loaded policy. */
-		policyDatasourceScopes?: readonly string[];
-	}
-}
-
-export type RemoteSessionRejectionCode = "injection-detected" | "outbound-leak-detected";
-
-export class RemoteSessionRejectedError extends Error {
-	readonly code: RemoteSessionRejectionCode;
-
-	constructor(code: RemoteSessionRejectionCode) {
-		super(`Remote session rejected: ${code}`);
-		this.name = "RemoteSessionRejectedError";
-		this.code = code;
-	}
-}
-
 /** Thinking level applied per search phase. "off" requests no reasoning. */
 export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -564,13 +532,6 @@ export interface AutoRAGThinkingOptions {
 	readonly fast?: AutoRAGThinkingLevel;
 	/** Thinking level for the verification/finalization phase. Default "high". */
 	readonly final?: AutoRAGThinkingLevel;
-}
-
-export interface PeerQueryOptions {
-	readonly port?: number;
-	readonly simplexDbPrefix?: string;
-	readonly openTransport?: () => Promise<SimplexTransport>;
-	readonly onResponse?: (state: SimplexQueryState, response: PeerQueryResponse) => void;
 }
 
 export interface AutoRAGAgentOptions {
@@ -612,7 +573,6 @@ export interface AutoRAGAgentOptions {
 	 * challenges. A self-hosted
 	 * SEARXNG_ENDPOINT is the only env-gated option. `false` disables both
 	 * tools. The `fetch` sub-option tunes or disables `web_fetch` alone.
-	 * Web tools are always omitted for remote P2P sessions.
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
 	/**
@@ -630,8 +590,7 @@ export interface AutoRAGAgentOptions {
 	 * probabilities out). When set, the two-phase search asks Jev before the
 	 * fast answer whether the question is answerable from intrinsic knowledge
 	 * (direct answer) or needs local search, and whether to decompose it; after the fast answer, whether
-	 * verification is needed. It also exposes the `jev` tool. Always omitted for
-	 * remote P2P sessions.
+	 * verification is needed. It also exposes the `jev` tool.
 	 *
 	 * The CLI config enables this by default on OpenRouter (`buildAgentOptions`
 	 * fills it in). On this programmatic option, absent or `false` keeps Jev
@@ -649,7 +608,7 @@ export interface AutoRAGAgentOptions {
 	 * branch for questions about AutoRAG's own settings: the turn skips the
 	 * fast answer, receives the full `autorag-setup` skill, edits
 	 * `configPath` with the pi tools, and reports what it changed as its final
-	 * message. Always omitted for remote P2P sessions.
+	 * message.
 	 */
 	selfConfig?: SelfConfigOptions;
 	/**
@@ -685,18 +644,11 @@ export interface AutoRAGAgentOptions {
 	 */
 	toolCallBurstGuard?: ToolBurstGuardOptions | false;
 	/**
-	 * Outbound SimpleX queries to trusted peer AutoRAG agents. Remote sessions
-	 * never receive this tool.
-	 */
-	peerQuery?: PeerQueryOptions | false;
-	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
-	remoteSession?: boolean;
-	/**
 	 * Control the interactive (TUI) session from Discord through the
 	 * `pi-discord-remote` extension: a session channel is created on launch, and
 	 * allowed users' messages run as questions; the final answer is posted back. Needs `~/.pi/agent/pi-discord-remote/config.json` (or
 	 * `DISCORD_TOKEN` + `DISCORD_GUILD_ID`).
-	 * Ignored for remote sessions. Default false.
+	 * Default false.
 	 */
 	discordRemote?: boolean;
 	/** Per-phase thinking levels for the two-phase (fast → verification) search. */
@@ -929,8 +881,6 @@ export class AutoRAGAgent {
 	private readonly conversationId = randomUUID();
 	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
-	/** True when this agent was constructed for an untrusted remote peer. */
-	readonly remoteSession: boolean;
 	private readonly discordRemote: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private readonly toolBurstGuard: ToolBurstGuard;
@@ -940,8 +890,7 @@ export class AutoRAGAgent {
 	constructor(options: AutoRAGAgentOptions) {
 		const { memoryPath } = options;
 		this.configuredModel = options.model;
-		this.remoteSession = options.remoteSession ?? false;
-		this.discordRemote = (options.discordRemote ?? false) && !this.remoteSession;
+		this.discordRemote = options.discordRemote ?? false;
 		this.toolBurstGuard = new ToolBurstGuard(options.toolCallBurstGuard);
 		this.fastThinkingLevel = options.thinking?.fast ?? "off";
 		this.finalThinkingLevel = options.thinking?.final ?? "high";
@@ -1045,11 +994,7 @@ export class AutoRAGAgent {
 			options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? createGatewayEmbedder());
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
-		// Remote peers never read retrieval memory: past judged evidence may come
-		// from sources outside the peer's sharing policy.
-		const checkMemoryTool = createCheckMemoryTool(this.memory, () =>
-			this.remoteSession ? undefined : this.memoryContextOptions(),
-		);
+		const checkMemoryTool = createCheckMemoryTool(this.memory, () => this.memoryContextOptions());
 		// One tool per configured datasource connection, so a question that
 		// targets a single connection spawns only that connection's CLIs instead
 		// of fanning out to every datasource. Generated from the configured
@@ -1073,11 +1018,11 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 		this.jevJudge =
-			options.jev === undefined || options.jev === false || this.remoteSession
+			options.jev === undefined || options.jev === false
 				? undefined
 				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
-		this.selfConfig = this.jevJudge === undefined || this.remoteSession ? undefined : options.selfConfig;
+		this.selfConfig = this.jevJudge === undefined ? undefined : options.selfConfig;
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
 				? undefined
@@ -1088,37 +1033,12 @@ export class AutoRAGAgent {
 							: {}),
 					};
 
-		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
-		const peerQuery = options.peerQuery;
-		const queryPeerTool =
-			this.remoteSession || peerQuery === undefined || peerQuery === false
-				? undefined
-				: createQueryPeerAgentTool({
-						workspacePath: this.workspaceProjectRoot,
-						onResponse: peerQuery?.onResponse,
-						openTransport:
-							peerQuery?.openTransport ??
-							(() =>
-								openPeerQueryTransport({
-									dbPrefix:
-										peerQuery?.simplexDbPrefix ??
-										join(this.workspaceProjectRoot, ".autorag", "p2p", "simplex"),
-									displayName: `autorag-${basename(this.workspaceProjectRoot) || "node"}`,
-								})),
-						autoStart: true,
-						sessionId: () => this.lastSessionId,
-						ledger: this.evidenceLedger,
-					});
-
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this, this.evidenceLedger) : undefined;
-		// Remote peers never enumerate local file names.
-		const everythingSearchTool =
-			this.everythingClient !== undefined && !this.remoteSession ? createEverythingSearchTool(this) : undefined;
-		const fsearchSearchTool =
-			this.fsearchClient !== undefined && !this.remoteSession ? createFSearchSearchTool(this) : undefined;
+		const everythingSearchTool = this.everythingClient !== undefined ? createEverythingSearchTool(this) : undefined;
+		const fsearchSearchTool = this.fsearchClient !== undefined ? createFSearchSearchTool(this) : undefined;
 
 		const webSearchOption = options.webSearch;
-		const webToolsEnabled = webSearchOption !== false && !this.remoteSession;
+		const webToolsEnabled = webSearchOption !== false;
 		this.webSearchOptions = webToolsEnabled
 			? { ...(webSearchOption ?? {}), modelAuth: () => this.modelNativeSearchAuth }
 			: undefined;
@@ -1145,8 +1065,6 @@ export class AutoRAGAgent {
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			JEV_TOOL_NAME,
-			RECOMMEND_PEER_TARGETS_TOOL_NAME,
-			QUERY_PEER_AGENT_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
 		]);
@@ -1174,8 +1092,6 @@ export class AutoRAGAgent {
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
-			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
-			...(queryPeerTool !== undefined ? [queryPeerTool as AgentTool] : []),
 		];
 		const seenToolNames = new Set<string>();
 		const tools = orderedTools.filter((tool) => {
@@ -1186,11 +1102,8 @@ export class AutoRAGAgent {
 		this.tools = tools;
 		// pi registers the jev tool from its extension; AutoRAG still lists the
 		// name so the prompt advertises it and reserved-name checks cover it.
-		const builtinToolNames = this.remoteSession
-			? PI_BUILTIN_TOOL_NAMES.filter((name) => name !== "write" && name !== "edit")
-			: PI_BUILTIN_TOOL_NAMES;
 		const toolNames = [
-			...builtinToolNames,
+			...PI_BUILTIN_TOOL_NAMES,
 			...tools.map((tool) => tool.name),
 			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
 		];
@@ -1200,14 +1113,13 @@ export class AutoRAGAgent {
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
 			retrievedContentGuard: false,
-			remoteSession: this.remoteSession,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
 		this.innerAgent = {
 			state: {
 				systemPrompt,
-				tools: [...builtinToolNames.map((name) => ({ name })), ...tools],
+				tools: [...PI_BUILTIN_TOOL_NAMES.map((name) => ({ name })), ...tools],
 				messages: [],
 			},
 			transformContext: (messages) => this.withMemoryContext(messages),
@@ -1242,7 +1154,7 @@ export class AutoRAGAgent {
 	 * this conversation, up to 25 similar past questions, and matching
 	 * long-term insights. Computed once per run (the datasource check and every
 	 * model turn share it) so the similar-question search and its embedder call
-	 * are not repeated and a fallback is reported once. Remote peers never read it.
+	 * are not repeated and a fallback is reported once.
 	 */
 	private loadMemoryContextFor(query: string): Promise<MemoryContext> {
 		if (this.memoryContextCache?.query === query) return this.memoryContextCache.context;
@@ -1262,7 +1174,7 @@ export class AutoRAGAgent {
 	}
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
-		if (this.lastQuery === undefined || this.remoteSession) return messages;
+		if (this.lastQuery === undefined) return messages;
 		const context = await this.loadMemoryContextFor(this.lastQuery);
 		if (context.empty) return messages;
 		return [
@@ -1350,7 +1262,7 @@ export class AutoRAGAgent {
 	 * After the final answer: map every cited evidence back to the search query
 	 * and method that found it, ask Jev (one batched call, evidence judged in
 	 * parallel) whether it really supports the answer sentence it backs, and
-	 * keep only what clears the threshold. Remote peers and runs without Jev
+	 * keep only what clears the threshold. Runs without Jev
 	 * store nothing; a failed judgment stores nothing and says why.
 	 */
 	private async recordJudgedEvidence(
@@ -1358,7 +1270,7 @@ export class AutoRAGAgent {
 		question: string,
 		details: AutoRAGResultsDetails,
 	): Promise<SearchDocumentDiagnostic | undefined> {
-		if (this.remoteSession || details.mapping.length === 0) return undefined;
+		if (details.mapping.length === 0) return undefined;
 		if (this.jevJudge === undefined) {
 			return {
 				code: "evidence-judgment-fallback",
@@ -1491,7 +1403,6 @@ export class AutoRAGAgent {
 			providerApiKeys: resolved.providerApiKeys,
 			getSystemPrompt: () => systemPrompt,
 			customTools: this.steerableTools(),
-			remoteSession: this.remoteSession,
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
 			...(this.jevExtension !== undefined
@@ -1547,9 +1458,6 @@ export class AutoRAGAgent {
 					results?: readonly SearchDocumentRetrievalTraceResult[];
 			  }
 			| undefined;
-		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
-			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
-		}
 		if (Array.isArray(details?.results)) {
 			const calledQuery = this.searchToolQueries.get(event.toolCallId);
 			this.searchToolQueries.delete(event.toolCallId);
@@ -1622,7 +1530,6 @@ export class AutoRAGAgent {
 				...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
 				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
 			],
-			remoteSession: this.remoteSession,
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
 			...(this.piExtensionFlags === undefined ? {} : { extensionFlags: this.piExtensionFlags }),
@@ -1706,7 +1613,7 @@ export class AutoRAGAgent {
 
 	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
 	private deriveAnswer(text: string): AutoRAGResultsDetails {
-		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, { allowLocalFiles: !this.remoteSession });
+		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, { allowLocalFiles: true });
 		this.routingDiagnostics.push(...derived.diagnostics);
 		return derived.details;
 	}
@@ -1930,7 +1837,6 @@ export class AutoRAGAgent {
 			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.startupDiagnostics);
 		}
 		options = this.normalizeRetrievalOptions(options);
-		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
 		this.activeRetrievalOptions = options;
 
 		// A later turn of an interactive conversation is a plain agent turn: the
@@ -2188,92 +2094,55 @@ export class AutoRAGAgent {
 				steering.acceptingSteers = false;
 			});
 
-			let emittedNoVerifiedResults = false;
 			if (captured === undefined) {
-				if (this.remoteSession) {
-					// Remote sessions fail soft: the peer must receive a structured
-					// "no verified results" response, never an internal error.
-					emittedNoVerifiedResults = true;
-					captured = {
-						answer: "No verified results were found for this query.",
-						results: [],
-						mapping: [],
-						warnings: [],
-					};
-				} else {
-					// Local sessions resolve with a degraded response that carries the
-					// run's retrieval trace instead of throwing away the whole run.
-					const reason = lastAssistantText(session?.agent.state.messages ?? []);
-					const modelError = lastModelRequestError(session?.agent.state.messages ?? []);
-					const response: SearchDocumentsResponse = {
-						sessionId,
-						query: trimmedQuery,
-						results: [],
-						answer: buildMissingFinalAnswer(trimmedQuery, reason, this.retrievalTrace, modelError),
-						searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
-						warnings: [],
-						diagnostics: [
-							...this.collectComponentDiagnostics(),
-							{
-								code: "no-final-answer",
-								severity: "warning",
-								message:
-									"The agent ended its run without a final answer message; returning a degraded response that carries the run's retrieval trace.",
-							},
-							...(modelError === undefined
-								? []
-								: [
-										{
-											code: "model-request-failed" as const,
-											severity: "error" as const,
-											message: `The model request failed: ${modelError}`,
-										},
-									]),
-						],
-						retrievalTrace: this.retrievalTrace,
-					};
-					this.runLogger.write({
-						event: "search_completed",
-						timestamp: new Date().toISOString(),
-						sessionId,
-						resultCount: 0,
-						degraded: true,
-					});
-					return response;
-				}
-			}
-			if (this.remoteSession && options.observedSources !== undefined) {
-				for (const entry of captured.mapping) options.observedSources.add(entry.source);
-			}
-			if (this.remoteSession) {
-				const scan = scanOutboundPayload(
-					[
-						captured.answer,
-						...captured.results.flatMap((result) => [
-							result.summary,
-							...result.evidence.map((evidence) => evidence.excerpt),
-						]),
+				// Local sessions resolve with a degraded response that carries the
+				// run's retrieval trace instead of throwing away the whole run.
+				const reason = lastAssistantText(session?.agent.state.messages ?? []);
+				const modelError = lastModelRequestError(session?.agent.state.messages ?? []);
+				const response: SearchDocumentsResponse = {
+					sessionId,
+					query: trimmedQuery,
+					results: [],
+					answer: buildMissingFinalAnswer(trimmedQuery, reason, this.retrievalTrace, modelError),
+					searched: this.retrievalTrace.reduce((total, entry) => total + entry.resultCount, 0),
+					warnings: [],
+					diagnostics: [
+						...this.collectComponentDiagnostics(),
+						{
+							code: "no-final-answer",
+							severity: "warning",
+							message:
+								"The agent ended its run without a final answer message; returning a degraded response that carries the run's retrieval trace.",
+						},
+						...(modelError === undefined
+							? []
+							: [
+									{
+										code: "model-request-failed" as const,
+										severity: "error" as const,
+										message: `The model request failed: ${modelError}`,
+									},
+								]),
 					],
-					[this.workspaceProjectRoot, ...this.searchPaths].map((root) => resolve(root)),
-				);
-				if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
+					retrievalTrace: this.retrievalTrace,
+				};
+				this.runLogger.write({
+					event: "search_completed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					resultCount: 0,
+					degraded: true,
+				});
+				return response;
 			}
 			const componentDiagnostics = this.collectComponentDiagnostics();
-			if (emittedNoVerifiedResults) {
-				componentDiagnostics.push({
-					code: "no-verified-results",
-					severity: "info",
-					message: "The agent completed without verified results; returning a structured empty response.",
-					source: "agent",
-				});
-			}
 			const recorded = recordStructuredResultsSession(
 				sessionId,
 				trimmedQuery,
 				captured,
 				this.memory,
 				componentDiagnostics,
-				{ isolateMemory: this.remoteSession || selfConfigRun },
+				{ isolateMemory: selfConfigRun },
 			);
 			// A self-config report is about AutoRAG's settings, not retrieved evidence.
 			const memoryDiagnostic = selfConfigRun
@@ -2805,8 +2674,6 @@ export class AutoRAGAgent {
 		const datasourceResults = interleave(perQuery.map(([, , perDatasource]) => interleave(perDatasource))).filter(
 			unseen,
 		);
-		for (const result of minSyncResults) options.observedSources?.add(result.source);
-		for (const result of datasourceResults) options.observedSources?.add(result.source);
 		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths,
 		// MinSync chunks, and selected-datasource chunks) against the original
 		// question, so decomposed sub-query hits compete on relevance to what the
@@ -2930,7 +2797,7 @@ export class AutoRAGAgent {
 	 * transcript, so a fresh session (`/new`) starts over with the full pipeline.
 	 */
 	private isConversationTurn(): boolean {
-		if (this.remoteSession || this.boundPiRuntime === undefined) return false;
+		if (this.boundPiRuntime === undefined) return false;
 		return this.boundPiRuntime.session.messages.some((message) => message.role === "assistant");
 	}
 
@@ -3798,14 +3665,10 @@ export class AutoRAGAgent {
 		query: string,
 		options: RetrievalOptions = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
-		if (this.remoteSession) options = { ...this.activeRetrievalOptions, ...options };
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
-		for (const results of filteredByMethod.values()) {
-			for (const result of results) options.observedSources?.add(result.source);
-		}
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
 			dedup: true,
@@ -3857,9 +3720,6 @@ export class AutoRAGAgent {
 			retrievalOptions,
 		);
 		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
-		for (const results of filteredByMethod.values()) {
-			for (const result of results) retrievalOptions.observedSources?.add(result.source);
-		}
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.singleDatasourceTopK,
 			dedup: true,
@@ -3947,9 +3807,7 @@ export class AutoRAGAgent {
 				if (property !== "retrieve") return Reflect.get(target, property, receiver);
 				return async (query: string, options: RetrievalOptions) => {
 					const effective = { ...this.activeRetrievalOptions, ...options };
-					const results = await target.retrieve.call(target, query, effective);
-					for (const result of results) effective.observedSources?.add(result.source);
-					return results;
+					return target.retrieve.call(target, query, effective);
 				};
 			},
 		}) as T;

@@ -52,17 +52,6 @@ const VALUE_FLAGS = new Set([
 	"minsync-max-chunk-size",
 	"timeout-ms",
 	"port",
-	"peer",
-	"accept",
-	"alias",
-	"endpoint",
-	"remove",
-	"add",
-	"contact-id",
-	"edit",
-	"show",
-	"rank",
-	"description",
 	"input",
 	"profile",
 	"format",
@@ -85,8 +74,6 @@ const COMMANDS = [
 	"health",
 	"duplicates",
 	"tui",
-	"serve",
-	"p2p",
 	"lite",
 	"models",
 	"gateway",
@@ -129,16 +116,6 @@ Commands:
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
                        (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
-  serve                Start the P2P peer query server over SimpleX
-                       (--port N  --force)
-  p2p                  SimpleX peer trust management
-                       (peers [--add <alias> --contact-id <n>] [--edit <alias>]
-                        [--description <text>]
-                        [--show <alias>] [--rank <query>] [--remove <alias>])
-                       (requests [approve|deny <id>])
-  p2p policy list      Show effective merged sharing policy (virtual-path keys)
-  p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
-  p2p policy unset     Remove a sharing rule by key
   models list          List chat models from the pi runtime (--provider ID --available)
   models prefetch|import|verify
                        Manage verified embedding model cache (--profile ID)
@@ -276,19 +253,6 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "tui": {
 			const { runTui } = await import("./commands/tui.ts");
 			return runTui(ctx);
-		}
-		case "serve": {
-			const { runServe } = await import("./commands/serve.ts");
-			return runServe(ctx);
-		}
-		case "p2p": {
-			if (ctx.positionals[0] === "policy") {
-				const { runP2pPolicy } = await import("./commands/p2p-policy.ts");
-				ctx.positionals = ctx.positionals.slice(1);
-				return runP2pPolicy(ctx);
-			}
-			const { runP2p } = await import("./commands/p2p.ts");
-			return runP2p(ctx);
 		}
 		case "lite": {
 			return dispatchLite(ctx);

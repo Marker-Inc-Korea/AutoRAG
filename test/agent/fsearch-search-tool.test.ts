@@ -187,7 +187,7 @@ describe("AutoRAGAgent FSearch wiring", () => {
 		expect(agent.getSystemPrompt()).toContain("## FSearch File-Name Search");
 	});
 
-	it("omits fsearch_search on Windows, when disabled, and for remote peers", () => {
+	it("omits fsearch_search on Windows and when disabled", () => {
 		const windows = macAgent({ platform: "win32" });
 		expect(toolNames(windows)).not.toContain(FSEARCH_SEARCH_TOOL_NAME);
 
@@ -200,18 +200,6 @@ describe("AutoRAGAgent FSearch wiring", () => {
 			fsearch: false,
 		});
 		expect(toolNames(disabled)).not.toContain(FSEARCH_SEARCH_TOOL_NAME);
-
-		const remote = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			workspacePath: tmpDir,
-			memoryPath: join(tmpDir, "memory.json"),
-			minSync: { autoInstall: false },
-			jikji: false,
-			webSearch: false,
-			remoteSession: true,
-			fsearch: { platform: "darwin" },
-		});
-		expect(toolNames(remote)).not.toContain(FSEARCH_SEARCH_TOOL_NAME);
 	});
 
 	it("indexes FSearch during refresh and reports its component status", async () => {
