@@ -12,10 +12,12 @@
  * providers — a configured reranker that cannot run is reported, not replaced.
  */
 
-import { OpenRouter } from "@openrouter/sdk";
 import { API_PATH, PROVIDER_ID as DAZZI_PROVIDER_ID, resolveBaseUrl } from "../cloud/config.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "../cloud/credential.ts";
 import type { RetrievalResult } from "./types.ts";
+
+/** OpenRouter's production API root. */
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /** Default rerank model routed through OpenRouter. */
 export const DEFAULT_RERANK_MODEL = "voyageai/rerank-3-lite";
@@ -80,7 +82,7 @@ export interface Reranker {
 	rerank(query: string, results: readonly RetrievalResult[], options?: RerankOptions): Promise<RetrievalResult[]>;
 }
 
-/** Minimal rerank client shape, so tests can inject a fake without the SDK. */
+/** Minimal rerank client shape, so tests can inject a fake without network access. */
 export interface RerankClient {
 	rerank(
 		request: {
@@ -95,7 +97,7 @@ export interface RerankClient {
 	): Promise<RerankResponse>;
 }
 
-/** Response body returned by OpenRouter's rerank router. */
+/** Rerank response as {@link OpenRouterReranker} consumes it. */
 export interface RerankResponse {
 	readonly results: ReadonlyArray<{
 		readonly index: number;
@@ -159,7 +161,65 @@ function dazziApiBaseUrl(env: NodeJS.ProcessEnv): string {
 }
 
 /**
- * Reranker backed by an OpenRouter-compatible rerank router.
+ * Rerank client over plain `fetch`. The OpenRouter SDK validates every result
+ * against a schema that requires a `document` echo, which Dazzi does not send:
+ * the SDK then rejects a successful HTTP 200. Only `index` and
+ * `relevance_score` are read here, and a malformed or non-2xx response throws
+ * with the status and body so the failure is reported, not hidden.
+ */
+function createFetchRerankClient(options: {
+	readonly apiKey: string;
+	readonly baseUrl: string;
+	readonly timeoutMs?: number;
+}): RerankClient {
+	const url = `${options.baseUrl.replace(/\/+$/u, "")}/rerank`;
+	return {
+		rerank: async ({ requestBody }, requestOptions) => {
+			const { topN, ...rest } = requestBody;
+			const timeout = options.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs);
+			const signal = AbortSignal.any([requestOptions?.signal, timeout].filter((entry) => entry !== undefined));
+			const response = await fetch(url, {
+				method: "POST",
+				headers: { authorization: `Bearer ${options.apiKey}`, "content-type": "application/json" },
+				body: JSON.stringify({ ...rest, ...(topN !== undefined ? { top_n: topN } : {}) }),
+				signal,
+			});
+			const text = await response.text();
+			if (!response.ok) throw new Error(`rerank request failed (HTTP ${response.status}): ${text.slice(0, 500)}`);
+			let body: unknown;
+			try {
+				body = JSON.parse(text);
+			} catch {
+				throw new Error(`rerank response is not JSON: ${text.slice(0, 200)}`);
+			}
+			const results = readField(body, "results");
+			if (!Array.isArray(results)) throw new Error(`rerank response has no results array: ${text.slice(0, 200)}`);
+			const parsed = results.map((entry: unknown) => {
+				const index = readField(entry, "index");
+				const score = readField(entry, "relevance_score");
+				if (typeof index !== "number" || !Number.isInteger(index) || typeof score !== "number") {
+					throw new Error(`rerank response has a malformed result: ${JSON.stringify(entry).slice(0, 200)}`);
+				}
+				return { index, relevanceScore: score };
+			});
+			const model = readField(body, "model");
+			const provider = readField(body, "provider");
+			return {
+				results: parsed,
+				...(typeof model === "string" ? { model } : {}),
+				...(typeof provider === "string" ? { provider } : {}),
+			};
+		},
+	};
+}
+
+/** `value[key]` when `value` is an object that has `key`, else `undefined`. */
+function readField(value: unknown, key: string): unknown {
+	return typeof value === "object" && value !== null && key in value ? Reflect.get(value, key) : undefined;
+}
+
+/**
+ * Reranker backed by an OpenRouter-compatible rerank endpoint.
  *
  * OpenRouter is the default provider; the hosted Dazzi Models plan serves the
  * same wire shape at `<root>/v1/rerank`, so {@link createReranker} reuses this
@@ -192,18 +252,8 @@ export class OpenRouterReranker implements Reranker {
 				: `no API key: set ${apiKeyEnv} or configure rerank.apiKeyEnv`;
 			return;
 		}
-		const baseUrl = options.baseUrl ?? (isDazzi ? dazziApiBaseUrl(env) : undefined);
-		const sdkOptions: ConstructorParameters<typeof OpenRouter>[0] = { apiKey };
-		if (baseUrl !== undefined) sdkOptions.serverURL = baseUrl;
-		if (options.timeoutMs !== undefined) sdkOptions.timeoutMs = options.timeoutMs;
-		const sdk = new OpenRouter(sdkOptions);
-		this.client = {
-			rerank: async (request, requestOptions) => {
-				const response = await sdk.rerank.rerank(request, requestOptions);
-				if (typeof response === "string") throw new Error(response);
-				return response;
-			},
-		};
+		const baseUrl = options.baseUrl ?? (isDazzi ? dazziApiBaseUrl(env) : OPENROUTER_BASE_URL);
+		this.client = createFetchRerankClient({ apiKey, baseUrl, timeoutMs: options.timeoutMs });
 	}
 
 	describe(): RerankerDescriptor {

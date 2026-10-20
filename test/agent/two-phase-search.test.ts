@@ -188,7 +188,7 @@ async function collectEvents(agent: AutoRAGAgent, query: string): Promise<Search
 	return events;
 }
 
-describe("two-phase progressive answers (thinking off fast → thinking on final)", () => {
+describe("two-phase progressive answers (minimal-thinking fast → high-thinking final)", () => {
 	it("yields the fast preliminary answer before the verified complete response", async () => {
 		const model = fauxModel(
 			true,
@@ -332,7 +332,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		expect(complete?.type === "complete" && complete.response.answer).toContain("Immediate final answer");
 	});
 
-	it("runs the fast phase with thinking off and the verification phase with thinking on by default", async () => {
+	it("runs the fast phase with minimal thinking and the verification phase with high thinking by default", async () => {
 		const reasoningLog: (string | undefined)[] = [];
 		const model = fauxModel(
 			true,
@@ -344,7 +344,7 @@ describe("two-phase progressive answers (thinking off fast → thinking on final
 		const response = await agent.searchDocuments("refund approval?");
 
 		expect(response.answer).toContain("Final answer");
-		expect(reasoningLog).toEqual([undefined, "high"]);
+		expect(reasoningLog).toEqual(["minimal", "high"]);
 	});
 
 	it("honours explicit thinking-level overrides for both phases", async () => {
