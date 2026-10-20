@@ -6,10 +6,20 @@ export interface EmbeddingIdentity {
 	readonly dimension: number;
 }
 
+/**
+ * What a text is for. Instruction-aware models embed a search query differently from the document it should
+ * match, so every caller says which side it is on; `"document"` is the default.
+ */
+export type EmbedRole = "query" | "document";
+
+export interface EmbedOptions {
+	readonly role?: EmbedRole;
+}
+
 /** Embedder contract: identity is async because the gateway resolves it lazily. */
 export interface Embedder {
 	identity(): Promise<EmbeddingIdentity>;
-	embed(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
+	embed(texts: readonly string[], options?: EmbedOptions): Promise<readonly (readonly number[])[]>;
 }
 
 export interface GatewayEmbedderOptions {
@@ -17,6 +27,7 @@ export interface GatewayEmbedderOptions {
 	readonly runtime?: {
 		ensureRuntime(input?: { profileId?: ProfileId; cachedOnly?: boolean }): Promise<{
 			baseUrl: string;
+			profile: { queryPrefix: string; passagePrefix: string };
 			identity: { provider: string; model: string; dimension: number };
 		}>;
 	};
@@ -37,8 +48,14 @@ export const EMBED_BATCH_SIZE = 32;
  * download; an unprimed cache surfaces as a caller-side degrade.
  */
 export function createGatewayEmbedder(options: GatewayEmbedderOptions = {}): Embedder {
-	let ensured: { baseUrl: string; identity: EmbeddingIdentity } | undefined;
-	async function ensure(): Promise<{ baseUrl: string; identity: EmbeddingIdentity }> {
+	interface Ensured {
+		readonly baseUrl: string;
+		readonly identity: EmbeddingIdentity;
+		readonly queryPrefix: string;
+		readonly passagePrefix: string;
+	}
+	let ensured: Ensured | undefined;
+	async function ensure(): Promise<Ensured> {
 		if (ensured !== undefined) return ensured;
 		let runtime = options.runtime;
 		if (runtime === undefined) {
@@ -51,6 +68,8 @@ export function createGatewayEmbedder(options: GatewayEmbedderOptions = {}): Emb
 		const result = await runtime.ensureRuntime({ profileId: options.profileId, cachedOnly: true });
 		ensured = {
 			baseUrl: result.baseUrl,
+			queryPrefix: result.profile.queryPrefix,
+			passagePrefix: result.profile.passagePrefix,
 			identity: {
 				provider: result.identity.provider,
 				model: result.identity.model,
@@ -61,13 +80,14 @@ export function createGatewayEmbedder(options: GatewayEmbedderOptions = {}): Emb
 	}
 	return {
 		identity: async () => (await ensure()).identity,
-		async embed(texts) {
+		async embed(texts, embedOptions) {
 			if (texts.length === 0) return [];
-			const { baseUrl, identity } = await ensure();
+			const { baseUrl, identity, queryPrefix, passagePrefix } = await ensure();
+			const prefix = embedOptions?.role === "query" ? queryPrefix : passagePrefix;
 			const fetchImpl = options.fetchImpl ?? fetch;
 			const embeddings: number[][] = [];
 			for (let offset = 0; offset < texts.length; offset += EMBED_BATCH_SIZE) {
-				const batch = texts.slice(offset, offset + EMBED_BATCH_SIZE);
+				const batch = texts.slice(offset, offset + EMBED_BATCH_SIZE).map((text) => `${prefix}${text}`);
 				const response = await fetchImpl(`${baseUrl}/v1/embeddings`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },

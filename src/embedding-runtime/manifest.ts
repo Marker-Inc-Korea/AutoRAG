@@ -1,6 +1,12 @@
 import type { BackendKind, PlatformId, ProfileId, RuntimeAsset, RuntimeProfile } from "./types.ts";
 
 const RUNTIME_BUILD = "b10951";
+/**
+ * Qwen3-Embedding is instruction-aware: the query side is `Instruct: {task}\nQuery:{query}` and documents are
+ * embedded raw (model card `get_detailed_instruct`; no space after `Query:`). Keep the task in English.
+ */
+export const QWEN3_QUERY_PREFIX =
+	"Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:";
 const protocolCapabilities = { healthz: true, embed: true, openaiCompatible: true, ollamaCompatible: true } as const;
 
 const profiles: Readonly<Record<ProfileId, RuntimeProfile>> = {
@@ -9,7 +15,7 @@ const profiles: Readonly<Record<ProfileId, RuntimeProfile>> = {
 		provider: "qwen",
 		model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
 		dimension: 1024,
-		queryPrefix: "",
+		queryPrefix: QWEN3_QUERY_PREFIX,
 		passagePrefix: "",
 		runtimeBuild: RUNTIME_BUILD,
 		modelRevision: "370f27d7550e0def9b39c1f16d3fbaa13aa67728",

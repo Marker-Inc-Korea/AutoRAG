@@ -170,7 +170,9 @@ async function rankByVector(
 	try {
 		const vectors = store?.load(identity.dimension) ?? new Map<string, Float32Array>();
 		const missing = questions.filter((question) => !vectors.has(questionKey(question)));
-		const embedded = await embedder.embed([query, ...missing]);
+		// Question-to-question matching is symmetric: the query and the stored questions are embedded the same
+		// way (raw, document role), not as a search query against passages.
+		const embedded = await embedder.embed([query, ...missing], { role: "document" });
 		const queryVector = embedded[0];
 		if (queryVector === undefined || embedded.length !== missing.length + 1) {
 			throw new Error("embedder returned a different number of vectors than texts");

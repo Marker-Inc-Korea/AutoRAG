@@ -12,6 +12,14 @@ describe("embedding runtime manifest", () => {
 		expect(() => resolveProfile("missing" as never)).toThrow(/unknown profile/i);
 	});
 
+	it("gives the Qwen3 profile the model card's query instruction and raw passages", () => {
+		// `get_detailed_instruct` in the model card: f"Instruct: {task}\nQuery:{query}" (no space after "Query:").
+		expect(resolveProfile("qwen3-embedding-0.6b")).toMatchObject({
+			queryPrefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
+			passagePrefix: "",
+		});
+	});
+
 	it.each<[PlatformId, string]>([
 		["darwin-arm64-metal", "macos-arm64"],
 		["win-x64-cpu", "win-cpu-x64"],

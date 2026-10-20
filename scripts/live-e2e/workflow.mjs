@@ -21,7 +21,7 @@ export function buildLiveStackOptions(root, workspace) {
 					id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
 					baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT,
 					dimension: 1024,
-					queryPrefix: "",
+					queryPrefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
 					passagePrefix: "",
 					timeoutMs: 120_000,
 				};

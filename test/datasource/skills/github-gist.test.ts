@@ -374,6 +374,44 @@ describe("GitHubGistSkill semantic retrieval", () => {
 		expect(hits[0]?.source).toContain("/github-gist/default/chunks/g1");
 	});
 
+	it("embeds gists as documents and the search query as a query", async () => {
+		const workspace = tempWorkspace();
+		const roles: (string | undefined)[] = [];
+		const base = stubEmbedder();
+		const embedder: Embedder = {
+			identity: base.identity,
+			embed: async (texts, options) => {
+				roles.push(options?.role);
+				return base.embed(texts, options);
+			},
+		};
+		const mock = createMockFetch([
+			{
+				match: "/gists/g1",
+				json: {
+					...(GIST_FULL.g1 as object),
+					description: "alpha notes",
+					files: { "a.md": { filename: "a.md", content: "alpha alpha topic", truncated: false } },
+				},
+			},
+			{ match: "/gists?", json: [{ ...GIST_LIST[0], id: "g1", description: "alpha notes" }] },
+		]);
+		const skill = new GitHubGistSkill({
+			workspaceRoot: workspace,
+			semantic: { embedder },
+			connector: new GitHubGistConnector({
+				...NO_TOKEN,
+				token: "t",
+				fetchImpl: mock.fetchImpl,
+				statePath: join(workspace, "state.json"),
+			}),
+		});
+		await skill.index();
+		const semantic = skill.retrievalMethods().find((m) => m.describe().name === "github-gist-semantic");
+		await semantic!.retrieve("alpha query", { topK: 1 });
+		expect(roles).toEqual(["document", "query"]);
+	});
+
 	it("re-embeds everything when the embedding identity changes", async () => {
 		const workspace = tempWorkspace();
 		const embedderA = stubEmbedder(3);

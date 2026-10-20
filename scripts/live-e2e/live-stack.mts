@@ -162,7 +162,7 @@ const result = {
 				: "Qwen3-Embedding-0.6B-Q8_0.gguf",
 		profileId: "qwen3-embedding-0.6b",
 		dimension: 1024,
-		queryPrefix: "",
+		queryPrefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
 		passagePrefix: "",
 		loopbackOnly: process.env.AUTORAG_LIVE_E2E_EMBEDDER !== "native",
 	},

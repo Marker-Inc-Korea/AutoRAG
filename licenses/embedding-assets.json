@@ -7,7 +7,7 @@
       "provider": "qwen",
       "model": "Qwen3-Embedding-0.6B-Q8_0.gguf",
       "dimension": 1024,
-      "queryPrefix": "",
+      "queryPrefix": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
       "passagePrefix": "",
       "runtimeBuild": "b10951",
       "modelRevision": "370f27d7550e0def9b39c1f16d3fbaa13aa67728",

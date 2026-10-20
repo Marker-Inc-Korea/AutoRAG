@@ -338,8 +338,9 @@ An explicit `minSync.workspacePath` setting replaces the default
 under that configured path instead.
 
 The identity includes provider, model, immutable model revision, dimension,
-query prefix, passage prefix, and runtime build. A mismatch requires a full
-reindex. Existing 768-dimensional Ollama/TEI stores must therefore be handled
+query prefix, passage prefix, and runtime build. A mismatch in any field except
+the query prefix requires a full reindex; the query prefix only shapes query
+vectors, so changing it is recorded without re-embedding documents. Existing 768-dimensional Ollama/TEI stores must therefore be handled
 by either:
 
 - an explicit `autorag index reset --method minsync --yes` followed by

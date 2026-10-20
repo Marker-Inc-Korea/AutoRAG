@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EnsuredRuntime } from "../embedding-runtime/index.ts";
+import { QWEN3_QUERY_PREFIX } from "../embedding-runtime/manifest.ts";
 import {
 	configuredLexicalLanguage,
 	configuredMaxChunkSize,
@@ -105,19 +106,24 @@ export class MinSyncClient {
 			) {
 				const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
 				const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
+				// An operator value, including "", wins; otherwise the model's own default applies.
+				const config: MinSyncEmbedderConfig = {
+					...configured,
+					id,
+					dimension,
+					...(configured?.queryPrefix === undefined && id === DEFAULT_MINSYNC_EMBEDDER_ID
+						? { queryPrefix: QWEN3_QUERY_PREFIX }
+						: {}),
+				};
 				return {
-					config: {
-						...configured,
-						id,
-						dimension,
-					},
+					config,
 					identity: {
 						provider: "native",
 						model: id.startsWith("native:") ? id.slice("native:".length) : id,
 						artifactRevision: "default",
 						dimension,
-						queryPrefix: configured?.queryPrefix ?? "",
-						passagePrefix: configured?.passagePrefix ?? "",
+						queryPrefix: config.queryPrefix ?? "",
+						passagePrefix: config.passagePrefix ?? "",
 						runtimeBuild: "minsync-native",
 					},
 				};
@@ -127,13 +133,16 @@ export class MinSyncClient {
 		try {
 			const ensured = await this.runtime?.ensureRuntime({ profileId: configured?.profile, cachedOnly: true });
 			if (!ensured) throw new Error("Embedding runtime did not return a runtime");
+			// An operator value, including "", wins over the profile's default.
+			const queryPrefix = configured?.queryPrefix ?? ensured.profile.queryPrefix;
+			const passagePrefix = configured?.passagePrefix ?? ensured.profile.passagePrefix;
 			return {
 				config: {
 					id: `tei:${ensured.profile.model}`,
 					baseUrl: ensured.baseUrl,
 					dimension: ensured.profile.dimension,
-					queryPrefix: ensured.profile.queryPrefix,
-					passagePrefix: ensured.profile.passagePrefix,
+					queryPrefix,
+					passagePrefix,
 					// A profile selects the embedding model only. Batching, concurrency,
 					// retry, and timeout settings belong to the operator, so they must
 					// still reach MinSync's config instead of falling back to MinSync's
@@ -148,8 +157,8 @@ export class MinSyncClient {
 					model: ensured.identity.model,
 					artifactRevision: ensured.identity.modelRevision,
 					dimension: ensured.identity.dimension,
-					queryPrefix: ensured.profile.queryPrefix,
-					passagePrefix: ensured.profile.passagePrefix,
+					queryPrefix,
+					passagePrefix,
 					runtimeBuild: ensured.identity.runtimeBuild,
 				},
 			};
@@ -177,7 +186,11 @@ export class MinSyncClient {
 
 	private identityMismatch(identity: MinSyncEmbeddingIdentity): boolean {
 		const previous = this.readIdentity();
-		return previous === undefined || JSON.stringify(previous) !== JSON.stringify(identity);
+		if (previous === undefined) return true;
+		// Document vectors do not depend on the query prefix, so changing it alone must not force a re-embed.
+		const { queryPrefix: _previousQuery, ...previousDocuments } = previous;
+		const { queryPrefix: _currentQuery, ...currentDocuments } = identity;
+		return JSON.stringify(previousDocuments) !== JSON.stringify(currentDocuments);
 	}
 
 	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {

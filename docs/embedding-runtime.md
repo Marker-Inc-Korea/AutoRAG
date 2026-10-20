@@ -17,12 +17,22 @@ The default profile is `qwen3-embedding-0.6b`:
 
 | Profile | Provider | Model asset | Dimension | Query prefix | Passage prefix | License |
 |---|---|---|---:|---|---|---|
-| `qwen3-embedding-0.6b` (default) | Qwen | `Qwen3-Embedding-0.6B-Q8_0.gguf` | 1024 | empty | empty | Apache-2.0 |
+| `qwen3-embedding-0.6b` (default) | Qwen | `Qwen3-Embedding-0.6B-Q8_0.gguf` | 1024 | `Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:` | empty | Apache-2.0 |
 
 Profile identity includes the provider, model, immutable model revision,
 dimension, query prefix, passage prefix, and llama.cpp runtime build. A profile
 change is an embedding identity change, not an in-place vector-store setting
 change.
+
+The query prefix is applied to search queries only; documents are embedded
+raw. `createGatewayEmbedder().embed(texts, { role })` prepends the profile's
+query prefix for `role: "query"` and its passage prefix otherwise (default
+`"document"`). MinSync paths get the same prefix through `[embedder].query_prefix`
+in its config. An operator-set `minSync.embedder.queryPrefix`, including `""`,
+always wins over the profile default. The query prefix is not part of the
+reindex trigger: stored document vectors do not depend on it, so upgrading to
+a release that adds or changes it does not re-embed existing MinSync
+workspaces. A passage-prefix, model, dimension, or runtime change still does.
 
 The bundled profile has a model card covering intended use, unsuitable use,
 limitations, license, and the pinned GGUF hash:
@@ -291,7 +301,7 @@ compares this block with the machine manifest and with the pinned values in
       "provider": "qwen",
       "model": "Qwen3-Embedding-0.6B-Q8_0.gguf",
       "dimension": 1024,
-      "queryPrefix": "",
+      "queryPrefix": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
       "passagePrefix": "",
       "runtimeBuild": "b10951",
       "modelRevision": "370f27d7550e0def9b39c1f16d3fbaa13aa67728",

@@ -114,7 +114,10 @@ export class GistSemanticIndex {
 		}
 		let vectors: readonly (readonly number[])[];
 		try {
-			vectors = await embedder.embed(pending.map((chunk) => `${chunk.title ?? ""}\n${chunk.content}`));
+			vectors = await embedder.embed(
+				pending.map((chunk) => `${chunk.title ?? ""}\n${chunk.content}`),
+				{ role: "document" },
+			);
 		} catch (error) {
 			return { ok: false, message: error instanceof Error ? error.message : String(error) };
 		}
@@ -213,7 +216,7 @@ export class GitHubGistSemanticMethod implements RetrievalMethod {
 		const topK = options.topK ?? DEFAULT_TOP_K;
 		let queryVector: readonly number[] | undefined;
 		try {
-			queryVector = (await this.options.embedder.embed([trimmed]))[0];
+			queryVector = (await this.options.embedder.embed([trimmed], { role: "query" }))[0];
 		} catch {
 			return [];
 		}

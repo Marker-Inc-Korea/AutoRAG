@@ -244,7 +244,7 @@ a remote embedding service is used only when the operator explicitly
 configures one.
 
 The default product path uses the AutoRAG-owned `autorag-gateway` with the
-`qwen3-embedding-0.6b` profile (1024 dimensions, no query/passage prefixes).
+`qwen3-embedding-0.6b` profile (1024 dimensions, Qwen3 query instruction prefix, no passage prefix).
 The gateway is started on demand by the semantic MinSync path and stays
 loopback-only.
 

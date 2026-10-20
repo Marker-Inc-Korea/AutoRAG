@@ -289,7 +289,7 @@ export class CrawlerSidecar {
 			cached = {
 				query,
 				at: now,
-				vector: embedder.embed([query]).then(
+				vector: embedder.embed([query], { role: "query" }).then(
 					(vectors) => vectors[0],
 					() => undefined,
 				),
@@ -355,7 +355,10 @@ export class CrawlerSidecar {
 		const budget = Math.max(1, this.options.maxEmbedPerSync ?? DEFAULT_MAX_EMBED_PER_SYNC);
 		const target = Math.min(pending.length, budget);
 		const embed = async (rows: readonly SidecarRow[]): Promise<readonly (readonly number[])[]> => {
-			const vectors = await embedder.embed(rows.map((row) => row.input));
+			const vectors = await embedder.embed(
+				rows.map((row) => row.input),
+				{ role: "document" },
+			);
 			if (vectors.length !== rows.length) {
 				throw new Error(`embedder returned ${vectors.length} vectors for ${rows.length} messages`);
 			}

@@ -19,7 +19,7 @@ Local, loopback-only embedding for AutoRAG's MinSync and native-datasource seman
 
 - This is an embedding model, not a generative or chat model. It cannot answer questions, summarize, or produce text.
 - Output dimension is 1024 as configured in AutoRAG. The upstream model supports smaller truncated dimensions, but AutoRAG pins 1024.
-- The AutoRAG profile uses an empty query prefix and an empty passage prefix. The upstream card notes that instruction-style query prompts can improve retrieval scores slightly, but AutoRAG does not apply them in this profile.
+- The AutoRAG profile prefixes search queries with the upstream card's instruction (`Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:`, no space after `Query:`) and embeds passages raw, as the card prescribes. Operators can override or clear it with `minSync.embedder.queryPrefix`.
 - Per the upstream card, the Qwen3 Embedding series supports over 100 languages, including programming languages. Language-by-language quality varies; the upstream card does not break coverage down per language.
 - 0.6B parameters is the smallest size in the series. It trades peak benchmark accuracy for speed and footprint, which fits AutoRAG's local-first design.
 
