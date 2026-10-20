@@ -12,13 +12,7 @@ export interface ResolvedEmbeddingEndpoint extends EmbedderEndpoint {
 	readonly dimension: number;
 }
 
-/**
- * `index` is `refresh` work, where the shared embedder may start the `minsync serve` daemon. `query` is a
- * search, where nothing is ever started: an absent daemon leaves the CLI on its own configuration.
- */
-export type EmbeddingPurpose = "index" | "query";
-
-export type EmbeddingEndpointSource = (purpose: EmbeddingPurpose) => Promise<ResolvedEmbeddingEndpoint | undefined>;
+export type EmbeddingEndpointSource = () => Promise<ResolvedEmbeddingEndpoint | undefined>;
 
 const LOOPBACK_HOSTS: Record<string, true> = { "127.0.0.1": true, localhost: true, "[::1]": true, "::1": true };
 
@@ -41,12 +35,11 @@ function apiKeyValue(endpoint: EmbedderEndpoint, parentEnv: NodeJS.ProcessEnv): 
 }
 
 /**
- * The shared embedder as an endpoint source. Probes only, except that `index` first lets the embedder start
- * its daemon. `undefined` means the embedder would run in-process, which an external CLI cannot reach.
+ * The shared embedder as an endpoint source. Probes only: it never starts a daemon. `undefined` means the
+ * embedder would run in-process, which an external CLI cannot reach.
  */
 export function embeddingEndpointSource(embedder: ManagedEmbedder): EmbeddingEndpointSource {
-	return async (purpose) => {
-		if (purpose === "index") await embedder.ensureReady();
+	return async () => {
 		const endpoint = await embedder.describeEndpoint();
 		if (endpoint === undefined) return undefined;
 		const dimension = endpoint.dimension ?? (await embedder.identity()).dimension;

@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { type EmbeddingPurpose, mailcrawlEmbeddingEnv } from "../../embedding-env.ts";
+import { mailcrawlEmbeddingEnv } from "../../embedding-env.ts";
 import { ensurePrivateMailcrawlDataDir, validateMailcrawlInstanceId } from "./config.ts";
 import type {
 	MailcrawlFailure,
@@ -134,7 +134,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			args,
 			options?.signal,
 			this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
-			mode === "semantic" || mode === "hybrid" ? "query" : undefined,
+			mode === "semantic" || mode === "hybrid",
 		);
 		if (!result.ok) return failure(result);
 		const parsed = parseJson(result.stdout);
@@ -163,7 +163,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 		args: readonly string[],
 		signal: AbortSignal | undefined,
 		timeoutMs: number,
-		embedding?: EmbeddingPurpose,
+		embeds = false,
 	): Promise<ProcessResult> {
 		const violation = findRemoteEmbeddingViolation({ ...process.env, ...(this.options.env ?? {}) });
 		if (violation !== undefined) {
@@ -180,18 +180,18 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			else if (SAFE_ENV_KEYS.has(key) || SAFE_MAILCRAWL_ENV_KEYS.has(key)) env[key] = value;
 		}
 		if (dataDir !== undefined) env.MAILCRAWL_DATA_DIR = dataDir;
-		if (embedding !== undefined && this.options.embeddingEndpoint !== undefined) {
+		if (embeds && this.options.embeddingEndpoint !== undefined) {
 			// The shared backend replaces whatever embedder the environment selected: mailcrawl never falls
 			// back to its own native model while the operator has pointed AutoRAG at a shared one.
 			try {
-				const endpoint = await this.options.embeddingEndpoint(embedding);
+				const endpoint = await this.options.embeddingEndpoint();
 				if (endpoint === undefined) {
 					return {
 						ok: false,
 						reason: "embedding-unavailable",
 						stdout: "",
 						stderr:
-							"no embedding endpoint is available: start `minsync serve` (`autorag refresh` starts it) or set minSync.embedder to a remote endpoint",
+							"no embedding endpoint is available: start `minsync serve` (docs/minsync-setup.md) or set minSync.embedder to a remote endpoint",
 						code: null,
 					};
 				}
@@ -213,7 +213,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 	}
 
 	async index(signal?: AbortSignal): Promise<MailcrawlOk<MailcrawlIndexInfo> | MailcrawlFailure> {
-		const result = await this.run(["index", "--json"], signal, this.indexTimeoutMs(), "index");
+		const result = await this.run(["index", "--json"], signal, this.indexTimeoutMs(), true);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (

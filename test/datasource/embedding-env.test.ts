@@ -77,15 +77,12 @@ describe("lazykatokEmbeddingEnv", () => {
 });
 
 describe("embeddingEndpointSource", () => {
-	function fake(endpoint: ManagedEmbedder["describeEndpoint"] extends () => Promise<infer T> ? T : never) {
+	function fake(endpoint: Awaited<ReturnType<ManagedEmbedder["describeEndpoint"]>>) {
 		const calls: string[] = [];
 		const embedder: ManagedEmbedder = {
 			identity: async () => ({ provider: "minsync", model: "m", dimension: 7 }),
 			embed: async () => [],
-			ensureReady: async () => {
-				calls.push("ensureReady");
-				return { backend: "daemon", daemonStarted: true };
-			},
+			health: async () => ({ backend: "daemon", alive: true }),
 			describeEndpoint: async () => {
 				calls.push("describeEndpoint");
 				return endpoint;
@@ -95,19 +92,15 @@ describe("embeddingEndpointSource", () => {
 		return { embedder, calls };
 	}
 
-	it("starts the daemon for indexing but never for a query", async () => {
+	it("only probes, learning the vector length from the embedder when the endpoint omits it", async () => {
 		const { embedder, calls } = fake({ ...daemon, dimension: undefined });
-		const source = embeddingEndpointSource(embedder);
-		expect(await source("query")).toMatchObject({ dimension: 7 });
+		expect(await embeddingEndpointSource(embedder)()).toMatchObject({ dimension: 7 });
 		expect(calls).toEqual(["describeEndpoint"]);
-		calls.length = 0;
-		await source("index");
-		expect(calls).toEqual(["ensureReady", "describeEndpoint"]);
 	});
 
 	it("reports no endpoint while the shared embedder would run in-process", async () => {
 		const { embedder } = fake(undefined);
-		expect(await embeddingEndpointSource(embedder)("query")).toBeUndefined();
+		expect(await embeddingEndpointSource(embedder)()).toBeUndefined();
 	});
 });
 
@@ -141,12 +134,12 @@ process.stdout.write(process.argv.includes("index") ? '{"embedded":1,"reused":0}
 			.map((line) => JSON.parse(line));
 
 	it("mailcrawl indexes and searches semantically through the endpoint, replacing its native settings", async () => {
-		const modes: string[] = [];
+		let endpointCalls = 0;
 		const client = new MailcrawlClient({
 			binaryPath,
 			env: { MAILCRAWL_NATIVE_MODEL: "native:other", MAILCRAWL_EMBEDDER_PROVIDER: "native" },
-			embeddingEndpoint: async (purpose) => {
-				modes.push(purpose);
+			embeddingEndpoint: async () => {
+				endpointCalls += 1;
 				return daemon;
 			},
 		});
@@ -159,7 +152,8 @@ process.stdout.write(process.argv.includes("index") ? '{"embedded":1,"reused":0}
 		expect(semantic?.env.MAILCRAWL_EMBEDDER_PROVIDER).toBe("openai");
 		// BM25 never embeds, so it neither asks for an endpoint nor receives one.
 		expect(bm25?.env).not.toHaveProperty("MAILCRAWL_EMBED_URL");
-		expect(modes).toEqual(["index", "query"]);
+		// index and the semantic search ask once each; BM25 never embeds, so it never asks.
+		expect(endpointCalls).toBe(2);
 	});
 
 	it("mailcrawl refuses to fall back to its native model when no endpoint is available", async () => {

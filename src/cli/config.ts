@@ -1493,12 +1493,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	if (config.refresh !== undefined) opts.refresh = config.refresh;
 	// One embedder serves memory and every datasource, so a single `minSync.embedder` block (local MinSync or a
 	// remote endpoint) decides where all of AutoRAG's text is embedded.
-	const embedder = createEmbedderFromConfig({
-		embedder: config.minSync?.embedder,
-		root: config.workspacePath ?? process.cwd(),
-		...(config.minSync?.workspacePath === undefined ? {} : { minSyncWorkspace: config.minSync.workspacePath }),
-		...(config.minSync?.autoInstall === undefined ? {} : { autoInstall: config.minSync.autoInstall }),
-	});
+	const embedder = createEmbedderFromConfig({ embedder: config.minSync?.embedder });
 	opts.embedder = embedder;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath, {

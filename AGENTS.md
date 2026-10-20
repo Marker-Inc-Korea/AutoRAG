@@ -246,10 +246,12 @@ embedding service is used only when the operator explicitly configures
 The default product path uses MinSync's Qwen3-Embedding-0.6B engine (1024
 dimensions, no query/passage prefixes). Vectors come from a loopback
 `minsync serve` daemon when one answers, otherwise from MinSync's in-process
-engine through the optional `@nomadamas/minsync-native` addon. `autorag refresh`
-starts a daemon when none answers and stays loopback-only; a search never
-starts one. `autorag setup` reports the resolved `embedding.backend` (`daemon`,
-`in-process`, or `remote`) with the provider, model, and dimension.
+engine through the optional `@nomadamas/minsync-native` addon. AutoRAG never
+starts or stops the daemon: the operator runs `minsync serve --idle-timeout 0`
+(launchd/systemd, see `docs/minsync-setup.md`) or presses Ctrl+Shift+E in the
+TUI. `autorag setup` and `autorag status` only report the resolved
+`embedding.backend` (`daemon`, `in-process`, or `remote`) with the provider,
+model, and dimension, or why none is alive.
 
 Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag` (see the manual-QA rules above):
 

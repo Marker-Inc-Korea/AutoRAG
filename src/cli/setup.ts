@@ -19,11 +19,8 @@ export interface SetupDatasourceReport {
 	readonly reason?: string;
 }
 export interface SetupEmbeddingReport {
-	/** Where text is embedded: a configured remote endpoint, MinSync's `minsync serve` daemon, or MinSync in-process. */
-	readonly backend?: EmbeddingBackend;
-	readonly daemonStarted?: boolean;
-	/** Why the daemon was not used, when MinSync's in-process engine took over. */
-	readonly daemonError?: string;
+	/** Where text is embedded: a configured remote endpoint, the `minsync serve` daemon, or MinSync in-process. */
+	readonly backend?: Exclude<EmbeddingBackend, "none">;
 	readonly provider?: string;
 	readonly model?: string;
 	readonly dimension?: number;
@@ -51,7 +48,7 @@ export interface SetupDeps {
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 const REMEDIATION =
-	"Semantic embeddings are unavailable. Install MinSync (`cargo install minsync`) so AutoRAG can start `minsync serve` or use its in-process engine, or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
+	"Semantic search needs an embedding backend: run `minsync serve --idle-timeout 0` as a service (docs/minsync-setup.md), or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
 const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	kakao: "lazykatok",
 	lark: "lark-cli",
@@ -95,7 +92,7 @@ function executableInPath(name: string, env: NodeJS.ProcessEnv): string | undefi
 function safeReason(value: unknown): string {
 	const text = value instanceof Error ? value.message : String(value);
 	return text
-		.replace(/(?:[A-Za-z]:)?\/[^\s'"`]+/g, "<path>")
+		.replace(/(?<![\w@.-])(?:[A-Za-z]:)?\/[^\s'"`]+/g, "<path>")
 		.replace(/\b(?:token|key|secret|password)\s*[=:]\s*\S+/gi, "$1=<redacted>")
 		.slice(0, 180);
 }
@@ -187,30 +184,25 @@ export async function runSetup(options: {
 		} catch {
 			configuredEmbedder = undefined;
 		}
-		embedder =
-			options.deps?.embedder ??
-			createEmbedderFromConfig({
-				embedder: configuredEmbedder,
-				root: options.workspacePath,
-				minSyncWorkspace: typeof rawMinSync.workspacePath === "string" ? rawMinSync.workspacePath : undefined,
-				autoInstall: rawMinSync.autoInstall !== false,
-				env,
-			});
+		embedder = options.deps?.embedder ?? createEmbedderFromConfig({ embedder: configuredEmbedder, env });
 		let embedding: SetupEmbeddingReport;
 		try {
-			const ready = await embedder.ensureReady();
-			const identity: EmbeddingIdentity = await embedder.identity();
-			embedding = {
-				backend: ready.backend,
-				daemonStarted: ready.daemonStarted,
-				...(ready.daemonError === undefined ? {} : { daemonError: safeReason(ready.daemonError) }),
-				provider: identity.provider,
-				model: identity.model,
-				dimension: identity.dimension,
-			};
+			const health = await embedder.health();
+			if (health.alive && health.backend !== "none") {
+				const identity: EmbeddingIdentity = await embedder.identity();
+				embedding = {
+					backend: health.backend,
+					provider: identity.provider,
+					model: identity.model,
+					dimension: identity.dimension,
+				};
+			} else {
+				// The way out is the report's own `remediation` field; the reason is only what was observed.
+				embedding = { reason: safeReason(health.detail ?? "no embedding backend answers") };
+			}
 		} catch (error) {
-			// Embedding startup is independent from datasource probes: the report stays useful in BM25 mode,
-			// but the failure reason must reach the caller instead of being discarded.
+			// Embedding is independent from datasource probes: the report stays useful in BM25 mode, but the
+			// failure reason must reach the caller instead of being discarded.
 			embedding = { reason: safeReason(error) };
 		}
 		const semantic = embedding.backend !== undefined;

@@ -1,9 +1,9 @@
-import { DEFAULT_DAEMON_MODEL, ensureMinSyncDaemon, type MinSyncDaemon, probeMinSyncDaemon } from "./daemon.ts";
-import type { Embedder, EmbedderEndpoint, EmbedderReadiness, EmbeddingIdentity, ManagedEmbedder } from "./embedder.ts";
+import { DEFAULT_DAEMON_MODEL, type MinSyncDaemon, probeMinSyncDaemon } from "./daemon.ts";
+import type { Embedder, EmbedderEndpoint, EmbedderHealth, EmbeddingIdentity, ManagedEmbedder } from "./embedder.ts";
 import { createHttpEmbedder, type EmbeddingProtocol } from "./http-embedder.ts";
 import { type InProcessEmbedder, loadNativeEmbedder } from "./in-process.ts";
 
-/** An operator-configured remote endpoint. When present, AutoRAG never starts MinSync's daemon for it. */
+/** An operator-configured remote endpoint. When present, AutoRAG never looks for MinSync's daemon. */
 export interface RemoteEmbedderSettings {
 	readonly baseUrl: string;
 	readonly model: string;
@@ -23,53 +23,67 @@ export interface ManagedEmbedderOptions {
 	readonly env?: NodeJS.ProcessEnv;
 	/** Model of the daemon to use. Defaults to MinSync's default Qwen3 embedder. */
 	readonly model?: string;
-	/** Working directory for a daemon this embedder starts, so it reads the workspace's `[embedder]` settings. */
-	readonly cwd?: string;
-	/** Locates the `minsync` executable; only called when a daemon has to be started. */
-	readonly resolveBinary?: () => Promise<string>;
 	/** Loads MinSync's in-process engine; only called when no daemon answers. */
 	readonly inProcess?: () => Promise<InProcessEmbedder>;
-	readonly readyTimeoutMs?: number;
 	readonly fetchImpl?: typeof fetch;
 }
 
 const PROVIDER = "minsync";
+const REMOTE_HEALTH_TIMEOUT_MS = 2_000;
 
 function message(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * The one embedder every AutoRAG consumer shares. AutoRAG owns no embedding model:
+ * `GET /health` of a remote endpoint's server root. TEI and `minsync serve` answer it, and so do most
+ * OpenAI-compatible servers (vLLM, llama.cpp); a hosted API that has no such route answers 404, which still
+ * proves the host is reachable, so only a network failure or a 5xx counts as down.
+ */
+async function probeRemote(remote: RemoteEmbedderSettings, fetchImpl: typeof fetch): Promise<EmbedderHealth> {
+	const root = remote.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+	try {
+		const response = await fetchImpl(`${root}/health`, { signal: AbortSignal.timeout(REMOTE_HEALTH_TIMEOUT_MS) });
+		if (response.status >= 500) return { backend: "remote", alive: false, detail: `HTTP ${response.status}` };
+		return { backend: "remote", alive: true, detail: root };
+	} catch (error) {
+		return { backend: "remote", alive: false, detail: message(error) };
+	}
+}
+
+/**
+ * The one embedder every AutoRAG consumer shares. AutoRAG owns no embedding model and never starts or stops
+ * a process: the operator runs `minsync serve` (see docs/minsync-setup.md) or points at a remote endpoint.
  *
- * - **remote** — a configured endpoint is used as is; nothing local is started or loaded.
- * - **daemon** — a running `minsync serve` is preferred, because it keeps one warm copy of the model for
- *   every process. `ensureReady` (refresh/watch only) starts it when none answers; `embed` never does.
- * - **in-process** — MinSync's own engine, used when no daemon answers. Daemon and in-process vectors are
+ * - **remote**: a configured endpoint is used as is; nothing local is looked for or loaded.
+ * - **daemon**: a running `minsync serve` is preferred, because it keeps one warm copy of the model for every
+ *   process. It is looked up again on every call, so one started or stopped while AutoRAG runs is noticed.
+ * - **in-process**: MinSync's own engine, used when no daemon answers. Daemon and in-process vectors are
  *   identical for the same model and device, so both report one identity and stores never re-embed
  *   because the daemon came or went.
  */
 export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedEmbedder {
-	const fetchImpl = options.fetchImpl;
+	const fetchImpl = options.fetchImpl ?? fetch;
 	const wantedModel = options.model ?? DEFAULT_DAEMON_MODEL;
 
 	if (options.remote !== undefined) {
+		const remoteSettings = options.remote;
 		const remote = createHttpEmbedder({
-			...options.remote,
-			provider: options.remote.provider ?? options.remote.protocol,
+			...remoteSettings,
+			provider: remoteSettings.provider ?? remoteSettings.protocol,
 			...(options.env === undefined ? {} : { env: options.env }),
-			...(fetchImpl === undefined ? {} : { fetchImpl }),
+			fetchImpl,
 		});
 		return {
 			identity: () => remote.identity(),
 			embed: (texts) => remote.embed(texts),
-			ensureReady: async () => ({ backend: "remote", daemonStarted: false }),
+			health: () => probeRemote(remoteSettings, fetchImpl),
 			describeEndpoint: async () => ({
-				baseUrl: options.remote?.baseUrl as string,
-				protocol: options.remote?.protocol as EmbeddingProtocol,
-				model: options.remote?.model as string,
-				dimension: options.remote?.dimension,
-				...(options.remote?.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.remote.apiKeyEnv }),
+				baseUrl: remoteSettings.baseUrl,
+				protocol: remoteSettings.protocol,
+				model: remoteSettings.model,
+				dimension: remoteSettings.dimension,
+				...(remoteSettings.apiKeyEnv === undefined ? {} : { apiKeyEnv: remoteSettings.apiKeyEnv }),
 				backend: "remote" as const,
 			}),
 			close: async () => undefined,
@@ -77,8 +91,6 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 	}
 
 	let daemon: { readonly info: MinSyncDaemon; readonly embedder: Embedder } | undefined;
-	let daemonError: string | undefined;
-	let starting: Promise<EmbedderReadiness> | undefined;
 	let inProcess: Promise<InProcessEmbedder> | undefined;
 
 	const adopt = (info: MinSyncDaemon): Embedder => {
@@ -88,20 +100,18 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 			model: info.model,
 			dimension: info.dimension,
 			provider: PROVIDER,
-			...(fetchImpl === undefined ? {} : { fetchImpl }),
+			fetchImpl,
 		});
 		daemon = { info, embedder };
 		return embedder;
 	};
 
-	const probe = async (): Promise<Embedder | undefined> => {
-		const found = await probeMinSyncDaemon({
+	const probe = async (): Promise<MinSyncDaemon | undefined> =>
+		probeMinSyncDaemon({
 			model: wantedModel,
 			...(options.home === undefined ? {} : { home: options.home }),
-			...(fetchImpl === undefined ? {} : { fetchImpl }),
+			fetchImpl,
 		});
-		return found === undefined ? undefined : adopt(found);
-	};
 
 	const loadInProcess = (): Promise<InProcessEmbedder> => {
 		inProcess ??= (options.inProcess ?? (() => loadNativeEmbedder()))();
@@ -117,43 +127,16 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 		return { provider: PROVIDER, model: identity.model, dimension: identity.dimension };
 	};
 
-	async function startDaemon(): Promise<EmbedderReadiness> {
-		try {
-			const binaryPath = await (options.resolveBinary ?? rejectNoBinary)();
-			const started = await ensureMinSyncDaemon({
-				binaryPath,
-				model: wantedModel,
-				...(options.home === undefined ? {} : { home: options.home }),
-				...(options.env === undefined ? {} : { env: options.env }),
-				...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-				...(options.readyTimeoutMs === undefined ? {} : { readyTimeoutMs: options.readyTimeoutMs }),
-				...(fetchImpl === undefined ? {} : { fetchImpl }),
-			});
-			adopt(started);
-			return {
-				backend: "daemon",
-				daemonStarted: started.started,
-				...(started.pid === undefined ? {} : { daemonPid: started.pid }),
-			};
-		} catch (error) {
-			daemonError = message(error);
-			return { backend: "in-process", daemonStarted: false, daemonError };
-		}
-	}
-
 	async function active(): Promise<{ readonly source: Embedder; readonly viaDaemon: boolean }> {
-		const source = daemon?.embedder ?? (await probe());
-		if (source !== undefined) return { source, viaDaemon: true };
+		const found = await probe();
+		if (found !== undefined)
+			return { source: daemon?.info.baseUrl === found.baseUrl ? daemon.embedder : adopt(found), viaDaemon: true };
+		daemon = undefined;
 		try {
 			return { source: await loadInProcess(), viaDaemon: false };
 		} catch (error) {
 			throw new Error(
-				[
-					daemonError === undefined ? undefined : `no embedding daemon: ${daemonError}`,
-					`no in-process embedder: ${message(error)}`,
-				]
-					.filter((line) => line !== undefined)
-					.join("; "),
+				`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`minsync serve\` (see docs/minsync-setup.md) or set minSync.embedder to a remote endpoint.`,
 				{ cause: error },
 			);
 		}
@@ -177,34 +160,32 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 				return next.source.embed(texts);
 			}
 		},
-		async ensureReady() {
-			// A daemon stops itself when idle, so a past success proves nothing: look again every time.
-			if ((await probe()) !== undefined) return { backend: "daemon", daemonStarted: false };
-			// A failed start is remembered for the life of this embedder instead of retried on every call.
-			if (daemonError !== undefined) return { backend: "in-process", daemonStarted: false, daemonError };
-			starting ??= startDaemon().finally(() => {
-				starting = undefined;
-			});
-			return starting;
+		async health() {
+			const found = await probe();
+			if (found !== undefined) return { backend: "daemon", alive: true, detail: found.baseUrl };
+			// No daemon answers. In-process is only a real backend when the addon is loaded or loadable.
+			try {
+				await loadInProcess();
+				return { backend: "in-process", alive: true };
+			} catch (error) {
+				return { backend: "none", alive: false, detail: message(error) };
+			}
 		},
 		async describeEndpoint() {
-			// Probes (never starts) so a daemon that has exited is not reported.
-			const found = await probeMinSyncDaemon({
-				model: wantedModel,
-				...(options.home === undefined ? {} : { home: options.home }),
-				...(fetchImpl === undefined ? {} : { fetchImpl }),
-			});
-			if (found !== undefined) adopt(found);
-			else daemon = undefined;
-			return found === undefined
-				? undefined
-				: {
-						baseUrl: found.baseUrl,
-						protocol: "openai" as const,
-						model: found.model,
-						dimension: found.dimension,
-						backend: "daemon" as const,
-					};
+			// Probes only, so a daemon that has exited is not reported.
+			const found = await probe();
+			if (found === undefined) {
+				daemon = undefined;
+				return undefined;
+			}
+			adopt(found);
+			return {
+				baseUrl: found.baseUrl,
+				protocol: "openai" as const,
+				model: found.model,
+				dimension: found.dimension,
+				backend: "daemon" as const,
+			};
 		},
 		async close() {
 			const loaded = inProcess;
@@ -212,8 +193,4 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 			if (loaded !== undefined) await (await loaded.catch(() => undefined))?.close();
 		},
 	};
-}
-
-async function rejectNoBinary(): Promise<string> {
-	throw new Error("no `minsync` executable resolver was provided");
 }

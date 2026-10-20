@@ -31,11 +31,11 @@ autorag refresh --method parsed,minsync --json
 autorag search --json "semantic question about the documents"
 ```
 
-`autorag refresh`, `autorag watch`, and `autorag setup` start a loopback
-`minsync serve` daemon when none answers. A search or query never starts one:
-it reads the prebuilt indexes and starts no indexing infrastructure.
-`autorag setup` reports the resolved backend (`daemon`, `in-process`, or
-`remote`), whether it started a daemon, and the provider, model, and dimension.
+`autorag setup` and `autorag status` report which embedding backend is alive
+(`daemon`, `in-process`, or `remote`) and the provider, model, and dimension,
+or why none is and how to start one. Nothing here starts a daemon: see
+[Running the embedding daemon](#running-the-embedding-daemon). A search or
+query never starts indexing infrastructure either.
 
 ## Embedding backends
 
@@ -55,19 +55,105 @@ this order:
    never the token), `dimension`, `batchSize`, and `timeoutMs`.
 2. **`minsync serve` daemon.** Otherwise a running daemon is preferred. It is
    loopback only and requires MinSync 0.4.11 or newer. It serves TEI
-   `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`, and exits
-   after 300 s idle by default. Running instances are discovered through
-   `~/.cache/minsync/serve/<instance>/` (`host`, `port`, `pid`, `lock`).
-   `autorag refresh`, `autorag watch`, and `autorag setup` start it detached
-   when none answers; a search never does.
-3. **In-process engine.** When no daemon answers and none could be started,
-   AutoRAG-owned consumers use MinSync's in-process engine through the optional
-   Node-API addon `@nomadamas/minsync-native`. It runs the same engine and
-   weights, so vectors are bit-for-bit identical to the daemon's. The addon is
-   loaded lazily and is not bundled; when it is absent, the error says so. The
+   `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`. Running
+   instances are discovered through `~/.cache/minsync/serve/<instance>/`
+   (`host`, `port`, `pid`, `lock`). **AutoRAG never starts or stops it for you**
+   (see [Running the embedding daemon](#running-the-embedding-daemon)); it is
+   looked up again on every call, so one you start or stop while AutoRAG runs
+   is noticed.
+3. **In-process engine.** When no daemon answers, AutoRAG-owned consumers use
+   MinSync's in-process engine through the optional Node-API addon
+   `@nomadamas/minsync-native`. It runs the same engine and weights, so vectors
+   are bit-for-bit identical to the daemon's. The addon is loaded lazily and is
+   not bundled (it is not on npm yet); when it is absent, the error says so. The
    `minsync` CLI independently adopts a running daemon for `native:`
    workspaces and otherwise falls back in-process (`MINSYNC_SERVER=off`
    disables adoption).
+
+### Running the embedding daemon
+
+Semantic search over everything except the MinSync datasource needs an
+embedding backend that is alive: a remote endpoint, a running `minsync serve`,
+or the optional in-process addon. Without one, memory, the chat-sidecar
+semantic search, gist, discrawl, mailcrawl, and lazykatok fall back to keyword
+search or report `embedding-unavailable`; the MinSync datasource keeps working
+because `minsync` embeds in-process by itself. AutoRAG leaves the daemon's
+lifecycle to you, so a remote endpoint is the way to avoid managing one:
+it needs no local model and no process.
+
+Without a remote endpoint, keep the daemon running. `--idle-timeout 0` serves
+until stopped; the default of 300 s frees the ~2.8 GB model after five idle
+minutes, and the next semantic call then fails until the daemon is started
+again. Do not pass `--state-dir`: only the default state directory is
+discovered.
+
+**macOS (launchd).** Save as `~/Library/LaunchAgents/dev.autorag.minsync-serve.plist`
+(replace `YOU`, and the path from `which minsync`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.autorag.minsync-serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/.cargo/bin/minsync</string>
+    <string>serve</string>
+    <string>--idle-timeout</string>
+    <string>0</string>
+    <string>--format</string>
+    <string>json</string>
+    <string>--quiet</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/YOU/Library/Logs/minsync-serve.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOU/Library/Logs/minsync-serve.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.autorag.minsync-serve.plist
+launchctl kickstart -k gui/$(id -u)/dev.autorag.minsync-serve   # restart
+launchctl bootout gui/$(id -u)/dev.autorag.minsync-serve        # stop and unload
+```
+
+**Linux (systemd user unit).** `~/.config/systemd/user/minsync-serve.service`
+with `ExecStart=%h/.cargo/bin/minsync serve --idle-timeout 0 --quiet` and
+`Restart=always`, then `systemctl --user enable --now minsync-serve`.
+
+**Without a service manager**, run `minsync serve --idle-timeout 0` in a
+terminal, or press **Ctrl+Shift+E** in `autorag tui` (below).
+
+`autorag setup` and `autorag status` report whether a backend is alive and say
+how to start one; the MCP status tool returns the same `embedding-unavailable`
+diagnostic. They only look: nothing is started.
+
+### The TUI footer and Ctrl+Shift+E
+
+`autorag tui` shows the embedding state in the footer and re-checks it every
+15 s and after each toggle:
+
+| Footer | Meaning |
+|---|---|
+| `embedding: daemon ● up` | A `minsync serve` daemon answers `GET /health`. |
+| `embedding: in-process ●` | No daemon, but the in-process addon is loadable. |
+| `embedding: remote ● up` / `remote ○ down (…)` | The configured remote's `GET /health` (a 404 still counts as up, since hosted APIs have no such route; a network error or 5xx is down). |
+| `embedding: off ○ (ctrl+shift+e starts minsync serve)` | Nothing can embed. |
+
+**Ctrl+Shift+E** starts the daemon (`minsync serve --idle-timeout 0`, so it
+stays on until you stop it) when none runs, and stops it with `SIGTERM` when
+one does. With a remote endpoint configured it only explains that there is
+nothing local to toggle. A daemon started by a launchd service is stopped by
+the key too, and launchd then restarts it (`KeepAlive`); use
+`launchctl bootout` to stop it for good.
 
 The reported identity is provider `minsync`, model
 `Qwen/Qwen3-Embedding-0.6B`, and dimension `1024`.

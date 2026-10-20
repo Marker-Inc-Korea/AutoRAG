@@ -12,7 +12,7 @@ function recordingEmbedder(): { embedder: ManagedEmbedder; calls: string[][] } {
 				calls.push([...texts]);
 				return texts.map(() => [1, 0]);
 			},
-			ensureReady: async () => ({ backend: "daemon", daemonStarted: false }),
+			health: async () => ({ backend: "daemon", alive: true }),
 			describeEndpoint: async () => undefined,
 			close: async () => undefined,
 		},

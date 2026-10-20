@@ -10,6 +10,7 @@ const HEALTH_TIMEOUT_MS = 2_000;
 const DEFAULT_READY_TIMEOUT_MS = 10 * 60 * 1_000;
 const POLL_INTERVAL_MS = 150;
 const STDERR_LIMIT = 4_000;
+const STOP_TIMEOUT_MS = 15_000;
 
 export interface MinSyncDaemon {
 	/** `http://127.0.0.1:<port>`; the OpenAI route lives under `/v1`, TEI at `/embed`. */
@@ -182,4 +183,33 @@ export async function ensureMinSyncDaemon(options: EnsureDaemonOptions): Promise
 		if (exit === undefined) child.kill("SIGTERM");
 		throw error;
 	}
+}
+
+export interface StopDaemonOptions extends ProbeOptions {
+	/** How long to wait for the server to remove its discovery files and stop answering. */
+	readonly timeoutMs?: number;
+}
+
+/**
+ * Stops the running `minsync serve` daemon with SIGTERM, which `minsync serve` handles by removing its
+ * discovery files and exiting. The pid comes from the server's own `GET /health` answer, so only a live
+ * loopback server of the wanted model is ever signalled. Returns the stopped daemon, or undefined when none ran.
+ */
+export async function stopMinSyncDaemon(options: StopDaemonOptions = {}): Promise<MinSyncDaemon | undefined> {
+	const running = await probeMinSyncDaemon(options);
+	if (running === undefined) return undefined;
+	if (running.pid === undefined) {
+		throw new MinSyncDaemonError(
+			"the running `minsync serve` did not report its pid, so it cannot be stopped from here",
+		);
+	}
+	process.kill(running.pid, "SIGTERM");
+	const deadline = Date.now() + (options.timeoutMs ?? STOP_TIMEOUT_MS);
+	while (Date.now() < deadline) {
+		if ((await probeMinSyncDaemon(options)) === undefined) return running;
+		await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+	}
+	throw new MinSyncDaemonError(
+		`\`minsync serve\` (pid ${running.pid}) did not stop within ${(options.timeoutMs ?? STOP_TIMEOUT_MS) / 1000}s`,
+	);
 }

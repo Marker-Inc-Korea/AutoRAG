@@ -99,10 +99,11 @@ The zero-configuration boundary is narrow:
   - A remote key is exported to that one child as the value of the variable
     `apiKeyEnv` names (`MAILCRAWL_EMBED_API_KEY_ENV` for mailcrawl,
     `KATOK_EMBED_API_KEY` for lazykatok); no other credential is passed.
-  - Neither CLI falls back to its own model: `index` starts the `minsync serve`
-    daemon like `refresh` does, a search never does, and with no daemon and no
-    remote the semantic call fails with "no embedding endpoint is available"
-    while BM25 keeps working.
+  - Neither CLI falls back to its own model, and AutoRAG starts no daemon for
+    them: with no daemon and no remote endpoint, `index` and the semantic call
+    fail with "no embedding endpoint is available" while BM25 and `sync` keep
+    working. Start `minsync serve --idle-timeout 0` first (see
+    `docs/minsync-setup.md`), so the first `index` finds it.
   - mailcrawl identity is provider + model + dimension, and lazykatok records
     vectors under `openai/<model>`, so an archive built with the old native
     model rebuilds on the next `index` (`mailcrawl repair --semantic`,

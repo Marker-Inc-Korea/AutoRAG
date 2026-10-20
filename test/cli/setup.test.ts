@@ -15,22 +15,18 @@ function fakeLock() {
 }
 
 function fakeEmbedder(options: {
-	readonly backend?: "daemon" | "in-process" | "remote";
-	readonly daemonStarted?: boolean;
-	readonly daemonError?: string;
+	readonly backend?: "daemon" | "in-process" | "remote" | "none";
+	readonly alive?: boolean;
+	readonly detail?: string;
 	readonly identity?: { provider: string; model: string; dimension: number };
 	readonly identityError?: string;
-	readonly ensureError?: string;
 }): ManagedEmbedder {
 	return {
-		ensureReady: async () => {
-			if (options.ensureError !== undefined) throw new Error(options.ensureError);
-			return {
-				backend: options.backend ?? "daemon",
-				daemonStarted: options.daemonStarted ?? false,
-				...(options.daemonError === undefined ? {} : { daemonError: options.daemonError }),
-			};
-		},
+		health: async () => ({
+			backend: options.backend ?? "daemon",
+			alive: options.alive ?? true,
+			...(options.detail === undefined ? {} : { detail: options.detail }),
+		}),
 		identity: async () => {
 			if (options.identityError !== undefined) throw new Error(options.identityError);
 			return options.identity ?? { provider: "minsync", model: "Qwen/Qwen3-Embedding-0.6B", dimension: 1024 };
@@ -92,7 +88,7 @@ describe("setup orchestration", () => {
 				executable: () => undefined,
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				embedder: fakeEmbedder({ backend: "daemon", daemonStarted: true }),
+				embedder: fakeEmbedder({ backend: "daemon" }),
 			},
 		});
 		expect(report.mode).toBe("semantic");
@@ -100,7 +96,6 @@ describe("setup orchestration", () => {
 		expect(report.remediation).toBeUndefined();
 		expect(report.embedding).toEqual({
 			backend: "daemon",
-			daemonStarted: true,
 			provider: "minsync",
 			model: "Qwen/Qwen3-Embedding-0.6B",
 			dimension: 1024,
@@ -112,7 +107,7 @@ describe("setup orchestration", () => {
 		});
 	});
 
-	it("is still semantic when the daemon could not start but MinSync's in-process engine answers", async () => {
+	it("is still semantic when no daemon runs but MinSync's in-process engine answers", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);
 		const configPath = join(root, "config.json");
@@ -125,11 +120,11 @@ describe("setup orchestration", () => {
 				executable: () => undefined,
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				embedder: fakeEmbedder({ backend: "in-process", daemonError: "port bind failed" }),
+				embedder: fakeEmbedder({ backend: "in-process" }),
 			},
 		});
 		expect(report.mode).toBe("semantic");
-		expect(report.embedding).toMatchObject({ backend: "in-process", daemonError: "port bind failed" });
+		expect(report.embedding).toMatchObject({ backend: "in-process" });
 	});
 
 	it("reports a configured remote endpoint as the backend and does not rewrite the operator's config", async () => {
@@ -207,7 +202,7 @@ describe("setup orchestration", () => {
 		});
 	});
 
-	it("surfaces an embedding startup failure instead of discarding it", async () => {
+	it("reports that no embedding backend is alive, with the way out, instead of discarding it", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);
 		const configPath = join(root, "config.json");
@@ -220,13 +215,17 @@ describe("setup orchestration", () => {
 				executable: () => undefined,
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				embedder: fakeEmbedder({ ensureError: "spawn failed at /Users/alice/secret token=abc" }),
+				embedder: fakeEmbedder({
+					alive: false,
+					backend: "none",
+					detail: "addon missing at /Users/alice/secret token=abc",
+				}),
 			},
 		});
 		expect(report.mode).toBe("bm25");
-		expect(report.embedding.reason).toContain("spawn failed");
+		expect(report.embedding.reason).toContain("addon missing");
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
-		expect(report.remediation).toContain("minsync");
+		expect(report.remediation).toContain("minsync serve");
 	});
 });
 
@@ -247,7 +246,7 @@ describe("discord native store probe", () => {
 				executable: (name) => (name === "discrawl" ? "/opt/homebrew/bin/discrawl" : undefined),
 				pathExists: existing,
 				acquireLock: fakeLock,
-				embedder: fakeEmbedder({ ensureError: "offline" }),
+				embedder: fakeEmbedder({ alive: false, backend: "none", detail: "offline" }),
 			},
 		});
 		return { root, entry: report.datasources.find((d) => d.name === "discord") };
@@ -293,7 +292,7 @@ describe("discord native store probe", () => {
 					return false;
 				},
 				acquireLock: fakeLock,
-				embedder: fakeEmbedder({ ensureError: "offline" }),
+				embedder: fakeEmbedder({ alive: false, backend: "none", detail: "offline" }),
 			},
 		});
 		expect(seen.filter((path) => path.includes("discrawl"))).toEqual([explicit]);
@@ -316,7 +315,7 @@ describe("discord native store probe", () => {
 					return false;
 				},
 				acquireLock: fakeLock,
-				embedder: fakeEmbedder({ ensureError: "offline" }),
+				embedder: fakeEmbedder({ alive: false, backend: "none", detail: "offline" }),
 			},
 		});
 		return seen.filter((path) => path.includes("discrawl"));

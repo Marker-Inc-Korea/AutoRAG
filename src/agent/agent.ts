@@ -12,7 +12,12 @@ import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
-import { createEmbedderFromConfig, type Embedder, type ManagedEmbedder } from "../embedding/index.ts";
+import {
+	createEmbedderFromConfig,
+	type Embedder,
+	type ManagedEmbedder,
+	remoteEmbedderFromMinSync,
+} from "../embedding/index.ts";
 import {
 	EverythingClient,
 	type EverythingClientOptions,
@@ -51,9 +56,11 @@ import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
+import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
 	type MinSyncDiagnostic,
+	type MinSyncEmbedderConfig,
 	type MinSyncFileFailure,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
@@ -109,6 +116,7 @@ import {
 	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 	type ScanDuplicateDocumentsDetails,
 } from "./dupey-tool.ts";
+import { createEmbeddingControls } from "./embedding-controls.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
@@ -872,6 +880,8 @@ export class AutoRAGAgent {
 	private readonly rerankTopN: number | undefined;
 
 	private readonly minSyncMethod: MinSyncVectorMethod;
+	private readonly minSyncEmbedderConfig: MinSyncEmbedderConfig | undefined;
+	private readonly minSyncBinaryPath: string | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
@@ -1020,17 +1030,9 @@ export class AutoRAGAgent {
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
 		this.memoryVectorPath = memoryVectorStorePath(memPath);
-		this.embedder =
-			options.embedder ??
-			createEmbedderFromConfig({
-				embedder: options.minSync?.embedder,
-				root: options.workspacePath ?? process.cwd(),
-				...(options.minSync?.workspacePath === undefined
-					? {}
-					: { minSyncWorkspace: options.minSync.workspacePath }),
-				...(options.minSync?.binaryPath === undefined ? {} : { binaryPath: options.minSync.binaryPath }),
-				...(options.minSync?.autoInstall === undefined ? {} : { autoInstall: options.minSync.autoInstall }),
-			});
+		this.minSyncEmbedderConfig = options.minSync?.embedder;
+		this.minSyncBinaryPath = options.minSync?.binaryPath;
+		this.embedder = options.embedder ?? createEmbedderFromConfig({ embedder: options.minSync?.embedder });
 		this.memoryEmbedder = options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? this.embedder);
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
@@ -1601,6 +1603,16 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				createEvidencePersistence(this.evidenceLedger),
+				createEmbeddingControls({
+					embedder: this.embedder,
+					remote: remoteEmbedderFromMinSync(this.minSyncEmbedderConfig) !== undefined,
+					resolveBinary: () =>
+						resolveMinSyncBinary({
+							root: this.workspaceProjectRoot,
+							...(this.minSyncBinaryPath === undefined ? {} : { binaryPath: this.minSyncBinaryPath }),
+							autoInstall: false,
+						}),
+				}),
 				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
 			],
 			...(this.jevExtension !== undefined ? { extensionToolNames: [JEV_TOOL_NAME] } : {}),
@@ -3227,6 +3239,26 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * One warning when nothing can embed, so semantic search is not silently lexical-only. The text names the
+	 * way out; AutoRAG does not start the daemon itself. Shown by `status`, `lite status`, and the MCP status tool.
+	 */
+	private async embeddingDiagnostics(): Promise<SearchDocumentDiagnostic[]> {
+		const health = await this.embedder.health().catch(() => undefined);
+		if (health === undefined || health.alive) return [];
+		return [
+			{
+				code: "embedding-unavailable",
+				severity: "warning",
+				message:
+					health.backend === "remote"
+						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+				source: "embedding",
+			},
+		];
+	}
+
+	/**
 	 * Path-opaque snapshot of corpus freshness and the last refresh outcome. Runs
 	 * a cheap parse-free staleness scan (stat only); never parses in this path.
 	 *
@@ -3248,6 +3280,7 @@ export class AutoRAGAgent {
 			...this.startupDiagnostics,
 			...this.refreshState.mirrorDiagnostics.map(toSearchDiagnostic),
 			...staleDiagnostics.map(toSearchDiagnostic),
+			...(await this.embeddingDiagnostics()),
 			...this.refreshState.jikjiDiagnostics.map((d) => ({
 				code: d.code,
 				severity: d.severity,

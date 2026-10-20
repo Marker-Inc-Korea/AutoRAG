@@ -15,17 +15,15 @@ export interface Embedder {
 	embed(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
 }
 
-/** Where a {@link ManagedEmbedder} is sending text right now. */
-export type EmbeddingBackend = "daemon" | "in-process" | "remote";
+/** Where a {@link ManagedEmbedder} is sending text right now. `none` means nothing can embed. */
+export type EmbeddingBackend = "daemon" | "in-process" | "remote" | "none";
 
-export interface EmbedderReadiness {
+/** Whether the embedding backend answers right now. Probed on every call; nothing is cached. */
+export interface EmbedderHealth {
 	readonly backend: EmbeddingBackend;
-	/** True when this call started the `minsync serve` daemon. */
-	readonly daemonStarted: boolean;
-	/** Pid of a daemon this call started; the daemon outlives the process and stops itself when idle. */
-	readonly daemonPid?: number;
-	/** Why the daemon was not used, verbatim, when the in-process engine took over. */
-	readonly daemonError?: string;
+	readonly alive: boolean;
+	/** The answering server's address when alive, or why it is not. */
+	readonly detail?: string;
 }
 
 /** Where a {@link ManagedEmbedder} currently sends text, for external CLIs that need a URL. */
@@ -41,15 +39,13 @@ export interface EmbedderEndpoint {
 }
 
 /**
- * An {@link Embedder} that can be brought up explicitly. `embed` and `identity` never start a process,
- * so answering a question never spawns a server; `ensureReady` is what `refresh`/`watch` call first.
+ * An {@link Embedder} that reports where it embeds. AutoRAG never starts or stops a server: the operator
+ * runs `minsync serve` or configures a remote endpoint, and `health` / `describeEndpoint` only look.
  */
 export interface ManagedEmbedder extends Embedder {
-	ensureReady(): Promise<EmbedderReadiness>;
-	/**
-	 * The HTTP endpoint behind this embedder right now, or undefined while it would embed in-process.
-	 * Probes only: it never starts a daemon.
-	 */
+	/** Probes the backend now: the daemon's or the remote's `GET /health`. Never starts anything. */
+	health(): Promise<EmbedderHealth>;
+	/** The HTTP endpoint behind this embedder right now, or undefined while it would embed in-process. */
 	describeEndpoint(): Promise<EmbedderEndpoint | undefined>;
 	close(): Promise<void>;
 }

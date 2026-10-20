@@ -39,7 +39,6 @@ function renderSetup(report: Awaited<ReturnType<typeof runSetup>>): string {
 			? "embedding: blocked"
 			: `embedding: ${report.embedding.backend} (${report.embedding.provider}/${report.embedding.model}, ${report.embedding.dimension}d)`,
 		...(report.embedding.reason ? [`embedding: ${report.embedding.reason}`] : []),
-		...(report.embedding.daemonError ? [`daemon: ${report.embedding.daemonError}`] : []),
 		...report.datasources.map((d) => `  ${d.name}: ${d.state}${d.reason ? ` (${d.reason})` : ""}`),
 		...(report.remediation ? [`remediation: ${report.remediation}`] : []),
 	].join("\n");

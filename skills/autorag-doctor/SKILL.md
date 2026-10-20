@@ -39,10 +39,11 @@ autorag setup --format json
   `--skip-probes` only proves config shape, never live access; do not claim a
   healthy model from it.
 - `setup --format json` reports `embedding.backend` (`remote`, `daemon`, or
-  `in-process`), the resolved `provider`/`model`/`dimension`, `daemonStarted`,
-  and `daemonError` when MinSync's in-process engine took over. A daemon is
-  on-demand: absent while nothing is embedding is normal; `embedder-unavailable`
-  **while** a refresh is running is a real failure.
+  `in-process`) and the resolved `provider`/`model`/`dimension` when a backend
+  is alive, or `embedding.reason` and a `remediation` when none is. It only
+  probes; it never starts a daemon. Semantic search needs the daemon (or a
+  remote endpoint) to be running: a backend that is absent is a real
+  `embedding-unavailable` state, not normal.
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`,
@@ -145,14 +146,17 @@ ls ~/.cache/minsync/serve/* 2>/dev/null
 autorag setup --format json
 ```
 
-To diagnose a daemon that will not start, run `minsync serve` by hand in the
-workspace and read its own error; `setup --format json` reports the resolved
-`embedding.backend` and a `daemonError` when MinSync's in-process engine took
-over instead. When no daemon answers and the in-process addon
+To diagnose an embedding backend that is not alive, `setup --format json` and
+`status` say so (`embedding.reason`, and the `embedding-unavailable`
+diagnostic). AutoRAG never starts the daemon: run `minsync serve
+--idle-timeout 0` by hand (or as a launchd/systemd service, see
+`docs/minsync-setup.md`) and read its own error, or press Ctrl+Shift+E in the
+TUI. When no daemon answers and the in-process addon
 (`@nomadamas/minsync-native`) is missing, that is the `embedder-unavailable`
-state; stop an orphaned daemon by the pid from
-`~/.cache/minsync/serve/<instance>/pid` after confirming no live refresh holds
-it.
+state. The daemon stops itself after `--idle-timeout` seconds (default 300), so
+a semantic failure after a quiet spell usually means it timed out. Stop an
+orphaned daemon by the pid from `~/.cache/minsync/serve/<instance>/pid` after
+confirming no live refresh holds it.
 
 Index locks are owned by their engines: MinSync/tantivy locks under
 `<workspace>/.autorag/`, and per-CLI locks such as
