@@ -517,44 +517,6 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(states[1]).not.toContain("[slack]");
 	});
 
-	it("never shows a remote peer's past searches to the local Jev datasource check", async () => {
-		const states: string[] = [];
-		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.1, { slack: 0.9 }));
-		const recordingJev: JevBackend = {
-			name: "recording",
-			async judge(request) {
-				if (request.questions.some((question) => question.id === datasourceQuestionId("slack"))) {
-					states.push(String(request.state));
-				}
-				return routing.judge(request);
-			},
-		};
-		const memoryPath = join(root, "shared-memory.json");
-		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels", () => ({
-			source: "/slack/default/release-plan",
-		}));
-		const remote = agentWith({
-			model: fauxModel(fastAnswer("Peer answer."), finalAnswer("Peer answer.")),
-			memoryPath,
-			remoteSession: true,
-			datasourceSkills: [slack.skill],
-		});
-		injectMinSync(remote, recordingMinSync().method);
-		await remote.searchDocuments("릴리즈 날짜 언제로 정했지?");
-
-		const local = agentWith({
-			model: fauxModel(fastAnswer("Friday [e2].")),
-			memoryPath,
-			jev: { backend: recordingJev },
-			datasourceSkills: [slack.skill],
-		});
-		injectMinSync(local, recordingMinSync().method);
-		await local.searchDocuments("릴리즈 날짜 언제로 정했어?");
-
-		expect(states).toHaveLength(1);
-		expect(states[0]).not.toContain("Similar past questions");
-	});
-
 	it("attributes evidence from a hyphenated datasource id to that datasource, not a shorter one it contains", async () => {
 		const states: string[] = [];
 		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.9, { "kakao-work": 0.9, kakao: 0.1 }));

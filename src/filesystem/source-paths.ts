@@ -50,17 +50,6 @@ export interface ResolvedVirtualSource {
 }
 
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
-const WINDOWS_DRIVE_PATH = /^[a-z]:[\\/]/iu;
-
-/**
- * True when `source` is an absolute filesystem path on any supported OS
- * (POSIX `/...`, Windows drive `C:\` or `C:/`, or UNC `\\...`).
- * Platform-independent so peer wire ids behave identically on macOS, Linux,
- * and Windows servers.
- */
-export function isFilesystemAbsolutePath(source: string): boolean {
-	return source.startsWith("/") || source.startsWith("\\\\") || WINDOWS_DRIVE_PATH.test(source);
-}
 
 /**
  * Normalize an opaque virtual source id. Returns the normalized id, or
@@ -87,53 +76,6 @@ export function normalizeVirtualPath(virtual: string | undefined | null): string
 		if (segment === ".." || segment === ".") return undefined;
 	}
 	return v;
-}
-
-/**
- * Canonicalize any retrieval source form to the canonical virtual source id:
- *
- * 1. An id already inside a configured root's virtual namespace is validated
- *    and returned unchanged (modulo separator cleanup).
- * 2. An OS-absolute real path contained in a configured source root becomes
- *    that root's virtual id (`/<prefix>/<relative>`); the longest containing
- *    root wins for nested roots.
- * 3. A datasource slash identity (`/kakao/<instance>/chunks/<chunk>`) is a
- *    virtual id in a non-filesystem namespace and passes through validation.
- * 4. An absolute filesystem path outside every root passes through as its
- *    own canonical form — backslashes are converted to forward slashes so
- *    Windows drive/UNC paths canonicalize identically on every host — letting
- *    operators write policy globs against real absolute paths.
- *
- * Everything else fails closed as `undefined`: traversal segments, URL
- * schemes (including the retired `kakao:<chat>` colon scheme), backslashes in
- * non-absolute sources, and empty input.
- */
-export function normalizeSource(source: string, sourceRoots: readonly SourceRoot[]): string | undefined {
-	if (typeof source !== "string" || source.length === 0) return undefined;
-	for (const root of sourceRoots) {
-		if (virtualRootMatches(source, root)) return normalizeVirtualPath(source);
-	}
-	if (isFilesystemAbsolutePath(source)) {
-		const containing = sourceRoots
-			.filter((root) => {
-				const rel = relative(root.rootPath, resolve(source));
-				return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-			})
-			.sort((a, b) => b.rootPath.length - a.rootPath.length);
-		const selected = containing[0];
-		if (selected !== undefined) return sourceIdentifier(selected, source);
-		// Canonical form uses forward slashes on every host. A Windows drive
-		// prefix is preserved and the remainder validated as a virtual path
-		// (a bare `C:/...` would otherwise look like a URL scheme).
-		const canonical = source.replaceAll("\\", "/");
-		const drive = /^([a-z]):(\/.*)$/iu.exec(canonical);
-		if (drive !== null) {
-			const rest = normalizeVirtualPath(drive[2] as string);
-			return rest === undefined ? undefined : `${drive[1]}:${rest}`;
-		}
-		return normalizeVirtualPath(canonical);
-	}
-	return normalizeVirtualPath(source);
 }
 
 /**

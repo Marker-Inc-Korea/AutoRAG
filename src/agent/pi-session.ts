@@ -63,7 +63,6 @@ export interface AutoRAGPiSessionOptions {
 	 * should be callable must appear here too.
 	 */
 	readonly extensionToolNames?: readonly string[];
-	readonly remoteSession?: boolean;
 	readonly contextTransform?: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
 }
 /**
@@ -403,7 +402,6 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		model: options.model,
 		customTools: customToolDefinitions,
 		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames],
-		excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		thinkingLevel: "off",
 	});
 	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames, ...extensionToolNames])];
@@ -477,7 +475,6 @@ export async function createAutoRAGPiInteractiveRuntime(
 				...options.customTools.map((tool) => tool.name),
 				...(options.extensionToolNames ?? []),
 			],
-			excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		});
 		if (options.inactiveToolNames !== undefined && options.inactiveToolNames.length > 0) {
 			const inactive = new Set(options.inactiveToolNames);
