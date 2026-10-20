@@ -39,7 +39,7 @@ zero-configuration default, and remote reranking (or a remote
 | `apiKeyEnv` | string | `OPENROUTER_API_KEY` (`openrouter`); not supported for `dazzi` | Env var holding the provider API key (never the secret itself). `dazzi` uses the credential stored by `/login`, and setting `apiKeyEnv` with it is a config error |
 | `baseUrl` | string | provider default | Override the provider base URL (e.g. a proxy or self-hosted endpoint); for `dazzi` this is the API base **including** `/v1` |
 | `topN` | positive integer | `25` | Keep only the top N merged results after reranking |
-| `timeoutMs` | positive integer | none (no request timeout) | Per-request timeout |
+| `timeoutMs` | positive integer | `60000` | Per-request timeout. A reranker that does not answer within it fails the call, which is reported and falls back to retrieval order. The hosted reranker takes about 15 s for 172 documents and 45 s for 300 |
 
 Setting `"rerank": false` disables reranking. A config file with no `rerank`
 block leaves the stage off; `autorag init` writes the block above so new

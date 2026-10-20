@@ -419,7 +419,10 @@ describe("Jev query pipeline before the fast answer", () => {
 			const decompositionModel = fauxModel(
 				fauxAssistantMessage('{"queries": ["Who approved the budget?"]}', { stopReason: "stop" }),
 			);
-			const model = fauxModel(capture(fastAnswer("Fast: approvers found."), prompts), finalAnswer("Verified approvers."));
+			const model = fauxModel(
+				capture(fastAnswer("Fast: approvers found."), prompts),
+				finalAnswer("Verified approvers."),
+			);
 			const agent = agentWith({
 				model,
 				queryDecomposition: { model: decompositionModel },

@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import {
 	createReranker,
@@ -86,6 +88,30 @@ describe("OpenRouterReranker", () => {
 
 	it("defaults the model to voyageai/rerank-3-lite", () => {
 		expect(new OpenRouterReranker({ client: clientReturning([]) }).describe().model).toBe(DEFAULT_RERANK_MODEL);
+	});
+});
+
+describe("OpenRouterReranker request timeout", () => {
+	it("aborts a rerank request the server never answers instead of waiting forever", async () => {
+		const server = createServer(() => {
+			// Accepts the request and never responds.
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		const port = typeof address === "object" && address !== null ? address.port : 0;
+		try {
+			const reranker = new OpenRouterReranker({
+				apiKey: "k",
+				baseUrl: `http://127.0.0.1:${port}/v1`,
+				timeoutMs: 100,
+			});
+
+			await expect(reranker.rerank("q", [result("a", "alpha")])).rejects.toThrow();
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 	});
 });
 

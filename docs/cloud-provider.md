@@ -81,10 +81,17 @@ Catalog fields are mapped as follows:
 |---|---|
 | `id`, `name` | `id`, `name` (`name` falls back to `id`) |
 | `context_window` | `contextWindow` (default 128000) |
-| `max_output_tokens` | `maxTokens` (default 16384) |
+| `max_output_tokens` | `maxTokens` (default 16384; a session request asks for at most 32,000 of it, see below) |
 | `input_modalities` | `input` (`text`/`image`; unknown modalities are dropped) |
 | `reasoning` | `reasoning` |
 | `pricing.{input,output,cache_read,cache_write}` | `cost` — USD per million tokens, Pi's cost unit |
+
+A session never asks a model for more than 32,000 output tokens, whatever the
+catalog lists. pi sizes each request's `max_tokens` from its own estimate of the
+window left, and that estimate leaves out the system prompt and the tool
+declarations, so a catalog `maxTokens` near the context window (some OpenRouter
+models list about 90% of it) overshoots the window and the provider answers 400.
+The context guard budgets the input against this same 32,000-token reserve.
 
 ### Offline resolution
 

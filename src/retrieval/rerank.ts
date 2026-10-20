@@ -31,6 +31,13 @@ export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
  * chat LLMs, so the project's 2026+ model rule does not cover them.
  */
 export const DEFAULT_DAZZI_RERANK_MODEL = "qwen/qwen3-reranker-8b";
+/**
+ * Default per-request rerank timeout. A reranker that never answers would stall
+ * the fast answer. Measured against the hosted reranker, a 172-document pool
+ * takes ~15s and a 300-document pool ~45s, so 60s clears the largest baseline
+ * pool (3 x 100 candidates) with headroom.
+ */
+export const DEFAULT_RERANK_TIMEOUT_MS = 60_000;
 /** Default number of merged chunks kept after reranking. */
 export const DEFAULT_RERANK_TOP_N = 25;
 /** Rerank providers {@link createReranker} can build. */
@@ -170,13 +177,13 @@ function dazziApiBaseUrl(env: NodeJS.ProcessEnv): string {
 function createFetchRerankClient(options: {
 	readonly apiKey: string;
 	readonly baseUrl: string;
-	readonly timeoutMs?: number;
+	readonly timeoutMs: number;
 }): RerankClient {
-	const url = `${options.baseUrl.replace(/\/+$/u, "")}/rerank`;
+	const url = `${trimTrailingSlashes(options.baseUrl)}/rerank`;
 	return {
 		rerank: async ({ requestBody }, requestOptions) => {
 			const { topN, ...rest } = requestBody;
-			const timeout = options.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs);
+			const timeout = AbortSignal.timeout(options.timeoutMs);
 			const signal = AbortSignal.any([requestOptions?.signal, timeout].filter((entry) => entry !== undefined));
 			const response = await fetch(url, {
 				method: "POST",
@@ -211,6 +218,13 @@ function createFetchRerankClient(options: {
 			};
 		},
 	};
+}
+
+/** `value` without its trailing `/` characters, in one backwards scan. */
+function trimTrailingSlashes(value: string): string {
+	let end = value.length;
+	while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+	return value.slice(0, end);
 }
 
 /** `value[key]` when `value` is an object that has `key`, else `undefined`. */
@@ -253,7 +267,11 @@ export class OpenRouterReranker implements Reranker {
 			return;
 		}
 		const baseUrl = options.baseUrl ?? (isDazzi ? dazziApiBaseUrl(env) : OPENROUTER_BASE_URL);
-		this.client = createFetchRerankClient({ apiKey, baseUrl, timeoutMs: options.timeoutMs });
+		this.client = createFetchRerankClient({
+			apiKey,
+			baseUrl,
+			timeoutMs: options.timeoutMs ?? DEFAULT_RERANK_TIMEOUT_MS,
+		});
 	}
 
 	describe(): RerankerDescriptor {

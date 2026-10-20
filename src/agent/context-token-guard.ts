@@ -4,12 +4,14 @@ import { calculateContextTokens, estimateTokens } from "@earendil-works/pi-codin
 
 const CONTEXT_HEADROOM = 1.2;
 /**
- * Most output tokens ever held back from the input budget. pi clamps each
- * request's `max_tokens` to the room left in the context window, so reserving a
- * catalog `maxTokens` that approaches the window (OpenRouter and Fireworks list
- * many such models) would zero the input budget and wipe the whole transcript.
+ * Most output tokens ever held back from the input budget, and the most a
+ * session request may ask for. pi clamps each request's `max_tokens` to the room
+ * its own estimate says is left in the window, but that estimate omits the system
+ * prompt and tool declarations, so a catalog `maxTokens` that approaches the
+ * window (OpenRouter and Fireworks list many such models) overshoots it. Holding
+ * the model to this cap keeps the request the guard budgeted for.
  */
-const MAX_OUTPUT_RESERVE_TOKENS = 32_000;
+export const MAX_OUTPUT_TOKENS = 32_000;
 /** The user's query keeps at least this many tokens even when the budget is exhausted. */
 const MIN_QUERY_TOKENS = 2_000;
 const GUARD_MARKER = "[AutoRAG context guard: omitted context to stay within the model context budget.]";
@@ -49,6 +51,12 @@ export function createContextTokenGuardedTransform(
 	};
 }
 
+/** The model with its output limit held to {@link MAX_OUTPUT_TOKENS}; the same model when already within it, or when absent. */
+export function withBoundedOutput<T extends Model<any> | undefined>(model: T): T {
+	if (model === undefined || (Number.isFinite(model.maxTokens) && model.maxTokens <= MAX_OUTPUT_TOKENS)) return model;
+	return { ...model, maxTokens: MAX_OUTPUT_TOKENS };
+}
+
 /**
  * Keep complete retrieval candidates while the assembled request fits the
  * model budget. Removing a per-chunk cut is only safe because this drops whole
@@ -72,7 +80,7 @@ export function guardAgentContextMessages(
 	const usableContext = Math.floor(model.contextWindow / CONTEXT_HEADROOM);
 	const outputReserve = Math.min(
 		Math.floor(usableContext / 4),
-		MAX_OUTPUT_RESERVE_TOKENS,
+		MAX_OUTPUT_TOKENS,
 		Number.isFinite(model.maxTokens) ? Math.max(0, model.maxTokens) : 0,
 	);
 	const inputBudget = Math.max(0, usableContext - outputReserve);
