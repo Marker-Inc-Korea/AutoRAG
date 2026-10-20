@@ -21,6 +21,7 @@ import {
 	type TuiMode,
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
+import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
 import { fitRequestLimits } from "./request-limits.ts";
@@ -176,6 +177,10 @@ async function configureModelRuntime(
 	const keys = new Map<string, string>();
 	if (model !== undefined && apiKey !== undefined) keys.set(model.provider, apiKey);
 	for (const [provider, key] of Object.entries(providerApiKeys ?? {})) keys.set(provider, key);
+	// Dazzi Models is OAuth-only: its token is the stored `/login` credential, and Pi resolves it from
+	// auth.json. A runtime API key would replace that credential with an api_key one the provider has
+	// no auth for, so every request then fails with "No API key found for dazzi".
+	keys.delete(DAZZI_PROVIDER_ID);
 	for (const [provider, key] of keys) await modelRuntime.setRuntimeApiKey(provider, key);
 }
 
