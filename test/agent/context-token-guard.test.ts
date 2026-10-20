@@ -5,6 +5,8 @@ import {
 	createContextTokenGuardedTransform,
 	estimateContextMessageTokens,
 	guardAgentContextMessages,
+	MAX_OUTPUT_TOKENS,
+	withBoundedOutput,
 } from "../../src/agent/context-token-guard.ts";
 
 const model = {
@@ -319,5 +321,23 @@ describe("context token guard", () => {
 		const guarded = guardAgentContextMessages(window, messages, false, 10_000);
 
 		expect(guarded).toBe(messages);
+	});
+
+	it("holds a catalog maxTokens near the context window to the output cap, leaving a smaller one as is", () => {
+		const near = { ...model, contextWindow: 262_144, maxTokens: 235_929 };
+		const small = { ...model, contextWindow: 262_144, maxTokens: 8_000 };
+
+		expect(withBoundedOutput(near).maxTokens).toBe(MAX_OUTPUT_TOKENS);
+		expect(withBoundedOutput(near).contextWindow).toBe(262_144);
+		expect(withBoundedOutput(small)).toBe(small);
+	});
+
+	it("keeps input plus the bounded output inside the window that overflowed in production", () => {
+		// 262,144 window, ~88k real input (text + tool declarations), catalog maxTokens 235,929:
+		// pi asked for 195,111 output tokens and the request was 20,691 over the window.
+		const bounded = withBoundedOutput({ ...model, contextWindow: 262_144, maxTokens: 235_929 });
+		const input = 87_724;
+
+		expect(input + bounded.maxTokens).toBeLessThanOrEqual(bounded.contextWindow);
 	});
 });

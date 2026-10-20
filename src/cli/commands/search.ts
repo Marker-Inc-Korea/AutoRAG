@@ -134,7 +134,7 @@ function parseThinkingLevel(value: string | boolean | undefined): AutoRAGThinkin
 
 /**
  * Per-phase thinking flags for the two-phase (fast → verification) search.
- * `--fast-thinking` and `--final-thinking` set the levels (default: off/high).
+ * `--fast-thinking` and `--final-thinking` set the levels (default: minimal/high).
  * An unrecognized level rejects with exit 2.
  */
 function buildThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {

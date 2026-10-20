@@ -526,17 +526,20 @@ interface RefreshState {
 	watchFailed: boolean;
 }
 
+/** Display-only TUI notice that a rerank call failed; stripped from the model's context. */
+const RERANK_FAILURE_MESSAGE_TYPE = "autorag.rerank-failed";
+
 /** Thinking level applied per search phase. "off" requests no reasoning. */
 export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * Per-phase thinking for AutoRAG's two-phase search: the fast phase delivers
  * an immediate first answer with {@link AutoRAGThinkingOptions.fast} thinking
- * (default "off"), then the verification phase re-checks and finalizes with
+ * (default "minimal"), then the verification phase re-checks and finalizes with
  * {@link AutoRAGThinkingOptions.final} thinking (default "high").
  */
 export interface AutoRAGThinkingOptions {
-	/** Thinking level for the immediate first answer. Default "off". */
+	/** Thinking level for the immediate first answer. Default "minimal": some hosted models reject "off". */
 	readonly fast?: AutoRAGThinkingLevel;
 	/** Thinking level for the verification/finalization phase. Default "high". */
 	readonly final?: AutoRAGThinkingLevel;
@@ -909,7 +912,7 @@ export class AutoRAGAgent {
 		this.configuredModel = options.model;
 		this.discordRemote = options.discordRemote ?? false;
 		this.toolBurstGuard = new ToolBurstGuard(options.toolCallBurstGuard);
-		this.fastThinkingLevel = options.thinking?.fast ?? "off";
+		this.fastThinkingLevel = options.thinking?.fast ?? "minimal";
 		this.finalThinkingLevel = options.thinking?.final ?? "high";
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
@@ -1534,7 +1537,14 @@ export class AutoRAGAgent {
 			// The model sees each steer framed as a correction of the running search;
 			// the transcript, pi's queue display, and Esc/dequeue restores keep the user's words.
 			contextTransform: async (messages) =>
-				this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
+				this.withMemoryContext(
+					frameSteers(
+						messages.filter(
+							(message) => !(message.role === "custom" && message.customType === RERANK_FAILURE_MESSAGE_TYPE),
+						),
+						this.interactive.steerTexts,
+					),
+				),
 			customTools: this.steerableTools(),
 			onInput: (input, pi) => this.routeInteractiveInput(input, pi),
 			isSearchRunning: () => this.interactive.run !== undefined,
@@ -1962,7 +1972,7 @@ export class AutoRAGAgent {
 			for (const message of steering.preSessionSteers) session.agent.steer(message);
 			steering.preSessionSteers.length = 0;
 			await (async () => {
-				// Two-phase flow: a fast thinking-off answer from the baseline
+				// Two-phase flow: a fast minimal-thinking answer from the baseline
 				// evidence, then a thinking-on verification pass. Each phase ends in
 				// plain assistant text; the harness resolves its inline [eN]
 				// citations against the evidence ledger.
@@ -2706,9 +2716,18 @@ export class AutoRAGAgent {
 		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths,
 		// MinSync chunks, and selected-datasource chunks) against the original
 		// question, so decomposed sub-query hits compete on relevance to what the
-		// user asked. Falls back to the unranked sections when reranking is
-		// disabled or unavailable.
-		const reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults, signal);
+		// user asked. A configured reranker that fails is reported like a model
+		// error and the baseline falls back to retrieval order cut to `rerank.topN`;
+		// with reranking disabled the sections stay uncut.
+		let reranked: RetrievalResult[] | undefined;
+		let rerankFailed = false;
+		try {
+			reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults, signal);
+		} catch (error) {
+			rerankFailed = true;
+			// A steer abort cuts the request short; that is not a reranker failure.
+			if (!signal.aborted) this.reportRerankFailure(error);
+		}
 		if (reranked !== undefined) {
 			const baseline = formatRerankedBaseline(
 				reranked,
@@ -2722,10 +2741,32 @@ export class AutoRAGAgent {
 		const sections: string[] = [];
 		if (searchQueries.length > 1) sections.push(formatSearchQueries(searchQueries));
 		const idFor = (result: RetrievalResult): string => this.evidenceLedger.registerResult("baseline", result);
-		if (jikjiFound) {
+		let shownPaths = jikjiPaths.slice(0, this.limits.prefetch.jikjiPathLimit);
+		let shownMinSync = minSyncResults.slice(0, this.limits.prefetch.sectionLimit);
+		let shownDatasource = datasourceResults.slice(0, this.limits.prefetch.sectionLimit);
+		if (rerankFailed && this.rerankTopN !== undefined) {
+			// Retrieval order, not rerank order: fill the cut round-robin by rank
+			// across the three sources so one source cannot take every slot, and
+			// each source keeps its own order.
+			const sources = [shownPaths, shownMinSync, shownDatasource];
+			const quota = sources.map(() => 0);
+			for (let taken = 0, rank = 0; taken < this.rerankTopN; rank++) {
+				let advanced = false;
+				for (const [slot, source] of sources.entries()) {
+					if (rank >= source.length || taken >= this.rerankTopN) continue;
+					quota[slot] = rank + 1;
+					taken++;
+					advanced = true;
+				}
+				if (!advanced) break;
+			}
+			shownPaths = shownPaths.slice(0, quota[0]);
+			shownMinSync = shownMinSync.slice(0, quota[1]);
+			shownDatasource = shownDatasource.slice(0, quota[2]);
+		}
+		if (jikjiFound && shownPaths.length > 0) {
 			sections.push(
-				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikjiPaths
-					.slice(0, this.limits.prefetch.jikjiPathLimit)
+				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${shownPaths
 					.map(
 						(path) =>
 							`[${this.evidenceLedger.register({ method: JIKJI_FIND_TOOL_NAME, source: path, content: path })}] ${path}`,
@@ -2733,18 +2774,16 @@ export class AutoRAGAgent {
 					.join("\n")}`,
 			);
 		}
-		if (minSyncResults.length > 0) {
+		if (shownMinSync.length > 0) {
 			sections.push(
-				`MinSync semantic initial candidates:\n${minSyncResults
-					.slice(0, this.limits.prefetch.sectionLimit)
+				`MinSync semantic initial candidates:\n${shownMinSync
 					.map((result) => `[${idFor(result)}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
 		}
-		if (datasourceResults.length > 0) {
+		if (shownDatasource.length > 0) {
 			sections.push(
-				`Datasource initial candidates:\n${datasourceResults
-					.slice(0, this.limits.prefetch.sectionLimit)
+				`Datasource initial candidates:\n${shownDatasource
 					.map((result) => `[${idFor(result)}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
 					.join("\n")}`,
 			);
@@ -2760,9 +2799,9 @@ export class AutoRAGAgent {
 	 * `rerank.topN`. With decomposition the pool merges every search query's
 	 * hits (interleaved), capped at the same per-source sizes as a single query
 	 * so the rerank request does not grow with the query count. Returns
-	 * `undefined` when reranking is disabled/unavailable or the pool is empty,
-	 * so the caller keeps the unranked sections; a rerank failure never blocks
-	 * the fast answer.
+	 * `undefined` when reranking is disabled or the pool is empty. A configured
+	 * reranker that is unavailable, throws, or returns nothing for a non-empty
+	 * pool throws, so the caller can report it and fall back.
 	 */
 	private async rerankPrefetchPool(
 		query: string,
@@ -2785,18 +2824,34 @@ export class AutoRAGAgent {
 		candidates.push(...minSyncResults.slice(0, this.limits.prefetch.minSyncTopK));
 		candidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
 		if (candidates.length === 0) return undefined;
-		if (!reranker.describe().available) return undefined;
-		try {
-			const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN, signal });
-			return reranked.length > 0 ? reranked : undefined;
-		} catch {
-			return undefined;
-		}
+		const descriptor = reranker.describe();
+		if (!descriptor.available) throw new Error(`reranker is unavailable: ${descriptor.reason ?? "unknown reason"}`);
+		const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN, signal });
+		if (reranked.length === 0) throw new Error("reranker returned no results for a non-empty candidate pool");
+		return reranked;
+	}
+
+	/**
+	 * Surface a rerank failure the way a model error is surfaced: a diagnostic on
+	 * the response and, in the TUI, a visible notice in the transcript. The run
+	 * continues on the retrieval-order fallback.
+	 */
+	private reportRerankFailure(error: unknown): void {
+		const name = this.reranker?.describe().name ?? "reranker";
+		const reason = error instanceof Error ? error.message : String(error);
+		const message = `Rerank failed (${name}); using retrieval order cut to the top ${this.rerankTopN} instead: ${reason}`;
+		this.routingDiagnostics.push({ code: "rerank-failed", severity: "warning", message, source: name });
+		void this.boundPiRuntime?.session
+			.sendCustomMessage(
+				{ customType: RERANK_FAILURE_MESSAGE_TYPE, content: [{ type: "text", text: message }], display: true },
+				{ triggerTurn: false },
+			)
+			.catch(() => undefined);
 	}
 
 	/**
 	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
-	 * is already gathered, so the model answers immediately with thinking off,
+	 * is already gathered, so the model answers immediately with minimal thinking,
 	 * as plain text, without any further tool calls.
 	 */
 	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {

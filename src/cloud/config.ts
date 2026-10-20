@@ -13,8 +13,8 @@ export const DEFAULT_DAZZI_CHAT_MODEL_ID = "z-ai/glm-5.3-flash";
 
 /**
  * Question-decomposition model used when nothing is configured and the user is
- * signed in. `z-ai/glm-5.3-flash` is not usable here: it requires reasoning, and
- * the decomposition call runs with reasoning off. Same catalog caveat as
+ * signed in. The decomposition call runs with minimal reasoning, so reasoning-only
+ * models (e.g. `z-ai/glm-5.3-flash`) also work. Same catalog caveat as
  * {@link DEFAULT_DAZZI_CHAT_MODEL_ID}: the model must be in the signed-in catalog.
  */
 export const DEFAULT_DAZZI_QUERY_DECOMPOSITION_MODEL_ID = "openai/gpt-6-luna";

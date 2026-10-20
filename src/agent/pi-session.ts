@@ -23,7 +23,7 @@ import {
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
-import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
+import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
 import { fitRequestLimits } from "./request-limits.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
@@ -404,7 +404,7 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		settingsManager,
 		resourceLoader,
 		sessionManager,
-		model: options.model,
+		model: withBoundedOutput(options.model),
 		customTools: customToolDefinitions,
 		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames],
 		thinkingLevel: "off",
@@ -473,7 +473,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 			services,
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
-			model: options.model,
+			model: withBoundedOutput(options.model),
 			customTools: options.customTools.map(toToolDefinition),
 			tools: [
 				...PI_BUILTIN_TOOL_NAMES,

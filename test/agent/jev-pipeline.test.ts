@@ -405,6 +405,64 @@ describe("Jev query pipeline before the fast answer", () => {
 		}
 	});
 
+	it("reports a failed rerank and falls back to retrieval order cut to topN", async () => {
+		const server = createServer((_request, response) => {
+			response.writeHead(500, { "content-type": "application/json" });
+			response.end(JSON.stringify({ error: "rerank backend down" }));
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		const port = typeof address === "object" && address !== null ? address.port : 0;
+		try {
+			const prompts: string[] = [];
+			const decompositionModel = fauxModel(
+				fauxAssistantMessage('{"queries": ["Who approved the budget?"]}', { stopReason: "stop" }),
+			);
+			const model = fauxModel(
+				capture(fastAnswer("Fast: approvers found."), prompts),
+				finalAnswer("Verified approvers."),
+			);
+			const agent = agentWith({
+				model,
+				queryDecomposition: { model: decompositionModel },
+				jev: { backend: jevRouting("local", 0.9) },
+				rerank: {
+					provider: "openrouter",
+					model: "test-rerank",
+					apiKey: "test-key",
+					baseUrl: `http://127.0.0.1:${port}/`,
+					topN: 2,
+				},
+			});
+			const hits = Array.from({ length: 5 }, (_, rank) => ({
+				id: `hit-${rank}`,
+				source: join(docs, `hit-${rank}.txt`),
+				content: `retrieval rank ${rank}`,
+				score: 1 - rank / 10,
+				metadata: {},
+			}));
+			injectMinSync(agent, {
+				isReady: () => true,
+				isBinaryMissing: () => false,
+				retrieve: async (): Promise<RetrievalResult[]> => hits,
+			});
+
+			const response = await agent.searchDocuments("Who approved the budget?");
+
+			const fastPrompt = prompts[0] ?? "";
+			expect(fastPrompt).toContain("retrieval rank 0");
+			expect(fastPrompt).toContain("retrieval rank 1");
+			expect(fastPrompt).not.toContain("retrieval rank 2");
+			expect(fastPrompt).not.toContain("Reranked initial candidates");
+			const failure = response.diagnostics?.find((diagnostic) => diagnostic.code === "rerank-failed");
+			expect(failure?.message).toContain("HTTP 500");
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
+	});
+
 	it("searches only the datasources Jev judges needed and adds their chunks to the fast-answer evidence", async () => {
 		const prompts: string[] = [];
 		const source = "/slack/default/release-date";

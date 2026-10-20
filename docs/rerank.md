@@ -8,9 +8,8 @@ by relevance to the query.
 
 The default reranker is the hosted **Dazzi Models** reranker
 (`qwen/qwen3-reranker-8b`) when you are signed in (`/login`), and
-**OpenRouter** (via the
-[`@openrouter/sdk`](https://www.npmjs.com/package/@openrouter/sdk) TypeScript
-SDK and [`voyageai/rerank-3-lite`](https://openrouter.ai/voyageai/rerank-3-lite))
+**OpenRouter** (a plain HTTPS call to its rerank endpoint with
+[`voyageai/rerank-3-lite`](https://openrouter.ai/voyageai/rerank-3-lite))
 otherwise. The choice is made by `autorag init` when it writes the `rerank`
 block; a config file with no `rerank` block leaves reranking off, and an
 existing block keeps what it says.
@@ -40,7 +39,7 @@ zero-configuration default, and remote reranking (or a remote
 | `apiKeyEnv` | string | `OPENROUTER_API_KEY` (`openrouter`); not supported for `dazzi` | Env var holding the provider API key (never the secret itself). `dazzi` uses the credential stored by `/login`, and setting `apiKeyEnv` with it is a config error |
 | `baseUrl` | string | provider default | Override the provider base URL (e.g. a proxy or self-hosted endpoint); for `dazzi` this is the API base **including** `/v1` |
 | `topN` | positive integer | `25` | Keep only the top N merged results after reranking |
-| `timeoutMs` | positive integer | SDK default | Per-request timeout |
+| `timeoutMs` | positive integer | `60000` | Per-request timeout. A reranker that does not answer within it fails the call, which is reported and falls back to retrieval order. The hosted reranker takes about 15 s for 172 documents and 45 s for 300 |
 
 Setting `"rerank": false` disables reranking. A config file with no `rerank`
 block leaves the stage off; `autorag init` writes the block above so new
@@ -82,9 +81,12 @@ The rerank client appends `/rerank` to the base URL, so an explicit
   datasources the Jev datasource check selected ≤100) is reranked down to
   `topN` (default 25) and injected as a single relevance-ordered section, so
   the immediate answer is grounded in relevance order rather than raw method
-  order. If the reranker is unavailable or fails, the unranked
-  Jikji/MinSync/datasource sections are used and the fast answer is
-  unaffected. When the Jev query pipeline decomposes a local question (see
+  order. If the reranker is unavailable or fails, the failure is reported (a
+  `rerank-failed` warning on the response and a visible notice in the TUI, never
+  shown to the model) and the baseline falls back to **retrieval order** cut to
+  `topN`, taking ranks round-robin across the Jikji, MinSync, and datasource
+  lists. With reranking disabled the sections stay uncut. When the Jev query
+  pipeline decomposes a local question (see
   [Jev Decisions](jev-decisions.md)), every sub-query's Jikji, MinSync, and
   selected-datasource hits are interleaved and deduplicated into one pool with
   the same per-source caps, and that pool is reranked against the **original**
@@ -99,9 +101,13 @@ The rerank client appends `/rerank` to the base URL, so an explicit
   reported as a `rerank-failed` diagnostic and the merged order is preserved.
   A reranker outage never hides retrieval evidence.
 
-## Local reranking
+## Wire format
 
-`baseUrl` can point at any Cohere-compatible `/v1/rerank` endpoint, including a
-local server. `openrouter` is the only supported `provider` id; any other value
-is rejected as a configuration error. For an in-process implementation, pass a
-custom `Reranker` to `RetrievalEngine` through its `reranker` option.
+The client is a plain `fetch` POST to `<base>/rerank` with
+`{ model, query, documents, top_n }` and a bearer token. It reads only
+`results[].index` and `results[].relevance_score` from the response, so any
+endpoint with that shape works, including a self-hosted or gateway server set
+through `baseUrl`. `openrouter` and `dazzi` are the only supported `provider`
+ids; any other value is rejected as a configuration error. For an in-process
+implementation, pass a custom `Reranker` to `RetrievalEngine` through its
+`reranker` option.
