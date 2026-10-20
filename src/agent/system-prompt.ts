@@ -66,6 +66,16 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(
 			config,
+			"convert_files",
+			"convert local files to another format offline (Filee), on any path, with optional overwrite",
+		),
+		toolLine(
+			config,
+			"list_file_conversions",
+			"list the formats the converter knows or what one source format can become",
+		),
+		toolLine(
+			config,
 			"web_search",
 			"search the public internet for current information beyond the local corpus and knowledge cutoff",
 		),
@@ -106,6 +116,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"semantic_search_local_docs",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
+						"convert_files",
+						"list_file_conversions",
 						"web_search",
 						"web_fetch",
 						"jev",
@@ -138,6 +150,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		? `## Local Corpus Management
 
 \`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files. When the user asks you to remove duplicates, carry it out with \`bash\` by moving them to the OS trash (see File Organization); the scan itself stays read-only.
+`
+		: "";
+	const fileConversion = toolAvailable(config, "convert_files")
+		? `## File Conversion
+
+\`convert_files\` converts local files offline with Filee and works on any path the user names. Check \`list_file_conversions\` first when you are unsure a source can become the target. Outputs land next to the source with a number added when the name is taken, so nothing is replaced; pass \`overwrite: true\` only when the user asks to replace the existing file, and \`outputDir\` to keep results elsewhere. Each converted file is reported with dupey's verdict on whether it is a duplicate-family member of its source: exact means the same canonical text, near means the same document in another format, different or unsupported means dupey will not group them. A converted copy never replaces the source; never delete the source unless the user asked.
 `
 		: "";
 	const webResearch =
@@ -222,6 +240,7 @@ ${discovery ? `- When exploring local files and folders, actively use ${discover
 
 ${fileOrganization}
 ${duplicateManagement}
+${fileConversion}
 ${
 	toolAvailable(config, "query_peer_agent")
 		? `## Peer AutoRAG Agents

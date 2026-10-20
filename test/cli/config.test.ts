@@ -185,6 +185,26 @@ describe("single-model CLI config", () => {
 		expect(opts.excludeExactDuplicates).toBe(false);
 	});
 
+	it("maps the filee config to agent options, and disables conversion with enabled:false", () => {
+		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
+		expect(buildAgentOptions({ ...base }).filee).toEqual({});
+		expect(
+			buildAgentOptions({
+				...base,
+				filee: { binaryPath: "/opt/filee", timeoutMs: 5000, dataDir: join(root, "filee-data") },
+			}).filee,
+		).toEqual({ executable: "/opt/filee", timeoutMs: 5000, dataDir: join(root, "filee-data") });
+		expect(buildAgentOptions({ ...base, filee: { enabled: false } }).filee).toBe(false);
+	});
+
+	it("rejects a non-object filee field in config.json", () => {
+		const path = join(root, "config.json");
+		writeFileSync(path, JSON.stringify({ searchPaths: ["."], filee: true }));
+		expect(() => resolveConfig({ flags: { config: path }, env: { HOME: root }, cwd: root })).toThrow(
+			"'filee' must be an object",
+		);
+	});
+
 	it("includes resolved languages in agent options", () => {
 		const opts = buildAgentOptions({
 			searchPaths: ["."],
