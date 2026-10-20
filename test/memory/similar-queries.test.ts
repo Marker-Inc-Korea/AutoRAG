@@ -71,6 +71,21 @@ describe("memoryVectorStorePath", () => {
 	});
 });
 
+describe("findSimilarQuestions embedding roles", () => {
+	it("embeds the current question and the stored questions the same way (question-to-question, not query-to-passage)", async () => {
+		const roles: (string | undefined)[] = [];
+		const embedder: Embedder = {
+			identity: async () => ({ provider: "test", model: "roles", dimension: 2 }),
+			embed: async (texts, options) => {
+				roles.push(options?.role);
+				return texts.map(() => [1, 0]);
+			},
+		};
+		await findSimilarQuestions([record("past question")], "current question", { embedder });
+		expect(roles).toEqual(["document"]);
+	});
+});
+
 describe("findSimilarQuestions without an embedder (BM25 only)", () => {
 	it("ranks past questions by lexical overlap and ignores unrelated ones", async () => {
 		const records = [

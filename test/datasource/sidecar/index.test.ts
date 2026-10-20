@@ -215,6 +215,29 @@ describe("CrawlerSidecar semantic index", () => {
 		sidecar.close();
 	});
 
+	it("embeds messages as documents and search queries as queries", async () => {
+		seedSlack([{ channel: "C1", ts: "1.000001", text: "we ship the release friday" }]);
+		const base = vocabEmbedder(VOCAB);
+		const roles: { texts: readonly string[]; role: string | undefined }[] = [];
+		const recording: Embedder = {
+			identity: base.identity,
+			embed: async (texts, options) => {
+				roles.push({ texts: [...texts], role: options?.role });
+				return base.embed(texts, options);
+			},
+		};
+		const sidecar = open(recording);
+		await sidecar.sync();
+		await sidecar.searchSemantic("release deploy", 5);
+		await sidecar.searchHybrid("ship it", 5);
+		expect(roles).toEqual([
+			{ texts: ["eng\nwe ship the release friday"], role: "document" },
+			{ texts: ["release deploy"], role: "query" },
+			{ texts: ["ship it"], role: "query" },
+		]);
+		sidecar.close();
+	});
+
 	it("picks up new messages incrementally without re-embedding old ones", async () => {
 		seedSlack([{ channel: "C1", ts: "1.000001", text: "release" }]);
 		const calls: number[] = [];

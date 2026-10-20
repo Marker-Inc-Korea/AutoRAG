@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveEmbeddingPrefixes } from "../embedding/prefixes.ts";
 import {
 	configuredLexicalLanguage,
 	configuredMaxChunkSize,
@@ -78,15 +79,22 @@ export class MinSyncClient {
 		if (!isNative) return { config: configured ?? {} };
 		const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
 		const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
+		// An operator value, including "", wins; otherwise the model's own default applies (Qwen3's instruction).
+		const prefixes = resolveEmbeddingPrefixes(configured);
 		return {
-			config: { ...configured, id, dimension },
+			config: {
+				...configured,
+				id,
+				dimension,
+				...(configured?.queryPrefix === undefined && prefixes.query !== "" ? { queryPrefix: prefixes.query } : {}),
+			},
 			identity: {
 				provider: "native",
 				model: id.slice("native:".length),
 				artifactRevision: "default",
 				dimension,
-				queryPrefix: configured?.queryPrefix ?? "",
-				passagePrefix: configured?.passagePrefix ?? "",
+				queryPrefix: prefixes.query,
+				passagePrefix: prefixes.passage,
 				runtimeBuild: "minsync-native",
 			},
 		};
@@ -107,7 +115,11 @@ export class MinSyncClient {
 
 	private identityMismatch(identity: MinSyncEmbeddingIdentity): boolean {
 		const previous = this.readIdentity();
-		return previous === undefined || JSON.stringify(previous) !== JSON.stringify(identity);
+		if (previous === undefined) return true;
+		// Document vectors do not depend on the query prefix, so changing it alone must not force a re-embed.
+		const { queryPrefix: _previousQuery, ...previousDocuments } = previous;
+		const { queryPrefix: _currentQuery, ...currentDocuments } = identity;
+		return JSON.stringify(previousDocuments) !== JSON.stringify(currentDocuments);
 	}
 
 	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {

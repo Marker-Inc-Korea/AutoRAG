@@ -244,7 +244,8 @@ embedding service is used only when the operator explicitly configures
 `minSync.embedder`.
 
 The default product path uses MinSync's Qwen3-Embedding-0.6B engine (1024
-dimensions, no query/passage prefixes). Vectors come from a loopback
+dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are
+raw). Vectors come from a loopback
 `minsync serve` daemon when one answers, otherwise from MinSync's in-process
 engine through the optional `@nomadamas/minsync-native` addon. AutoRAG never
 starts or stops the daemon: the operator runs `minsync serve --idle-timeout 0`

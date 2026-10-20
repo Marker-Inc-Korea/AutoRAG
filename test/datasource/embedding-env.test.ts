@@ -30,6 +30,17 @@ describe("mailcrawlEmbeddingEnv", () => {
 		});
 	});
 
+	it("hands mailcrawl the query instruction, which it applies itself because the daemon embeds text as sent", () => {
+		const env = mailcrawlEmbeddingEnv({ ...daemon, queryPrefix: "Instruct: t\nQuery:", passagePrefix: "" }, {});
+		expect(env.MAILCRAWL_QUERY_PREFIX).toBe("Instruct: t\nQuery:");
+		expect(env).not.toHaveProperty("MAILCRAWL_PASSAGE_PREFIX");
+	});
+
+	it("hands mailcrawl a non-empty passage prefix too", () => {
+		const env = mailcrawlEmbeddingEnv({ ...daemon, queryPrefix: "q: ", passagePrefix: "p: " }, {});
+		expect(env).toMatchObject({ MAILCRAWL_QUERY_PREFIX: "q: ", MAILCRAWL_PASSAGE_PREFIX: "p: " });
+	});
+
 	it("opts a non-loopback remote in and hands over only the named key", () => {
 		const env = mailcrawlEmbeddingEnv(
 			{ ...daemon, baseUrl: "https://api.example.com", protocol: "tei", backend: "remote", apiKeyEnv: "EMB_KEY" },

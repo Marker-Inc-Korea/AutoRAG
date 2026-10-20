@@ -30,6 +30,7 @@ import {
 	minSyncConfigPath,
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
+import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
@@ -1711,6 +1712,81 @@ describe("MinSync embedder selection", () => {
 			.find((call) => call.args[0] === "sync");
 		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json"]);
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
+	});
+});
+
+describe("Qwen3 query instruction in MinSync config", () => {
+	const QWEN3_QUERY_PREFIX =
+		"Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:";
+
+	type Toml = Record<string, Record<string, unknown>>;
+	const readConfig = (): Toml => parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Toml;
+	const readIdentity = () =>
+		JSON.parse(readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"));
+	const syncCalls = () =>
+		loggedCalls()
+			.map((line) => JSON.parse(line))
+			.filter((call) => call.args[0] === "sync");
+	const client = (embedder?: MinSyncEmbedderConfig) =>
+		new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			...(embedder === undefined ? {} : { embedder }),
+		});
+
+	it("defaults the native Qwen3 embedder to the model card's query instruction", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }).sync();
+		expect(result.ok).toBe(true);
+		expect(readConfig().embedder?.query_prefix).toBe(QWEN3_QUERY_PREFIX);
+		expect(readConfig().embedder?.passage_prefix).toBeUndefined();
+		expect(readIdentity().queryPrefix).toBe(QWEN3_QUERY_PREFIX);
+	});
+
+	it("defaults to the instruction when no embedder is configured at all", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client().sync();
+		expect(readConfig().embedder?.query_prefix).toBe(QWEN3_QUERY_PREFIX);
+	});
+
+	it("lets an operator-set empty queryPrefix win", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, queryPrefix: "" }).sync();
+		expect(readConfig().embedder?.query_prefix).toBe("");
+		expect(readIdentity().queryPrefix).toBe("");
+	});
+
+	it("lets an operator-set custom queryPrefix win", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", queryPrefix: "Instruct: custom\nQuery:" }).sync();
+		expect(readConfig().embedder?.query_prefix).toBe("Instruct: custom\nQuery:");
+	});
+
+	it("does not add the Qwen3 instruction to another native model", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:BAAI/bge-small-en-v1.5", dimension: 384 }).sync();
+		expect(readConfig().embedder?.query_prefix).toBeUndefined();
+		expect(readIdentity().queryPrefix).toBe("");
+	});
+
+	it("does not re-embed stored documents when only the query prefix changes", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		// Index built before the instruction existed: empty query prefix.
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, queryPrefix: "" }).sync();
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
+		// Same documents, new default query prefix: incremental, not --full.
+		const result = await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }).sync();
+		expect(result.ok).toBe(true);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--format", "json"]);
+		expect(readIdentity().queryPrefix).toBe(QWEN3_QUERY_PREFIX);
+		expect(result.diagnostic).toBeUndefined();
+	});
+
+	it("still re-embeds documents when the passage prefix changes", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "" }).sync();
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "passage: " }).sync();
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
 	});
 });
 

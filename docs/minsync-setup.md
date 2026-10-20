@@ -72,6 +72,27 @@ this order:
    a running daemon for `native:` workspaces, and `MINSYNC_SERVER=off` disables
    that).
 
+### Query instruction and passage prefix
+
+Qwen3-Embedding is instruction-aware: a search query is embedded as
+`Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:<query>`
+and a document is embedded raw. AutoRAG applies this on every semantic path:
+
+- MinSync's own index and search get it through `[embedder].query_prefix` in
+  `.minsync/config.toml`, which MinSync prepends to the query only.
+- AutoRAG-owned stores (chat sidecars, GitHub Gist) embed through the shared
+  embedder with `role: "query"` for a search query and `role: "document"` for
+  stored text. The shared embedder prepends the prefix itself; neither the
+  daemon nor a remote server is asked to.
+- mailcrawl receives the prefix through `MAILCRAWL_QUERY_PREFIX`.
+- Similar-past-question lookup compares a question with questions, so both
+  sides are embedded the same way, without the instruction.
+
+The default applies only to MinSync's local Qwen3 (no `id`, or
+`native:Qwen/Qwen3-Embedding-0.6B`, and no `baseUrl`). An operator-set
+`minSync.embedder.queryPrefix` or `passagePrefix`, including `""`, always wins,
+and a remote endpoint or another model gets no default prefix.
+
 ### Running the embedding daemon
 
 Semantic search over everything except the MinSync datasource needs an
@@ -468,7 +489,9 @@ An explicit `minSync.workspacePath` setting replaces the default
 under that configured path instead.
 
 The identity includes provider, model, immutable model revision, dimension,
-query prefix, and passage prefix. A mismatch requires a full reindex. Existing
+query prefix, and passage prefix. A mismatch in any field except the query
+prefix requires a full reindex; the query prefix only shapes query vectors, so
+changing it is recorded without re-embedding documents. Existing
 768-dimensional Ollama/TEI stores, and MinSync workspaces created through the
 old embedding gateway, must therefore be handled by either:
 

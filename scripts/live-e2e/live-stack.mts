@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { QWEN3_QUERY_PREFIX } from "../../src/embedding/prefixes.ts";
 import {
 	assertKoreanLexicalHit,
 	assertLiteRetrieveHealthy,
@@ -226,7 +227,7 @@ const result = {
 		endpoint: process.env.AUTORAG_EMBED_ENDPOINT,
 		model: "Qwen/Qwen3-Embedding-0.6B",
 		dimension: 1024,
-		queryPrefix: "",
+		queryPrefix: QWEN3_QUERY_PREFIX,
 		passagePrefix: "",
 		loopbackOnly: true,
 	},

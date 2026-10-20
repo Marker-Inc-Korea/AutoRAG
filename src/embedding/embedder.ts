@@ -10,9 +10,19 @@ export interface EmbeddingIdentity {
 	readonly dimension: number;
 }
 
+/**
+ * What a text is for. Instruction-aware models embed a search query differently from the document it should
+ * match, so a caller says which side it is on. `"document"` is the default.
+ */
+export type EmbedRole = "query" | "document";
+
+export interface EmbedOptions {
+	readonly role?: EmbedRole;
+}
+
 export interface Embedder {
 	identity(): Promise<EmbeddingIdentity>;
-	embed(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
+	embed(texts: readonly string[], options?: EmbedOptions): Promise<readonly (readonly number[])[]>;
 }
 
 /** Where a {@link ManagedEmbedder} is sending text right now. `none` means nothing can embed. */
@@ -35,6 +45,12 @@ export interface EmbedderEndpoint {
 	readonly dimension: number | undefined;
 	/** Name of the environment variable that holds the bearer token; remote endpoints only. */
 	readonly apiKeyEnv?: string;
+	/**
+	 * Prefixes this endpoint's consumers must apply themselves: the server embeds text as sent. Set only when
+	 * the embedder was given prefixes.
+	 */
+	readonly queryPrefix?: string;
+	readonly passagePrefix?: string;
 	readonly backend: "daemon" | "remote";
 }
 
