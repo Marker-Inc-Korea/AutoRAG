@@ -1,7 +1,15 @@
 import { DEFAULT_DAEMON_MODEL, type MinSyncDaemon, probeMinSyncDaemon } from "./daemon.ts";
-import type { Embedder, EmbedderEndpoint, EmbedderHealth, EmbeddingIdentity, ManagedEmbedder } from "./embedder.ts";
+import type {
+	Embedder,
+	EmbedderEndpoint,
+	EmbedderHealth,
+	EmbeddingIdentity,
+	EmbedOptions,
+	ManagedEmbedder,
+} from "./embedder.ts";
 import { createHttpEmbedder, type EmbeddingProtocol } from "./http-embedder.ts";
 import { type InProcessEmbedder, loadNativeEmbedder } from "./in-process.ts";
+import type { EmbeddingPrefixes } from "./prefixes.ts";
 
 /** An operator-configured remote endpoint. When present, AutoRAG never looks for MinSync's daemon. */
 export interface RemoteEmbedderSettings {
@@ -18,6 +26,11 @@ export interface RemoteEmbedderSettings {
 
 export interface ManagedEmbedderOptions {
 	readonly remote?: RemoteEmbedderSettings;
+	/**
+	 * Prepended to every input by role: `query` for `role: "query"`, `passage` otherwise. Applied here, on the
+	 * client, for every backend, because neither the daemon nor a remote server is asked to prefix.
+	 */
+	readonly prefixes?: EmbeddingPrefixes;
 	/** User home that holds MinSync's server state. */
 	readonly home?: string;
 	readonly env?: NodeJS.ProcessEnv;
@@ -65,6 +78,12 @@ async function probeRemote(remote: RemoteEmbedderSettings, fetchImpl: typeof fet
 export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedEmbedder {
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const wantedModel = options.model ?? DEFAULT_DAEMON_MODEL;
+	const prefixes = options.prefixes;
+	const prefixed = (texts: readonly string[], embedOptions: EmbedOptions | undefined): readonly string[] => {
+		const prefix = embedOptions?.role === "query" ? prefixes?.query : prefixes?.passage;
+		return prefix === undefined || prefix === "" ? texts : texts.map((text) => `${prefix}${text}`);
+	};
+	const prefixFields = prefixes === undefined ? {} : { queryPrefix: prefixes.query, passagePrefix: prefixes.passage };
 
 	if (options.remote !== undefined) {
 		const remoteSettings = options.remote;
@@ -76,7 +95,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 		});
 		return {
 			identity: () => remote.identity(),
-			embed: (texts) => remote.embed(texts),
+			embed: (texts, embedOptions) => remote.embed(prefixed(texts, embedOptions)),
 			health: () => probeRemote(remoteSettings, fetchImpl),
 			describeEndpoint: async () => ({
 				baseUrl: remoteSettings.baseUrl,
@@ -84,6 +103,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 				model: remoteSettings.model,
 				dimension: remoteSettings.dimension,
 				...(remoteSettings.apiKeyEnv === undefined ? {} : { apiKeyEnv: remoteSettings.apiKeyEnv }),
+				...prefixFields,
 				backend: "remote" as const,
 			}),
 			close: async () => undefined,
@@ -146,18 +166,19 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 		async identity() {
 			return normalized((await active()).source);
 		},
-		async embed(texts) {
+		async embed(texts, embedOptions) {
 			if (texts.length === 0) return [];
+			const inputs = prefixed(texts, embedOptions);
 			const { source, viaDaemon } = await active();
 			try {
-				return await source.embed(texts);
+				return await source.embed(inputs);
 			} catch (error) {
 				if (!viaDaemon) throw error;
 				// The daemon exited (idle timeout, crash) since it was found: forget it and use what is left.
 				daemon = undefined;
 				const next = await active();
 				if (next.viaDaemon) throw error;
-				return next.source.embed(texts);
+				return next.source.embed(inputs);
 			}
 		},
 		async health() {
@@ -184,6 +205,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 				protocol: "openai" as const,
 				model: found.model,
 				dimension: found.dimension,
+				...prefixFields,
 				backend: "daemon" as const,
 			};
 		},

@@ -93,6 +93,71 @@ describe("createManagedEmbedder (local)", () => {
 	});
 });
 
+describe("createManagedEmbedder roles", () => {
+	const prefixes = { query: "Q:", passage: "P:" };
+	// The fake daemon's vector for a text is [(len+0)/100, (len+1)/100, ...], so the vector shows what it was sent.
+	const lengthOf = (vector: readonly number[]): number => Math.round((vector[0] ?? 0) * 100);
+
+	it("prefixes queries, not documents, on the way to a daemon, and never asks it to prefix again", async () => {
+		const pid = await startOperatorDaemon();
+		try {
+			const embedder = createManagedEmbedder({ home, prefixes });
+			const [asQuery] = await embedder.embed(["abc"], { role: "query" });
+			const [asDocument] = await embedder.embed(["abc"], { role: "document" });
+			const [byDefault] = await embedder.embed(["abc"]);
+			expect(lengthOf(asQuery as number[])).toBe("Q:abc".length);
+			expect(lengthOf(asDocument as number[])).toBe("P:abc".length);
+			expect(byDefault).toEqual(asDocument);
+		} finally {
+			killDaemon(pid);
+		}
+	}, 40_000);
+
+	it("prefixes for the in-process engine", async () => {
+		const calls: string[] = [];
+		const embedder = createManagedEmbedder({ home, prefixes, inProcess: async () => inProcess(calls) });
+		await embedder.embed(["a"], { role: "query" });
+		await embedder.embed(["a"], { role: "document" });
+		expect(calls).toEqual(["Q:a", "P:a"]);
+	});
+
+	it("prefixes for a remote endpoint, per input of a batch", async () => {
+		const sent: string[][] = [];
+		const embedder = createManagedEmbedder({
+			prefixes,
+			remote: { baseUrl: "http://127.0.0.1:9", model: "m", dimension: 1, protocol: "tei" },
+			fetchImpl: (async (_url: string, init?: RequestInit) => {
+				const inputs = (JSON.parse(String(init?.body)) as { inputs: string[] }).inputs;
+				sent.push(inputs);
+				return new Response(JSON.stringify(inputs.map(() => [1])), { status: 200 });
+			}) as unknown as typeof fetch,
+		});
+		await embedder.embed(["a", "b"], { role: "query" });
+		await embedder.embed(["a", "b"]);
+		expect(sent).toEqual([
+			["Q:a", "Q:b"],
+			["P:a", "P:b"],
+		]);
+	});
+
+	it("sends text unchanged when no prefixes are configured", async () => {
+		const calls: string[] = [];
+		const embedder = createManagedEmbedder({ home, inProcess: async () => inProcess(calls) });
+		await embedder.embed(["a"], { role: "query" });
+		expect(calls).toEqual(["a"]);
+	});
+
+	it("reports the prefixes of the endpoint it embeds through, for external CLIs", async () => {
+		const pid = await startOperatorDaemon();
+		try {
+			const endpoint = await createManagedEmbedder({ home, prefixes }).describeEndpoint();
+			expect(endpoint).toMatchObject({ queryPrefix: "Q:", passagePrefix: "P:" });
+		} finally {
+			killDaemon(pid);
+		}
+	}, 40_000);
+});
+
 describe("createManagedEmbedder (remote)", () => {
 	it("never looks for a daemon or loads the in-process engine when a remote endpoint is configured", async () => {
 		let loaded = false;
