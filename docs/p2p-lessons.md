@@ -30,8 +30,8 @@ datasources, and anything a prompt-injected model was tricked into emitting.
   files and `/<kind>/<instance>/...` slash identities for datasources.
   Policy globs matched the canonical virtual id (`/docs/**`), never a raw path.
   Anything with traversal, a URL scheme, a backslash, or empty input failed
-  closed. `normalizeVirtualPath` in `src/filesystem/source-paths.ts` is the
-  surviving piece; file names keep `#` and `?` (issue #1617).
+  closed. `normalizeSource`, `normalizeVirtualPath`, and `isFilesystemAbsolutePath`
+  remain in `src/filesystem/source-paths.ts`; file names keep `#` and `?` (issue #1617).
 - **Remote sessions are a different agent, not a flag on the local one.** The
   old `remoteSession` flag removed `edit`/`write`, web search, Everything,
   FSearch, Jev, self-config, retrieval memory, and local-file citation. That

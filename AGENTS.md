@@ -24,7 +24,7 @@ Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay withi
 
 ### Ask first
 
-A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding profile or its license.
+A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding profile or its license, and P2P default changes.
 
 ## Git Workflow (binding)
 

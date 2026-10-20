@@ -23,7 +23,7 @@ function textOf(result: { content: ReadonlyArray<{ type: string; text?: string }
 }
 
 function resolve(ledger: EvidenceLedger, ref: string) {
-	return ledger.lookup(ref)[0];
+	return ledger.lookup(ref, { allowLocalFiles: false })[0];
 }
 
 let ledger: EvidenceLedger;

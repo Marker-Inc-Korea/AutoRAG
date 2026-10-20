@@ -6,6 +6,9 @@ import { deriveResultsFromAnswer } from "../../src/agent/answer-citations.ts";
 import { answerMarkers } from "../../src/agent/citations.ts";
 import { EvidenceLedger } from "../../src/agent/evidence-ledger.ts";
 
+const allowLocal = { allowLocalFiles: true };
+const denyLocal = { allowLocalFiles: false };
+
 const cite = (id: string): string => `[${id}]`;
 
 let root: string;
@@ -97,7 +100,11 @@ describe("deriveResultsFromAnswer", () => {
 		const a = ledger.register({ method: "bm25", source: "/docs/a.txt", content: "alpha" });
 		const b = ledger.register({ method: "web_search", source: "https://b.example/x", content: "beta" });
 
-		const { details, diagnostics } = deriveResultsFromAnswer(`First ${cite(b)} second ${cite(a)}.`, ledger);
+		const { details, diagnostics } = deriveResultsFromAnswer(
+			`First ${cite(b)} second ${cite(a)}.`,
+			ledger,
+			denyLocal,
+		);
 
 		expect(details.answer).toBe("First [1] second [2].");
 		expect(details.mapping.map((entry) => entry.source)).toEqual(["https://b.example/x", "/docs/a.txt"]);
@@ -110,7 +117,7 @@ describe("deriveResultsFromAnswer", () => {
 		const first = ledger.register({ method: "bm25", source: "/docs/a.txt", content: "one" });
 		const second = ledger.register({ method: "bm25", source: "/docs/a.txt", content: "two" });
 
-		const { details } = deriveResultsFromAnswer(`${cite(first)}${cite(second)}`, ledger);
+		const { details } = deriveResultsFromAnswer(`${cite(first)}${cite(second)}`, ledger, denyLocal);
 
 		// The same source cited twice back to back reads as one citation, not "[1][1]".
 		expect(details.answer).toBe("[1]");
@@ -128,6 +135,7 @@ describe("deriveResultsFromAnswer", () => {
 		const { details } = deriveResultsFromAnswer(
 			`The cap is 28% ${cite(first)}. It renews yearly ${cite(second)}.`,
 			ledger,
+			denyLocal,
 		);
 
 		expect(details.answer).toBe("The cap is 28% [1]. It renews yearly [1].");
@@ -139,11 +147,11 @@ describe("deriveResultsFromAnswer", () => {
 		const a = ledger.register({ method: "bm25", source: "/docs/a.txt", content: "alpha" });
 		const b = ledger.register({ method: "bm25", source: "/docs/b.txt", content: "beta" });
 
-		const comma = deriveResultsFromAnswer(`x [${a}, ${b}] y`, ledger);
+		const comma = deriveResultsFromAnswer(`x [${a}, ${b}] y`, ledger, denyLocal);
 		expect(comma.details.answer).toBe("x [1][2] y");
 		expect(comma.details.mapping.map((entry) => entry.source)).toEqual(["/docs/a.txt", "/docs/b.txt"]);
 
-		const adjacent = deriveResultsFromAnswer(`${cite(a)}${cite(b)}`, ledger);
+		const adjacent = deriveResultsFromAnswer(`${cite(a)}${cite(b)}`, ledger, denyLocal);
 		expect(adjacent.details.answer).toBe("[1][2]");
 		expect(adjacent.details.results.map((result) => result.number)).toEqual([1, 2]);
 	});
@@ -153,6 +161,7 @@ describe("deriveResultsFromAnswer", () => {
 		const { details, diagnostics } = deriveResultsFromAnswer(
 			"Refund needs approval [e99] and finance too [e98].",
 			ledger,
+			denyLocal,
 		);
 
 		expect(details.answer).toBe("Refund needs approval and finance too.");
@@ -165,7 +174,7 @@ describe("deriveResultsFromAnswer", () => {
 
 	it("drops a numeric marker the model typed itself", () => {
 		const ledger = new EvidenceLedger();
-		const { details, diagnostics } = deriveResultsFromAnswer("see [2]", ledger);
+		const { details, diagnostics } = deriveResultsFromAnswer("see [2]", ledger, denyLocal);
 
 		expect(details.answer).toBe("see");
 		expect(details.results).toEqual([]);
@@ -173,14 +182,18 @@ describe("deriveResultsFromAnswer", () => {
 		expect(diagnostics[0]?.message).toContain("[2]");
 	});
 
-	it("accepts [file:<abs>] for a real file the model opened itself", () => {
+	it("accepts [file:<abs>] for a real file only when local files are allowed", () => {
 		const file = join(root, "note [final].txt");
 		writeFileSync(file, "hello from disk");
 
-		const { details } = deriveResultsFromAnswer(`Found [file:${file}].`, new EvidenceLedger());
-		expect(details.results).toHaveLength(1);
-		expect(details.results[0]?.title).toBe("note [final].txt");
-		expect(details.mapping[0]).toMatchObject({ source: file, method: "bash", content: "hello from disk" });
+		const allowed = deriveResultsFromAnswer(`Found [file:${file}].`, new EvidenceLedger(), allowLocal);
+		expect(allowed.details.results).toHaveLength(1);
+		expect(allowed.details.results[0]?.title).toBe("note [final].txt");
+		expect(allowed.details.mapping[0]).toMatchObject({ source: file, method: "bash", content: "hello from disk" });
+
+		const denied = deriveResultsFromAnswer(`Found [file:${file}].`, new EvidenceLedger(), denyLocal);
+		expect(denied.details.results).toEqual([]);
+		expect(denied.details.answer).toContain(`[file:${file}]`);
 	});
 
 	it("carries the ledger's source, method, content, and evidenceRefs, never model text", () => {
@@ -193,7 +206,7 @@ describe("deriveResultsFromAnswer", () => {
 			metadata: { method: "bm25", chunkIndex: 3 },
 		});
 
-		const { details } = deriveResultsFromAnswer(`The answer is ${cite(id)}.`, ledger);
+		const { details } = deriveResultsFromAnswer(`The answer is ${cite(id)}.`, ledger, denyLocal);
 
 		expect(details.mapping[0]).toMatchObject({
 			number: 1,
@@ -214,7 +227,7 @@ describe("deriveResultsFromAnswer", () => {
 		const a = ledger.register({ method: "bm25", source: "/docs/a.txt", content: "alpha" });
 		const b = ledger.register({ method: "bm25", source: "/docs/b.txt", content: "beta" });
 
-		const { details } = deriveResultsFromAnswer(`- Alpha ${cite(a)} and more ${cite(b)}`, ledger);
+		const { details } = deriveResultsFromAnswer(`- Alpha ${cite(a)} and more ${cite(b)}`, ledger, denyLocal);
 
 		expect(details.results[0]?.summary).toBe("Alpha");
 		expect(details.results[1]?.summary).toBe("Alpha and more");
@@ -227,6 +240,7 @@ describe("deriveResultsFromAnswer", () => {
 		const { details } = deriveResultsFromAnswer(
 			`Refund policy needs approval. Director sign-off ${cite(id)}`,
 			ledger,
+			denyLocal,
 		);
 
 		expect(details.results[0]?.summary).toBe("Director sign-off");
@@ -236,7 +250,7 @@ describe("deriveResultsFromAnswer", () => {
 		const ledger = new EvidenceLedger();
 		const id = ledger.register({ method: "bm25", source: "/docs/a.txt", content: "x" });
 
-		const { details } = deriveResultsFromAnswer(cite(id), ledger);
+		const { details } = deriveResultsFromAnswer(cite(id), ledger, denyLocal);
 
 		expect(details.results[0]).not.toHaveProperty("confidence");
 		expect(details.results[0]).not.toHaveProperty("source");
@@ -246,7 +260,7 @@ describe("deriveResultsFromAnswer", () => {
 		const input = `${"(<".repeat(20_000)}${"[e".repeat(20_000)}`;
 		const started = performance.now();
 		const markers = answerMarkers(input);
-		const { details } = deriveResultsFromAnswer(input, new EvidenceLedger());
+		const { details } = deriveResultsFromAnswer(input, new EvidenceLedger(), denyLocal);
 		const elapsed = performance.now() - started;
 
 		expect(markers).toEqual([]);

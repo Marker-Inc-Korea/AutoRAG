@@ -61,8 +61,12 @@ function claimBefore(text: string, end: number): string {
  * A marker that matches no evidence, and any numeric marker the model wrote on
  * its own, is dropped and reported: it can never point at the wrong result.
  */
-export function deriveResultsFromAnswer(text: string, ledger: EvidenceLedger): DerivedAnswer {
-	const isFile = (path: string): boolean => isAbsolute(path) && isRegularFile(path);
+export function deriveResultsFromAnswer(
+	text: string,
+	ledger: EvidenceLedger,
+	options: { readonly allowLocalFiles: boolean },
+): DerivedAnswer {
+	const isFile = (path: string): boolean => options.allowLocalFiles && isAbsolute(path) && isRegularFile(path);
 	const sources = new Map<string, CitedSource>();
 	const dropped = new Set<string>();
 	let answer = "";
@@ -70,7 +74,7 @@ export function deriveResultsFromAnswer(text: string, ledger: EvidenceLedger): D
 	let lastEmitted: { readonly number: number; readonly end: number } | undefined;
 
 	const cite = (reference: string, claimEnd: number): number | undefined => {
-		const refs = ledger.lookup(reference);
+		const refs = ledger.lookup(reference, options);
 		const [primary] = refs;
 		if (primary === undefined) {
 			dropped.add(reference);

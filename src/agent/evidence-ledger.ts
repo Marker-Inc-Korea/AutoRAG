@@ -67,6 +67,11 @@ export function highestOrdinal(entries: readonly LedgerEntry[]): number {
 	return highest;
 }
 
+export interface LookupEvidenceOptions {
+	/** False in remote sessions: only evidence a tool returned this run may be cited. */
+	readonly allowLocalFiles: boolean;
+}
+
 function metadataString(metadata: Record<string, unknown>, key: string): string | undefined {
 	const value = metadata[key];
 	return typeof value === "string" && value.trim().length > 0 ? value : undefined;
@@ -208,14 +213,14 @@ export class EvidenceLedger {
 	 * itself. Returns an empty list when nothing matches: the caller drops the
 	 * citation instead of failing the run.
 	 */
-	lookup(raw: string): AutoRAGEvidenceRef[] {
+	lookup(raw: string, options: LookupEvidenceOptions): AutoRAGEvidenceRef[] {
 		const trimmed = raw.trim();
 		const ref = trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1).trim() : trimmed;
 		const byId = this.byId.get(ref);
 		if (byId !== undefined) return [toEvidenceRef(byId)];
 		const bySource = this.entries.filter((entry) => entry.source === ref);
 		if (bySource.length > 0) return bySource.map(toEvidenceRef);
-		if (isAbsolute(ref) && isRegularFile(ref)) {
+		if (options.allowLocalFiles && isAbsolute(ref) && isRegularFile(ref)) {
 			return [{ method: "bash", source: ref, content: readFileExcerpt(ref) }];
 		}
 		return [];

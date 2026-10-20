@@ -1009,7 +1009,7 @@ export class AutoRAGAgent {
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
-			() => this.withActiveRetrievalOptions(this.minSyncMethod),
+			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
 			this.evidenceLedger,
 		);
@@ -1112,6 +1112,7 @@ export class AutoRAGAgent {
 			modelId: options.model?.id,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
+			retrievedContentGuard: false,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
@@ -1612,7 +1613,7 @@ export class AutoRAGAgent {
 
 	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
 	private deriveAnswer(text: string): AutoRAGResultsDetails {
-		const derived = deriveResultsFromAnswer(text, this.evidenceLedger);
+		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, { allowLocalFiles: true });
 		this.routingDiagnostics.push(...derived.diagnostics);
 		return derived.details;
 	}
@@ -3795,8 +3796,7 @@ export class AutoRAGAgent {
 		}
 	}
 
-	/** Merge the in-flight run's retrieval options (signal, scope, topK) under each method call's own options. */
-	private withActiveRetrievalOptions<
+	private remoteFilteredRetrievalMethod<
 		T extends {
 			retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 			describe(): { name: string };
@@ -3805,8 +3805,10 @@ export class AutoRAGAgent {
 		return new Proxy(method, {
 			get: (target, property, receiver) => {
 				if (property !== "retrieve") return Reflect.get(target, property, receiver);
-				return async (query: string, options: RetrievalOptions) =>
-					target.retrieve.call(target, query, { ...this.activeRetrievalOptions, ...options });
+				return async (query: string, options: RetrievalOptions) => {
+					const effective = { ...this.activeRetrievalOptions, ...options };
+					return target.retrieve.call(target, query, effective);
+				};
 			},
 		}) as T;
 	}
