@@ -21,6 +21,7 @@ import {
 	type TuiMode,
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
+import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform } from "./context-token-guard.ts";
 import { fitRequestLimits } from "./request-limits.ts";
@@ -53,13 +54,16 @@ export interface AutoRAGPiSessionOptions {
 	 * extension. Each factory registers its tools, commands, and events with pi.
 	 */
 	readonly extensionFactories?: readonly ExtensionFactory[];
+	/** Extension entry files (e.g. an installed pi package's extension) loaded into the interactive session. */
+	readonly extensionPaths?: readonly string[];
+	/** CLI-style flag values for the flags those extensions register (`--name` / `--name value`). */
+	readonly extensionFlags?: Readonly<Record<string, string | boolean>>;
 	/**
 	 * Tool names registered by {@link extensionFactories}. pi's `tools`
 	 * allow-list keeps only named tools active, so every extension tool that
 	 * should be callable must appear here too.
 	 */
 	readonly extensionToolNames?: readonly string[];
-	readonly remoteSession?: boolean;
 	readonly contextTransform?: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
 }
 /**
@@ -172,6 +176,10 @@ async function configureModelRuntime(
 	const keys = new Map<string, string>();
 	if (model !== undefined && apiKey !== undefined) keys.set(model.provider, apiKey);
 	for (const [provider, key] of Object.entries(providerApiKeys ?? {})) keys.set(provider, key);
+	// Dazzi Models is OAuth-only: its token is the stored `/login` credential, and Pi resolves it from
+	// auth.json. A runtime API key would replace that credential with an api_key one the provider has
+	// no auth for, so every request then fails with "No API key found for dazzi".
+	keys.delete(DAZZI_PROVIDER_ID);
 	for (const [provider, key] of keys) await modelRuntime.setRuntimeApiKey(provider, key);
 }
 
@@ -246,6 +254,46 @@ function interactiveKeyOf(data: string): AutoRAGInteractiveKey | undefined {
 	return undefined;
 }
 
+/**
+ * Prefix `@llblab/pi-telegram` puts on every prompt it injects from a Telegram
+ * chat. The bridge hands them to pi through `pi.sendUserMessage`, so pi tags
+ * them `source: "extension"`, the same source AutoRAG's own phase prompts use.
+ * The prefix is what tells a person typing on a phone from AutoRAG talking to
+ * itself.
+ */
+export const TELEGRAM_INPUT_PREFIX = "[telegram]";
+
+/** `whatsapp-pi` frames every inbound chat message as `Message from <name> (<number>)`. */
+export const WHATSAPP_INPUT_PREFIX = "Message from ";
+
+/**
+ * The user's own words from a bridged Telegram prompt: the bridge's `[telegram]`
+ * prefix and its `[time]` line are envelope, not the question, so a Telegram
+ * question reaches the librarian exactly as the same text typed in the TUI.
+ * Attachment blocks stay: they are part of what the user sent.
+ */
+export function stripTelegramEnvelope(text: string): string {
+	return text
+		.replace(/^\s*\[telegram\]\s?/u, "")
+		.replace(/\n*\[time\][^\n]*/gu, "")
+		.trim();
+}
+
+/**
+ * The text of a user input (terminal, or a chat bridge such as Telegram or WhatsApp), or `undefined`
+ * for AutoRAG's own phase prompts (`source: "rpc"`) and pi's own extension prompts.
+ */
+function userInputText(event: { readonly source: string; readonly text: string }): string | undefined {
+	if (event.source === "interactive") return event.text.trim();
+	if (event.source === "extension" && event.text.trimStart().startsWith(TELEGRAM_INPUT_PREFIX)) {
+		return stripTelegramEnvelope(event.text);
+	}
+	if (event.source === "extension" && event.text.trimStart().startsWith(WHATSAPP_INPUT_PREFIX)) {
+		return event.text.trim();
+	}
+	return undefined;
+}
+
 function createAutoRAGInteractiveExtension(
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
@@ -280,8 +328,8 @@ function createAutoRAGInteractiveExtension(
 			});
 		}
 		pi.on("input", (event) => {
-			const text = event.text.trim();
-			if (event.source !== "interactive" || text.length === 0) return undefined;
+			const text = userInputText(event);
+			if (text === undefined || text.length === 0) return undefined;
 			// A "/" line is pi's (commands, skills, templates), except during a search:
 			// handed back to pi then, it would start pi's own prompt on the bound
 			// session outside the search. Registered commands never reach this
@@ -359,7 +407,6 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		model: options.model,
 		customTools: customToolDefinitions,
 		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames],
-		excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		thinkingLevel: "off",
 	});
 	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames, ...extensionToolNames])];
@@ -404,7 +451,11 @@ export async function createAutoRAGPiInteractiveRuntime(
 			agentDir: runtimeAgentDir,
 			modelRuntime,
 			settingsManager,
+			...(options.extensionFlags === undefined
+				? {}
+				: { extensionFlagValues: new Map(Object.entries(options.extensionFlags)) }),
 			resourceLoaderOptions: {
+				...(options.extensionPaths === undefined ? {} : { additionalExtensionPaths: [...options.extensionPaths] }),
 				extensionFactories: [
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,
@@ -422,13 +473,13 @@ export async function createAutoRAGPiInteractiveRuntime(
 			services,
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
+			model: options.model,
 			customTools: options.customTools.map(toToolDefinition),
 			tools: [
 				...PI_BUILTIN_TOOL_NAMES,
 				...options.customTools.map((tool) => tool.name),
 				...(options.extensionToolNames ?? []),
 			],
-			excludeTools: options.remoteSession ? ["edit", "write", "powershell"] : undefined,
 		});
 		if (options.inactiveToolNames !== undefined && options.inactiveToolNames.length > 0) {
 			const inactive = new Set(options.inactiveToolNames);

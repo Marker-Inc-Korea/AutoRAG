@@ -135,7 +135,7 @@ picks a default. OpenRouter stays the fallback when you are signed out.
 
 | What | Signed in to Dazzi Models | Signed out (fallback) |
 |---|---|---|
-| Chat model (no `model` in config, none in Pi settings) | `dazzi/anthropic/claude-haiku-5.5`, else the catalog's first model | Pi default, then the local Codex runtime |
+| Chat model (no `model` in config, none in Pi settings) | `dazzi/z-ai/glm-5.3-flash`, else the catalog's first model | CLI: Pi default, then the local Codex runtime. `autorag tui`: Pi's own picker, no local fallback |
 | Jev (`jev.backend` unset) | `dazzi` | `openrouter` |
 | Question decomposition (`queryDecomposition.model` unset) | `dazzi/openai/gpt-6-luna` | `openrouter/qwen/qwen3.7-flash` |
 | Rerank block `autorag init` writes | `dazzi` / `qwen/qwen3-reranker-8b` | `openrouter` / `voyageai/rerank-3-lite` |

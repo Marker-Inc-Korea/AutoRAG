@@ -9,7 +9,7 @@ export const PROVIDER_NAME = "Dazzi Models";
  * Chat model used when nothing is configured and the user is signed in. Used only
  * if the live or persisted catalog lists it; otherwise the first catalog model.
  */
-export const DEFAULT_DAZZI_CHAT_MODEL_ID = "anthropic/claude-haiku-5.5";
+export const DEFAULT_DAZZI_CHAT_MODEL_ID = "z-ai/glm-5.3-flash";
 
 /**
  * Question-decomposition model used when nothing is configured and the user is

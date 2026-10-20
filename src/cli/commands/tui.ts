@@ -1,10 +1,11 @@
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import { resolveInteractiveTuiMode } from "../../agent/pi-session.ts";
-import { buildAgentOptions, resolveAgentModel, resolveConfig, resolveQueryDecompositionModel } from "../config.ts";
+import { buildAgentOptions, resolveConfig, resolveQueryDecompositionModel, resolveTuiAgentModel } from "../config.ts";
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
 import { readPackageVersion } from "../version.ts";
+import { resolveWhatsAppExtension } from "../whatsapp-extension.ts";
 import type { CommandContext } from "./types.ts";
 
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -34,11 +35,10 @@ function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions
 /**
  * Build the librarian agent that hosts the interactive session.
  *
- * The model is resolved only when the CLI config explicitly declares one. When
- * it does not, the agent is constructed without a model so Pi's native
+ * The model follows the CLI chain (config, Pi default, signed-in Dazzi default).
+ * When none applies the agent is constructed without a model so Pi's native
  * `/login` and `/model` flows own first-launch credential and model selection —
- * resolving here would force the local model runtime before the user can log
- * in.
+ * the local model runtime is never forced before the user can log in.
  */
 async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
@@ -47,13 +47,21 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	// release check, injected into the same interactive session.
 	options.updateNotice = async () =>
 		renderAutoRAGUpdateNotice(await checkAutoRAGUpdate({ currentVersion: readPackageVersion() }));
+	// Opt-in: the bridge opens an outbound Telegram poller once `/telegram-connect` runs.
+	if (ctx.flags.telegram === true) options.telegram = true;
+	if (ctx.flags.discord === true) options.discordRemote = true;
 	const thinking = parseThinkingFlags(ctx.flags);
 	if (thinking !== undefined) options.thinking = thinking;
-	if (config.model !== undefined) {
-		const resolved = await resolveAgentModel(config);
+	const resolved = await resolveTuiAgentModel(config);
+	if (resolved !== undefined) {
 		options.model = resolved.model;
 		if (resolved.apiKey !== undefined) options.apiKey = resolved.apiKey;
 		if (resolved.providerApiKeys !== undefined) options.providerApiKeys = resolved.providerApiKeys;
+	}
+	const whatsapp = await resolveWhatsAppExtension({ flags: ctx.flags, cwd: ctx.cwd });
+	if (whatsapp !== undefined) {
+		options.piExtensionPaths = whatsapp.paths;
+		options.piExtensionFlags = whatsapp.flags;
 	}
 	const decompositionModel = await resolveQueryDecompositionModel(config);
 	if (decompositionModel !== undefined) options.queryDecomposition = decompositionModel;

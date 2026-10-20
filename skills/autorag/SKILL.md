@@ -142,8 +142,6 @@ autorag index rebuild --yes --json
 autorag index reset --method parsed --yes --json
 autorag memory inspect --json
 autorag tui
-autorag serve --force
-autorag p2p policy list --json
 ```
 
 Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
@@ -153,9 +151,7 @@ aligned. `--method` accepts
 a `--method` name. Use `--method` only for deliberate narrowing. Scheduled
 maintenance should use non-daemon `autorag watch --once`, typically every
 1 hour, with the same config used by search and no overlapping runs.
-`autorag tui` is the shipped beta terminal UI. `autorag serve` / `autorag p2p`
-are opt-in SimpleX peer sharing (disabled until `p2p.enabled` is true, unless
-`--force`).
+`autorag tui` is the shipped beta terminal UI.
 
 Reset and rebuild commands remove only selected workspace `.autorag` indexes.
 Never target source documents. `memory inspect` is read-only and path-opaque.
@@ -169,7 +165,7 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 - Preserve real source mapping.
 - Prefer `--json --debug` when another agent consumes search output.
 - Do not invent CLI commands. `autorag --help` is the command list of record,
-  including the shipped `setup`, `models`, `serve`, `p2p`, `tui`, and `lite`
+  including the shipped `setup`, `models`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
   `docs/minsync-setup.md#embedding-backends` for MinSync setup and embedding-backend selection.

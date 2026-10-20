@@ -10,6 +10,7 @@ import {
 	normalizeIndexingConfig,
 	resolveAgentModel,
 	resolveConfig,
+	resolveTuiAgentModel,
 	writeDefaultConfig,
 } from "../../src/cli/config.ts";
 import { buildStoreEntry, mapServerModels } from "../../src/cloud/models.ts";
@@ -387,7 +388,7 @@ describe("single-model CLI config", () => {
 	});
 
 	describe("hosted dazzi provider", () => {
-		const MODEL_ID = "anthropic/claude-haiku-5.5";
+		const MODEL_ID = "z-ai/glm-5.3-flash";
 		const base = () => ({ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") });
 		const options = (agentDir: string, env: NodeJS.ProcessEnv = {}) => ({
 			configPath: join(root, "missing.toml"),
@@ -396,21 +397,19 @@ describe("single-model CLI config", () => {
 		});
 
 		/** Persist a catalog snapshot the way a prior /v1/models refresh would. */
-		function seedSnapshot(agentDir: string): void {
+		function seedSnapshot(agentDir: string, ids: readonly string[] = [MODEL_ID]): void {
 			mkdirSync(agentDir, { recursive: true });
 			const models = mapServerModels({
 				object: "list",
-				data: [
-					{
-						id: MODEL_ID,
-						name: "Claude Haiku 5.5",
-						context_window: 200_000,
-						max_output_tokens: 8_192,
-						input_modalities: ["text", "image"],
-						reasoning: true,
-						pricing: { input: 1, output: 2 },
-					},
-				],
+				data: ids.map((id) => ({
+					id,
+					name: id,
+					context_window: 200_000,
+					max_output_tokens: 8_192,
+					input_modalities: ["text", "image"],
+					reasoning: true,
+					pricing: { input: 1, output: 2 },
+				})),
 			});
 			writeFileSync(
 				join(agentDir, "models-store.json"),
@@ -435,6 +434,46 @@ describe("single-model CLI config", () => {
 
 			expect(resolved.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
 			expect(resolved.apiKey).toBe("dz_stored");
+		});
+
+		it("defaults to glm-5.3-flash even when the catalog lists other models first", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir, ["anthropic/claude-haiku-5.5", MODEL_ID]);
+			signIn(agentDir);
+
+			const resolved = await resolveAgentModel(base(), options(agentDir));
+
+			expect(resolved.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
+		});
+
+		it("TUI: picks the dazzi default when signed in and no model is configured", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			signIn(agentDir);
+
+			const resolved = await resolveTuiAgentModel(base(), options(agentDir));
+
+			expect(resolved?.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
+		});
+
+		it("TUI: leaves the model unset when signed out so pi shows nothing", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+
+			expect(await resolveTuiAgentModel(base(), options(agentDir))).toBeUndefined();
+		});
+
+		it("TUI: resolves the configured model when one is set", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			signIn(agentDir);
+
+			const resolved = await resolveTuiAgentModel(
+				{ ...base(), model: { provider: "dazzi", id: MODEL_ID } },
+				options(agentDir),
+			);
+
+			expect(resolved?.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
 		});
 
 		it("does not pick a Dazzi model when signed out", async () => {

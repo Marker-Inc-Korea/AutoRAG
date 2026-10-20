@@ -151,24 +151,6 @@ export interface RerankConfig {
 	timeoutMs?: number;
 }
 
-export interface P2pConfig {
-	enabled?: boolean;
-	port?: number;
-	host?: string;
-	/** SimpleX CLI database prefix (defaults to <workspace>/.autorag/p2p/simplex). */
-	simplexDbPrefix?: string;
-	maxBodyBytes?: number;
-	maxFileBytes?: number;
-	policy?: Record<string, unknown>;
-	quotas?: {
-		queriesPerHour?: number;
-		burst?: number;
-	};
-	injectionClassifier?: boolean;
-	piiNer?: boolean;
-	newFilesPublic?: boolean;
-}
-
 export interface AgentModelConfig {
 	/** Provider identity used for auth lookup and Model.provider (e.g. openrouter, fireworks, ollama). */
 	provider: string;
@@ -255,8 +237,6 @@ export interface CliConfig {
 	refresh?: AutoRAGRefreshLimits;
 	/** Datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
-	/** P2P sharing configuration. Disabled by default. */
-	p2p?: P2pConfig;
 }
 
 export interface ResolveConfigInput {
@@ -717,169 +697,6 @@ const MINSYNC_ALLOWLIST = new Set<string>([
  */
 const MINSYNC_LEGACY_IGNORED = new Set<string>(["binaryPath"]);
 
-/**
- * `searchTimeoutMs` capped a peer search's wall time; searches no longer have a
- * time limit. Existing configs may still carry it, so it is ignored rather than
- * rejected.
- */
-const P2P_LEGACY_IGNORED = new Set<string>(["searchTimeoutMs"]);
-
-const P2P_ALLOWLIST = new Set([
-	"enabled",
-	"port",
-	"host",
-	"simplexDbPrefix",
-	"maxBodyBytes",
-	"maxFileBytes",
-	"policy",
-	"quotas",
-	"injectionClassifier",
-	"piiNer",
-	"newFilesPublic",
-]);
-
-const P2P_QUOTA_ALLOWLIST = new Set(["queriesPerHour", "burst"]);
-
-function normalizeP2pConfig(raw: unknown): P2pConfig {
-	const out: P2pConfig = {};
-	if (raw === undefined || raw === null) {
-		out.enabled = false;
-		out.host = "127.0.0.1";
-		out.port = 7583;
-		out.injectionClassifier = true;
-		out.piiNer = false;
-		return out;
-	}
-	if (typeof raw !== "object" || Array.isArray(raw)) {
-		throw new ConfigError("Config field 'p2p' must be an object");
-	}
-	const record = raw as Record<string, unknown>;
-	for (const key of Object.keys(record)) {
-		if (P2P_LEGACY_IGNORED.has(key)) continue;
-		if (!P2P_ALLOWLIST.has(key)) {
-			throw new ConfigError(`p2p.${key} is not a recognized field`);
-		}
-	}
-	if (record.enabled !== undefined) {
-		if (typeof record.enabled !== "boolean") {
-			throw new ConfigError("p2p.enabled must be a boolean");
-		}
-		out.enabled = record.enabled;
-	}
-	out.enabled ??= false;
-
-	if (record.host !== undefined) {
-		if (typeof record.host !== "string" || record.host.trim().length === 0) {
-			throw new ConfigError("p2p.host must be a non-empty string");
-		}
-		out.host = record.host.trim();
-	}
-	out.host ??= "127.0.0.1";
-
-	if (record.simplexDbPrefix !== undefined) {
-		if (typeof record.simplexDbPrefix !== "string" || record.simplexDbPrefix.trim().length === 0) {
-			throw new ConfigError("p2p.simplexDbPrefix must be a non-empty string");
-		}
-		out.simplexDbPrefix = record.simplexDbPrefix;
-	}
-
-	if (record.port !== undefined) {
-		if (typeof record.port !== "number" || !Number.isInteger(record.port) || record.port < 1 || record.port > 65535) {
-			throw new ConfigError("p2p.port must be an integer between 1 and 65535");
-		}
-		out.port = record.port;
-	}
-	out.port ??= 5225;
-
-	if (record.maxBodyBytes !== undefined) {
-		if (
-			typeof record.maxBodyBytes !== "number" ||
-			!Number.isInteger(record.maxBodyBytes) ||
-			record.maxBodyBytes <= 0
-		) {
-			throw new ConfigError("p2p.maxBodyBytes must be a positive integer");
-		}
-		out.maxBodyBytes = record.maxBodyBytes;
-	}
-
-	if (record.maxFileBytes !== undefined) {
-		if (
-			typeof record.maxFileBytes !== "number" ||
-			!Number.isInteger(record.maxFileBytes) ||
-			record.maxFileBytes <= 0
-		) {
-			throw new ConfigError("p2p.maxFileBytes must be a positive integer");
-		}
-		out.maxFileBytes = record.maxFileBytes;
-	}
-
-	if (record.policy !== undefined) {
-		if (typeof record.policy !== "object" || record.policy === null || Array.isArray(record.policy)) {
-			throw new ConfigError("p2p.policy must be an object");
-		}
-		out.policy = record.policy as Record<string, unknown>;
-	}
-
-	if (record.quotas !== undefined) {
-		if (typeof record.quotas !== "object" || record.quotas === null || Array.isArray(record.quotas)) {
-			throw new ConfigError("p2p.quotas must be an object");
-		}
-		const quotasRecord = record.quotas as Record<string, unknown>;
-		for (const key of Object.keys(quotasRecord)) {
-			if (!P2P_QUOTA_ALLOWLIST.has(key)) {
-				throw new ConfigError(`p2p.quotas.${key} is not a recognized field`);
-			}
-		}
-		const quotas: { queriesPerHour?: number; burst?: number } = {};
-		if (quotasRecord.queriesPerHour !== undefined) {
-			if (
-				typeof quotasRecord.queriesPerHour !== "number" ||
-				!Number.isInteger(quotasRecord.queriesPerHour) ||
-				quotasRecord.queriesPerHour <= 0
-			) {
-				throw new ConfigError("p2p.quotas.queriesPerHour must be a positive integer");
-			}
-			quotas.queriesPerHour = quotasRecord.queriesPerHour;
-		}
-		if (quotasRecord.burst !== undefined) {
-			if (
-				typeof quotasRecord.burst !== "number" ||
-				!Number.isInteger(quotasRecord.burst) ||
-				quotasRecord.burst <= 0
-			) {
-				throw new ConfigError("p2p.quotas.burst must be a positive integer");
-			}
-			quotas.burst = quotasRecord.burst;
-		}
-		out.quotas = quotas;
-	}
-
-	if (record.injectionClassifier !== undefined) {
-		if (typeof record.injectionClassifier !== "boolean") {
-			throw new ConfigError("p2p.injectionClassifier must be a boolean");
-		}
-		out.injectionClassifier = record.injectionClassifier;
-	}
-	out.injectionClassifier ??= true;
-
-	if (record.piiNer !== undefined) {
-		if (typeof record.piiNer !== "boolean") {
-			throw new ConfigError("p2p.piiNer must be a boolean");
-		}
-		out.piiNer = record.piiNer;
-	}
-	out.piiNer ??= false;
-
-	if (record.newFilesPublic !== undefined) {
-		if (typeof record.newFilesPublic !== "boolean") {
-			throw new ConfigError("p2p.newFilesPublic must be a boolean");
-		}
-		out.newFilesPublic = record.newFilesPublic;
-	}
-
-	return out;
-}
-
 function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): MinSyncMethodConfig {
 	if (raw === false) throw new ConfigError(MINSYNC_REQUIRED_MESSAGE);
 	if (raw === undefined || raw === null) return { enabled: true, autoInstall: true };
@@ -1161,7 +978,6 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.datasources = file.datasources as DatasourcesConfig;
 	}
-	config.p2p = normalizeP2pConfig(file.p2p);
 	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
 	return config;
 }
@@ -1512,14 +1328,6 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 			};
 			opts.startupDiagnostics = [diagnostic];
 		}
-	}
-	if (config.p2p?.enabled === true) {
-		opts.peerQuery = {
-			...(config.p2p.port !== undefined ? { port: config.p2p.port } : {}),
-			...(config.p2p.simplexDbPrefix !== undefined ? { simplexDbPrefix: config.p2p.simplexDbPrefix } : {}),
-		};
-	} else {
-		opts.peerQuery = false;
 	}
 	return opts as Omit<AutoRAGAgentOptions, "model">;
 }
@@ -1984,6 +1792,29 @@ export async function resolveAgentModel(
 }
 
 /**
+ * Model for `autorag tui`. Same chain as {@link resolveAgentModel} (config model,
+ * then Pi's settings default, then the signed-in Dazzi default) except that it
+ * never falls back to the local runtime: with nothing to resolve it returns
+ * undefined, so Pi's native `/login` and `/model` flows own first launch.
+ */
+export async function resolveTuiAgentModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<ResolvedAgentModel | undefined> {
+	if (config.model !== undefined) return resolveAgentModel(config, options);
+	const env = options.env ?? process.env;
+	const runtime = options.runtime ?? (await getModelRuntime(resolveAgentDir(options)));
+	const model = (await resolvePiDefaultModel(runtime, options)) ?? resolveDazziDefaultModel(runtime, options);
+	if (model === undefined) return undefined;
+	const auth = await resolveCatalogAuth(runtime, model, env);
+	return {
+		model,
+		...(auth.apiKey !== undefined ? { apiKey: auth.apiKey } : {}),
+		...(auth.providerApiKeys !== undefined ? { providerApiKeys: auth.providerApiKeys } : {}),
+	};
+}
+
+/**
  * Check that a config file still resolves to a callable model, the way the
  * next `autorag` launch will read it: invalid JSON, a schema error, or a model
  * id that neither the pi catalog nor a declared endpoint knows is a problem.
@@ -2145,8 +1976,6 @@ export function writeDefaultConfig(
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
 	full.rerank = partial.rerank ?? defaultRerankConfig();
-	if (partial.p2p !== undefined) full.p2p = normalizeP2pConfig(partial.p2p);
-	else full.p2p = { enabled: false };
 	// Jev routing and question decomposition are on by default; new configs
 	// spell the defaults out so they are visible and editable.
 	full.jev = partial.jev ?? { backend: defaultJevBackend() };
