@@ -80,9 +80,6 @@ type SpawnRequest = {
  */
 export class DiscrawlClient {
 	private readonly options: DiscrawlOptions;
-	/** The runtime the managed config currently points at; its key variable is the one child env passes through. */
-	private resolvedRuntime: DiscrawlEmbeddingRuntime | undefined;
-
 	constructor(options: DiscrawlOptions = {}) {
 		this.options = options;
 	}
@@ -112,13 +109,19 @@ export class DiscrawlClient {
 		};
 	}
 
-	async prepareEmbeddings(): Promise<boolean> {
+	private async resolveRuntime(): Promise<{
+		readonly runtime?: DiscrawlEmbeddingRuntime;
+		readonly configured: DiscrawlEmbeddingConfigResult;
+	}> {
 		const source = this.options.embeddingRuntime;
 		const runtime = typeof source === "function" ? await source() : source;
-		if (runtime === undefined) return false;
-		this.resolvedRuntime = runtime;
-		const configured = await this.configureEmbeddings(runtime);
-		if (!configured.configured) return false;
+		if (runtime === undefined) return { configured: { configured: false, rebuildRequired: false } };
+		return { runtime, configured: await this.configureEmbeddings(runtime) };
+	}
+
+	async prepareEmbeddings(): Promise<boolean> {
+		const { runtime, configured } = await this.resolveRuntime();
+		if (runtime === undefined || !configured.configured) return false;
 		const metadata = await this.metadata();
 		if (!metadata.ok) return configured.rebuildRequired;
 		return (
@@ -205,10 +208,11 @@ export class DiscrawlClient {
 		if (violatingKey !== undefined) {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
-		const env = controlledEnv(this.options.env, this.resolvedRuntime);
+		const { runtime, configured } = await this.resolveRuntime();
+		const env = controlledEnv(this.options.env, runtime);
 		return spawnDiscrawl({
 			options: this.options,
-			args: [...commonArgs(this.options), ...args],
+			args: [...commonArgs(this.options, configured.configured), ...args],
 			env,
 			signal,
 		});
@@ -225,20 +229,13 @@ export function discrawlWorkspace(options: DiscrawlOptions): string | undefined 
  * `configPath`, discrawl uses its own default store
  * (`~/Library/Application Support/discrawl` on macOS).
  */
-function commonArgs(options: DiscrawlOptions): readonly string[] {
+function commonArgs(options: DiscrawlOptions, useManagedConfig: boolean): readonly string[] {
 	if (options.configPath !== undefined) return ["--config", options.configPath];
-	if (hasManagedConfig(options) && (options.workspacePath ?? options.root) !== undefined) {
-		return ["--config", managedConfigPath((options.workspacePath ?? options.root) as string)];
+	const workspace = options.workspacePath ?? options.root;
+	if (useManagedConfig && workspace !== undefined) {
+		return ["--config", `${workspace}/.autorag/datasources/discrawl/config.toml`];
 	}
 	return [];
-}
-
-function hasManagedConfig(options: DiscrawlOptions): boolean {
-	return options.embeddingRuntime !== undefined;
-}
-
-function managedConfigPath(workspace: string): string {
-	return `${workspace}/.autorag/datasources/discrawl/config.toml`;
 }
 
 function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {

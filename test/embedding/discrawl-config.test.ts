@@ -2,6 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DiscrawlClient } from "../../src/datasource/skills/discrawl/client.ts";
 import {
 	discrawlEmbeddingRuntimeFor,
 	LOCAL_EMBEDDING_KEY_ENV,
@@ -154,5 +155,24 @@ describe("managed discrawl config file", () => {
 		});
 		expect(result.configured).toBe(false);
 		expect(readFileSync(configPath, "utf8")).toBe(original);
+	});
+
+	it("resolves the daemon runtime and writes the managed config on search() even without prepareEmbeddings()", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-search-runtime-"));
+		roots.push(root);
+		const bin = join(root, "discrawl");
+		writeFileSync(bin, `#!/bin/sh\nprintf '%s|%s\\n' "$*" "$AUTORAG_LOCAL_EMBEDDING_KEY" >&2\nprintf '[]'\n`);
+		chmodSync(bin, 0o755);
+		const client = new DiscrawlClient({
+			root,
+			binaryPath: bin,
+			embeddingRuntime: async () => discrawlEmbeddingRuntimeFor(daemon),
+		});
+		const result = await client.search("semantic", "회의");
+		expect(result.ok).toBe(true);
+		const configPath = join(root, ".autorag", "datasources", "discrawl", "config.toml");
+		expect(readFileSync(configPath, "utf8")).toContain('base_url = "http://127.0.0.1:52982/v1"');
+		expect(result.stderr).toContain(`--config ${configPath}`);
+		expect(result.stderr).toContain(`|${LOCAL_EMBEDDING_KEY_PLACEHOLDER}`);
 	});
 });
