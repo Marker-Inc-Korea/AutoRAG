@@ -27,7 +27,7 @@ jobs:
 
     osv-pr:
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.6.0
+        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.7.0
         permissions:
             actions: read
             contents: read
