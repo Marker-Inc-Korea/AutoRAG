@@ -107,4 +107,18 @@ describe("autorag automate run", () => {
 		expect((await runCli(["automate", "run", "pdf", "--event", "bogus:/a"])).code).toBe(2);
 		expect((await runCli(["automate", "run", "pdf", "--event", `create:${join(watched, "a.txt")}`])).code).toBe(2);
 	});
+
+	it("status reports service state and the last run record for each automation", async () => {
+		writeFileSync(
+			join(home, "automations.json"),
+			JSON.stringify({ automations: [{ id: "pdf", paths: [watched], run: ["node", "-e", "0"] }] }),
+		);
+		await runCli(["automate", "run", "pdf"]);
+		const status = await runCli(["automate", "status", "--json"]);
+		expect(status.code).toBe(0);
+		const body = JSON.parse(status.stdout);
+		expect(body.ok).toBe(true);
+		expect(body.automations[0].id).toBe("pdf");
+		expect(body.automations[0].lastRun.exitCode).toBe(0);
+	});
 });

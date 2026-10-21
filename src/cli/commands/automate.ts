@@ -10,6 +10,7 @@ import {
 } from "../../automation/config.ts";
 import { AutomationDaemonAlreadyRunningError, startAutomationDaemon } from "../../automation/daemon.ts";
 import { runAutomation } from "../../automation/run.ts";
+import { getAutomationStatus, installAutomationService, uninstallAutomationService } from "../../automation/service.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -81,13 +82,50 @@ export async function runAutomate(ctx: CommandContext): Promise<number> {
 	try {
 		const sub = ctx.positionals[0];
 		if (sub === "daemon") return runAutomateDaemon(ctx);
+		if (sub === "install") {
+			const desc = await installAutomationService();
+			ctx.stdout(
+				ctx.json
+					? JSON.stringify({ ok: true, action: "install", ...desc })
+					: `Installed automation service ${desc.id} (${desc.definitionPath})`,
+			);
+			return 0;
+		}
+		if (sub === "uninstall") {
+			const desc = await uninstallAutomationService();
+			ctx.stdout(
+				ctx.json
+					? JSON.stringify({ ok: true, action: "uninstall", ...desc })
+					: `Uninstalled automation service ${desc.id}`,
+			);
+			return 0;
+		}
+		if (sub === "status") {
+			const report = getAutomationStatus();
+			if (ctx.json) {
+				ctx.stdout(JSON.stringify({ ok: report.configError === undefined, ...report }));
+			} else {
+				const svc = report.service;
+				ctx.stdout(
+					`service: ${svc.id} (installed=${svc.installed}, running=${svc.running}, platform=${svc.platform})`,
+				);
+				if (report.configError) ctx.stderr(`config error: ${report.configError}`);
+				for (const item of report.automations) {
+					const last = item.lastRun
+						? `last=${item.lastRun.startedAt} exit=${item.lastRun.exitCode}`
+						: "last=never";
+					ctx.stdout(`  - ${item.id}: paths=${item.paths.length} events=${item.events.join(",")} (${last})`);
+				}
+			}
+			return report.configError === undefined ? 0 : 1;
+		}
 		if (sub !== "run") {
 			ctx.stderr(
 				renderError(
-					new Error("Usage: autorag automate <daemon|run> [id] [--event <create|update|delete>:<path>]"),
-					{
-						json: ctx.json,
-					},
+					new Error(
+						"Usage: autorag automate <daemon|install|uninstall|status|run> [id] [--event <create|update|delete>:<path>]",
+					),
+					{ json: ctx.json },
 				),
 			);
 			return 2;

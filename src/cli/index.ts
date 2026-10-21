@@ -120,7 +120,7 @@ Commands:
                        (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
   models list          List chat models from the pi runtime (--provider ID --available)
   update-check         Compare the running autorag against the published npm version
-  automate run <id>    Run a file-triggered automation from ~/.autorag/automations.json
+  automate <subcmd>    File-triggered automations (daemon|install|uninstall|status|run)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
