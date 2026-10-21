@@ -77,10 +77,18 @@ function jevDirect(): JevBackend {
 	});
 }
 
+/**
+ * A concrete object, not a Proxy: pi spreads the UI context when it binds it, and a Proxy
+ * over `{}` has no own keys, so extensions would find none of the methods.
+ */
 function noUi(): ExtensionUIContext {
-	return new Proxy({} as ExtensionUIContext, {
-		get: (_target, key) => (key === "onTerminalInput" ? () => () => undefined : () => undefined),
-	});
+	const ignore = (): undefined => undefined;
+	return {
+		onTerminalInput: () => ignore,
+		notify: ignore,
+		setStatus: ignore,
+		setWidget: ignore,
+	} as unknown as ExtensionUIContext;
 }
 
 function textOf(content: string | readonly { type: string; text?: string }[]): string {
