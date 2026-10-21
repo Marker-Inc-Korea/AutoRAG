@@ -35,7 +35,7 @@ jobs:
 
     osv-full:
         if: github.event_name == 'workflow_call' || github.event_name == 'schedule'
-        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.6.0
+        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0
         permissions:
             actions: read
             contents: read
