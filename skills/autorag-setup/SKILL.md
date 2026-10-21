@@ -418,6 +418,62 @@ the next `index`. kakao needs `lazykatok` 0.3.3 or newer for the same reason.
 Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
 datasource is removed.
 
+### Browser history (Hister) and the shared embedding model
+
+`hister` is the one datasource whose backing program AutoRAG does not install,
+start, or bundle (it is AGPL-3.0-or-later and stays a separate program). Setting
+it up is an agent task with these steps. Run each command; do not just describe it.
+
+1. **Probe first.** Add the datasource entry, then run `autorag setup --format json`
+   and read the `hister` object: `installed`, `running`, and `embedding`. Every
+   problem has a `remediation` string with the exact next command.
+2. **Install Hister** when `installed` is false: `brew install hister` (other
+   platforms: the release binaries at https://github.com/asciimoo/hister/releases).
+3. **Run it as a login item** when `running` is false: `brew services start hister`.
+   Hister must stay running: its browser extension only captures while it is up,
+   and a page visited while it is down is not re-sent. AutoRAG never starts it.
+4. **Install the browser extension** (Chrome Web Store "Hister", or Firefox
+   Add-ons). It must be done in the user's browser; tell the user if you cannot.
+5. **Share the embedding model** (below).
+6. **Before importing past history, install a skip list** in Hister's `rules.json`
+   (login, mail, documents, social and console domains, private hosts, token-bearing
+   URLs). `hister import browser history` re-downloads each URL *without* the
+   browser's cookies. See docs/datasource-skills.md, "Browser history via Hister".
+7. Add `"browser": { "type": "hister", "connector": { "semantic": true } }` under
+   `datasources`, then `autorag refresh` (only probes Hister) and
+   `autorag lite retrieve "<a question>" --scope '/browser/**' --json`.
+
+**Shared embedding model.** Hister keeps its own vector store and embeds with
+whatever its `config.yml` `semantic_search` block says. Pointing it at a different
+model does not fail: vectors simply stop lining up and results get worse. So Hister
+must use the same model as AutoRAG, which is the `minsync serve` daemon (model
+`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, with Qwen3's query instruction).
+
+```bash
+autorag setup --format json            # reports hister.embedding.differs: the keys that disagree
+autorag setup --sync-hister            # writes them, restarts Hister, re-embeds pages if needed
+```
+
+- `--sync-hister` rewrites only `enable`, `embedding_endpoint`, `embedding_model`,
+  `dimensions`, `query_prefix`, `document_prefix` in Hister's config (a
+  `config.yml.bak.<time>` is kept next to it), then runs `brew services restart hister`,
+  waits for it to answer, and runs `hister reindex` when a change makes stored
+  vectors stale. Without the flag setup never writes Hister's config.
+- The daemon port is chosen when `minsync serve` starts. After restarting the daemon,
+  run `autorag setup --sync-hister` again. It is idempotent: when nothing differs
+  it changes nothing and restarts nothing.
+- It refuses, and says why, when the shared backend is a remote endpoint (browsing
+  text would leave the machine) or MinSync's in-process engine (Hister cannot reach
+  it; run `minsync serve --idle-timeout 0`, docs/minsync-setup.md).
+- If `restartRequired` or `reindexRequired` is true in the report, the step was
+  not done (no Homebrew service, or it failed): run `brew services restart hister`
+  and `hister reindex` yourself. Check with `hister doctor`: the line
+  `server.index.embeddings` must be `ok`.
+- A changed `query_prefix` alone needs a restart but no reindex. Never hand-edit the
+  `query_prefix` value across two lines: Hister's YAML parser folds the newline into
+  a space and the model's instruction is silently corrupted. `--sync-hister` writes
+  it correctly.
+
 ## Verify and build indexes
 
 Configuration alone is not a successful setup:

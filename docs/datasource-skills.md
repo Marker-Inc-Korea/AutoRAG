@@ -752,13 +752,36 @@ not sent again later, so backfill the gap with
 `hister import browser history --start-date YYYY-MM-DD`. The web UI that the same
 server also serves is not used by AutoRAG.
 
-For semantic search, point `semantic_search` in Hister's own `config.yml` at an
-embedding endpoint. The MinSync daemon works (`embedding_endpoint:
-http://127.0.0.1:<port>/v1/embeddings`, model `Qwen/Qwen3-Embedding-0.6B`,
-`dimensions: 1024`); its port is chosen when it starts, so update the config if
-the daemon is restarted. Pages indexed before semantic search was enabled need
-`hister reindex`. A page whose chunks exceed the model's context is kept for
-keyword search and skipped for vectors, which Hister logs.
+### One embedding model for AutoRAG and Hister
+
+Hister keeps its own vector store and embeds with whatever its `config.yml`
+`semantic_search` block says. If that is a different model from AutoRAG's, nothing
+fails: the vectors simply stop lining up and results get worse. So the two must share
+the model, and `autorag setup` does that:
+
+```bash
+autorag setup                # reports `hister.embedding.differs`, the keys that disagree; writes nothing
+autorag setup --sync-hister  # writes them, restarts Hister, waits for it, re-embeds pages when needed
+hister doctor                # `server.index.embeddings` must be ok
+```
+
+The source of truth is the resolved shared embedder (`minsync serve`, model
+`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, with Qwen3's query instruction), so
+Hister embeds queries exactly as AutoRAG does. `--sync-hister` edits only
+`enable`, `embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix` and
+`document_prefix` in Hister's own config (a `config.yml.bak.<time>` stays next to
+it); the rest of the file is untouched. It restarts the service with
+`brew services restart hister`, waits until the server answers, and runs
+`hister reindex` only when a changed key makes stored vectors stale (the query prefix
+alone does not). It is idempotent. The report says `restartRequired` or
+`reindexRequired` when it could not do those steps itself. The daemon's port is chosen
+when it starts, so run `--sync-hister` again after restarting it.
+
+It refuses, and says why, for a remote shared backend (browsing text would leave the
+machine and Hister's config would have to hold the key) and for MinSync's in-process
+engine (Hister cannot reach it): start `minsync serve --idle-timeout 0` first. Pages
+indexed before semantic search was enabled need the reindex; a page whose chunks exceed
+the model's context is kept for keyword search and skipped for vectors, which Hister logs.
 
 ### Backfilling existing history safely
 

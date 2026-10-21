@@ -2,6 +2,13 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import {
+	findHisterEntries,
+	type HisterServiceDeps,
+	type HisterSetupReport,
+	setupHister,
+	systemHisterDeps,
+} from "../datasource/skills/hister/setup.ts";
+import {
 	createEmbedderFromConfig,
 	type EmbeddingBackend,
 	type EmbeddingIdentity,
@@ -33,6 +40,10 @@ export interface SetupReport {
 	readonly embedding: SetupEmbeddingReport;
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
+	/** One entry per configured `hister` datasource; absent when none is configured. */
+	readonly hister?: HisterSetupReport;
+	/** Every configured `hister` datasource, when there is more than one. */
+	readonly histers?: readonly HisterSetupReport[];
 	readonly changed: boolean;
 }
 
@@ -43,6 +54,8 @@ export interface SetupDeps {
 	readonly pathExists?: (path: string) => boolean;
 	readonly executable?: (name: string) => string | undefined;
 	readonly acquireLock?: (path: string) => FileLockHandle;
+	/** Hister's config path, health, restart and reindex; defaults to the real programs. */
+	readonly hister?: HisterServiceDeps;
 }
 
 const LOCK_TIMEOUT_MS = 10_000;
@@ -60,6 +73,7 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	mailcrawl: "mailcrawl",
 	"cloud-drive": "rclone",
 	obsidian: "qmd",
+	hister: "hister",
 };
 /**
  * Connectors AutoRAG authenticates itself. Every other built-in datasource is
@@ -162,6 +176,8 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 export async function runSetup(options: {
 	configPath: string;
 	workspacePath: string;
+	/** Write Hister's `semantic_search` to the shared embedding model (and restart/reindex it). Off by default. */
+	syncHister?: boolean;
 	deps?: SetupDeps;
 }): Promise<SetupReport> {
 	const env = options.deps?.env ?? process.env;
@@ -291,12 +307,29 @@ export async function runSetup(options: {
 			writeConfigObject(options.configPath, next);
 			changed = true;
 		}
+		const histerEntries = findHisterEntries(raw);
+		let histerReports: readonly HisterSetupReport[] = [];
+		if (histerEntries.length > 0) {
+			const system = systemHisterDeps(env, executable("hister"));
+			const histerResult = await setupHister({
+				entries: histerEntries,
+				embedder,
+				executable,
+				deps: { ...system, ...options.deps?.hister },
+				sync: options.syncHister === true,
+				assertLockOwned: () => lock.assertOwned(),
+			});
+			histerReports = histerResult.reports;
+			changed ||= histerResult.changed;
+		}
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
 			embedding,
 			datasources,
 			...(semantic ? {} : { remediation: REMEDIATION }),
+			...(histerReports[0] === undefined ? {} : { hister: histerReports[0] }),
+			...(histerReports.length > 1 ? { histers: histerReports } : {}),
 			changed,
 		};
 	} finally {
