@@ -2029,8 +2029,9 @@ export class AutoRAGAgent {
 					mkdirSync(this.workspaceProjectRoot, { recursive: true });
 					const previousTools = sessionAgent?.getActiveToolNames();
 					setThinking(this.finalThinkingLevel);
-					if (sessionAgent !== undefined) sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES]);
-					else activeSession.agent.state.tools = [];
+					if (sessionAgent !== undefined) {
+						sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES, MANAGE_AUTOMATIONS_TOOL_NAME]);
+					} else activeSession.agent.state.tools = [];
 					const configBefore = snapshotConfigFile(this.selfConfig.configPath);
 					try {
 						await activeSession.prompt(

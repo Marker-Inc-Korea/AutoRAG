@@ -104,7 +104,7 @@ const BASE_ROUTE_OPTIONS: Record<Exclude<QueryRoute, "config">, string> = {
 };
 
 const CONFIG_ROUTE_OPTION =
-	"The user asks to view, change, or test the settings of this AutoRAG agent itself: its model, model providers, API-key environment variables, Jev routing, search roots, or datasource setup. It is about configuring the assistant, not about the content of their documents.";
+	"The user asks to view, change, or test the settings of this AutoRAG agent itself: its model, model providers, API-key environment variables, Jev routing, search roots, or datasource setup (config.json). It is about configuring the assistant's search/model settings, not about the content of their documents and not about file-triggered automations or folder-watch rules.";
 
 const BASE_ROUTE_QUESTION = pick(
 	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",
