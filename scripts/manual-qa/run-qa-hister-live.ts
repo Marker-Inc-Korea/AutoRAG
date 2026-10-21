@@ -110,6 +110,16 @@ try {
 	const miss = await agent.searchSingleDatasourceDocuments("browser", "zzqqxxnomatchtoken", { topK: 5 });
 	check("a query with no match returns nothing", miss.results.length === 0);
 
+	// Regression: a natural-language question must not match every page that merely contains the word "or"/"the".
+	const question = `where did I read about ${expected[0]?.token ?? ""} and also zzqqxxnomatchtoken`;
+	const asked = await agent.searchSingleDatasourceDocuments("browser", question, { topK: 5 });
+	const lexicalTop = asked.results.find((hit) => String(hit.metadata.method).endsWith("-lexical"));
+	check(
+		"a natural-language question ranks the page that really contains the rare term first, not a stopword match",
+		lexicalTop?.metadata.url === expected[0]?.url,
+		`${lexicalTop?.metadata.url}`,
+	);
+
 	const down = buildDatasourceSkills({ browser: { type: "hister", connector: { baseUrl: "http://127.0.0.1:1" } } }, tmpRoot)
 		.skills[0];
 	let message = "";

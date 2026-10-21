@@ -731,8 +731,9 @@ config, and a non-loopback `http://` URL is refused when a token is configured.
 `semantic_search.enable` plus an embedding endpoint in the **Hister** config
 (the page text is sent to that endpoint, so use a loopback one for privacy); with
 it disabled on the server, the semantic method fails loudly instead of returning
-nothing. Plain words in a query are OR-ed; Hister syntax (`"phrases"`, `domain:`,
-`title:`, `-term`, `added:<7d`, `sort:date`) passes through as written.
+nothing. Plain words in a query are alternatives, sent as one `(a|b|c)` group (Hister's only
+OR; the word `OR` is searched literally); Hister syntax (`"phrases"`, `domain:`, `title:`,
+`-term`, `added:<7d`, `sort:date`) passes through as written.
 
 Incremental indexing is Hister's: each page is indexed when the extension sends
 it, so `autorag refresh` only probes the server (reachability, authentication,

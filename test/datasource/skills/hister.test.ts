@@ -80,17 +80,30 @@ describe("HisterSkill lexical retrieval", () => {
 		// Hister answers 500 to a request without this header.
 		expect(call?.headers.accept).toContain("application/json");
 		expect(call?.query).toMatchObject({ highlight: "HTML", limit: 7, semantic_enabled: false });
-		expect(call?.query?.text).toBe("(refund OR policy) type:web");
+		expect(call?.query?.text).toBe("(refund|policy) type:web");
 	});
 
-	it("turns a natural-language question into an OR of its terms so long questions still match", async () => {
+	it("turns a natural-language question into an alternation of its terms so long questions still match", async () => {
 		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
 		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
 
 		await lexical?.retrieve("When did I read about the inverted-index AND OR NOT 인증서를?", {});
 
 		const text = String(calls[0]?.query?.text);
-		expect(text).toBe("(When OR did OR I OR read OR about OR the OR inverted OR index OR 인증서를) type:web");
+		expect(text).toBe("(When|did|I|read|about|the|inverted|index|인증서를) type:web");
+	});
+
+	it("never sends the word OR: Hister searches it as a literal word and matches most English pages", async () => {
+		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+
+		await lexical?.retrieve("refund or policy OR approval", {});
+		await lexical?.retrieve("맥 파인더를 대체하는 앱", {});
+
+		for (const call of calls) expect(String(call.query?.text)).not.toMatch(/\bOR\b/i);
+		// A user's own `or`/`OR` is dropped, not forwarded as a search term.
+		expect(calls[0]?.query?.text).toBe("(refund|policy|approval) type:web");
+		expect(calls[1]?.query?.text).toBe("(맥|파인더를|대체하는|앱) type:web");
 	});
 
 	it("passes Hister query syntax through, still confined to web documents", async () => {

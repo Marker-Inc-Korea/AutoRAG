@@ -251,9 +251,12 @@ export class HisterClient {
 /**
  * Wrap a free-text question as a Hister query confined to web pages.
  *
- * Hister ANDs bare terms, so a natural-language question would match almost nothing. Terms become an OR group, and
- * Hister's own syntax (quoted phrases, `field:value`, wildcards, negation) passes through untouched. A `sort:`
- * directive is hoisted out of the group because Hister only honours it at the top level.
+ * Hister ANDs bare terms, so a natural-language question would match almost nothing. Plain words become one
+ * alternation group `(a|b|c)`. That pipe is Hister's only OR: the word `OR` is not an operator there, it is searched
+ * as the literal English word, which matches most English pages. Hister's own syntax (quoted phrases,
+ * `field:value`, wildcards, negation) passes through untouched, and a query using any of it is sent with its plain
+ * words ANDed, exactly as written. A `sort:` directive is hoisted out of the group because Hister only honours it at
+ * the top level.
  */
 export function buildWebQuery(question: string, domain?: string): string | undefined {
 	const tokens = tokenize(question);
@@ -263,12 +266,12 @@ export function buildWebQuery(question: string, domain?: string): string | undef
 		if (/^sort:-?(relevance|date|visits|domain)$/u.test(token)) sort = token;
 		else words.push(token);
 	}
-	const terms = words.map(normalizeTerm).filter((term): term is string => term !== undefined);
-	const structured = terms.some((term) => /^-?[a-z_.]+:./u.test(term) || term.startsWith('"') || term.startsWith("-"));
-	const limited = terms.slice(0, MAX_TERMS);
+	const terms = words.map(normalizeTerm).filter((term): term is NormalizedTerm => term !== undefined);
+	const structured = terms.some((term) => term.operator);
+	const flat = terms.flatMap((term) => term.parts).slice(0, MAX_TERMS);
 	let group: string;
-	if (structured) group = limited.join(" ");
-	else group = limited.join(" OR ");
+	if (structured) group = flat.join(" ");
+	else group = flat.join("|");
 	if (group.length === 0 && sort === undefined) return undefined;
 	const parts: string[] = [];
 	if (group.length > 0) parts.push(`(${group})`);
@@ -286,14 +289,23 @@ function tokenize(input: string): string[] {
 	return tokens;
 }
 
-function normalizeTerm(token: string): string | undefined {
-	if (token.startsWith('"') || /^-?[A-Za-z_.]+:/u.test(token) || token.startsWith("-")) return token;
+interface NormalizedTerm {
+	/** True for Hister syntax (phrase, `field:value`, negation) that must reach the server unchanged. */
+	readonly operator: boolean;
+	readonly parts: readonly string[];
+}
+
+function normalizeTerm(token: string): NormalizedTerm | undefined {
+	if (token.startsWith('"') || /^-?[A-Za-z_.]+:/u.test(token) || token.startsWith("-")) {
+		return { operator: true, parts: [token] };
+	}
 	const upper = token.toUpperCase();
 	if (upper === "AND" || upper === "OR" || upper === "NOT") return undefined;
-	// Strip punctuation that is meaningless to Hister's tokenizer but would break its query parser.
+	// Strip punctuation that is meaningless to Hister's tokenizer, and that would break its `(a|b)` grammar when it is
+	// `|` or a parenthesis. A hyphenated word becomes its parts.
 	const cleaned = token.replace(/[^\p{L}\p{N}*_]+/gu, " ").trim();
 	if (cleaned.length === 0) return undefined;
-	return cleaned.split(/\s+/u).join(" OR ");
+	return { operator: false, parts: cleaned.split(/\s+/u) };
 }
 
 function webDocuments(documents: readonly unknown[]): HisterHit[] {
