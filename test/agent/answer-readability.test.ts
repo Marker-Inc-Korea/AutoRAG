@@ -9,7 +9,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	ANSWER_BULLET_RULE,
+	ANSWER_CITATION_RULE,
+	ANSWER_DELIVERABLE_RULE,
 	ANSWER_EMPHASIS_RULE,
+	ANSWER_IMAGE_EMBED_RULE,
 	ANSWER_LANGUAGE_RULE,
 	ANSWER_LEAD_RULE,
 	ANSWER_UNCERTAINTY_RULE,
@@ -17,13 +20,29 @@ import {
 import { reportSchema } from "../../src/agent/results.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 
-// Readability rules shape every answer, so each surface that tells the model how
-// to write the answer must carry the same wording. A surface that drifts (a
-// phase prompt without the language rule, a delta that demands a lead
-// conclusion) makes the answer format depend on which phase produced it.
+// Readability rules shape every complete answer, so each surface that tells the
+// model how to write one carries the same wording. A delta answer is the
+// exception: it holds only corrections and new findings, so it carries the
+// delta-specific rules plus the answer language and leans on the system prompt
+// for everything else. Bullet, emphasis, lead, and uncertainty rules would pull
+// it back toward re-listing the first answer.
 
-/** Rules that apply to a complete answer and to a delta against a first answer. */
-const SHARED_RULES = [ANSWER_BULLET_RULE, ANSWER_EMPHASIS_RULE, ANSWER_LANGUAGE_RULE, ANSWER_UNCERTAINTY_RULE] as const;
+/** Rules every complete answer carries. */
+const COMPLETE_RULES = [
+	ANSWER_LEAD_RULE,
+	ANSWER_BULLET_RULE,
+	ANSWER_EMPHASIS_RULE,
+	ANSWER_LANGUAGE_RULE,
+	ANSWER_UNCERTAINTY_RULE,
+] as const;
+
+/** Complete-answer rules a delta must NOT carry: they invite re-listing the first answer. */
+const COMPLETE_ONLY_RULES = [
+	ANSWER_LEAD_RULE,
+	ANSWER_BULLET_RULE,
+	ANSWER_EMPHASIS_RULE,
+	ANSWER_UNCERTAINTY_RULE,
+] as const;
 
 interface TypeBoxAnswerSchema {
 	properties: { answer: { description?: string } };
@@ -79,18 +98,40 @@ describe("answer readability rules", () => {
 			report: answerDescription(reportSchema),
 		};
 		for (const [name, text] of Object.entries(surfaces)) {
-			for (const rule of [ANSWER_LEAD_RULE, ...SHARED_RULES]) {
+			for (const rule of COMPLETE_RULES) {
 				expect(text, `${name} is missing: ${rule.slice(0, 40)}`).toContain(rule);
 			}
 		}
 	});
 
-	it("a delta answer keeps the shared rules but is never told to lead with a conclusion", () => {
+	it("a delta answer keeps the answer language but none of the rules that invite re-listing", () => {
 		const delta = newAgent().buildRefinementPrompt("환불 예외는 누구 승인이 필요해?", {}, "draft [e1]", true);
-		for (const rule of SHARED_RULES) expect(delta).toContain(rule);
-		// The delta contract is "only corrections and new findings"; a lead conclusion would restate the first answer.
-		expect(delta).not.toContain(ANSWER_LEAD_RULE);
+		expect(delta).toContain(ANSWER_LANGUAGE_RULE);
+		for (const rule of COMPLETE_ONLY_RULES) expect(delta, rule.slice(0, 40)).not.toContain(rule);
 		expect(delta).toContain("DELTA ONLY");
+	});
+
+	it("tells a delta answer to keep file paths and retrieval mechanics out, like every other phase", () => {
+		const agent = newAgent();
+		const query = "환불 예외는 누구 승인이 필요해?";
+		const phrase = "Do not include specific file paths";
+		for (const text of [
+			agent.buildSearchPrompt(query, {}),
+			agent.buildFastAnswerPrompt(query, {}, "baseline"),
+			agent.buildRefinementPrompt(query, {}, undefined, false),
+			agent.buildRefinementPrompt(query, {}, "draft [e1]", true),
+		]) {
+			expect(text).toContain(phrase);
+		}
+	});
+
+	it("does not repeat the long system-prompt rules inside a delta prompt", () => {
+		const delta = newAgent().buildRefinementPrompt("환불 예외는 누구 승인이 필요해?", {}, "draft [e1]", true);
+		// Deliverables, citations and image embedding are already in the system prompt; the delta carries only its own one-line additions.
+		expect(delta).not.toContain(ANSWER_DELIVERABLE_RULE);
+		expect(delta).not.toContain(ANSWER_CITATION_RULE);
+		expect(delta).not.toContain(ANSWER_IMAGE_EMBED_RULE);
+		expect(delta.length).toBeLessThan(3000);
 	});
 
 	it("keeps the lead conclusion outside the 5-bullet cap so the cap is not silently broken", () => {

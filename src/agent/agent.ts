@@ -3015,20 +3015,14 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
 		const answerRules = fastAnswerDelivered
-			? `Formatting and content rules for your final answer (DELTA ONLY):\n` +
-				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer.\n` +
-				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list.\n` +
-				`- Mark each item clearly as a correction or as a new finding.\n` +
-				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
-				`- ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
-				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
-				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
-				`- ${ANSWER_BULLET_RULE}\n` +
-				`- ${ANSWER_EMPHASIS_RULE}\n` +
+			? `Rules for your final answer (DELTA ONLY; the system prompt's answer guidelines still apply):\n` +
+				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer. Mark each item as a correction or a new finding.\n` +
+				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list. If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is).\n` +
+				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text, and do not describe how you verified it.\n` +
+				`- A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
 				`- ${ANSWER_LANGUAGE_RULE}\n` +
-				`- ${ANSWER_UNCERTAINTY_RULE}\n` +
-				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
+				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
+				`- ${ANSWER_IMAGE_DELTA_RULE}`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
 				`- ${ANSWER_LEAD_RULE}\n` +
