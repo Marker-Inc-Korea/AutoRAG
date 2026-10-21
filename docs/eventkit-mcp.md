@@ -63,17 +63,3 @@ another tool call.
   semantic search over events. Keep date ranges narrow: subscribed calendars
   (holidays, sports) and recurring series expand into many events.
 - Only calendars known to Calendar.app are visible.
-
-## Verifying your setup
-
-A live, read-only end-to-end test drives the server with AutoRAG's own MCP
-client. It never writes, pins no calendar content, and tries one write to prove
-the confirmation flag refuses it:
-
-```bash
-AUTORAG_EVENTKIT_LIVE=1 bun run vitest run test/live-e2e/eventkit-mcp.test.ts
-```
-
-It is skipped unless `AUTORAG_EVENTKIT_LIVE=1` on macOS, so CI and other
-platforms never touch Calendar. Do not run it from `make qa-shell`/Docker: the
-container has no Calendar access.
