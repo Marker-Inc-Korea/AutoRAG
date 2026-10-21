@@ -72,7 +72,6 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	notion: "notcrawl",
 	mailcrawl: "mailcrawl",
 	"cloud-drive": "rclone",
-	obsidian: "qmd",
 	hister: "hister",
 };
 /**

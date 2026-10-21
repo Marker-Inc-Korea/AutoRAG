@@ -18,7 +18,7 @@
 
 > [!IMPORTANT]
 > **Looking for the original AutoRAG (RAG AutoML / pipeline optimization tool)?**
-> This repository now hosts **AutoRAG 2.0**, a complete reimagining of AutoRAG as a self-evolving librarian agent. The original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data — now lives in the [`legacy/`](legacy/) directory of this repository.
+> This repository now hosts **AutoRAG 2.0**, a complete reimagining of AutoRAG as a personal librarian agent for your office work. The original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data — now lives in the [`legacy/`](legacy/) directory of this repository.
 >
 > **The legacy AutoRAG is NOT abandoned.** It continues to be maintained (bug fixes, dependency updates, and PyPI releases via `pip install AutoRAG`) in maintenance mode. Existing users can keep using it exactly as before — see the [legacy README](legacy/README.md) for its documentation, and file issues in this repository as usual. New feature development is focused on AutoRAG Agent (2.0).
 
@@ -166,7 +166,7 @@ The app is one way in. The same librarian runs everywhere else:
 
 Search tools dump file paths and matching lines — forcing you to open files, read context, and synthesize answers yourself.
 
-**AutoRAG Agent is a self-evolving librarian agent.** Built on the [Pi](https://github.com/earendil-works/pi-mono) agent framework, a single configured model searches across multiple retrieval methods, opens source documents directly via `bash` to verify ground truth, and curates answers into clean, numbered knowledge units:
+**AutoRAG Agent is a personal librarian agent that helps with your office work.** Built on the [Pi](https://github.com/earendil-works/pi-mono) agent framework, a single configured model searches your files, mail, chats, and notes in place, opens source documents directly via `bash` to verify ground truth, and curates answers into clean, numbered knowledge units. Because it works for you rather than only on your index, it can also act on your files when you ask, such as organizing, renaming, moving, or editing them with a record of every change:
 
 ```text
 You ask:  "What changes were made to the cloud infrastructure contract in Q3?"
@@ -187,7 +187,7 @@ AutoRAG Agent:
 
 Three principles drive every design decision in AutoRAG Agent:
 
-1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`, `qmd`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
+1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
 2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding backend](docs/minsync-setup.md#embedding-backends) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (the hosted Dazzi Models reranker when signed in, else OpenRouter `voyageai/rerank-3-lite`) is an opt-in extra.
 
@@ -218,7 +218,11 @@ AutoRAG uses `@earendil-works/pi-coding-agent` as the runtime host for model ses
 
 The CLI TUI (`autorag tui`) is Pi's interactive mode hosted on the AutoRAG librarian: there is no separate AutoRAG renderer. Pi owns the terminal UI and its native in-session commands — `/login`/`/logout`, `/model`, `/resume`, `/new`, `/tree`, `/compact`, and `/settings` — so provider sign-in and model selection work on first launch even when no AutoRAG model is configured. AutoRAG registers its retrieval tools and runs the two-phase search in the same Pi session, where the model's progress notes, first answer, and final answer are ordinary assistant messages, so resume and two-phase search keep working together.
 
+A fresh session — at launch and after `/new` (or `/reload`) — opens on AutoRAG's own welcome screen: the AutoRAG logo, the version, and three rotating tips, centered and scaled down to a smaller logo or a plain wordmark on narrow terminals. Pi's own logo, key-hint list, and loaded skills/prompts/extensions listing are hidden by default (`quietStartup: "header"`). A `quietStartup` saved in Pi's global or project `settings.json` wins: `true` removes the banner, `false` brings Pi's resource listing back.
+
 Typing while a search runs works like steering one of Pi's own turns. **Enter** steers the running search: AutoRAG treats the text as a correction of a search that is going wrong, delivers it before the search's next model request (also between phases, where no turn is streaming), cuts in-flight retrieval short so the correction lands promptly, and always runs the verification phase so the answer reflects the correction. **Alt+Enter** queues a new question that runs after the current search answers. **Esc** stops the search instead of letting it continue into its next phase. Pi's registered `/` commands still run during a search; any other line starting with `/` (a path, for example) is a steer like any other text. A query typed after a search answers is a new search in the same session, as before.
+
+From the moment a question is submitted, a live progress widget sits above the editor: a spinner, the elapsed time, and one line per step the search is running (routing, splitting the question, each retrieval source with its hit count and time, ranking, the first answer, verification). A slow source shows its own running timer, a failing source shows its error text verbatim, and the widget disappears when the answer is final or **Esc** stops the search. While the model streams, Pi's own `Working` loader takes over and the widget keeps only the header and steps.
 
 Update notices are AutoRAG's, not Pi's: `autorag tui` suppresses Pi's "run `pi update`" banner (Pi is a bundled host, not a separate install) and instead checks the published `@autorag/librarian` release, showing a one-line notice in the session when a newer version exists. Set `AUTORAG_NO_UPDATE_CHECK=1` to skip the lookup; `AUTORAG_UPDATE_CHECK_URL` overrides the registry endpoint.
 
@@ -501,6 +505,36 @@ Core Lite tools include `autorag.status`, `autorag.search`,
 integrated datasources expose additional scoped search tools. Read-only MCP
 mode omits mutating tools such as refresh and report.
 
+## Using external MCP servers and agent skills
+
+AutoRAG is also an MCP *client*. Servers listed in the pi agent directory's `mcp.json`
+(`~/.pi/agent/mcp.json`, or `<piAgentDir>/mcp.json` when the agent is given one) are connected
+when a TUI session or a one-shot `autorag search` starts, and their tools reach the model next to
+AutoRAG's own tools. The file uses the format shared by other MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "docs": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" } }
+  }
+}
+```
+
+- **Exposure.** By default a server's tools are reached through the `codemode` tool (the model
+  writes a short script that calls them); `"exposure": "direct"` declares them to the model
+  like built-in tools, `"deferred"` loads them on demand through `tool_search`, and `"hidden"`
+  turns a server off. `description` is shown to the model so it knows when to use the server.
+- **Only the user-level file is read.** A project `.pi/mcp.json` is ignored on purpose: it would
+  let any folder AutoRAG starts in choose which processes run.
+- **Failures are reported verbatim.** An invalid entry or a server that fails to start is
+  reported at session start with pi's own message; the other servers keep working.
+- **Inside the TUI**, `/mcp` lists servers, reconnects them, signs in to OAuth servers, and
+  changes exposure. Pi's `/skill:<name>` commands and `<available_skills>` list also work for
+  any agent skill installed under the agent directory.
+- MCP results are data from an external server. AutoRAG tells the model never to follow
+  instructions found in them.
+
 ---
 
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
@@ -584,7 +618,8 @@ Do not copy or retain the removed `autorag-lite-search` skill.
    autorag search "your question" --json
    ```
 4. **Safety Guidelines for Agents:**
-   - **Never delete, move, or modify original user documents.**
+   - **Setup, diagnostics, indexing, and refresh never modify your documents.** An agent that installs, configures, or repairs AutoRAG (Claude Code, Codex, and similar) must not move, rename, edit, or delete user documents as part of that work. That rule is about those procedures; it is not a limit on the librarian itself, which may organize, create, or modify files in local sessions when the user asks (see `Local File Organization` in the system prompt).
+   - **Never permanently delete.** Deletion goes to the OS trash, and every change is listed as old path → new path so it can be undone.
    - AutoRAG writes index artifacts into `<workspace>/.autorag/` and Jikji's central store (`<OS data dir>/jikji/`, override with `JIKJI_DATA_DIR`). Jikji also drops a `.jikji_agent_map.md` guide into each indexed root.
    - Never print or leak API keys, tokens, or credential values into stdout or logs.
 
@@ -605,7 +640,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **Notion** | `notion` | [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | Local page/database/block archive + FTS5 | Lexical FTS5 |
 | **Email Archives** | `mailcrawl` | [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | Local Gmail, IMAP, and Maildir storage | BM25, Semantic, Hybrid |
 | **Local Mail Export**| `mail-export` | Built-in `.mbox` / `.eml` parser | Local filesystem mailboxes | Lexical |
-| **Obsidian Vaults** | `obsidian` | [`qmd`](https://github.com/tobi/qmd) CLI | Direct markdown vault indexing | BM25, Semantic |
+| **Obsidian Vaults** | `obsidian` | Indexed with MinSync in its own workspace (no external CLI) | Markdown notes, folder-scopable | Lexical (BM25), Semantic, Scoped |
 | **GitHub** | `github` | GitHub REST API | In-memory fetched Issues and Pull Requests | Lexical, Scoped |
 | **GitHub Gists** | `github-gist` | GitHub REST API | Incremental local index of own-account public and permitted secret Gist content/metadata; token not stored | Lexical (BM25), Local Semantic, Scoped |
 | **Cloud Drives** | `cloud-drive` | [`rclone`](https://rclone.org) CLI | Google Drive (Tier-1), OneDrive, Dropbox, etc. | Incremental Mirror + BM25 |
@@ -693,6 +728,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[Discord Remote Control](docs/discord.md):** Ask the librarian from a Discord channel through a running `autorag tui --discord` session: bot setup, permissions, and limits.
 - **[Telegram Remote Control](docs/telegram.md):** Ask the librarian from a Telegram chat through a running `autorag tui --telegram` session: setup, commands, and keeping it alive.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
+- **[Apple Calendar & Reminders via EventKit MCP](docs/eventkit-mcp.md):** macOS-only: read Calendar events and Reminders (Google/iCloud/Exchange accounts already in Calendar.app) by running `mcp-server-apple-events` beside `autorag-mcp`. Live, read-only; not indexed.
 - **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to a direct answer (intrinsic knowledge) or local search (everything needing more information; web search is left to the agent after the fast answer), splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
@@ -722,7 +758,7 @@ AutoRAG Agent stands on the shoulders of fantastic open-source projects:
 - **[FSearch](https://github.com/cboxdoerfer/fsearch)** and **[fsearch-cli](https://github.com/NomaDamas/fsearch-mac)** — Everything-style file-name search for macOS/Linux (GPL-2.0-or-later). Never bundled or linked: users install fsearch-cli separately and AutoRAG spawns it as a separate process (mere aggregation per the FSF GPL FAQ).
 - **[Hister](https://github.com/asciimoo/hister)** by [asciimoo](https://github.com/asciimoo) and contributors — Self-hosted browser web-history search (AGPL-3.0-or-later). Never bundled, linked, copied, or modified: users run Hister as a separate program and AutoRAG only calls its public HTTP search API (mere aggregation). Hister is always named as the backend of the `hister` datasource.
 - **[dupey](https://github.com/NomaDamas/dupey)** by [NomaDamas](https://github.com/NomaDamas) — Fast duplicate and near-duplicate document family detection.
-- **Federated CLI Authors:** External datasource tools [`lazykatok`](https://github.com/changeroa/lazykatok), [`discrawl`](https://github.com/openclaw/discrawl), [`mailcrawl`](https://github.com/NomaDamas/mailcrawl), [`wacrawl`](https://github.com/openclaw/wacrawl), [`telecrawl`](https://github.com/openclaw/telecrawl), [`slacrawl`](https://github.com/openclaw/slacrawl), [`notcrawl`](https://github.com/openclaw/notcrawl), [`qmd`](https://github.com/tobi/qmd), and [`rclone`](https://rclone.org).
+- **Federated CLI Authors:** External datasource tools [`lazykatok`](https://github.com/changeroa/lazykatok), [`discrawl`](https://github.com/openclaw/discrawl), [`mailcrawl`](https://github.com/NomaDamas/mailcrawl), [`wacrawl`](https://github.com/openclaw/wacrawl), [`telecrawl`](https://github.com/openclaw/telecrawl), [`slacrawl`](https://github.com/openclaw/slacrawl), [`notcrawl`](https://github.com/openclaw/notcrawl), and [`rclone`](https://rclone.org).
 - **[kordoc](https://github.com/chrisryugj/kordoc)** by [chrisryugj](https://github.com/chrisryugj) — HWP/HWPX/HWPML, PDF, DOCX and XLSX parsing with nested-table fidelity, used as AutoRAG's default document parser.
 
 ---
@@ -767,7 +803,7 @@ Common failures and their fix:
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
 | Every search does a full local search and verification, even for small talk | `query-route-fallback` | sign in to Dazzi Models with `/login`, or set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
 
-Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, `qmd status`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
+Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
 
 ---
 

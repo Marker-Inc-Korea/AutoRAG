@@ -1,6 +1,6 @@
 ---
 name: autorag-doctor
-description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, qmd, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
+description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
 license: Apache-2.0
 ---
 
@@ -15,9 +15,10 @@ Always finish with the status table in [Report](#report).
 
 ## Safety
 
-- Never delete, move, or edit source documents.
+- Diagnosis and repair never delete, move, or edit source documents; a doctor
+  run changes only AutoRAG-owned state.
 - Never delete a datasource's **native** store (`~/Library/Application Support/katok`, `~/.discrawl`,
-  `~/.mailcrawl`, `.qmd`, Telegram/WhatsApp/Notion archives). AutoRAG only
+  `~/.mailcrawl`, Telegram/WhatsApp/Notion archives). AutoRAG only
   reads them; rebuilding them is the owning CLI's job.
 - Only AutoRAG-owned state under `AUTORAG_HOME` and the workspace `.autorag`
   directory may be reset.
@@ -69,7 +70,7 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 | WhatsApp | `wacrawl --json doctor` | `wacrawl import` |
 | Telegram | `telecrawl --json doctor`, `telecrawl --json status` | `telecrawl import` |
 | Notion | `notcrawl doctor`, `notcrawl status` | `notcrawl sync --source desktop` |
-| Obsidian / notes | `qmd status` | `qmd update && qmd embed` |
+| Obsidian / notes | `autorag status` (AutoRAG-owned index) | `autorag refresh --method datasources`; if corrupt, delete `.autorag/datasources/obsidian/<instance>` first |
 | Mail | `mailcrawl doctor`, `mailcrawl status` | `mailcrawl sync && mailcrawl index` |
 | Cloud drive | `rclone listremotes` | `autorag refresh --method datasources` |
 | Spotlight (macOS) | `mdutil -s /` | indexed by the OS; no AutoRAG sync |

@@ -86,7 +86,7 @@ export class HisterClient {
 				`hister baseUrl must use https when an access token is configured and the host is not loopback (${parsed.hostname})`,
 			);
 		}
-		this.baseUrl = raw.replace(/\/+$/u, "");
+		this.baseUrl = trimTrailingSlashes(raw);
 		this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
 	}
@@ -281,12 +281,61 @@ export function buildWebQuery(question: string, domain?: string): string | undef
 	return parts.join(" ");
 }
 
-/** Split on whitespace, keeping a double-quoted phrase (optionally field-prefixed) in one token. */
+/**
+ * Split on whitespace, keeping a double-quoted phrase (optionally field-prefixed and/or negated, like
+ * `title:"a b"` or `-"a b"`) in one token. A linear scan, so no input can make it slow.
+ */
 function tokenize(input: string): string[] {
 	const tokens: string[] = [];
-	const pattern = /(?:-?[A-Za-z_.]+:)?-?"[^"]*"|\S+/gu;
-	for (const match of input.matchAll(pattern)) tokens.push(match[0]);
+	let i = 0;
+	while (i < input.length) {
+		if (/\s/u.test(input[i] ?? "")) {
+			i += 1;
+			continue;
+		}
+		const start = i;
+		let quoted = false;
+		while (i < input.length && !/\s/u.test(input[i] ?? "")) {
+			if (input[i] === '"') {
+				// A quote is only a phrase when it is the token's first character or follows an optional `-` and field prefix.
+				if (!quoted && isPhraseStart(input, start, i)) {
+					const close = input.indexOf('"', i + 1);
+					if (close !== -1) {
+						i = close + 1;
+						quoted = true;
+						break;
+					}
+				}
+			}
+			i += 1;
+		}
+		tokens.push(input.slice(start, i));
+	}
 	return tokens;
+}
+
+/**
+ * True when the `"` at `quote` opens a phrase, i.e. the token so far is exactly one of `"`, `-"`, `field:"`,
+ * `-field:"`, `field:-"` or `-field:-"`, where `field` is one or more of `A-Za-z_.`. Same language as the original
+ * regular expression `(?:-?[A-Za-z_.]+:)?-?"[^"]*"`, without its backtracking.
+ */
+function isPhraseStart(input: string, start: number, quote: number): boolean {
+	let j = start;
+	if (input[j] === "-") j += 1;
+	let k = j;
+	while (k < quote && /[A-Za-z_.]/u.test(input[k] ?? "")) k += 1;
+	if (k > j && input[k] === ":") {
+		j = k + 1;
+		if (input[j] === "-") j += 1;
+		return j === quote;
+	}
+	return start + (input[start] === "-" ? 1 : 0) === quote;
+}
+
+function trimTrailingSlashes(text: string): string {
+	let end = text.length;
+	while (end > 0 && text[end - 1] === "/") end -= 1;
+	return text.slice(0, end);
 }
 
 interface NormalizedTerm {

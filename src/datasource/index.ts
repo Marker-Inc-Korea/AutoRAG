@@ -132,15 +132,10 @@ export {
 } from "./skills/notion/index.ts";
 export {
 	ObsidianBm25Method,
+	type ObsidianMethodOptions,
 	ObsidianSemanticMethod,
 	ObsidianSkill,
-	type ObsidianSkillClient,
 	type ObsidianSkillOptions,
-	QmdClient,
-	type QmdOptions,
-	type QmdSearchHit,
-	type QmdSearchMode,
-	type QmdSearchResult,
 } from "./skills/obsidian/index.ts";
 export {
 	RssConnector,

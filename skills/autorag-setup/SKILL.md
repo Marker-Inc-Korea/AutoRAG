@@ -21,7 +21,8 @@ librarian, not the Lite MCP server.
 - Never print, copy, migrate, compare, or persist credential values. Store only
   environment-variable names such as `apiKeyEnv`.
 - Do not scan the whole filesystem or home directory without explicit approval.
-- Never move, rename, edit, or delete source documents.
+- Setup, indexing, and refresh never move, rename, edit, or delete source
+  documents. The librarian itself may organize files when the user asks it to.
 - Do not index system trees, app bundles, caches, credential stores,
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.
@@ -361,7 +362,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`lazykatok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`, `lark-cli`) and its
+   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `rclone`, `lark-cli`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
    tokens) are never required or checked for them. Non-CLI connectors

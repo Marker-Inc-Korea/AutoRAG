@@ -1,64 +1,53 @@
 import { join } from "node:path";
+import { sanitizeIdSegment } from "../../connector.ts";
 
 /**
- * Path helpers for the Obsidian (`qmd`) datasource skill.
+ * Path helpers for the Obsidian datasource.
  *
- * All AutoRAG-managed state lives under
- * `<workspaceRoot>/.autorag/datasources/obsidian/<instanceId>/`. The external
- * `qmd` CLI is pointed at isolated config/cache dirs so multiple workspaces
- * never share an index. Callers surface opaque slash-hierarchical sources of
- * the form `/obsidian/<instance-id>/chunks/<chunk-id>`.
+ * Everything AutoRAG owns for one vault lives under
+ * `<workspaceRoot>/.autorag/datasources/obsidian/<instance>/`: a MinSync workspace of its own
+ * (`minsync/`, never shared with the local-file index) and the staging record (`staging.json`)
+ * that maps staged notes back to the vault. Callers see slash-hierarchical opaque sources of
+ * the form `/obsidian/<instance>/<vault-relative note path>`.
  */
 
-export const AUTORAG_DIRNAME = ".autorag";
-export const DATASOURCES_DIRNAME = "datasources";
-export const OBSIDIAN_DATASOURCE_DIRNAME = "obsidian";
-export const OBSIDIAN_SOURCE_KIND = "obsidian" as const;
+export const OBSIDIAN_DATASOURCE_ID = "obsidian";
+export const OBSIDIAN_SKILL_TYPE = "obsidian-vault";
 
-export function obsidianDatasourceRoot(workspaceRoot: string, instanceId: string): string {
-	return join(workspaceRoot, AUTORAG_DIRNAME, DATASOURCES_DIRNAME, OBSIDIAN_DATASOURCE_DIRNAME, instanceId);
+export function obsidianDatasourceDir(workspaceRoot: string, instanceId: string): string {
+	return join(workspaceRoot, ".autorag", "datasources", OBSIDIAN_DATASOURCE_ID, sanitizeIdSegment(instanceId));
 }
 
-/** Directory passed to `QMD_CONFIG_DIR` (holds `index.yml`). */
-export function obsidianQmdConfigDir(workspaceRoot: string, instanceId: string): string {
-	return join(obsidianDatasourceRoot(workspaceRoot, instanceId), "config");
+/** The MinSync workspace this vault is indexed in; staged notes live in its `files/` folder. */
+export function obsidianMinSyncWorkspace(workspaceRoot: string, instanceId: string): string {
+	return join(obsidianDatasourceDir(workspaceRoot, instanceId), "minsync");
 }
 
-/** Directory passed to `XDG_CACHE_HOME` (holds `qmd/index.sqlite`). */
-export function obsidianQmdCacheDir(workspaceRoot: string, instanceId: string): string {
-	return join(obsidianDatasourceRoot(workspaceRoot, instanceId), "cache");
+/** Kept beside the MinSync workspace, outside the tree MinSync indexes. */
+export function obsidianStagingStatePath(workspaceRoot: string, instanceId: string): string {
+	return join(obsidianDatasourceDir(workspaceRoot, instanceId), "staging.json");
 }
 
-export function obsidianSourcePath(instanceId: string, chunkId: string): string {
-	return `/${OBSIDIAN_SOURCE_KIND}/${instanceId}/chunks/${chunkId}`;
-}
-
-export function parseObsidianSourcePath(
-	source: string,
-): { readonly instanceId: string; readonly chunkId: string } | undefined {
-	const match = /^\/obsidian\/([^/]+)\/chunks\/([^/]+)$/.exec(source);
-	if (match === null) return undefined;
-	const [, instanceId, chunkId] = match;
-	if (instanceId === undefined || chunkId === undefined) return undefined;
-	return { instanceId, chunkId };
-}
-
-/** Strip leading and trailing ASCII dashes without a quadratic regex. */
-export function stripEdgeDashes(value: string): string {
-	let start = 0;
-	let end = value.length;
-	while (start < end && value[start] === "-") start += 1;
-	while (end > start && value[end - 1] === "-") end -= 1;
-	return value.slice(start, end);
-}
-
-/** Sanitize an instance id into a qmd collection name. */
-export function toQmdCollectionName(instanceId: string): string {
-	const cleaned = stripEdgeDashes(
-		instanceId
-			.trim()
-			.toLowerCase()
-			.replace(/[^a-z0-9._-]+/g, "-"),
+/**
+ * Escape what would change the meaning of a source segment: `%` (the escape itself), `/` (the
+ * separator, possible in an instance id), `#` (datasource sources never carry a fragment), `\`
+ * (not valid in a virtual path) and `*` (a scope glob). Everything else, spaces and non-Latin
+ * letters included, stays readable.
+ */
+export function encodeSourceSegment(segment: string): string {
+	return segment.replace(
+		/[%/#\\*]/gu,
+		(character) => `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
 	);
-	return cleaned.length > 0 ? cleaned.slice(0, 64) : "default";
+}
+
+/** The root source of one vault: the scope that selects every note in it. */
+export function obsidianInstanceSource(instanceId: string): string {
+	return `/${OBSIDIAN_DATASOURCE_ID}/${encodeSourceSegment(instanceId)}`;
+}
+
+/** The source of one note, from its vault-relative path written with `/` separators. */
+export function obsidianNoteSource(instanceId: string, relativePath: string): string {
+	const segments = relativePath.normalize("NFC").split("/").map(encodeSourceSegment);
+	return `${obsidianInstanceSource(instanceId)}/${segments.join("/")}`;
 }

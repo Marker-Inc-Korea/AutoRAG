@@ -138,7 +138,7 @@ try {
 	check(
 		"manifest names Hister, its AGPL license and source, and the separate-program relationship",
 		manifest.includes("AGPL-3.0") &&
-			manifest.includes("https://github.com/asciimoo/hister") &&
+			manifest.includes("asciimoo/hister") &&
 			manifest.includes("separate program"),
 	);
 

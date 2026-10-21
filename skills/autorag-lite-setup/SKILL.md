@@ -17,9 +17,9 @@ Use `autorag-setup` instead when the model-backed librarian must be configured.
   `memoryPath`, `minSync`, `jikji`, `datasources`.
 - Never print, copy, migrate, compare, or persist credential values. Store only
   environment-variable names such as `tokenEnv` or `apiKeyEnv`.
-- Never move, rename, edit, or delete source documents. Lite commands write
-  indexes only under the configured workspace `.autorag/` directory and
-  Jikji's central store (`<OS data dir>/jikji/`).
+- Setup and Lite commands never move, rename, edit, or delete source documents.
+  They write indexes only under the configured workspace `.autorag/` directory
+  and Jikji's central store (`<OS data dir>/jikji/`).
 - Do not index system trees, app bundles, caches, credential stores,
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.
@@ -113,7 +113,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`lazykatok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`) and its
+   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `rclone`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
    tokens) are never required or checked for them. Non-CLI connectors

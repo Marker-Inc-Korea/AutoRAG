@@ -24,7 +24,9 @@ import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
+import { createAutoRAGMcpClient, mcpPromptAddendum } from "./mcp-client.ts";
 import { fitRequestLimits } from "./request-limits.ts";
+import { createWelcomeHeader } from "./welcome-header.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
 /**
@@ -108,12 +110,20 @@ export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessio
 	 * launch.
 	 */
 	readonly updateNotice?: () => Promise<string | undefined>;
+	/**
+	 * AutoRAG version shown on the welcome banner. Set only by the TUI: when present,
+	 * every session start (launch, `/new`, `/resume`, `/reload`) replaces pi's startup
+	 * header with the AutoRAG banner and hides pi's loaded-resource listing.
+	 */
+	readonly welcomeVersion?: string;
 }
 
 export interface AutoRAGPiSession {
 	readonly session: AgentSession;
 	readonly baseToolNames: readonly string[];
 	readonly sessionFile: string | undefined;
+	/** Stops what extensions started (MCP server processes), then disposes the session. */
+	readonly dispose: () => Promise<void>;
 }
 
 /** Adapts a pi-agent-core {@link AgentTool} to pi's extension {@link ToolDefinition}. */
@@ -229,7 +239,9 @@ function createAutoRAGExtension(
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
-		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
+		pi.on("before_agent_start", (event) => ({
+			systemPrompt: getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections),
+		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
 	};
@@ -301,7 +313,9 @@ function createAutoRAGInteractiveExtension(
 	updateNotice: (() => Promise<string | undefined>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
-		pi.on("before_agent_start", () => ({ systemPrompt: getSystemPrompt() }));
+		pi.on("before_agent_start", (event) => ({
+			systemPrompt: getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections),
+		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
 		if (updateNotice !== undefined) {
@@ -378,11 +392,15 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 	await configureModelRuntime(modelRuntime, options.model, options.apiKey, options.providerApiKeys);
 	const customTools = [...options.customTools];
 	const extensionToolNames = [...(options.extensionToolNames ?? [])];
+	// pi's MCP extension fills the `mcp_servers` prompt section in its own before_agent_start
+	// handler; AutoRAG's handler forces the prompt, so it has to run after that one.
+	const mcp = createAutoRAGMcpClient(agentDir);
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: options.cwd,
 		agentDir,
 		settingsManager,
 		extensionFactories: [
+			...(mcp?.extensionFactories ?? []),
 			createAutoRAGExtension(options.getSystemPrompt, options.contextTransform),
 			...(options.extensionFactories ?? []),
 		],
@@ -406,15 +424,26 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		sessionManager,
 		model: withBoundedOutput(options.model),
 		customTools: customToolDefinitions,
-		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames],
+		tools: [...PI_BUILTIN_TOOL_NAMES, ...customToolNames, ...extensionToolNames, ...(mcp?.toolNames ?? [])],
 		thinkingLevel: "off",
 	});
 	const initialToolNames = [...new Set([...session.getActiveToolNames(), ...customToolNames, ...extensionToolNames])];
 	session.setActiveToolsByName(initialToolNames);
+	// pi connects MCP servers on `session_start`, which only a bind emits and no TUI hosts this
+	// session. Binding is limited to sessions that have servers so every other headless search
+	// keeps running without extension lifecycle events.
+	if (mcp !== undefined) await session.bindExtensions({});
 	return {
 		session,
 		baseToolNames: initialToolNames,
 		sessionFile: session.sessionFile,
+		dispose: async () => {
+			try {
+				if (mcp !== undefined) await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+			} finally {
+				session.dispose();
+			}
+		},
 	};
 }
 
@@ -446,6 +475,8 @@ export async function createAutoRAGPiInteractiveRuntime(
 		sessionManager: runtimeSessionManager,
 		sessionStartEvent,
 	}) => {
+		// Built per runtime: /new, /resume, and fork each start a fresh session whose servers connect anew.
+		const mcp = createAutoRAGMcpClient(runtimeAgentDir);
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir: runtimeAgentDir,
@@ -457,6 +488,10 @@ export async function createAutoRAGPiInteractiveRuntime(
 			resourceLoaderOptions: {
 				...(options.extensionPaths === undefined ? {} : { additionalExtensionPaths: [...options.extensionPaths] }),
 				extensionFactories: [
+					...(mcp?.extensionFactories ?? []),
+					...(options.welcomeVersion === undefined
+						? []
+						: [createWelcomeHeader({ version: options.welcomeVersion, settings: settingsManager })]),
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,
 						options.contextTransform,
@@ -479,6 +514,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 				...PI_BUILTIN_TOOL_NAMES,
 				...options.customTools.map((tool) => tool.name),
 				...(options.extensionToolNames ?? []),
+				...(mcp?.toolNames ?? []),
 			],
 		});
 		if (options.inactiveToolNames !== undefined && options.inactiveToolNames.length > 0) {

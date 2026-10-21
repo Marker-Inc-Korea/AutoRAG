@@ -47,6 +47,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	// release check, injected into the same interactive session.
 	options.updateNotice = async () =>
 		renderAutoRAGUpdateNotice(await checkAutoRAGUpdate({ currentVersion: readPackageVersion() }));
+	// The first screen (and `/new`) is AutoRAG's banner, not pi's logo and key-hint listing.
+	options.welcomeVersion = readPackageVersion();
 	// Opt-in: the bridge opens an outbound Telegram poller once `/telegram-connect` runs.
 	if (ctx.flags.telegram === true) options.telegram = true;
 	if (ctx.flags.discord === true) options.discordRemote = true;

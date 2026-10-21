@@ -65,6 +65,7 @@ async function tuiAgent(
 	responses: FauxResponseStep[],
 	jev: JevBackend = jevRoute("direct"),
 	extra: Pick<AutoRAGAgentOptions, "datasourceSkills"> = {},
+	ui: Partial<ExtensionUIContext> = {},
 ) {
 	const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
 	registration.setResponses(responses);
@@ -94,6 +95,7 @@ async function tuiAgent(
 	await hosted.runtime.session.bindExtensions({
 		uiContext: {
 			...noUi(),
+			...ui,
 			onTerminalInput: (handler) => {
 				keyListeners.add(handler);
 				return () => keyListeners.delete(handler);
@@ -1118,6 +1120,153 @@ describe("AutoRAG pi coding-agent host", () => {
 				expect(response.results.map((result) => result.title)).toEqual(["a.txt", "b.txt"]);
 			} finally {
 				await resumed.dispose();
+			}
+		});
+	});
+
+	describe("search progress widget", () => {
+		const PROGRESS_KEY = "autorag-search-progress";
+		interface WidgetComponent {
+			render(width: number): string[];
+			dispose?(): void;
+		}
+		type WidgetFactory = (
+			tui: { requestRender(): void },
+			theme: { fg(color: string, text: string): string },
+		) => WidgetComponent;
+
+		/** Records pi widget calls; `lines()` renders whatever progress widget is currently shown. */
+		function widgetRecorder() {
+			const calls: { key: string; shown: boolean }[] = [];
+			let current: WidgetComponent | undefined;
+			let disposed = 0;
+			const setWidget = (key: string, content: unknown): void => {
+				current?.dispose?.();
+				if (current !== undefined) disposed += 1;
+				current = undefined;
+				calls.push({ key, shown: content !== undefined });
+				if (typeof content === "function") {
+					current = (content as WidgetFactory)({ requestRender: () => undefined }, { fg: (_c, text) => text });
+				}
+			};
+			return {
+				ui: { setWidget } as unknown as Partial<ExtensionUIContext>,
+				calls,
+				lines: (): string[] => current?.render(100) ?? [],
+				disposed: () => disposed,
+			};
+		}
+
+		function localRouting() {
+			return new MockBackend({
+				[QUERY_ROUTE_QUESTION_ID]: {
+					answer: "local",
+					distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+					confidence: 0.8,
+				},
+				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
+				[datasourceQuestionId("kakao")]: { answer: 0.9 },
+			});
+		}
+
+		it("shows a live progress widget the moment a question is submitted, before any retrieval returns", async () => {
+			const routing = holdingJev(localRouting(), QUERY_ROUTE_QUESTION_ID);
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent(
+				[fauxAssistantMessage("Fast answer.", { stopReason: "stop" })],
+				routing.backend,
+				{},
+				widgets.ui,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await routing.entered;
+
+				expect(widgets.calls).toEqual([{ key: PROGRESS_KEY, shown: true }]);
+				const lines = widgets.lines();
+				expect(lines[0]).toContain("Searching");
+				expect(lines.join("\n")).toContain("Routing the question");
+				routing.release();
+				await tui.agent.waitForIdle();
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("names the source the baseline prefetch is still waiting on, and removes the widget when the search ends", async () => {
+			const datasource = slowDatasource("kakao");
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent(
+				[
+					fauxAssistantMessage("Fast answer.", { stopReason: "stop" }),
+					fauxAssistantMessage("Verified.", { stopReason: "stop" }),
+				],
+				localRouting(),
+				{ datasourceSkills: [datasource.skill] },
+				widgets.ui,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await datasource.entered;
+
+				const waiting = widgets.lines().join("\n");
+				expect(waiting).toMatch(/✓ Routing the question — local/u);
+				expect(waiting).toMatch(/Datasource kakao · \d+s/u);
+				expect(waiting).toContain("MinSync");
+
+				datasource.release();
+				await tui.agent.waitForIdle();
+
+				expect(widgets.calls.at(-1)).toEqual({ key: PROGRESS_KEY, shown: false });
+				expect(widgets.lines()).toEqual([]);
+				expect(widgets.disposed()).toBe(1);
+			} finally {
+				datasource.release();
+				await tui.dispose();
+			}
+		});
+
+		it("removes the widget when the user stops the search with Esc", async () => {
+			const routing = holdingJev(localRouting(), QUERY_ROUTE_QUESTION_ID);
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent([], routing.backend, {}, widgets.ui);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await routing.entered;
+				expect(tui.pressKey("\x1b")).toBe(true);
+				routing.release();
+				await tui.agent.waitForIdle();
+
+				expect(widgets.calls.at(-1)).toEqual({ key: PROGRESS_KEY, shown: false });
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("shows the progress of each follow-up question queued behind the first", async () => {
+			const first = heldStep(fauxAssistantMessage("First answer.", { stopReason: "stop" }));
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent(
+				[first.held, fauxAssistantMessage("Second answer.", { stopReason: "stop" })],
+				jevRoute("direct"),
+				{},
+				widgets.ui,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await first.entered;
+				await tui.session.prompt("Who painted the Mona Lisa?", {
+					source: "interactive",
+					streamingBehavior: "followUp",
+				});
+				first.release();
+				await tui.agent.waitForIdle();
+
+				// One widget per question: shown, removed, shown, removed.
+				expect(widgets.calls.map((call) => call.shown)).toEqual([true, false, true, false]);
+			} finally {
+				await tui.dispose();
 			}
 		});
 	});

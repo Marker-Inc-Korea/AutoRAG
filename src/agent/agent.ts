@@ -5,7 +5,7 @@ import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, keyText } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
@@ -178,6 +178,7 @@ import {
 	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
+import { createSearchProgressExtension, SearchProgressTracker } from "./search-progress.ts";
 import {
 	createSingleDatasourceSearchTools,
 	type SingleDatasourceToolSpec,
@@ -682,6 +683,8 @@ export interface AutoRAGAgentOptions {
 	 * a launch.
 	 */
 	updateNotice?: () => Promise<string | undefined>;
+	/** Interactive only: show the AutoRAG welcome banner (with this version) instead of pi's startup header. */
+	welcomeVersion?: string;
 	/** Extension entry files (installed pi packages) loaded into the interactive session. */
 	piExtensionPaths?: readonly string[];
 	/** Flag values for the flags those extensions register. */
@@ -718,7 +721,7 @@ export interface AutoRAGSearchSession {
 	readonly piSession?: AutoRAGPiSession["session"];
 	prompt(text: string): Promise<void>;
 	abort(): Promise<void> | void;
-	dispose(): void;
+	dispose(): void | Promise<void>;
 }
 
 export type AutoRAGJikjiPrepareResult =
@@ -814,6 +817,8 @@ export class AutoRAGAgent {
 		nextSubmitIsFollowUp: false,
 		steerTexts: new Set(),
 	};
+	/** What the running search is doing, shown as a live widget in the TUI. */
+	private readonly searchProgress = new SearchProgressTracker();
 	/** Aborted by {@link abort} and by the run's timeout: gates publishing and the run's own requests. */
 	private activeRunAbort: AbortController | undefined;
 	private modelNativeSearchAuth: ModelNativeSearchAuth | undefined;
@@ -885,6 +890,7 @@ export class AutoRAGAgent {
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
+	private readonly welcomeVersion: string | undefined;
 	private readonly piExtensionPaths: readonly string[] | undefined;
 	private readonly piExtensionFlags: Readonly<Record<string, string | boolean>> | undefined;
 	private readonly telegram: boolean;
@@ -920,6 +926,7 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
+		this.welcomeVersion = options.welcomeVersion;
 		this.piExtensionPaths = options.piExtensionPaths;
 		this.piExtensionFlags = options.piExtensionFlags;
 		this.telegram = options.telegram === true;
@@ -1437,7 +1444,7 @@ export class AutoRAGAgent {
 			piSession: piSession.session,
 			prompt: async (prompt) => piSession.session.prompt(prompt, { source: "extension" }),
 			abort: async () => piSession.session.abort(),
-			dispose: () => piSession.session.dispose(),
+			dispose: () => piSession.dispose(),
 		};
 	}
 
@@ -1551,6 +1558,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				createEvidencePersistence(this.evidenceLedger),
+				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
 				createEmbeddingControls({
 					embedder: this.embedder,
 					remote: remoteEmbedderFromMinSync(this.minSyncEmbedderConfig) !== undefined,
@@ -1570,6 +1578,7 @@ export class AutoRAGAgent {
 				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
 			],
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
+			...(this.welcomeVersion === undefined ? {} : { welcomeVersion: this.welcomeVersion }),
 			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
 			...(this.piExtensionFlags === undefined ? {} : { extensionFlags: this.piExtensionFlags }),
 		});
@@ -1884,6 +1893,7 @@ export class AutoRAGAgent {
 		// Jev gate and the baseline pipeline.
 		const conversational = this.isConversationTurn();
 		this.activeRun = true;
+		this.searchProgress.begin(trimmedQuery);
 		this.toolBurstGuard.reset();
 		this.retrievalTrace = [];
 		// A conversation keeps one evidence ledger for its whole life: the transcript still shows the earlier
@@ -1989,7 +1999,7 @@ export class AutoRAGAgent {
 				};
 				if (conversational) {
 					setThinking(this.finalThinkingLevel);
-					await activeSession.prompt(trimmedQuery);
+					await this.searchProgress.step("answer", "Answering", () => activeSession.prompt(trimmedQuery));
 					// A steer typed after the turn's last model request is still owed an answer.
 					while (
 						!this.interactive.userAborted &&
@@ -2064,7 +2074,9 @@ export class AutoRAGAgent {
 					// phase: the fast answer is the final answer. Only Jev routes
 					// here, so the preliminary was never published.
 					setThinking(this.fastThinkingLevel);
-					await activeSession.prompt(this.buildDirectAnswerPrompt(trimmedQuery));
+					await this.searchProgress.step("direct", "Answering from the model's own knowledge", () =>
+						activeSession.prompt(this.buildDirectAnswerPrompt(trimmedQuery)),
+					);
 					if (stopped()) return;
 					directText = finalAnswerText(transcript());
 					// A steer typed while the direct answer streamed questions it: verify instead.
@@ -2082,7 +2094,9 @@ export class AutoRAGAgent {
 				let preliminary: AutoRAGResultsDetails | undefined;
 				if (plan.route !== "direct") {
 					setThinking(this.fastThinkingLevel);
-					await activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
+					await this.searchProgress.step("fast", "Drafting a first answer", () =>
+						activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline)),
+					);
 					if (stopped()) return;
 					fastText = finalAnswerText(transcript());
 					preliminary = fastText === undefined ? undefined : this.deriveAnswer(fastText);
@@ -2092,7 +2106,18 @@ export class AutoRAGAgent {
 					// With Jev enabled, a fast answer that needs no correction,
 					// clarification, or further research ends the run here. A steer
 					// means the search is going wrong, so it always verifies.
-					const followUp = steered() || (await this.shouldFollowUp(trimmedQuery, preliminary));
+					// Without Jev there is no check to show: `shouldFollowUp` answers true at once.
+					const checkFollowUp = (): Promise<boolean> => this.shouldFollowUp(trimmedQuery, preliminary);
+					const followUp =
+						steered() ||
+						(this.jevJudge === undefined
+							? await checkFollowUp()
+							: await this.searchProgress.step(
+									"followup",
+									"Checking whether the first answer needs verification",
+									checkFollowUp,
+									(needed) => (needed ? "verifying" : "final"),
+								));
 					// The follow-up check is not tied to the session abort, so it
 					// can resolve after the run's timeout fired; stop here rather
 					// than publishing or prompting on behalf of a dead run.
@@ -2109,13 +2134,15 @@ export class AutoRAGAgent {
 				// The model gets its own first answer verbatim, with the [eN] ids it
 				// wrote: the caller's copy was renumbered to [n], and the prompt tells
 				// the model its [eN] ids are still valid.
-				await activeSession.prompt(
-					this.buildRefinementPrompt(
-						trimmedQuery,
-						options,
-						fastText,
-						fastAnswerDelivered,
-						this.interactive.steers,
+				await this.searchProgress.step("verify", "Verifying the answer against the sources", () =>
+					activeSession.prompt(
+						this.buildRefinementPrompt(
+							trimmedQuery,
+							options,
+							fastText,
+							fastAnswerDelivered,
+							this.interactive.steers,
+						),
 					),
 				);
 				// A steer typed after verification's last model request is still owed an
@@ -2131,6 +2158,8 @@ export class AutoRAGAgent {
 			})().finally(() => {
 				// Every early return decides synchronously after its last steer check.
 				steering.acceptingSteers = false;
+				// The answer is complete; judging its evidence for memory is housekeeping, not search.
+				this.searchProgress.end();
 			});
 
 			if (captured === undefined) {
@@ -2209,12 +2238,7 @@ export class AutoRAGAgent {
 			}
 			throw error;
 		} finally {
-			const cleanupActions: readonly (() => void)[] = [
-				...unsubscribers,
-				() => {
-					session?.dispose();
-				},
-			];
+			const cleanupActions: readonly (() => void)[] = [...unsubscribers, () => session?.dispose()];
 			const cleanupResults = await Promise.allSettled(
 				cleanupActions.map((cleanup) => Promise.resolve().then(cleanup)),
 			);
@@ -2234,6 +2258,7 @@ export class AutoRAGAgent {
 					],
 				});
 			}
+			this.searchProgress.end();
 			this.activeSession = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
@@ -2492,8 +2517,14 @@ export class AutoRAGAgent {
 		readonly datasources: readonly string[];
 		readonly selfConfigSkill?: string;
 	}> {
-		if (this.jevJudge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
-		const decision = await routeQuery(this.jevJudge, query, { selfConfig: this.selfConfig !== undefined });
+		const judge = this.jevJudge;
+		if (judge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+		const decision = await this.searchProgress.step(
+			"route",
+			"Routing the question",
+			() => routeQuery(judge, query, { selfConfig: this.selfConfig !== undefined }),
+			(routed) => routed.route,
+		);
 		if (decision.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "query-route-fallback",
@@ -2518,7 +2549,15 @@ export class AutoRAGAgent {
 				route = FALLBACK_QUERY_ROUTE;
 			}
 		}
-		const datasourcesPromise = route === "local" ? this.selectSearchDatasources(query) : Promise.resolve([]);
+		const datasourcesPromise =
+			route === "local"
+				? this.searchProgress.step(
+						"datasource-select",
+						"Choosing datasources to search",
+						() => this.selectSearchDatasources(query),
+						(ids) => (ids.length === 0 ? "none" : ids.join(", ")),
+					)
+				: Promise.resolve([]);
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route !== "direct") {
 			const target = this.queryDecompositionModel ?? {
@@ -2528,7 +2567,12 @@ export class AutoRAGAgent {
 					: {}),
 			};
 			try {
-				queries = await decomposeQuery(createModelDecompositionCompleter(target, signal), query);
+				queries = await this.searchProgress.step(
+					"decompose",
+					"Splitting the question into search queries",
+					() => decomposeQuery(createModelDecompositionCompleter(target, signal), query),
+					(list) => `${list.length} ${list.length === 1 ? "query" : "queries"}`,
+				);
 			} catch (error) {
 				this.routingDiagnostics.push({
 					code: "query-decomposition-failed",
@@ -2647,21 +2691,43 @@ export class AutoRAGAgent {
 				Promise.all([
 					this.jikjiClient === undefined
 						? Promise.resolve(undefined)
-						: this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK, signal }).catch(
-								() => undefined,
-							),
-					this.minSyncMethod.retrieve(searchQuery, retrieveOptions).catch((error: unknown) => {
-						// MinSync is required: its absence fails the run, anything else is one empty source.
-						if (error instanceof MinSyncRequiredError) throw error;
-						return [];
-					}),
+						: this.searchProgress
+								.track(
+									"jikji",
+									"Jikji file discovery",
+									this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK, signal }),
+									{
+										count: (found) => found.answerPack?.answerPaths.length ?? 0,
+									},
+								)
+								.catch(() => undefined),
+					this.searchProgress
+						.track(
+							"minsync",
+							"MinSync semantic search",
+							this.minSyncMethod.retrieve(searchQuery, retrieveOptions),
+							{
+								count: (found) => found.length,
+							},
+						)
+						.catch((error: unknown) => {
+							// MinSync is required: its absence fails the run, anything else is one empty source.
+							if (error instanceof MinSyncRequiredError) throw error;
+							return [];
+						}),
 					Promise.all(
 						datasources.map((datasourceId) =>
-							this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
-								topK: this.limits.singleDatasourceTopK,
-								scope: options.scope,
-								signal,
-							})
+							this.searchProgress
+								.track(
+									`datasource:${datasourceId}`,
+									`Datasource ${datasourceId}`,
+									this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
+										topK: this.limits.singleDatasourceTopK,
+										scope: options.scope,
+										signal,
+									}),
+									{ count: (outcome) => outcome.results.length },
+								)
 								.then((outcome) => outcome.results)
 								.catch((): RetrievalResult[] => []),
 						),
@@ -2722,7 +2788,12 @@ export class AutoRAGAgent {
 		let reranked: RetrievalResult[] | undefined;
 		let rerankFailed = false;
 		try {
-			reranked = await this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults, signal);
+			reranked = await this.searchProgress.step(
+				"rerank",
+				"Ranking the candidates",
+				() => this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults, signal),
+				(ranked) => (ranked === undefined ? undefined : `${ranked.length} kept`),
+			);
 		} catch (error) {
 			rerankFailed = true;
 			// A steer abort cuts the request short; that is not a reranker failure.

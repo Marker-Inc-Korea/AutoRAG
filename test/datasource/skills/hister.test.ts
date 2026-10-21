@@ -391,6 +391,30 @@ describe("HisterClient construction guards", () => {
 	});
 });
 
+describe("HisterClient input handling", () => {
+	it("trims trailing slashes from the base URL in linear time, whatever the input", () => {
+		const hostile = `http://127.0.0.1:4433${"/".repeat(200_000)}`;
+		const started = performance.now();
+		const client = new HisterClient({ baseUrl: hostile });
+		expect(performance.now() - started).toBeLessThan(200);
+		expect(client.baseUrl).toBe("http://127.0.0.1:4433");
+		expect(new HisterClient({ baseUrl: "http://127.0.0.1:4433/hister/" }).baseUrl).toBe(
+			"http://127.0.0.1:4433/hister",
+		);
+	});
+
+	it("tokenizes a question with a long run of dots or colons in linear time, keeping phrases whole", async () => {
+		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+		const started = performance.now();
+		await lexical?.retrieve(`${"a.".repeat(50_000)} ${"x:".repeat(50_000)}`, {});
+		expect(performance.now() - started).toBeLessThan(1_000);
+		expect(calls).toHaveLength(1);
+		await lexical?.retrieve('title:"hello world" -"bad phrase" plain', {});
+		expect(calls[1]?.query?.text).toBe('(title:"hello world" -"bad phrase" plain) type:web');
+	});
+});
+
 describe("hister through the datasource factory", () => {
 	it("builds from config and exposes a path-opaque, license-honest manifest", () => {
 		const { skills, unknown } = buildDatasourceSkills({
