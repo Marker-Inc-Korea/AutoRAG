@@ -91,6 +91,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 		const text = prompt();
 		expect(text).toContain("document collections, cloud drives, images, and messenger history");
 		expect(text).not.toContain("librarian agent for codebases");
+		expect(text).toContain("personal librarian agent that assists the user's office work");
 	});
 
 	it("includes bullet-point answer guidelines, honest uncertainty, and omits per-source negative reports", () => {

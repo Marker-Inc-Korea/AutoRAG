@@ -17,9 +17,9 @@ Use `autorag-setup` instead when the model-backed librarian must be configured.
   `memoryPath`, `minSync`, `jikji`, `datasources`.
 - Never print, copy, migrate, compare, or persist credential values. Store only
   environment-variable names such as `tokenEnv` or `apiKeyEnv`.
-- Never move, rename, edit, or delete source documents. Lite commands write
-  indexes only under the configured workspace `.autorag/` directory and
-  Jikji's central store (`<OS data dir>/jikji/`).
+- Setup and Lite commands never move, rename, edit, or delete source documents.
+  They write indexes only under the configured workspace `.autorag/` directory
+  and Jikji's central store (`<OS data dir>/jikji/`).
 - Do not index system trees, app bundles, caches, credential stores,
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.

@@ -1,4 +1,4 @@
-# AutoRAG — Pi-Powered Librarian Agent
+# AutoRAG — Pi-Powered Personal Librarian Agent
 
 ## Guardrails
 
@@ -333,7 +333,7 @@ runner.
 
 ## Purpose
 
-AutoRAG is an **over-powered librarian agent** for **document collections** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a librarian, used through one library/programmatic API (and a thin CLI).
+AutoRAG is a **personal librarian agent** that assists the user's everyday office work. It finds what is in the user's **documents, mail, chats, notes, and cloud drives** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus — and, in local sessions, acts on the user's own files when asked. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a librarian, used through one library/programmatic API (and a thin CLI).
 
 Searches run in one agent loop: the librarian chooses retrieval methods, reads source files directly, judges the evidence, and curates structured results. The model and provider come from the user's authenticated runtime; the distributed package does not assume a private provider.
 
@@ -370,6 +370,33 @@ Rationale for value 1 comes from the competitive landscape study
 (see `docs/competitive-landscape-2026-09.md`): MCP-native, local-first, and
 hybrid retrieval are commoditized, while harness-free federation with
 source-native provenance is the durable differentiator.
+
+### Acting on the user's files
+
+The librarian is not read-only. In local sessions it may organize, create, and
+modify the user's files when the user asks: rename, move, copy, create folders,
+write new files, edit or replace existing files, and move files to the OS trash
+(`src/agent/system-prompt.ts`, "Local File Organization"). The boundaries are:
+
+- **No permanent deletion.** Never `rm`, `shred`, or `find -delete`. Deletion
+  goes to the OS trash. Overwriting an existing file is allowed when the user
+  asks for it.
+- **Every change is reported** as old path → new path in the answer, so "undo
+  that" works from the conversation alone.
+- **Only when asked.** Retrieval, answering, and curation never modify files on
+  their own.
+- **Indexing is separate.** `refresh`, `watch`, `lite`, `setup`, and `doctor`
+  never modify source documents; they write only under the workspace
+  `.autorag/` directory, Jikji's central store, and `~/.autorag`. Agents that
+  install, configure, or repair AutoRAG (Claude Code, Codex, …) follow that
+  rule; it is a statement about those procedures, not a limit on the librarian.
+- **Datasource native stores are owned by their CLIs.** AutoRAG reads them
+  (the sidecar opens crawler archives `mode=ro`) and never deletes or rewrites
+  them; rebuilding is the owning CLI's job.
+- **Acting on external systems** (sending mail or messages, creating calendar
+  events, writing to a SaaS) needs its own design for credential location,
+  explicit user approval, and an audit trail before it ships. Secrets still
+  stay with the tool that owns them.
 
 ## New CLI-backed datasource
 
