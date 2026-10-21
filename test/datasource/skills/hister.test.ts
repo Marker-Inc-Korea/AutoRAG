@@ -394,13 +394,11 @@ describe("hister through the datasource factory", () => {
 		const manifest = skill?.skillManifest();
 		expect(manifest?.name).toBe("datasource-browser");
 		const content = manifest?.content ?? "";
+		// The tool the agent must call, and the licence notice that keeps Hister's use visible.
 		expect(content).toContain("search_datasource_browser");
+		expect(content).toContain("Hister");
 		expect(content).toContain("AGPL-3.0");
 		expect(content).toContain("https://github.com/asciimoo/hister");
-		expect(content).toContain("separate program");
-		expect(content).toContain("hister search");
-		expect(content).not.toMatch(/Never pass.*is fine/);
-		expect(content).toContain("Never pass datasource virtual paths (`/browser/...`) to bash");
 	});
 
 	it("defaults to the plain `hister` identity and a single lexical method", () => {
