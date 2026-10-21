@@ -18,9 +18,9 @@ separate model role.
 Indexing and refresh read source documents and write only under the configured
 workspace `.autorag/` directory and Jikji's central store (`<OS data dir>/jikji/`,
 plus a `.jikji_agent_map.md` guide in each indexed root). The librarian may
-organize or create the user's own files in local sessions when the user asks;
-it never deletes permanently (OS trash only) and lists every change as old path
-→ new path. Do not move, rename, edit, or delete source files on your own
+organize, create, or modify the user's own files in local sessions when the
+user asks; it never deletes permanently (OS trash only) and lists every change
+as old path → new path. Do not move, rename, edit, or delete source files on your own
 initiative while searching or diagnosing.
 
 ## Preflight

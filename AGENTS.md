@@ -373,14 +373,14 @@ source-native provenance is the durable differentiator.
 
 ### Acting on the user's files
 
-The librarian is not read-only. In local sessions it may organize and create the
-user's files when the user asks: rename, move, copy, create folders, write new
-files, and move files to the OS trash (`src/agent/system-prompt.ts`, "Local File
-Organization"). The boundaries are:
+The librarian is not read-only. In local sessions it may organize, create, and
+modify the user's files when the user asks: rename, move, copy, create folders,
+write new files, edit or replace existing files, and move files to the OS trash
+(`src/agent/system-prompt.ts`, "Local File Organization"). The boundaries are:
 
-- **Reversible by default.** Never permanently delete (`rm`, `shred`, `find
-  -delete`, overwriting an existing file). Deletion goes to the OS trash.
-  Collisions use no-clobber (`mv -n`, `cp -n`).
+- **No permanent deletion.** Never `rm`, `shred`, or `find -delete`. Deletion
+  goes to the OS trash. Overwriting an existing file is allowed when the user
+  asks for it.
 - **Every change is reported** as old path → new path in the answer, so "undo
   that" works from the conversation alone.
 - **Only when asked.** Retrieval, answering, and curation never modify files on

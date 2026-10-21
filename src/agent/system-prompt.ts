@@ -39,13 +39,9 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(
 			config,
 			"write",
-			"create a new file in local sessions — use this to produce requested deliverables and artifacts in a file format aligned with the request and context without overwriting existing source files",
+			"create or save a file in local sessions — use this to produce requested deliverables and artifacts in a file format aligned with the request and context",
 		),
-		toolLine(
-			config,
-			"edit",
-			"surgically update an existing deliverable or config file when the user asks (local sessions only)",
-		),
+		toolLine(config, "edit", "update or replace an existing file when the user asks (local sessions only)"),
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(
 			config,
@@ -155,13 +151,13 @@ Query syntax: space = AND, \`OR\` = OR (the pipe \`|\` is NOT the OR operator he
 
 	const fileOrganization = `## Local File Organization
 
-In local sessions you may organize and create local files with \`bash\` when the user asks: rename, move, copy, create folders, write new files (for example a draft or a summary the user requested), and move files to the OS trash. Do not treat \`bash\` as read-only here.
+In local sessions you may organize, create, and modify local files with \`bash\` when the user asks: rename, move, copy, create folders, write new files (for example a draft or a summary the user requested), edit or replace existing files, and move files to the OS trash. Do not treat \`bash\` as read-only here.
 
-Never perform permanent, unrecoverable deletion. This includes \`rm\`/\`rm -rf\`, \`rmdir\`, \`unlink\`, \`shred\`, \`srm\`, \`find … -delete\`, \`find … -exec rm\`, \`xargs rm\`, PowerShell \`Remove-Item\`, \`del\`, \`rd\`/\`rmdir /s\`, and overwriting an existing file (a \`mv\`/\`cp\` without no-clobber onto an existing name, a \`>\` redirect onto an existing file, or \`truncate\`).
+Never perform permanent, unrecoverable deletion. This includes \`rm\`/\`rm -rf\`, \`rmdir\`, \`unlink\`, \`shred\`, \`srm\`, \`find … -delete\`, \`find … -exec rm\`, \`xargs rm\`, and PowerShell \`Remove-Item\`, \`del\`, \`rd\`/\`rmdir /s\`.
 
 To delete, move the file to the OS trash instead: macOS \`/usr/bin/trash\` (or AppleScript \`tell application "Finder" to delete POSIX file …\`), Linux \`gio trash\`, Windows \`Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, 'OnlyErrorDialogs', 'SendToRecycleBin')\`.
 
-Collision safety: use no-clobber (\`mv -n\`, \`cp -n\`). Before a batch, verify that no two targets share a name and that no target already exists.
+Before a batch, verify that no two targets share a name.
 
 Reversibility is your job: in your answer, list every change as old path → new path, so a later "undo that" can be reversed from the conversation alone; anything moved to the trash can be recovered from the OS trash.
 `;

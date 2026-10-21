@@ -166,7 +166,7 @@ The app is one way in. The same librarian runs everywhere else:
 
 Search tools dump file paths and matching lines — forcing you to open files, read context, and synthesize answers yourself.
 
-**AutoRAG Agent is a personal librarian agent that helps with your office work.** Built on the [Pi](https://github.com/earendil-works/pi-mono) agent framework, a single configured model searches your files, mail, chats, and notes in place, opens source documents directly via `bash` to verify ground truth, and curates answers into clean, numbered knowledge units. Because it works for you rather than only on your index, it can also act on your files when you ask, such as organizing, renaming, or moving them with a recoverable record of every change:
+**AutoRAG Agent is a personal librarian agent that helps with your office work.** Built on the [Pi](https://github.com/earendil-works/pi-mono) agent framework, a single configured model searches your files, mail, chats, and notes in place, opens source documents directly via `bash` to verify ground truth, and curates answers into clean, numbered knowledge units. Because it works for you rather than only on your index, it can also act on your files when you ask, such as organizing, renaming, moving, or editing them with a record of every change:
 
 ```text
 You ask:  "What changes were made to the cloud infrastructure contract in Q3?"
@@ -584,7 +584,7 @@ Do not copy or retain the removed `autorag-lite-search` skill.
    autorag search "your question" --json
    ```
 4. **Safety Guidelines for Agents:**
-   - **Setup, diagnostics, indexing, and refresh never modify your documents.** An agent that installs, configures, or repairs AutoRAG (Claude Code, Codex, and similar) must not move, rename, edit, or delete user documents as part of that work. That rule is about those procedures; it is not a limit on the librarian itself, which may organize or create files in local sessions when the user asks (see `Local File Organization` in the system prompt).
+   - **Setup, diagnostics, indexing, and refresh never modify your documents.** An agent that installs, configures, or repairs AutoRAG (Claude Code, Codex, and similar) must not move, rename, edit, or delete user documents as part of that work. That rule is about those procedures; it is not a limit on the librarian itself, which may organize, create, or modify files in local sessions when the user asks (see `Local File Organization` in the system prompt).
    - **Never permanently delete.** Deletion goes to the OS trash, and every change is listed as old path → new path so it can be undone.
    - AutoRAG writes index artifacts into `<workspace>/.autorag/` and Jikji's central store (`<OS data dir>/jikji/`, override with `JIKJI_DATA_DIR`). Jikji also drops a `.jikji_agent_map.md` guide into each indexed root.
    - Never print or leak API keys, tokens, or credential values into stdout or logs.
