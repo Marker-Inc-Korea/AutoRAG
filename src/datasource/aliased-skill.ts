@@ -102,7 +102,7 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 						...this.channelIds,
 						...this.channelNames,
 					].join(", ")}.`;
-		const rewritten = rewriteSource(manifest.content, this.originalId, this.alias);
+		const rewritten = rewriteManifestText(manifest.content, this.originalId, this.alias);
 		return {
 			name: `datasource-${this.alias}`,
 			description: `${manifest.description} Connection alias: ${this.alias}.`,
@@ -142,7 +142,15 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 	}
 }
 
+/** Swap the leading datasource segment of a source or scope; a deeper segment with the same name is data. */
 function rewriteSource(value: string, originalId: string, alias: string): string {
+	const root = `/${originalId}`;
+	if (value === root) return `/${alias}`;
+	return value.startsWith(`${root}/`) ? `/${alias}${value.slice(root.length)}` : value;
+}
+
+/** Manifest prose names the datasource in several places, so every mention is rewritten. */
+function rewriteManifestText(value: string, originalId: string, alias: string): string {
 	return value
 		.replaceAll(`/${originalId}/`, `/${alias}/`)
 		.replaceAll(`datasource-${originalId}`, `datasource-${alias}`);

@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 
 export const DATASOURCE_BINARIES = Object.freeze([
-  "lazykatok", "discrawl", "qmd", "rclone", "mailcrawl", "jikji", "minsync",
+  "lazykatok", "discrawl", "rclone", "mailcrawl", "jikji", "minsync",
 ]);
 
 const EXPECTED_MODEL = "Qwen/Qwen3-Embedding-0.6B";

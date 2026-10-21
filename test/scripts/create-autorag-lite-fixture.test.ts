@@ -62,7 +62,7 @@ describe("create-autorag-lite-fixture", () => {
 		expect(result.ok).toBe(true);
 		expect(result.root).toBe(TEST_ROOT);
 		expect(result.datasources).toEqual(["missing-cli"]);
-		expect(result.missingBinaryPath).toBe("/definitely/missing/autorag-lite-cli");
+		expect(result.missingVaultPath).toBe("/definitely/missing/autorag-lite-vault");
 		expect(result.contents["docs/README.md"].size).toBeGreaterThan(100);
 		expect(result.contents["workspace/data/notes.txt"].size).toBeGreaterThan(100);
 		expect(result.contents["workspace/src/main.ts"].size).toBeGreaterThan(50);
@@ -83,8 +83,8 @@ describe("create-autorag-lite-fixture", () => {
 		expect(config.minSync.autoInstall).toBe(false);
 		expect(config.jikji).toBe(false);
 		expect(config.datasources["missing-cli"].type).toBe("obsidian");
-		expect(config.datasources["missing-cli"].connector.vaultPath).toBe(join(TEST_ROOT, "workspace"));
-		expect(config.datasources["missing-cli"].connector.binaryPath).toBe("/definitely/missing/autorag-lite-cli");
+		expect(config.datasources["missing-cli"].connector.vaultPath).toBe("/definitely/missing/autorag-lite-vault");
+		expect(config.datasources["missing-cli"].connector.binaryPath).toBeUndefined();
 		const datasourceResult = buildDatasourceSkills(config.datasources, TEST_ROOT);
 		expect(datasourceResult.unknown).toEqual([]);
 		expect(datasourceResult.skills).toHaveLength(1);
@@ -192,6 +192,6 @@ describe("create-autorag-lite-fixture", () => {
 		expect(out).toContain("config.json");
 		expect(out).toContain("datasource: missing-cli");
 		expect(out).toContain("cleanup");
-		expect(out).toContain("definitely/missing/autorag-lite-cli");
+		expect(out).toContain("definitely/missing/autorag-lite-vault");
 	});
 });

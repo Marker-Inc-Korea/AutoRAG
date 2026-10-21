@@ -81,8 +81,8 @@ contracts without requiring a model or agent loop.
 ## Notes
 
 - All paths in config.json are relative to this fixture root.
-- The "missing-cli" datasource entry deliberately sets binaryPath to
-  a non-existent executable to test diagnostics.
+- The "missing-cli" datasource entry deliberately sets vaultPath to
+  a non-existent folder to test diagnostics.
 - This fixture requires no network access, MinSync server, Jikji index,
   or Ollama instance.
 `;
@@ -123,11 +123,9 @@ function buildConfig(baseRoot) {
 			"missing-cli": {
 				type: "obsidian",
 				description:
-					"A deliberately misconfigured datasource whose external CLI binary does not exist on disk. Used to test graceful diagnostics without affecting other refresh methods.",
+					"A deliberately misconfigured datasource whose vault folder does not exist on disk. Used to test graceful diagnostics without affecting other refresh methods.",
 				connector: {
-					vaultPath: join(baseRoot, "workspace"),
-					binaryPath: "/definitely/missing/autorag-lite-cli",
-					configPath: "/definitely/missing/config",
+					vaultPath: "/definitely/missing/autorag-lite-vault",
 				},
 				tags: ["test-fixture", "missing-binary"],
 			},
@@ -199,9 +197,7 @@ const unrefreshedConfig = {
 			description:
 				"A deliberately misconfigured datasource for un-refreshed fixtures. Environment has never been initialized.",
 			connector: {
-				vaultPath: join(root, "workspace"),
-				binaryPath: "/definitely/missing/autorag-lite-cli",
-				configPath: "/definitely/missing/config",
+				vaultPath: "/definitely/missing/autorag-lite-vault",
 			},
 			tags: ["test-fixture", "missing-binary"],
 		},
@@ -227,7 +223,7 @@ const output = {
 		"workspace/src/main.ts": { size: SOURCE_CODE.length },
 	},
 	datasources: Object.keys(config.datasources),
-	missingBinaryPath: config.datasources["missing-cli"].connector.binaryPath,
+	missingVaultPath: config.datasources["missing-cli"].connector.vaultPath,
 	cleanupCommand: `node scripts/manual-qa/create-autorag-lite-fixture.mjs --root ${root} --cleanup`,
 };
 
@@ -242,7 +238,7 @@ if (printJson) {
 		`  config.json                 ${configJson.length} bytes (${Object.keys(config).length} keys)`,
 		`  unrefreshed-config.json     ${unrefreshedJson.length} bytes`,
 		`datasource: missing-cli`,
-		`  binaryPath: /definitely/missing/autorag-lite-cli (deliberately missing)`,
+		`  vaultPath: /definitely/missing/autorag-lite-vault (deliberately missing)`,
 		`cleanup: node ${process.argv[1]} --root ${root} --cleanup`,
 	]) {
 		console.log(line);

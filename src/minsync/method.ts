@@ -15,6 +15,7 @@ import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
+import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
 export interface MinSyncVectorMethodOptions {
 	readonly root: string;
@@ -33,28 +34,6 @@ export interface MinSyncVectorMethodOptions {
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
-
-/**
- * MinSync allows one operation per workspace: a second concurrent operation fails
- * with "another sync is in progress" while the first holds its lock. AutoRAG
- * registers the vector and hybrid methods over the same workspace and the parallel
- * retriever runs them at once, so operations for one workspace queue here.
- */
-const workspaceOperationTails = new Map<string, Promise<unknown>>();
-const workspaceSyncInFlight = new Map<string, number>();
-
-function withWorkspaceLock<T>(workspacePath: string, run: () => Promise<T>): Promise<T> {
-	const previous = workspaceOperationTails.get(workspacePath) ?? Promise.resolve();
-	const result = previous.then(run, run);
-	workspaceOperationTails.set(
-		workspacePath,
-		result.then(
-			() => undefined,
-			() => undefined,
-		),
-	);
-	return result;
-}
 
 export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly root: string;
@@ -102,13 +81,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		const inFlight = workspaceSyncInFlight.get(this.workspacePath) ?? 0;
-		workspaceSyncInFlight.set(this.workspacePath, inFlight + 1);
-		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force, signal)).finally(() => {
-			const remaining = (workspaceSyncInFlight.get(this.workspacePath) ?? 1) - 1;
-			if (remaining === 0) workspaceSyncInFlight.delete(this.workspacePath);
-			else workspaceSyncInFlight.set(this.workspacePath, remaining);
-		});
+		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal));
 	}
 
 	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
@@ -142,10 +115,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		if ((workspaceSyncInFlight.get(this.workspacePath) ?? 0) > 0) {
-			throw new Error(`another sync is in progress (${this.workspacePath})`);
-		}
-		return withWorkspaceLock(this.workspacePath, () => this.retrieveUnlocked(query, options));
+		return runWorkspaceQuery(this.workspacePath, () => this.retrieveUnlocked(query, options));
 	}
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {

@@ -32,7 +32,7 @@ import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazyka
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
-import { ObsidianSkill } from "./obsidian/index.ts";
+import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill } from "./slack/index.ts";
 import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
@@ -77,6 +77,8 @@ export interface DatasourceEmbeddingOptions {
 	readonly discrawl?: DiscrawlEmbeddingRuntime | (() => Promise<DiscrawlEmbeddingRuntime | undefined>);
 	/** For CLIs that embed for themselves through env (mailcrawl, lazykatok): where the shared backend is. */
 	readonly cliEndpoint?: EmbeddingEndpointSource;
+	/** MinSync binary, embedder and chunking shared with the local-file index; vault indexes run on it too. */
+	readonly minSync?: ObsidianMinSyncOptions;
 }
 
 type SkillBuilder = (
@@ -292,17 +294,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.connector as MailcrawlOptions),
 			...(embedding.cliEndpoint === undefined ? {} : { embeddingEndpoint: embedding.cliEndpoint }),
 		}),
-	obsidian: (config, workspaceRoot, registrationName) => {
-		const connector = config.connector as
-			| { vaultPath?: string; binaryPath?: string; configPath?: string }
-			| undefined;
+	obsidian: (config, workspaceRoot, registrationName, embedding) => {
+		const connector = config.connector as { vaultPath?: string } | undefined;
 		return new ObsidianSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
-			...(connector?.vaultPath !== undefined ? { vaultPath: connector.vaultPath } : {}),
-			...(connector?.binaryPath !== undefined ? { binaryPath: connector.binaryPath } : {}),
-			...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-			...(connector?.configPath !== undefined ? { configPath: connector.configPath } : {}),
+			...(connector?.vaultPath === undefined ? {} : { vaultPath: connector.vaultPath }),
+			...(embedding.minSync === undefined ? {} : { minSync: embedding.minSync }),
 		});
 	},
 	rss: (config, workspaceRoot, registrationName) =>
