@@ -742,6 +742,38 @@ URL itself is in the hit content and `metadata.url`, so use `web_fetch` to read 
 page as it is now. A scope of `/<id>/<instance>/pages/<domain>/**` is pushed down
 to Hister as `domain:<domain>`.
 
+### Running it day to day
+
+Hister must be running for the extension to capture pages and for AutoRAG to
+search; AutoRAG never starts or stops it (the same rule as the MinSync daemon).
+On macOS, `brew services start hister` makes it a login item and
+`brew services stop hister` removes it. A page visited while Hister is down is
+not sent again later, so backfill the gap with
+`hister import browser history --start-date YYYY-MM-DD`. The web UI that the same
+server also serves is not used by AutoRAG.
+
+For semantic search, point `semantic_search` in Hister's own `config.yml` at an
+embedding endpoint. The MinSync daemon works (`embedding_endpoint:
+http://127.0.0.1:<port>/v1/embeddings`, model `Qwen/Qwen3-Embedding-0.6B`,
+`dimensions: 1024`); its port is chosen when it starts, so update the config if
+the daemon is restarted. Pages indexed before semantic search was enabled need
+`hister reindex`. A page whose chunks exceed the model's context is kept for
+keyword search and skipped for vectors, which Hister logs.
+
+### Backfilling existing history safely
+
+`hister import browser history` does not copy page text out of the browser: it
+reads the History database for URLs and then downloads each URL again **without
+your logged-in cookies**. A login-gated URL is therefore saved as its login page,
+and tokens in a URL are sent to that site again. Before importing, put a skip list
+in Hister's `rules.json` (one regular expression per entry, matched against the
+full URL, and also applied to what the extension captures from now on). Cover at
+least login and SSO hosts, mail, documents, drive, social and console
+domains, private hosts and explicit ports, URLs whose query carries a token, key,
+code or session, and `/login`, `/account`, `/settings`, `/admin` style paths.
+This is a deny list: a new, unlisted login page is still captured. Use an `allow`
+list instead if you want the reverse. Check the result with `hister list-urls`.
+
 ## GitHub Gists
 
 `github-gist` indexes the authenticated account's own Gists through the GitHub
