@@ -21,7 +21,8 @@ librarian, not the Lite MCP server.
 - Never print, copy, migrate, compare, or persist credential values. Store only
   environment-variable names such as `apiKeyEnv`.
 - Do not scan the whole filesystem or home directory without explicit approval.
-- Never move, rename, edit, or delete source documents.
+- Setup, indexing, and refresh never move, rename, edit, or delete source
+  documents. The librarian itself may organize files when the user asks it to.
 - Do not index system trees, app bundles, caches, credential stores,
   `node_modules`, `.git`, `dist`, `build`, `target`, `.cache`, `.autorag`, or
   `.jikji`.

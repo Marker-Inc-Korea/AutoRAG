@@ -573,7 +573,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 			"autorag.refresh",
 			{
 				title: "Refresh AutoRAG Lite Index",
-				description: "Refresh configured AutoRAG indexes. Source documents are never modified.",
+				description: "Refresh configured AutoRAG indexes. Refreshing never modifies source documents.",
 				inputSchema: refreshInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },

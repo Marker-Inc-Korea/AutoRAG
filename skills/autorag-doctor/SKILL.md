@@ -15,7 +15,8 @@ Always finish with the status table in [Report](#report).
 
 ## Safety
 
-- Never delete, move, or edit source documents.
+- Diagnosis and repair never delete, move, or edit source documents; a doctor
+  run changes only AutoRAG-owned state.
 - Never delete a datasource's **native** store (`~/Library/Application Support/katok`, `~/.discrawl`,
   `~/.mailcrawl`, `.qmd`, Telegram/WhatsApp/Notion archives). AutoRAG only
   reads them; rebuilding them is the owning CLI's job.
