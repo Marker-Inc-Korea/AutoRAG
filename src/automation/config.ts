@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 
 export type AutomationEventType = "create" | "update" | "delete";
@@ -189,9 +189,19 @@ function globMatches(relPosix: string, pattern: string): boolean {
 	return false;
 }
 
-export function matchesAutomation(automation: Automation, watchedRoot: string, event: AutomationEvent): boolean {
-	if (!automation.events.includes(event.type)) return false;
-	const rel = relative(resolve(watchedRoot), resolve(event.path));
+function canonicalizePath(target: string): string {
+	const resolved = resolve(target);
+	try {
+		return realpathSync(resolved);
+	} catch {
+		const parent = dirname(resolved);
+		if (parent === resolved) return resolved;
+		return join(canonicalizePath(parent), basename(resolved));
+	}
+}
+
+export function matchesAutomationPath(automation: Automation, watchedRoot: string, filePath: string): boolean {
+	const rel = relative(canonicalizePath(watchedRoot), canonicalizePath(filePath));
 	if (rel.length === 0 || rel === "." || rel.startsWith("..") || isAbsolute(rel)) return false;
 	const relPosix = rel.replaceAll("\\", "/");
 
@@ -202,4 +212,9 @@ export function matchesAutomation(automation: Automation, watchedRoot: string, e
 		if (globMatches(relPosix, pattern)) return false;
 	}
 	return automation.include.some((pattern) => globMatches(relPosix, pattern));
+}
+
+export function matchesAutomation(automation: Automation, watchedRoot: string, event: AutomationEvent): boolean {
+	if (!automation.events.includes(event.type)) return false;
+	return matchesAutomationPath(automation, watchedRoot, event.path);
 }

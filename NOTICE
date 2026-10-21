@@ -24,6 +24,9 @@ License: MIT
 @modelcontextprotocol/server@2.3.1
 License: Apache-2.0
 
+@parcel/watcher@2.6.0
+License: MIT
+
 chardet@2.2.0
 License: MIT
 

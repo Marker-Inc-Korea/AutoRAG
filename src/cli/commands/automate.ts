@@ -8,6 +8,7 @@ import {
 	loadAutomations,
 	matchesAutomation,
 } from "../../automation/config.ts";
+import { AutomationDaemonAlreadyRunningError, startAutomationDaemon } from "../../automation/daemon.ts";
 import { runAutomation } from "../../automation/run.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -29,14 +30,65 @@ function eventMatchesAnyRoot(automation: Automation, event: AutomationEvent): bo
 	return automation.paths.some((root) => matchesAutomation(automation, root, event));
 }
 
+async function runAutomateDaemon(ctx: CommandContext): Promise<number> {
+	try {
+		const handle = await startAutomationDaemon({
+			onRun: (automation, record) => {
+				if (ctx.json) {
+					ctx.stdout(JSON.stringify({ event: "run", ...record }));
+				} else {
+					const status = record.timedOut
+						? "timed out"
+						: record.error
+							? `error (${record.error})`
+							: `exit ${record.exitCode}`;
+					ctx.stdout(
+						`[automate] ${automation.id}: ${status} (${record.durationMs}ms, events=${record.eventCount})`,
+					);
+				}
+			},
+			onError: (msg) => ctx.stderr(`[automate] ${msg}`),
+		});
+		ctx.stdout(
+			ctx.json
+				? JSON.stringify({ ok: true, mode: "daemon", message: "automation daemon started" })
+				: "AutoRAG automation daemon started. Send SIGINT/SIGTERM to stop.",
+		);
+		await new Promise<void>((resolveStop) => {
+			const keepAlive = setInterval(() => {}, 60_000);
+			let stopping = false;
+			const onSignal = (): void => {
+				if (stopping) return;
+				stopping = true;
+				clearInterval(keepAlive);
+				void handle.stop().finally(resolveStop);
+			};
+			process.once("SIGINT", onSignal);
+			process.once("SIGTERM", onSignal);
+		});
+		return 0;
+	} catch (error) {
+		if (error instanceof AutomationDaemonAlreadyRunningError) {
+			ctx.stderr(error.message);
+			return 0;
+		}
+		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		return 1;
+	}
+}
+
 export async function runAutomate(ctx: CommandContext): Promise<number> {
 	try {
 		const sub = ctx.positionals[0];
+		if (sub === "daemon") return runAutomateDaemon(ctx);
 		if (sub !== "run") {
 			ctx.stderr(
-				renderError(new Error("Usage: autorag automate run <id> [--event <create|update|delete>:<path>]"), {
-					json: ctx.json,
-				}),
+				renderError(
+					new Error("Usage: autorag automate <daemon|run> [id] [--event <create|update|delete>:<path>]"),
+					{
+						json: ctx.json,
+					},
+				),
 			);
 			return 2;
 		}
