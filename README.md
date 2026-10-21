@@ -501,6 +501,36 @@ Core Lite tools include `autorag.status`, `autorag.search`,
 integrated datasources expose additional scoped search tools. Read-only MCP
 mode omits mutating tools such as refresh and report.
 
+## Using external MCP servers and agent skills
+
+AutoRAG is also an MCP *client*. Servers listed in the pi agent directory's `mcp.json`
+(`~/.pi/agent/mcp.json`, or `<piAgentDir>/mcp.json` when the agent is given one) are connected
+when a TUI session or a one-shot `autorag search` starts, and their tools reach the model next to
+AutoRAG's own tools. The file uses the format shared by other MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "docs": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" } }
+  }
+}
+```
+
+- **Exposure.** By default a server's tools are reached through the `codemode` tool (the model
+  writes a short script that calls them); `"exposure": "direct"` declares them to the model
+  like built-in tools, `"deferred"` loads them on demand through `tool_search`, and `"hidden"`
+  turns a server off. `description` is shown to the model so it knows when to use the server.
+- **Only the user-level file is read.** A project `.pi/mcp.json` is ignored on purpose: it would
+  let any folder AutoRAG starts in choose which processes run.
+- **Failures are reported verbatim.** An invalid entry or a server that fails to start is
+  reported at session start with pi's own message; the other servers keep working.
+- **Inside the TUI**, `/mcp` lists servers, reconnects them, signs in to OAuth servers, and
+  changes exposure. Pi's `/skill:<name>` commands and `<available_skills>` list also work for
+  any agent skill installed under the agent directory.
+- MCP results are data from an external server. AutoRAG tells the model never to follow
+  instructions found in them.
+
 ---
 
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine

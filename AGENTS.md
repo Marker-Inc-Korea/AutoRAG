@@ -559,6 +559,7 @@ configured for the run is never shown. See
 | `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
+| `src/agent/mcp-client.ts` | Connects the user's external MCP servers (`<piAgentDir>/mcp.json` only; project `.pi/mcp.json` is ignored) through pi's MCP, codemode, and tool-search extensions, carries pi's `mcp_servers` prompt section into AutoRAG's forced system prompt, and names the tools the session allow-list must keep |
 | `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/results.ts` | Result types (`AutoRAGResultsDetails`) and `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |

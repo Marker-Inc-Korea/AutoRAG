@@ -718,7 +718,7 @@ export interface AutoRAGSearchSession {
 	readonly piSession?: AutoRAGPiSession["session"];
 	prompt(text: string): Promise<void>;
 	abort(): Promise<void> | void;
-	dispose(): void;
+	dispose(): void | Promise<void>;
 }
 
 export type AutoRAGJikjiPrepareResult =
@@ -1437,7 +1437,7 @@ export class AutoRAGAgent {
 			piSession: piSession.session,
 			prompt: async (prompt) => piSession.session.prompt(prompt, { source: "extension" }),
 			abort: async () => piSession.session.abort(),
-			dispose: () => piSession.session.dispose(),
+			dispose: () => piSession.dispose(),
 		};
 	}
 
@@ -2209,12 +2209,7 @@ export class AutoRAGAgent {
 			}
 			throw error;
 		} finally {
-			const cleanupActions: readonly (() => void)[] = [
-				...unsubscribers,
-				() => {
-					session?.dispose();
-				},
-			];
+			const cleanupActions: readonly (() => void)[] = [...unsubscribers, () => session?.dispose()];
 			const cleanupResults = await Promise.allSettled(
 				cleanupActions.map((cleanup) => Promise.resolve().then(cleanup)),
 			);
