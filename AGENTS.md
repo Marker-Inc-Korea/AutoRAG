@@ -183,7 +183,13 @@ Prerequisites:
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
 - MinSync 0.4.11 or newer on `PATH`. The runner starts a `minsync serve` daemon
   for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
-  model pull is required.
+  model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
+  the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
+  nothing on the host. MinSync publishes a Linux build for x86_64 only, so that
+  image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host
+  it runs under emulation, and building it for arm64 fails with that reason.
+  Bump `MINSYNC_VERSION`/`MINSYNC_SHA256` in the Dockerfile with
+  `MINSYNC_VERSION` in `src/minsync/installer.ts`.
 - `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings stay local
   during live E2E: do not configure a remote `minSync.embedder` endpoint or
   send corpus text off the machine.
