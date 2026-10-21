@@ -1,5 +1,5 @@
 import type { ExtensionFactory, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 /** Logos from widest to narrowest. The first whose block fits the terminal is drawn. */
 const LOGOS: readonly (readonly string[])[] = [
@@ -21,18 +21,19 @@ const LOGOS: readonly (readonly string[])[] = [
 
 const WORDMARK = "AutoRAG";
 
-/** Shown three at a time, rotating. Each one is true of the TUI as shipped; none contains the word the banner prefixes them with. */
+/**
+ * One is shown per session, picked at random. Each fits on one line of an
+ * 80-column terminal after the `Tip · ` label, and is true of the TUI as shipped.
+ */
 export const WELCOME_TIPS: readonly string[] = [
-	"Ask in plain language: AutoRAG searches your files and sources and cites what it finds.",
-	"Press Enter while a search runs to steer it; Alt+Enter queues a follow-up question.",
+	"Ask in plain language; answers cite the files they came from.",
+	"Press Enter during a search to steer it, Alt+Enter to queue a follow-up.",
 	"Esc interrupts a running search.",
-	"/embedding on starts the local embedding daemon; Ctrl+Shift+E toggles it.",
+	"/embedding on starts the local embedding daemon (Ctrl+Shift+E toggles).",
 	"/model switches the model, /login signs in to a provider.",
 	"/new starts a fresh session, /resume returns to an earlier one.",
 	"/hotkeys lists every keyboard shortcut.",
 ];
-
-const TIPS_SHOWN = 3;
 
 export interface WelcomeBannerOptions {
 	readonly width: number;
@@ -49,9 +50,10 @@ function center(styled: string, width: number): string {
 }
 
 /**
- * The first screen of `autorag tui`: the logo, the version, and a few tips,
+ * The first screen of `autorag tui`: the logo, the version, and one random tip,
  * centered on `width`. The logo is centered as one block so its shape holds;
- * the version and each tip line are centered on their own.
+ * the version and the tip are centered on their own. The tip is always one line
+ * and is cut with `...` when the terminal is narrower than it.
  */
 export function renderWelcomeBanner({ width, version, theme, random = Math.random }: WelcomeBannerOptions): string[] {
 	const logo = LOGOS.find((rows) => Math.max(...rows.map((row) => row.length)) <= width);
@@ -63,14 +65,8 @@ export function renderWelcomeBanner({ width, version, theme, random = Math.rando
 		for (const row of logo) lines.push(left + theme.fg("accent", row));
 	}
 	lines.push("", center(theme.fg("muted", `v${version} · personal librarian agent`), width), "");
-	const start = Math.floor(random() * WELCOME_TIPS.length);
-	for (let offset = 0; offset < TIPS_SHOWN; offset++) {
-		const tip = WELCOME_TIPS[(start + offset) % WELCOME_TIPS.length] as string;
-		const label = `${theme.fg("accent", "Tip")} ${theme.fg("dim", "·")} `;
-		// Wrap the tip itself to what the label leaves, so continuation lines stay inside the terminal.
-		const body = wrapTextWithAnsi(theme.fg("muted", tip), Math.max(1, width - visibleWidth(label)));
-		for (const [index, row] of body.entries()) lines.push(center(index === 0 ? label + row : row, width));
-	}
+	const tip = WELCOME_TIPS[Math.floor(random() * WELCOME_TIPS.length)] as string;
+	lines.push(center(`${theme.fg("accent", "Tip")} ${theme.fg("dim", "·")} ${theme.fg("muted", tip)}`, width));
 	lines.push("");
 	return lines;
 }

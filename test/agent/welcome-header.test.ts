@@ -47,11 +47,11 @@ describe("renderWelcomeBanner", () => {
 		expect(indents.size).toBeGreaterThan(0);
 	});
 
-	it("centers the version line and every tip on its own", () => {
+	it("centers the version line and the tip on their own", () => {
 		const width = 120;
 		const lines = banner(width).filter((line) => line.trim().length > 0);
 		const centered = lines.filter((line) => line.includes("v9.9.9") || line.includes("Tip"));
-		expect(centered.length).toBeGreaterThanOrEqual(3);
+		expect(centered).toHaveLength(2);
 		for (const line of centered) {
 			const left = indent(line);
 			const right = width - left - line.trim().length;
@@ -66,22 +66,30 @@ describe("renderWelcomeBanner", () => {
 		expect(text).not.toMatch(/\[Skills\]|to interrupt|to cycle models|Pi can explain/i);
 	});
 
-	it("rotates tips with the injected random source and shows three different ones", () => {
+	it("shows exactly one tip, picked by the random source", () => {
 		const tipLines = (random: () => number) => banner(160, random).filter((line) => line.includes("Tip"));
-		const first = tipLines(() => 0);
-		const later = tipLines(() => 0.999);
-		expect(first).toHaveLength(3);
-		expect(new Set(first).size).toBe(3);
-		expect(later).toHaveLength(3);
-		expect(later).not.toEqual(first);
+		expect(tipLines(() => 0)).toHaveLength(1);
+		expect(tipLines(() => 0.999)).toHaveLength(1);
+		expect(tipLines(() => 0)).not.toEqual(tipLines(() => 0.999));
+		const seen = WELCOME_TIPS.map((_, index) => tipLines(() => index / WELCOME_TIPS.length)[0]?.trim());
+		expect(new Set(seen).size).toBe(WELCOME_TIPS.length);
 	});
 
-	it("wraps a tip that is wider than the terminal instead of cutting it", () => {
-		const lines = banner(30);
+	it("keeps every tip on one line on an 80-column terminal, uncut", () => {
+		for (const [index, tip] of WELCOME_TIPS.entries()) {
+			const lines = banner(80, () => index / WELCOME_TIPS.length);
+			const tipLines = lines.filter((line) => line.includes("Tip"));
+			expect(tipLines, tip).toHaveLength(1);
+			expect(tipLines[0]?.trim(), tip).toBe(`Tip · ${tip}`);
+		}
+	});
+
+	it("cuts a tip wider than the terminal to one line instead of wrapping it", () => {
+		const lines = banner(30, () => 0);
 		for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(30);
-		const longest = [...WELCOME_TIPS].sort((a, b) => b.length - a.length)[0] as string;
-		const lastWord = longest.split(" ").at(-1) as string;
-		expect(banner(30, () => WELCOME_TIPS.indexOf(longest) / WELCOME_TIPS.length).join(" ")).toContain(lastWord);
+		const tipLines = lines.filter((line) => line.includes("Tip"));
+		expect(tipLines).toHaveLength(1);
+		expect(tipLines[0]).toMatch(/\.\.\.$/);
 	});
 });
 
@@ -165,19 +173,19 @@ describe("createWelcomeHeader", () => {
 		expect(logoLeft(140)).toBeGreaterThan(logoLeft(100));
 	});
 
-	it("keeps the same tips across a resize", () => {
+	it("keeps the same tip across a resize", () => {
 		const pi = install(settingsWith());
 		pi.start("startup");
 		const component = (pi.headers[0] as HeaderFactory)({}, plain);
-		const tips = (width: number) =>
+		const tip = (width: number) =>
 			component
 				.render(width)
 				.map((line) => stripTerminalSequences(line).trim())
 				.filter((line) => line.startsWith("Tip"));
-		const first = tips(200);
-		expect(first).toHaveLength(3);
-		expect(tips(180)).toEqual(first);
-		expect(tips(200)).toEqual(first);
+		const first = tip(200);
+		expect(first).toHaveLength(1);
+		expect(tip(160)).toEqual(first);
+		expect(tip(200)).toEqual(first);
 	});
 
 	it("hides pi's loaded-resource listing (skills, prompts, extensions) by default, keeping the header", () => {
