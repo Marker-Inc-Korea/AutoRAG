@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type AutomationDaemonHandle, startAutomationDaemon } from "../../src/automation/daemon.ts";
 import {
 	automationServiceDescriptor,
 	getAutomationStatus,
@@ -103,7 +104,9 @@ describe("installAutomationService / uninstallAutomationService / getAutomationS
 			env,
 			selfCommand: ["/usr/local/bin/node", "/app/dist/cli/index.js"],
 			exec,
+			waitForRunningMs: 0,
 		});
+		expect(installed.running).toBe(false);
 		expect(existsSync(installed.definitionPath)).toBe(true);
 		expect(existsSync(installed.envFilePath)).toBe(true);
 		expect(readFileSync(installed.envFilePath, "utf8")).toContain(`AUTORAG_HOME=${autoragHome}`);
@@ -122,5 +125,27 @@ describe("installAutomationService / uninstallAutomationService / getAutomationS
 		await uninstallAutomationService({ platform: "darwin", home: autoragHome, env, exec });
 		expect(existsSync(installed.definitionPath)).toBe(false);
 		expect(existsSync(installed.envFilePath)).toBe(false);
+	});
+
+	it("reports running once the started daemon holds its lock", async () => {
+		const env = { HOME: userHome, PATH: "/usr/bin" };
+		let daemon: AutomationDaemonHandle | undefined;
+		const exec = async (_cmd: string, args: readonly string[]) => {
+			if (args[0] === "bootstrap") daemon = await startAutomationDaemon({ home: autoragHome, env });
+			return { code: 0, stdout: "", stderr: "" };
+		};
+		try {
+			const installed = await installAutomationService({
+				platform: "darwin",
+				home: autoragHome,
+				env,
+				selfCommand: ["/usr/local/bin/node", "/app/dist/cli/index.js"],
+				exec,
+				waitForRunningMs: 2000,
+			});
+			expect(installed.running).toBe(true);
+		} finally {
+			await daemon?.stop();
+		}
 	});
 });

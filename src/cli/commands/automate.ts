@@ -83,11 +83,11 @@ export async function runAutomate(ctx: CommandContext): Promise<number> {
 		const sub = ctx.positionals[0];
 		if (sub === "daemon") return runAutomateDaemon(ctx);
 		if (sub === "install") {
-			const desc = await installAutomationService();
+			const installed = await installAutomationService();
 			ctx.stdout(
 				ctx.json
-					? JSON.stringify({ ok: true, action: "install", ...desc })
-					: `Installed automation service ${desc.id} (${desc.definitionPath})`,
+					? JSON.stringify({ ok: true, action: "install", ...installed })
+					: `Installed automation service ${installed.id} (${installed.definitionPath}); running=${installed.running}`,
 			);
 			return 0;
 		}

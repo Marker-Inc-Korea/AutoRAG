@@ -2,10 +2,11 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { type Automation, loadAutomations } from "./config.ts";
 import { isAutomationDaemonRunning } from "./daemon.ts";
-import { type AutomationRunRecord, readLastAutomationRun } from "./run.ts";
+import { type AutomationRunRecord, autoragCliCommand, readLastAutomationRun } from "./run.ts";
 
 export interface AutomationServiceSpec {
 	readonly id: string;
@@ -40,6 +41,25 @@ export interface AutomationServiceOptions {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly selfCommand?: readonly string[];
 	readonly exec?: ServiceCommandExec;
+	/** How long install waits for the daemon to hold its lock. Default 15000. */
+	readonly waitForRunningMs?: number;
+}
+
+export interface AutomationServiceInstallResult extends AutomationServiceDescriptor {
+	/** Whether the daemon was observed running before install returned. */
+	readonly running: boolean;
+}
+
+const DAEMON_START_POLL_MS = 100;
+const DEFAULT_WAIT_FOR_RUNNING_MS = 15_000;
+
+async function waitForDaemon(home: string, timeoutMs: number): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		if (isAutomationDaemonRunning(home)) return true;
+		if (Date.now() >= deadline) return false;
+		await sleep(DAEMON_START_POLL_MS);
+	}
 }
 
 export interface AutomationStatusEntry extends Automation {
@@ -234,16 +254,15 @@ const defaultExec: ServiceCommandExec = (cmd, args) => {
 	});
 };
 
-function resolveSelfNodeAndCli(selfCommand?: readonly string[]): {
+function resolveSelfNodeAndCli(selfCommand: readonly string[] = autoragCliCommand()): {
 	readonly nodePath: string;
 	readonly cliEntry: string;
 } {
-	if (selfCommand && selfCommand.length >= 2) {
-		return { nodePath: selfCommand[0]!, cliEntry: resolve(selfCommand[1]!) };
+	const [nodePath, cliEntry] = selfCommand;
+	if (nodePath === undefined || cliEntry === undefined) {
+		throw new Error("Cannot locate this AutoRAG install's CLI entrypoint to register the automation service");
 	}
-	const entry = process.argv[1];
-	if (!entry) throw new Error("Cannot determine AutoRAG CLI entrypoint from process.argv[1]");
-	return { nodePath: process.execPath, cliEntry: resolve(entry) };
+	return { nodePath, cliEntry: resolve(cliEntry) };
 }
 
 async function runChecked(exec: ServiceCommandExec, cmd: string, args: readonly string[]): Promise<void> {
@@ -255,7 +274,7 @@ async function runChecked(exec: ServiceCommandExec, cmd: string, args: readonly 
 
 export async function installAutomationService(
 	options: AutomationServiceOptions = {},
-): Promise<AutomationServiceDescriptor> {
+): Promise<AutomationServiceInstallResult> {
 	const env = options.env ?? process.env;
 	const home = resolve(options.home ?? resolveAutoRAGHome(env));
 	const desc = automationServiceDescriptor({ ...options, home, env });
@@ -288,7 +307,7 @@ export async function installAutomationService(
 	if (desc.platform === "darwin") {
 		writeFileSync(desc.definitionPath, renderLaunchdPlist(spec), "utf8");
 		const domain = `gui/${process.getuid?.() ?? 501}`;
-		await exec("launchctl", ["bootout", domain, desc.definitionPath]);
+		await exec("launchctl", ["bootout", `${domain}/${desc.id}`]);
 		await runChecked(exec, "launchctl", ["bootstrap", domain, desc.definitionPath]);
 	} else if (desc.platform === "linux") {
 		writeFileSync(desc.definitionPath, renderSystemdUnit(spec), "utf8");
@@ -304,7 +323,8 @@ export async function installAutomationService(
 		await runChecked(exec, "schtasks", ["/Run", "/TN", desc.id]);
 	}
 
-	return desc;
+	const running = await waitForDaemon(home, options.waitForRunningMs ?? DEFAULT_WAIT_FOR_RUNNING_MS);
+	return { ...desc, running };
 }
 
 export async function uninstallAutomationService(
@@ -317,7 +337,7 @@ export async function uninstallAutomationService(
 
 	if (desc.platform === "darwin") {
 		const domain = `gui/${process.getuid?.() ?? 501}`;
-		await exec("launchctl", ["bootout", domain, desc.definitionPath]);
+		await exec("launchctl", ["bootout", `${domain}/${desc.id}`]);
 	} else if (desc.platform === "linux") {
 		await exec("systemctl", ["--user", "disable", "--now", `${desc.id}.service`]);
 		await exec("systemctl", ["--user", "daemon-reload"]);

@@ -100,6 +100,7 @@ import {
 	ANSWER_IMAGE_DELTA_RULE,
 	ANSWER_IMAGE_EMBED_RULE,
 } from "./answer-guidelines.ts";
+import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -1046,6 +1047,7 @@ export class AutoRAGAgent {
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		const manageAutomationsTool = createManageAutomationsTool();
 		this.jevJudge =
 			options.jev === undefined || options.jev === false
 				? undefined
@@ -1093,6 +1095,7 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
@@ -1118,6 +1121,7 @@ export class AutoRAGAgent {
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
+			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),

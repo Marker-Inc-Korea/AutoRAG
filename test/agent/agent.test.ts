@@ -324,6 +324,15 @@ describe("AutoRAGAgent", () => {
 		expect(internals(agent).tools.map((tool) => tool.name)).not.toContain("scan_duplicate_documents");
 	});
 
+	it("registers the manage_automations tool", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(internals(agent).tools.map((tool) => tool.name)).toContain("manage_automations");
+		expect(agent.getSystemPrompt()).toContain("## File Automations");
+	});
+
 	it("defaults to direct retrieval and reading tools for library mode", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

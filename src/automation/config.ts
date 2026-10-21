@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
+import { writeFileAtomic } from "../mirror/atomic-write.ts";
 
 export type AutomationEventType = "create" | "update" | "delete";
 
@@ -162,10 +163,7 @@ export function parseAutomations(raw: unknown, env: NodeJS.ProcessEnv = process.
 	});
 }
 
-export function loadAutomations(
-	configPath: string = automationsConfigPath(),
-	env: NodeJS.ProcessEnv = process.env,
-): Automation[] {
+function readRawAutomations(configPath: string): Record<string, unknown>[] {
 	if (!existsSync(configPath)) return [];
 	let parsed: unknown;
 	try {
@@ -174,7 +172,49 @@ export function loadAutomations(
 		const msg = error instanceof Error ? error.message : String(error);
 		throw new AutomationConfigError(`Invalid JSON in ${configPath}: ${msg}`);
 	}
-	return parseAutomations(parsed, env);
+	if (
+		typeof parsed !== "object" ||
+		parsed === null ||
+		!("automations" in parsed) ||
+		!Array.isArray(parsed.automations)
+	) {
+		throw new AutomationConfigError(`${configPath} must be a JSON object with an \`automations\` array`);
+	}
+	return parsed.automations;
+}
+
+export function loadAutomations(
+	configPath: string = automationsConfigPath(),
+	env: NodeJS.ProcessEnv = process.env,
+): Automation[] {
+	return parseAutomations({ automations: readRawAutomations(configPath) }, env);
+}
+
+/**
+ * Insert or replace the rule with `id`, keeping every other rule as written. The
+ * whole file is validated before it is written, so an invalid rule never lands
+ * on disk and the running daemon never reloads a broken file.
+ */
+export function saveAutomation(
+	configPath: string,
+	id: string,
+	rule: Readonly<Record<string, unknown>>,
+	env: NodeJS.ProcessEnv = process.env,
+): Automation {
+	const entry = { ...rule, id };
+	const raw = readRawAutomations(configPath);
+	const index = raw.findIndex((item) => item.id === id);
+	const next = index === -1 ? [...raw, entry] : raw.map((item, i) => (i === index ? entry : item));
+	const parsed = parseAutomations({ automations: next }, env);
+	writeFileAtomic(configPath, `${JSON.stringify({ automations: next }, null, 2)}\n`);
+	return parsed.find((item) => item.id === id) as Automation;
+}
+
+export function deleteAutomation(configPath: string, id: string): void {
+	const raw = readRawAutomations(configPath);
+	const next = raw.filter((item) => item.id !== id);
+	if (next.length === raw.length) throw new AutomationConfigError(`Unknown automation id: "${id}"`);
+	writeFileAtomic(configPath, `${JSON.stringify({ automations: next }, null, 2)}\n`);
 }
 
 /**

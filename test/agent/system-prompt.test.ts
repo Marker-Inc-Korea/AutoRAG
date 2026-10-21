@@ -153,4 +153,15 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("primary and preferred tool for exploring local files, folders, and documents");
 		expect(text).toContain("actively use `jikji_find` rather than running exploratory `bash` commands");
 	});
+
+	it("teaches file-triggered automations only when manage_automations is registered", () => {
+		const without = prompt();
+		expect(without).not.toContain("## File Automations");
+
+		const text = prompt(["bash", "search_all_documents", "manage_automations"]);
+		expect(text).toContain("## File Automations");
+		expect(text).toContain("`manage_automations`");
+		expect(text).toContain("install_service");
+		expect(text).not.toContain("- **manage_automations**: caller-provided tool");
+	});
 });
