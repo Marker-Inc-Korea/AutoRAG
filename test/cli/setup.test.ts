@@ -202,6 +202,32 @@ describe("setup orchestration", () => {
 		});
 	});
 
+	it("treats an Obsidian vault as configured without any external binary", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				datasources: { obsidian: { connector: { vaultPath: join(root, "vault") } } },
+			}),
+		);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+			},
+		});
+		expect(report.datasources.find((entry) => entry.name === "obsidian")?.state).toBe("configured");
+	});
+
 	it("reports that no embedding backend is alive, with the way out, instead of discarding it", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);

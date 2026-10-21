@@ -6,11 +6,10 @@ export const TREE_KILL_GRACE_MS = 500;
 /**
  * Terminate a spawned external CLI together with the descendants it created.
  *
- * CLIs such as qmd 2.8.3 are launchers: the process AutoRAG spawns starts a
- * runtime descendant that inherits the launcher's stdout/stderr pipes. Node
- * emits `close` only once every holder of those pipes has exited, so signalling
- * just the direct child leaves the caller waiting on a descendant that may live
- * for minutes — the hang reported in #1578.
+ * CLIs that are launchers (an npm shim, a wrapper script) start a runtime descendant that inherits
+ * the launcher's stdout/stderr pipes. Node emits `close` only once every holder of those pipes has
+ * exited, so signalling just the direct child leaves the caller waiting on a descendant that may
+ * live for minutes — the hang reported in #1578.
  *
  * Spawn the child with `detached: true` on POSIX so it leads its own process
  * group; the group survives the direct child and stays addressable as `-pid`.

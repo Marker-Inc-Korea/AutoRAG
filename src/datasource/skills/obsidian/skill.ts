@@ -1,9 +1,6 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
-import { datasourceSourcePath } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
-	DatasourceDiagnostic,
-	DatasourceDiagnosticCode,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -12,47 +9,40 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
-import { QmdClient } from "./client.ts";
-import { ObsidianBm25Method, type ObsidianSearchClient, ObsidianSemanticMethod } from "./methods.ts";
-import { toQmdCollectionName } from "./paths.ts";
-import type { QmdEmbedResult, QmdEnsureResult, QmdOptions, QmdUpdateResult } from "./types.ts";
-
-export interface ObsidianSkillClient extends ObsidianSearchClient {
-	ensureCollection(signal?: AbortSignal): Promise<QmdEnsureResult>;
-	update(signal?: AbortSignal): Promise<QmdUpdateResult>;
-	embed(signal?: AbortSignal): Promise<QmdEmbedResult>;
-}
+import { ObsidianBm25Method, ObsidianSemanticMethod } from "./methods.ts";
+import { OBSIDIAN_DATASOURCE_ID, OBSIDIAN_SKILL_TYPE, obsidianInstanceSource } from "./paths.ts";
+import { type ObsidianMinSyncOptions, ObsidianVaultIndex } from "./vault-index.ts";
 
 export interface ObsidianSkillOptions {
 	readonly datasourceId?: string;
-	readonly client?: ObsidianSkillClient;
 	readonly vaultPath?: string;
-	readonly binaryPath?: string;
 	readonly instanceId?: string;
 	readonly instances?: readonly string[];
 	readonly pollingIntervalMs?: number;
 	readonly tags?: readonly string[];
 	readonly lastIndexedAt?: number;
+	/** Where `.autorag/datasources/obsidian/<instance>` is kept. Required to index or search. */
 	readonly workspaceRoot?: string;
-	readonly collectionName?: string;
-	readonly timeoutMs?: number;
-	readonly configPath?: string;
+	/** The install's MinSync binary, embedder and chunking, shared with the local-file index. */
+	readonly minSync?: ObsidianMinSyncOptions;
 	readonly connectorOptions?: { readonly vaultPath?: string };
 }
 
-const OBSIDIAN_DATASOURCE_ID = "obsidian";
-const OBSIDIAN_SKILL_TYPE = "obsidian-vault";
 const DEFAULT_INSTANCE_ID = "default";
 const DEFAULT_POLLING_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_OBSIDIAN_TAGS = ["obsidian", "notes"] as const;
 
+/**
+ * An Obsidian vault as a datasource: its markdown notes are indexed by MinSync (BM25 and
+ * semantic) in a workspace of their own, and a note's source is its vault-relative path, so a
+ * folder is an ordinary `scope`.
+ */
 export class ObsidianSkill implements DatasourceSkill {
-	private readonly client: ObsidianSkillClient;
+	private readonly vaultIndex: ObsidianVaultIndex;
 	private readonly instanceId: string;
 	private readonly instances: readonly string[];
 	private readonly pollingIntervalMs: number;
 	private readonly tags: readonly string[];
-	private readonly vaultPath: string | undefined;
 	private lastIndexedAt: number | undefined;
 	private lastError: string | undefined;
 
@@ -63,17 +53,12 @@ export class ObsidianSkill implements DatasourceSkill {
 		this.pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
 		this.tags = options.tags ?? DEFAULT_OBSIDIAN_TAGS;
 		this.lastIndexedAt = options.lastIndexedAt;
-		this.vaultPath = options.vaultPath ?? options.connectorOptions?.vaultPath;
-		const clientOptions: QmdOptions = {
-			...(options.binaryPath !== undefined ? { binaryPath: options.binaryPath } : {}),
-			...(this.vaultPath !== undefined ? { vaultPath: this.vaultPath } : {}),
-			...(options.workspaceRoot !== undefined ? { workspaceRoot: options.workspaceRoot } : {}),
+		this.vaultIndex = new ObsidianVaultIndex({
 			instanceId: this.instanceId,
-			collectionName: options.collectionName ?? toQmdCollectionName(this.instanceId),
-			...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-			...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
-		};
-		this.client = options.client ?? new QmdClient(clientOptions);
+			vaultPath: options.vaultPath ?? options.connectorOptions?.vaultPath,
+			workspaceRoot: options.workspaceRoot,
+			...(options.minSync === undefined ? {} : { minSync: options.minSync }),
+		});
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -81,11 +66,10 @@ export class ObsidianSkill implements DatasourceSkill {
 			name: OBSIDIAN_DATASOURCE_ID,
 			id: OBSIDIAN_DATASOURCE_ID,
 			type: OBSIDIAN_SKILL_TYPE,
-			description: "Obsidian vault datasource via the external qmd CLI",
-			capabilities: ["notes", "external-cli", "polling", "bm25", "semantic", "incremental"],
+			description: "Obsidian vault datasource, indexed by MinSync",
+			capabilities: ["notes", "polling", "lexical", "semantic", "incremental", "scoped"],
 			tags: this.tags,
 			status: "active",
-			requiresExternalCli: true,
 			datasourceId: OBSIDIAN_DATASOURCE_ID,
 			instanceId: this.instanceId,
 			instances: this.instances,
@@ -97,83 +81,67 @@ export class ObsidianSkill implements DatasourceSkill {
 			mode: this.pollingIntervalMs > 0 ? "poll" : "none",
 			...(this.pollingIntervalMs > 0 ? { intervalMs: this.pollingIntervalMs } : {}),
 			lastIndexedAt: this.lastIndexedAt,
-			...(this.lastError !== undefined ? { lastError: this.lastError } : {}),
+			...(this.lastError === undefined ? {} : { lastError: this.lastError }),
 		};
 	}
 
 	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
-		try {
-			const ensure = await this.client.ensureCollection(options?.signal);
-			if (!ensure.ok) {
-				return this.fail(qmdFailureCode(ensure.reason), ensure);
-			}
-			const update = await this.client.update(options?.signal);
-			if (!update.ok) {
-				return this.fail(qmdFailureCode(update.reason), update);
-			}
-			const diagnostics: DatasourceDiagnostic[] = [];
-			const embed = await this.client.embed(options?.signal);
-			if (!embed.ok) {
-				diagnostics.push({
-					code: "datasource-index-failed",
-					severity: "warning",
-					message: `qmd embed failed (${embed.reason}); lexical search remains available`,
-					instanceId: this.instanceId,
-					source: OBSIDIAN_DATASOURCE_ID,
-				});
-			}
-			this.lastIndexedAt = Date.now();
-			this.lastError = undefined;
-			const chunkCount =
-				update.data.indexed + update.data.updated + update.data.unchanged > 0
-					? update.data.indexed + update.data.updated + update.data.unchanged
-					: update.data.indexed + update.data.updated;
+		const outcome = await this.vaultIndex.sync(options?.signal);
+		const indexedAt = Date.now();
+		if (!outcome.ok) {
+			this.lastError = outcome.message;
 			return {
-				ok: true,
+				ok: false,
 				instanceId: this.instanceId,
 				skill: OBSIDIAN_DATASOURCE_ID,
-				chunkCount,
-				indexedAt: this.lastIndexedAt,
-				diagnostics,
+				indexedAt,
+				diagnostics: [
+					{
+						code: outcome.code,
+						severity: outcome.code === "datasource-index-failed" ? "error" : "warning",
+						message: outcome.message,
+						instanceId: this.instanceId,
+						source: OBSIDIAN_DATASOURCE_ID,
+					},
+				],
+				error: outcome.code,
+				code: outcome.code,
+				message: outcome.message,
 			};
-		} catch {
-			return this.fail("datasource-unavailable", {
-				ok: false,
-				reason: "spawn-error",
-				stdout: "",
-				stderr: "qmd command failed",
-				code: null,
-			});
 		}
+		this.lastIndexedAt = indexedAt;
+		this.lastError = undefined;
+		return {
+			ok: true,
+			instanceId: this.instanceId,
+			skill: OBSIDIAN_DATASOURCE_ID,
+			chunkCount: outcome.notes,
+			indexedAt,
+			diagnostics: outcome.diagnostics,
+		};
 	}
 
 	retrievalMethods(): readonly RetrievalMethod[] {
-		return [
-			new ObsidianBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-			new ObsidianSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-		];
+		const methodOptions = { index: this.vaultIndex, tags: this.tags };
+		return [new ObsidianBm25Method(methodOptions), new ObsidianSemanticMethod(methodOptions)];
 	}
 
 	describeSources(): readonly SourceDescription[] {
 		return this.instances.map((instanceId) => ({
-			source: datasourceSourcePath(OBSIDIAN_DATASOURCE_ID, instanceId),
+			source: obsidianInstanceSource(instanceId),
 			datasourceId: OBSIDIAN_DATASOURCE_ID,
 			skill: OBSIDIAN_DATASOURCE_ID,
 			instanceId,
 			contentType: "note",
-			metadata: {
-				datasourceId: OBSIDIAN_DATASOURCE_ID,
-				instanceId,
-				tags: this.tags,
-				...(this.vaultPath !== undefined ? { vaultPath: this.vaultPath } : {}),
-			},
+			metadata: { datasourceId: OBSIDIAN_DATASOURCE_ID, instanceId, tags: this.tags },
 		}));
 	}
 
 	skillManifest(): DatasourceSkillManifest {
 		const instanceScopes = this.instances
-			.map((instanceId) => `- \`${datasourceSourcePath(OBSIDIAN_DATASOURCE_ID, instanceId)}\``)
+			.map((instanceId) => `- \`${obsidianInstanceSource(instanceId)}\``)
 			.join("\n");
+		const folderExample = `${obsidianInstanceSource(this.instances[0] ?? this.instanceId)}/<folder>`;
 		const cadence =
 			this.pollingIntervalMs > 0
 				? `roughly every ${Math.round(this.pollingIntervalMs / 60000)} minute(s) when auto-refresh runs`
@@ -181,66 +149,27 @@ export class ObsidianSkill implements DatasourceSkill {
 		return {
 			name: `datasource-${OBSIDIAN_DATASOURCE_ID}`,
 			description:
-				"Search an indexed Obsidian vault (markdown notes) via qmd incremental BM25 + semantic indexes. Use for questions about personal notes and knowledge-base content.",
+				"Search an Obsidian vault (markdown notes) with BM25 and semantic retrieval, optionally limited to a folder. Use for questions about personal notes and knowledge-base content.",
 			content: [
 				`# Obsidian vault datasource (${OBSIDIAN_SKILL_TYPE})`,
 				"",
-				"This skill indexes and searches an Obsidian vault through the external `qmd` CLI (incremental update, BM25 search, vector search). AutoRAG does not reimplement vault walking for query-time retrieval.",
+				"The vault's markdown notes are indexed by MinSync in a workspace of their own, separate from the local-file index. Hidden folders (`.obsidian`, `.trash`), non-markdown attachments, and symlinks are not indexed.",
 				"",
 				"## When to use",
-				"Use this skill when the question is about Obsidian notes, vault folders, tags, or knowledge-base content.",
+				"Use this skill when the question is about Obsidian notes, vault folders, or knowledge-base content.",
 				"",
 				"## Indexing",
-				`Indexing is server-managed and refreshed ${cadence} via \`qmd update\` (+ \`qmd embed\` for semantic). You do not trigger indexing; just search.`,
+				`Indexing is server-managed and refreshed ${cadence}; only new, changed, and deleted notes are re-indexed. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				`Call the dedicated \`${datasourceSearchToolName(OBSIDIAN_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a narrowing \`scope\`. Available authorized scopes:`,
-				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
+				`Call the dedicated \`${datasourceSearchToolName(OBSIDIAN_DATASOURCE_ID)}\` tool with a natural-language \`query\`. Optionally pass \`topK\` and a \`scope\`. Each note's source is its vault-relative path, so a folder is a scope. Available vault scopes:`,
+				instanceScopes.length > 0 ? instanceScopes : "- (no vaults configured)",
 				"",
-				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
-				"",
-				"## Native CLI",
-				'This datasource runs the external `qmd` CLI with a workspace-managed config and cache (`QMD_CONFIG_DIR` / `XDG_CACHE_HOME` under the workspace). A bare `qmd` call through `bash` searches qmd\'s default global index instead of this vault, so prefer the dedicated tool; call qmd directly only if you first mirror that managed environment (e.g. `qmd search "<query>" --json -n 20 -c <collection>`).',
+				`Narrow to a folder with \`${folderExample}\`: it matches that folder and everything below it. A glob needs an explicit trailing \`/**\`, for example \`${obsidianInstanceSource(this.instances[0] ?? this.instanceId)}/**/Daily/**\`. \`#\`, \`%\`, \`*\`, and \`\\\` in a note or folder name appear as \`%23\`, \`%25\`, \`%2A\`, and \`%5C\`.`,
 				"",
 				"## Output rules",
-				"Datasource source identifiers such as `/obsidian/<instance>/chunks/<id>` are stable. Result metadata may carry real vault file paths; cite them when helpful. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.",
+				"Result metadata carries the note's `file` (vault-relative path), `title`, and real `path`; cite them when they help the user find the note. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.",
 			].join("\n"),
 		};
 	}
-
-	private fail(
-		code: DatasourceDiagnosticCode,
-		result: { ok: false; reason: string; stdout?: string; stderr: string; code: number | null },
-	): DatasourceIndexResult {
-		const message = result.stderr.length > 0 ? `${result.reason}: ${boundDiagnostic(result.stderr)}` : result.reason;
-		this.lastError = message;
-		const diagnostic: DatasourceDiagnostic = {
-			code,
-			severity: code === "datasource-unavailable" || code === "datasource-empty" ? "warning" : "error",
-			message,
-			instanceId: this.instanceId,
-			source: OBSIDIAN_DATASOURCE_ID,
-		};
-		return {
-			ok: false,
-			instanceId: this.instanceId,
-			skill: OBSIDIAN_DATASOURCE_ID,
-			indexedAt: Date.now(),
-			diagnostics: [diagnostic],
-			error: result.reason,
-			code,
-			message,
-		};
-	}
-}
-
-function qmdFailureCode(reason: string): DatasourceDiagnosticCode {
-	if (reason === "not-configured") return "datasource-unavailable";
-	if (reason === "binary-missing") return "datasource-unavailable";
-	return "datasource-index-failed";
-}
-
-function boundDiagnostic(value: string): string {
-	const trimmed = value.trim();
-	return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
 }
