@@ -239,6 +239,17 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"newer release is available. Set AUTORAG_NO_UPDATE_CHECK=1 to skip the",
 		"lookup; the TUI also runs this check on launch.",
 	]),
+	automate: usage([
+		"autorag automate - file-triggered automations",
+		"",
+		"Usage: autorag automate run <id> [--event <create|update|delete>:<path>]",
+		"",
+		"Reads ~/.autorag/automations.json (or $AUTORAG_HOME/automations.json) and",
+		"runs the named automation, piping matched events as JSON on stdin.",
+		"",
+		"Flags:",
+		"  --event <type:path>   Synthetic file event (repeatable)",
+	]),
 };
 
 export function commandUsage(command: string | undefined): string | undefined {
