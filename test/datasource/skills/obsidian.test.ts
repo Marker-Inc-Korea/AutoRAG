@@ -1,409 +1,370 @@
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	statSync,
+	symlinkSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { QmdClient } from "../../../src/datasource/skills/obsidian/client.ts";
-import { ObsidianBm25Method, ObsidianSemanticMethod } from "../../../src/datasource/skills/obsidian/methods.ts";
-import { toQmdCollectionName } from "../../../src/datasource/skills/obsidian/paths.ts";
-import { ObsidianSkill, type ObsidianSkillClient } from "../../../src/datasource/skills/obsidian/skill.ts";
-import type {
-	QmdEmbedResult,
-	QmdEnsureResult,
-	QmdFailureReason,
-	QmdSearchHit,
-	QmdSearchResult,
-	QmdUpdateResult,
-} from "../../../src/datasource/skills/obsidian/types.ts";
+import { ObsidianSkill } from "../../../src/datasource/skills/obsidian/index.ts";
+import type { RetrievalMethod } from "../../../src/retrieval/types.ts";
+import { type FakeMinSync, installFakeMinSync } from "../../fixtures/fake-minsync.ts";
 
 let root: string;
+let vault: string;
+let fake: FakeMinSync;
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), "autorag-obsidian-"));
+	root = realpathSync(mkdtempSync(join(tmpdir(), "autorag-obsidian-")));
+	vault = join(root, "vault");
+	mkdirSync(vault, { recursive: true });
+	fake = installFakeMinSync(join(root, "bin"));
 });
 
 afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-/** kill(pid, 0) is true for zombies until init reaps them. Those are not running. */
-function posixProcessIsRunnable(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
-		throw error;
-	}
-	try {
-		const stat = execFileSync("ps", ["-p", String(pid), "-o", "stat="], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		}).trim();
-		return stat.length > 0 && stat.charAt(0) !== "Z";
-	} catch {
-		return false;
-	}
+function note(relativePath: string, body: string): void {
+	const path = join(vault, relativePath);
+	mkdirSync(join(path, ".."), { recursive: true });
+	writeFileSync(path, body);
 }
 
-class StubClient implements ObsidianSkillClient {
-	public ensureResult: QmdEnsureResult = {
-		ok: true,
-		data: { collectionName: "vault-1", vaultPath: "/vault", configDir: "/cfg" },
-		stdout: "",
-		stderr: "",
-		code: 0,
-	};
-	public updateResult: QmdUpdateResult = {
-		ok: true,
-		data: { indexed: 1, updated: 0, unchanged: 0, removed: 0 },
-		stdout: "Indexed: 1 new, 0 updated, 0 unchanged, 0 removed",
-		stderr: "",
-		code: 0,
-	};
-	public embedResult: QmdEmbedResult = {
-		ok: true,
-		data: { embedded: true },
-		stdout: "",
-		stderr: "",
-		code: 0,
-	};
-	public searchResult: QmdSearchResult = {
-		ok: true,
-		hits: [
-			{
-				chunkId: "abc123",
-				score: 0.91,
-				content: "Ship the beta in June",
-				title: "Roadmap 2024",
-				file: "projects/roadmap.md",
-			},
-		],
-		data: {
-			hits: [
-				{
-					chunkId: "abc123",
-					score: 0.91,
-					content: "Ship the beta in June",
-					title: "Roadmap 2024",
-					file: "projects/roadmap.md",
-				},
-			],
-		},
-		stdout: "",
-		stderr: "",
-		code: 0,
-	};
-
-	async ensureCollection(): Promise<QmdEnsureResult> {
-		return this.ensureResult;
-	}
-	async update(): Promise<QmdUpdateResult> {
-		return this.updateResult;
-	}
-	async embed(): Promise<QmdEmbedResult> {
-		return this.embedResult;
-	}
-	async search(): Promise<QmdSearchResult> {
-		return this.searchResult;
-	}
+function makeSkill(options: { readonly instanceId?: string } = {}): ObsidianSkill {
+	return new ObsidianSkill({
+		instanceId: options.instanceId ?? "vault-1",
+		vaultPath: vault,
+		workspaceRoot: root,
+		minSync: { binaryPath: fake.binaryPath, autoInstall: false },
+	});
 }
 
-function fail(
-	reason: QmdFailureReason,
-	stderr = "failed",
-): {
-	readonly ok: false;
-	readonly reason: QmdFailureReason;
-	readonly stdout: string;
-	readonly stderr: string;
-	readonly code: number;
-} {
-	return { ok: false, reason, stdout: "", stderr, code: 1 };
+function method(skill: ObsidianSkill, name: "obsidian-bm25" | "obsidian-semantic"): RetrievalMethod {
+	const found = skill.retrievalMethods().find((candidate) => candidate.describe().name === name);
+	if (found === undefined) throw new Error(`skill exposes no ${name} method`);
+	return found;
 }
 
-describe("ObsidianSkill", () => {
-	it("describes qmd-backed capabilities and indexes via update+embed", async () => {
-		const client = new StubClient();
-		const skill = new ObsidianSkill({ client, instanceId: "vault-1", vaultPath: "/vault" });
-		expect(skill.describe()).toMatchObject({
-			name: "obsidian",
-			datasourceId: "obsidian",
-			requiresExternalCli: true,
-			capabilities: expect.arrayContaining(["bm25", "semantic", "incremental", "external-cli"]),
-		});
-		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 1 });
-		const methods = skill.retrievalMethods();
-		expect(methods.map((method) => method.describe().name)).toEqual(["obsidian-bm25", "obsidian-semantic"]);
-		const hits = await methods[0]?.retrieve("ship beta June", { topK: 5 });
-		expect(hits?.[0]?.source).toBe("/obsidian/vault-1/chunks/abc123");
-		expect(hits?.[0]?.metadata?.path).toBe("projects/roadmap.md");
-		expect(skill.describeSources().map((source) => source.source)).toContain("/obsidian/vault-1");
+function workspace(instanceId = "vault-1"): string {
+	return join(root, ".autorag", "datasources", "obsidian", instanceId, "minsync");
+}
+
+function stagedFiles(instanceId = "vault-1"): string[] {
+	const filesRoot = join(workspace(instanceId), "files");
+	const walk = (directory: string): string[] =>
+		readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
+			entry.isDirectory() ? walk(join(directory, entry.name)) : [join(directory, entry.name)],
+		);
+	return existsSync(filesRoot) ? walk(filesRoot).map((path) => path.slice(filesRoot.length + 1)) : [];
+}
+
+function minsyncCalls(): { args: string[]; cwd: string }[] {
+	const log = join(root, "bin", "calls.jsonl");
+	return existsSync(log)
+		? readFileSync(log, "utf8")
+				.trim()
+				.split("\n")
+				.filter(Boolean)
+				.map((line) => JSON.parse(line) as { args: string[]; cwd: string })
+		: [];
+}
+
+describe("ObsidianSkill indexing through MinSync", () => {
+	it("stages only markdown notes into its own MinSync workspace and leaves the vault untouched", async () => {
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta launches in October.");
+		note("Daily/2026-10-01.markdown", "# Daily\nRead about postgres.");
+		note("Projects/diagram.png", "not a note");
+		note("Projects/data.txt", "plain text is not a vault note");
+		note(".obsidian/workspace.json", '{"mobile":"settings"}');
+		note(".trash/Deleted.md", "deleted note about mobile");
+		note("node_modules/pkg/README.md", "a dependency readme about mobile");
+		symlinkSync(join(root, "elsewhere"), join(vault, "linked"));
+		const before = readdirSync(vault, { recursive: true }).sort();
+
+		const result = await makeSkill().index();
+
+		expect(result).toMatchObject({ ok: true, instanceId: "vault-1", skill: "obsidian", chunkCount: 2 });
+		expect(stagedFiles().sort()).toEqual(["Daily/2026-10-01.markdown", "Projects/Roadmap.md"]);
+		expect(minsyncCalls().map((call) => call.args[0])).toEqual(expect.arrayContaining(["init", "check", "sync"]));
+		expect(new Set(minsyncCalls().map((call) => call.cwd))).toEqual(new Set([workspace()]));
+		expect(readdirSync(vault, { recursive: true }).sort()).toEqual(before);
 	});
 
-	it("soft-fails embed while keeping a successful index", async () => {
-		const client = new StubClient();
-		client.embedResult = fail("nonzero-exit", "embed model missing");
-		const skill = new ObsidianSkill({ client, instanceId: "vault-1" });
+	it("re-indexes incrementally: edits and deletions reach the index, unchanged notes are not rewritten", async () => {
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta launches in October.");
+		note("Projects/Budget.md", "# Budget\nHiring is frozen.");
+		const skill = makeSkill();
+		await skill.index();
+		const budgetStaged = join(workspace(), "files", "Projects", "Budget.md");
+		const pinned = new Date("2020-01-01T00:00:00.000Z");
+		utimesSync(budgetStaged, pinned, pinned);
+
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta slipped to November.");
+		rmSync(join(vault, "Projects", "Budget.md"));
+		note("Projects/New.md", "# New\nA brand new note about kubernetes.");
+		const second = await skill.index();
+
+		expect(second).toMatchObject({ ok: true, chunkCount: 2 });
+		expect(stagedFiles().sort()).toEqual(["Projects/New.md", "Projects/Roadmap.md"]);
+		const hits = await method(skill, "obsidian-bm25").retrieve("november", { topK: 5 });
+		expect(hits.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Projects/Roadmap.md"]);
+		expect(await method(skill, "obsidian-bm25").retrieve("frozen", { topK: 5 })).toEqual([]);
+
+		const untouched = join(workspace(), "files", "Projects", "Roadmap.md");
+		utimesSync(untouched, pinned, pinned);
+		await skill.index();
+		expect(statSync(untouched).mtime.getTime()).toBe(pinned.getTime());
+	});
+
+	it("keeps the previous index when the vault is unavailable instead of wiping it", async () => {
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta launches in October.");
+		const skill = makeSkill();
+		await skill.index();
+		rmSync(vault, { recursive: true, force: true });
+
 		const result = await skill.index();
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.diagnostics.some((item) => item.severity === "warning")).toBe(true);
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
+		expect(stagedFiles()).toEqual(["Projects/Roadmap.md"]);
+	});
+
+	it("does not treat a vault that turned empty as a mass delete", async () => {
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta launches in October.");
+		const skill = makeSkill();
+		await skill.index();
+		rmSync(join(vault, "Projects"), { recursive: true });
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-empty" });
+		expect(stagedFiles()).toEqual(["Projects/Roadmap.md"]);
+	});
+
+	it("keeps notes under a folder it could not read and reports a warning", async () => {
+		note("Open/Visible.md", "# Visible\nreadable note");
+		note("Locked/Secret.md", "# Secret\nlocked note");
+		const skill = makeSkill();
+		await skill.index();
+		chmodSync(join(vault, "Locked"), 0o000);
+		try {
+			const result = await skill.index();
+			expect(result.ok).toBe(true);
+			expect(result.diagnostics.some((diagnostic) => diagnostic.severity === "warning")).toBe(true);
+			expect(stagedFiles().sort()).toEqual(["Locked/Secret.md", "Open/Visible.md"]);
+		} finally {
+			chmodSync(join(vault, "Locked"), 0o755);
 		}
 	});
 
-	it("fails index when update fails", async () => {
-		const client = new StubClient();
-		client.updateResult = fail("binary-missing", "qmd binary not found");
-		const skill = new ObsidianSkill({ client });
-		expect(await skill.index()).toMatchObject({ ok: false, code: "datasource-unavailable" });
-	});
-
-	it("manifest stays free of absolute home paths", () => {
+	it("reports a missing minsync binary as an unavailable datasource instead of throwing", async () => {
+		note("Projects/Roadmap.md", "# Roadmap");
 		const skill = new ObsidianSkill({
-			client: new StubClient(),
-			instanceId: "work",
-			vaultPath: "/Users/someone/Notes",
-		});
-		const manifest = skill.skillManifest();
-		expect(manifest.content).toContain("/obsidian/work");
-		expect(manifest.content).toContain("qmd");
-		expect(manifest.content).not.toContain("/Users/someone");
-	});
-});
-
-describe("Obsidian retrieval methods", () => {
-	it("maps lexical and semantic hits to opaque sources", async () => {
-		const hits: readonly QmdSearchHit[] = [{ chunkId: "n1", score: 1.2, content: "beta ship", file: "a.md" }];
-		const client = {
-			async search(): Promise<QmdSearchResult> {
-				return { ok: true, hits, data: { hits }, stdout: "", stderr: "", code: 0 };
-			},
-		};
-		const lexical = await new ObsidianBm25Method({ client, instanceId: "v1" }).retrieve("beta", { topK: 3 });
-		const semantic = await new ObsidianSemanticMethod({ client, instanceId: "v1" }).retrieve("beta", { topK: 3 });
-		expect(lexical[0]?.source).toBe("/obsidian/v1/chunks/n1");
-		expect(semantic[0]?.metadata?.mode).toBe("vsearch");
-	});
-
-	it("surfaces the qmd failure with its stderr", async () => {
-		const client = {
-			async search(): Promise<QmdSearchResult> {
-				return { ok: false, reason: "nonzero-exit", stdout: "", stderr: "nope", code: 1 };
-			},
-		};
-		await expect(new ObsidianBm25Method({ client, instanceId: "v1" }).retrieve("x", { topK: 3 })).rejects.toThrow(
-			"obsidian search failed (nonzero-exit, exit code 1): nope",
-		);
-	});
-});
-
-describe("QmdClient", () => {
-	it("writes isolated index.yml and parses search JSON from a fake binary", async () => {
-		const binDir = join(root, "bin");
-		const binaryPath = join(binDir, "qmd");
-		const logPath = join(root, "calls.jsonl");
-		mkdirSync(binDir, { recursive: true });
-		writeFileSync(
-			binaryPath,
-			`#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
-const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, configDir: process.env.QMD_CONFIG_DIR, cache: process.env.XDG_CACHE_HOME }) + "\\n");
-if (args[0] === "search" || args[0] === "vsearch") {
-  process.stdout.write(JSON.stringify([{ docid: "#deadbe", score: 0.8, file: "notes/a.md", snippet: "hello vault" }]));
-} else if (args[0] === "update") {
-  process.stdout.write("Indexed: 2 new, 1 updated, 3 unchanged, 0 removed\\n");
-} else {
-  process.stdout.write("{}\\n");
-}
-process.exit(0);
-`,
-		);
-		chmodSync(binaryPath, 0o755);
-
-		const vault = join(root, "vault");
-		mkdirSync(vault, { recursive: true });
-		writeFileSync(join(vault, "note.md"), "# Note\nhello");
-
-		const client = new QmdClient({
-			binaryPath,
+			instanceId: "vault-1",
 			vaultPath: vault,
 			workspaceRoot: root,
-			instanceId: "vault-1",
-			timeoutMs: 10_000,
+			minSync: { binaryPath: join(root, "no-such-minsync"), autoInstall: false },
 		});
 
-		const ensure = await client.ensureCollection();
-		expect(ensure.ok).toBe(true);
-		const configPath = join(root, ".autorag", "datasources", "obsidian", "vault-1", "config", "index.yml");
-		expect(existsSync(configPath)).toBe(true);
-		expect(readFileSync(configPath, "utf8")).toContain(JSON.stringify(vault));
-		expect(readFileSync(configPath, "utf8")).toContain(".obsidian/**");
+		const result = await skill.index();
 
-		const update = await client.update();
-		expect(update.ok).toBe(true);
-		if (update.ok) {
-			expect(update.data).toMatchObject({ indexed: 2, updated: 1, unchanged: 3, removed: 0 });
+		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
+		expect(result.diagnostics[0]?.message).toContain("minsync");
+	});
+
+	it("reports a failing MinSync sync with MinSync's own reason", async () => {
+		note("Projects/Roadmap.md", "# Roadmap");
+		fake.breakSync();
+
+		const result = await makeSkill().index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-index-failed" });
+		expect(result.diagnostics[0]?.message).toContain("boom");
+	});
+
+	it("fails clearly when no vaultPath is configured", async () => {
+		const result = await new ObsidianSkill({ workspaceRoot: root }).index();
+		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
+	});
+});
+
+describe("ObsidianSkill retrieval", () => {
+	beforeEach(() => {
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta launches in October.");
+		note("Projects/Nested/Plan.md", "# Plan\nMobile launch plan details.");
+		note("Projects-old/Archive.md", "# Archive\nOld mobile launch notes.");
+		note("Daily/2026-10-01.md", "# Daily\nMobile standup and postgres reading.");
+		note("Work/Daily/2026-10-02.md", "# Work daily\nMobile release checklist.");
+	});
+
+	it("returns vault-relative opaque sources with the real note path in metadata", async () => {
+		const skill = makeSkill();
+		await skill.index();
+
+		const hits = await method(skill, "obsidian-bm25").retrieve("beta october", { topK: 5 });
+
+		expect(hits).toHaveLength(1);
+		expect(hits[0]).toMatchObject({
+			source: "/obsidian/vault-1/Projects/Roadmap.md",
+			content: expect.stringContaining("mobile app beta"),
+			metadata: {
+				method: "obsidian-bm25",
+				datasourceId: "obsidian",
+				instanceId: "vault-1",
+				file: "Projects/Roadmap.md",
+				title: "Roadmap",
+				path: join(vault, "Projects", "Roadmap.md"),
+			},
+		});
+	});
+
+	it("filters by folder through scope without leaking sibling folders that share a prefix", async () => {
+		const skill = makeSkill();
+		await skill.index();
+		const bm25 = method(skill, "obsidian-bm25");
+
+		const everything = await bm25.retrieve("mobile", { topK: 10 });
+		expect(everything.map((hit) => hit.source).sort()).toEqual([
+			"/obsidian/vault-1/Daily/2026-10-01.md",
+			"/obsidian/vault-1/Projects-old/Archive.md",
+			"/obsidian/vault-1/Projects/Nested/Plan.md",
+			"/obsidian/vault-1/Projects/Roadmap.md",
+			"/obsidian/vault-1/Work/Daily/2026-10-02.md",
+		]);
+
+		const projects = await bm25.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/Projects" });
+		expect(projects.map((hit) => hit.source).sort()).toEqual([
+			"/obsidian/vault-1/Projects/Nested/Plan.md",
+			"/obsidian/vault-1/Projects/Roadmap.md",
+		]);
+
+		// The shared scope matcher's `**/` needs at least one folder before `Daily`, so a top-level `Daily` is not included.
+		const nestedDaily = await bm25.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/**/Daily/**" });
+		expect(nestedDaily.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Work/Daily/2026-10-02.md"]);
+
+		const oneNote = await bm25.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/Projects/Roadmap.md" });
+		expect(oneNote.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Projects/Roadmap.md"]);
+	});
+
+	it("still fills topK from a small folder when many notes elsewhere rank higher", async () => {
+		for (let index = 0; index < 40; index += 1) {
+			note(`Noise/n${index}.md`, "mobile mobile mobile mobile mobile");
 		}
+		const skill = makeSkill();
+		await skill.index();
 
-		const search = await client.search("search", "hello", { topK: 5 });
-		expect(search.ok).toBe(true);
-		if (search.ok) {
-			expect(search.hits[0]).toMatchObject({ chunkId: "deadbe", content: "hello vault", score: 0.8 });
-		}
+		const scoped = await method(skill, "obsidian-bm25").retrieve("mobile", {
+			topK: 3,
+			scope: "/obsidian/vault-1/Daily",
+		});
 
-		const calls = readFileSync(logPath, "utf8")
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line) as { args: string[]; configDir: string });
-		expect(calls.some((call) => call.args[0] === "update")).toBe(true);
+		expect(scoped.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Daily/2026-10-01.md"]);
+	});
+
+	it("queries MinSync in the mode each method names, against its own workspace", async () => {
+		const skill = makeSkill();
+		await skill.index();
+
+		await method(skill, "obsidian-bm25").retrieve("mobile", { topK: 4 });
+		await method(skill, "obsidian-semantic").retrieve("mobile", { topK: 4 });
+
+		const queries = minsyncCalls().filter((call) => call.args[0] === "query");
+		expect(queries.map((call) => call.args[call.args.indexOf("--mode") + 1])).toEqual(["bm25", "vector"]);
+		expect(new Set(queries.map((call) => call.cwd))).toEqual(new Set([workspace()]));
+		expect(method(skill, "obsidian-bm25").describe()).toMatchObject({
+			type: "bm25",
+			datasourceId: "obsidian",
+			capabilities: expect.arrayContaining(["lexical", "scoped"]),
+		});
+		expect(method(skill, "obsidian-semantic").describe()).toMatchObject({
+			type: "vector",
+			datasourceId: "obsidian",
+			capabilities: expect.arrayContaining(["semantic", "scoped"]),
+		});
+	});
+
+	it("keeps distinct sources for notes whose names contain # or %, and matches Korean names written decomposed", async () => {
+		const decomposed = "계획.md".normalize("NFD");
+		note("Ideas/C# tips 100%.md", "# Tips\nspecialchars mobile");
+		note(`프로젝트/${decomposed}`, "# 계획\n모바일 앱 출시 일정");
+		const skill = makeSkill();
+		await skill.index();
+
+		const special = await method(skill, "obsidian-bm25").retrieve("specialchars", { topK: 5 });
+		expect(special.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Ideas/C%23 tips 100%25.md"]);
+		expect(special[0]?.metadata.file).toBe("Ideas/C# tips 100%.md");
 		expect(
-			calls.every(
-				(call) => call.configDir === join(root, ".autorag", "datasources", "obsidian", "vault-1", "config"),
-			),
-		).toBe(true);
+			await method(skill, "obsidian-bm25").retrieve("specialchars", {
+				topK: 5,
+				scope: "/obsidian/vault-1/Ideas/C%23 tips 100%25.md",
+			}),
+		).toHaveLength(1);
+
+		const korean = await method(skill, "obsidian-bm25").retrieve("모바일", { topK: 5 });
+		expect(korean.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/프로젝트/계획.md".normalize("NFC")]);
+		expect(korean[0]?.metadata.path).toBe(join(vault, "프로젝트", decomposed));
 	});
 
-	it("uses the managed qmd environment transport for configured workspaces", async () => {
-		const binDir = join(root, "managed-bin");
-		const binaryPath = join(binDir, "qmd");
-		const logPath = join(root, "managed-calls.jsonl");
-		mkdirSync(binDir, { recursive: true });
-		writeFileSync(
-			binaryPath,
-			`#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
-  configDir: process.env.QMD_CONFIG_DIR,
-  cache: process.env.XDG_CACHE_HOME,
-  args: process.argv.slice(2),
-}) + "\\n");
-process.stdout.write("{}");
-`,
+	it("rejects with an actionable reason before the first successful index", async () => {
+		await expect(method(makeSkill(), "obsidian-bm25").retrieve("mobile", { topK: 3 })).rejects.toThrow(
+			/not indexed yet/u,
 		);
-		chmodSync(binaryPath, 0o755);
-		const vault = join(root, "vault-managed");
-		mkdirSync(vault, { recursive: true });
-		const client = new QmdClient({ binaryPath, workspaceRoot: root, vaultPath: vault, instanceId: "notes" });
-
-		expect(await client.ensureCollection()).toMatchObject({ ok: true });
-		const call = JSON.parse(readFileSync(logPath, "utf8").trim()) as {
-			configDir: string;
-			cache: string;
-			args: string[];
-		};
-		expect(call.configDir).toBe(join(root, ".autorag", "datasources", "obsidian", "notes", "config"));
-		expect(call.cache).toBe(join(root, ".autorag", "datasources", "obsidian", "notes", "cache"));
-		expect(call.args).toEqual(["status"]);
 	});
 
-	it("honors an explicit operator-owned qmd config directory", async () => {
-		const binDir = join(root, "explicit-bin");
-		const binaryPath = join(binDir, "qmd");
-		const logPath = join(root, "explicit-calls.jsonl");
-		const configPath = join(root, "operator-qmd-config");
-		mkdirSync(binDir, { recursive: true });
-		mkdirSync(configPath, { recursive: true });
-		writeFileSync(
-			binaryPath,
-			`#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(logPath)}, process.env.QMD_CONFIG_DIR + "\\n");
-process.stdout.write("{}");
-`,
+	it("rejects while a sync is rewriting the index instead of returning a partial view", async () => {
+		const skill = makeSkill();
+		await skill.index();
+		note("Projects/Another.md", "# Another\nmobile");
+		const syncing = skill.index();
+		await expect(method(skill, "obsidian-bm25").retrieve("mobile", { topK: 3 })).rejects.toThrow(
+			/sync is in progress/u,
 		);
-		chmodSync(binaryPath, 0o755);
-		const client = new QmdClient({ binaryPath, configPath, vaultPath: join(root, "vault") });
-
-		expect(await client.ensureCollection()).toMatchObject({ ok: true });
-		expect(readFileSync(logPath, "utf8").trim()).toBe(configPath);
+		await syncing;
 	});
 
-	it("returns binary-missing without throwing", async () => {
-		const client = new QmdClient({
-			binaryPath: join(root, "no-such-qmd"),
-			vaultPath: join(root, "vault"),
-			workspaceRoot: root,
-			instanceId: "x",
-		});
-		mkdirSync(join(root, "vault"), { recursive: true });
-		const result = await client.update();
-		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.reason).toBe("binary-missing");
+	it("returns nothing for an empty query without spawning MinSync", async () => {
+		const skill = makeSkill();
+		await skill.index();
+		const before = minsyncCalls().length;
+
+		expect(await method(skill, "obsidian-bm25").retrieve("   ", { topK: 3 })).toEqual([]);
+		expect(minsyncCalls()).toHaveLength(before);
 	});
-
-	it("reaps a qmd descendant that keeps the inherited stdio open after the direct child exits", async () => {
-		const binaryPath = join(root, "qmd-descendant");
-		mkdirSync(join(root, "vault-descendant"), { recursive: true });
-		// qmd 2.8.3 is a launcher: it spawns a runtime descendant that inherits the
-		// launcher stdout/stderr pipes. When only the launcher exits, the descendant
-		// keeps those pipes open and Node never emits "close".
-		writeFileSync(
-			binaryPath,
-			`#!/usr/bin/env node
-import { spawn } from "node:child_process";
-const descendant = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 5000)"], { stdio: "inherit" });
-// Wait until exec has finished so inherited stdio is actually held, matching
-// qmd 2.8.3 (runtime already running when the launcher exits).
-descendant.on("spawn", () => {
-	process.stdout.write(JSON.stringify([{ docid: "descendant", score: 1, file: "notes/descendant.md", snippet: "descendant", grandchildPid: descendant.pid }]));
-	process.exit(0);
-});
-`,
-		);
-		chmodSync(binaryPath, 0o755);
-
-		const client = new QmdClient({
-			binaryPath,
-			vaultPath: join(root, "vault-descendant"),
-			workspaceRoot: root,
-			instanceId: "descendant",
-			timeoutMs: 30_000,
-		});
-		let bound: ReturnType<typeof setTimeout> | undefined;
-		let result: Awaited<ReturnType<QmdClient["search"]>>;
-		try {
-			// The fixture spawns a fresh Node runtime; under a loaded parallel suite
-			// that startup plus the 500ms reap grace can exceed a tight bound. Keep
-			// the bound generous so the assertion tests the reaper, not machine speed,
-			// while a genuine regression still fails here instead of hanging.
-			result = await Promise.race([
-				client.search("search", "descendant"),
-				new Promise<never>((_, reject) => {
-					bound = setTimeout(
-						() =>
-							reject(
-								new Error(
-									"qmd search never settled: the direct child exited while its descendant held the inherited stdio open",
-								),
-							),
-						30_000,
-					);
-				}),
-			]);
-		} finally {
-			clearTimeout(bound);
-		}
-
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		expect(result.hits[0]?.chunkId).toBe("descendant");
-		const pidMatch = /"grandchildPid":(\d+)/.exec(result.stdout);
-		const pidText = pidMatch?.[1];
-		if (pidText === undefined) throw new Error("qmd fixture did not report its descendant PID");
-		if (process.platform === "win32") return;
-		if (posixProcessIsRunnable(Number(pidText))) {
-			throw new Error(`qmd descendant ${pidText} survived after the client settled`);
-		}
-	}, 10_000);
 });
 
-describe("toQmdCollectionName", () => {
-	it("collapses punctuation and strips edge dashes without a quadratic regex", () => {
-		expect(toQmdCollectionName("Vault One")).toBe("vault-one");
-		expect(toQmdCollectionName("---Work---")).toBe("work");
-		const padded = `${"-".repeat(10_000)}ok${"-".repeat(10_000)}`;
-		expect(toQmdCollectionName(padded)).toBe("ok");
-		expect(toQmdCollectionName("---")).toBe("default");
+describe("ObsidianSkill description", () => {
+	it("announces a MinSync-backed vault datasource with folder scopes and no external CLI", () => {
+		const skill = makeSkill({ instanceId: "my vault" });
+		const descriptor = skill.describe();
+
+		expect(descriptor).toMatchObject({ name: "obsidian", datasourceId: "obsidian", instanceId: "my vault" });
+		expect(descriptor.requiresExternalCli).toBeUndefined();
+		expect(descriptor.capabilities).toEqual(expect.arrayContaining(["lexical", "semantic", "incremental"]));
+		expect(descriptor.capabilities).not.toContain("external-cli");
+		expect(skill.describeSources().map((source) => source.source)).toEqual(["/obsidian/my vault"]);
+		const manifest = skill.skillManifest();
+		expect(manifest.content).toContain("search_datasource_obsidian");
+		expect(manifest.content).toContain("/obsidian/my vault/<folder>");
+		expect(manifest.content).not.toMatch(/qmd/iu);
+	});
+
+	it("keeps instances in separate MinSync workspaces", async () => {
+		note("A.md", "# A\nalpha");
+		await makeSkill({ instanceId: "one" }).index();
+		await makeSkill({ instanceId: "two" }).index();
+
+		expect(stagedFiles("one")).toEqual(["A.md"]);
+		expect(stagedFiles("two")).toEqual(["A.md"]);
+		expect(workspace("one")).not.toBe(workspace("two"));
+		expect(existsSync(join(root, ".autorag", "minsync"))).toBe(false);
 	});
 });

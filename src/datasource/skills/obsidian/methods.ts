@@ -4,130 +4,67 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
-import { datasourceCliError } from "../../errors.ts";
-import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
-import type { QmdSearchHit, QmdSearchMode, QmdSearchOptions, QmdSearchResult } from "./types.ts";
-
-export interface ObsidianSearchClient {
-	search(mode: QmdSearchMode, query: string, options?: QmdSearchOptions): Promise<QmdSearchResult>;
-}
+import { OBSIDIAN_DATASOURCE_ID } from "./paths.ts";
+import type { ObsidianSearchMode, ObsidianVaultIndex } from "./vault-index.ts";
 
 export interface ObsidianMethodOptions {
-	readonly client: ObsidianSearchClient;
-	readonly instanceId: string;
-	readonly tags?: readonly string[];
+	readonly index: ObsidianVaultIndex;
+	readonly tags: readonly string[];
 }
 
-const OBSIDIAN_DATASOURCE_ID = "obsidian";
-const DEFAULT_OBSIDIAN_TAGS = ["obsidian", "notes"] as const;
-const DEFAULT_TOP_K = 20;
+const COMMON_CAPABILITIES = ["scoped", "incremental", "path-opaque-sources"] as const;
 
-export class ObsidianBm25Method implements RetrievalMethod {
-	private readonly client: ObsidianSearchClient;
-	private readonly instanceId: string;
+/** One MinSync query mode over one vault. A failure reaches the pipeline verbatim and is reported as unsearched. */
+class ObsidianMinSyncMethod implements RetrievalMethod {
+	private readonly index: ObsidianVaultIndex;
 	private readonly tags: readonly string[];
+	private readonly mode: ObsidianSearchMode;
 
-	constructor(options: ObsidianMethodOptions) {
-		this.client = options.client;
-		this.instanceId = options.instanceId;
-		this.tags = options.tags ?? DEFAULT_OBSIDIAN_TAGS;
+	constructor(mode: ObsidianSearchMode, options: ObsidianMethodOptions) {
+		this.mode = mode;
+		this.index = options.index;
+		this.tags = options.tags;
 	}
 
 	describe(): RetrievalMethodDescriptor {
-		return {
-			name: "obsidian-bm25",
-			type: "bm25",
-			description: "BM25 lexical retrieval over an Obsidian vault via the external qmd CLI",
-			status: "active",
-			capabilities: ["lexical", "keyword-mode", "scoped", "external-cli", "path-opaque-sources"],
-			datasourceId: OBSIDIAN_DATASOURCE_ID,
-			tags: this.tags,
-		};
+		return this.mode === "bm25"
+			? {
+					name: "obsidian-bm25",
+					type: "bm25",
+					description: "BM25 lexical retrieval over an Obsidian vault, indexed by MinSync",
+					status: "active",
+					capabilities: ["lexical", ...COMMON_CAPABILITIES],
+					datasourceId: OBSIDIAN_DATASOURCE_ID,
+					tags: this.tags,
+				}
+			: {
+					name: "obsidian-semantic",
+					type: "vector",
+					description: "Semantic vector retrieval over an Obsidian vault, indexed by MinSync",
+					status: "active",
+					capabilities: ["semantic", ...COMMON_CAPABILITIES],
+					datasourceId: OBSIDIAN_DATASOURCE_ID,
+					tags: this.tags,
+				};
 	}
 
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		return retrieveObsidian(this.client, "search", "obsidian-bm25", this.instanceId, query, options);
+		return this.index.query(this.mode, query, {
+			...(options.topK === undefined ? {} : { topK: options.topK }),
+			...(options.scope === undefined ? {} : { scope: options.scope }),
+			...(options.signal === undefined ? {} : { signal: options.signal }),
+		});
 	}
 }
 
-export class ObsidianSemanticMethod implements RetrievalMethod {
-	private readonly client: ObsidianSearchClient;
-	private readonly instanceId: string;
-	private readonly tags: readonly string[];
-
+export class ObsidianBm25Method extends ObsidianMinSyncMethod {
 	constructor(options: ObsidianMethodOptions) {
-		this.client = options.client;
-		this.instanceId = options.instanceId;
-		this.tags = options.tags ?? DEFAULT_OBSIDIAN_TAGS;
-	}
-
-	describe(): RetrievalMethodDescriptor {
-		return {
-			name: "obsidian-semantic",
-			type: "vector",
-			description: "Semantic vector retrieval over an Obsidian vault via the external qmd CLI",
-			status: "active",
-			capabilities: ["semantic", "vector-mode", "scoped", "external-cli", "path-opaque-sources"],
-			datasourceId: OBSIDIAN_DATASOURCE_ID,
-			tags: this.tags,
-		};
-	}
-
-	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		return retrieveObsidian(this.client, "vsearch", "obsidian-semantic", this.instanceId, query, options);
+		super("bm25", options);
 	}
 }
 
-async function retrieveObsidian(
-	client: ObsidianSearchClient,
-	mode: QmdSearchMode,
-	methodName: string,
-	instanceId: string,
-	query: string,
-	options: RetrievalOptions,
-): Promise<RetrievalResult[]> {
-	const trimmed = query.trim();
-	if (trimmed.length === 0) return [];
-	const topK = options.topK ?? DEFAULT_TOP_K;
-	const searchOptions: QmdSearchOptions = { topK, signal: options.signal };
-
-	// qmd failures reach the caller verbatim: the pipeline reports this
-	// datasource as unsearched with the CLI's own error text.
-	const result: QmdSearchResult = await client.search(mode, trimmed, searchOptions);
-	if (!result.ok) throw datasourceCliError(OBSIDIAN_DATASOURCE_ID, mode, result);
-
-	const mapped: RetrievalResult[] = [];
-	for (const hit of result.hits) {
-		const source = datasourceSourcePath(OBSIDIAN_DATASOURCE_ID, instanceId, hit.chunkId);
-		if (!matchesDatasourceScope(source, options.scope)) continue;
-		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode));
-		if (mapped.length >= topK) break;
+export class ObsidianSemanticMethod extends ObsidianMinSyncMethod {
+	constructor(options: ObsidianMethodOptions) {
+		super("semantic", options);
 	}
-	return mapped;
-}
-
-function toRetrievalResult(
-	hit: QmdSearchHit,
-	source: string,
-	methodName: string,
-	instanceId: string,
-	mode: QmdSearchMode,
-): RetrievalResult {
-	return {
-		id: `obsidian:${instanceId}:${hit.chunkId}`,
-		content: hit.content,
-		source,
-		score: hit.score,
-		metadata: {
-			...(hit.metadata ?? {}),
-			method: methodName,
-			datasourceId: OBSIDIAN_DATASOURCE_ID,
-			instanceId,
-			mode,
-			chunkId: hit.chunkId,
-			...(hit.title !== undefined ? { title: hit.title } : {}),
-			...(hit.file !== undefined ? { path: hit.file } : {}),
-			...(hit.docid !== undefined ? { docid: hit.docid } : {}),
-		},
-	};
 }

@@ -14,7 +14,7 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "slacrawl", binary: "slacrawl" },
 	{ name: "lark", binary: "lark-cli", command: "scripts/manual-qa/run-qa-lark-live.ts", identityPattern: /\/lark\/[^/]+\/(?:messages|docs)\/[^/\s]+/u },
 	{ name: "notcrawl", binary: "notcrawl" },
-	{ name: "qmd", binary: "qmd" },
+	{ name: "obsidian", binary: "minsync", command: "scripts/manual-qa/run-qa-obsidian-live.ts", identityPattern: /\/obsidian\/[^/\s]+\/[^\s]+\.md/u },
 	{ name: "rclone", binary: "rclone" },
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
 	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\bspotlight:[^\s]+/u },
@@ -31,7 +31,8 @@ const NATIVE_STORE_PROBES = Object.freeze({
 	telecrawl: () => existsSync(join(homedir(), ".telecrawl", "telecrawl.db")),
 	slacrawl: () => existsSync(join(homedir(), ".slacrawl", "config.toml")),
 	notcrawl: () => existsSync(join(homedir(), ".notcrawl", "notcrawl.db")),
-	qmd: () => existsSync(join(homedir(), ".cache", "qmd", "index.sqlite")),
+	// Self-contained: the harness builds its own vault fixture, so the lane needs `minsync` and nothing else.
+	obsidian: () => true,
 	rclone: () => existsSync(join(homedir(), ".config", "rclone", "rclone.conf")),
 	mailcrawl: () => existsSync(join(homedir(), ".mailcrawl")),
 	// Spotlight's harness must actually index+search a fixture: on hosts where

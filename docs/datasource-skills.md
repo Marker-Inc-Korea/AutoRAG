@@ -51,6 +51,42 @@ protected locations. Unavailable on non-macOS hosts.
 }
 ```
 
+### Obsidian
+
+`obsidian` indexes a markdown vault with MinSync — the same engine and
+`minSync.*` binary/embedder configuration used for local files — in its own
+MinSync workspace at
+`<workspace>/.autorag/datasources/obsidian/<instanceId>/minsync`, so vault notes
+never mix with the local-file index. There is no external CLI.
+
+```json
+{
+  "datasources": {
+    "obsidian": {
+      "connector": { "vaultPath": "/path/to/vault" }
+    }
+  }
+}
+```
+
+Only `.md` and `.markdown` notes are staged. Dot-prefixed folders and files
+(`.obsidian`, `.trash`, `.git`), `node_modules`, and symlinks are skipped, and a
+re-index is incremental: only changed or deleted notes are touched. The former
+`connector.binaryPath` and `connector.configPath` options no longer exist.
+Retrieval exposes `obsidian-bm25` (lexical) and `obsidian-semantic` (vector,
+through the shared embedder), and both accept an ordinary `scope`. Sources are
+vault-relative note paths as opaque slash paths —
+`/obsidian/<instanceId>/<folder>/<note>.md`, for example
+`/obsidian/default/Projects/Roadmap.md`, with `#` shown as `%23`. Folder
+filtering is the ordinary `scope`: `scope=/obsidian/default/Projects` matches
+that folder and everything under it, and a scope that already contains `*` is
+matched literally as written, so a nested-folder glob needs an explicit trailing
+`/**`, for example `/obsidian/default/**/Daily/**`. Result metadata `path`
+carries the real note path on disk and `file` the vault-relative path. The index
+is AutoRAG-owned: to reset it, delete
+`<workspace>/.autorag/datasources/obsidian/<instanceId>` and run
+`autorag refresh --method datasources`.
+
 ## Shared embedding runtime and native ownership
 
 AutoRAG owns no embedding model and no bundled native runtime. MinSync provisions
@@ -112,8 +148,10 @@ The zero-configuration boundary is narrow:
   AutoRAG sidecars use the shared embedder.
 - **github-gist** semantic retrieval uses the shared embedder;
   `connector.semantic: false` keeps it lexical-only.
-- **qmd** and **clawgallery** are untouched. qmd retains its native retrieval;
-  ClawGallery retains its VDR/native retrieval.
+- **obsidian** semantic retrieval runs through MinSync with the shared embedder,
+  in the datasource's own workspace under
+  `.autorag/datasources/obsidian/<instanceId>/minsync`.
+- **clawgallery** is untouched: it retains its VDR/native retrieval.
 
 Embedding requests contain text and the selected model only. AutoRAG does not
 send archive IDs, source paths, credentials, or native store paths to the

@@ -9,9 +9,9 @@ import { singleDatasourceToolName } from "../../src/agent/search-single-datasour
 import type { CrawlerSkillClient } from "../../src/datasource/crawler-skill.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { GitHubSkill } from "../../src/datasource/skills/github/index.ts";
-import { ObsidianSkill } from "../../src/datasource/skills/obsidian/index.ts";
 import { RssSkill } from "../../src/datasource/skills/rss/index.ts";
 import { SlackSkill } from "../../src/datasource/skills/slack/index.ts";
+import { installFakeMinSync } from "../fixtures/fake-minsync.ts";
 import { createMockFetch } from "../fixtures/mock-fetch.ts";
 
 let tmpDir: string;
@@ -161,70 +161,25 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		expect(serialized).not.toContain(tmpDir);
 	});
 
-	it("wires factory-built Obsidian skill config and qmd-backed retrieval through the agent", async () => {
+	it("indexes a factory-built Obsidian vault through MinSync and filters a folder through the agent", async () => {
 		const vault = join(tmpDir, "vault");
-		mkdirSync(join(vault, "notes"), { recursive: true });
-		writeFileSync(join(vault, "notes", "decisions.md"), "# Decisions\nWe chose Postgres over MySQL for the core DB.");
+		mkdirSync(join(vault, "Decisions"), { recursive: true });
+		mkdirSync(join(vault, "Daily"), { recursive: true });
+		writeFileSync(
+			join(vault, "Decisions", "database.md"),
+			"# Decisions\nWe chose Postgres over MySQL for the core database.",
+		);
+		writeFileSync(join(vault, "Daily", "2026-10-01.md"), "# Daily\nRead about Postgres vacuum tuning.");
+		const fake = installFakeMinSync(join(tmpDir, "bin"));
 
 		const { skills, unknown } = buildDatasourceSkills(
-			{
-				obsidian: { instanceId: "vault-1", connector: { vaultPath: vault } },
-				slack: false,
-			},
+			{ obsidian: { instanceId: "vault-1", connector: { vaultPath: vault } }, slack: false },
 			tmpDir,
+			{ minSync: { binaryPath: fake.binaryPath, autoInstall: false } },
 		);
 		expect(unknown).toEqual([]);
 		expect(skills.map((skill) => skill.describe().name)).toEqual(["obsidian"]);
-		expect(skills[0]?.describe().capabilities).toEqual(
-			expect.arrayContaining(["bm25", "semantic", "incremental", "external-cli"]),
-		);
-
-		const stubHits = [
-			{
-				chunkId: "decisions",
-				score: 0.95,
-				content: "We chose Postgres over MySQL for the core DB.",
-				file: join(vault, "notes", "decisions.md"),
-			},
-		] as const;
-		const skill = new ObsidianSkill({
-			instanceId: "vault-1",
-			workspaceRoot: tmpDir,
-			vaultPath: vault,
-			client: {
-				async ensureCollection() {
-					return {
-						ok: true as const,
-						data: { collectionName: "vault-1", vaultPath: vault, configDir: tmpDir },
-						stdout: "",
-						stderr: "",
-						code: 0,
-					};
-				},
-				async update() {
-					return {
-						ok: true as const,
-						data: { indexed: 1, updated: 0, unchanged: 0, removed: 0 },
-						stdout: "",
-						stderr: "",
-						code: 0,
-					};
-				},
-				async embed() {
-					return { ok: true as const, data: { embedded: true }, stdout: "", stderr: "", code: 0 };
-				},
-				async search() {
-					return {
-						ok: true as const,
-						hits: stubHits,
-						data: { hits: stubHits },
-						stdout: "",
-						stderr: "",
-						code: 0,
-					};
-				},
-			},
-		});
+		expect(skills[0]?.describe().requiresExternalCli).toBeUndefined();
 
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
@@ -232,54 +187,85 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 			minSync: { autoInstall: false },
 			everything: false,
 			fsearch: false,
-			datasourceSkills: [skill],
+			datasourceSkills: skills,
 		});
-		await agent.refresh(true, { methods: ["datasources"] });
-		const { results } = await agent.searchSingleDatasourceDocuments("obsidian", "postgres core database decision");
-		expect(results.length).toBeGreaterThan(0);
-		expect(results[0]?.source).toMatch(/^\/obsidian\/vault-1\/chunks\//);
-		expect(results[0]?.metadata?.path).toBe(join(vault, "notes", "decisions.md"));
+		const refresh = await agent.refresh(true, { methods: ["datasources"] });
+		expect(refresh.datasources?.find((result) => result.skill === "obsidian")).toMatchObject({
+			ok: true,
+			chunkCount: 2,
+		});
+
+		const everywhere = await agent.searchSingleDatasourceDocuments("obsidian", "postgres");
+		expect(everywhere.results.map((result) => result.source).sort()).toEqual([
+			"/obsidian/vault-1/Daily/2026-10-01.md",
+			"/obsidian/vault-1/Decisions/database.md",
+		]);
+
+		const decisions = await agent.searchSingleDatasourceDocuments("obsidian", "postgres", {
+			scope: "/obsidian/vault-1/Decisions",
+		});
+		expect(decisions.results.map((result) => result.source)).toEqual(["/obsidian/vault-1/Decisions/database.md"]);
+		expect(decisions.results[0]?.metadata.path).toBe(join(vault, "Decisions", "database.md"));
 	});
 
-	it("exposes both lexical and semantic Obsidian methods after a successful qmd index", async () => {
-		const skill = new ObsidianSkill({
-			instanceId: "vault-1",
-			workspaceRoot: tmpDir,
-			vaultPath: join(tmpDir, "vault"),
-			client: {
-				async ensureCollection() {
-					return {
-						ok: true as const,
-						data: { collectionName: "vault-1", vaultPath: join(tmpDir, "vault"), configDir: tmpDir },
-						stdout: "",
-						stderr: "",
-						code: 0,
-					};
-				},
-				async update() {
-					return {
-						ok: true as const,
-						data: { indexed: 1, updated: 0, unchanged: 0, removed: 0 },
-						stdout: "",
-						stderr: "",
-						code: 0,
-					};
-				},
-				async embed() {
-					return { ok: true as const, data: { embedded: true }, stdout: "", stderr: "", code: 0 };
-				},
-				async search() {
-					const hits = [{ chunkId: "note", score: 1, content: "Release scheduled for September." }] as const;
-					return { ok: true as const, hits, data: { hits }, stdout: "", stderr: "", code: 0 };
-				},
+	it("serves two vaults and an aliased connection from separate MinSync workspaces", async () => {
+		const work = join(tmpDir, "work-vault");
+		const home = join(tmpDir, "home-vault");
+		mkdirSync(join(work, "obsidian"), { recursive: true });
+		mkdirSync(home, { recursive: true });
+		writeFileSync(join(work, "obsidian", "plan.md"), "# Plan\nquarterly planning notes");
+		writeFileSync(join(home, "recipes.md"), "# Recipes\nquarterly sourdough planning");
+		const fake = installFakeMinSync(join(tmpDir, "bin"));
+
+		const { skills, unknown } = buildDatasourceSkills(
+			{
+				"work-notes": { type: "obsidian", connector: { vaultPath: work } },
+				"home-notes": { type: "obsidian", connector: { vaultPath: home } },
 			},
+			tmpDir,
+			{ minSync: { binaryPath: fake.binaryPath, autoInstall: false } },
+		);
+		expect(unknown).toEqual([]);
+		const agent = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			minSync: { autoInstall: false },
+			everything: false,
+			fsearch: false,
+			datasourceSkills: skills,
 		});
-		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 1 });
-		const methods = skill.retrievalMethods();
-		expect(methods.map((method) => method.describe().name)).toEqual(["obsidian-bm25", "obsidian-semantic"]);
-		const hits = await methods[0]?.retrieve("release September", { topK: 5 });
-		expect(hits?.length).toBe(1);
-		expect(hits?.[0]?.source).toBe("/obsidian/vault-1/chunks/note");
+		await agent.refresh(true, { methods: ["datasources"] });
+
+		const workHits = await agent.searchSingleDatasourceDocuments("work-notes", "quarterly");
+		expect(workHits.results.map((result) => result.source)).toEqual(["/work-notes/work-notes/obsidian/plan.md"]);
+		const scoped = await agent.searchSingleDatasourceDocuments("work-notes", "quarterly", {
+			scope: "/work-notes/work-notes/obsidian",
+		});
+		expect(scoped.results).toHaveLength(1);
+		const homeHits = await agent.searchSingleDatasourceDocuments("home-notes", "quarterly");
+		expect(homeHits.results.map((result) => result.source)).toEqual(["/home-notes/home-notes/recipes.md"]);
+	});
+
+	it("reports an Obsidian vault with no MinSync binary as degraded without failing the other refresh methods", async () => {
+		const vault = join(tmpDir, "vault");
+		mkdirSync(vault, { recursive: true });
+		writeFileSync(join(vault, "note.md"), "# Note\nsomething");
+		const { skills } = buildDatasourceSkills({ obsidian: { connector: { vaultPath: vault } } }, tmpDir, {
+			minSync: { binaryPath: join(tmpDir, "missing-minsync"), autoInstall: false },
+		});
+		const agent = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			minSync: { autoInstall: false },
+			everything: false,
+			fsearch: false,
+			datasourceSkills: skills,
+		});
+
+		const refresh = await agent.refresh(true, { methods: ["datasources"] });
+
+		expect(refresh.datasources?.[0]).toMatchObject({ ok: false, code: "datasource-unavailable" });
+		expect((await agent.getRefreshStatus()).components.datasources).toBe("degraded");
 	});
 
 	it("keeps rss dedupe window active through the agent refresh path", async () => {

@@ -102,4 +102,27 @@ describe("AliasedDatasourceSkill", () => {
 		expect(results?.map((result) => result.content)).toEqual(["family"]);
 		expect(skill.skillManifest().content).toContain("가족방");
 	});
+
+	it("rewrites only the leading datasource segment of a source or scope, never a folder that shares its name", async () => {
+		const received: (string | undefined)[] = [];
+		const base = chatSkill();
+		const original = base.retrievalMethods()[0];
+		base.retrievalMethods = () => [
+			{
+				...original,
+				retrieve: async (_query, options) => {
+					received.push(options.scope);
+					return [
+						{ id: "1", content: "x", source: "/chat/default/chat/notes/chat/a.md", score: 1, metadata: {} },
+						{ id: "2", content: "y", source: "/chat", score: 1, metadata: {} },
+					];
+				},
+			},
+		];
+		const skill = new AliasedDatasourceSkill(base, { alias: "work" });
+		const results = await skill.retrievalMethods()[0]?.retrieve("q", { scope: "/work/default/work/**" });
+
+		expect(received).toEqual(["/chat/default/work/**"]);
+		expect(results?.map((result) => result.source)).toEqual(["/work/default/chat/notes/chat/a.md", "/work"]);
+	});
 });

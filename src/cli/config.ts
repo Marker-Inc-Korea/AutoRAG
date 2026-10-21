@@ -1316,6 +1316,12 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 			embedder,
 			discrawl: async () => discrawlEmbeddingRuntimeFor(await embedder.describeEndpoint()),
 			cliEndpoint: embeddingEndpointSource(embedder),
+			minSync: {
+				...(config.minSync?.autoInstall === undefined ? {} : { autoInstall: config.minSync.autoInstall }),
+				...(config.minSync?.installer === undefined ? {} : { installer: config.minSync.installer }),
+				...(config.minSync?.embedder === undefined ? {} : { embedder: config.minSync.embedder }),
+				...(config.minSync?.maxChunkSize === undefined ? {} : { maxChunkSize: config.minSync.maxChunkSize }),
+			},
 		});
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {

@@ -183,7 +183,13 @@ Prerequisites:
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
 - MinSync 0.4.11 or newer on `PATH`. The runner starts a `minsync serve` daemon
   for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
-  model pull is required.
+  model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
+  the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
+  nothing on the host. MinSync publishes a Linux build for x86_64 only, so that
+  image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host
+  it runs under emulation, and building it for arm64 fails with that reason.
+  Bump `MINSYNC_VERSION`/`MINSYNC_SHA256` in the Dockerfile with
+  `MINSYNC_VERSION` in `src/minsync/installer.ts`.
 - `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings stay local
   during live E2E: do not configure a remote `minSync.embedder` endpoint or
   send corpus text off the machine.
@@ -201,8 +207,9 @@ make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 ```
 
 Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
-executes the `local` lane plus every native CLI lane (lazykatok, discrawl, wacrawl,
-telecrawl, slacrawl, lark, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
+executes the `local` lane, the self-contained `obsidian` vault lane, and every
+native CLI lane (lazykatok, discrawl, wacrawl, telecrawl, slacrawl, lark,
+notcrawl, rclone, mailcrawl, and macOS Spotlight).
 `E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
 skips native lanes entirely). The summary separates the core MinSync result
 (`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
@@ -232,7 +239,7 @@ filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
-only. Leave lazykatok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight
+only. Leave lazykatok, discrawl, crawler, rclone, mailcrawl, and Spotlight
 native stores untouched.
 Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
 
@@ -353,7 +360,7 @@ Three core values drive every design decision. Features and PRs that conflict
 with any of them should be rejected or reshaped:
 
 1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
-   stores (lazykatok, discrawl, qmd, msgvault, rclone, …) in place. No forced
+   stores (lazykatok, discrawl, msgvault, rclone, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
    (`/kakao/<instance>/chunks/<chunk>`), and secrets
@@ -400,7 +407,7 @@ write new files, edit or replace existing files, and move files to the OS trash
 
 ## New CLI-backed datasource
 
-External datasource CLIs (lazykatok, discrawl, slacrawl, qmd, rclone,
+External datasource CLIs (lazykatok, discrawl, slacrawl, rclone,
 crawlers) are driven **directly** with their own native stores. There is no
 AutoRAG-managed workspace/config forcing and no bash gate: the agent may run
 these CLIs through `bash` as well as through the datasource tools.
@@ -513,7 +520,7 @@ Datasource skills are retrieval-method factories plus indexing hooks for externa
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
 ## Directory Access
 

@@ -30,6 +30,38 @@ describe("live-e2e datasource matrix", () => {
 		expect(existsSync(lazykatok?.command ?? "")).toBe(true);
 	});
 
+	it("registers a self-contained obsidian lane that runs on MinSync alone and no longer registers qmd", () => {
+		const lanes = buildDatasourceMatrix();
+		expect(lanes.find((lane) => lane.name === "obsidian")).toMatchObject({ kind: "native", binary: "minsync" });
+		expect(existsSync(lanes.find((lane) => lane.name === "obsidian")?.command ?? "")).toBe(true);
+		expect(lanes.some((lane) => lane.name === "qmd")).toBe(false);
+	});
+
+	it("passes the obsidian lane on a note identity without any pre-existing native store", async () => {
+		const result = await runDatasourceMatrix({
+			root: fixtureRoot(),
+			selection: ["obsidian"],
+			which: (binary: string) => binary === "minsync",
+			run: async () => ({ ok: true, stdout: "PASS  x — /obsidian/vault/Projects/Budget.md", stderr: "", code: 0 }),
+		});
+		expect(result.lanes[0]).toMatchObject({ name: "obsidian", status: "PASS" });
+	});
+
+	it("fails the obsidian lane when the harness reports no note identity", async () => {
+		const result = await runDatasourceMatrix({
+			root: fixtureRoot(),
+			selection: ["obsidian"],
+			which: () => true,
+			run: async () => ({ ok: true, stdout: "PASS  x — /obsidian/vault/chunks/abc", stderr: "", code: 0 }),
+		});
+		expect(result.lanes[0]).toMatchObject({ name: "obsidian", status: "FAIL" });
+	});
+
+	it("skips the obsidian lane, never passes it, when minsync is not installed", async () => {
+		const result = await runDatasourceMatrix({ root: fixtureRoot(), selection: ["obsidian"], which: () => false });
+		expect(result.lanes[0]).toMatchObject({ name: "obsidian", status: "SKIP", reason: "minsync-not-installed" });
+	});
+
 	it("rejects a successful native command without a lane-native identity", async () => {
 		const result = await runDatasourceMatrix({
 			root: fixtureRoot(),
