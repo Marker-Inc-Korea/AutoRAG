@@ -682,6 +682,8 @@ export interface AutoRAGAgentOptions {
 	 * a launch.
 	 */
 	updateNotice?: () => Promise<string | undefined>;
+	/** Interactive only: show the AutoRAG welcome banner (with this version) instead of pi's startup header. */
+	welcomeVersion?: string;
 	/** Extension entry files (installed pi packages) loaded into the interactive session. */
 	piExtensionPaths?: readonly string[];
 	/** Flag values for the flags those extensions register. */
@@ -885,6 +887,7 @@ export class AutoRAGAgent {
 	private readonly piSessionDir: string | undefined;
 	private readonly persistPiSessions: boolean;
 	private readonly updateNotice: (() => Promise<string | undefined>) | undefined;
+	private readonly welcomeVersion: string | undefined;
 	private readonly piExtensionPaths: readonly string[] | undefined;
 	private readonly piExtensionFlags: Readonly<Record<string, string | boolean>> | undefined;
 	private readonly telegram: boolean;
@@ -920,6 +923,7 @@ export class AutoRAGAgent {
 		this.piSessionDir = options.piSessionDir;
 		this.persistPiSessions = options.persistPiSessions ?? true;
 		this.updateNotice = options.updateNotice;
+		this.welcomeVersion = options.welcomeVersion;
 		this.piExtensionPaths = options.piExtensionPaths;
 		this.piExtensionFlags = options.piExtensionFlags;
 		this.telegram = options.telegram === true;
@@ -1570,6 +1574,7 @@ export class AutoRAGAgent {
 				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
 			],
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
+			...(this.welcomeVersion === undefined ? {} : { welcomeVersion: this.welcomeVersion }),
 			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
 			...(this.piExtensionFlags === undefined ? {} : { extensionFlags: this.piExtensionFlags }),
 		});

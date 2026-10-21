@@ -26,6 +26,7 @@ import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
 import { createAutoRAGMcpClient, mcpPromptAddendum } from "./mcp-client.ts";
 import { fitRequestLimits } from "./request-limits.ts";
+import { createWelcomeHeader } from "./welcome-header.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
 /**
@@ -109,6 +110,12 @@ export interface AutoRAGPiInteractiveRuntimeOptions extends Omit<AutoRAGPiSessio
 	 * launch.
 	 */
 	readonly updateNotice?: () => Promise<string | undefined>;
+	/**
+	 * AutoRAG version shown on the welcome banner. Set only by the TUI: when present,
+	 * every session start (launch, `/new`, `/resume`, `/reload`) replaces pi's startup
+	 * header with the AutoRAG banner and hides pi's loaded-resource listing.
+	 */
+	readonly welcomeVersion?: string;
 }
 
 export interface AutoRAGPiSession {
@@ -482,6 +489,9 @@ export async function createAutoRAGPiInteractiveRuntime(
 				...(options.extensionPaths === undefined ? {} : { additionalExtensionPaths: [...options.extensionPaths] }),
 				extensionFactories: [
 					...(mcp?.extensionFactories ?? []),
+					...(options.welcomeVersion === undefined
+						? []
+						: [createWelcomeHeader({ version: options.welcomeVersion, settings: settingsManager })]),
 					createAutoRAGInteractiveExtension(
 						options.getSystemPrompt,
 						options.contextTransform,
