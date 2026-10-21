@@ -137,7 +137,7 @@ Datasource skills belong in trusted config.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`,
-`mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`) or connection
+`mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, `hister`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are

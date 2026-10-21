@@ -384,7 +384,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`, `mail-export`,
-`mailcrawl`, `obsidian`, `rss`, `spotlight`, and `lark`. Config keys may be connection
+`mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, and `hister`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.

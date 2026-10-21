@@ -53,6 +53,23 @@ describe("NOTICE and CycloneDX tokens", () => {
 		expect(notice).toContain("xlsx@0.18.5");
 	});
 
+	it("declares Hister as a separate AGPL program that is not bundled", () => {
+		const notice = generateNotice({
+			projectName: "AutoRAG",
+			year: "2025",
+			holder: "NomaDamas / Marker Inc.",
+			rootLicense: "Apache-2.0",
+			legacyLicense: "Apache-2.0",
+			components,
+		});
+		expect(notice).toContain("Hister");
+		expect(notice).toContain("AGPL-3.0-or-later");
+		expect(notice).toContain("https://github.com/asciimoo/hister");
+		expect(notice).toMatch(/not (bundled|distributed)/i);
+		expect(notice).toMatch(/unmodified/i);
+		expect(notice).toContain("licenses/hister-AGPL-3.0-notice.txt");
+	});
+
 	it("emits CycloneDX JSON with named components", () => {
 		const bom = generateCycloneDx({
 			name: "@autorag/librarian",

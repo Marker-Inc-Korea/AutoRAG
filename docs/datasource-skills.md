@@ -684,6 +684,63 @@ scopes `search:message` and `search:docs:read`, and confirm with
 `/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
 coverage of older messages is not guaranteed.
 
+## Browser history via Hister
+
+`hister` searches the web pages your browser visited, through a running
+[Hister](https://github.com/asciimoo/hister) server. Hister is a **separate
+program under AGPL-3.0-or-later**: AutoRAG ships none of its code, does not
+modify it, and only sends search requests to its public HTTP API (`GET /search`,
+`GET /api/config`). Hister owns the index, the browser extension, incremental
+capture, and (optionally) the embeddings. AutoRAG never copies the corpus, and
+the datasource manifest names Hister, its license, and its source to the agent.
+See [`licenses/hister-AGPL-3.0-notice.txt`](../licenses/hister-AGPL-3.0-notice.txt).
+
+**Web pages only.** Every query is sent with `type:web`, and any document Hister
+returns with another type is dropped. Hister can also index local directories and
+file snapshots; leave `indexer.directories` empty (the default) and never run
+`hister import file`. If such documents exist anyway, `index()` reports how many
+are excluded.
+
+```bash
+brew install hister                      # or a release binary, Docker, Nix
+hister listen                            # http://127.0.0.1:4433, keep it running
+# install the Hister browser extension in Chrome/Chromium (Chrome Web Store: "Hister")
+hister import browser history            # optional: backfill existing history
+hister search 'domain:example.com'       # must print rows before wiring it up
+```
+
+```json
+{
+  "datasources": {
+    "browser": {
+      "type": "hister",
+      "connector": {
+        "baseUrl": "http://127.0.0.1:4433",
+        "tokenEnv": "HISTER_TOKEN",
+        "semantic": false
+      }
+    }
+  }
+}
+```
+
+`baseUrl` defaults to `http://127.0.0.1:4433`. `tokenEnv` names an environment
+variable holding Hister's `app.access_token`; the token is never written to the
+config, and a non-loopback `http://` URL is refused when a token is configured.
+`semantic: true` also registers Hister's semantic search and requires
+`semantic_search.enable` plus an embedding endpoint in the **Hister** config
+(the page text is sent to that endpoint, so use a loopback one for privacy); with
+it disabled on the server, the semantic method fails loudly instead of returning
+nothing. Plain words in a query are OR-ed; Hister syntax (`"phrases"`, `domain:`,
+`title:`, `-term`, `added:<7d`, `sort:date`) passes through as written.
+
+Incremental indexing is Hister's: each page is indexed when the extension sends
+it, so `autorag refresh` only probes the server (reachability, authentication,
+page count). Sources are `/<id>/<instance>/pages/<domain>/<hash of the URL>`; the
+URL itself is in the hit content and `metadata.url`, so use `web_fetch` to read a
+page as it is now. A scope of `/<id>/<instance>/pages/<domain>/**` is pushed down
+to Hister as `domain:<domain>`.
+
 ## GitHub Gists
 
 `github-gist` indexes the authenticated account's own Gists through the GitHub
