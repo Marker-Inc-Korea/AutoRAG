@@ -85,6 +85,14 @@ and a document is embedded raw. AutoRAG applies this on every semantic path:
   stored text. The shared embedder prepends the prefix itself; neither the
   daemon nor a remote server is asked to.
 - mailcrawl receives the prefix through `MAILCRAWL_QUERY_PREFIX`.
+- Hister (the browser-history datasource) keeps its own vector store, so it is
+  pointed at the shared daemon through its own `config.yml` `semantic_search`
+  block (`embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix`,
+  `document_prefix`). `autorag setup --sync-hister` writes those keys from the
+  resolved shared endpoint, byte for byte, so the query instruction above reaches
+  Hister too. The daemon's port is chosen when it starts, so re-run
+  `autorag setup --sync-hister` after restarting it. See
+  [Browser history via Hister](datasource-skills.md#browser-history-via-hister).
 - Similar-past-question lookup compares a question with questions, so both
   sides are embedded the same way, without the instruction.
 
@@ -98,7 +106,7 @@ and a remote endpoint or another model gets no default prefix.
 Semantic search over everything except the MinSync datasource needs an
 embedding backend that is alive: a remote endpoint, a running `minsync serve`,
 or the optional in-process addon. Without one, memory, the chat-sidecar
-semantic search, gist, discrawl, mailcrawl, and lazykatok fall back to keyword
+semantic search, gist, discrawl, mailcrawl, lazykatok, and Hister fall back to keyword
 search or report `embedding-unavailable`; the MinSync datasource keeps working
 because `minsync` embeds in-process by itself. AutoRAG leaves the daemon's
 lifecycle to you, so a remote endpoint is the way to avoid managing one:
