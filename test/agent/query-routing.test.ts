@@ -160,6 +160,24 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
 	});
 
+	it("describes the config branch so file automations and folder-watch rules belong to it", async () => {
+		let routeOptions: Record<string, string> | undefined;
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				const route = request.questions.find((question) => question.id === QUERY_ROUTE_QUESTION_ID);
+				const options = route?.options;
+				if (options !== undefined && !Array.isArray(options)) routeOptions = options as Record<string, string>;
+				return { answers: [{ answer: "local", confidence: 0.9 }, { answer: 0.1 }] };
+			},
+		};
+		await routeQuery(judgeWith(backend), "when a PDF lands in Downloads, summarize it", { selfConfig: true });
+		expect(routeOptions?.config).toMatch(/automation/iu);
+		expect(routeOptions?.config).toMatch(/folder|file.*(change|trigger|watch)/iu);
+		expect(routeOptions?.config).not.toMatch(/not about file-triggered automations/iu);
+		expect(routeOptions?.local).not.toMatch(/automation/iu);
+	});
+
 	it("offers the config branch only when the host enables agent self-configuration", async () => {
 		const offered: string[][] = [];
 		const backend: JevBackend = {

@@ -104,7 +104,7 @@ const BASE_ROUTE_OPTIONS: Record<Exclude<QueryRoute, "config">, string> = {
 };
 
 const CONFIG_ROUTE_OPTION =
-	"The user asks to view, change, or test the settings of this AutoRAG agent itself: its model, model providers, API-key environment variables, Jev routing, search roots, or datasource setup (config.json). It is about configuring the assistant's search/model settings, not about the content of their documents and not about file-triggered automations or folder-watch rules.";
+	"The user asks to view, change, or test the settings of this AutoRAG agent itself: its model, model providers, API-key environment variables, Jev routing, search roots, or datasource setup (config.json). It also covers everything about the assistant's file-triggered automations (자동화, 폴더 감시, 파일 기반 규칙): creating, listing, showing status or the last run of, editing, testing, deleting, or turning on or off the automation rules and the background daemon that run a command or an AutoRAG task by themselves whenever files in a folder are created, changed, or deleted (for example 'when a PDF lands in Downloads, summarize it', '새 파일이 생기면 자동으로 ... 해줘', 'watch this folder', 'show my automations', 'turn the folder-watch daemon off'). It is about configuring the assistant and its background rules, not about the content of the user's documents.";
 
 const BASE_ROUTE_QUESTION = pick(
 	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",

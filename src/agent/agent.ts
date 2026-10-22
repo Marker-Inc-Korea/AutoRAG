@@ -2040,6 +2040,7 @@ export class AutoRAGAgent {
 								configPath: this.selfConfig.configPath,
 								agentDir: this.piAgentDir ?? getAgentDir(),
 								skill: plan.selfConfigSkill,
+								automations: true,
 							}),
 						);
 						const report = finalAnswerText(transcript());
