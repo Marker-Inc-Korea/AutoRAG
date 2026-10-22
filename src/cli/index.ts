@@ -27,6 +27,7 @@ const BOOLEAN_FLAGS = new Set([
 	"whatsapp",
 	"telegram",
 	"discord",
+	"sync-hister",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",

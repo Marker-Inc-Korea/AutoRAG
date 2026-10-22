@@ -84,7 +84,7 @@ describe("answer image-embed exception (#1790)", () => {
 		expect(prompt).toContain("Never include specific file paths");
 	});
 
-	it("states the image-embed exception in all three phase prompts", () => {
+	it("states the image-embed exception in the search, fast, and complete phase prompts", () => {
 		const agent = new AutoRAGAgent(agentOptions(fauxModel()));
 
 		const search = agent.buildSearchPrompt("Q3 매출 차트 이미지 보여줘", {});
@@ -92,16 +92,19 @@ describe("answer image-embed exception (#1790)", () => {
 		const complete = agent.buildRefinementPrompt("Q3 매출 차트 이미지 보여줘", {}, undefined, false);
 
 		for (const text of [search, fast, complete]) expectImageEmbedRule(text);
+	});
 
+	it("tells a delta answer not to re-embed an image the first answer showed, leaving the full rule to the system prompt", () => {
+		const agent = new AutoRAGAgent(agentOptions(fauxModel()));
 		const delta = agent.buildRefinementPrompt(
 			"Q3 매출 차트 이미지 보여줘",
 			{},
 			`![Q3 revenue chart](<${join(docs, "q3-chart.png")}>) [1]`,
 			true,
 		);
-		expectImageEmbedRule(delta);
-		// A delta answer must not re-embed an image the first answer already showed.
 		expect(delta).toContain("must not be embedded again");
+		// The full embed rule already sits in the system prompt; the delta prompt does not repeat it.
+		expect(delta).not.toContain("Use only the real source path of retrieved evidence");
 	});
 
 	it("states the image-embed exception in the report answer schema", () => {
