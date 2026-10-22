@@ -106,6 +106,7 @@ import {
 	ANSWER_UNCERTAINTY_RULE,
 } from "./answer-guidelines.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
+import { createCitationLinks } from "./citation-links.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -1567,6 +1568,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				createEvidencePersistence(this.evidenceLedger),
+				createCitationLinks(this.evidenceLedger),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
 				createEmbeddingControls({
 					embedder: this.embedder,
