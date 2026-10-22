@@ -540,6 +540,8 @@ is set up.
 - `AUTORAG_MEMORY_PATH`
 - `AUTORAG_MODEL_PROVIDER`
 - `AUTORAG_MODEL_ID`
+- `AUTORAG_PERMISSION_MODE` (`ask` default, `auto`, `full`; config key `permissionMode`; the agent
+  asks before deleting, moving, renaming, or editing original files unless this is `full`)
 
 ## Completion condition
 

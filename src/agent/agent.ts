@@ -141,6 +141,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
 	type AutoRAGInputDisposition,
 	type AutoRAGInteractiveInput,
@@ -703,6 +704,15 @@ export interface AutoRAGAgentOptions {
 	 * owner pairing live in pi's `telegram.json`, never in AutoRAG config.
 	 */
 	telegram?: boolean;
+	/**
+	 * Approval gate for what the agent does to existing files. `full` (the programmatic default) installs a
+	 * gate that never asks; `ask` and `auto` approve deletes, moves, renames, and in-place edits of originals
+	 * (copying and creating new files never ask). `auto` asks Jev first and only falls back to the user when
+	 * Jev will not approve. See {@link PermissionMode}.
+	 */
+	permissionMode?: PermissionMode;
+	/** Share one controller (mode, session grants) with a host that switches modes itself. Wins over `permissionMode`. */
+	permissionController?: PermissionController;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -882,6 +892,9 @@ export class AutoRAGAgent {
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
 	private readonly jevJudge: JevJudge | undefined;
+	/** Mode and grants of the file-change approval gate; shared by every pi session this agent creates. */
+	private readonly permissions: PermissionController;
+	private readonly permissionGate: ExtensionFactory;
 	/** Self-configuration, enabled only with Jev on a local session. */
 	private readonly selfConfig: SelfConfigOptions | undefined;
 	private readonly queryDecompositionModel: DecompositionModel | undefined;
@@ -1060,6 +1073,14 @@ export class AutoRAGAgent {
 				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
 		this.selfConfig = this.jevJudge === undefined ? undefined : options.selfConfig;
+		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
+		// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
+		if (this.selfConfig !== undefined) this.permissions.trust([resolve(this.selfConfig.configPath)]);
+		this.permissionGate = createPermissionGate({
+			controller: this.permissions,
+			...(this.jevJudge === undefined ? {} : { judge: this.jevJudge }),
+			request: () => this.lastQuery,
+		});
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
 				? undefined
@@ -1444,9 +1465,8 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			...(this.jevExtension !== undefined
-				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
-				: {}),
+			extensionFactories: [this.permissionGate, ...(this.jevExtension !== undefined ? [this.jevExtension] : [])],
+			extensionToolNames: this.jevExtension !== undefined ? [JEV_TOOL_NAME] : [],
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -1522,6 +1542,11 @@ export class AutoRAGAgent {
 		};
 	}
 
+	/** The approval gate's controller: read or switch the permission mode of this agent's sessions. */
+	get permissionControl(): PermissionController {
+		return this.permissions;
+	}
+
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
 		this.listeners.add(listener);
 		return () => {
@@ -1567,6 +1592,7 @@ export class AutoRAGAgent {
 			isSearchRunning: () => this.interactive.run !== undefined,
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
+				this.permissionGate,
 				createEvidencePersistence(this.evidenceLedger),
 				createCitationLinks(this.evidenceLedger),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
