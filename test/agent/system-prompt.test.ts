@@ -24,13 +24,10 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("End with the final answer as a plain reply");
 		expect(text).toContain("[e3]");
 		expect(text).toContain("generic, stable question");
-		expect(text).toContain("baseline retrieval is already running in parallel");
 		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");
-		expect(text).toContain("Never repeat a generic status message");
-		expect(text).toContain("generic, stable question");
-		expect(text).toContain("baseline retrieval is already running in parallel");
-		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");
-		expect(text).toContain("Never repeat a generic status message");
+		// Progress comes from each tool call's `i` intent, not from notes the model writes between calls.
+		expect(text).toContain("`i` argument");
+		expect(text).not.toMatch(/progress update/i);
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
 

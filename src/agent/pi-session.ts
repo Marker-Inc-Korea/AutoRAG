@@ -24,6 +24,7 @@ import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
+import { registerIntentTracing } from "./intent-tracing.ts";
 import { createAutoRAGMcpClient, mcpPromptAddendum } from "./mcp-client.ts";
 import { fitRequestLimits } from "./request-limits.ts";
 import { createWelcomeHeader } from "./welcome-header.ts";
@@ -244,6 +245,7 @@ function createAutoRAGExtension(
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
+		registerIntentTracing(pi);
 	};
 }
 /**
@@ -318,6 +320,7 @@ function createAutoRAGInteractiveExtension(
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
+		registerIntentTracing(pi);
 		if (updateNotice !== undefined) {
 			pi.on("session_start", () => {
 				void updateNotice()
