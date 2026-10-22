@@ -9,6 +9,7 @@ import {
 	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
 	OpenRouterReranker,
+	RERANK_MAX_DOCUMENT_CHARS,
 } from "../../src/retrieval/rerank.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
 import { startFakeServer } from "../cloud/helpers/fake-server.ts";
@@ -262,5 +263,54 @@ describe("blank documents", () => {
 		const out = await reranker.rerank("q", [result("blank", ""), result("a", "alpha")], { topN: 3 });
 		expect(sent).toEqual([["alpha"]]);
 		expect(out.map((entry) => entry.id)).toEqual(["a"]);
+	});
+
+	it("truncates documents to the provider's character limit without altering the returned results", async () => {
+		signIn();
+		const server = await rankingServer();
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "dazzi",
+				agentDir,
+				env: { AUTORAG_BASE_URL: server.url },
+			});
+			const long = "가".repeat(RERANK_MAX_DOCUMENT_CHARS + 5_000);
+			const exact = "b".repeat(RERANK_MAX_DOCUMENT_CHARS);
+			const out = await reranker.rerank("q", [
+				result("long", long),
+				result("exact", exact),
+				result("short", "short"),
+			]);
+
+			const sent = postedDocuments(server.requests[0]?.json);
+			expect(sent.map((entry) => entry.length)).toEqual([RERANK_MAX_DOCUMENT_CHARS, RERANK_MAX_DOCUMENT_CHARS, 5]);
+			expect(sent[0]).toBe(long.slice(0, RERANK_MAX_DOCUMENT_CHARS));
+			expect(sent[1]).toBe(exact);
+			// Evidence handed back to the caller is never truncated.
+			expect(out.find((entry) => entry.id === "long")?.content).toBe(long);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("does not split a surrogate pair at the truncation boundary", async () => {
+		signIn();
+		const server = await rankingServer();
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "dazzi",
+				agentDir,
+				env: { AUTORAG_BASE_URL: server.url },
+			});
+			// The emoji's high surrogate lands on the last allowed UTF-16 unit.
+			const content = `${"a".repeat(RERANK_MAX_DOCUMENT_CHARS - 1)}😀tail`;
+			await reranker.rerank("q", [result("e", content)]);
+			const [sent] = postedDocuments(server.requests[0]?.json);
+			expect(sent).toBe("a".repeat(RERANK_MAX_DOCUMENT_CHARS - 1));
+			// 0x61 is "a": the dangling high surrogate (0xd83d) was not kept.
+			expect(sent?.charCodeAt((sent?.length ?? 1) - 1)).toBe(0x61);
+		} finally {
+			await server.close();
+		}
 	});
 });

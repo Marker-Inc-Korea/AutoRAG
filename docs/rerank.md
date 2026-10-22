@@ -102,6 +102,11 @@ The rerank client appends `/rerank` to the base URL, so an explicit
   fails the whole request). They are not scored: with `topN` unset they follow
   the ranked results in their original order; with `topN` set they are dropped.
   If every result is blank no request is made.
+- Documents longer than **131,000 characters** are cut to that length in the request
+  only (the hosted reranker rejects 131,072 or more with HTTP 400); the returned
+  results keep their full `content`. The upstream also enforces a token limit,
+  so very long repetitive or CJK text can still be rejected below that length;
+  such a failure is reported as `rerank-failed`.
 - A configured-but-unavailable reranker (missing key) or a rerank failure is
   reported as a `rerank-failed` diagnostic and the merged order is preserved.
   A reranker outage never hides retrieval evidence.

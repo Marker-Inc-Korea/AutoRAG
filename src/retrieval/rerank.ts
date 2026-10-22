@@ -40,6 +40,12 @@ export const DEFAULT_DAZZI_RERANK_MODEL = "qwen/qwen3-reranker-8b";
 export const DEFAULT_RERANK_TIMEOUT_MS = 60_000;
 /** Default number of merged chunks kept after reranking. */
 export const DEFAULT_RERANK_TOP_N = 25;
+/**
+ * Longest document, in UTF-16 units, sent to a reranker. The hosted Dazzi
+ * reranker rejects a document of 131,072 characters or more with HTTP 400 and
+ * fails the whole request; 131,000 stays under that with a small margin.
+ */
+export const RERANK_MAX_DOCUMENT_CHARS = 131_000;
 /** Rerank providers {@link createReranker} can build. */
 export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER, DAZZI_PROVIDER_ID];
 
@@ -294,8 +300,10 @@ export class OpenRouterReranker implements Reranker {
 		}
 		if (results.length === 0) return [];
 
-		// The provider rejects an empty document with HTTP 400 and fails the whole
-		// request, so blank (empty or whitespace-only) content is never sent.
+		// The provider fails the whole request with HTTP 400 for an empty document
+		// and for one above its input limit, so blank (empty or whitespace-only)
+		// content is never sent and long content is cut to RERANK_MAX_DOCUMENT_CHARS
+		// on the wire only; the returned results keep their full content.
 		// `sent[i]` is the index in `results` of the i-th document on the wire.
 		const sent: number[] = [];
 		const documents: string[] = [];
@@ -303,7 +311,15 @@ export class OpenRouterReranker implements Reranker {
 			const content = (results[index] as RetrievalResult).content;
 			if (content.trim() === "") continue;
 			sent.push(index);
-			documents.push(content);
+			if (content.length <= RERANK_MAX_DOCUMENT_CHARS) {
+				documents.push(content);
+				continue;
+			}
+			// Do not leave half of a surrogate pair at the cut.
+			const lastKept = content.charCodeAt(RERANK_MAX_DOCUMENT_CHARS - 1);
+			const cut =
+				lastKept >= 0xd800 && lastKept <= 0xdbff ? RERANK_MAX_DOCUMENT_CHARS - 1 : RERANK_MAX_DOCUMENT_CHARS;
+			documents.push(content.slice(0, cut));
 		}
 		if (documents.length === 0) {
 			return options.topN === undefined ? [...results] : results.slice(0, options.topN);

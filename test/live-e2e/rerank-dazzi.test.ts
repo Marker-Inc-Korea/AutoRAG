@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readDazziLoginToken } from "../../src/cloud/credential.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
-import { OpenRouterReranker } from "../../src/retrieval/rerank.ts";
+import { OpenRouterReranker, RERANK_MAX_DOCUMENT_CHARS } from "../../src/retrieval/rerank.ts";
 import type { RetrievalMethod, RetrievalMethodDescriptor, RetrievalResult } from "../../src/retrieval/types.ts";
 
 const LIVE = process.env.AUTORAG_DAZZI_RERANK_LIVE === "1";
@@ -75,6 +75,22 @@ describe.skipIf(!LIVE)("Dazzi rerank live e2e (real API)", () => {
 		expect(out[0]?.id).toBe("bonds");
 		expect(out.map((entry) => entry.id)).not.toContain("empty");
 		expect(out.map((entry) => entry.id)).not.toContain("blank");
+	}, 60_000);
+
+	// Word-like English: the upstream also enforces a token limit, which repetitive or CJK text hits first.
+	it("reranks a pool with an oversized document instead of failing with HTTP 400", async () => {
+		const oversized = doc(
+			"huge",
+			`A bond's price falls when interest rates rise. ${"bond rates ".repeat(Math.ceil((RERANK_MAX_DOCUMENT_CHARS + 9_000) / 11))}`,
+		);
+		const out = await new OpenRouterReranker({ provider: "dazzi", agentDir: AGENT_DIR }).rerank(QUERY, [
+			...DOCS,
+			oversized,
+		]);
+		expect(out).toHaveLength(DOCS.length + 1);
+		// Returned evidence keeps its full content.
+		expect(out.find((entry) => entry.id === "huge")?.content).toBe(oversized.content);
+		expect(out.find((entry) => entry.id === "huge")?.metadata.rerankScore).toBeTypeOf("number");
 	}, 60_000);
 
 	it("reranks the engine's merged evidence without a rerank-failed diagnostic", async () => {
