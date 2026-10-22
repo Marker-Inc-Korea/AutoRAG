@@ -126,6 +126,7 @@ import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import { intentOfMessage } from "./intent-tracing.ts";
 import {
 	createJevExtension,
 	createJevJudge,
@@ -2295,18 +2296,33 @@ export class AutoRAGAgent {
 		const queue: SearchDocumentsStreamEvent[] = [];
 		let wake: (() => void) | undefined;
 		let settled = false;
+		let lastIntent: string | undefined;
+		const push = (text: string): void => {
+			queue.push({ type: "progress", sessionId: this.lastSessionId ?? "", query: query.trim(), text });
+			wake?.();
+			wake = undefined;
+		};
 		const unsubscribe = this.subscribe((event) => {
+			// The model says what each tool call is for (intent tracing); the newest one is the progress.
+			if (event.type === "message_update" || event.type === "message_end") {
+				const intent = intentOfMessage(event.message);
+				if (intent !== undefined && intent !== lastIntent) {
+					lastIntent = intent;
+					push(intent);
+					return;
+				}
+			}
 			if (event.type !== "message_end" || event.message.role !== "assistant") return;
 			if (event.message.stopReason !== "toolUse") return;
+			// A message whose tool call carries an intent has reported it above.
+			if (intentOfMessage(event.message) !== undefined) return;
 			const text = event.message.content
 				.filter((block) => block.type === "text")
 				.map((block) => block.text)
 				.join("")
 				.trim();
 			if (text === "") return;
-			queue.push({ type: "progress", sessionId: this.lastSessionId ?? "", query: query.trim(), text });
-			wake?.();
-			wake = undefined;
+			push(text);
 		});
 		queue.push({
 			type: "progress",
@@ -3052,7 +3068,6 @@ export class AutoRAGAgent {
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);
 	}
@@ -3080,8 +3095,7 @@ export class AutoRAGAgent {
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- ${ANSWER_UNCERTAINTY_RULE} If there are partial clues or leads, mention them concisely.\n\n` +
-			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
-			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
+			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);
