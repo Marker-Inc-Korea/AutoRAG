@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
 import { mailcrawlEmbeddingEnv } from "../../embedding-env.ts";
 import { ensurePrivateMailcrawlDataDir, validateMailcrawlInstanceId } from "./config.ts";
 import type {
@@ -37,7 +38,7 @@ const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
  * outlives an interactive timeout. A process-wide kill timer must not truncate
  * that run.
  */
-const DEFAULT_INDEX_TIMEOUT_MS = 1_800_000;
+const DEFAULT_INDEX_TIMEOUT_MS = DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const SAFE_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR"]);

@@ -22,7 +22,7 @@ export interface MailcrawlOptions {
 	 * `indexTimeoutMs`, because a 0.2.0 native index run is not interactive.
 	 */
 	readonly timeoutMs?: number;
-	/** Non-interactive budget for `sync`/`index`; defaults to 30 minutes. */
+	/** Non-interactive budget for `sync`/`index`; defaults to one hour. */
 	readonly indexTimeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
