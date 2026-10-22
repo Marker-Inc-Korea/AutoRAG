@@ -137,7 +137,7 @@ Datasource skills belong in trusted config.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`,
-`mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`) or connection
+`mail-export`, `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, `hister`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are
@@ -145,6 +145,24 @@ descriptive metadata only, not search filters. Use MCP `datasourceIds` to
 select configured connections before retrieval; discover their IDs with
 `autorag.datasources.list`. Store only env-var names such as `tokenEnv` or
 `apiKeyEnv`, never credential values.
+
+### Browser history (Hister) and the shared embedding model
+
+`hister` needs a separately installed, always-running Hister server (AGPL-3.0, never
+bundled by AutoRAG). Run `autorag setup --format json` and read the `hister` object
+(`installed`, `running`, `embedding`); each problem carries the exact command to run:
+`brew install hister`, `brew services start hister`, then install the Hister browser
+extension in the user's browser.
+
+Hister embeds with its own `semantic_search` config, so it must use the same model as
+AutoRAG (the `minsync serve` daemon, `Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) or
+its vectors stop lining up without any error. `autorag setup --sync-hister` copies the
+shared settings into Hister's `config.yml` (backup kept), restarts the service, waits
+for it, and runs `hister reindex` when needed; it is idempotent, and it refuses a
+remote or in-process backend. Re-run it after restarting the `minsync serve` daemon
+(its port changes). Verify with `hister doctor`: `server.index.embeddings` must be `ok`.
+Install a skip list in Hister's `rules.json` before importing past history, because the
+importer re-downloads URLs without the browser's cookies (docs/datasource-skills.md).
 
 ## Build and refresh indexes
 

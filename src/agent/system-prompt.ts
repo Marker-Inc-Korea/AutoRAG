@@ -1,9 +1,14 @@
 import {
+	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
 	ANSWER_DELIVERABLE_DELTA_RULE,
 	ANSWER_DELIVERABLE_RULE,
+	ANSWER_EMPHASIS_RULE,
 	ANSWER_IMAGE_DELTA_RULE,
 	ANSWER_IMAGE_EMBED_RULE,
+	ANSWER_LANGUAGE_RULE,
+	ANSWER_LEAD_RULE,
+	ANSWER_UNCERTAINTY_RULE,
 } from "./answer-guidelines.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
@@ -227,6 +232,11 @@ Your answer is your final reply, written as plain text, never as a tool call. Ci
 
 - **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
 - **Bullet-point core answer**: Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
+- ${ANSWER_LEAD_RULE}
+- ${ANSWER_BULLET_RULE}
+- ${ANSWER_EMPHASIS_RULE}
+- ${ANSWER_LANGUAGE_RULE}
+- ${ANSWER_UNCERTAINTY_RULE}
 - **Direct answer only**: Unless the user explicitly requests otherwise, the caller only needs the direct answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
 - ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}
 - ${ANSWER_CITATION_RULE}

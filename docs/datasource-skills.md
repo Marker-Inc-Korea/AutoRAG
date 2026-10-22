@@ -722,6 +722,119 @@ scopes `search:message` and `search:docs:read`, and confirm with
 `/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
 coverage of older messages is not guaranteed.
 
+## Browser history via Hister
+
+`hister` searches the web pages your browser visited, through a running
+[Hister](https://github.com/asciimoo/hister) server. Hister is a **separate
+program under AGPL-3.0-or-later**: AutoRAG ships none of its code, does not
+modify it, and only sends search requests to its public HTTP API (`GET /search`,
+`GET /api/config`). Hister owns the index, the browser extension, incremental
+capture, and (optionally) the embeddings. AutoRAG never copies the corpus, and
+the datasource manifest names Hister, its license, and its source to the agent.
+See [`licenses/hister-AGPL-3.0-notice.txt`](../licenses/hister-AGPL-3.0-notice.txt).
+
+**Web pages only.** Every query is sent with `type:web`, and any document Hister
+returns with another type is dropped. Hister can also index local directories and
+file snapshots; leave `indexer.directories` empty (the default) and never run
+`hister import file`. If such documents exist anyway, `index()` reports how many
+are excluded.
+
+```bash
+brew install hister                      # or a release binary, Docker, Nix
+hister listen                            # http://127.0.0.1:4433, keep it running
+# install the Hister browser extension in Chrome/Chromium (Chrome Web Store: "Hister")
+hister import browser history            # optional: backfill existing history
+hister search 'domain:example.com'       # must print rows before wiring it up
+```
+
+```json
+{
+  "datasources": {
+    "browser": {
+      "type": "hister",
+      "connector": {
+        "baseUrl": "http://127.0.0.1:4433",
+        "tokenEnv": "HISTER_TOKEN",
+        "semantic": false
+      }
+    }
+  }
+}
+```
+
+`baseUrl` defaults to `http://127.0.0.1:4433`. `tokenEnv` names an environment
+variable holding Hister's `app.access_token`; the token is never written to the
+config, and a non-loopback `http://` URL is refused when a token is configured.
+`semantic: true` also registers Hister's semantic search and requires
+`semantic_search.enable` plus an embedding endpoint in the **Hister** config
+(the page text is sent to that endpoint, so use a loopback one for privacy); with
+it disabled on the server, the semantic method fails loudly instead of returning
+nothing. Plain words in a query are alternatives, sent as one `(a|b|c)` group (Hister's only
+OR; the word `OR` is searched literally); Hister syntax (`"phrases"`, `domain:`, `title:`,
+`-term`, `added:<7d`, `sort:date`) passes through as written.
+
+Incremental indexing is Hister's: each page is indexed when the extension sends
+it, so `autorag refresh` only probes the server (reachability, authentication,
+page count). Sources are `/<id>/<instance>/pages/<domain>/<hash of the URL>`; the
+URL itself is in the hit content and `metadata.url`, so use `web_fetch` to read a
+page as it is now. A scope of `/<id>/<instance>/pages/<domain>/**` is pushed down
+to Hister as `domain:<domain>`.
+
+### Running it day to day
+
+Hister must be running for the extension to capture pages and for AutoRAG to
+search; AutoRAG never starts or stops it (the same rule as the MinSync daemon).
+On macOS, `brew services start hister` makes it a login item and
+`brew services stop hister` removes it. A page visited while Hister is down is
+not sent again later, so backfill the gap with
+`hister import browser history --start-date YYYY-MM-DD`. The web UI that the same
+server also serves is not used by AutoRAG.
+
+### One embedding model for AutoRAG and Hister
+
+Hister keeps its own vector store and embeds with whatever its `config.yml`
+`semantic_search` block says. If that is a different model from AutoRAG's, nothing
+fails: the vectors simply stop lining up and results get worse. So the two must share
+the model, and `autorag setup` does that:
+
+```bash
+autorag setup                # reports `hister.embedding.differs`, the keys that disagree; writes nothing
+autorag setup --sync-hister  # writes them, restarts Hister, waits for it, re-embeds pages when needed
+hister doctor                # `server.index.embeddings` must be ok
+```
+
+The source of truth is the resolved shared embedder (`minsync serve`, model
+`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, with Qwen3's query instruction), so
+Hister embeds queries exactly as AutoRAG does. `--sync-hister` edits only
+`enable`, `embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix` and
+`document_prefix` in Hister's own config (a `config.yml.bak.<time>` stays next to
+it); the rest of the file is untouched. It restarts the service with
+`brew services restart hister`, waits until the server answers, and runs
+`hister reindex` only when a changed key makes stored vectors stale (the query prefix
+alone does not). It is idempotent. The report says `restartRequired` or
+`reindexRequired` when it could not do those steps itself. The daemon's port is chosen
+when it starts, so run `--sync-hister` again after restarting it.
+
+It refuses, and says why, for a remote shared backend (browsing text would leave the
+machine and Hister's config would have to hold the key) and for MinSync's in-process
+engine (Hister cannot reach it): start `minsync serve --idle-timeout 0` first. Pages
+indexed before semantic search was enabled need the reindex; a page whose chunks exceed
+the model's context is kept for keyword search and skipped for vectors, which Hister logs.
+
+### Backfilling existing history safely
+
+`hister import browser history` does not copy page text out of the browser: it
+reads the History database for URLs and then downloads each URL again **without
+your logged-in cookies**. A login-gated URL is therefore saved as its login page,
+and tokens in a URL are sent to that site again. Before importing, put a skip list
+in Hister's `rules.json` (one regular expression per entry, matched against the
+full URL, and also applied to what the extension captures from now on). Cover at
+least login and SSO hosts, mail, documents, drive, social and console
+domains, private hosts and explicit ports, URLs whose query carries a token, key,
+code or session, and `/login`, `/account`, `/settings`, `/admin` style paths.
+This is a deny list: a new, unlisted login page is still captured. Use an `allow`
+list instead if you want the reverse. Check the result with `hister list-urls`.
+
 ## GitHub Gists
 
 `github-gist` indexes the authenticated account's own Gists through the GitHub

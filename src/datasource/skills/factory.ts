@@ -27,6 +27,7 @@ import {
 } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
+import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
@@ -124,6 +125,22 @@ function chatCrawlerArgs(
 	};
 }
 
+function histerConnectorOptions(connector: Record<string, unknown> | undefined): {
+	readonly baseUrl?: string;
+	readonly tokenEnv?: string;
+	readonly timeoutMs?: number;
+	readonly semantic?: boolean;
+} {
+	if (connector === undefined) return {};
+	const { baseUrl, tokenEnv, timeoutMs, semantic } = connector;
+	return {
+		...(typeof baseUrl === "string" ? { baseUrl } : {}),
+		...(typeof tokenEnv === "string" ? { tokenEnv } : {}),
+		...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+		...(typeof semantic === "boolean" ? { semantic } : {}),
+	};
+}
+
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 	telegram: (config, workspaceRoot, registrationName, embedding) =>
 		new TelecrawlSkill(
@@ -216,6 +233,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			...(config.channels?.ids !== undefined ? { chatIds: config.channels.ids } : {}),
 			...larkConnectorOptions(config.connector),
+		}),
+	hister: (config, _workspaceRoot, registrationName) =>
+		new HisterSkill({
+			datasourceId: registrationName,
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			...histerConnectorOptions(config.connector),
 		}),
 	kakao: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as LazykatokOptions;
