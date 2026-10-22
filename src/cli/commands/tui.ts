@@ -1,7 +1,9 @@
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { TuiAltScreen } from "@earendil-works/pi-tui";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import { resolveInteractiveTuiMode } from "../../agent/pi-session.ts";
 import { buildAgentOptions, resolveConfig, resolveQueryDecompositionModel, resolveTuiAgentModel } from "../config.ts";
+import { openCitationTarget } from "../open-target.ts";
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
 import { readPackageVersion } from "../version.ts";
@@ -96,6 +98,17 @@ export async function runTui(ctx: CommandContext): Promise<number> {
 			// AutoRAG surfaces its own npm release notice instead (options.updateNotice).
 			interactive.showNewVersionNotification = () => undefined;
 			interactive.showPackageUpdateNotification = () => undefined;
+			// pi hands a clicked hyperlink to `open`; fullscreen mode reads `openUrl` per click, so
+			// setting it there sends cited files to Dazzi (falling back to `open`) for every
+			// renderer pi creates, including after a mode switch.
+			const altScreen = TuiAltScreen.prototype as unknown as {
+				handleSelectionMouseEvent(this: { openUrl?: (url: string) => void }, event: unknown): void;
+			};
+			const handleMouse = altScreen.handleSelectionMouseEvent;
+			altScreen.handleSelectionMouseEvent = function (event) {
+				this.openUrl = openCitationTarget;
+				handleMouse.call(this, event);
+			};
 			await interactive.init();
 			await interactive.run();
 			return 0;
