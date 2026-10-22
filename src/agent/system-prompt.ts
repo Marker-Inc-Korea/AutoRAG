@@ -64,6 +64,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(
 			config,
+			"manage_automations",
+			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
+		),
+		toolLine(
+			config,
 			"web_search",
 			"search the public internet for current information beyond the local corpus and knowledge cutoff",
 		),
@@ -98,6 +103,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"semantic_search_local_docs",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
+						"manage_automations",
 						"web_search",
 						"web_fetch",
 						"jev",
@@ -151,6 +157,17 @@ Query syntax: space = AND, \`|\` = OR, \`!\` = NOT, \`"exact phrase"\`, wildcard
 This host runs macOS or Linux with fsearch-cli (FSearch): an Everything-style indexer whose per-workspace database holds the names, sizes, and modified dates of every file and folder under the configured search folders, kept live by a background \`fsearch-cli watch\` daemon (FSEvents on macOS, inotify/fanotify on Linux). \`fsearch_search\` answers name/path questions in well under a second, so use it freely and repeatedly instead of \`bash\` \`find\`/\`ls\` scans whenever you need to locate files or folders by name, extension, location, size, or date. It searches names and paths only, not file contents: read the returned absolute paths with \`bash\`, and use the retrieval tools for content questions.
 
 Query syntax: space = AND, \`OR\` = OR (the pipe \`|\` is NOT the OR operator here, unlike Everything), \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`), \`ext:pdf;docx;hwp\`, \`size:>10mb\`, \`path:<fragment>\`, \`case:\`, \`regex:\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or size:. When fsearch-cli is not installed the tool still answers through a slow bounded filesystem walk (substring/regex name matching only) and says so in its output — prefer narrow queries there, and never replace the tool with your own recursive \`find\`.
+`
+		: "";
+	const automations = toolAvailable(config, "manage_automations")
+		? `## File Automations
+
+When the user asks for something to happen whenever files change — "when a PDF lands in Downloads, summarize it", "keep the index fresh when my notes change", "convert new HWP files to PDF" — set it up with \`manage_automations\` instead of describing manual steps. A rule watches folders and runs one command, without a shell, when files there are created, updated, or deleted; the changed files arrive on the command's stdin as JSON \`[{type, path}]\`. \`run\` is the full argv: keep every argument the command needs (output files, options) in it. \`appendFiles\` adds the changed paths after those arguments, so leave it off when the command reads stdin or takes its own arguments positionally.
+
+- Commands: \`["autorag", "refresh"]\` keeps the index fresh, \`["autorag", "search", "<instruction>"]\` with \`appendFiles\` hands each batch to AutoRAG itself, \`["node", "/abs/script.ts"]\` runs a TypeScript or JavaScript script, and any other program works by absolute path or PATH name. Write a helper script with \`write\` first when the work needs more than one command. Use \`["sh", "-c", "…"]\` only when shell syntax is required.
+- Narrow each rule with \`include\` globs (\`**/*.pdf\`) and \`events\`. Temporary downloads, \`.git\`, and \`node_modules\` are ignored automatically. Never let a rule write its output inside a folder it watches unless \`exclude\` covers that output; a rule that keeps re-triggering itself is disabled after 20 runs in a minute.
+- After \`save\`, test the rule with the \`run\` action and sample \`events\` before relying on it, then check \`list\`. Test events only describe a change: they need no real file, so never create or modify files to test a rule. Rules only fire while the daemon runs: if \`list\` shows it is not installed, call \`install_service\`, which registers a login service (launchd, systemd --user, or Task Scheduler) that restarts on failure and picks up rule changes automatically.
+- Report what you set up: the rule id, watched folders, trigger, and command. Use \`delete\` to remove a rule and \`uninstall_service\` only when the user wants every automation stopped.
 `
 		: "";
 
@@ -207,6 +224,7 @@ ${discovery ? `- When exploring local files and folders, actively use ${discover
 
 ${fileOrganization}
 ${duplicateManagement}
+${automations}
 ${webResearch}
 ## External Datasource Skills
 

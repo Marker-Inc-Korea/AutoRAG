@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { terminateProcessTree } from "../process/terminate-tree.ts";
@@ -61,9 +62,23 @@ export function readLastAutomationRun(home: string, id: string): AutomationRunRe
 	}
 }
 
-function defaultSelfCommand(): readonly string[] {
-	const entry = process.argv[1];
-	return entry ? [process.execPath, entry] : ["autorag"];
+/**
+ * `[runtime, cliEntry]` for this AutoRAG install, found by walking up from this
+ * module to the package root. `process.argv[1]` is not used: inside the MCP
+ * server or a library host it is not the AutoRAG CLI. Bundled installs run
+ * `dist/cli/index.js`; a source checkout without a build runs the TypeScript entry.
+ */
+export function autoragCliCommand(): readonly string[] {
+	let dir = dirname(fileURLToPath(import.meta.url));
+	for (let depth = 0; depth < 6; depth += 1) {
+		for (const entry of [join(dir, "dist", "cli", "index.js"), join(dir, "src", "cli", "index.ts")]) {
+			if (existsSync(join(dir, "package.json")) && existsSync(entry)) return [process.execPath, entry];
+		}
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return ["autorag"];
 }
 
 function resolveSpawnArgv(
@@ -100,7 +115,7 @@ export async function runAutomation(
 ): Promise<AutomationRunRecord> {
 	const env = options.env ?? process.env;
 	const home = options.home ?? resolveAutoRAGHome(env);
-	const selfCommand = options.selfCommand ?? defaultSelfCommand();
+	const selfCommand = options.selfCommand ?? autoragCliCommand();
 	const { command, args, filesOverflow } = resolveSpawnArgv(
 		automation.run,
 		events,

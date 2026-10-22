@@ -105,6 +105,7 @@ import {
 	ANSWER_LEAD_RULE,
 	ANSWER_UNCERTAINTY_RULE,
 } from "./answer-guidelines.ts";
+import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -1051,6 +1052,7 @@ export class AutoRAGAgent {
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		const manageAutomationsTool = createManageAutomationsTool();
 		this.jevJudge =
 			options.jev === undefined || options.jev === false
 				? undefined
@@ -1098,6 +1100,7 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
@@ -1123,6 +1126,7 @@ export class AutoRAGAgent {
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
+			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
@@ -2030,8 +2034,9 @@ export class AutoRAGAgent {
 					mkdirSync(this.workspaceProjectRoot, { recursive: true });
 					const previousTools = sessionAgent?.getActiveToolNames();
 					setThinking(this.finalThinkingLevel);
-					if (sessionAgent !== undefined) sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES]);
-					else activeSession.agent.state.tools = [];
+					if (sessionAgent !== undefined) {
+						sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES, MANAGE_AUTOMATIONS_TOOL_NAME]);
+					} else activeSession.agent.state.tools = [];
 					const configBefore = snapshotConfigFile(this.selfConfig.configPath);
 					try {
 						await activeSession.prompt(
@@ -2040,6 +2045,7 @@ export class AutoRAGAgent {
 								configPath: this.selfConfig.configPath,
 								agentDir: this.piAgentDir ?? getAgentDir(),
 								skill: plan.selfConfigSkill,
+								automations: true,
 							}),
 						);
 						const report = finalAnswerText(transcript());

@@ -54,6 +54,29 @@ describe("buildSelfConfigPrompt", () => {
 		expect(prompt).toContain("/tmp/qa/pi-agent");
 		expect(prompt).toContain("add an anthropic provider");
 	});
+
+	it("sends automation requests to manage_automations instead of editing config.json or rules by hand", () => {
+		const prompt = buildSelfConfigPrompt({
+			query: "x",
+			configPath: "/tmp/qa/config.json",
+			agentDir: "/tmp/qa/pi-agent",
+			skill: "# Skill\n",
+			automations: true,
+		});
+		expect(prompt).toContain("manage_automations");
+		expect(prompt).toMatch(/file-triggered automation/iu);
+		expect(prompt).toMatch(/never by hand-editing the rules file/iu);
+	});
+
+	it("leaves automations out of scope when the host did not register manage_automations", () => {
+		const prompt = buildSelfConfigPrompt({
+			query: "x",
+			configPath: "/tmp/qa/config.json",
+			agentDir: "/tmp/qa/pi-agent",
+			skill: "# Skill\n",
+		});
+		expect(prompt).not.toMatch(/file-triggered automation requests/iu);
+	});
 });
 
 describe("buildSelfConfigPrompt guidance learned from manual QA", () => {
