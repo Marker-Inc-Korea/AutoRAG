@@ -1,0 +1,47 @@
+Hister — license notice for AutoRAG's `hister` datasource
+==========================================================
+
+Program:      Hister ("Your own search engine")
+Source:       https://github.com/asciimoo/hister
+Copyright:    asciimoo and Hister contributors (see the repository history)
+License:      GNU Affero General Public License, version 3 or (at your option)
+              any later version (AGPL-3.0-or-later)
+License text: https://www.gnu.org/licenses/agpl-3.0.txt
+              (also the LICENSE file in the Hister repository)
+
+How AutoRAG relates to Hister
+-----------------------------
+* AutoRAG does NOT contain, bundle, link, vendor, or redistribute any Hister
+  source code or binary. Nothing from the Hister repository is copied into
+  this package.
+* Users install Hister themselves, unmodified, from its own releases
+  (https://github.com/asciimoo/hister/releases, `brew install hister`, Docker,
+  or Nix), and run it as a separate process (`hister listen`).
+* AutoRAG talks to that process only over HTTP, using Hister's public JSON API
+  (`GET /search`, `GET /api/config`), the same API Hister's own `hister search`
+  command uses. Hister owns its index, its browser extension, its credentials,
+  and its optional embedding calls.
+* AutoRAG does not modify Hister, and it never hides that Hister is the backend:
+  the datasource manifest shown to the agent names Hister, its license, and its
+  source URL.
+* The `hister` datasource only reads web-page documents (`type:web`). It never
+  enables or uses Hister's local-directory indexing.
+
+Combining separate programs that communicate over a network is "mere
+aggregation" in the sense of the GNU licenses FAQ
+(https://www.gnu.org/licenses/gpl-faq.html#MereAggregation); AutoRAG therefore
+stays under its own license (Apache-2.0).
+
+If you run Hister as a network service for other people, AGPL-3.0 section 13
+applies to YOU as the operator of that Hister instance: you must offer those
+users the Corresponding Source of the Hister version you run (and of any
+modifications you made). Running an unmodified upstream release satisfies this
+by pointing users at https://github.com/asciimoo/hister.
+
+Obtaining the Hister source for a release you run
+-------------------------------------------------
+    git clone https://github.com/asciimoo/hister
+    git checkout <the version printed by `hister --version`>
+
+This file is a notice, not the license. The authoritative license terms are in
+the Hister repository and at the AGPL URL above.

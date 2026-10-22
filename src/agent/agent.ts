@@ -94,11 +94,16 @@ import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
+	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
 	ANSWER_DELIVERABLE_DELTA_RULE,
 	ANSWER_DELIVERABLE_RULE,
+	ANSWER_EMPHASIS_RULE,
 	ANSWER_IMAGE_DELTA_RULE,
 	ANSWER_IMAGE_EMBED_RULE,
+	ANSWER_LANGUAGE_RULE,
+	ANSWER_LEAD_RULE,
+	ANSWER_UNCERTAINTY_RULE,
 } from "./answer-guidelines.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import {
@@ -2941,13 +2946,17 @@ export class AutoRAGAgent {
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- ${ANSWER_LEAD_RULE}\n` +
+			`- ${ANSWER_BULLET_RULE}\n` +
+			`- ${ANSWER_EMPHASIS_RULE}\n` +
+			`- ${ANSWER_LANGUAGE_RULE}\n` +
 			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- ${ANSWER_DELIVERABLE_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations, stating that it is difficult to answer fully with the given information and searching continues. If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
+			`- ${ANSWER_UNCERTAINTY_RULE} If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
 			`Write the answer as your reply, then stop.`
 		);
 	}
@@ -3012,18 +3021,21 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
 		const answerRules = fastAnswerDelivered
-			? `Formatting and content rules for your final answer (DELTA ONLY):\n` +
-				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer.\n` +
-				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list.\n` +
-				`- Mark each item clearly as a correction or as a new finding.\n` +
-				`- If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is) instead of restating it.\n` +
-				`- ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
-				`- ${ANSWER_CITATION_RULE} A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
-				`- ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}\n` +
-				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`
+			? `Rules for your final answer (DELTA ONLY; the system prompt's answer guidelines still apply):\n` +
+				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer. Mark each item as a correction or a new finding.\n` +
+				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list. If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is).\n` +
+				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text, and do not describe how you verified it.\n` +
+				`- A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
+				`- ${ANSWER_LANGUAGE_RULE}\n` +
+				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
+				`- ${ANSWER_IMAGE_DELTA_RULE}`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
 				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+				`- ${ANSWER_LEAD_RULE}\n` +
+				`- ${ANSWER_BULLET_RULE}\n` +
+				`- ${ANSWER_EMPHASIS_RULE}\n` +
+				`- ${ANSWER_LANGUAGE_RULE}\n` +
+				`- ${ANSWER_UNCERTAINTY_RULE}\n` +
 				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- ${ANSWER_DELIVERABLE_RULE}${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}\n` +
 				`- ${ANSWER_CITATION_RULE}\n` +
@@ -3055,13 +3067,17 @@ export class AutoRAGAgent {
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
+			`- ${ANSWER_LEAD_RULE}\n` +
+			`- ${ANSWER_BULLET_RULE}\n` +
+			`- ${ANSWER_EMPHASIS_RULE}\n` +
+			`- ${ANSWER_LANGUAGE_RULE}\n` +
 			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 			`- ${ANSWER_DELIVERABLE_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- If information is incomplete or uncertain, acknowledge it briefly without lengthy explanations. If there are partial clues or leads, mention them concisely.\n\n` +
+			`- ${ANSWER_UNCERTAINTY_RULE} If there are partial clues or leads, mention them concisely.\n\n` +
 			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
