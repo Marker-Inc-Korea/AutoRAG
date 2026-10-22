@@ -246,13 +246,16 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 	automate: usage([
 		"autorag automate - file-triggered automations",
 		"",
-		"Usage: autorag automate run <id> [--event <create|update|delete>:<path>]",
+		"Usage:",
+		"  autorag automate daemon",
+		"  autorag automate run <id> [--event <create|update|delete>:<path>]",
 		"",
-		"Reads ~/.autorag/automations.json (or $AUTORAG_HOME/automations.json) and",
-		"runs the named automation, piping matched events as JSON on stdin.",
+		"Reads ~/.autorag/automations.json (or $AUTORAG_HOME/automations.json).",
+		"`daemon` watches configured folders with @parcel/watcher and runs matching",
+		"automations; `run` executes one automation immediately.",
 		"",
 		"Flags:",
-		"  --event <type:path>   Synthetic file event (repeatable)",
+		"  --event <type:path>   Synthetic file event for `run` (repeatable)",
 	]),
 };
 
