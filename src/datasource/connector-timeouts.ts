@@ -10,8 +10,12 @@
  * the short default.
  */
 
-/** Non-interactive budget for a connector `sync`/`index` step (30 minutes). */
-export const DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS = 1_800_000;
+/**
+ * Non-interactive budget for a connector `sync`/`index` step (one hour). A no-op mailcrawl `sync` of a
+ * 1,000-message INBOX measured 16 to 27 minutes because mailcrawl re-reads every message on each run
+ * (NomaDamas/mailcrawl#48), so 30 minutes did not hold even when nothing had changed.
+ */
+export const DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS = 3_600_000;
 
 /**
  * Operator-facing hint appended to a sync/index diagnostic when the connector

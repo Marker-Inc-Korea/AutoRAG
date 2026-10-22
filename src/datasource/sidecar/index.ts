@@ -76,8 +76,8 @@ export interface CrawlerSidecarOptions {
 
 /** Messages embedded per request and per write transaction; bounds memory and keeps a failed sync resumable. */
 const DEFAULT_BATCH_SIZE = 256;
-/** About 9 s on the local gateway at the measured ~224 msg/s; 16.6k messages catch up in 9 refreshes. */
-const DEFAULT_MAX_EMBED_PER_SYNC = 2048;
+/** About 73 s at the ~224 msg/s measured on the local gateway; 31k messages catch up in two refreshes. */
+const DEFAULT_MAX_EMBED_PER_SYNC = 16_384;
 /**
  * Characters of one message sent to the embedder. The gateway rejects a request over 262,144 characters
  * (HTTP 413) and the embedder sends 32 inputs per request, so 8192 keeps any full request under the cap.
