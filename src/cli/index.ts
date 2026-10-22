@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { releaseEmbedders } from "../embedding/index.ts";
 import { commandUsage } from "./command-help.ts";
+import { runAutomate } from "./commands/automate.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 import { readPackageVersion } from "./version.ts";
@@ -60,6 +61,7 @@ const VALUE_FLAGS = new Set([
 	"fast-thinking",
 	"final-thinking",
 	"whatsapp-group",
+	"event",
 ]);
 
 const COMMANDS = [
@@ -78,6 +80,7 @@ const COMMANDS = [
 	"lite",
 	"models",
 	"update-check",
+	"automate",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -118,6 +121,7 @@ Commands:
                        (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
   models list          List chat models from the pi runtime (--provider ID --available)
   update-check         Compare the running autorag against the published npm version
+  automate run <id>    Run a file-triggered automation from ~/.autorag/automations.json
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -177,8 +181,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 		if (value === undefined || (eq === -1 && value.startsWith("--"))) {
 			return { error: `Flag --${key} requires a value` };
 		}
-		if (key === "exclude") {
-			if (value.trim().length === 0) return { error: "Flag --exclude requires a non-empty path" };
+		if (key === "exclude" || key === "event") {
+			if (value.trim().length === 0) return { error: `Flag --${key} requires a non-empty value` };
 			repeatedFlags[key] ??= [];
 			repeatedFlags[key].push(value);
 		}
@@ -261,6 +265,9 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "update-check": {
 			const { runUpdateCheck } = await import("./commands/update-check.ts");
 			return runUpdateCheck(ctx);
+		}
+		case "automate": {
+			return runAutomate(ctx);
 		}
 	}
 }
