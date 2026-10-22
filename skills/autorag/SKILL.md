@@ -145,7 +145,18 @@ autorag index rebuild --yes --json
 autorag index reset --method parsed --yes --json
 autorag memory inspect --json
 autorag tui
+autorag automate status --json
+autorag automate install --json
+autorag automate uninstall --json
+autorag automate run invoice --event create:/path/to/file.pdf --json
+autorag automate daemon
 ```
+
+File-triggered automations live in `~/.autorag/automations.json` (`automations`
+array of `{ id, paths, events, include, exclude, run, appendFiles, debounceMs, timeoutMs }`).
+Edit `automations.json` directly to add or change rules; matched `[{ type, path }]`
+events are piped on stdin to `run`. Use `autorag automate install` to register
+the background daemon with launchd, `systemd --user`, or Windows Task Scheduler.
 
 Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
 datasources, and (on Windows) the bundled Everything file-name index stay
