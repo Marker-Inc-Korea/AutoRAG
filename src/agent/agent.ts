@@ -106,6 +106,7 @@ import {
 	ANSWER_UNCERTAINTY_RULE,
 } from "./answer-guidelines.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
+import { CitationNumbers } from "./citation-numbers.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -835,6 +836,8 @@ export class AutoRAGAgent {
 	 * run starts from an empty ledger.
 	 */
 	private readonly evidenceLedger = new EvidenceLedger();
+	/** The result numbers (`[n]`) this conversation has shown, kept next to the ledger's `e<N>` ordinals. */
+	private readonly citationNumbers = new CitationNumbers();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
@@ -1566,7 +1569,7 @@ export class AutoRAGAgent {
 			isSearchRunning: () => this.interactive.run !== undefined,
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
-				createEvidencePersistence(this.evidenceLedger),
+				createEvidencePersistence(this.evidenceLedger, this.citationNumbers),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
 				createEmbeddingControls({
 					embedder: this.embedder,
@@ -1596,7 +1599,11 @@ export class AutoRAGAgent {
 		return {
 			...runtime,
 			dispose: async () => {
-				if (this.boundPiRuntime === runtime.runtime) this.boundPiRuntime = undefined;
+				if (this.boundPiRuntime === runtime.runtime) {
+					this.boundPiRuntime = undefined;
+					// A disposed session must not receive later numbers.
+					this.citationNumbers.setSink(undefined);
+				}
 				await dispose();
 			},
 		};
@@ -1670,7 +1677,12 @@ export class AutoRAGAgent {
 
 	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
 	private deriveAnswer(text: string): AutoRAGResultsDetails {
-		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, { allowLocalFiles: true });
+		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, {
+			allowLocalFiles: true,
+			numbers: this.citationNumbers,
+		});
+		// The answer is derived after the turn's last session event: persist its new numbers now.
+		this.citationNumbers.flush();
 		this.routingDiagnostics.push(...derived.diagnostics);
 		return derived.details;
 	}
@@ -1907,8 +1919,11 @@ export class AutoRAGAgent {
 		this.retrievalTrace = [];
 		// A conversation keeps one evidence ledger for its whole life: the transcript still shows the earlier
 		// [eN] ids, and the session rebuilds the ledger on resume, /new, and tree moves. Only a run that owns
-		// no transcript starts over.
-		if (this.boundPiRuntime === undefined) this.evidenceLedger.clear();
+		// no transcript starts over, and result numbers follow the same rule: `[n]` accumulates with the conversation.
+		if (this.boundPiRuntime === undefined) {
+			this.evidenceLedger.clear();
+			this.citationNumbers.reset();
+		}
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
