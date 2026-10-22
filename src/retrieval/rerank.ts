@@ -294,6 +294,21 @@ export class OpenRouterReranker implements Reranker {
 		}
 		if (results.length === 0) return [];
 
+		// The provider rejects an empty document with HTTP 400 and fails the whole
+		// request, so blank (empty or whitespace-only) content is never sent.
+		// `sent[i]` is the index in `results` of the i-th document on the wire.
+		const sent: number[] = [];
+		const documents: string[] = [];
+		for (let index = 0; index < results.length; index += 1) {
+			const content = (results[index] as RetrievalResult).content;
+			if (content.trim() === "") continue;
+			sent.push(index);
+			documents.push(content);
+		}
+		if (documents.length === 0) {
+			return options.topN === undefined ? [...results] : results.slice(0, options.topN);
+		}
+
 		const requestBody: {
 			model: string;
 			query: string;
@@ -302,7 +317,7 @@ export class OpenRouterReranker implements Reranker {
 		} = {
 			model: this.model,
 			query,
-			documents: results.map((result) => result.content),
+			documents,
 		};
 		if (options.topN !== undefined) requestBody.topN = options.topN;
 
@@ -311,9 +326,10 @@ export class OpenRouterReranker implements Reranker {
 		const seen = new Set<number>();
 		const reranked: RetrievalResult[] = [];
 		for (const entry of ordered) {
-			const original = results[entry.index];
-			if (original === undefined || seen.has(entry.index)) continue;
-			seen.add(entry.index);
+			const originalIndex = sent[entry.index];
+			if (originalIndex === undefined || seen.has(originalIndex)) continue;
+			const original = results[originalIndex] as RetrievalResult;
+			seen.add(originalIndex);
 			reranked.push({
 				...original,
 				score: entry.relevanceScore,

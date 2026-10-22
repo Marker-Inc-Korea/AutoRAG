@@ -161,3 +161,106 @@ describe("OpenRouterReranker provider-dependent defaults", () => {
 		);
 	});
 });
+
+/** The `documents` array of a posted rerank body, narrowed at runtime. */
+function postedDocuments(body: unknown): string[] {
+	if (typeof body !== "object" || body === null || !("documents" in body) || !Array.isArray(body.documents)) {
+		throw new Error("request body has no documents array");
+	}
+	return body.documents.map((entry: unknown) => String(entry));
+}
+
+describe("blank documents", () => {
+	/** Echo every posted document back as a ranked result, last document best. */
+	function rankingServer() {
+		return startFakeServer((request) => {
+			const documents = postedDocuments(request.json);
+			return {
+				body: {
+					model: DEFAULT_DAZZI_RERANK_MODEL,
+					results: documents.map((_, index) => ({ index, relevance_score: (index + 1) / 10 })).reverse(),
+				},
+			};
+		});
+	}
+
+	it("never sends empty or whitespace-only documents and maps scores back to the original results", async () => {
+		signIn();
+		const server = await rankingServer();
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "dazzi",
+				agentDir,
+				env: { AUTORAG_BASE_URL: server.url },
+			});
+			const out = await reranker.rerank("q", [
+				result("a", "alpha"),
+				result("blank", ""),
+				result("b", "beta"),
+				result("ws", " \n\t "),
+				result("c", "gamma"),
+			]);
+
+			expect(postedDocuments(server.requests[0]?.json)).toEqual(["alpha", "beta", "gamma"]);
+			// Server ranked the last sent document (gamma) best; ids must follow the original results.
+			expect(out.map((entry) => entry.id)).toEqual(["c", "b", "a", "blank", "ws"]);
+			expect(out[0]?.score).toBeCloseTo(0.3);
+			expect(out[0]?.metadata.rerankProvider).toBe("dazzi");
+			// Unscored blanks keep their original score and gain no rerank metadata.
+			expect(out[3]?.metadata.rerankScore).toBeUndefined();
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("drops blank documents when topN is set", async () => {
+		signIn();
+		const server = await rankingServer();
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "dazzi",
+				agentDir,
+				env: { AUTORAG_BASE_URL: server.url },
+			});
+			const out = await reranker.rerank("q", [result("blank", ""), result("a", "alpha"), result("b", "beta")], {
+				topN: 5,
+			});
+			expect(out.map((entry) => entry.id)).toEqual(["b", "a"]);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("makes no request and keeps the input order when every document is blank", async () => {
+		signIn();
+		const server = await rankingServer();
+		try {
+			const reranker = new OpenRouterReranker({
+				provider: "dazzi",
+				agentDir,
+				env: { AUTORAG_BASE_URL: server.url },
+			});
+			const input = [result("x", ""), result("y", "   ")];
+			expect((await reranker.rerank("q", input)).map((entry) => entry.id)).toEqual(["x", "y"]);
+			expect((await reranker.rerank("q", input, { topN: 1 })).map((entry) => entry.id)).toEqual(["x"]);
+			expect(server.requests).toHaveLength(0);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("applies the same filtering for the openrouter provider", async () => {
+		const sent: string[][] = [];
+		const reranker = new OpenRouterReranker({
+			client: {
+				async rerank({ requestBody }) {
+					sent.push(requestBody.documents);
+					return { results: [{ index: 0, relevanceScore: 0.5 }] };
+				},
+			},
+		});
+		const out = await reranker.rerank("q", [result("blank", ""), result("a", "alpha")], { topN: 3 });
+		expect(sent).toEqual([["alpha"]]);
+		expect(out.map((entry) => entry.id)).toEqual(["a"]);
+	});
+});
