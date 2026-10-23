@@ -7,6 +7,13 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, keyText } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import {
+	convertAndRelate,
+	type FileeCliOptions,
+	type FileeConvertRequest,
+	listFileeFormats,
+	resolveFileeOptions,
+} from "../convert/index.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
@@ -108,6 +115,13 @@ import {
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
+import {
+	CONVERT_FILES_TOOL_NAME,
+	type ConvertFilesDetails,
+	createConvertFilesTool,
+	createListFileConversionsTool,
+	LIST_FILE_CONVERSIONS_TOOL_NAME,
+} from "./convert-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -607,6 +621,12 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	/**
+	 * Filee command line behind `convert_files` and `list_file_conversions`.
+	 * `false` leaves both tools out. The duplicate-family check on converted
+	 * copies follows `dupey`.
+	 */
+	filee?: FileeCliOptions | false;
+	/**
 	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
 	 * probabilities out). When set, the two-phase search asks Jev before the
 	 * fast answer whether the question is answerable from intrinsic knowledge
@@ -882,6 +902,7 @@ export class AutoRAGAgent {
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
+	private readonly fileeOptions: FileeCliOptions | false;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
@@ -961,6 +982,7 @@ export class AutoRAGAgent {
 		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
 		this.dupeyOptions = options.dupey ?? {};
+		this.fileeOptions = options.filee ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
@@ -1057,6 +1079,8 @@ export class AutoRAGAgent {
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
+		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
 		this.jevJudge =
 			options.jev === undefined || options.jev === false
@@ -1105,6 +1129,8 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			CONVERT_FILES_TOOL_NAME,
+			LIST_FILE_CONVERSIONS_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -1131,6 +1157,8 @@ export class AutoRAGAgent {
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
+			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
+			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
 			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
@@ -1171,6 +1199,21 @@ export class AutoRAGAgent {
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
 		}
+	}
+
+	async convertFiles(request: FileeConvertRequest, signal?: AbortSignal): Promise<ConvertFilesDetails> {
+		if (this.fileeOptions === false) throw new Error("File conversion is disabled.");
+		const filee = await resolveFileeOptions(this.fileeOptions, { env: process.env });
+		return convertAndRelate(request, {
+			filee: { ...filee, ...(signal !== undefined ? { signal } : {}) },
+			dupey: this.dupeyOptions,
+		});
+	}
+
+	async listFileConversions(from?: string, signal?: AbortSignal): Promise<string> {
+		if (this.fileeOptions === false) throw new Error("File conversion is disabled.");
+		const filee = await resolveFileeOptions(this.fileeOptions, { env: process.env });
+		return listFileeFormats(from, { ...filee, ...(signal !== undefined ? { signal } : {}) });
 	}
 
 	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {

@@ -1,6 +1,14 @@
 export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
+	CONVERT_FILES_TOOL_NAME,
+	type ConvertFilesDetails,
+	createConvertFilesTool,
+	createListFileConversionsTool,
+	type FileConversionProvider,
+	LIST_FILE_CONVERSIONS_TOOL_NAME,
+} from "./convert-tool.ts";
+export {
 	buildDatasourceSkillsPrompt,
 	createLoadDatasourceSkillTool,
 	type DatasourceSkillProvider,

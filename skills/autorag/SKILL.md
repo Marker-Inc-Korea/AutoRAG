@@ -45,6 +45,34 @@ near/contains families require human review. Exact duplicate exclusion during
 refresh is enabled by default and can be disabled with
 `"excludeExactDuplicates": false` in `config.json`.
 
+### Converting files
+
+The `convert_files` and `list_file_conversions` Agent tools run the
+[Filee](https://github.com/KnifeLemon/Filee) command line to convert local
+files offline: documents, spreadsheets, slides, HWP/HWPX, images, e-books,
+archives, audio, video, data, and subtitles. They work on any path the user
+names, not only the configured roots. This is the one exception to the
+"never write source files" rule above: a conversion writes a new file and
+never touches its source. An existing output name gets a number added unless
+the user asks to replace it, in which case pass `overwrite: true`. Never
+delete the source unless the user asked.
+
+Each converted file is checked with `dupey compare` against its source, using
+dupey's own thresholds, so the report says whether a later scan will group
+them: `exact` (same canonical text, for example DOCX to HWPX), `near` (same
+document in another format, for example Markdown to TXT), `different` (text
+differs, typically layout formats such as PDF), `unsupported` (dupey cannot
+read the format, for example HTML or images), or `unavailable` (dupey not
+installed). The command line is `filee.binaryPath` if set, else a `filee`/`filee-cli`
+on `PATH`, else the pinned [filee-cli](https://github.com/NomaDamas/filee-cli)
+release that `autorag setup` (or the first conversion) downloads into
+`<AUTORAG_HOME>/tools/filee-cli/`; `"filee": { "autoInstall": false }` forbids that
+download. The system prompt carries the conversion map (which format family
+converts to which, and the two-step chain when no direct route exists), so plan
+from it instead of probing. `"filee": { "enabled": false }` in `config.json` removes both
+tools; `filee.timeoutMs` (default 30 minutes) and `filee.dataDir` (Filee's
+own settings and engines, `FILEE_DATA_DIR`) tune them.
+
 ### Excluding local files from the index
 
 `"excludePaths"` in `config.json` lists files or folders (absolute, or relative
