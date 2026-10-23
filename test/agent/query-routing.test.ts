@@ -17,7 +17,7 @@ function judgeWith(backend: JevBackend) {
 }
 
 describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition check)", () => {
-	it("falls back to local search when a direct verdict is below the confidence floor", async () => {
+	it("follows the top branch even when its probability is low", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
@@ -31,13 +31,13 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 			),
 			"latest stable Node.js release",
 		);
-		expect(decision.route).toBe("local");
+		expect(decision.route).toBe("direct");
 		expect(decision.decompose).toBe(false);
 		expect(decision.routeProbability).toBe(0.6);
-		expect(decision.fallbackReason).toMatch(/confidence floor/u);
+		expect(decision.fallbackReason).toBeUndefined();
 	});
 
-	it("answers directly only when the direct verdict clears the confidence floor", async () => {
+	it("answers directly when the direct branch is the top verdict", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
@@ -68,7 +68,7 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 		expect(decision.decompose).toBe(false);
 	});
 
-	it("keeps local search when Jev reports a direct branch with no probability", async () => {
+	it("follows the reported branch when Jev gives an answer but no probabilities", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
@@ -76,10 +76,11 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 				}),
 			),
-			"can you help me pick a birthday gift for my girlfriend?",
+			"what is a monad?",
 		);
-		expect(decision.route).toBe("local");
-		expect(decision.fallbackReason).toMatch(/confidence floor/u);
+		expect(decision.route).toBe("direct");
+		expect(decision.routeProbability).toBeUndefined();
+		expect(decision.fallbackReason).toBeUndefined();
 	});
 
 	it("asks for decomposition when Jev's yes-probability reaches one half", async () => {
@@ -213,7 +214,7 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 		expect(decision.decompose).toBe(false);
 	});
 
-	it("keeps local search when Jev's config verdict does not clear the confidence floor", async () => {
+	it("follows the config branch whenever it is the top verdict", async () => {
 		const decision = await routeQuery(
 			judgeWith(
 				new MockBackend({
@@ -224,12 +225,12 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 				}),
 			),
-			"which model does the agent use for my budget notes?",
+			"which model does the agent use?",
 			{ selfConfig: true },
 		);
-		expect(decision.route).toBe("local");
+		expect(decision.route).toBe("config");
 		expect(decision.routeProbability).toBe(0.65);
-		expect(decision.fallbackReason).toContain("config");
+		expect(decision.fallbackReason).toBeUndefined();
 	});
 
 	it("ignores a config verdict when self-configuration is disabled", async () => {
@@ -269,7 +270,7 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 	});
 
 	it.each(["organize", "extra"] as const)(
-		"routes to %s when Jev picks it above the confidence floor, and never decomposes it",
+		"routes to %s when it is the top verdict, and never decomposes it",
 		async (route) => {
 			const decision = await routeQuery(
 				judgeWith(
@@ -290,26 +291,40 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 		},
 	);
 
-	it.each(["organize", "extra"] as const)(
-		"keeps local search when Jev's %s verdict does not clear the confidence floor",
-		async (route) => {
-			const decision = await routeQuery(
-				judgeWith(
-					new MockBackend({
-						[QUERY_ROUTE_QUESTION_ID]: {
-							answer: route,
-							distribution: { local: 0.3, direct: 0.05, organize: 0.05, extra: 0.05, [route]: 0.75 },
-						},
-						[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
-					}),
-				),
-				"where did I put the invoice folder?",
-			);
-			expect(decision.route).toBe("local");
-			expect(decision.routeProbability).toBe(0.75);
-			expect(decision.fallbackReason).toContain(route);
-		},
-	);
+	it.each(["organize", "extra"] as const)("follows %s as the top verdict even at a low probability", async (route) => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: route,
+						distribution: { local: 0.3, direct: 0.05, organize: 0.05, extra: 0.05, [route]: 0.55 },
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			),
+			"sort the invoice folder",
+		);
+		expect(decision.route).toBe(route);
+		expect(decision.routeProbability).toBe(0.55);
+		expect(decision.fallbackReason).toBeUndefined();
+	});
+
+	it("stays on local when local is the top verdict, however close the others are", async () => {
+		const decision = await routeQuery(
+			judgeWith(
+				new MockBackend({
+					[QUERY_ROUTE_QUESTION_ID]: {
+						answer: "local",
+						distribution: { local: 0.4, direct: 0.1, organize: 0.38, extra: 0.12 },
+					},
+					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				}),
+			),
+			"where is the invoice folder?",
+		);
+		expect(decision.route).toBe("local");
+		expect(decision.fallbackReason).toBeUndefined();
+	});
 });
 
 describe("needsFollowUp (Jev check after the fast answer)", () => {

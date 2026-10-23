@@ -36,16 +36,6 @@ export const DECOMPOSE_PROBABILITY_THRESHOLD = 0.5;
 /** A `noul` probability at or above this sends the fast answer on to verification. */
 export const FOLLOW_UP_PROBABILITY_THRESHOLD = 0.5;
 
-/**
- * Minimum Jev branch probability required to leave local search. A `direct`
- * branch at or below this floor — or one Jev reported without a probability —
- * keeps the run on local search, the corpus-grounded default.
- * Without the floor a weakly-favored `direct` verdict (observed at p 0.57-0.63
- * on personal-corpus questions) skips retrieval entirely and answers from
- * general knowledge, so the caller loses the evidence the question depends on.
- */
-export const NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD = 0.75;
-
 /** A `noul` probability at or above this searches that datasource before the fast answer. */
 export const DATASOURCE_PROBABILITY_THRESHOLD = 0.5;
 
@@ -133,11 +123,11 @@ const DECOMPOSE_QUESTION = check(
 );
 
 export interface QueryRouteDecision {
-	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none or its non-local branch missed {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD}. */
+	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none. */
 	readonly route: QueryRoute;
 	/** True when Jev judged the question needs decomposition (only ever for `local`). */
 	readonly decompose: boolean;
-	/** Probability Jev gave the winning branch, including a rejected non-local branch whose floor moved the route to local. */
+	/** Probability Jev gave the winning branch; absent when Jev reported none. */
 	readonly routeProbability?: number;
 	/** Jev's P(decomposition needed), when it answered. */
 	readonly decomposeProbability?: number;
@@ -177,10 +167,10 @@ export interface RouteQueryOptions {
 
 /**
  * Ask Jev, in one batched call about the user question, which branch answers
- * it and whether it needs decomposition. Never throws: a missing credential,
- * an unreachable backend, an unusable verdict, or a `direct` branch that does
- * not clear {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} falls back to a
- * single local search, with the reason recorded.
+ * it and whether it needs decomposition. The most probable branch wins, with
+ * no confidence floor. Never throws: a missing credential, an unreachable
+ * backend, or an unusable verdict falls back to a single local search, with
+ * the reason recorded.
  */
 export async function routeQuery(
 	judge: JevJudge,
@@ -214,22 +204,6 @@ export async function routeQuery(
 	const decomposeVerdict = verdicts.find((verdict) => verdict.id === DECOMPOSE_QUESTION_ID);
 	const decomposeProbability = typeof decomposeVerdict?.answer === "number" ? decomposeVerdict.answer : undefined;
 	const decompose = decomposeProbability !== undefined && decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD;
-	// Leaving local search drops corpus evidence, so it needs a confident branch:
-	// a weak or probability-less `direct` verdict keeps the local default.
-	if (
-		best.route !== "local" &&
-		(best.probability === undefined || best.probability <= NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD)
-	) {
-		return {
-			route: FALLBACK_QUERY_ROUTE,
-			decompose,
-			fallbackReason:
-				`Jev's ${best.route} route probability (${best.probability ?? "not reported"}) is not above the ` +
-				`${NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} confidence floor; using local search.`,
-			...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
-			...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
-		};
-	}
 	return {
 		route: best.route,
 		decompose: best.route === "local" && decompose,

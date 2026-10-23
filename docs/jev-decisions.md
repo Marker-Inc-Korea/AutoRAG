@@ -141,12 +141,11 @@ user question in one batched call:
    knowledge** alone (`direct`), or does it need additional information
    (`local`)? There is no web branch. Two action branches, `organize` and
    `extra`, are always offered, and a `config` branch is also offered to local
-   sessions. The highest-probability branch wins, but leaving local search needs
-   confidence: a `direct`, `organize`, `extra`, or `config` branch **at or below
-   0.75** (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without
-   a probability — falls back to `local` search with a `query-route-fallback`
-   diagnostic, so a weak verdict never silently drops the corpus evidence the
-   question depends on (and never moves files or edits settings on a guess).
+   sessions. The highest-probability branch wins, with no confidence floor: a
+   weak `direct` verdict does answer without retrieval, and a weak `organize`
+   verdict does act on files. Only a missing credential, an unreachable
+   backend, or a verdict with no usable branch falls back to `local` search,
+   with a `query-route-fallback` diagnostic.
    - `local`: answering needs anything beyond intrinsic knowledge — information
      only the user can reach (files on their computer, Discord/KakaoTalk/Slack
      chats, email, notes, calendar, history) or facts that may be recent,
