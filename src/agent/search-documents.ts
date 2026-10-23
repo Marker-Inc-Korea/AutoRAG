@@ -66,6 +66,8 @@ export type SearchDocumentDiagnosticCode =
 	| "datasources-selected"
 	| "datasource-selection-fallback"
 	| "citation-without-result"
+	| "citation-irrelevant"
+	| "citation-relevance-fallback"
 	| "evidence-judged"
 	| "evidence-judgment-fallback"
 	| "memory-search-fallback"

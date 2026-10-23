@@ -99,7 +99,7 @@ import {
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { deriveResultsFromAnswer } from "./answer-citations.ts";
+import { citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
 	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
@@ -115,6 +115,8 @@ import {
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
+import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
+import { ConversationQueries } from "./conversation-queries.ts";
 import {
 	CONVERT_FILES_TOOL_NAME,
 	type ConvertFilesDetails,
@@ -873,6 +875,8 @@ export class AutoRAGAgent {
 	private readonly evidenceLedger = new EvidenceLedger();
 	/** The result numbers (`[n]`) this conversation has shown, kept next to the ledger's `e<N>` ordinals. */
 	private readonly citationNumbers = new CitationNumbers();
+	/** Everything the user typed in this conversation; Jev reads it to judge whether a citation relates to what was asked. */
+	private readonly conversationQueries = new ConversationQueries();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
@@ -1644,7 +1648,7 @@ export class AutoRAGAgent {
 			extensionFactories: [
 				this.permissionGate,
 				createUserRequestPersistence(this.userRequests),
-				createEvidencePersistence(this.evidenceLedger, this.citationNumbers),
+				createEvidencePersistence(this.evidenceLedger, this.citationNumbers, this.conversationQueries),
 				createCitationLinks(this.evidenceLedger),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
 				createEmbeddingControls({
@@ -1679,6 +1683,7 @@ export class AutoRAGAgent {
 					this.boundPiRuntime = undefined;
 					// A disposed session must not receive later numbers.
 					this.citationNumbers.setSink(undefined);
+					this.conversationQueries.setSink(undefined);
 				}
 				await dispose();
 			},
@@ -1756,15 +1761,53 @@ export class AutoRAGAgent {
 		};
 	}
 
-	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
-	private deriveAnswer(text: string): AutoRAGResultsDetails {
+	/**
+	 * Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results.
+	 * With Jev on, every cited chunk is first checked for relevance to the sentence that cites it and to what
+	 * the user typed in this conversation; a chunk Jev finds unrelated (a table of contents, a footer) is dropped
+	 * from the citations before the answer is returned or judged for memory.
+	 */
+	private async deriveAnswer(text: string): Promise<AutoRAGResultsDetails> {
+		const options = { allowLocalFiles: true };
+		let excludedChunks: ReadonlySet<string> | undefined;
+		let removedSources: readonly string[] = [];
+		if (this.jevJudge !== undefined) {
+			const chunks = citedChunks(text, this.evidenceLedger, options);
+			const relevance = await judgeCitationRelevance(this.jevJudge, {
+				userMessages: this.conversationQueries.all(),
+				chunks,
+			});
+			if (relevance.fallbackReason !== undefined) {
+				this.routingDiagnostics.push({
+					code: "citation-relevance-fallback",
+					severity: "warning",
+					message: `Jev citation relevance check was unavailable; every citation was kept. ${relevance.fallbackReason}`,
+					source: "agent",
+				});
+			} else if (relevance.rejected.size > 0) {
+				excludedChunks = relevance.rejected;
+				removedSources = [
+					...new Set(chunks.filter((chunk) => relevance.rejected.has(chunk.key)).map((chunk) => chunk.source)),
+				];
+			}
+		}
 		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, {
-			allowLocalFiles: true,
+			...options,
 			numbers: this.citationNumbers,
+			...(excludedChunks !== undefined ? { excludedChunks } : {}),
 		});
-		// The answer is derived after the turn's last session event: persist its new numbers now.
+		// The answer is derived after the turn's last session event: persist its new numbers and queries now.
 		this.citationNumbers.flush();
+		this.conversationQueries.flush();
 		this.routingDiagnostics.push(...derived.diagnostics);
+		if (excludedChunks !== undefined) {
+			this.routingDiagnostics.push({
+				code: "citation-irrelevant",
+				severity: "info",
+				message: `Jev found ${excludedChunks.size} cited chunk(s) unrelated to the sentence that cites them or to what the user asked (P(relevant) < ${CITATION_RELEVANCE_FLOOR}) and removed them from the citations: ${removedSources.join(", ")}.`,
+				source: "agent",
+			});
+		}
 		return derived.details;
 	}
 
@@ -1793,6 +1836,7 @@ export class AutoRAGAgent {
 			state.steers.push(input.text);
 			this.userRequests.record(input.text, "steer");
 			state.steerTexts.add(input.text);
+			this.conversationQueries.add(input.text);
 			// Cut any in-flight retrieval short so the steer reaches the model promptly.
 			state.steerInterrupt.abort();
 			return { kind: "steer", text: input.text };
@@ -1912,6 +1956,7 @@ export class AutoRAGAgent {
 		state.steers.push(text);
 		this.userRequests.record(text, "steer");
 		state.steerTexts.add(text);
+		this.conversationQueries.add(text);
 		// Cut any in-flight retrieval short so the steer reaches the model promptly.
 		state.steerInterrupt.abort();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }, ...images];
@@ -2011,6 +2056,7 @@ export class AutoRAGAgent {
 		if (this.boundPiRuntime === undefined) {
 			this.evidenceLedger.clear();
 			this.citationNumbers.reset();
+			this.conversationQueries.reset();
 		}
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
@@ -2023,6 +2069,7 @@ export class AutoRAGAgent {
 			this.userRequests.reset();
 			this.userRequests.record(trimmedQuery);
 		}
+		this.conversationQueries.add(trimmedQuery);
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;
@@ -2129,7 +2176,7 @@ export class AutoRAGAgent {
 					steering.acceptingSteers = false;
 					if (this.interactive.userAborted) return;
 					const turnText = finalAnswerText(transcript());
-					if (turnText !== undefined) captured = this.deriveAnswer(turnText);
+					if (turnText !== undefined) captured = await this.deriveAnswer(turnText);
 					return;
 				}
 				const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
@@ -2158,7 +2205,7 @@ export class AutoRAGAgent {
 							}),
 						);
 						const report = finalAnswerText(transcript());
-						if (report !== undefined) captured = this.deriveAnswer(report);
+						if (report !== undefined) captured = await this.deriveAnswer(report);
 						const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
 						if (rolledBack !== undefined) {
 							this.routingDiagnostics.push({
@@ -2201,7 +2248,7 @@ export class AutoRAGAgent {
 					directText = finalAnswerText(transcript());
 					// A steer typed while the direct answer streamed questions it: verify instead.
 					if (!steered()) {
-						if (directText !== undefined) captured = this.deriveAnswer(directText);
+						if (directText !== undefined) captured = await this.deriveAnswer(directText);
 						return;
 					}
 				}
@@ -2219,7 +2266,7 @@ export class AutoRAGAgent {
 					);
 					if (stopped()) return;
 					fastText = finalAnswerText(transcript());
-					preliminary = fastText === undefined ? undefined : this.deriveAnswer(fastText);
+					preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText);
 				}
 				if (preliminary !== undefined) {
 					emitPreliminary(preliminary);
@@ -2274,7 +2321,7 @@ export class AutoRAGAgent {
 				steering.acceptingSteers = false;
 				if (stopped()) return;
 				const finalText = finalAnswerText(transcript());
-				if (finalText !== undefined) captured = this.deriveAnswer(finalText);
+				if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
 			})().finally(() => {
 				// Every early return decides synchronously after its last steer check.
 				steering.acceptingSteers = false;
