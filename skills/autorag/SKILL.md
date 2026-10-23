@@ -111,7 +111,10 @@ autorag search "what were the key findings in the Q3 report" --top-k 5 --json --
 only `answer` plus `results`. Every
 bracketed `[n]` citation in `answer` resolves to a `results[].number` of the
 same response; an unmatched citation is removed and reported as a
-`citation-without-result` diagnostic.
+`citation-without-result` diagnostic. Within one conversation (an interactive
+session, including a resumed one), a source keeps the `number` it was first
+shown with and a new source gets the next unused number, so `results[].number`
+can skip numbers and need not start at 1 on a later turn.
 
 To inspect the exact persisted evidence behind numbered results, use:
 

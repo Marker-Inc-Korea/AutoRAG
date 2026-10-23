@@ -267,7 +267,7 @@ ${fsearch}
 Your answer is your final reply, written as plain text, never as a tool call. Cite evidence inline with the ids the retrieval tools print next to each result:
 - Put the id in square brackets at the end of the sentence it supports, e.g. \`The cap is 28% [e3].\` Use \`[e3][e7]\` or \`[e3, e7]\` for several. Copy ids exactly as printed; never invent one.
 - For a local file you opened yourself with \`bash\`, cite \`[file:<absolute path>]\`.
-- The harness resolves every id to its recorded source, number the citations \`[1]\`, \`[2]\`, … in order of first appearance, and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
+- The harness resolves every id to its recorded source, numbers the citations \`[1]\`, \`[2]\`, … (a source keeps the number it was first shown with for the whole conversation; a new source gets the next unused number), and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
 - Evidence ids belong to the whole conversation: cite any id a retrieval tool printed in this conversation, including in earlier turns. An id no tool ever printed is dropped.
 
 ## Answer Guidelines

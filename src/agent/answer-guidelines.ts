@@ -48,8 +48,8 @@ export const ANSWER_UNCERTAINTY_RULE =
 /**
  * Inline evidence citations. The model writes the id the retrieval tools print
  * next to each result; the harness resolves it to the recorded source and
- * renumbers the markers `[1]`, `[2]`, ... in order of first appearance, so the
- * caller only ever sees numbered citations backed by recorded evidence.
+ * renumbers the markers `[1]`, `[2]`, ... (a source keeps its number for the whole
+ * conversation), so the caller only ever sees numbered citations backed by recorded evidence.
  */
 export const ANSWER_CITATION_RULE =
 	"**Citations**: cite supporting evidence inline with the evidence id shown next to each retrieved result, in square brackets (e.g. [e3], or [e3][e7] for two). Copy ids exactly; never invent one. For a local file you opened yourself with `bash`, cite `[file:<absolute path>]`. Cite the evidence that backs a sentence at the end of that sentence. Do not cite numbers, paths, or anything else.";
