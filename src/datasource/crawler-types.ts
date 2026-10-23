@@ -60,7 +60,7 @@ export interface CrawlerCliOptions {
 	 */
 	readonly timeoutMs?: number;
 	/**
-	 * Spawn timeout for `sync` in milliseconds. Default 1_800_000 (30 min): a first
+	 * Spawn timeout for `sync` in milliseconds. Default 3_600_000 (1 hour): a first
 	 * full import over a real archive can take many minutes, and a timed-out sync
 	 * restarts from scratch on the next refresh.
 	 */

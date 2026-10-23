@@ -314,6 +314,17 @@ describe("CrawlerSidecar semantic index", () => {
 	});
 });
 
+describe("CrawlerSidecar default sync budget", () => {
+	it("embeds a large backlog in one sync without an explicit cap, then reports the rest as remaining", async () => {
+		seedSlack(
+			Array.from({ length: 16_385 }, (_, i) => ({ channel: "C1", ts: `${i + 1}.000001`, text: `release ${i}` })),
+		);
+		const sidecar = open(vocabEmbedder(VOCAB));
+		expect(await sidecar.sync()).toMatchObject({ ok: true, embedded: 16_384, remaining: 1 });
+		sidecar.close();
+	});
+});
+
 describe("CrawlerSidecar sync budget", () => {
 	it("stops embedding when the budget is spent, keeps what it embedded, and finishes the rest on the next sync", async () => {
 		seedSlack(Array.from({ length: 6 }, (_, i) => ({ channel: "C1", ts: `${i + 1}.000001`, text: `release ${i}` })));

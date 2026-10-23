@@ -26,7 +26,7 @@ export interface LazykatokOptions {
 	 */
 	readonly timeoutMs?: number;
 	/**
-	 * Spawn timeout for `sync`/`index` in milliseconds. Default 1_800_000 (30 min):
+	 * Spawn timeout for `sync`/`index` in milliseconds. Default 3_600_000 (1 hour):
 	 * the first semantic index over a large archive was measured at ~11 minutes, and
 	 * a timed-out build restarts from scratch on the next refresh.
 	 */

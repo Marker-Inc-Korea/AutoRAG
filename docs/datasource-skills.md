@@ -185,13 +185,14 @@ answer, never from how an individual search call turned out.
 ## Connector sync/index timeouts
 
 Connector `sync`/`index` steps are not interactive, so AutoRAG gives them a
-30-minute budget (`connector.indexTimeoutMs`) instead of the 60-second
+one-hour budget (`connector.indexTimeoutMs`) instead of the 60-second
 interactive default (`connector.timeoutMs`) used by `search`, `doctor`, and chunk
 reads. Measured first-run costs on a real archive:
 
 | Connector | First-run workload | Measured |
 |---|---|---|
 | `mailcrawl` | Gmail INBOX full sync (~2,300 messages) + native index | ~12 min |
+| `mailcrawl` | No-op `sync` of a 1,000-message INBOX (mailcrawl re-reads every message, NomaDamas/mailcrawl#48) | 16 to 27 min |
 | `kakao` (lazykatok) | Semantic index over a ~50k-message archive (9,373 units) | ~11 min |
 
 A step killed by its timeout does not commit its cursor, so the next refresh
@@ -209,7 +210,7 @@ progress. Raise the budget per connection:
 }
 ```
 
-`indexTimeoutMs` takes precedence, then `timeoutMs`, then the 30-minute default.
+`indexTimeoutMs` takes precedence, then `timeoutMs`, then the one-hour default.
 A `sync`/`index` diagnostic ending in `timeout` carries a hint naming
 `connector.indexTimeoutMs` and the restart behaviour.
 
@@ -253,7 +254,7 @@ overrides are replaced for `index` and semantic search.
 - The default embedder is the in-process native `Qwen/Qwen3-Embedding-0.6B`
   (1024 dimensions, the same model and dimension as AutoRAG's shared embedder),
   so a cold cache downloads ONNX weights on the first `index`. AutoRAG gives
-  `sync`/`index` a 30-minute budget (`connector.indexTimeoutMs`) while search
+  `sync`/`index` a one-hour budget (`connector.indexTimeoutMs`) while search
   keeps its 60-second interactive budget.
 - `index` reports `{ embedded, reused, archiveRevision, rebuilt, embedder }`
   instead of the 0.1.x generation report.
@@ -435,7 +436,7 @@ matching rows — an unscoped search looks exactly like an empty archive, with n
 diagnostic. `syncSource` is likewise required: `slacrawl sync` without
 `--source` fails and surfaces as `datasource-index-failed`. `timeoutMs` bounds
 the FTS search; the first `sync` (a wiretap import of the whole cache) uses
-`indexTimeoutMs`, default 30 minutes, so it is not cut off at 60 seconds.
+`indexTimeoutMs`, default one hour, so it is not cut off at 60 seconds.
 
 Initialize and refresh the local mirror with:
 
@@ -472,7 +473,7 @@ Tune or opt out per datasource with `connector.sidecar`:
 | `false` or `{ "enabled": false }` | CLI-backed FTS only, as before |
 | `semantic: false` | BM25 only; no embedding calls, and no `<name>-semantic` / `<name>-hybrid` methods |
 | `crawlerDbPath` | archive to read. Otherwise: `connector.databasePath`; for `slack`, the `db_path` in the slacrawl config that `connector.configPath` names (relative paths resolve against that file); otherwise the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
-| `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (2048) |
+| `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (16,384) |
 
 How it works and what it never does:
 
@@ -497,7 +498,7 @@ How it works and what it never does:
 - Embedding is **bounded per refresh** so the first sync of a large archive does not hold the whole refresh. While
   a backlog remains the datasource reports an info diagnostic (`datasource-index-partial`: `semantic index
   catching up`), and hybrid search uses BM25 for the messages not yet embedded. Measured on 16,591 WhatsApp
-  messages: about 224 messages/s, 2048 per refresh, so 9 refreshes to catch up.
+  messages: about 224 messages/s; at 16,384 per refresh that archive catches up in two refreshes (about 73 s each).
 - Each message's embedding input is its first 8192 characters (BM25 still indexes all of it). A message the
   embedder rejects on its own is skipped with a warning and retried only after it is edited, so it cannot stall
   the backlog behind it.
