@@ -19,9 +19,9 @@ and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
 yourself with `cargo install minsync` when auto-install cannot run. MinSync
-0.4.11 on Apple Silicon and Linux needs rustc 1.96 or newer, because its
+0.4.12 on Apple Silicon and Linux needs rustc 1.96 or newer, because its
 dependency `candle-core` requires NEON f16 support; AutoRAG's installer pins
-MinSync 0.4.11.
+MinSync 0.4.12.
 
 A normal setup is:
 
@@ -54,7 +54,7 @@ this order:
    `apiKeyEnv` (the name of an environment variable holding the bearer token,
    never the token), `dimension`, `batchSize`, and `timeoutMs`.
 2. **`minsync serve` daemon.** Otherwise a running daemon is preferred. It is
-   loopback only and requires MinSync 0.4.11 or newer. It serves TEI
+   loopback only and requires MinSync 0.4.12 or newer. It serves TEI
    `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`. Running
    instances are discovered through `~/.cache/minsync/serve/<instance>/`
    (`host`, `port`, `pid`, `lock`). **AutoRAG never starts or stops it for you**
@@ -472,8 +472,8 @@ of a generic `minsync-sync-failed`.
 
 ## Skipped files (partial sync)
 
-MinSync 0.4.11 skips a file it cannot read, chunk, or embed instead of aborting
-the sync, and exits 6 with `partial: true` and a `files_failed` list. AutoRAG
+MinSync 0.4.11 and newer skip a file they cannot read, chunk, or embed instead of
+aborting the sync, and exit 6 with `partial: true` and a `files_failed` list. AutoRAG
 treats that as a completed sync (`minsync.ok: true`) and reports each skipped
 file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
 inside the MinSync workspace. MinSync keeps the file's previous chunks and
