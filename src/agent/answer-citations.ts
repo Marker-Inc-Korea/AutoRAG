@@ -34,6 +34,14 @@ interface CitedSource {
 	readonly claim: string;
 }
 
+/**
+ * Identity of one cited chunk: the source plus the recorded chunk text. A
+ * source can back several chunks, so a chunk is judged and excluded on its own.
+ */
+export function citedChunkKey(ref: { readonly source: string; readonly content?: string }): string {
+	return `${ref.source}\0${ref.content ?? ""}`;
+}
+
 /** The sentence ending at `end`, stripped of list marks and other citation markers. */
 function claimBefore(text: string, end: number): string {
 	const window = text.slice(Math.max(0, end - CLAIM_LOOKBACK_CHARS), end);
@@ -68,7 +76,12 @@ function claimBefore(text: string, end: number): string {
 export function deriveResultsFromAnswer(
 	text: string,
 	ledger: EvidenceLedger,
-	options: { readonly allowLocalFiles: boolean; readonly numbers: CitationNumbers },
+	options: {
+		readonly allowLocalFiles: boolean;
+		readonly numbers: CitationNumbers;
+		/** Chunks ({@link citedChunkKey}) a relevance judgment rejected: a citation of only these is dropped silently. */
+		readonly excludedChunks?: ReadonlySet<string>;
+	},
 ): DerivedAnswer {
 	const isFile = (path: string): boolean => options.allowLocalFiles && isAbsolute(path) && isRegularFile(path);
 	const sources = new Map<string, CitedSource>();
@@ -78,12 +91,15 @@ export function deriveResultsFromAnswer(
 	let lastEmitted: { readonly number: number; readonly end: number } | undefined;
 
 	const cite = (reference: string, claimEnd: number): number | undefined => {
-		const refs = ledger.lookup(reference, options);
-		const [primary] = refs;
-		if (primary === undefined) {
+		const found = ledger.lookup(reference, options);
+		if (found.length === 0) {
 			dropped.add(reference);
 			return undefined;
 		}
+		// A chunk judged unrelated is no citation, but it is not an invented id either.
+		const refs = found.filter((ref) => options.excludedChunks?.has(citedChunkKey(ref)) !== true);
+		const [primary] = refs;
+		if (primary === undefined) return undefined;
 		let cited = sources.get(primary.source);
 		if (cited === undefined) {
 			cited = {
@@ -95,7 +111,7 @@ export function deriveResultsFromAnswer(
 			sources.set(primary.source, cited);
 		}
 		for (const ref of refs) {
-			const chunkKey = `${ref.source}\0${ref.content ?? ""}`;
+			const chunkKey = citedChunkKey(ref);
 			if (cited.chunkKeys.has(chunkKey)) continue;
 			cited.chunkKeys.add(chunkKey);
 			cited.refs.push(ref);

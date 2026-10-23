@@ -24,6 +24,7 @@ import {
 } from "../../src/agent/query-routing.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
+import { citationsRelevant } from "../helpers/citations-relevant.ts";
 
 let root: string;
 
@@ -49,15 +50,17 @@ function customTool(): AgentTool {
 
 /** Jev routing every query to `route`; `followUp` is the post-fast-answer "verify?" probability. */
 function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
-	return new MockBackend({
-		[QUERY_ROUTE_QUESTION_ID]: {
-			answer: route,
-			distribution: { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 },
-			confidence: 0.8,
-		},
-		[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
-		[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
-	});
+	return citationsRelevant(
+		new MockBackend({
+			[QUERY_ROUTE_QUESTION_ID]: {
+				answer: route,
+				distribution: { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 },
+				confidence: 0.8,
+			},
+			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+			[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
+		}),
+	);
 }
 
 /** A TUI-hosted agent on the faux model, routed by `jev` (direct route by default). */

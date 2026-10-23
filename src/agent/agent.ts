@@ -99,7 +99,7 @@ import {
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { deriveResultsFromAnswer } from "./answer-citations.ts";
+import { citedChunkKey, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
 	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
@@ -115,6 +115,7 @@ import {
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
+import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
 import {
 	CONVERT_FILES_TOOL_NAME,
 	type ConvertFilesDetails,
@@ -1721,15 +1722,59 @@ export class AutoRAGAgent {
 		};
 	}
 
-	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
-	private deriveAnswer(text: string): AutoRAGResultsDetails {
-		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, {
-			allowLocalFiles: true,
-			numbers: this.citationNumbers,
-		});
+	/**
+	 * Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results.
+	 * With Jev on, every cited chunk is first checked for relevance to the sentence that cites it, and a chunk
+	 * Jev finds unrelated (a table of contents, a footer) is dropped from the citations before the answer
+	 * is returned or judged for memory.
+	 */
+	private async deriveAnswer(text: string, question: string): Promise<AutoRAGResultsDetails> {
+		const derive = (numbers: CitationNumbers, excludedChunks?: ReadonlySet<string>) =>
+			deriveResultsFromAnswer(text, this.evidenceLedger, {
+				allowLocalFiles: true,
+				numbers,
+				...(excludedChunks !== undefined ? { excludedChunks } : {}),
+			});
+		let rejected: ReadonlySet<string> | undefined;
+		let removedSources: readonly string[] = [];
+		if (this.jevJudge !== undefined) {
+			// Judge against a scratch numbering: the conversation's numbers are never reissued, so a
+			// source Jev is about to reject must not consume one.
+			const draft = derive(new CitationNumbers());
+			if (draft.details.mapping.length > 0) {
+				const relevance = await judgeCitationRelevance(this.jevJudge, { question, details: draft.details });
+				if (relevance.fallbackReason !== undefined) {
+					this.routingDiagnostics.push({
+						code: "citation-relevance-fallback",
+						severity: "warning",
+						message: `Jev citation relevance check was unavailable; every citation was kept. ${relevance.fallbackReason}`,
+						source: "agent",
+					});
+				} else if (relevance.rejected.size > 0) {
+					rejected = relevance.rejected;
+					removedSources = [
+						...new Set(
+							draft.details.mapping
+								.flatMap((entry) => entry.evidenceRefs)
+								.filter((ref) => relevance.rejected.has(citedChunkKey(ref)))
+								.map((ref) => ref.source),
+						),
+					];
+				}
+			}
+		}
+		const derived = derive(this.citationNumbers, rejected);
 		// The answer is derived after the turn's last session event: persist its new numbers now.
 		this.citationNumbers.flush();
 		this.routingDiagnostics.push(...derived.diagnostics);
+		if (rejected !== undefined) {
+			this.routingDiagnostics.push({
+				code: "citation-irrelevant",
+				severity: "info",
+				message: `Jev found ${rejected.size} cited chunk(s) unrelated to the sentence that cites them (P(relevant) < ${CITATION_RELEVANCE_FLOOR}) and removed them from the citations: ${removedSources.join(", ")}.`,
+				source: "agent",
+			});
+		}
 		return derived.details;
 	}
 
@@ -2081,7 +2126,7 @@ export class AutoRAGAgent {
 					steering.acceptingSteers = false;
 					if (this.interactive.userAborted) return;
 					const turnText = finalAnswerText(transcript());
-					if (turnText !== undefined) captured = this.deriveAnswer(turnText);
+					if (turnText !== undefined) captured = await this.deriveAnswer(turnText, trimmedQuery);
 					return;
 				}
 				const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
@@ -2110,7 +2155,7 @@ export class AutoRAGAgent {
 							}),
 						);
 						const report = finalAnswerText(transcript());
-						if (report !== undefined) captured = this.deriveAnswer(report);
+						if (report !== undefined) captured = await this.deriveAnswer(report, trimmedQuery);
 						const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
 						if (rolledBack !== undefined) {
 							this.routingDiagnostics.push({
@@ -2153,7 +2198,7 @@ export class AutoRAGAgent {
 					directText = finalAnswerText(transcript());
 					// A steer typed while the direct answer streamed questions it: verify instead.
 					if (!steered()) {
-						if (directText !== undefined) captured = this.deriveAnswer(directText);
+						if (directText !== undefined) captured = await this.deriveAnswer(directText, trimmedQuery);
 						return;
 					}
 				}
@@ -2171,7 +2216,7 @@ export class AutoRAGAgent {
 					);
 					if (stopped()) return;
 					fastText = finalAnswerText(transcript());
-					preliminary = fastText === undefined ? undefined : this.deriveAnswer(fastText);
+					preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText, trimmedQuery);
 				}
 				if (preliminary !== undefined) {
 					emitPreliminary(preliminary);
@@ -2226,7 +2271,7 @@ export class AutoRAGAgent {
 				steering.acceptingSteers = false;
 				if (stopped()) return;
 				const finalText = finalAnswerText(transcript());
-				if (finalText !== undefined) captured = this.deriveAnswer(finalText);
+				if (finalText !== undefined) captured = await this.deriveAnswer(finalText, trimmedQuery);
 			})().finally(() => {
 				// Every early return decides synchronously after its last steer check.
 				steering.acceptingSteers = false;

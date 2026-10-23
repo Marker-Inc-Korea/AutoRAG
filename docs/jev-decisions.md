@@ -296,6 +296,64 @@ queries as a `query-routed` diagnostic, and the datasource check's picks as
 two-phase (fast answer, then verification unless Jev ends the run); there is
 no single-phase mode.
 
+## Citation relevance check
+
+The model sometimes cites a chunk that has nothing to do with the sentence it
+backs or with the question: a table of contents, a navigation bar, a
+copyright footer, a generic introduction. Every `[eN]` the harness resolves
+against the evidence ledger is real, but real is not the same as related, so
+with Jev on, each cited chunk is checked before the answer is returned.
+
+- **One `noul` question per cited chunk**, all in **one batched call**: *is the
+  evidence relevant to the answer sentence that cites it, or to the user's
+  question?* The question carries only that chunk (JSON-quoted, bounded to 1500
+  characters) and the sentence(s) citing it; the state carries the JSON-quoted
+  user question and the full answer as reference.
+- **Threshold.** `CITATION_RELEVANCE_FLOOR` is **0.3**: below it the chunk is
+  removed from the citations; at or above it the chunk stays. This is
+  deliberately looser than the memory gate below (0.7, "directly supports and is
+  needed"): a chunk that is on topic, or backs only part of a claim, must stay.
+  Only evidence with no information on the subject is removed.
+- **What removal means.** The answer is re-derived without the rejected chunks,
+  so numbering, summaries, results, and `mapping` stay consistent: a source whose
+  every cited chunk was rejected disappears and the rest renumber; a source with
+  one rejected chunk among several keeps its marker and loses only that chunk.
+  A `citation-irrelevant` diagnostic lists the removed sources. The removed
+  chunk is not an invented id, so no `citation-without-result` warning is raised.
+- **What is never judged.** Evidence that is only a path (a file the model
+  located but did not read) has no text to judge and is kept.
+- **Failure behavior.** If Jev is disabled, the call fails, or Jev gives no usable
+  verdict for any chunk, **every citation is kept** and a
+  `citation-relevance-fallback` diagnostic carries the verbatim reason. A chunk
+  Jev left unanswered is kept. The check never blocks a search.
+- **Order.** It runs where the answer is derived (the fast answer, the final
+  answer, and the direct route), before the preliminary is published and before
+  the memory judgment below, so a rejected chunk is also never judged for or
+  stored in memory.
+
+Measured on live OpenRouter Jev (`typesafe/jev-1.13`) with 26 labeled cases
+(11 on-topic or partial chunks that must stay, 15 junk chunks that must go:
+tables of contents, introductions, navigation, copyright and email footers,
+chatter, bot notifications, unrelated sections), 5 runs each, through the
+agent's own `judgeCitationRelevance`
+(`scripts/manual-qa/run-qa-citation-relevance-live.ts`):
+
+| Group | Correct |
+| ----- | ------- |
+| on-topic chunks retained | 35/35 |
+| tables of contents removed | 15/15 |
+| introductions removed | 15/15 |
+| off-topic chunks removed | 25/25 |
+| boilerplate removed | 15/20 |
+| partially related chunks retained | 15/20 |
+
+Junk removed 70/75 and relevant chunks retained 50/55. Two cases fail every run,
+and no single floor fixes both: a security-deposit chunk cited for the rent
+sentence scores 0.25 and is removed although it is lease text, while a court
+case header block cited for a division ruling scores 0.36 and is kept although
+it carries no ruling. The chunk that should stay scores lower than the chunk that
+should go, so any floor that removes the header also removes the deposit chunk.
+
 ## Evidence judgment for memory
 
 Retrieval memory stores only evidence that survived judgment, so after the
