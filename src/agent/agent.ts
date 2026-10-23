@@ -201,6 +201,7 @@ import {
 } from "./self-config.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import { ToolBurstGuard, type ToolBurstGuardOptions } from "./tool-burst-guard.ts";
+import { createUserRequestPersistence, UserRequestLog } from "./user-requests.ts";
 import {
 	createWatchRefresh,
 	type WatcherFactory,
@@ -774,6 +775,8 @@ export class AutoRAGAgent {
 	private readonly memory: RetrievalMemory;
 	private readonly runLogger: AutoRAGRunLogger;
 	private lastQuery: string | undefined;
+	/** What the user has said in this conversation; Jev's permission gate judges file changes against it. */
+	private readonly userRequests = new UserRequestLog();
 	private lastSessionId: string | undefined;
 	private activeRun = false;
 	/**
@@ -1079,7 +1082,7 @@ export class AutoRAGAgent {
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
 			...(this.jevJudge === undefined ? {} : { judge: this.jevJudge }),
-			request: () => this.lastQuery,
+			requests: this.userRequests,
 		});
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
@@ -1593,6 +1596,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				this.permissionGate,
+				createUserRequestPersistence(this.userRequests),
 				createEvidencePersistence(this.evidenceLedger),
 				createCitationLinks(this.evidenceLedger),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
@@ -1639,8 +1643,13 @@ export class AutoRAGAgent {
 		return createDiscordRemoteExtension({
 			submit: (text, pi) => {
 				const state = this.interactive;
-				if (state.run === undefined) this.startInteractiveQuery(text, pi);
-				else if (!this.steer(text)) state.followUps.push(text);
+				if (state.run === undefined) {
+					this.userRequests.record(text);
+					this.startInteractiveQuery(text, pi);
+				} else if (!this.steer(text)) {
+					this.userRequests.record(text);
+					state.followUps.push(text);
+				}
 			},
 			isRunning: () => this.interactive.run !== undefined,
 			onRunSettled: (callback) => void this.waitForIdle().then(callback),
@@ -1714,16 +1723,19 @@ export class AutoRAGAgent {
 		const followUp = input.streamingBehavior === "followUp" || state.nextSubmitIsFollowUp;
 		state.nextSubmitIsFollowUp = false;
 		if (state.run === undefined) {
+			this.userRequests.record(input.text);
 			this.startInteractiveQuery(input.text, pi);
 			return { kind: "handled" };
 		}
 		if (followUp) {
+			this.userRequests.record(input.text);
 			state.followUps.push(input.text);
 			return { kind: "handled" };
 		}
 		if (input.streamingBehavior === "steer") {
 			// A turn is streaming: pi queues the user's text as steering for that turn.
 			state.steers.push(input.text);
+			this.userRequests.record(input.text, "steer");
 			state.steerTexts.add(input.text);
 			// Cut any in-flight retrieval short so the steer reaches the model promptly.
 			state.steerInterrupt.abort();
@@ -1732,7 +1744,10 @@ export class AutoRAGAgent {
 		// Between phases no turn streams, so pi would start a new prompt. Queue the
 		// steer on the search instead: the next phase's model request takes it. A
 		// search past its last request (or between queued queries) answers it next.
-		if (!this.steer(input.text, input.images)) state.followUps.push(input.text);
+		if (!this.steer(input.text, input.images)) {
+			this.userRequests.record(input.text);
+			state.followUps.push(input.text);
+		}
 		return { kind: "handled" };
 	}
 
@@ -1839,6 +1854,7 @@ export class AutoRAGAgent {
 		const state = this.interactive;
 		if (!this.activeRun || !state.acceptingSteers || state.userAborted || text.trim() === "") return false;
 		state.steers.push(text);
+		this.userRequests.record(text, "steer");
 		state.steerTexts.add(text);
 		// Cut any in-flight retrieval short so the steer reaches the model promptly.
 		state.steerInterrupt.abort();
@@ -1942,6 +1958,12 @@ export class AutoRAGAgent {
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
 		this.lastQuery = trimmedQuery;
+		// A run that owns no TUI session is its own conversation. In the TUI the log is the session's and is fed
+		// as the user types, so a follow-up or a steer is never missing and a phase prompt is never in it.
+		if (this.boundPiRuntime === undefined) {
+			this.userRequests.reset();
+			this.userRequests.record(trimmedQuery);
+		}
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;

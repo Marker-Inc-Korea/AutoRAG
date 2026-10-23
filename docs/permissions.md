@@ -74,10 +74,27 @@ Pass `--permission-mode full` (or set the env/config) for an unattended job that
 
 ## Jev in `auto`
 
-Jev sees only your request, the working directory, and one line per operation (`delete /path`). Never file
-contents. `jev-use` redacts secrets such as API keys and URL passwords before anything leaves the machine. Jev
-needs a backend (`jev` config, `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or a Dazzi login); without one `auto`
-behaves like `ask`. A 15 second timeout falls back to asking you.
+Jev is asked one allow/deny question per gated operation. The state it judges is:
+
+- **Everything you said in this conversation**, numbered, oldest first, exactly as typed: the first question,
+  every follow-up (also ones queued with Alt+Enter), and every steer typed while the agent was working (marked
+  `(correction while the agent was working)`). AutoRAG's own internal prompts (the fast-answer, verification,
+  and direct-answer wrappers, steer continuations) are never included: the log is fed where your words arrive,
+  not read back from the transcript.
+- The working directory and one line per operation (`delete /path`).
+
+It is saved in the session next to the transcript, so `/resume` brings the earlier messages back and `/new`
+starts empty.
+
+Nothing is shortened while it fits. Jev's context allows 30,000 tokens of state, so the conversation gets
+about 108,000 characters minus the operations. Past that, the opening request and the newest messages are kept
+and the middle is dropped with a count (`[12 earlier messages omitted]`); a single message longer than the
+whole budget is cut in its middle. A run of 1,000+ characters without whitespace (a pasted blob) is replaced by
+a note of its size, because it says nothing about intent and jev-use's secret redaction is quadratic on it.
+
+Never file contents. `jev-use` redacts secrets such as API keys and URL passwords before anything leaves the
+machine. Jev needs a backend (`jev` config, `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or a Dazzi login); without
+one `auto` behaves like `ask`. A 15 second timeout falls back to asking you.
 
 ## MCP
 

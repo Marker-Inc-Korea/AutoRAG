@@ -3,6 +3,7 @@ import { isAbsolute, relative, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { type Question, redactSecrets } from "jev-use";
+import { DEFAULT_MAX_STATE_TOKENS } from "jev-use/dist/protocol.js";
 import type { JevJudge } from "./jev-extension.ts";
 import {
 	type ClassifyFs,
@@ -13,6 +14,7 @@ import {
 	type PermissionOperation,
 	type PermissionOperationKind,
 } from "./permission-classify.ts";
+import { renderUserRequests, type UserRequest, type UserRequestLog } from "./user-requests.ts";
 
 /**
  * How much the agent may do to the user's files without asking.
@@ -40,6 +42,14 @@ export const AUTO_APPROVE_MIN_CONFIDENCE = 0.8;
 
 const JEV_TIMEOUT_MS = 15_000;
 const STATUS_KEY = "autorag-permissions";
+
+/**
+ * Largest state the gate shows Jev, in characters. jev-use hands every question back ("oversized") once the
+ * state passes {@link DEFAULT_MAX_STATE_TOKENS} estimated tokens (about 4 characters each), and then `auto`
+ * would silently become `ask`. The ceiling is read from jev-use so it cannot drift, and 10% is left for
+ * jev-use's own estimate being rough.
+ */
+export const DEFAULT_MAX_STATE_CHARS = Math.floor(DEFAULT_MAX_STATE_TOKENS * 4 * 0.9);
 
 export function parsePermissionMode(value: unknown): PermissionMode | undefined {
 	if (typeof value !== "string") return undefined;
@@ -118,10 +128,13 @@ export interface PermissionGateOptions {
 	/** Jev judge for `auto` mode. Without one, `auto` asks the user like `ask`. */
 	readonly judge?: JevJudge;
 	/**
-	 * The user's current request, which Jev judges the operations against. Without it the gate uses the prompt
-	 * of the run that started, which is an internal phase prompt in AutoRAG's two-phase search.
+	 * What the user has said in this conversation: the first question, every follow-up, every steer. Jev judges
+	 * the operations against all of it. The host feeds it from the user's own input, so AutoRAG's internal phase
+	 * prompts are never in it.
 	 */
-	readonly request?: () => string | undefined;
+	readonly requests?: UserRequestLog;
+	/** Cap on the state shown to Jev, in characters. Default: Jev's context ceiling with a safety margin. */
+	readonly maxStateChars?: number;
 	/** Filesystem the classifier reads. Default: the real one, with `~` expanding to the user's home. */
 	readonly fs?: (cwd: string) => ClassifyFs;
 }
@@ -201,7 +214,8 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 	return (pi: ExtensionAPI) => {
 		/** Paths a call creates, trusted once the call succeeds. */
 		const pendingCreations = new Map<string, string[]>();
-		let userRequest = "";
+		const { requests } = options;
+		const maxStateChars = options.maxStateChars ?? DEFAULT_MAX_STATE_CHARS;
 		let dialogsOpen = 0;
 		let queue: Promise<unknown> = Promise.resolve();
 		let boundUi: ExtensionContext["ui"] | undefined;
@@ -278,7 +292,6 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 		});
 
 		pi.on("before_agent_start", (event) => {
-			if (event.messageType === "user" && typeof event.prompt === "string") userRequest = event.prompt;
 			if (controller.mode === "full") return undefined;
 			return { systemPrompt: `${event.systemPrompt}\n\n${PERMISSION_PROMPT_ADDENDUM}` };
 		});
@@ -345,7 +358,7 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 
 			let declined: string | undefined;
 			if (controller.mode === "auto" && judge !== undefined) {
-				const verdict = await askJev(judge, pending, options.request?.() ?? userRequest, ctx.cwd);
+				const verdict = await askJev(judge, pending, requests?.entries() ?? [], ctx.cwd, maxStateChars);
 				if (verdict.approved) {
 					ctx.ui.notify(`Jev approved: ${pending.map((op) => op.detail).join("; ")}`, "info");
 					return undefined;
@@ -419,22 +432,41 @@ const GATE_QUESTION: Question = {
 	},
 };
 
+/** A run of non-whitespace this long is data, not words: no key, token, or path the gate cares about is. */
+const MAX_UNBROKEN_RUN = 1000;
+const UNBROKEN_RUN = new RegExp(`\\S{${MAX_UNBROKEN_RUN},}`, "g");
+
+/** `text` with every run of {@link MAX_UNBROKEN_RUN}+ non-whitespace characters replaced by a note of its size. */
+function collapseBlobs(text: string): string {
+	return text.replace(UNBROKEN_RUN, (run) => `[unbroken text of ${run.length} characters omitted]`);
+}
+
 /** Jev's yes/no on one batch of operations. Never throws: no answer means "ask the user". */
 async function askJev(
 	judge: JevJudge,
 	ops: readonly PermissionOperation[],
-	request: string,
+	requests: readonly UserRequest[],
 	cwd: string,
+	maxStateChars: number,
 ): Promise<JevVerdict> {
-	// Only the request and the operations leave the machine: never file contents, and secrets are stripped.
-	const state = redactSecrets(
+	// Only what the user said and the operations leave the machine: never file contents. A long unbroken run
+	// (a pasted blob, a base64 dump) says nothing about what the user wants and jev-use's redaction is quadratic
+	// on it (108k characters took ~19s), so every such run is replaced by a one-line note before anything is
+	// measured or redacted. Redaction then runs over the bounded state.
+	const operations = redactSecrets(
 		[
-			`User request: ${request.trim().slice(0, 2000) || "(not available)"}`,
 			`Working directory: ${cwd}`,
 			"Proposed file operations:",
 			...ops.map((op) => `- ${describeOperation(op).trim()}  [${op.detail}]`),
 		].join("\n"),
 	);
+	const header = "What the user has said in this conversation, oldest first:\n";
+	const budget = Math.max(0, maxStateChars - header.length - operations.length - 2);
+	const conversation = renderUserRequests(
+		requests.map((request) => ({ ...request, text: collapseBlobs(request.text) })),
+		budget,
+	);
+	const state = redactSecrets(`${header}${conversation}\n\n${operations}`);
 	let timer: NodeJS.Timeout | undefined;
 	try {
 		const judgment = await Promise.race([

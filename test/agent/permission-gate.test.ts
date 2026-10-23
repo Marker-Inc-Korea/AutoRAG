@@ -14,6 +14,7 @@ import {
 	type PermissionMode,
 	parsePermissionMode,
 } from "../../src/agent/permission-gate.ts";
+import { UserRequestLog } from "../../src/agent/user-requests.ts";
 
 const ALLOW_ONCE = "Allow once";
 const ALLOW_SESSION_PREFIX = "Allow";
@@ -35,6 +36,9 @@ interface HarnessOptions {
 	readonly mode?: PermissionMode;
 	readonly hasUI?: boolean;
 	readonly jev?: JevBackend;
+	/** What the user said so far; the gate shows it to Jev. */
+	readonly requests?: UserRequestLog;
+	readonly maxStateChars?: number;
 	/** Dialog answers in order; a function sees the title and options. */
 	readonly answers?: (string | undefined | ((title: string, options: string[]) => string | undefined))[];
 }
@@ -78,7 +82,12 @@ function harness(options: HarnessOptions = {}) {
 			theme: { fg: (_color: string, text: string) => text },
 		},
 	} as unknown as ExtensionContext;
-	createPermissionGate({ controller, ...(judge === undefined ? {} : { judge }) })(pi);
+	createPermissionGate({
+		controller,
+		...(judge === undefined ? {} : { judge }),
+		...(options.requests === undefined ? {} : { requests: options.requests }),
+		...(options.maxStateChars === undefined ? {} : { maxStateChars: options.maxStateChars }),
+	})(pi);
 	let nextId = 0;
 	const emit = async (event: string, payload: Record<string, unknown>) => {
 		let result: unknown;
@@ -434,17 +443,132 @@ describe("auto mode", () => {
 				} as never;
 			},
 		};
-		const h = harness({ mode: "auto", jev: backend });
-		await h.emit("before_agent_start", {
-			messageType: "user",
-			prompt: "clean up my downloads",
-			systemPrompt: "base",
-		});
+		const requests = new UserRequestLog();
+		requests.record("clean up my downloads");
+		const h = harness({ mode: "auto", jev: backend, requests });
 		await h.bash(`rm ${original("a.txt")} # sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef`);
 		expect(seen).toHaveLength(1);
 		expect(seen[0]).toContain("clean up my downloads");
 		expect(seen[0]).not.toContain("sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef");
 		expect(seen[0]).not.toContain(FILE_MARKER);
+	});
+});
+
+/** A Jev that approves everything and keeps the state it was shown. */
+function spyJev(states: string[]): JevBackend {
+	return {
+		name: "spy",
+		judge: async (request) => {
+			states.push(typeof request.state === "string" ? request.state : JSON.stringify(request.state));
+			return {
+				answers: request.questions.map(() => ({
+					answer: "allow",
+					distribution: { allow: 0.99, deny: 0.01 },
+					confidence: 0.99,
+				})),
+			};
+		},
+	};
+}
+
+describe("what Jev is told about the request", () => {
+	it("shows every user message of the conversation in order, corrections marked", async () => {
+		const states: string[] = [];
+		const requests = new UserRequestLog();
+		requests.record("organize my downloads folder");
+		requests.record("the invoices from 2024 are obsolete, remove them", "request");
+		requests.record("not the 2025 ones", "steer");
+		const h = harness({ mode: "auto", jev: spyJev(states), requests });
+		await h.bash(`rm ${original("invoice-2024.pdf")}`);
+		expect(states).toHaveLength(1);
+		const state = states[0] ?? "";
+		const first = state.indexOf("[1] organize my downloads folder");
+		const second = state.indexOf("[2] the invoices from 2024 are obsolete, remove them");
+		const third = state.indexOf("[3] (correction while the agent was working) not the 2025 ones");
+		expect(first).toBeGreaterThan(-1);
+		expect(second).toBeGreaterThan(first);
+		expect(third).toBeGreaterThan(second);
+	});
+
+	it("does not cut a long request at 2000 characters", async () => {
+		const states: string[] = [];
+		const requests = new UserRequestLog();
+		const long = `please tidy up ${"details ".repeat(1500)}THE-END-MARKER`;
+		requests.record(long);
+		const h = harness({ mode: "auto", jev: spyJev(states), requests });
+		await h.bash(`rm ${original("a.txt")}`);
+		expect(long.length).toBeGreaterThan(10_000);
+		expect(states[0]).toContain(long);
+	});
+
+	it("keeps the whole state under Jev's context limit, dropping the middle of a very long conversation", async () => {
+		const states: string[] = [];
+		const requests = new UserRequestLog();
+		requests.record("OPENING-REQUEST organize everything");
+		for (let i = 0; i < 400; i++) requests.record(`filler message ${i} ${"z".repeat(300)}`);
+		requests.record("LATEST-STEER only the pdfs", "steer");
+		const h = harness({ mode: "auto", jev: spyJev(states), requests, maxStateChars: 8000 });
+		await h.bash(`rm ${original("a.txt")}`);
+		const state = states[0] ?? "";
+		expect(state.length).toBeLessThanOrEqual(8000);
+		expect(state).toContain("OPENING-REQUEST");
+		expect(state).toContain("LATEST-STEER only the pdfs");
+		expect(state).toMatch(/earlier messages omitted/);
+		expect(state).toContain(`${root}`);
+		expect(state).toContain("rm ");
+	});
+
+	it("by default leaves room for the operations and Jev's own question under its 30k-token ceiling", async () => {
+		const states: string[] = [];
+		const requests = new UserRequestLog();
+		requests.record(`start ${"word ".repeat(80_000)} end`);
+		const h = harness({ mode: "auto", jev: spyJev(states), requests });
+		await h.bash(`rm ${original("a.txt")}`);
+		// jev-use estimates ~4 characters per token and hands the question back above 30,000 tokens.
+		expect(Math.ceil((states[0] ?? "").length / 4)).toBeLessThan(30_000);
+		expect(states).toHaveLength(1);
+		expect(states[0]).toContain("rm ");
+	});
+
+	it("still answers fast when a message holds a huge unbroken blob, and still redacts around it", async () => {
+		const states: string[] = [];
+		const requests = new UserRequestLog();
+		const key = "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef";
+		// jev-use's redaction slows down quadratically on long runs without whitespace (108k took ~19s).
+		requests.record(`delete the old export, my key is ${key} and the blob is ${"A".repeat(300_000)} thanks`);
+		const h = harness({ mode: "auto", jev: spyJev(states), requests });
+		const started = performance.now();
+		await h.bash(`rm ${original("export.csv")}`);
+		expect(performance.now() - started).toBeLessThan(5000);
+		const state = states[0] ?? "";
+		expect(state).toContain("delete the old export");
+		expect(state).toContain("thanks");
+		expect(state).not.toContain(key);
+		expect(state).toContain("[redacted]");
+		expect(state.length).toBeLessThan(10_000);
+	}, 30_000);
+
+	it("says so when no user message is known instead of inventing one", async () => {
+		const states: string[] = [];
+		const h = harness({ mode: "auto", jev: spyJev(states) });
+		await h.bash(`rm ${original("a.txt")}`);
+		expect(states[0]).toContain("(no user message available)");
+	});
+
+	it("never shows Jev AutoRAG's internal phase prompts", async () => {
+		const states: string[] = [];
+		const requests = new UserRequestLog();
+		requests.record("delete old-notes.txt");
+		const h = harness({ mode: "auto", jev: spyJev(states), requests });
+		// A phase prompt reaches pi as a before_agent_start of source "rpc"/"extension"; it never enters the log.
+		await h.emit("before_agent_start", {
+			messageType: "user",
+			prompt: "Answer this query directly from your own general knowledge: delete old-notes.txt",
+			systemPrompt: "base",
+		});
+		await h.bash(`rm ${original("old-notes.txt")}`);
+		expect(states[0]).toContain("[1] delete old-notes.txt");
+		expect(states[0]).not.toContain("Answer this query directly");
 	});
 });
 
