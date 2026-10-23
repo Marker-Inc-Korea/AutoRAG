@@ -233,6 +233,8 @@ export interface CliConfig {
 	filee?: {
 		enabled?: boolean;
 		binaryPath?: string;
+		/** Download the pinned filee-cli into `<AUTORAG_HOME>/tools` when none is found. Default true. */
+		autoInstall?: boolean;
 		timeoutMs?: number;
 		/** Folder for Filee's own settings and engines (`FILEE_DATA_DIR`); default is Filee's per-user folder. */
 		dataDir?: string;
@@ -1322,6 +1324,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	} else {
 		opts.filee = {
 			...(config.filee?.binaryPath ? { executable: config.filee.binaryPath } : {}),
+			...(config.filee?.autoInstall === false ? { autoInstall: false } : {}),
 			...(config.filee?.timeoutMs ? { timeoutMs: config.filee.timeoutMs } : {}),
 			...(config.filee?.dataDir ? { dataDir: config.filee.dataDir } : {}),
 		};

@@ -1,3 +1,4 @@
+import { renderConversionGuide } from "../convert/matrix.ts";
 import {
 	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
@@ -152,6 +153,10 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		? `## File Conversion
 
 \`convert_files\` converts local files offline with Filee and works on any path the user names. Check \`list_file_conversions\` first when you are unsure a source can become the target. Outputs land next to the source with a number added when the name is taken, so nothing is replaced; pass \`overwrite: true\` only when the user asks to replace the existing file, and \`outputDir\` to keep results elsewhere. Each converted file is reported with dupey's verdict on whether it is a duplicate-family member of its source: exact means the same canonical text, near means the same document in another format, different or unsupported means dupey will not group them. A converted copy never replaces the source; never delete the source unless the user asked.
+
+This is the conversion map. Use it to plan any conversion immediately, including a two-step chain when no direct route exists, instead of probing with trial calls.
+
+${renderConversionGuide()}
 `
 		: "";
 	const webResearch =

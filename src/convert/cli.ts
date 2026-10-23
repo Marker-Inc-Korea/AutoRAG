@@ -62,6 +62,8 @@ export interface FileeCliOptions {
 	 * run neither reads nor writes the user's own Filee app settings.
 	 */
 	readonly dataDir?: string;
+	/** `false` never downloads filee-cli when none is found. Default true. See `resolveFileeOptions`. */
+	readonly autoInstall?: boolean;
 	/** Test seam: replaces the spawn. */
 	readonly run?: (args: readonly string[]) => Promise<FileeCliRun>;
 }

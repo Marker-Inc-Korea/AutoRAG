@@ -237,4 +237,29 @@ describe("agent wiring", () => {
 		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
 		expect(without).not.toContain("convert_files");
 	});
+
+	it("puts the conversion matrix in the prompt so the model plans without a tool call", () => {
+		const prompt = buildSystemPrompt({ toolNames: ["bash", "convert_files"], modelId: "test-model" });
+		expect(prompt).toContain("Source families");
+		expect(prompt).toContain("- hwp -> ");
+		expect(prompt).toContain("chain two conversions");
+		expect(prompt).toContain("hwp: hwp hwpx");
+		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
+		expect(without).not.toContain("Source families");
+	});
+
+	it("names the main routes in the convert_files tool description", () => {
+		const tool = createConvertFilesTool({
+			async convertFiles() {
+				return details();
+			},
+			async listFileConversions() {
+				return "";
+			},
+		});
+		expect(tool.description).toContain("docx");
+		expect(tool.description).toContain("hwpx");
+		expect(tool.description).toContain("outputDir");
+		expect(tool.description).toMatch(/chain/i);
+	});
 });

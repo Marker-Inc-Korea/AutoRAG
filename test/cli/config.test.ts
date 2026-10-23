@@ -188,6 +188,7 @@ describe("single-model CLI config", () => {
 	it("maps the filee config to agent options, and disables conversion with enabled:false", () => {
 		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
 		expect(buildAgentOptions({ ...base }).filee).toEqual({});
+		expect(buildAgentOptions({ ...base, filee: { autoInstall: false } }).filee).toEqual({ autoInstall: false });
 		expect(
 			buildAgentOptions({
 				...base,

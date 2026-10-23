@@ -12,6 +12,7 @@ import {
 	type FileeCliOptions,
 	type FileeConvertRequest,
 	listFileeFormats,
+	resolveFileeOptions,
 } from "../convert/index.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
@@ -1199,15 +1200,17 @@ export class AutoRAGAgent {
 
 	async convertFiles(request: FileeConvertRequest, signal?: AbortSignal): Promise<ConvertFilesDetails> {
 		if (this.fileeOptions === false) throw new Error("File conversion is disabled.");
+		const filee = await resolveFileeOptions(this.fileeOptions, { env: process.env });
 		return convertAndRelate(request, {
-			filee: { ...this.fileeOptions, ...(signal !== undefined ? { signal } : {}) },
+			filee: { ...filee, ...(signal !== undefined ? { signal } : {}) },
 			dupey: this.dupeyOptions,
 		});
 	}
 
 	async listFileConversions(from?: string, signal?: AbortSignal): Promise<string> {
 		if (this.fileeOptions === false) throw new Error("File conversion is disabled.");
-		return listFileeFormats(from, { ...this.fileeOptions, ...(signal !== undefined ? { signal } : {}) });
+		const filee = await resolveFileeOptions(this.fileeOptions, { env: process.env });
+		return listFileeFormats(from, { ...filee, ...(signal !== undefined ? { signal } : {}) });
 	}
 
 	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {

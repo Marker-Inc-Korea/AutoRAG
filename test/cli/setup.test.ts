@@ -365,4 +365,82 @@ describe("discord native store probe", () => {
 		const candidates = await discordCandidates({ HOME: "/h", XDG_DATA_HOME: "relative-xdg" });
 		expect(candidates).not.toContain(join("relative-xdg", "discrawl", "discrawl.db"));
 	});
+
+	it("installs filee-cli alongside the agent, and says where it came from", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const asked: unknown[] = [];
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({ backend: "daemon" }),
+				filee: async (options) => {
+					asked.push(options);
+					return { path: join(root, "tools", "filee-cli", "filee-cli"), source: "installed" };
+				},
+			},
+		});
+		expect(asked).toEqual([{ executable: undefined, autoInstall: undefined }]);
+		expect(report.filee).toEqual({ state: "installed", path: join(root, "tools", "filee-cli", "filee-cli") });
+		expect(report.ok).toBe(true);
+	});
+
+	it("reports a failed filee-cli install without failing the rest of setup", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({ backend: "daemon" }),
+				filee: async () => {
+					throw new Error("network down at /Users/alice/x");
+				},
+			},
+		});
+		expect(report.mode).toBe("semantic");
+		expect(report.filee?.state).toBe("failed");
+		expect(report.filee?.reason).toContain("network down");
+		expect(JSON.stringify(report)).not.toContain("/Users/alice");
+	});
+
+	it("leaves filee-cli alone when the operator turned conversion or auto-install off", async () => {
+		for (const filee of [{ enabled: false }, { autoInstall: false }]) {
+			const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+			roots.push(root);
+			const configPath = join(root, "config.json");
+			writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root, filee }));
+			let called = false;
+			const report = await runSetup({
+				configPath,
+				workspacePath: root,
+				deps: {
+					env: { PATH: "/bin", HOME: root },
+					executable: () => undefined,
+					pathExists: () => true,
+					acquireLock: fakeLock,
+					embedder: fakeEmbedder({ backend: "daemon" }),
+					filee: async () => {
+						called = true;
+						return { path: "x", source: "installed" };
+					},
+				},
+			});
+			expect(called).toBe(false);
+			expect(report.filee?.state).toBe("skipped");
+		}
+	});
 });
