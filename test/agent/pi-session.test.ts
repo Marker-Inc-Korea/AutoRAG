@@ -1122,6 +1122,126 @@ describe("AutoRAG pi coding-agent host", () => {
 				await resumed.dispose();
 			}
 		});
+
+		it("keeps a source's [n] across turns and numbers a new source with the next unused number", async () => {
+			const kakao = scriptedDatasource("kakao", [
+				[{ source: "/kakao/room/a.txt", content: "alpha fact" }],
+				[{ source: "/kakao/room/b.txt", content: "beta fact" }],
+			]);
+			const search = fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+				stopReason: "toolUse",
+			});
+			const tui = await tuiAgent(
+				[
+					search,
+					citingStep((ids) => `Alpha [${ids[0]}].`),
+					search,
+					citingStep((ids) => `Beta [${ids[1]}].`),
+					citingStep((ids) => `Beta [${ids[1]}] and alpha [${ids[0]}].`),
+				],
+				jevRoute("direct"),
+				{ datasourceSkills: [kakao] },
+			);
+			try {
+				const first = await tui.agent.searchDocuments("what is alpha?");
+				const second = await tui.agent.searchDocuments("what is beta?");
+				const third = await tui.agent.searchDocuments("how do they relate?");
+
+				expect(first.answer).toBe("Alpha [1].");
+				expect(second.answer).toBe("Beta [2].");
+				expect(second.results.map((result) => [result.number, result.title])).toEqual([[2, "b.txt"]]);
+				expect(third.answer).toBe("Beta [2] and alpha [1].");
+				expect(third.results.map((result) => [result.number, result.title])).toEqual([
+					[2, "b.txt"],
+					[1, "a.txt"],
+				]);
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("keeps result numbers when the conversation is resumed in a new process", async () => {
+			const first = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `Alpha [${ids[0]}].`),
+				],
+				jevRoute("direct"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
+					],
+				},
+			);
+			let sessionFile: string | undefined;
+			try {
+				const answered = await first.agent.searchDocuments("what is alpha?");
+				expect(answered.answer).toBe("Alpha [1].");
+				sessionFile = first.session.sessionFile;
+			} finally {
+				await first.dispose();
+			}
+			if (sessionFile === undefined) throw new Error("expected a persisted pi session");
+
+			const resumed = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `New [${ids[1]}], old [${ids[0]}].`),
+				],
+				jevRoute("direct"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
+					],
+				},
+			);
+			try {
+				await resumed.runtime.switchSession(sessionFile);
+				await resumed.runtime.session.bindExtensions({ uiContext: noUi() });
+
+				const response = await resumed.agent.searchDocuments("and what about beta?");
+
+				expect(response.answer).toBe("New [2], old [1].");
+				expect(response.results.map((result) => [result.number, result.title])).toEqual([
+					[2, "b.txt"],
+					[1, "a.txt"],
+				]);
+			} finally {
+				await resumed.dispose();
+			}
+		});
+
+		it("numbers the quick answer and the verification answer of one search from one sequence", async () => {
+			const alpha = join(root, "alpha.txt");
+			const beta = join(root, "beta.txt");
+			writeFileSync(alpha, "alpha fact");
+			writeFileSync(beta, "beta fact");
+			const tui = await tuiAgent(
+				[
+					fauxAssistantMessage(`Beta first [file:${beta}]. Then alpha [file:${alpha}].`, { stopReason: "stop" }),
+					fauxAssistantMessage(`Alpha first [file:${alpha}]. Then beta [file:${beta}].`, { stopReason: "stop" }),
+				],
+				jevRoute("local", 0.9),
+			);
+			try {
+				const preliminaries: string[] = [];
+				let finalAnswer = "";
+				for await (const event of tui.agent.searchDocumentsStream("what are alpha and beta?")) {
+					if (event.type === "preliminary") preliminaries.push(event.response.answer);
+					if (event.type === "complete") finalAnswer = event.response.answer;
+				}
+
+				expect(preliminaries).toEqual(["Beta first [1]. Then alpha [2]."]);
+				// The verification answer cites the same sources in the other order: each keeps the number the quick answer showed.
+				expect(finalAnswer).toBe("Alpha first [2]. Then beta [1].");
+			} finally {
+				await tui.dispose();
+			}
+		});
 	});
 
 	describe("search progress widget", () => {

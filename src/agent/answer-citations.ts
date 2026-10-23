@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import type { CitationNumbers } from "./citation-numbers.ts";
 import { answerMarkers } from "./citations.ts";
 import { type EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
 import type {
@@ -56,15 +57,18 @@ function claimBefore(text: string, end: number): string {
  * itself. Each id is resolved against the run's evidence ledger, so a source,
  * method, and chunk always come from recorded evidence, never from model text.
  *
- * Results are one per cited source, numbered by first appearance, and every
- * marker in the returned answer is rewritten to its result number (`[1]`).
+ * Results are one per cited source, in order of first appearance in this answer. A source's
+ * number comes from the conversation's {@link CitationNumbers}: a source
+ * numbered in an earlier answer (or an earlier phase of this turn) keeps its
+ * number, a new source gets the next unused one, and every marker in the
+ * returned answer is rewritten to its result number (`[1]`).
  * A marker that matches no evidence, and any numeric marker the model wrote on
  * its own, is dropped and reported: it can never point at the wrong result.
  */
 export function deriveResultsFromAnswer(
 	text: string,
 	ledger: EvidenceLedger,
-	options: { readonly allowLocalFiles: boolean },
+	options: { readonly allowLocalFiles: boolean; readonly numbers: CitationNumbers },
 ): DerivedAnswer {
 	const isFile = (path: string): boolean => options.allowLocalFiles && isAbsolute(path) && isRegularFile(path);
 	const sources = new Map<string, CitedSource>();
@@ -82,7 +86,12 @@ export function deriveResultsFromAnswer(
 		}
 		let cited = sources.get(primary.source);
 		if (cited === undefined) {
-			cited = { number: sources.size + 1, refs: [], chunkKeys: new Set(), claim: claimBefore(text, claimEnd) };
+			cited = {
+				number: options.numbers.numberFor(primary.source),
+				refs: [],
+				chunkKeys: new Set(),
+				claim: claimBefore(text, claimEnd),
+			};
 			sources.set(primary.source, cited);
 		}
 		for (const ref of refs) {
