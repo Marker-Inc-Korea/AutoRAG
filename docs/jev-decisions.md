@@ -139,13 +139,14 @@ user question in one batched call:
 
 1. **Branch** (`choice`): can the assistant answer from its **intrinsic
    knowledge** alone (`direct`), or does it need additional information
-   (`local`)? There is no web branch. A `config` branch is also offered to local
+   (`local`)? There is no web branch. Two action branches, `organize` and
+   `extra`, are always offered, and a `config` branch is also offered to local
    sessions. The highest-probability branch wins, but leaving local search needs
-   confidence: a `direct` or `config` branch **at or below 0.75**
-   (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without a
-   probability — falls back to `local` search with a `query-route-fallback`
+   confidence: a `direct`, `organize`, `extra`, or `config` branch **at or below
+   0.75** (`NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD`) — or one Jev reports without
+   a probability — falls back to `local` search with a `query-route-fallback`
    diagnostic, so a weak verdict never silently drops the corpus evidence the
-   question depends on (and never edits settings on a guess).
+   question depends on (and never moves files or edits settings on a guess).
    - `local`: answering needs anything beyond intrinsic knowledge — information
      only the user can reach (files on their computer, Discord/KakaoTalk/Slack
      chats, email, notes, calendar, history) or facts that may be recent,
@@ -160,6 +161,16 @@ user question in one batched call:
    - `config`: the user wants to view, change, or test AutoRAG's own settings
      (model, providers, API-key environment variables, Jev, search roots,
      datasources).
+   - `organize`: the user wants files or folders **acted on**, not information
+     found: move or copy into folders, tidy or sort a folder, bulk or pattern
+     rename, rename by what a file's content says, convert formats, create
+     folder structures, archive, move to the trash. A request that only asks to
+     find or read a document is `local`.
+   - `extra`: none of the others fits and no retrieval is needed — committing
+     code, pushing a branch, opening a pull request, running tests or a build,
+     any other task for the agent's tools. Jev's gate is skipped: it is handled
+     like `direct` (no retrieval, no verification) except that every tool stays
+     available.
 2. **Decomposition** (`noul`): does the question need several search queries
    (multiple sub-questions, comparisons, several facts to confirm)? A
    probability of 0.5 or more means yes.
@@ -169,6 +180,8 @@ What happens next:
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `direct` | Skips Jikji, MinSync, web search, and the verification phase; the fast answer is final. |
+| `organize` | Skips retrieval, decomposition, the fast answer, and verification. One turn with `bash`/`read`/`edit`/`write` plus the converter (`convert_files`, `list_file_conversions`), the duplicate scan, and file-name discovery; the datasource, retrieval, and web tools are withheld. The prompt requires a plan first, no overwrites, no permanent deletion (trash only), a listing check afterwards, and a final report of every change as old path → new path. No results; the run is not recorded in retrieval memory. |
+| `extra` | Skips retrieval, decomposition, the fast answer, and verification. One turn with every tool the session has; the final message reports what was done. No results; the run is not recorded in retrieval memory. |
 | `config` | Skips retrieval, decomposition, the fast answer, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new as its final message (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
 | `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 

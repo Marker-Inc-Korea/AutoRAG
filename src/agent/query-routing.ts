@@ -8,11 +8,17 @@ import type { JevJudge } from "./jev-extension.ts";
  *   Local retrieval runs first; web search is left to the agent after the fast
  *   answer, when local evidence falls short.
  * - `direct`: intrinsic knowledge or small talk the model answers on its own.
+ * - `organize`: the user wants files or folders acted on — move, rename in
+ *   bulk, rename by content, convert, sort, tidy — rather than information
+ *   found. No retrieval and no verification: one tool-capable turn does it.
+ * - `extra`: none of the other branches (committing code, opening a pull
+ *   request, running a build, any other task for the agent's tools). The Jev
+ *   gate is skipped: no retrieval, no verification, tools stay available.
  * - `config`: the user wants to inspect or change AutoRAG's own settings
  *   (model, providers, datasources). Offered only when the host enables
  *   agent self-configuration.
  */
-export type QueryRoute = "local" | "direct" | "config";
+export type QueryRoute = "local" | "direct" | "organize" | "extra" | "config";
 
 /** Jev question id of the intrinsic-knowledge / local branch. */
 export const QUERY_ROUTE_QUESTION_ID = "route";
@@ -101,6 +107,9 @@ const BASE_ROUTE_OPTIONS: Record<Exclude<QueryRoute, "config">, string> = {
 	local: "Answering needs additional information beyond the assistant's intrinsic knowledge: private information only the user can access (files on their computer, their chats such as Discord, KakaoTalk, Slack, their email, notes, calendar, or history), documents, or any fact that may be recent, specific, niche, or changing (current events, recent releases, prices, versions). Prefer local whenever the question refers to the user's own life, situation, plans, or records — questions phrased with words like 'my', 'I', 'we', 'our', a named friend, family member, or colleague, or 'my case/hearing/appointment/routine' — even when a generic answer would also be possible. When unsure whether intrinsic knowledge suffices, choose local.",
 	direct:
 		"The assistant's intrinsic knowledge alone reliably answers it: stable common knowledge, a definition, simple reasoning, or small talk, with no need to look anything up. Never direct when the question refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine'), and never direct for facts that may have changed recently.",
+	organize:
+		"The user asks the assistant to DO something to files or folders instead of finding information: move or copy files into folders, tidy or sort a folder, bulk or pattern rename (for example by date or number), rename files according to what their content says, convert files to another format, create folder structures, group files by type or topic, archive, or move to the trash ('정리해줘', '폴더 이동', '파일 이름 일괄 변경', '내용에 맞게 파일명 바꿔줘', 'convert these to PDF', 'sort my Downloads folder'). It is about acting on files and folders, never about looking up what a document says or where something is. A question that only asks to find or read a file's content is local, not organize.",
+	extra: "None of the other options fits and no retrieval is needed: an action or task for the assistant's tools that is not about answering from knowledge, not about the user's records, and not about organizing files or folders. Examples: committing code, pushing a branch, opening a pull request, running tests or a build, installing a package, running a script, writing or editing code. If any other option fits, do not choose extra.",
 };
 
 const CONFIG_ROUTE_OPTION =
@@ -126,7 +135,7 @@ const DECOMPOSE_QUESTION = check(
 export interface QueryRouteDecision {
 	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none or its non-local branch missed {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD}. */
 	readonly route: QueryRoute;
-	/** True when Jev judged the question needs decomposition (never for `direct`). */
+	/** True when Jev judged the question needs decomposition (only ever for `local`). */
 	readonly decompose: boolean;
 	/** Probability Jev gave the winning branch, including a rejected non-local branch whose floor moved the route to local. */
 	readonly routeProbability?: number;
@@ -137,7 +146,13 @@ export interface QueryRouteDecision {
 }
 
 function isQueryRoute(value: unknown, selfConfig: boolean): value is QueryRoute {
-	return value === "local" || value === "direct" || (selfConfig && value === "config");
+	return (
+		value === "local" ||
+		value === "direct" ||
+		value === "organize" ||
+		value === "extra" ||
+		(selfConfig && value === "config")
+	);
 }
 
 /** The highest-probability branch, even when Jev escalates the verdict as unsure. */
@@ -217,7 +232,7 @@ export async function routeQuery(
 	}
 	return {
 		route: best.route,
-		decompose: best.route !== "direct" && best.route !== "config" && decompose,
+		decompose: best.route === "local" && decompose,
 		...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
 		...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
 	};

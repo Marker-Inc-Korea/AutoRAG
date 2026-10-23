@@ -147,7 +147,13 @@ default, OpenRouter), Jev first routes the question:
   datasources) is handled by the agent itself: it loads the setup skill, edits
   the active config, verifies it, and reports what changed. The running agent
   keeps its startup model; changes apply to the next `autorag` launch.
-- Private-data questions use local search; public current facts use web search.
+- A request to act on files or folders (move, bulk rename, rename by content,
+  convert, sort) is carried out in one tool turn with no retrieval and no
+  verification, and reports every change as old path → new path.
+- Anything else that needs no retrieval (commit, push, open a PR, run a build)
+  is carried out in one tool turn the same way.
+- Private-data questions use local search; the agent decides on web search
+  after the fast answer.
 - A multi-part question is split into up to five parallel search queries.
 - On local search, Jev also picks which registered datasources (Slack,
   Discord, KakaoTalk, email, ...) to search before the fast answer, from each

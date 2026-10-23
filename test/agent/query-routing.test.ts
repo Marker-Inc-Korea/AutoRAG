@@ -63,7 +63,7 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 			},
 		};
 		const decision = await routeQuery(judgeWith(backend), "latest stable Node.js release");
-		expect(Object.keys(routeOptions ?? {}).sort()).toEqual(["direct", "local"]);
+		expect(Object.keys(routeOptions ?? {}).sort()).toEqual(["direct", "extra", "local", "organize"]);
 		expect(decision.route).toBe("local");
 		expect(decision.decompose).toBe(false);
 	});
@@ -247,6 +247,69 @@ describe("routeQuery (Jev intrinsic-knowledge vs local branch + decomposition ch
 		);
 		expect(decision.route).toBe("local");
 	});
+
+	it("describes organize as acting on files and folders, never as finding information in them", async () => {
+		let routeOptions: Record<string, string> | undefined;
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				const route = request.questions.find((question) => question.id === QUERY_ROUTE_QUESTION_ID);
+				const options = route?.options;
+				if (options !== undefined && !Array.isArray(options)) routeOptions = options as Record<string, string>;
+				return { answers: [{ answer: "local", confidence: 0.9 }, { answer: 0.1 }] };
+			},
+		};
+		await routeQuery(judgeWith(backend), "rename every invoice PDF by its issue date");
+		expect(routeOptions?.organize).toMatch(/move|rename|convert/iu);
+		expect(routeOptions?.organize).toMatch(/folder/iu);
+		expect(routeOptions?.organize).toMatch(/content/iu);
+		expect(routeOptions?.extra).toMatch(/none of the other/iu);
+		expect(routeOptions?.extra).toMatch(/commit|pull request|git/iu);
+		expect(routeOptions?.local).not.toMatch(/organiz/iu);
+	});
+
+	it.each(["organize", "extra"] as const)(
+		"routes to %s when Jev picks it above the confidence floor, and never decomposes it",
+		async (route) => {
+			const decision = await routeQuery(
+				judgeWith(
+					new MockBackend({
+						[QUERY_ROUTE_QUESTION_ID]: {
+							answer: route,
+							distribution: { local: 0.05, direct: 0.05, organize: 0.05, extra: 0.05, [route]: 0.8 },
+						},
+						[DECOMPOSE_QUESTION_ID]: { answer: 0.99 },
+					}),
+				),
+				"sort my Downloads folder by file type",
+			);
+			expect(decision.route).toBe(route);
+			expect(decision.decompose).toBe(false);
+			expect(decision.routeProbability).toBe(0.8);
+			expect(decision.fallbackReason).toBeUndefined();
+		},
+	);
+
+	it.each(["organize", "extra"] as const)(
+		"keeps local search when Jev's %s verdict does not clear the confidence floor",
+		async (route) => {
+			const decision = await routeQuery(
+				judgeWith(
+					new MockBackend({
+						[QUERY_ROUTE_QUESTION_ID]: {
+							answer: route,
+							distribution: { local: 0.3, direct: 0.05, organize: 0.05, extra: 0.05, [route]: 0.75 },
+						},
+						[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+					}),
+				),
+				"where did I put the invoice folder?",
+			);
+			expect(decision.route).toBe("local");
+			expect(decision.routeProbability).toBe(0.75);
+			expect(decision.fallbackReason).toContain(route);
+		},
+	);
 });
 
 describe("needsFollowUp (Jev check after the fast answer)", () => {
