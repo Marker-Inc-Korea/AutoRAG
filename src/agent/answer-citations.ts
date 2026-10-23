@@ -58,6 +58,44 @@ function claimBefore(text: string, end: number): string {
 	return claim.length > MAX_CLAIM_CHARS ? `${claim.slice(0, MAX_CLAIM_CHARS)}…` : claim;
 }
 
+/** One chunk the answer cites, with the sentences that cite it. */
+export interface CitedChunk {
+	/** {@link citedChunkKey} of the chunk. */
+	readonly key: string;
+	readonly source: string;
+	readonly content: string;
+	/** Each distinct sentence ending in a marker that cites this chunk, in answer order. */
+	readonly sentences: readonly string[];
+}
+
+/**
+ * Every chunk the answer cites, read from the raw markers. It resolves ids the
+ * way {@link deriveResultsFromAnswer} does but numbers nothing, so judging a
+ * citation never touches the conversation's result numbers.
+ */
+export function citedChunks(
+	text: string,
+	ledger: EvidenceLedger,
+	options: { readonly allowLocalFiles: boolean },
+): CitedChunk[] {
+	const isFile = (path: string): boolean => options.allowLocalFiles && isAbsolute(path) && isRegularFile(path);
+	const chunks = new Map<string, { source: string; content: string; sentences: string[] }>();
+	for (const marker of answerMarkers(text, isFile)) {
+		if (marker.kind === "number") continue;
+		const references = marker.kind === "evidence" ? marker.ids : [marker.path];
+		const sentence = claimBefore(text, marker.start);
+		for (const reference of references) {
+			for (const ref of ledger.lookup(reference, options)) {
+				const key = citedChunkKey(ref);
+				const chunk = chunks.get(key) ?? { source: ref.source, content: ref.content ?? "", sentences: [] };
+				if (sentence !== "" && !chunk.sentences.includes(sentence)) chunk.sentences.push(sentence);
+				chunks.set(key, chunk);
+			}
+		}
+	}
+	return [...chunks].map(([key, chunk]) => ({ key, ...chunk }));
+}
+
 /**
  * Turn the model's plain answer into the structured results the rest of the
  * harness consumes. The model cites with the evidence ids the retrieval tools

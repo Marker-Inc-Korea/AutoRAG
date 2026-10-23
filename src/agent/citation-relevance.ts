@@ -1,12 +1,10 @@
 import { check, type Question, type Verdict } from "jev-use";
-import { citedChunkKey } from "./answer-citations.ts";
-import { answerSentencesCiting } from "./evidence-judgment.ts";
+import type { CitedChunk } from "./answer-citations.ts";
 import type { JevJudge } from "./jev-extension.ts";
-import type { AutoRAGResultsDetails } from "./results.ts";
 
 /**
  * The model sometimes cites a chunk that has nothing to do with the sentence it
- * backs or with the question: a table of contents, a navigation bar, a
+ * backs or with what the user asked: a table of contents, a navigation bar, a
  * copyright footer, a generic introduction. Before the answer is returned,
  * every cited chunk is put to Jev as one relevance question, and a chunk Jev
  * finds unrelated is removed from the answer's citations.
@@ -30,70 +28,59 @@ const MAX_CHUNK_CHARACTERS = 1500;
 const NO_VERDICT_FALLBACK = "Jev returned no usable citation relevance verdict.";
 
 const STATE_INSTRUCTION =
-	"Each question asks whether one cited piece of evidence is relevant to the answer sentence that cites it or to the user's question. Judge only that evidence; the full answer is shown for reference only.";
+	"Each question asks whether one cited piece of evidence is relevant to the answer sentence that cites it or to what the user asked. Judge only that evidence. The user's messages are the whole conversation so far, oldest first; the latest one is the question being answered.";
 
-const RELEVANCE_QUESTION = check("Is the evidence relevant to the cited sentence or the user's question?", {
-	true: "The evidence contains information on the same subject as the cited sentence or the user's question; it may back only part of the claim.",
-	false: "The evidence has no information on the cited sentence's subject or the user's question: a table of contents, navigation, header or footer, copyright or boilerplate, a generic introduction, or another topic.",
+const RELEVANCE_QUESTION = check("Is the evidence relevant to the cited sentence or to what the user asked?", {
+	true: "The evidence contains information on the same subject as the cited sentence or what the user asked; it may back only part of the claim.",
+	false: "The evidence has no information on the cited sentence's subject or what the user asked: a table of contents, navigation, header or footer, copyright or boilerplate, a generic introduction, or another topic.",
 });
 
 export interface CitationRelevanceInput {
-	readonly question: string;
-	/** The derived answer: its `[n]` markers and `mapping` carry the cited chunks. */
-	readonly details: AutoRAGResultsDetails;
+	/** Everything the user typed in the conversation, oldest first; the last is the question being answered. */
+	readonly userMessages: readonly string[];
+	/** The chunks the answer cites, with the sentences citing each. */
+	readonly chunks: readonly CitedChunk[];
 }
 
 export interface CitationRelevance {
-	/** {@link citedChunkKey} of every chunk Jev found unrelated. */
+	/** {@link CitedChunk.key} of every chunk Jev found unrelated. */
 	readonly rejected: ReadonlySet<string>;
 	/** Set when Jev gave no usable verdict for ANY chunk; nothing was rejected. Absent when Jev decided. */
 	readonly fallbackReason?: string;
 }
 
-interface CitationUnit {
-	readonly key: string;
-	readonly question: Question;
-}
-
 /**
  * Ask Jev, in one batched call, whether each cited chunk is relevant to the
- * sentence that cites it. Never throws: a rejecting judge rejects nothing and
- * reports why, and a chunk Jev left unanswered is kept.
+ * sentences that cite it and to what the user asked. Never throws: a rejecting
+ * judge rejects nothing and reports why, and a chunk Jev left unanswered is kept.
  */
 export async function judgeCitationRelevance(
 	judge: JevJudge,
 	input: CitationRelevanceInput,
 ): Promise<CitationRelevance> {
-	const units: CitationUnit[] = [];
-	const seen = new Set<string>();
-	for (const entry of input.details.mapping) {
-		const sentences = answerSentencesCiting(input.details.answer, entry.number);
+	const questions: Question[] = [];
+	const keyById = new Map<string, string>();
+	for (const chunk of input.chunks) {
+		const text = chunk.content.trim();
+		// Evidence that is only a path (a file the model located, not read) has no text to judge.
+		if (text === "" || text === chunk.source) continue;
 		const backed =
-			sentences.length > 0
-				? `the answer sentence it backs: ${sentences.map((sentence) => JSON.stringify(sentence)).join(" ")}`
+			chunk.sentences.length > 0
+				? `the answer sentence it backs: ${chunk.sentences.map((sentence) => JSON.stringify(sentence)).join(" ")}`
 				: "the answer";
-		for (const ref of entry.evidenceRefs) {
-			const text = (ref.excerpt ?? ref.content ?? "").trim();
-			// Evidence that is only a path (a file the model located, not read) has no text to judge.
-			if (text === "" || text === ref.source) continue;
-			const key = citedChunkKey(ref);
-			if (seen.has(key)) continue;
-			seen.add(key);
-			const bounded = text.length <= MAX_CHUNK_CHARACTERS ? text : `${text.slice(0, MAX_CHUNK_CHARACTERS - 1)}…`;
-			units.push({
-				key,
-				question: {
-					...RELEVANCE_QUESTION,
-					id: `${CITATION_QUESTION_ID_PREFIX}${units.length}`,
-					question: [
-						`Is the evidence below relevant to ${backed} or to the user's question?`,
-						`Evidence: ${JSON.stringify(bounded)}`,
-					].join("\n"),
-				},
-			});
-		}
+		const bounded = text.length <= MAX_CHUNK_CHARACTERS ? text : `${text.slice(0, MAX_CHUNK_CHARACTERS - 1)}…`;
+		const id = `${CITATION_QUESTION_ID_PREFIX}${questions.length}`;
+		keyById.set(id, chunk.key);
+		questions.push({
+			...RELEVANCE_QUESTION,
+			id,
+			question: [
+				`Is the evidence below relevant to ${backed} or to what the user asked?`,
+				`Evidence: ${JSON.stringify(bounded)}`,
+			].join("\n"),
+		});
 	}
-	if (units.length === 0) return { rejected: new Set() };
+	if (questions.length === 0) return { rejected: new Set() };
 
 	let verdicts: readonly Verdict[];
 	try {
@@ -101,11 +88,10 @@ export async function judgeCitationRelevance(
 			await judge(
 				[
 					STATE_INSTRUCTION,
-					`User question: ${JSON.stringify(input.question)}`,
-					"Full answer (reference only):",
-					input.details.answer,
+					"User messages, oldest first:",
+					...input.userMessages.map((message, index) => `${index + 1}. ${JSON.stringify(message)}`),
 				].join("\n"),
-				units.map((unit) => unit.question),
+				questions,
 			)
 		).verdicts;
 	} catch (error) {
@@ -117,14 +103,14 @@ export async function judgeCitationRelevance(
 	const rejected = new Set<string>();
 	let decided = 0;
 	let firstHint: string | undefined;
-	for (const unit of units) {
-		const verdict = byId[unit.question.id ?? ""];
+	for (const [id, key] of keyById) {
+		const verdict = byId[id];
 		if (typeof verdict?.answer !== "number") {
 			firstHint ??= verdict?.hint;
 			continue;
 		}
 		decided += 1;
-		if (verdict.answer < CITATION_RELEVANCE_FLOOR) rejected.add(unit.key);
+		if (verdict.answer < CITATION_RELEVANCE_FLOOR) rejected.add(key);
 	}
 	if (decided === 0) return { rejected, fallbackReason: firstHint ?? NO_VERDICT_FALLBACK };
 	return { rejected };

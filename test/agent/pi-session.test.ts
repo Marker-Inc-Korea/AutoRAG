@@ -10,6 +10,7 @@ import { type JevBackend, MockBackend } from "jev-use";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
+import { CITATION_QUESTION_ID_PREFIX } from "../../src/agent/citation-relevance.ts";
 import {
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
@@ -1161,6 +1162,128 @@ describe("AutoRAG pi coding-agent host", () => {
 			} finally {
 				await tui.dispose();
 			}
+		});
+
+		describe("what Jev reads as the user's messages when it judges citations", () => {
+			/** Records the state of every citation-relevance batch and keeps every chunk. */
+			function citationStates(route: JevBackend = jevRoute("direct")): { backend: JevBackend; states: string[] } {
+				const states: string[] = [];
+				const inner = route;
+				const backend: JevBackend = {
+					name: inner.name,
+					async judge(request) {
+						if (request.questions.some((question) => question.id?.startsWith(CITATION_QUESTION_ID_PREFIX))) {
+							states.push(String(request.state));
+						}
+						return inner.judge(request);
+					},
+				};
+				return { backend, states };
+			}
+
+			const search = fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+				stopReason: "toolUse",
+			});
+
+			it("holds every question of the conversation, as typed, oldest first", async () => {
+				const { backend, states } = citationStates();
+				const tui = await tuiAgent(
+					[search, citingStep((ids) => `Alpha [${ids[0]}].`), search, citingStep((ids) => `Beta [${ids[1]}].`)],
+					backend,
+					{
+						datasourceSkills: [
+							scriptedDatasource("kakao", [
+								[{ source: "/kakao/room/a.txt", content: "alpha fact" }],
+								[{ source: "/kakao/room/b.txt", content: "beta fact" }],
+							]),
+						],
+					},
+				);
+				try {
+					await tui.agent.searchDocuments("what is alpha?");
+					await tui.agent.searchDocuments("and what about beta?");
+
+					expect(states).toHaveLength(2);
+					expect(states[0]).toContain(JSON.stringify("what is alpha?"));
+					expect(states[0]).not.toContain("and what about beta?");
+					const second = states[1] ?? "";
+					const alpha = second.indexOf(JSON.stringify("what is alpha?"));
+					expect(alpha).toBeGreaterThan(-1);
+					expect(second.indexOf(JSON.stringify("and what about beta?"))).toBeGreaterThan(alpha);
+					// The harness prompt that wraps a question never stands in for what the user typed.
+					expect(second).not.toContain("Baseline retrieval evidence");
+					expect(second).not.toContain("Answer this original query");
+				} finally {
+					await tui.dispose();
+				}
+			});
+
+			it("includes a steer the user typed while the search ran", async () => {
+				const { backend, states } = citationStates(jevRoute("local", 0.05));
+				const fast = heldStep(fauxAssistantMessage("Fast answer: Lyon.", { stopReason: "stop" }));
+				const tui = await tuiAgent(
+					[
+						fast.held,
+						// The steer lands after the fast turn: pi answers it within the fast phase, then verification runs.
+						fauxAssistantMessage("Noted: checking Paris.", { stopReason: "stop" }),
+						search,
+						citingStep((ids) => `Paris [${ids[0]}].`),
+					],
+					backend,
+					{
+						datasourceSkills: [
+							scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "paris fact" }]]),
+						],
+					},
+				);
+				try {
+					const run = tui.agent.searchDocuments("capital of france?");
+					await fast.entered;
+					expect(tui.agent.steer("Lyon is wrong, check Paris.")).toBe(true);
+					fast.release();
+					await run;
+
+					const last = states.at(-1) ?? "";
+					expect(last).toContain(JSON.stringify("capital of france?"));
+					expect(last).toContain(JSON.stringify("Lyon is wrong, check Paris."));
+				} finally {
+					await tui.dispose();
+				}
+			});
+
+			it("keeps the earlier questions when the conversation is resumed in a new process", async () => {
+				const first = await tuiAgent([search, citingStep((ids) => `Alpha [${ids[0]}].`)], jevRoute("direct"), {
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
+					],
+				});
+				let sessionFile: string | undefined;
+				try {
+					await first.agent.searchDocuments("what is alpha?");
+					sessionFile = first.session.sessionFile;
+				} finally {
+					await first.dispose();
+				}
+				if (sessionFile === undefined) throw new Error("expected a persisted pi session");
+
+				const { backend, states } = citationStates();
+				const resumed = await tuiAgent([search, citingStep((ids) => `Beta [${ids[1]}].`)], backend, {
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
+					],
+				});
+				try {
+					await resumed.runtime.switchSession(sessionFile);
+					await resumed.runtime.session.bindExtensions({ uiContext: noUi() });
+					await resumed.agent.searchDocuments("and what about beta?");
+
+					const state = states.at(-1) ?? "";
+					expect(state).toContain(JSON.stringify("what is alpha?"));
+					expect(state).toContain(JSON.stringify("and what about beta?"));
+				} finally {
+					await resumed.dispose();
+				}
+			});
 		});
 
 		it("keeps result numbers when the conversation is resumed in a new process", async () => {
