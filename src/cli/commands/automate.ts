@@ -9,7 +9,7 @@ import {
 	matchesAutomation,
 } from "../../automation/config.ts";
 import { AutomationDaemonAlreadyRunningError, startAutomationDaemon } from "../../automation/daemon.ts";
-import { runAutomation } from "../../automation/run.ts";
+import { runRule } from "../../automation/dispatch.ts";
 import { getAutomationStatus, installAutomationService, uninstallAutomationService } from "../../automation/service.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -160,7 +160,7 @@ export async function runAutomate(ctx: CommandContext): Promise<number> {
 			return 2;
 		}
 
-		const record = await runAutomation(automation, matched);
+		const record = await runRule(automation, matched);
 		const ok = record.exitCode === 0 && !record.timedOut && record.error === undefined;
 		if (ctx.json) {
 			ctx.stdout(
