@@ -159,6 +159,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
 	type AutoRAGInputDisposition,
 	type AutoRAGInteractiveInput,
@@ -218,6 +219,7 @@ import {
 } from "./self-config.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import { ToolBurstGuard, type ToolBurstGuardOptions } from "./tool-burst-guard.ts";
+import { createUserRequestPersistence, UserRequestLog } from "./user-requests.ts";
 import {
 	createWatchRefresh,
 	type WatcherFactory,
@@ -727,6 +729,15 @@ export interface AutoRAGAgentOptions {
 	 * owner pairing live in pi's `telegram.json`, never in AutoRAG config.
 	 */
 	telegram?: boolean;
+	/**
+	 * Approval gate for what the agent does to existing files. `full` (the programmatic default) installs a
+	 * gate that never asks; `ask` and `auto` approve deletes, moves, renames, and in-place edits of originals
+	 * (copying and creating new files never ask). `auto` asks Jev first and only falls back to the user when
+	 * Jev will not approve. See {@link PermissionMode}.
+	 */
+	permissionMode?: PermissionMode;
+	/** Share one controller (mode, session grants) with a host that switches modes itself. Wins over `permissionMode`. */
+	permissionController?: PermissionController;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -788,6 +799,8 @@ export class AutoRAGAgent {
 	private readonly memory: RetrievalMemory;
 	private readonly runLogger: AutoRAGRunLogger;
 	private lastQuery: string | undefined;
+	/** What the user has said in this conversation; Jev's permission gate judges file changes against it. */
+	private readonly userRequests = new UserRequestLog();
 	private lastSessionId: string | undefined;
 	private activeRun = false;
 	/**
@@ -911,6 +924,9 @@ export class AutoRAGAgent {
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
 	private readonly jevJudge: JevJudge | undefined;
+	/** Mode and grants of the file-change approval gate; shared by every pi session this agent creates. */
+	private readonly permissions: PermissionController;
+	private readonly permissionGate: ExtensionFactory;
 	/** Self-configuration, enabled only with Jev on a local session. */
 	private readonly selfConfig: SelfConfigOptions | undefined;
 	private readonly queryDecompositionModel: DecompositionModel | undefined;
@@ -1092,6 +1108,14 @@ export class AutoRAGAgent {
 				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
 		this.selfConfig = this.jevJudge === undefined ? undefined : options.selfConfig;
+		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
+		this.permissionGate = createPermissionGate({
+			controller: this.permissions,
+			...(this.jevJudge === undefined ? {} : { judge: this.jevJudge }),
+			requests: this.userRequests,
+			// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
+			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
+		});
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
 				? undefined
@@ -1495,9 +1519,8 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			...(this.jevExtension !== undefined
-				? { extensionFactories: [this.jevExtension], extensionToolNames: [JEV_TOOL_NAME] }
-				: {}),
+			extensionFactories: [this.permissionGate, ...(this.jevExtension !== undefined ? [this.jevExtension] : [])],
+			extensionToolNames: this.jevExtension !== undefined ? [JEV_TOOL_NAME] : [],
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -1573,6 +1596,11 @@ export class AutoRAGAgent {
 		};
 	}
 
+	/** The approval gate's controller: read or switch the permission mode of this agent's sessions. */
+	get permissionControl(): PermissionController {
+		return this.permissions;
+	}
+
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
 		this.listeners.add(listener);
 		return () => {
@@ -1618,6 +1646,8 @@ export class AutoRAGAgent {
 			isSearchRunning: () => this.interactive.run !== undefined,
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
+				this.permissionGate,
+				createUserRequestPersistence(this.userRequests),
 				createEvidencePersistence(this.evidenceLedger, this.citationNumbers, this.conversationQueries),
 				createCitationLinks(this.evidenceLedger),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
@@ -1669,8 +1699,13 @@ export class AutoRAGAgent {
 		return createDiscordRemoteExtension({
 			submit: (text, pi) => {
 				const state = this.interactive;
-				if (state.run === undefined) this.startInteractiveQuery(text, pi);
-				else if (!this.steer(text)) state.followUps.push(text);
+				if (state.run === undefined) {
+					this.userRequests.record(text);
+					this.startInteractiveQuery(text, pi);
+				} else if (!this.steer(text)) {
+					this.userRequests.record(text);
+					state.followUps.push(text);
+				}
 			},
 			isRunning: () => this.interactive.run !== undefined,
 			onRunSettled: (callback) => void this.waitForIdle().then(callback),
@@ -1787,16 +1822,19 @@ export class AutoRAGAgent {
 		const followUp = input.streamingBehavior === "followUp" || state.nextSubmitIsFollowUp;
 		state.nextSubmitIsFollowUp = false;
 		if (state.run === undefined) {
+			this.userRequests.record(input.text);
 			this.startInteractiveQuery(input.text, pi);
 			return { kind: "handled" };
 		}
 		if (followUp) {
+			this.userRequests.record(input.text);
 			state.followUps.push(input.text);
 			return { kind: "handled" };
 		}
 		if (input.streamingBehavior === "steer") {
 			// A turn is streaming: pi queues the user's text as steering for that turn.
 			state.steers.push(input.text);
+			this.userRequests.record(input.text, "steer");
 			state.steerTexts.add(input.text);
 			this.conversationQueries.add(input.text);
 			// Cut any in-flight retrieval short so the steer reaches the model promptly.
@@ -1806,7 +1844,10 @@ export class AutoRAGAgent {
 		// Between phases no turn streams, so pi would start a new prompt. Queue the
 		// steer on the search instead: the next phase's model request takes it. A
 		// search past its last request (or between queued queries) answers it next.
-		if (!this.steer(input.text, input.images)) state.followUps.push(input.text);
+		if (!this.steer(input.text, input.images)) {
+			this.userRequests.record(input.text);
+			state.followUps.push(input.text);
+		}
 		return { kind: "handled" };
 	}
 
@@ -1913,6 +1954,7 @@ export class AutoRAGAgent {
 		const state = this.interactive;
 		if (!this.activeRun || !state.acceptingSteers || state.userAborted || text.trim() === "") return false;
 		state.steers.push(text);
+		this.userRequests.record(text, "steer");
 		state.steerTexts.add(text);
 		this.conversationQueries.add(text);
 		// Cut any in-flight retrieval short so the steer reaches the model promptly.
@@ -2021,6 +2063,12 @@ export class AutoRAGAgent {
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
 		this.lastQuery = trimmedQuery;
+		// A run that owns no TUI session is its own conversation. In the TUI the log is the session's and is fed
+		// as the user types, so a follow-up or a steer is never missing and a phase prompt is never in it.
+		if (this.boundPiRuntime === undefined) {
+			this.userRequests.reset();
+			this.userRequests.record(trimmedQuery);
+		}
 		this.conversationQueries.add(trimmedQuery);
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;

@@ -11,6 +11,12 @@ import {
 	type LocalAutoRAGModel,
 	loadLocalAutoRAGModel,
 } from "../agent/local-model.ts";
+import {
+	DEFAULT_PERMISSION_MODE,
+	PERMISSION_MODES,
+	type PermissionMode,
+	parsePermissionMode,
+} from "../agent/permission-gate.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import {
@@ -220,6 +226,11 @@ export interface CliConfig {
 	 * agent's own model decompose.
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
+	/**
+	 * Approval gate for file changes by the agent: `auto` (default for the TUI: Jev first, user as fallback; `full` for `search` and a bridged TUI), `ask`
+	 * (the user approves every file-capable call, Jev unused), or `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
+	 */
+	permissionMode?: PermissionMode;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -254,6 +265,11 @@ export interface ResolveConfigInput {
 	env?: NodeJS.ProcessEnv;
 	cwd?: string;
 	readOnly?: boolean;
+	/**
+	 * Mode when no flag, environment variable, or config file sets one. Commands that run with nobody to approve
+	 * (`search`) or through a remote bridge pass `full`; the interactive TUI leaves it to the default (`auto`).
+	 */
+	defaultPermissionMode?: PermissionMode;
 }
 
 export interface ResolvedConfigPath {
@@ -968,6 +984,12 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
 	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	config.permissionMode = resolvePermissionMode(
+		flags,
+		env,
+		file.permissionMode,
+		input.defaultPermissionMode ?? DEFAULT_PERMISSION_MODE,
+	);
 	if (file.queryDecomposition !== undefined) {
 		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
 	}
@@ -1005,6 +1027,36 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
  */
 export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 	return resolveConfig({ ...input, readOnly: true });
+}
+
+/**
+ * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then the
+ * command's own default (`auto` unless the command says otherwise). An unknown value is an error from any
+ * source, never a silent fallback to a weaker gate.
+ */
+function resolvePermissionMode(
+	flags: Record<string, string | boolean | undefined>,
+	env: NodeJS.ProcessEnv,
+	fileValue: unknown,
+	fallback: PermissionMode,
+): PermissionMode {
+	const valid = PERMISSION_MODES.join(", ");
+	const flag = flagString(flags, "permission-mode");
+	if (flag !== undefined) {
+		const mode = parsePermissionMode(flag);
+		if (mode === undefined) throw new ConfigError(`--permission-mode must be one of: ${valid}`);
+		return mode;
+	}
+	const fromEnv = envString(env, "AUTORAG_PERMISSION_MODE");
+	if (fromEnv !== undefined) {
+		const mode = parsePermissionMode(fromEnv);
+		if (mode === undefined) throw new ConfigError(`AUTORAG_PERMISSION_MODE must be one of: ${valid}`);
+		return mode;
+	}
+	if (fileValue === undefined) return fallback;
+	const mode = parsePermissionMode(fileValue);
+	if (mode === undefined) throw new ConfigError(`Config field 'permissionMode' must be one of: ${valid}`);
+	return mode;
 }
 
 const JEV_CONFIG_FIELDS: Record<string, true> = {
@@ -1289,6 +1341,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	opts.jev = buildJevAgentOption(config.jev, agentDir);
+	opts.permissionMode = config.permissionMode;
 	// The Jev `config` branch edits the very file this process resolved; it only
 	// takes effect when Jev is on, so the option is always safe to pass.
 	if (config.configPath !== undefined) {

@@ -540,6 +540,8 @@ is set up.
 - `AUTORAG_MEMORY_PATH`
 - `AUTORAG_MODEL_PROVIDER`
 - `AUTORAG_MODEL_ID`
+- `AUTORAG_PERMISSION_MODE` (`auto` default for the TUI, `full` for `autorag search` and a TUI with a chat bridge, `ask`, `full`; config key `permissionMode`; with `auto` Jev checks the agent's
+  file-changing calls and asks the user only when it will not approve, `ask` asks about every one, `full` never asks)
 
 ## Completion condition
 

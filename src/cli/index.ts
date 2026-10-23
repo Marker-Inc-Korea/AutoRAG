@@ -60,6 +60,7 @@ const VALUE_FLAGS = new Set([
 	"provider",
 	"fast-thinking",
 	"final-thinking",
+	"permission-mode",
 	"whatsapp-group",
 	"event",
 ]);
@@ -137,6 +138,7 @@ Global flags:
   --languages <csv>    OCR/parser languages (also AUTORAG_LANGUAGES)
   --model-provider <name>  Override the model provider
   --model-id <id>          Override the model
+  --permission-mode <m>    Approval gate for file changes by the agent: auto (default; full for search and bridged tui), ask, full
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
