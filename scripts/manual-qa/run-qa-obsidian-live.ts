@@ -7,7 +7,7 @@
  * search -> folder scope -> incremental re-index (edit, add, delete) -> hidden/attachment skipping.
  * The vault is built in a temp directory, so it needs no existing Obsidian install.
  *
- * Prerequisites: the `minsync` binary on PATH (0.4.11 or newer).
+ * Prerequisites: the `minsync` binary on PATH (0.4.12 or newer).
  *
  * Run: bun scripts/manual-qa/run-qa-obsidian-live.ts
  */

@@ -181,7 +181,7 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- MinSync 0.4.11 or newer on `PATH`. The runner starts a `minsync serve` daemon
+- MinSync 0.4.12 or newer on `PATH`. The runner starts a `minsync serve` daemon
   for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
   model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
   the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
