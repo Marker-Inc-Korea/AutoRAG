@@ -240,6 +240,16 @@ export interface CliConfig {
 		timeoutMs?: number;
 	};
 	excludeExactDuplicates?: boolean;
+	/** Filee command line behind the `convert_files` tool. `enabled: false` removes the conversion tools. */
+	filee?: {
+		enabled?: boolean;
+		binaryPath?: string;
+		/** Download the pinned filee-cli into `<AUTORAG_HOME>/tools` when none is found. Default true. */
+		autoInstall?: boolean;
+		timeoutMs?: number;
+		/** Folder for Filee's own settings and engines (`FILEE_DATA_DIR`); default is Filee's per-user folder. */
+		dataDir?: string;
+	};
 	/** Absolute or workspace-relative files/directories omitted from local indexing. */
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
@@ -990,6 +1000,12 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.dupey = file.dupey as CliConfig["dupey"];
 	}
+	if (file.filee !== undefined) {
+		if (typeof file.filee !== "object" || file.filee === null || Array.isArray(file.filee)) {
+			throw new ConfigError("Config field 'filee' must be an object");
+		}
+		config.filee = file.filee as CliConfig["filee"];
+	}
 	if (file.excludeExactDuplicates !== undefined && typeof file.excludeExactDuplicates !== "boolean") {
 		throw new ConfigError("Config field 'excludeExactDuplicates' must be a boolean");
 	}
@@ -1354,6 +1370,16 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		opts.dupey = {
 			...(config.dupey?.binaryPath ? { executable: config.dupey.binaryPath } : {}),
 			...(config.dupey?.timeoutMs ? { timeoutMs: config.dupey.timeoutMs } : {}),
+		};
+	}
+	if (config.filee?.enabled === false) {
+		opts.filee = false;
+	} else {
+		opts.filee = {
+			...(config.filee?.binaryPath ? { executable: config.filee.binaryPath } : {}),
+			...(config.filee?.autoInstall === false ? { autoInstall: false } : {}),
+			...(config.filee?.timeoutMs ? { timeoutMs: config.filee.timeoutMs } : {}),
+			...(config.filee?.dataDir ? { dataDir: config.filee.dataDir } : {}),
 		};
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;

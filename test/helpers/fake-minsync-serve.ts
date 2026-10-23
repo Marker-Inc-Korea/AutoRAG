@@ -28,7 +28,7 @@ if (args[0] !== "serve") { console.error("unexpected command: " + args.join(" ")
 if (failWith) { console.error(failWith); process.exit(1); }
 const dir = path.join(process.env.HOME, ".cache", "minsync", "serve", "fake-instance");
 fs.mkdirSync(dir, { recursive: true });
-const health = () => ({ status: "ok", model_id: model, dimension, dtype: "f32", device: "cpu", attention: "eager", max_length: 2048, max_inputs: 512, instance: "fake-instance", pid: process.pid, host: "127.0.0.1", port: server.address().port, url: "http://127.0.0.1:" + server.address().port, version: "0.4.11" });
+const health = () => ({ status: "ok", model_id: model, dimension, dtype: "f32", device: "cpu", attention: "eager", max_length: 2048, max_inputs: 512, instance: "fake-instance", pid: process.pid, host: "127.0.0.1", port: server.address().port, url: "http://127.0.0.1:" + server.address().port, version: "0.4.12" });
 const vector = (text) => Array.from({ length: dimension }, (_, i) => (text.length + i) / 100);
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") { res.setHeader("content-type", "application/json"); res.end(JSON.stringify(health())); return; }

@@ -23,6 +23,7 @@ export {
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
 export * from "./cloud/index.ts";
+export * from "./convert/index.ts";
 export {
 	AutoRAGLite,
 	type AutoRAGLiteOptions,

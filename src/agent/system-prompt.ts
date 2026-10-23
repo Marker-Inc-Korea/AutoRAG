@@ -1,3 +1,4 @@
+import { renderConversionGuide } from "../convert/matrix.ts";
 import {
 	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
@@ -64,6 +65,16 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(
 			config,
+			"convert_files",
+			"convert local files to another format offline (Filee), on any path, with optional overwrite",
+		),
+		toolLine(
+			config,
+			"list_file_conversions",
+			"list the formats the converter knows or what one source format can become",
+		),
+		toolLine(
+			config,
 			"manage_automations",
 			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
 		),
@@ -103,6 +114,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"semantic_search_local_docs",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
+						"convert_files",
+						"list_file_conversions",
 						"manage_automations",
 						"web_search",
 						"web_fetch",
@@ -134,6 +147,16 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		? `## Local Corpus Management
 
 \`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files. When the user asks you to remove duplicates, carry it out with \`bash\` by moving them to the OS trash (see File Organization); the scan itself stays read-only.
+`
+		: "";
+	const fileConversion = toolAvailable(config, "convert_files")
+		? `## File Conversion
+
+\`convert_files\` converts local files offline with Filee and works on any path the user names. Check \`list_file_conversions\` first when you are unsure a source can become the target. Outputs land next to the source with a number added when the name is taken, so nothing is replaced; pass \`overwrite: true\` only when the user asks to replace the existing file, and \`outputDir\` to keep results elsewhere. Each converted file is reported with dupey's verdict on whether it is a duplicate-family member of its source: exact means the same canonical text, near means the same document in another format, different or unsupported means dupey will not group them. A converted copy never replaces the source; never delete the source unless the user asked.
+
+This is the conversion map. Use it to plan any conversion immediately, including a two-step chain when no direct route exists, instead of probing with trial calls.
+
+${renderConversionGuide()}
 `
 		: "";
 	const webResearch =
@@ -218,12 +241,13 @@ ${noSearchTools}
 ${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization.` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization."}
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
 - Cross-check important claims against the original source and cite the evidence ids of the results you rely on.
-- When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
+- Every tool takes a short \`i\` argument: one line, specific to this question, saying what the call checks. It is shown to the user as live progress, so do not write separate progress notes before tool calls.
 - Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
 - Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available.
 
 ${fileOrganization}
 ${duplicateManagement}
+${fileConversion}
 ${automations}
 ${webResearch}
 ## External Datasource Skills
@@ -243,7 +267,7 @@ ${fsearch}
 Your answer is your final reply, written as plain text, never as a tool call. Cite evidence inline with the ids the retrieval tools print next to each result:
 - Put the id in square brackets at the end of the sentence it supports, e.g. \`The cap is 28% [e3].\` Use \`[e3][e7]\` or \`[e3, e7]\` for several. Copy ids exactly as printed; never invent one.
 - For a local file you opened yourself with \`bash\`, cite \`[file:<absolute path>]\`.
-- The harness resolves every id to its recorded source, number the citations \`[1]\`, \`[2]\`, … in order of first appearance, and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
+- The harness resolves every id to its recorded source, numbers the citations \`[1]\`, \`[2]\`, … (a source keeps the number it was first shown with for the whole conversation; a new source gets the next unused number), and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
 - Evidence ids belong to the whole conversation: cite any id a retrieval tool printed in this conversation, including in earlier turns. An id no tool ever printed is dropped.
 
 ## Answer Guidelines

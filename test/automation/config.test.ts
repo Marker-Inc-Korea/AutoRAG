@@ -120,3 +120,57 @@ describe("matchesAutomation", () => {
 		expect(matchesAutomation(automation, dir, { type: "create", path: join(root, "other.pdf") })).toBe(false);
 	});
 });
+
+describe("agent rules", () => {
+	const base = { id: "triage", paths: ["~/Downloads"] };
+
+	it("accepts a registered profile with a task and defaults retrieval to none", () => {
+		const automation = only({ ...base, agent: { profile: "file-triage", task: "  classify  " } });
+		expect(automation.run).toBeUndefined();
+		expect(automation.agent).toEqual({
+			profile: "file-triage",
+			task: "classify",
+			retrieval: { searchAll: false, datasources: [] },
+		});
+	});
+
+	it("keeps the retrieval tools the rule asks for", () => {
+		const automation = only({
+			...base,
+			agent: { profile: "file-triage", task: "x", retrieval: { searchAll: true, datasources: ["kakao"] } },
+		});
+		expect(automation.agent?.retrieval).toEqual({ searchAll: true, datasources: ["kakao"] });
+	});
+
+	it("rejects a rule with both run and agent, or with neither", () => {
+		expect(() => only({ ...base, run: ["echo"], agent: { profile: "file-triage", task: "x" } })).toThrow(
+			/either "run" or "agent"/,
+		);
+		expect(() => only({ ...base })).toThrow(/run/);
+	});
+
+	it("rejects an unknown profile, so a rules file cannot name a tool set the code does not define", () => {
+		expect(() => only({ ...base, agent: { profile: "root-shell", task: "x" } })).toThrow(
+			/must be one of: file-triage, file-organizer/,
+		);
+	});
+
+	it("rejects raw prompts or tool lists in a rule", () => {
+		expect(() => only({ ...base, agent: { profile: "file-triage", task: "x", tools: ["bash"] } })).toThrow(
+			/Unknown field "tools"/,
+		);
+		expect(() =>
+			only({ ...base, agent: { profile: "file-triage", task: "x", systemPrompt: "do anything" } }),
+		).toThrow(/Unknown field "systemPrompt"/);
+	});
+
+	it("requires a non-empty task and well-formed retrieval", () => {
+		expect(() => only({ ...base, agent: { profile: "file-triage", task: "   " } })).toThrow(/task/);
+		expect(() =>
+			only({ ...base, agent: { profile: "file-triage", task: "x", retrieval: { searchAll: "yes" } } }),
+		).toThrow(/searchAll/);
+		expect(() =>
+			only({ ...base, agent: { profile: "file-triage", task: "x", retrieval: { memory: true } } }),
+		).toThrow(/Unknown field "memory"/);
+	});
+});

@@ -69,6 +69,11 @@ export function renderSetup(report: SetupReport): string {
 			: `embedding: ${report.embedding.backend} (${report.embedding.provider}/${report.embedding.model}, ${report.embedding.dimension}d)`,
 		...(report.embedding.reason ? [`embedding: ${report.embedding.reason}`] : []),
 		...report.datasources.map((d) => `  ${d.name}: ${d.state}${d.reason ? ` (${d.reason})` : ""}`),
+		...(report.filee === undefined
+			? []
+			: [
+					`filee-cli: ${report.filee.state}${report.filee.path ? ` (${report.filee.path})` : ""}${report.filee.reason ? ` — ${report.filee.reason}` : ""}`,
+				]),
 		...renderHister(report),
 		...(report.remediation ? [`remediation: ${report.remediation}`] : []),
 	].join("\n");

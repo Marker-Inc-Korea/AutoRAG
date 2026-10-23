@@ -201,7 +201,7 @@ resolves in order:
 
 1. A configured remote endpoint (`minSync.embedder`), used for everything; no
    daemon is started and no local model is loaded.
-2. A running `minsync serve` daemon (loopback only; MinSync 0.4.11+).
+2. A running `minsync serve` daemon (loopback only; MinSync 0.4.12+).
    AutoRAG never starts it: run `minsync serve --idle-timeout 0` yourself, as
    a launchd/systemd service (see `docs/minsync-setup.md`), or press
    Ctrl+Shift+E in `autorag tui`. `autorag setup` only reports whether it is

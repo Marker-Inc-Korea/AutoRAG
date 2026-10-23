@@ -18,6 +18,10 @@
     "./core": {
       "types": "./dist/core.d.ts",
       "default": "./dist/core.js"
+    },
+    "./profiles": {
+      "types": "./dist/profiles.d.ts",
+      "default": "./dist/profiles.js"
     }
   },
   "bin": {
@@ -36,7 +40,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/core.ts src/cli/index.ts src/mcp/index.ts src/parser/parse-worker.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "build": "bun build src/index.ts src/core.ts src/profiles.ts src/cli/index.ts src/mcp/index.ts src/parser/parse-worker.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",

@@ -7,6 +7,13 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, keyText } from "@earendil-works/pi-coding-agent";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import {
+	convertAndRelate,
+	type FileeCliOptions,
+	type FileeConvertRequest,
+	listFileeFormats,
+	resolveFileeOptions,
+} from "../convert/index.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
@@ -107,6 +114,14 @@ import {
 } from "./answer-guidelines.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
+import { CitationNumbers } from "./citation-numbers.ts";
+import {
+	CONVERT_FILES_TOOL_NAME,
+	type ConvertFilesDetails,
+	createConvertFilesTool,
+	createListFileConversionsTool,
+	LIST_FILE_CONVERSIONS_TOOL_NAME,
+} from "./convert-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	type DatasourceAgentSkill,
@@ -126,6 +141,7 @@ import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import { intentOfMessage } from "./intent-tracing.ts";
 import {
 	createJevExtension,
 	createJevJudge,
@@ -607,6 +623,12 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	/**
+	 * Filee command line behind `convert_files` and `list_file_conversions`.
+	 * `false` leaves both tools out. The duplicate-family check on converted
+	 * copies follows `dupey`.
+	 */
+	filee?: FileeCliOptions | false;
+	/**
 	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
 	 * probabilities out). When set, the two-phase search asks Jev before the
 	 * fast answer whether the question is answerable from intrinsic knowledge
@@ -849,6 +871,8 @@ export class AutoRAGAgent {
 	 * run starts from an empty ledger.
 	 */
 	private readonly evidenceLedger = new EvidenceLedger();
+	/** The result numbers (`[n]`) this conversation has shown, kept next to the ledger's `e<N>` ordinals. */
+	private readonly citationNumbers = new CitationNumbers();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
@@ -891,6 +915,7 @@ export class AutoRAGAgent {
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
+	private readonly fileeOptions: FileeCliOptions | false;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
@@ -973,6 +998,7 @@ export class AutoRAGAgent {
 		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
 		this.dupeyOptions = options.dupey ?? {};
+		this.fileeOptions = options.filee ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
@@ -1069,6 +1095,8 @@ export class AutoRAGAgent {
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
+		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
+		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
 		this.jevJudge =
 			options.jev === undefined || options.jev === false
@@ -1125,6 +1153,8 @@ export class AutoRAGAgent {
 			EVERYTHING_SEARCH_TOOL_NAME,
 			FSEARCH_SEARCH_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			CONVERT_FILES_TOOL_NAME,
+			LIST_FILE_CONVERSIONS_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -1151,6 +1181,8 @@ export class AutoRAGAgent {
 			...(webSearchTool !== undefined ? [webSearchTool] : []),
 			...(webFetchTool !== undefined ? [webFetchTool] : []),
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
+			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
+			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
 			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
@@ -1191,6 +1223,21 @@ export class AutoRAGAgent {
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
 		}
+	}
+
+	async convertFiles(request: FileeConvertRequest, signal?: AbortSignal): Promise<ConvertFilesDetails> {
+		if (this.fileeOptions === false) throw new Error("File conversion is disabled.");
+		const filee = await resolveFileeOptions(this.fileeOptions, { env: process.env });
+		return convertAndRelate(request, {
+			filee: { ...filee, ...(signal !== undefined ? { signal } : {}) },
+			dupey: this.dupeyOptions,
+		});
+	}
+
+	async listFileConversions(from?: string, signal?: AbortSignal): Promise<string> {
+		if (this.fileeOptions === false) throw new Error("File conversion is disabled.");
+		const filee = await resolveFileeOptions(this.fileeOptions, { env: process.env });
+		return listFileeFormats(from, { ...filee, ...(signal !== undefined ? { signal } : {}) });
 	}
 
 	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {
@@ -1597,7 +1644,7 @@ export class AutoRAGAgent {
 			extensionFactories: [
 				this.permissionGate,
 				createUserRequestPersistence(this.userRequests),
-				createEvidencePersistence(this.evidenceLedger),
+				createEvidencePersistence(this.evidenceLedger, this.citationNumbers),
 				createCitationLinks(this.evidenceLedger),
 				createSearchProgressExtension(this.searchProgress, () => keyText("app.interrupt")),
 				createEmbeddingControls({
@@ -1628,7 +1675,11 @@ export class AutoRAGAgent {
 		return {
 			...runtime,
 			dispose: async () => {
-				if (this.boundPiRuntime === runtime.runtime) this.boundPiRuntime = undefined;
+				if (this.boundPiRuntime === runtime.runtime) {
+					this.boundPiRuntime = undefined;
+					// A disposed session must not receive later numbers.
+					this.citationNumbers.setSink(undefined);
+				}
 				await dispose();
 			},
 		};
@@ -1707,7 +1758,12 @@ export class AutoRAGAgent {
 
 	/** Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results. */
 	private deriveAnswer(text: string): AutoRAGResultsDetails {
-		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, { allowLocalFiles: true });
+		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, {
+			allowLocalFiles: true,
+			numbers: this.citationNumbers,
+		});
+		// The answer is derived after the turn's last session event: persist its new numbers now.
+		this.citationNumbers.flush();
 		this.routingDiagnostics.push(...derived.diagnostics);
 		return derived.details;
 	}
@@ -1951,8 +2007,11 @@ export class AutoRAGAgent {
 		this.retrievalTrace = [];
 		// A conversation keeps one evidence ledger for its whole life: the transcript still shows the earlier
 		// [eN] ids, and the session rebuilds the ledger on resume, /new, and tree moves. Only a run that owns
-		// no transcript starts over.
-		if (this.boundPiRuntime === undefined) this.evidenceLedger.clear();
+		// no transcript starts over, and result numbers follow the same rule: `[n]` accumulates with the conversation.
+		if (this.boundPiRuntime === undefined) {
+			this.evidenceLedger.clear();
+			this.citationNumbers.reset();
+		}
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
@@ -2343,18 +2402,33 @@ export class AutoRAGAgent {
 		const queue: SearchDocumentsStreamEvent[] = [];
 		let wake: (() => void) | undefined;
 		let settled = false;
+		let lastIntent: string | undefined;
+		const push = (text: string): void => {
+			queue.push({ type: "progress", sessionId: this.lastSessionId ?? "", query: query.trim(), text });
+			wake?.();
+			wake = undefined;
+		};
 		const unsubscribe = this.subscribe((event) => {
+			// The model says what each tool call is for (intent tracing); the newest one is the progress.
+			if (event.type === "message_update" || event.type === "message_end") {
+				const intent = intentOfMessage(event.message);
+				if (intent !== undefined && intent !== lastIntent) {
+					lastIntent = intent;
+					push(intent);
+					return;
+				}
+			}
 			if (event.type !== "message_end" || event.message.role !== "assistant") return;
 			if (event.message.stopReason !== "toolUse") return;
+			// A message whose tool call carries an intent has reported it above.
+			if (intentOfMessage(event.message) !== undefined) return;
 			const text = event.message.content
 				.filter((block) => block.type === "text")
 				.map((block) => block.text)
 				.join("")
 				.trim();
 			if (text === "") return;
-			queue.push({ type: "progress", sessionId: this.lastSessionId ?? "", query: query.trim(), text });
-			wake?.();
-			wake = undefined;
+			push(text);
 		});
 		queue.push({
 			type: "progress",
@@ -3100,7 +3174,6 @@ export class AutoRAGAgent {
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);
 	}
@@ -3128,8 +3201,7 @@ export class AutoRAGAgent {
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
 			`- ${ANSWER_UNCERTAINTY_RULE} If there are partial clues or leads, mention them concisely.\n\n` +
-			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
-			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
+			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
 		);

@@ -181,7 +181,7 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- MinSync 0.4.11 or newer on `PATH`. The runner starts a `minsync serve` daemon
+- MinSync 0.4.12 or newer on `PATH`. The runner starts a `minsync serve` daemon
   for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
   model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
   the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
@@ -601,6 +601,7 @@ configured for the run is never shown. See
 | `src/agent/evidence-ledger.ts` | `EvidenceLedger`: every retrieval tool registers what it returned and prints an `[eN]` id; `lookup` resolves a cited id back to the recorded source, method, and chunk without throwing. Ids only count up and are never reissued, so a stale id can never alias new evidence. A bound TUI conversation keeps one ledger for its whole life; a programmatic run with no transcript starts from an empty one. `takeUnsaved` / `restore` let the hosting session persist and rebuild it |
 | `src/agent/evidence-persistence.ts` | pi extension that appends new ledger entries to the session file as `autorag.evidence` entries and rebuilds the ledger from the branch in view on `session_start` (resume, `/new`, fork) and `session_tree`, so an id the model saw keeps resolving across turns, tool calls, resumes, and restarts |
 | `src/agent/search-progress.ts` | `SearchProgressTracker` (what the running search is doing: routing, decomposition, each retrieval source's hits/failures/time, ranking, model phases), `renderSearchProgress` (pure widget lines), and `createSearchProgressExtension`, the pi extension that shows it as the `autorag-search-progress` widget from submit until the answer is final. Reports outside a begun search are ignored, so the library path pays nothing |
+| `src/agent/intent-tracing.ts` | Intent tracing (ported from oh-my-pi): declares a required `i` argument on every tool in each model request, strips it before the tool runs, and shows the newest one as pi's working message; `searchDocumentsStream` reports the same text as `progress` |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
 | `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |
@@ -638,3 +639,10 @@ configured for the run is never shown. See
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
+| `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
+| `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |
+| `src/profiles/retrieval-tools.ts` | Optional `search_all_documents` / `search_datasource_<id>` tools for a profile, backed by an agent whose memory file is a throwaway |
+| `src/profiles/automation-profiles.ts` | Code-defined profiles an automation rule may name (`file-triage` read-only, `file-organizer` writes); a rule carries an id, never a prompt or tool list |
+| `src/profiles/loop-guard.ts` | The mandatory system-prompt section appended to every automation agent run: names the rule's folders, file types and events and forbids triggering the rule again |
+| `src/automation/run-agent.ts` | Runs an agent rule: profile + loop guard, changed files as the user message, final reply logged like a command's stdout |
+| `src/automation/dispatch.ts` | `runRule`: the one entry for command and agent rules; at most one agent run in flight across rules |

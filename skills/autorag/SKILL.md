@@ -45,6 +45,34 @@ near/contains families require human review. Exact duplicate exclusion during
 refresh is enabled by default and can be disabled with
 `"excludeExactDuplicates": false` in `config.json`.
 
+### Converting files
+
+The `convert_files` and `list_file_conversions` Agent tools run the
+[Filee](https://github.com/KnifeLemon/Filee) command line to convert local
+files offline: documents, spreadsheets, slides, HWP/HWPX, images, e-books,
+archives, audio, video, data, and subtitles. They work on any path the user
+names, not only the configured roots. This is the one exception to the
+"never write source files" rule above: a conversion writes a new file and
+never touches its source. An existing output name gets a number added unless
+the user asks to replace it, in which case pass `overwrite: true`. Never
+delete the source unless the user asked.
+
+Each converted file is checked with `dupey compare` against its source, using
+dupey's own thresholds, so the report says whether a later scan will group
+them: `exact` (same canonical text, for example DOCX to HWPX), `near` (same
+document in another format, for example Markdown to TXT), `different` (text
+differs, typically layout formats such as PDF), `unsupported` (dupey cannot
+read the format, for example HTML or images), or `unavailable` (dupey not
+installed). The command line is `filee.binaryPath` if set, else a `filee`/`filee-cli`
+on `PATH`, else the pinned [filee-cli](https://github.com/NomaDamas/filee-cli)
+release that `autorag setup` (or the first conversion) downloads into
+`<AUTORAG_HOME>/tools/filee-cli/`; `"filee": { "autoInstall": false }` forbids that
+download. The system prompt carries the conversion map (which format family
+converts to which, and the two-step chain when no direct route exists), so plan
+from it instead of probing. `"filee": { "enabled": false }` in `config.json` removes both
+tools; `filee.timeoutMs` (default 30 minutes) and `filee.dataDir` (Filee's
+own settings and engines, `FILEE_DATA_DIR`) tune them.
+
 ### Excluding local files from the index
 
 `"excludePaths"` in `config.json` lists files or folders (absolute, or relative
@@ -83,7 +111,10 @@ autorag search "what were the key findings in the Q3 report" --top-k 5 --json --
 only `answer` plus `results`. Every
 bracketed `[n]` citation in `answer` resolves to a `results[].number` of the
 same response; an unmatched citation is removed and reported as a
-`citation-without-result` diagnostic.
+`citation-without-result` diagnostic. Within one conversation (an interactive
+session, including a resumed one), a source keeps the `number` it was first
+shown with and a new source gets the next unused number, so `results[].number`
+can skip numbers and need not start at 1 on a later turn.
 
 To inspect the exact persisted evidence behind numbered results, use:
 
@@ -153,10 +184,33 @@ autorag automate daemon
 ```
 
 File-triggered automations live in `~/.autorag/automations.json` (`automations`
-array of `{ id, paths, events, include, exclude, run, appendFiles, debounceMs, timeoutMs }`).
+array of `{ id, paths, events, include, exclude, run | agent, appendFiles, debounceMs, timeoutMs }`).
 Edit `automations.json` directly to add or change rules; matched `[{ type, path }]`
 events are piped on stdin to `run`. Use `autorag automate install` to register
 the background daemon with launchd, `systemd --user`, or Windows Task Scheduler.
+
+A rule runs exactly one of `run` (a command) or `agent` (an AI agent started in
+the daemon on each batch of changes):
+
+```json
+{ "id": "inbox-triage", "paths": ["~/Downloads"], "include": ["**/*.pdf"],
+  "agent": { "profile": "file-triage", "task": "Summarize each new PDF.",
+             "retrieval": { "searchAll": true, "datasources": ["kakao"] } } }
+```
+
+`agent.profile` names a profile defined in code: `file-triage` (reads, lists and
+searches files; changes nothing) or `file-organizer` (also `bash`, `edit`,
+`write`). A rule never carries a prompt or a tool list, so the rules file cannot
+grant an agent more than its profile has. `retrieval` optionally adds
+`search_all_documents` and one `search_datasource_<id>` per listed datasource.
+Retrieval memory is never connected to an automation agent.
+
+Every agent run gets a loop guard appended to its system prompt, naming the
+rule's folders, file types and events, and forbidding any change that would
+fire the rule again, editing the rules file, and running `autorag automate`. At
+most one agent run is in flight across all rules, and an agent rule is
+disabled after 6 runs within 60 seconds (command rules: 20). The run's final
+reply is the `stdout` of its log entry.
 
 Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
 datasources, and (on Windows) the bundled Everything file-name index stay

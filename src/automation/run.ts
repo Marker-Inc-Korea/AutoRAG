@@ -113,15 +113,12 @@ export async function runAutomation(
 	events: readonly AutomationEvent[],
 	options: RunAutomationOptions = {},
 ): Promise<AutomationRunRecord> {
+	const run = automation.run;
+	if (run === undefined) throw new Error(`Automation "${automation.id}" has no run command`);
 	const env = options.env ?? process.env;
 	const home = options.home ?? resolveAutoRAGHome(env);
 	const selfCommand = options.selfCommand ?? autoragCliCommand();
-	const { command, args, filesOverflow } = resolveSpawnArgv(
-		automation.run,
-		events,
-		automation.appendFiles,
-		selfCommand,
-	);
+	const { command, args, filesOverflow } = resolveSpawnArgv(run, events, automation.appendFiles, selfCommand);
 	const cwd = existsSync(automation.paths[0]) ? automation.paths[0] : resolveUserHome(env);
 	const startedAtMs = Date.now();
 	const startedAt = new Date(startedAtMs).toISOString();

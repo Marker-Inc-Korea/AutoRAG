@@ -4,9 +4,12 @@ import parcelWatcher from "@parcel/watcher";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { type Automation, type AutomationEvent, loadAutomations, matchesAutomationPath } from "./config.ts";
-import { type AutomationRunRecord, runAutomation } from "./run.ts";
+import { runRule } from "./dispatch.ts";
+import type { AutomationRunRecord } from "./run.ts";
 
 export const DEFAULT_MAX_RUNS_PER_MINUTE = 20;
+/** An agent run costs model calls, so a rule that starts agents trips the self-trigger breaker sooner. */
+export const DEFAULT_MAX_AGENT_RUNS_PER_MINUTE = 6;
 const RUNAWAY_WINDOW_MS = 60_000;
 const CONFIG_POLL_INTERVAL_MS = 1000;
 const PARCEL_IGNORED_SEGMENTS = ["**/.git/**", "**/node_modules/**", "**/.autorag/**"];
@@ -98,7 +101,11 @@ function createRuleScheduler(deps: {
 	readonly onRun?: (automation: Automation, record: AutomationRunRecord) => void;
 	readonly onError: (message: string) => void;
 }): Promise<RuleScheduler> {
-	const { automation, home, watcher, runner, maxRunsPerMinute, onRun, onError } = deps;
+	const { automation, home, watcher, runner, onRun, onError } = deps;
+	const maxRunsPerMinute =
+		automation.agent === undefined
+			? deps.maxRunsPerMinute
+			: Math.min(deps.maxRunsPerMinute, DEFAULT_MAX_AGENT_RUNS_PER_MINUTE);
 	const pending = new Map<string, AutomationEvent>();
 	const recentRuns: number[] = [];
 	const subscriptions: AutomationSubscription[] = [];
@@ -220,7 +227,7 @@ export async function startAutomationDaemon(options: AutomationDaemonOptions = {
 	const watcher = options.watcher ?? defaultParcelBackend;
 	const runner: AutomationRunner =
 		options.runner ??
-		((automation, events) => runAutomation(automation, events, { home, env, selfCommand: options.selfCommand }));
+		((automation, events) => runRule(automation, events, { home, env, selfCommand: options.selfCommand }));
 	const maxRunsPerMinute = options.maxRunsPerMinute ?? DEFAULT_MAX_RUNS_PER_MINUTE;
 	const onError = options.onError ?? ((msg: string) => process.stderr.write(`[automate] ${msg}\n`));
 

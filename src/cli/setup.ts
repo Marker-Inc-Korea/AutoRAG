@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
+import { type ResolvedFileeBinary, type ResolveFileeBinaryOptions, resolveFileeBinary } from "../convert/index.ts";
 import {
 	findHisterEntries,
 	type HisterServiceDeps,
@@ -34,6 +35,14 @@ export interface SetupEmbeddingReport {
 	/** Why no embedding backend is available. */
 	readonly reason?: string;
 }
+export type SetupFileeState = "installed" | "cached" | "path" | "configured" | "skipped" | "failed";
+/** The Filee command line behind `convert_files`; setup installs it unless the operator opted out. */
+export interface SetupFileeReport {
+	readonly state: SetupFileeState;
+	readonly path?: string;
+	readonly reason?: string;
+}
+
 export interface SetupReport {
 	readonly ok: boolean;
 	readonly mode: "semantic" | "bm25";
@@ -44,6 +53,8 @@ export interface SetupReport {
 	readonly hister?: HisterSetupReport;
 	/** Every configured `hister` datasource, when there is more than one. */
 	readonly histers?: readonly HisterSetupReport[];
+	/** Present on every run; `skipped` when `filee.enabled` or `filee.autoInstall` is false. */
+	readonly filee?: SetupFileeReport;
 	readonly changed: boolean;
 }
 
@@ -56,6 +67,10 @@ export interface SetupDeps {
 	readonly acquireLock?: (path: string) => FileLockHandle;
 	/** Hister's config path, health, restart and reindex; defaults to the real programs. */
 	readonly hister?: HisterServiceDeps;
+	/** Finds or installs filee-cli; defaults to the pinned release download. */
+	readonly filee?: (
+		options: Pick<ResolveFileeBinaryOptions, "executable" | "autoInstall">,
+	) => Promise<ResolvedFileeBinary>;
 }
 
 const LOCK_TIMEOUT_MS = 10_000;
@@ -321,11 +336,16 @@ export async function runSetup(options: {
 			histerReports = histerResult.reports;
 			changed ||= histerResult.changed;
 		}
+		const fileeReport = await setupFilee(
+			raw.filee,
+			options.deps?.filee ?? ((o) => resolveFileeBinary({ ...o, env })),
+		);
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
 			embedding,
 			datasources,
+			filee: fileeReport,
 			...(semantic ? {} : { remediation: REMEDIATION }),
 			...(histerReports[0] === undefined ? {} : { hister: histerReports[0] }),
 			...(histerReports.length > 1 ? { histers: histerReports } : {}),
@@ -335,5 +355,21 @@ export async function runSetup(options: {
 		lock.release();
 		// A caller-supplied embedder belongs to the caller; one built here is released with the process.
 		if (options.deps?.embedder === undefined) await embedder?.close();
+	}
+}
+
+/** Install filee-cli unless disabled; a failed install is reported, never fatal, because conversion is optional. */
+async function setupFilee(rawFilee: unknown, resolve: NonNullable<SetupDeps["filee"]>): Promise<SetupFileeReport> {
+	const filee = rawFilee !== null && typeof rawFilee === "object" ? (rawFilee as Record<string, unknown>) : {};
+	if (filee.enabled === false) return { state: "skipped", reason: "disabled by operator (filee.enabled)" };
+	if (filee.autoInstall === false) return { state: "skipped", reason: "filee.autoInstall is false" };
+	try {
+		const resolved = await resolve({
+			executable: typeof filee.binaryPath === "string" ? filee.binaryPath : undefined,
+			autoInstall: undefined,
+		});
+		return { state: resolved.source, path: resolved.path };
+	} catch (error) {
+		return { state: "failed", reason: safeReason(error) };
 	}
 }
