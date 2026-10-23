@@ -114,7 +114,7 @@ function pluralMessages(count: number): string {
 }
 
 /** `text` cut to `max` characters by dropping its middle, so both what it starts with and ends with survive. */
-function cutMiddle(text: string, max: number): string {
+export function cutMiddle(text: string, max: number): string {
 	if (text.length <= max) return text;
 	// The marker's number has at most as many digits as the text is long, so this length is an upper bound.
 	const marker = (omitted: number) => ` [...${omitted} characters omitted...] `;

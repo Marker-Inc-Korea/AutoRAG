@@ -5,16 +5,18 @@ import { join } from "node:path";
 import { type FauxResponseStep, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { type JevBackend, MockBackend } from "jev-use";
-import type { RawAnswer } from "jev-use/dist/backends/types.js";
+import type { JevBackend } from "jev-use";
+import type { BackendRequest, RawAnswer } from "jev-use/dist/backends/types.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { createJevJudge } from "../../src/agent/jev-extension.ts";
+import { createPermissionGate, PermissionController, type PermissionMode } from "../../src/agent/permission-gate.ts";
 import {
-	createPermissionGate,
 	PERMISSION_GATE_QUESTION_ID,
-	PermissionController,
-	type PermissionMode,
-} from "../../src/agent/permission-gate.ts";
+	PERMISSION_KINDS,
+	type PermissionKind,
+	permissionKindQuestionId,
+} from "../../src/agent/permission-judgment.ts";
 import { createAutoRAGPiSession } from "../../src/agent/pi-session.ts";
 import { QUERY_ROUTE_QUESTION_ID } from "../../src/agent/query-routing.ts";
 
@@ -27,6 +29,15 @@ beforeEach(() => {
 afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
+
+/** A promise and its resolver. tsconfig lib is ES2022, which predates Promise.withResolvers. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve: () => void = () => undefined;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
 
 /** The interactive UI surface the TUI binds, with no visible effect; only the dialogs are scripted. */
 function ui(select: ExtensionUIContext["select"]): ExtensionUIContext {
@@ -77,8 +88,61 @@ function bashResult(messages: readonly { role: string; toolName?: string; conten
 	return JSON.stringify(result?.content ?? "");
 }
 
+// ---------------------------------------------------------------------------
+// A Jev double that classifies the way Jev would for the calls a test scripts.
+// ---------------------------------------------------------------------------
+
+interface ScriptedJev {
+	readonly backend: JevBackend;
+	/** The state of every permission request, in order. */
+	readonly states: string[];
+	/** How many permission requests Jev answered. */
+	readonly count: () => number;
+}
+
+/**
+ * Jev that answers a query-routing question `direct` and a permission request by looking up the proposed call's
+ * text in `rules`: the first rule whose `match` the state contains decides the categories (default: safe) and
+ * whether it approves.
+ */
+function scriptedJev(
+	rules: readonly { match: string; kinds?: Partial<Record<PermissionKind, number>>; approve?: boolean }[] = [],
+): ScriptedJev {
+	const states: string[] = [];
+	const answer = (request: BackendRequest, question: BackendRequest["questions"][number]): RawAnswer => {
+		const state = typeof request.state === "string" ? request.state : JSON.stringify(request.state);
+		const proposed = state.slice(state.lastIndexOf("Proposed tool call"));
+		const rule = rules.find((candidate) => proposed.includes(candidate.match));
+		if (question.id === PERMISSION_GATE_QUESTION_ID) {
+			const allow = rule?.approve === true;
+			return {
+				answer: allow ? "allow" : "deny",
+				distribution: allow ? { allow: 0.97, deny: 0.03 } : { allow: 0.03, deny: 0.97 },
+				confidence: 0.97,
+			};
+		}
+		if (question.id === QUERY_ROUTE_QUESTION_ID) {
+			return { answer: "direct", distribution: { local: 0.05, web: 0.05, direct: 0.9 }, confidence: 0.9 };
+		}
+		for (const kind of PERMISSION_KINDS) {
+			if (question.id === permissionKindQuestionId(kind)) return { answer: rule?.kinds?.[kind] ?? 0.02 };
+		}
+		return { answer: 0.05 };
+	};
+	const backend: JevBackend = {
+		name: "scripted",
+		judge: async (request) => {
+			if (request.questions.some((question) => question.id === permissionKindQuestionId("delete"))) {
+				states.push(typeof request.state === "string" ? request.state : JSON.stringify(request.state));
+			}
+			return { answers: request.questions.map((question) => answer(request, question)) };
+		},
+	};
+	return { backend, states, count: () => states.length };
+}
+
 describe("gate inside a real pi session (headless)", () => {
-	async function run(mode: PermissionMode, command: string) {
+	async function run(mode: PermissionMode, command: string, jev?: ScriptedJev) {
 		const registration = registerFauxProvider({ api: `faux-perm-${randomUUID()}`, models: [{ id: "perm" }] });
 		registration.setResponses(bashThenDone(command));
 		const controller = new PermissionController(mode);
@@ -88,7 +152,16 @@ describe("gate inside a real pi session (headless)", () => {
 			model: registration.getModel(),
 			getSystemPrompt: () => "system",
 			customTools: [],
-			extensionFactories: [createPermissionGate({ controller })],
+			extensionFactories: [
+				createPermissionGate({
+					controller,
+					...(jev === undefined
+						? {}
+						: {
+								judge: createJevJudge({ backend: jev.backend }),
+							}),
+				}),
+			],
 		});
 		try {
 			await hosted.session.prompt("tidy up");
@@ -99,29 +172,46 @@ describe("gate inside a real pi session (headless)", () => {
 		}
 	}
 
-	it("blocks a delete of an original in ask mode and the file survives", async () => {
+	it("blocks a flagged call and the file survives", async () => {
 		const file = join(root, "keep.txt");
 		writeFileSync(file, "precious");
-		const result = await run("ask", `rm ${file}`);
+		const result = await run("ask", `rm ${file}`, scriptedJev([{ match: "rm ", kinds: { delete: 0.97 } }]));
 		expect(existsSync(file)).toBe(true);
 		expect(result).toMatch(/approval/i);
 	});
 
-	it("deletes it in full mode", async () => {
-		const file = join(root, "gone.txt");
-		writeFileSync(file, "x");
-		await run("full", `rm ${file}`);
-		expect(existsSync(file)).toBe(false);
+	it("blocks the python-subprocess trash that a pattern list could not see", async () => {
+		const file = join(root, "report.pdf");
+		writeFileSync(file, "precious");
+		const script = `python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['/usr/bin/trash', '${file}'])\nEOF`;
+		const result = await run("ask", script, scriptedJev([{ match: "subprocess", kinds: { delete: 0.95 } }]));
+		expect(existsSync(file)).toBe(true);
+		expect(result).toMatch(/approval/i);
 	});
 
-	it("lets a copy-then-edit workflow run in ask mode without anyone to ask", async () => {
+	it("runs a call Jev finds safe", async () => {
 		const file = join(root, "a.md");
 		writeFileSync(file, "hello");
 		const copy = join(root, "a.copy.md");
-		await run("ask", `cp ${file} ${copy} && sed -i.bak 's/hello/bye/' ${copy} && rm ${copy}.bak`);
-		expect(readFileSync(copy, "utf8")).toBe("bye");
-		expect(readFileSync(file, "utf8")).toBe("hello");
-		expect(existsSync(`${copy}.bak`)).toBe(false);
+		await run("ask", `cp ${file} ${copy}`, scriptedJev());
+		expect(readFileSync(copy, "utf8")).toBe("hello");
+	});
+
+	it("blocks everything gated when there is no Jev to classify, so it fails closed", async () => {
+		const file = join(root, "keep.txt");
+		writeFileSync(file, "precious");
+		const result = await run("ask", `rm ${file}`);
+		expect(existsSync(file)).toBe(true);
+		expect(result).toMatch(/could not classify/i);
+	});
+
+	it("deletes it in full mode without asking Jev", async () => {
+		const file = join(root, "gone.txt");
+		writeFileSync(file, "x");
+		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.97 } }]);
+		await run("full", `rm ${file}`, jev);
+		expect(existsSync(file)).toBe(false);
+		expect(jev.count()).toBe(0);
 	});
 });
 
@@ -170,10 +260,11 @@ describe("gate inside the agent's interactive runtime", () => {
 		const file = join(root, "report.pdf");
 		writeFileSync(file, "x");
 		const asked: string[] = [];
+		const jev = scriptedJev([{ match: "mv ", kinds: { move: 0.95 } }]);
 		const t = await tui(
 			"ask",
 			bashThenDone(`mv ${file} ${join(root, "elsewhere.pdf")}`),
-			undefined,
+			jev.backend,
 			async (title) => {
 				asked.push(title);
 				return "Deny";
@@ -183,6 +274,7 @@ describe("gate inside the agent's interactive runtime", () => {
 			await t.session.prompt("move the report", { source: "extension" });
 			expect(asked).toHaveLength(1);
 			expect(asked[0]).toContain(file);
+			expect(asked[0]).toMatch(/\bmove\b/);
 			expect(existsSync(file)).toBe(true);
 			expect(bashResult(t.session.messages as never)).toMatch(/denied/i);
 		} finally {
@@ -193,7 +285,8 @@ describe("gate inside the agent's interactive runtime", () => {
 	it("runs the operation when the user allows it", async () => {
 		const file = join(root, "report.pdf");
 		writeFileSync(file, "x");
-		const t = await tui("ask", bashThenDone(`rm ${file}`), undefined, async () => "Allow once");
+		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.95 } }]);
+		const t = await tui("ask", bashThenDone(`rm ${file}`), jev.backend, async () => "Allow once");
 		try {
 			await t.session.prompt("delete the report", { source: "extension" });
 			expect(existsSync(file)).toBe(false);
@@ -205,10 +298,11 @@ describe("gate inside the agent's interactive runtime", () => {
 	it("switches mode live: the same call is blocked in ask and runs after the controller moves to full", async () => {
 		const file = join(root, "report.pdf");
 		writeFileSync(file, "x");
+		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.95 } }]);
 		const t = await tui(
 			"ask",
 			[...bashThenDone(`rm ${file}`), ...bashThenDone(`rm ${file}`)],
-			undefined,
+			jev.backend,
 			async () => "Deny",
 		);
 		try {
@@ -223,20 +317,18 @@ describe("gate inside the agent's interactive runtime", () => {
 	});
 
 	it("auto mode: Jev approves without a dialog; a Jev rejection reaches the user", async () => {
-		const approve = new MockBackend({
-			[PERMISSION_GATE_QUESTION_ID]: {
-				answer: "allow",
-				distribution: { allow: 0.97, deny: 0.03 },
-				confidence: 0.97,
-			},
-		});
 		const first = join(root, "approved.txt");
 		writeFileSync(first, "x");
 		let dialogs = 0;
-		const a = await tui("auto", bashThenDone(`rm ${first}`), approve, async () => {
-			dialogs += 1;
-			return "Deny";
-		});
+		const a = await tui(
+			"auto",
+			bashThenDone(`rm ${first}`),
+			scriptedJev([{ match: "rm ", kinds: { delete: 0.97 }, approve: true }]).backend,
+			async () => {
+				dialogs += 1;
+				return "Deny";
+			},
+		);
 		try {
 			await a.session.prompt("tidy", { source: "extension" });
 			expect(existsSync(first)).toBe(false);
@@ -245,16 +337,18 @@ describe("gate inside the agent's interactive runtime", () => {
 			await a.dispose();
 		}
 
-		const reject = new MockBackend({
-			[PERMISSION_GATE_QUESTION_ID]: { answer: "deny", distribution: { allow: 0.03, deny: 0.97 }, confidence: 0.97 },
-		});
 		const second = join(root, "rejected.txt");
 		writeFileSync(second, "x");
 		const titles: string[] = [];
-		const b = await tui("auto", bashThenDone(`rm ${second}`), reject, async (title) => {
-			titles.push(title);
-			return "Allow once";
-		});
+		const b = await tui(
+			"auto",
+			bashThenDone(`rm ${second}`),
+			scriptedJev([{ match: "rm ", kinds: { delete: 0.97 }, approve: false }]).backend,
+			async (title) => {
+				titles.push(title);
+				return "Allow once";
+			},
+		);
 		try {
 			await b.session.prompt("tidy", { source: "extension" });
 			expect(titles).toHaveLength(1);
@@ -267,33 +361,7 @@ describe("gate inside the agent's interactive runtime", () => {
 });
 
 describe("what Jev is told, through the agent's real input paths", () => {
-	/** A Jev that routes every query `direct`, approves every gate question, and keeps each gate state. */
-	function recordingJev(states: string[]): JevBackend {
-		return {
-			name: "recording",
-			judge: async (request) => {
-				const stateText = typeof request.state === "string" ? request.state : JSON.stringify(request.state);
-				return {
-					answers: request.questions.map((question): RawAnswer => {
-						if (question.id === PERMISSION_GATE_QUESTION_ID) {
-							states.push(stateText);
-							return { answer: "allow", distribution: { allow: 0.99, deny: 0.01 }, confidence: 0.99 };
-						}
-						if (question.id === QUERY_ROUTE_QUESTION_ID) {
-							return {
-								answer: "direct",
-								distribution: { local: 0.05, web: 0.05, direct: 0.9 },
-								confidence: 0.9,
-							};
-						}
-						return { answer: 0.05 };
-					}),
-				};
-			},
-		};
-	}
-
-	async function auto(responses: FauxResponseStep[], states: string[]) {
+	async function auto(responses: FauxResponseStep[], jev: ScriptedJev) {
 		const registration = registerFauxProvider({ api: `faux-perm-state-${randomUUID()}`, models: [{ id: "state" }] });
 		registration.setResponses(responses);
 		const agentDir = join(root, "agent");
@@ -314,7 +382,7 @@ describe("what Jev is told, through the agent's real input paths", () => {
 			piAgentDir: agentDir,
 			piSessionDir: join(root, "sessions"),
 			permissionMode: "auto",
-			jev: { backend: recordingJev(states) },
+			jev: { backend: jev.backend },
 		});
 		const hosted = await agent.createPiInteractiveRuntime();
 		await hosted.runtime.session.bindExtensions({ uiContext: ui(async () => "Deny") });
@@ -329,17 +397,19 @@ describe("what Jev is told, through the agent's real input paths", () => {
 		};
 	}
 
+	const flagged = (match: string) => scriptedJev([{ match, kinds: { delete: 0.97 }, approve: true }]);
+
 	it("shows the first question and every later turn, never the phase prompts", async () => {
-		const states: string[] = [];
 		const victim = join(root, "old-notes.txt");
 		writeFileSync(victim, "x");
+		const jev = flagged("rm ");
 		const t = await auto(
 			[
 				fauxAssistantMessage("FIRST ANSWER", { stopReason: "stop" }),
 				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" }),
 				fauxAssistantMessage("done", { stopReason: "stop" }),
 			],
-			states,
+			jev,
 		);
 		try {
 			await t.session.prompt("Organize my notes folder", { source: "interactive" });
@@ -347,8 +417,8 @@ describe("what Jev is told, through the agent's real input paths", () => {
 			await t.session.prompt("Now delete old-notes.txt, it is obsolete", { source: "interactive" });
 			await t.agent.waitForIdle();
 
-			expect(states).toHaveLength(1);
-			const state = states[0] ?? "";
+			expect(jev.count()).toBe(1);
+			const state = jev.states[0] ?? "";
 			expect(state.indexOf("[1] Organize my notes folder")).toBeGreaterThan(-1);
 			expect(state.indexOf("[2] Now delete old-notes.txt, it is obsolete")).toBeGreaterThan(
 				state.indexOf("[1] Organize my notes folder"),
@@ -363,23 +433,17 @@ describe("what Jev is told, through the agent's real input paths", () => {
 	});
 
 	it("includes a steer typed while the agent was working", async () => {
-		const states: string[] = [];
 		const victim = join(root, "report-2024.pdf");
 		writeFileSync(victim, "x");
-		let release: () => void = () => undefined;
-		const gate = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		let entered: () => void = () => undefined;
-		const started = new Promise<void>((resolve) => {
-			entered = resolve;
-		});
+		const { promise: gate, resolve: release } = deferred();
+		const { promise: started, resolve: entered } = deferred();
 		const held: FauxResponseStep = async () => {
 			entered();
 			await gate;
 			return fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" });
 		};
-		const t = await auto([held, fauxAssistantMessage("done", { stopReason: "stop" })], states);
+		const jev = flagged("rm ");
+		const t = await auto([held, fauxAssistantMessage("done", { stopReason: "stop" })], jev);
 		try {
 			await t.session.prompt("Clean up old reports", { source: "interactive" });
 			await started;
@@ -387,8 +451,8 @@ describe("what Jev is told, through the agent's real input paths", () => {
 			release();
 			await t.agent.waitForIdle();
 
-			expect(states).toHaveLength(1);
-			const state = states[0] ?? "";
+			expect(jev.count()).toBe(1);
+			const state = jev.states[0] ?? "";
 			expect(state).toContain("[1] Clean up old reports");
 			expect(state).toContain("[2] (correction while the agent was working) Only the 2024 ones");
 		} finally {
@@ -397,29 +461,23 @@ describe("what Jev is told, through the agent's real input paths", () => {
 	});
 
 	it("includes an Alt+Enter follow-up queued behind the running search", async () => {
-		const states: string[] = [];
 		const victim = join(root, "scratch.txt");
 		writeFileSync(victim, "x");
-		let release: () => void = () => undefined;
-		const gate = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		let entered: () => void = () => undefined;
-		const started = new Promise<void>((resolve) => {
-			entered = resolve;
-		});
+		const { promise: gate, resolve: release } = deferred();
+		const { promise: started, resolve: entered } = deferred();
 		const held: FauxResponseStep = async () => {
 			entered();
 			await gate;
 			return fauxAssistantMessage("FIRST ANSWER", { stopReason: "stop" });
 		};
+		const jev = flagged("rm ");
 		const t = await auto(
 			[
 				held,
 				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" }),
 				fauxAssistantMessage("done", { stopReason: "stop" }),
 			],
-			states,
+			jev,
 		);
 		try {
 			await t.session.prompt("What is in my scratch folder?", { source: "interactive" });
@@ -431,20 +489,49 @@ describe("what Jev is told, through the agent's real input paths", () => {
 			release();
 			await t.agent.waitForIdle();
 
-			expect(states).toHaveLength(1);
-			expect(states[0]).toContain("[1] What is in my scratch folder?");
-			expect(states[0]).toContain("[2] After that, delete scratch.txt");
+			expect(jev.count()).toBe(1);
+			expect(jev.states[0]).toContain("[1] What is in my scratch folder?");
+			expect(jev.states[0]).toContain("[2] After that, delete scratch.txt");
+		} finally {
+			await t.dispose();
+		}
+	});
+
+	it("shows the agent's own earlier calls, so Jev can tell what it created itself", async () => {
+		const original = join(root, "report.md");
+		writeFileSync(original, "hello");
+		const copy = join(root, "report.edited.md");
+		const jev = scriptedJev();
+		const t = await auto(
+			[
+				fauxAssistantMessage([fauxToolCall("bash", { command: `cp ${original} ${copy}` })], {
+					stopReason: "toolUse",
+				}),
+				fauxAssistantMessage([fauxToolCall("bash", { command: `sed -i.bak 's/hello/bye/' ${copy}` })], {
+					stopReason: "toolUse",
+				}),
+				fauxAssistantMessage("done", { stopReason: "stop" }),
+			],
+			jev,
+		);
+		try {
+			await t.session.prompt("Fix the typo in a copy of report.md", { source: "interactive" });
+			await t.agent.waitForIdle();
+			expect(jev.count()).toBe(2);
+			expect(jev.states[1]).toContain(`cp ${original} ${copy}`);
+			expect(readFileSync(copy, "utf8")).toBe("bye");
+			expect(readFileSync(original, "utf8")).toBe("hello");
 		} finally {
 			await t.dispose();
 		}
 	});
 
 	it("brings the earlier conversation back on /resume and starts empty on /new", async () => {
-		const states: string[] = [];
 		const victim = join(root, "later.txt");
 		const kept = join(root, "kept.txt");
 		writeFileSync(victim, "x");
 		writeFileSync(kept, "x");
+		const jev = flagged("rm ");
 		const t = await auto(
 			[
 				fauxAssistantMessage("FIRST ANSWER", { stopReason: "stop" }),
@@ -456,7 +543,7 @@ describe("what Jev is told, through the agent's real input paths", () => {
 				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" }),
 				fauxAssistantMessage("resumed done", { stopReason: "stop" }),
 			],
-			states,
+			jev,
 		);
 		try {
 			await t.session.prompt("Remember: the archive folder is off limits", { source: "interactive" });
@@ -470,19 +557,19 @@ describe("what Jev is told, through the agent's real input paths", () => {
 			await t.agent.waitForIdle();
 			await t.runtime.session.prompt("Delete kept.txt", { source: "interactive" });
 			await t.agent.waitForIdle();
-			expect(states).toHaveLength(1);
-			expect(states[0]).toContain("[1] Hello there");
-			expect(states[0]).toContain("[2] Delete kept.txt");
-			expect(states[0]).not.toContain("archive folder is off limits");
+			expect(jev.count()).toBe(1);
+			expect(jev.states[0]).toContain("[1] Hello there");
+			expect(jev.states[0]).toContain("[2] Delete kept.txt");
+			expect(jev.states[0]).not.toContain("archive folder is off limits");
 
 			await t.runtime.switchSession(file);
 			await t.runtime.session.bindExtensions({ uiContext: ui(async () => "Deny") });
 			await t.runtime.session.prompt("Now delete later.txt", { source: "interactive" });
 			await t.agent.waitForIdle();
-			expect(states).toHaveLength(2);
-			expect(states[1]).toContain("[1] Remember: the archive folder is off limits");
-			expect(states[1]).toContain("[2] Now delete later.txt");
-			expect(states[1]).not.toContain("Hello there");
+			expect(jev.count()).toBe(2);
+			expect(jev.states[1]).toContain("[1] Remember: the archive folder is off limits");
+			expect(jev.states[1]).toContain("[2] Now delete later.txt");
+			expect(jev.states[1]).not.toContain("Hello there");
 		} finally {
 			await t.dispose();
 		}

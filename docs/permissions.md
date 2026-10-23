@@ -12,24 +12,39 @@ Reading, searching, copying, and creating new files never ask. The gate is a pi 
 | `auto` | Jev (the judgment model) answers first. It approves silently when it is at least 80% sure the user's request covers exactly that change. Otherwise, or when Jev is unreachable, the question goes to you, with Jev's reason shown. |
 | `full` | No gate. The agent does everything itself. |
 
-Not gated, in every mode: `ls`, `cat`, `grep`, `find`, `cp` to a new path, `mkdir`, `touch`, `write` to a new
-path, `sed` without `-i`, and every AutoRAG search tool. Files and folders the agent created itself stay free
-to edit, move, and delete, so the intended workflow is copy first, then change the copy. The system prompt
-tells the model this in `ask` and `auto`.
+Not gated, in every mode: every AutoRAG search tool, and any `bash`, `write`, or `edit` call that Jev (the
+judgment model) finds does not delete, move, rename, overwrite, or edit an existing file: `ls`, `cat`, `grep`,
+`cp` to a new path, `mkdir`, `touch`, `write` to a new path. Files and folders the agent created itself stay free
+to edit, move, and delete, so the intended workflow is copy first, then change the copy. The system prompt tells
+the model this in `ask` and `auto`.
 
-What counts as a change to an original:
+## How a call is classified
 
-- `delete`: `rm`, `rmdir`, `unlink`, `trash`, `shred`, `find -delete` / `-exec rm`, `rsync --remove-source-files` / `--delete`, `git rm`, `git clean`
-- `rename` / `move`: `mv`, `git mv` (same folder and name change is a rename, anything else a move)
-- `overwrite`: `>`, `>>`, `tee`, `dd of=`, `cp` onto an existing file, `write` onto an existing file
-- `edit`: `edit` on an existing file, `sed -i`, `perl -i`, `truncate`
-- `script`: `python -c` / `node -e` / `perl -e` / shell heredocs whose source removes or renames files
-- A saved `manage_automations` rule whose command does any of the above
+There is no command parser. Before every `bash`, `write`, `edit`, and `manage_automations save` call, Jev answers six
+questions in one batched request, each a probability that the call does that to a file that existed before it ran:
 
-A target only known at run time (`rm $X`, `rm *.tmp`, `xargs rm`) is gated as well. Wrappers (`sudo`, `env`,
-`nohup`, `bash -c`, `eval`, `$(...)`) are looked through. This is a gate against mistakes and runaway agents, not
-a sandbox: a determined script can still reach files in ways no command parser sees. Use `full` only when you
-trust the task.
+| Category | Question |
+| --- | --- |
+| `delete` | removes a file or folder, by any means (`rm`, `trash`, `find -delete`, a one-line perl/python/ruby/node call, ...) |
+| `move` | moves one to a different directory |
+| `rename` | renames one within its directory |
+| `overwrite` | replaces a file's whole content (redirect, download, `cp` over it, `git reset --hard`) |
+| `edit` | changes part of a file in place (`sed -i`, an editor, a script that patches it) |
+| `unclear` | runs code whose effect cannot be told (an unseen script, `make`, an encoded command) |
+
+A category at 0.3 or above, or one Jev is unsure about, counts as flagged and the call is asked about; the dialog
+names the categories. Jev is shown the call, what you said in this conversation, the agent's earlier successful
+calls, and for each path the call names whether it exists right now and whether the agent created it. That is
+how `cp report.md report.edited.md` then `sed -i.bak ... report.edited.md` runs without asking: the copy is the
+agent's own.
+
+Because Jev reads what a call does rather than matching its text, a one-line `python3 -c` that trashes a file, or
+`f=rm; $f x`, is caught, and a script Jev cannot read is `unclear` and asked about. If Jev cannot be reached,
+times out after 15 seconds, or returns no usable answer, the call is treated as unclassified and goes to you in
+`ask` and `auto` (nothing is let through on a failure). `full` never calls Jev for this.
+
+This is a gate against mistakes and runaway agents, not a sandbox: Jev is a model, so it can misjudge, and a
+determined script can still reach files in ways it cannot see. Use `full` only when you trust the task.
 
 External MCP servers' tools (`mcp__*`) are outside the gate: AutoRAG cannot know what they do.
 
@@ -74,14 +89,14 @@ Pass `--permission-mode full` (or set the env/config) for an unattended job that
 
 ## Jev in `auto`
 
-Jev is asked one allow/deny question per gated operation. The state it judges is:
+In `auto`, the same batch also carries one allow/deny question. The state Jev judges, for both, is:
 
 - **Everything you said in this conversation**, numbered, oldest first, exactly as typed: the first question,
   every follow-up (also ones queued with Alt+Enter), and every steer typed while the agent was working (marked
   `(correction while the agent was working)`). AutoRAG's own internal prompts (the fast-answer, verification,
   and direct-answer wrappers, steer continuations) are never included: the log is fed where your words arrive,
   not read back from the transcript.
-- The working directory and one line per operation (`delete /path`).
+- The working directory, the call itself, the agent's earlier successful calls, and the existence facts above.
 
 It is saved in the session next to the transcript, so `/resume` brings the earlier messages back and `/new`
 starts empty.
@@ -93,8 +108,8 @@ whole budget is cut in its middle. A run of 1,000+ characters without whitespace
 a note of its size, because it says nothing about intent and jev-use's secret redaction is quadratic on it.
 
 Never file contents. `jev-use` redacts secrets such as API keys and URL passwords before anything leaves the
-machine. Jev needs a backend (`jev` config, `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or a Dazzi login); without
-one `auto` behaves like `ask`. A 15 second timeout falls back to asking you.
+machine. Jev needs a backend (`jev` config, `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or a Dazzi login). Without one, every
+bash/write/edit call is unclassified, so even in `ask` each one asks (`full` is the mode for running without Jev).
 
 ## MCP
 

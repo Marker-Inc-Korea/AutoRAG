@@ -1077,12 +1077,12 @@ export class AutoRAGAgent {
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
 		this.selfConfig = this.jevJudge === undefined ? undefined : options.selfConfig;
 		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
-		// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
-		if (this.selfConfig !== undefined) this.permissions.trust([resolve(this.selfConfig.configPath)]);
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
 			...(this.jevJudge === undefined ? {} : { judge: this.jevJudge }),
 			requests: this.userRequests,
+			// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
+			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
 		});
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined

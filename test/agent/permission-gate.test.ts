@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type JevBackend, MockBackend } from "jev-use";
+import type { BackendRequest } from "jev-use/dist/backends/types.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import {
@@ -14,11 +15,18 @@ import {
 	type PermissionMode,
 	parsePermissionMode,
 } from "../../src/agent/permission-gate.ts";
+import {
+	PERMISSION_KINDS,
+	type PermissionKind,
+	permissionKindQuestionId,
+} from "../../src/agent/permission-judgment.ts";
 import { UserRequestLog } from "../../src/agent/user-requests.ts";
 
 const ALLOW_ONCE = "Allow once";
-const ALLOW_SESSION_PREFIX = "Allow";
 const DENY = "Deny";
+
+/** Unique file content, so a test can prove it never leaves the machine. */
+const FILE_MARKER = "FILE-CONTENT-MARKER-7f3a";
 
 let root: string;
 
@@ -30,6 +38,61 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
+// ---------------------------------------------------------------------------
+// Jev test doubles. The real Jev classifies; these answer the way it would for one scripted call.
+// ---------------------------------------------------------------------------
+
+interface AllowVerdict {
+	readonly answer: "allow" | "deny";
+	readonly confidence?: number;
+}
+
+/** Jev saying each listed category is likely (default probability for the rest: 0.02) and `allow` for auto mode. */
+function jevSays(flags: Partial<Record<PermissionKind, number>>, allow?: AllowVerdict) {
+	const script: Record<
+		string,
+		{ answer: number | string; distribution?: Record<string, number>; confidence?: number }
+	> = {};
+	for (const kind of PERMISSION_KINDS) script[permissionKindQuestionId(kind)] = { answer: flags[kind] ?? 0.02 };
+	const confidence = allow?.confidence ?? 0.95;
+	script[PERMISSION_GATE_QUESTION_ID] = {
+		answer: allow?.answer ?? "deny",
+		distribution:
+			(allow?.answer ?? "deny") === "allow"
+				? { allow: confidence, deny: 1 - confidence }
+				: { allow: 1 - confidence, deny: confidence },
+		confidence,
+	};
+	return new MockBackend(script);
+}
+
+/** Wraps a backend so a test can read every request it received. */
+function spy(inner: JevBackend) {
+	const requests: BackendRequest[] = [];
+	const backend: JevBackend = {
+		name: inner.name,
+		judge: async (request) => {
+			requests.push(request);
+			return inner.judge(request);
+		},
+	};
+	const states = () =>
+		requests.map((request) => (typeof request.state === "string" ? request.state : JSON.stringify(request.state)));
+	return { backend, requests, states };
+}
+
+const SAFE = () => jevSays({});
+
+/** The proposed-call part of a state Jev was shown: everything from the call's own heading on. */
+function callPartOf(state: string | undefined): string {
+	const text = state ?? "";
+	return text.slice(text.lastIndexOf("Proposed tool call"));
+}
+
+// ---------------------------------------------------------------------------
+// Harness: the gate against a minimal pi API.
+// ---------------------------------------------------------------------------
+
 type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
 
 interface HarnessOptions {
@@ -39,8 +102,15 @@ interface HarnessOptions {
 	/** What the user said so far; the gate shows it to Jev. */
 	readonly requests?: UserRequestLog;
 	readonly maxStateChars?: number;
+	readonly trustedPaths?: readonly string[];
 	/** Dialog answers in order; a function sees the title and options. */
 	readonly answers?: (string | undefined | ((title: string, options: string[]) => string | undefined))[];
+}
+
+interface Verdict {
+	block?: boolean;
+	reason?: string;
+	systemPrompt?: string;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -61,6 +131,8 @@ function harness(options: HarnessOptions = {}) {
 	const terminalListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
 	const statuses: (string | undefined)[] = [];
 	const notices: string[] = [];
+	/** The session's branch, as pi's session manager returns it. */
+	const branch: unknown[] = [];
 	const select = vi.fn(async (title: string, choices: string[]) => {
 		dialogs.push({ title, options: choices });
 		const next = answers.shift();
@@ -70,6 +142,7 @@ function harness(options: HarnessOptions = {}) {
 		hasUI: options.hasUI ?? true,
 		cwd: root,
 		signal: undefined,
+		sessionManager: { getBranch: () => branch },
 		ui: {
 			select,
 			input: vi.fn(async () => "use a copy"),
@@ -87,6 +160,7 @@ function harness(options: HarnessOptions = {}) {
 		...(judge === undefined ? {} : { judge }),
 		...(options.requests === undefined ? {} : { requests: options.requests }),
 		...(options.maxStateChars === undefined ? {} : { maxStateChars: options.maxStateChars }),
+		...(options.trustedPaths === undefined ? {} : { trustedPaths: options.trustedPaths }),
 	})(pi);
 	let nextId = 0;
 	const emit = async (event: string, payload: Record<string, unknown>) => {
@@ -95,8 +169,36 @@ function harness(options: HarnessOptions = {}) {
 			const out = await handler({ type: event, ...payload }, ctx);
 			if (out !== undefined && out !== null) result = out;
 		}
-		return result as { block?: boolean; reason?: string; systemPrompt?: string } | undefined;
+		return result as Verdict | undefined;
 	};
+	/** One tool call as pi runs it: the gate may block it, otherwise `execute` runs and the result is recorded. */
+	async function call(
+		toolName: string,
+		input: Record<string, unknown>,
+		execute?: () => void,
+	): Promise<Verdict | undefined> {
+		const toolCallId = `call-${nextId++}`;
+		const result = await emit("tool_call", { toolName, toolCallId, input });
+		const ok = result?.block !== true;
+		if (ok) {
+			execute?.();
+			await emit("tool_result", { toolName, toolCallId, input, isError: false });
+		}
+		branch.push({
+			type: "message",
+			id: toolCallId,
+			message: {
+				role: "assistant",
+				content: [{ type: "toolCall", id: toolCallId, name: toolName, arguments: input }],
+			},
+		});
+		branch.push({
+			type: "message",
+			id: `${toolCallId}-result`,
+			message: { role: "toolResult", toolCallId, toolName, isError: !ok, content: [] },
+		});
+		return result;
+	}
 	return {
 		controller,
 		dialogs,
@@ -106,37 +208,14 @@ function harness(options: HarnessOptions = {}) {
 		ctx,
 		emit,
 		commands,
-		/** Runs one tool call through the gate; on success also reports its result like pi does. */
-		async call(toolName: string, input: Record<string, unknown>, execute?: () => void) {
-			const toolCallId = `call-${nextId++}`;
-			const result = await emit("tool_call", { toolName, toolCallId, input });
-			if (result?.block !== true) {
-				execute?.();
-				await emit("tool_result", { toolName, toolCallId, input, isError: false });
-			}
-			return result;
-		},
-		bash: (command: string, execute?: () => void) => emitBash(command, execute),
+		branch,
+		call,
+		bash: (command: string, execute?: () => void) => call("bash", { command }, execute),
 		start: () => emit("session_start", { reason: "startup" }),
 		press: (data: string) => [...terminalListeners].some((listener) => listener(data)?.consume === true),
 		listenerCount: () => terminalListeners.size,
 	};
-
-	function emitBash(command: string, execute?: () => void) {
-		return (async () => {
-			const toolCallId = `call-${nextId++}`;
-			const result = await emit("tool_call", { toolName: "bash", toolCallId, input: { command } });
-			if (result?.block !== true) {
-				execute?.();
-				await emit("tool_result", { toolName: "bash", toolCallId, input: { command }, isError: false });
-			}
-			return result;
-		})();
-	}
 }
-
-/** Unique file content, so a test can prove it never leaves the machine. */
-const FILE_MARKER = "FILE-CONTENT-MARKER-7f3a";
 
 function original(name: string): string {
 	const path = join(root, name);
@@ -144,19 +223,7 @@ function original(name: string): string {
 	return path;
 }
 
-/** Jev answering the gate question with `answer`. */
-function gateJev(answer: "allow" | "deny", confidence = 0.95): JevBackend {
-	return new MockBackend({
-		[PERMISSION_GATE_QUESTION_ID]: {
-			answer,
-			distribution: {
-				allow: answer === "allow" ? confidence : 1 - confidence,
-				deny: answer === "deny" ? confidence : 1 - confidence,
-			},
-			confidence,
-		},
-	});
-}
+// ---------------------------------------------------------------------------
 
 describe("permission mode helpers", () => {
 	it("parses modes case-insensitively and rejects everything else", () => {
@@ -176,43 +243,97 @@ describe("permission mode helpers", () => {
 });
 
 describe("full mode", () => {
-	it("never gates or prompts", async () => {
-		const h = harness({ mode: "full" });
+	it("never asks Jev and never prompts", async () => {
+		const jev = spy(jevSays({ delete: 0.99 }));
+		const h = harness({ mode: "full", jev: jev.backend });
 		const target = original("a.txt");
 		expect(await h.bash(`rm ${target}`)).toBeUndefined();
 		expect(await h.call("edit", { path: target })).toBeUndefined();
 		expect(h.select).not.toHaveBeenCalled();
+		expect(jev.requests).toHaveLength(0);
 	});
 });
 
+describe("which tool calls Jev classifies", () => {
+	it("classifies bash, write, edit, and saved automations, and nothing else", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.bash("ls");
+		await h.call("write", { path: join(root, "new.md"), content: "x" });
+		await h.call("edit", { path: original("a.md"), edits: [] });
+		await h.call("manage_automations", {
+			action: "save",
+			id: "r",
+			automation: { paths: [root], run: ["echo", "hi"] },
+		});
+		expect(jev.requests).toHaveLength(4);
+
+		await h.call("read", { path: original("r.md") });
+		await h.call("grep", { pattern: "x" });
+		await h.call("search_all_documents", { query: "rm a" });
+		await h.call("mcp__files__delete", { path: "/x" });
+		await h.call("manage_automations", { action: "list" });
+		expect(jev.requests).toHaveLength(4);
+	});
+
+	it("asks the six category questions in one batch", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.bash("ls");
+		expect(jev.requests).toHaveLength(1);
+		const ids = jev.requests[0]?.questions.map((question) => question.id);
+		expect(ids).toEqual(PERMISSION_KINDS.map(permissionKindQuestionId));
+		// ask mode has no use for Jev's approval verdict
+		expect(ids).not.toContain(PERMISSION_GATE_QUESTION_ID);
+	});
+});
+
+/** Jev answering with each backend in turn, one per request; the last one repeats. */
+function sequence(...backends: JevBackend[]): JevBackend {
+	let next = 0;
+	return {
+		name: "sequence",
+		judge: async (request) => {
+			const backend = backends[Math.min(next, backends.length - 1)] as JevBackend;
+			next += 1;
+			return backend.judge(request);
+		},
+	};
+}
+
 describe("ask mode", () => {
-	it("lets reads, searches, copies, and new files through without a prompt", async () => {
-		const h = harness();
-		const a = original("a.pdf");
-		expect(await h.bash(`ls ${root} && grep -rn x ${root} | head`)).toBeUndefined();
-		expect(await h.bash(`cp ${a} ${join(root, "copy.pdf")}`)).toBeUndefined();
-		expect(await h.bash(`mkdir ${join(root, "out")} && echo hi > ${join(root, "out", "n.txt")}`)).toBeUndefined();
-		expect(await h.call("write", { path: join(root, "fresh.md") })).toBeUndefined();
-		expect(await h.call("read", { path: a })).toBeUndefined();
+	it("lets a call through silently when Jev finds no category", async () => {
+		const h = harness({ jev: SAFE() });
+		expect(await h.bash(`ls ${root} && cp a.pdf copy.pdf`)).toBeUndefined();
+		expect(await h.call("write", { path: join(root, "fresh.md"), content: "x" })).toBeUndefined();
 		expect(h.select).not.toHaveBeenCalled();
 	});
 
-	it("asks before deleting, and runs the command only after approval", async () => {
-		const h = harness({ answers: [ALLOW_ONCE] });
+	it("asks when Jev says the call deletes, naming the category and showing the command", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.97 }), answers: [ALLOW_ONCE] });
 		const a = original("a.pdf");
-		const result = await h.bash(`rm ${a}`);
-		expect(result).toBeUndefined();
+		expect(await h.bash(`rm ${a}`)).toBeUndefined();
 		expect(h.dialogs).toHaveLength(1);
-		expect(h.dialogs[0]?.title).toContain("delete");
-		expect(h.dialogs[0]?.title).toContain(a);
+		expect(h.dialogs[0]?.title).toMatch(/delete/);
+		expect(h.dialogs[0]?.title).toContain(`rm ${a}`);
 		expect(h.dialogs[0]?.options).toContain(ALLOW_ONCE);
 		expect(h.dialogs[0]?.options).toContain(DENY);
 	});
 
-	it("blocks a denied operation and tells the model to work on a copy", async () => {
-		const h = harness({ answers: [DENY] });
-		const a = original("a.pdf");
-		const result = await h.bash(`mv ${a} ${join(root, "b.pdf")}`);
+	it("asks for every category Jev flags, and says which", async () => {
+		const h = harness({
+			jev: jevSays({ move: 0.9, rename: 0.8, overwrite: 0.7, edit: 0.9, unclear: 0.9 }),
+			answers: [DENY],
+		});
+		await h.bash("python3 reorganize.py");
+		const title = h.dialogs[0]?.title ?? "";
+		for (const kind of ["move", "rename", "overwrite", "edit", "unclear"]) expect(title).toContain(kind);
+		expect(title).not.toMatch(/\bdelete\b/);
+	});
+
+	it("blocks a denied call and tells the model to work on a copy", async () => {
+		const h = harness({ jev: jevSays({ move: 0.95 }), answers: [DENY] });
+		const result = await h.bash(`mv ${original("a.pdf")} ${join(root, "b.pdf")}`);
 		expect(result?.block).toBe(true);
 		expect(result?.reason).toMatch(/denied/i);
 		expect(result?.reason).toMatch(/copy/i);
@@ -220,6 +341,7 @@ describe("ask mode", () => {
 
 	it("passes the user's note to the model when they deny with feedback", async () => {
 		const h = harness({
+			jev: jevSays({ edit: 0.95 }),
 			answers: [(_title, options) => options.find((option) => option.startsWith("Deny") && option !== DENY)],
 		});
 		const result = await h.call("edit", { path: original("a.md") });
@@ -228,39 +350,24 @@ describe("ask mode", () => {
 	});
 
 	it("treats a dismissed dialog as a denial", async () => {
-		const h = harness({ answers: [undefined] });
-		const result = await h.bash(`rm ${original("a.txt")}`);
-		expect(result?.block).toBe(true);
+		const h = harness({ jev: jevSays({ delete: 0.95 }), answers: [undefined] });
+		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
 	});
 
-	it("asks before editing or overwriting an original document", async () => {
-		const h = harness({ answers: [DENY, DENY, DENY] });
-		const a = original("a.md");
-		expect((await h.call("edit", { path: a }))?.block).toBe(true);
-		expect((await h.call("write", { path: a }))?.block).toBe(true);
-		expect((await h.bash(`sed -i 's/a/b/' ${a}`))?.block).toBe(true);
-		expect(h.dialogs.map((dialog) => dialog.title).join("\n")).toMatch(/edit/);
-		expect(h.dialogs.map((dialog) => dialog.title).join("\n")).toMatch(/overwrite/);
+	it("asks when Jev is unsure about a category, not only when it is certain", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.5 }), answers: [DENY] });
+		expect((await h.bash("do-something"))?.block).toBe(true);
+		expect(h.dialogs).toHaveLength(1);
 	});
 
-	it("asks for a rename and a move", async () => {
-		const h = harness({ answers: [DENY, DENY] });
-		const a = original("a.txt");
-		mkdirSync(join(root, "archive"));
-		expect((await h.bash(`mv ${a} ${join(root, "renamed.txt")}`))?.block).toBe(true);
-		expect((await h.bash(`mv ${a} ${join(root, "archive")}`))?.block).toBe(true);
-		expect(h.dialogs[0]?.title).toContain("rename");
-		expect(h.dialogs[1]?.title).toContain("move");
+	it("does not ask when a category is clearly unlikely", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.1, edit: 0.05 }) });
+		expect(await h.bash("ls")).toBeUndefined();
+		expect(h.select).not.toHaveBeenCalled();
 	});
 
-	it("asks when the target is only known at run time", async () => {
-		const h = harness({ answers: [DENY] });
-		expect((await h.bash("rm $TARGET"))?.block).toBe(true);
-		expect(h.dialogs[0]?.title).toContain("rm $TARGET");
-	});
-
-	it("blocks without a prompt when nobody can answer", async () => {
-		const h = harness({ hasUI: false });
+	it("blocks without a prompt when nobody can answer, pointing at the way out", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.95 }), hasUI: false });
 		const result = await h.bash(`rm ${original("a.txt")}`);
 		expect(result?.block).toBe(true);
 		expect(result?.reason).toMatch(/approval/i);
@@ -268,94 +375,14 @@ describe("ask mode", () => {
 		expect(h.select).not.toHaveBeenCalled();
 	});
 
-	it("remembers 'allow for this session' per operation kind only", async () => {
-		const h = harness({
-			answers: [
-				(_title, options) =>
-					options.find((option) => option.startsWith(ALLOW_SESSION_PREFIX) && option !== ALLOW_ONCE),
-				DENY,
-			],
-		});
-		const a = original("a.txt");
-		const b = original("b.txt");
-		const c = original("c.txt");
-		expect(await h.bash(`rm ${a}`)).toBeUndefined();
-		expect(await h.bash(`rm ${b}`)).toBeUndefined();
-		expect(h.dialogs).toHaveLength(1);
-		expect((await h.bash(`mv ${c} ${join(root, "d.txt")}`))?.block).toBe(true);
-		expect(h.dialogs).toHaveLength(2);
-	});
-
-	it("never gates files the agent created itself, so copy-then-edit needs no approval", async () => {
-		const h = harness({ answers: [DENY] });
-		const a = original("a.md");
-		const copy = join(root, "a.edited.md");
-		await h.bash(`cp ${a} ${copy}`, () => writeFileSync(copy, "original"));
-		expect(await h.call("edit", { path: copy })).toBeUndefined();
-		expect(await h.call("write", { path: copy })).toBeUndefined();
-		expect(await h.bash(`sed -i 's/a/b/' ${copy}`)).toBeUndefined();
-		expect(await h.bash(`mv ${copy} ${join(root, "final.md")}`)).toBeUndefined();
-		expect(await h.bash(`rm ${join(root, "final.md")}`)).toBeUndefined();
-		expect(h.select).not.toHaveBeenCalled();
-		// The original it was copied from is still protected.
-		expect((await h.bash(`rm ${a}`))?.block).toBe(true);
-		expect(h.select).toHaveBeenCalledTimes(1);
-	});
-
-	it("trusts files created earlier in the same command, and everything inside a folder it made", async () => {
-		const h = harness({ answers: [DENY] });
-		const out = join(root, "sorted");
-		expect(
-			await h.bash(`mkdir ${out} && echo x > ${join(out, "n.txt")} && rm ${join(out, "n.txt")}`, () =>
-				mkdirSync(out),
-			),
-		).toBeUndefined();
-		const nested = join(out, "deep.txt");
-		await h.call("write", { path: nested }, () => writeFileSync(nested, "x"));
-		expect(await h.call("edit", { path: nested })).toBeUndefined();
-		expect(h.select).not.toHaveBeenCalled();
-	});
-
-	it("does not trust a path whose creating command failed", async () => {
-		const h = harness({ answers: [DENY] });
-		const target = join(root, "never-made.txt");
-		const toolCallId = "failed-1";
-		await h.emit("tool_call", { toolName: "bash", toolCallId, input: { command: `echo x > ${target}` } });
-		await h.emit("tool_result", { toolName: "bash", toolCallId, input: {}, isError: true });
-		writeFileSync(target, "someone else's file");
-		expect((await h.call("edit", { path: target }))?.block).toBe(true);
-	});
-
-	it("ignores tools it does not manage, including external MCP tools", async () => {
-		const h = harness({ answers: [DENY] });
-		expect(await h.call("mcp__files__delete", { command: "rm -rf /", path: "/x" })).toBeUndefined();
-		expect(await h.call("search_all_documents", { query: "rm a" })).toBeUndefined();
-		expect(h.select).not.toHaveBeenCalled();
-	});
-
-	it("gates a saved automation whose command deletes, not one that only searches", async () => {
-		const h = harness({ answers: [DENY] });
-		const save = (run: string[]) =>
-			h.call("manage_automations", { action: "save", id: "r", automation: { paths: [root], run } });
-		expect(await save(["autorag", "search", "summarize new file"])).toBeUndefined();
-		expect((await save(["sh", "-c", `rm ${original("old.txt")}`]))?.block).toBe(true);
-		expect(await h.call("manage_automations", { action: "list" })).toBeUndefined();
-		expect(h.select).toHaveBeenCalledTimes(1);
-	});
-
-	it("shows several operations of one command in a single prompt", async () => {
-		const h = harness({ answers: [ALLOW_ONCE] });
-		const a = original("a.txt");
-		const b = original("b.txt");
-		await h.bash(`rm ${a} ${b}`);
-		expect(h.dialogs).toHaveLength(1);
-		expect(h.dialogs[0]?.title).toContain(a);
-		expect(h.dialogs[0]?.title).toContain(b);
+	it("still lets a clearly safe call run without a UI", async () => {
+		const h = harness({ jev: SAFE(), hasUI: false });
+		expect(await h.bash("ls")).toBeUndefined();
 	});
 
 	it("asks one question at a time when calls overlap", async () => {
 		const releases: ((answer: string) => void)[] = [];
-		const h = harness();
+		const h = harness({ jev: jevSays({ delete: 0.95 }) });
 		h.select.mockImplementation(
 			(title: string, options: string[]) =>
 				new Promise<string | undefined>((resolve) => {
@@ -366,7 +393,6 @@ describe("ask mode", () => {
 		const first = h.bash(`rm ${original("a.txt")}`);
 		const second = h.bash(`rm ${original("b.txt")}`);
 		await vi.waitFor(() => expect(releases).toHaveLength(1));
-		// The second call must wait for the first dialog instead of stacking another one.
 		await Promise.resolve();
 		expect(h.dialogs).toHaveLength(1);
 		releases[0]?.(ALLOW_ONCE);
@@ -377,212 +403,379 @@ describe("ask mode", () => {
 	});
 });
 
-describe("auto mode", () => {
-	it("lets Jev approve without bothering the user, and says so", async () => {
-		const h = harness({ mode: "auto", jev: gateJev("allow") });
-		const a = original("a.txt");
-		expect(await h.bash(`rm ${a}`)).toBeUndefined();
-		expect(h.select).not.toHaveBeenCalled();
-		expect(h.notices.join("\n")).toMatch(/jev/i);
-		expect(h.notices.join("\n")).toContain("rm");
-	});
-
-	it("falls back to asking the user when Jev rejects, showing why", async () => {
-		const h = harness({ mode: "auto", jev: gateJev("deny"), answers: [ALLOW_ONCE] });
-		expect(await h.bash(`rm ${original("a.txt")}`)).toBeUndefined();
-		expect(h.dialogs).toHaveLength(1);
-		expect(h.dialogs[0]?.title).toMatch(/jev/i);
-		expect(h.dialogs[0]?.title).toMatch(/reject|denied|declined/i);
-	});
-
-	it("blocks when Jev rejects and the user also denies", async () => {
-		const h = harness({ mode: "auto", jev: gateJev("deny"), answers: [DENY] });
-		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
-	});
-
-	it("asks the user when Jev is not confident enough", async () => {
-		const h = harness({ mode: "auto", jev: gateJev("allow", 0.55), answers: [DENY] });
-		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
-		expect(h.dialogs).toHaveLength(1);
-	});
-
-	it("asks the user when Jev is unreachable or unconfigured", async () => {
-		const broken = new MockBackend();
-		broken.judge = async () => {
-			throw new Error("network down");
+describe("when Jev cannot classify", () => {
+	function failing(message: string): JevBackend {
+		const backend = new MockBackend();
+		backend.judge = async () => {
+			throw new Error(message);
 		};
-		const unreachable = harness({ mode: "auto", jev: broken, answers: [DENY] });
-		expect((await unreachable.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
-		expect(unreachable.dialogs).toHaveLength(1);
+		return backend;
+	}
 
-		const none = harness({ mode: "auto", answers: [DENY] });
-		expect((await none.bash(`rm ${original("b.txt")}`))?.block).toBe(true);
-		expect(none.dialogs).toHaveLength(1);
+	it("asks the user rather than letting the call through, and says why", async () => {
+		const h = harness({ jev: failing("network down"), answers: [DENY] });
+		expect((await h.bash("ls"))?.block).toBe(true);
+		expect(h.dialogs).toHaveLength(1);
+		expect(h.dialogs[0]?.title).toMatch(/could not classify/i);
+		expect(h.dialogs[0]?.title).toMatch(/network down/);
 	});
 
-	it("blocks without a UI when Jev does not approve", async () => {
-		const h = harness({ mode: "auto", hasUI: false, jev: gateJev("deny") });
-		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
-		const approved = harness({ mode: "auto", hasUI: false, jev: gateJev("allow") });
-		expect(await approved.bash(`rm ${original("b.txt")}`)).toBeUndefined();
+	it("does the same when no Jev is configured at all", async () => {
+		const h = harness({ answers: [DENY] });
+		expect((await h.bash("ls"))?.block).toBe(true);
+		expect(h.dialogs[0]?.title).toMatch(/could not classify/i);
+		expect(h.dialogs[0]?.title).toMatch(/not configured/i);
 	});
 
-	it("never sends secrets or file contents to Jev, only the operation and the request", async () => {
-		const seen: string[] = [];
-		const backend: JevBackend = {
-			name: "spy",
-			judge: async (request) => {
-				seen.push(JSON.stringify(request));
-				return {
-					answers: request.questions.map((question) => ({
-						id: question.id,
-						answer: "allow",
-						distribution: { allow: 0.99, deny: 0.01 },
-						confidence: 0.99,
-					})),
-				} as never;
-			},
-		};
-		const requests = new UserRequestLog();
-		requests.record("clean up my downloads");
-		const h = harness({ mode: "auto", jev: backend, requests });
-		await h.bash(`rm ${original("a.txt")} # sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef`);
-		expect(seen).toHaveLength(1);
-		expect(seen[0]).toContain("clean up my downloads");
-		expect(seen[0]).not.toContain("sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef");
-		expect(seen[0]).not.toContain(FILE_MARKER);
-	});
-});
-
-/** A Jev that approves everything and keeps the state it was shown. */
-function spyJev(states: string[]): JevBackend {
-	return {
-		name: "spy",
-		judge: async (request) => {
-			states.push(typeof request.state === "string" ? request.state : JSON.stringify(request.state));
-			return {
-				answers: request.questions.map(() => ({
-					answer: "allow",
-					distribution: { allow: 0.99, deny: 0.01 },
-					confidence: 0.99,
-				})),
-			};
-		},
-	};
-}
-
-describe("what Jev is told about the request", () => {
-	it("shows every user message of the conversation in order, corrections marked", async () => {
-		const states: string[] = [];
-		const requests = new UserRequestLog();
-		requests.record("organize my downloads folder");
-		requests.record("the invoices from 2024 are obsolete, remove them", "request");
-		requests.record("not the 2025 ones", "steer");
-		const h = harness({ mode: "auto", jev: spyJev(states), requests });
-		await h.bash(`rm ${original("invoice-2024.pdf")}`);
-		expect(states).toHaveLength(1);
-		const state = states[0] ?? "";
-		const first = state.indexOf("[1] organize my downloads folder");
-		const second = state.indexOf("[2] the invoices from 2024 are obsolete, remove them");
-		const third = state.indexOf("[3] (correction while the agent was working) not the 2025 ones");
-		expect(first).toBeGreaterThan(-1);
-		expect(second).toBeGreaterThan(first);
-		expect(third).toBeGreaterThan(second);
+	it("blocks headless with a reason naming Jev and the mode flag", async () => {
+		const h = harness({ jev: failing("boom"), hasUI: false });
+		const result = await h.bash("ls");
+		expect(result?.block).toBe(true);
+		expect(result?.reason).toMatch(/jev/i);
+		expect(result?.reason).toMatch(/--permission-mode/);
 	});
 
-	it("does not cut a long request at 2000 characters", async () => {
-		const states: string[] = [];
-		const requests = new UserRequestLog();
-		const long = `please tidy up ${"details ".repeat(1500)}THE-END-MARKER`;
-		requests.record(long);
-		const h = harness({ mode: "auto", jev: spyJev(states), requests });
-		await h.bash(`rm ${original("a.txt")}`);
-		expect(long.length).toBeGreaterThan(10_000);
-		expect(states[0]).toContain(long);
-	});
-
-	it("keeps the whole state under Jev's context limit, dropping the middle of a very long conversation", async () => {
-		const states: string[] = [];
-		const requests = new UserRequestLog();
-		requests.record("OPENING-REQUEST organize everything");
-		for (let i = 0; i < 400; i++) requests.record(`filler message ${i} ${"z".repeat(300)}`);
-		requests.record("LATEST-STEER only the pdfs", "steer");
-		const h = harness({ mode: "auto", jev: spyJev(states), requests, maxStateChars: 8000 });
-		await h.bash(`rm ${original("a.txt")}`);
-		const state = states[0] ?? "";
-		expect(state.length).toBeLessThanOrEqual(8000);
-		expect(state).toContain("OPENING-REQUEST");
-		expect(state).toContain("LATEST-STEER only the pdfs");
-		expect(state).toMatch(/earlier messages omitted/);
-		expect(state).toContain(`${root}`);
-		expect(state).toContain("rm ");
-	});
-
-	it("by default leaves room for the operations and Jev's own question under its 30k-token ceiling", async () => {
-		const states: string[] = [];
-		const requests = new UserRequestLog();
-		requests.record(`start ${"word ".repeat(80_000)} end`);
-		const h = harness({ mode: "auto", jev: spyJev(states), requests });
-		await h.bash(`rm ${original("a.txt")}`);
-		// jev-use estimates ~4 characters per token and hands the question back above 30,000 tokens.
-		expect(Math.ceil((states[0] ?? "").length / 4)).toBeLessThan(30_000);
-		expect(states).toHaveLength(1);
-		expect(states[0]).toContain("rm ");
-	});
-
-	it("still answers fast when a message holds a huge unbroken blob, and still redacts around it", async () => {
-		const states: string[] = [];
-		const requests = new UserRequestLog();
-		const key = "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef";
-		// jev-use's redaction slows down quadratically on long runs without whitespace (108k took ~19s).
-		requests.record(`delete the old export, my key is ${key} and the blob is ${"A".repeat(300_000)} thanks`);
-		const h = harness({ mode: "auto", jev: spyJev(states), requests });
-		const started = performance.now();
-		await h.bash(`rm ${original("export.csv")}`);
-		expect(performance.now() - started).toBeLessThan(5000);
-		const state = states[0] ?? "";
-		expect(state).toContain("delete the old export");
-		expect(state).toContain("thanks");
-		expect(state).not.toContain(key);
-		expect(state).toContain("[redacted]");
-		expect(state.length).toBeLessThan(10_000);
-	}, 30_000);
-
-	it("says so when no user message is known instead of inventing one", async () => {
-		const states: string[] = [];
-		const h = harness({ mode: "auto", jev: spyJev(states) });
-		await h.bash(`rm ${original("a.txt")}`);
-		expect(states[0]).toContain("(no user message available)");
-	});
-
-	it("never shows Jev AutoRAG's internal phase prompts", async () => {
-		const states: string[] = [];
-		const requests = new UserRequestLog();
-		requests.record("delete old-notes.txt");
-		const h = harness({ mode: "auto", jev: spyJev(states), requests });
-		// A phase prompt reaches pi as a before_agent_start of source "rpc"/"extension"; it never enters the log.
-		await h.emit("before_agent_start", {
-			messageType: "user",
-			prompt: "Answer this query directly from your own general knowledge: delete old-notes.txt",
-			systemPrompt: "base",
-		});
-		await h.bash(`rm ${original("old-notes.txt")}`);
-		expect(states[0]).toContain("[1] delete old-notes.txt");
-		expect(states[0]).not.toContain("Answer this query directly");
-	});
-});
-
-describe("switching modes", () => {
-	it("applies the new mode to the very next call and clears session grants", async () => {
+	it("lets the user allow the unclassifiable calls for the session, so a Jev outage is survivable", async () => {
 		const h = harness({
-			answers: [(_t, options) => options.find((o) => o !== ALLOW_ONCE && o.startsWith("Allow")), DENY],
+			jev: failing("boom"),
+			answers: [(_title, options) => options.find((option) => option.startsWith("Allow all"))],
 		});
+		expect(await h.bash("ls")).toBeUndefined();
+		expect(await h.bash("pwd")).toBeUndefined();
+		expect(h.dialogs).toHaveLength(1);
+	});
+});
+
+describe("allowing for the session", () => {
+	const allowSession = (_title: string, options: string[]) => options.find((option) => option.startsWith("Allow all"));
+
+	it("remembers a category, so the next call in it passes while other categories still ask", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.95 }), answers: [allowSession] });
+		expect(await h.bash(`rm ${original("a.txt")}`)).toBeUndefined();
+		expect(await h.bash(`rm ${original("b.txt")}`)).toBeUndefined();
+		expect(h.dialogs).toHaveLength(1);
+		expect(h.dialogs[0]?.options.join("\n")).toMatch(/Allow all delete/);
+	});
+
+	it("still asks Jev each time, because the category is what is remembered", async () => {
+		const jev = spy(jevSays({ delete: 0.95 }));
+		const h = harness({ jev: jev.backend, answers: [allowSession] });
+		await h.bash(`rm ${original("a.txt")}`);
+		await h.bash(`rm ${original("b.txt")}`);
+		expect(jev.requests).toHaveLength(2);
+	});
+
+	it("does not carry over to a different category: a move still asks after delete was allowed", async () => {
+		const jev = sequence(jevSays({ delete: 0.95 }), jevSays({ move: 0.95 }), jevSays({ delete: 0.95 }));
+		const h = harness({ jev, answers: [allowSession, DENY] });
+		expect(await h.bash(`rm ${original("a.txt")}`)).toBeUndefined();
+		expect((await h.bash("mv a b"))?.block).toBe(true);
+		expect(h.dialogs).toHaveLength(2);
+		expect(h.dialogs[1]?.title).toMatch(/\bmove\b/);
+		// delete is still granted afterwards
+		expect(await h.bash(`rm ${original("c.txt")}`)).toBeUndefined();
+		expect(h.dialogs).toHaveLength(2);
+	});
+
+	it("needs every flagged category granted", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.95, move: 0.95 }), answers: [allowSession, DENY] });
+		await h.bash("mv a b && rm c");
+		expect(h.dialogs[0]?.options.join("\n")).toMatch(/Allow all (delete\/move|move\/delete)/);
+		h.controller.set("ask");
+		expect(h.controller.isGranted("delete")).toBe(true);
+		expect(h.controller.isGranted("move")).toBe(true);
+		expect(h.controller.isGranted("edit")).toBe(false);
+	});
+
+	it("ends when the mode changes", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.95 }), answers: [allowSession, DENY] });
 		await h.bash(`rm ${original("a.txt")}`);
 		h.controller.set("full");
 		expect(await h.bash(`rm ${original("b.txt")}`)).toBeUndefined();
 		h.controller.set("ask");
 		expect((await h.bash(`rm ${original("c.txt")}`))?.block).toBe(true);
 		expect(h.dialogs).toHaveLength(2);
+	});
+});
+
+describe("auto mode", () => {
+	it("asks Jev the categories and its approval together, in one request", async () => {
+		const jev = spy(jevSays({ delete: 0.97 }, { answer: "allow" }));
+		const h = harness({ mode: "auto", jev: jev.backend });
+		await h.bash(`rm ${original("a.txt")}`);
+		expect(jev.requests).toHaveLength(1);
+		expect(jev.requests[0]?.questions.map((question) => question.id)).toEqual([
+			...PERMISSION_KINDS.map(permissionKindQuestionId),
+			PERMISSION_GATE_QUESTION_ID,
+		]);
+	});
+
+	it("lets Jev approve a flagged call without bothering the user, and says so", async () => {
+		const h = harness({ mode: "auto", jev: jevSays({ delete: 0.97 }, { answer: "allow" }) });
+		const a = original("a.txt");
+		expect(await h.bash(`rm ${a}`)).toBeUndefined();
+		expect(h.select).not.toHaveBeenCalled();
+		expect(h.notices.join("\n")).toMatch(/Jev approved/);
+		expect(h.notices.join("\n")).toContain("delete");
+		expect(h.notices.join("\n")).toContain("rm");
+	});
+
+	it("does not need Jev's approval, or say anything, for a call it finds safe", async () => {
+		const h = harness({ mode: "auto", jev: SAFE() });
+		expect(await h.bash("ls")).toBeUndefined();
+		expect(h.select).not.toHaveBeenCalled();
+		expect(h.notices).toEqual([]);
+	});
+
+	it("falls back to asking the user when Jev rejects, showing why", async () => {
+		const h = harness({ mode: "auto", jev: jevSays({ delete: 0.97 }, { answer: "deny" }), answers: [ALLOW_ONCE] });
+		expect(await h.bash(`rm ${original("a.txt")}`)).toBeUndefined();
+		expect(h.dialogs).toHaveLength(1);
+		expect(h.dialogs[0]?.title).toMatch(/Jev declined/);
+		expect(h.dialogs[0]?.title).toMatch(/delete/);
+	});
+
+	it("blocks when Jev rejects and the user also denies", async () => {
+		const h = harness({ mode: "auto", jev: jevSays({ delete: 0.97 }, { answer: "deny" }), answers: [DENY] });
+		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
+	});
+
+	it("asks the user when Jev approves without enough confidence", async () => {
+		const h = harness({
+			mode: "auto",
+			jev: jevSays({ delete: 0.97 }, { answer: "allow", confidence: 0.55 }),
+			answers: [DENY],
+		});
+		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
+		expect(h.dialogs).toHaveLength(1);
+	});
+
+	it("blocks without a UI when Jev does not approve, and passes when it does", async () => {
+		const rejected = harness({ mode: "auto", hasUI: false, jev: jevSays({ delete: 0.97 }, { answer: "deny" }) });
+		expect((await rejected.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
+		const approved = harness({ mode: "auto", hasUI: false, jev: jevSays({ delete: 0.97 }, { answer: "allow" }) });
+		expect(await approved.bash(`rm ${original("b.txt")}`)).toBeUndefined();
+	});
+
+	it("without a configured Jev behaves like ask: it cannot classify, so it asks", async () => {
+		const h = harness({ mode: "auto", answers: [DENY] });
+		expect((await h.bash("ls"))?.block).toBe(true);
+		expect(h.dialogs[0]?.title).toMatch(/could not classify/i);
+	});
+});
+
+describe("trusted paths", () => {
+	it("lets write and edit of a trusted file through without asking Jev at all", async () => {
+		const config = original("config.json");
+		const jev = spy(jevSays({ edit: 0.99, overwrite: 0.99 }));
+		const h = harness({ jev: jev.backend, trustedPaths: [config] });
+		expect(await h.call("edit", { path: config })).toBeUndefined();
+		expect(await h.call("write", { path: config, content: "{}" })).toBeUndefined();
+		expect(jev.requests).toHaveLength(0);
+		// A different file is still classified.
+		expect((await h.call("edit", { path: original("other.json") }))?.block).toBe(true);
+	});
+});
+
+describe("what Jev is shown about the call", () => {
+	it("shows a bash command in full", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		const script = `python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['/usr/bin/trash', '${root}/a.pdf'])\nEOF`;
+		await h.bash(script);
+		expect(jev.states()[0]).toContain(script);
+		expect(jev.states()[0]).toContain(root);
+	});
+
+	it("tells Jev whether a write or edit target exists, without sending its content", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.call("write", { path: original("exists.md"), content: "NEW-CONTENT-MARKER" });
+		await h.call("write", { path: join(root, "missing.md"), content: "NEW-CONTENT-MARKER" });
+		await h.call("edit", {
+			path: join(root, "exists.md"),
+			edits: [{ oldText: "SECRET-OLD", newText: "SECRET-NEW" }],
+		});
+		const [existing, missing, edited] = jev.states().map(callPartOf);
+		expect(existing).toMatch(/exists/i);
+		expect(existing).not.toMatch(/does not exist/i);
+		expect(missing).toMatch(/does not exist/i);
+		expect(edited).toContain(join(root, "exists.md"));
+		for (const state of jev.states()) {
+			expect(state).not.toContain("NEW-CONTENT-MARKER");
+			expect(state).not.toContain("SECRET-OLD");
+			expect(state).not.toContain(FILE_MARKER);
+		}
+	});
+
+	it("shows the earlier calls that worked, so Jev can tell what the agent created itself", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.bash("cp report.md report.edited.md");
+		await h.call("write", { path: join(root, "notes.md"), content: "x" });
+		await h.bash("sed -i 's/a/b/' report.edited.md");
+		const third = jev.states()[2] ?? "";
+		expect(third).toContain("cp report.md report.edited.md");
+		expect(third).toContain(join(root, "notes.md"));
+		// the call being judged is the proposed one, and it is not also listed as history
+		expect(callPartOf(third).match(/sed -i/g)).toHaveLength(1);
+	});
+
+	it("tells Jev which absolute paths in a bash command exist right now, and which do not", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		const existing = original("target.txt");
+		const missing = join(root, "copy.txt");
+		await h.bash(`cp ${existing} ${missing}`);
+		const state = jev.states()[0] ?? "";
+		expect(state).toContain(`${existing}: exists (file)`);
+		expect(state).toContain(`${missing}: does not exist`);
+	});
+
+	it("names a folder as a folder, and says so when the command names no path", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.bash(`ls ${root}`);
+		await h.bash("echo hello");
+		expect(callPartOf(jev.states()[0])).toContain(`${root}: exists (folder)`);
+		expect(callPartOf(jev.states()[1])).toMatch(/no path in the call/i);
+	});
+
+	it("resolves ~ and relative paths against the working directory", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		original("rel.txt");
+		await h.bash("cat rel.txt ./rel.txt missing-rel.txt");
+		const state = jev.states()[0] ?? "";
+		expect(state).toContain(`${join(root, "rel.txt")}: exists (file)`);
+		expect(state).toContain(`${join(root, "missing-rel.txt")}: does not exist`);
+	});
+
+	it("marks a path the agent created earlier in this session, so a copy it made is not mistaken for an original", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		const source = original("report.md");
+		const copy = join(root, "report.edited.md");
+		await h.bash(`cp ${source} ${copy}`, () => writeFileSync(copy, "copy"));
+		await h.bash(`sed -i.bak 's/old/new/' ${copy}`);
+		const state = callPartOf(jev.states()[1]);
+		expect(state).toContain(`${copy}: exists (file), created by the agent earlier in this session`);
+		// the original it copied from is not the agent's
+		await h.bash(`cat ${source}`);
+		expect(callPartOf(jev.states()[2])).toMatch(new RegExp(`${source}: exists \\(file\\)$`, "m"));
+		expect(callPartOf(jev.states()[2])).not.toContain(`${source}: exists (file), created`);
+	});
+
+	it("does not list option flags, sed scripts, or backup suffixes as paths", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		const target = original("report.md");
+		await h.bash(`sed -i.bak 's/old/new/' ${target}`);
+		const facts = callPartOf(jev.states()[0]).split("Paths named in the call")[1] ?? "";
+		expect(facts).toContain(target);
+		expect(facts).not.toContain("-i.bak");
+		expect(facts).not.toContain("s/old/new");
+		expect(facts).not.toMatch(/old\/new/);
+	});
+
+	it("lists a path the agent created earlier even when a later command only names it relatively", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.bash("mkdir sorted", () => mkdirSync(join(root, "sorted")));
+		await h.bash("ls sorted");
+		expect(callPartOf(jev.states()[1])).toContain(
+			`${join(root, "sorted")}: exists (folder), created by the agent earlier in this session`,
+		);
+	});
+
+	it("does not read any file, only checks that the paths exist", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend });
+		await h.bash(`cat ${original("secret.txt")}`);
+		expect(jev.states()[0]).not.toContain(FILE_MARKER);
+	});
+
+	it("leaves out earlier calls that failed or were blocked", async () => {
+		const jev = spy(jevSays({ delete: 0.95 }));
+		const h = harness({ jev: jev.backend, answers: [DENY] });
+		await h.bash("rm denied-file.txt");
+		await h.bash("ls");
+		expect(jev.states()[1]).not.toContain("denied-file.txt");
+	});
+
+	it("shows what the user said, every message, steers marked", async () => {
+		const requests = new UserRequestLog();
+		requests.record("organize my downloads folder");
+		requests.record("not the 2025 ones", "steer");
+		const jev = spy(SAFE());
+		await harness({ jev: jev.backend, requests }).bash("ls");
+		expect(jev.states()[0]).toContain("[1] organize my downloads folder");
+		expect(jev.states()[0]).toContain("[2] (correction while the agent was working) not the 2025 ones");
+	});
+
+	it("does not cut a long request, and says so when there is nothing to show", async () => {
+		const requests = new UserRequestLog();
+		const long = `please tidy up ${"details ".repeat(1500)}THE-END-MARKER`;
+		requests.record(long);
+		const jev = spy(SAFE());
+		await harness({ jev: jev.backend, requests }).bash("ls");
+		await harness({ jev: jev.backend }).bash("ls");
+		expect(jev.states()[0]).toContain(long);
+		expect(jev.states()[1]).toContain("(no user message available)");
+	});
+
+	it("never sends secrets", async () => {
+		const jev = spy(SAFE());
+		const key = "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef";
+		const requests = new UserRequestLog();
+		requests.record(`my key is ${key}`);
+		const h = harness({ jev: jev.backend, requests });
+		await h.bash(`curl -H 'Authorization: Bearer ${key}' https://example.com`);
+		await h.bash("ls");
+		for (const state of jev.states()) expect(state).not.toContain(key);
+		expect(jev.states()[0]).toContain("[redacted]");
+	});
+
+	it("keeps the whole state under the budget however long the command, history, and conversation are", async () => {
+		const requests = new UserRequestLog();
+		requests.record("OPENING-REQUEST organize everything");
+		for (let i = 0; i < 300; i++) requests.record(`filler message ${i} ${"z".repeat(300)}`);
+		requests.record("LATEST-STEER only the pdfs", "steer");
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend, requests, maxStateChars: 10_000 });
+		for (let i = 0; i < 60; i++) await h.bash(`echo step ${i} ${"y".repeat(400)}`);
+		jev.requests.length = 0;
+		const longCommand = `echo START ${"word ".repeat(8000)} END-OF-COMMAND`;
+		await h.bash(longCommand);
+		const state = jev.states()[0] ?? "";
+		expect(state.length).toBeLessThanOrEqual(10_000);
+		expect(state).toContain("OPENING-REQUEST");
+		expect(state).toContain("LATEST-STEER only the pdfs");
+		expect(state).toContain("START");
+		expect(state).toContain("END-OF-COMMAND");
+	});
+
+	it("by default stays under Jev's 30k-token ceiling and still answers fast on a huge unbroken blob", async () => {
+		const requests = new UserRequestLog();
+		requests.record(`delete the old export ${"A".repeat(300_000)} thanks`);
+		const jev = spy(SAFE());
+		const h = harness({ jev: jev.backend, requests });
+		const started = performance.now();
+		await h.bash(`echo ${"B".repeat(300_000)}`);
+		expect(performance.now() - started).toBeLessThan(5000);
+		const state = jev.states()[0] ?? "";
+		expect(Math.ceil(state.length / 4)).toBeLessThan(30_000);
+		expect(state).toContain("delete the old export");
+		expect(state).toContain("thanks");
+	}, 30_000);
+});
+
+describe("switching modes", () => {
+	it("applies the new mode to the very next call", async () => {
+		const h = harness({ jev: jevSays({ delete: 0.95 }), answers: [DENY] });
+		expect((await h.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
+		h.controller.set("full");
+		expect(await h.bash(`rm ${original("b.txt")}`)).toBeUndefined();
 	});
 
 	it("shows the mode in the status bar and updates it on change", async () => {
@@ -610,7 +803,7 @@ describe("switching modes", () => {
 
 	it("ignores Shift+Tab while an approval dialog is open", async () => {
 		let resolveDialog: (value: string) => void = () => undefined;
-		const h = harness();
+		const h = harness({ jev: jevSays({ delete: 0.95 }) });
 		h.select.mockImplementationOnce(
 			() => new Promise<string | undefined>((resolve) => (resolveDialog = resolve as (value: string) => void)),
 		);

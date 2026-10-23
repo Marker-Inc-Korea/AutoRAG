@@ -1,30 +1,38 @@
-import { homedir } from "node:os";
+import { statSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionFactory, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
-import { type Question, redactSecrets } from "jev-use";
-import { DEFAULT_MAX_STATE_TOKENS } from "jev-use/dist/protocol.js";
 import type { JevJudge } from "./jev-extension.ts";
 import {
-	type ClassifyFs,
-	classifyAutomationRun,
-	classifyBash,
-	classifyFileTool,
-	nodeClassifyFs,
-	type PermissionOperation,
-	type PermissionOperationKind,
-} from "./permission-classify.ts";
-import { renderUserRequests, type UserRequest, type UserRequestLog } from "./user-requests.ts";
+	type Approval,
+	classifyCall,
+	DEFAULT_MAX_STATE_CHARS,
+	type FlaggedKind,
+	isGatedCall,
+	type PermissionKind,
+	successfulCalls,
+	summarizeCall,
+} from "./permission-judgment.ts";
+import { type ProposedCall, pathsNamedBy, resolveToolPath } from "./permission-paths.ts";
+import { cutMiddle, type UserRequestLog } from "./user-requests.ts";
+
+export {
+	AUTO_APPROVE_MIN_CONFIDENCE,
+	DEFAULT_MAX_STATE_CHARS,
+	PERMISSION_GATE_QUESTION_ID,
+} from "./permission-judgment.ts";
 
 /**
  * How much the agent may do to the user's files without asking.
  *
- * - `full`: no gate; the agent does everything on its own.
- * - `ask`: the user approves deleting, moving, renaming, overwriting, and
- *   editing originals. Reading, searching, copying, and creating new files
- *   never ask, and anything the agent created itself stays free to change.
- * - `auto`: like `ask`, but Jev (the judgment model) answers first; only what
- *   Jev will not approve confidently reaches the user.
+ * Jev classifies every `bash`, `write`, `edit`, and saved automation first, in `ask` and `auto` alike: it says
+ * whether the call deletes, moves, renames, overwrites, or edits an existing file, or runs code whose effect
+ * cannot be told. What happens next depends on the mode.
+ *
+ * - `full`: no gate; the agent does everything on its own, and Jev is never asked.
+ * - `ask`: a call Jev finds safe runs; one it flags is put to the user.
+ * - `auto`: like `ask`, but Jev also decides whether a flagged call may run without the user; only what Jev
+ *   will not approve confidently reaches the user.
  */
 export type PermissionMode = "full" | "ask" | "auto";
 
@@ -34,22 +42,16 @@ export const PERMISSION_MODES: readonly PermissionMode[] = ["ask", "auto", "full
 /** Mode a fresh interactive or CLI session starts in. */
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "ask";
 
-/** Jev question id of the "may this run without asking?" check. */
-export const PERMISSION_GATE_QUESTION_ID = "permission_gate";
-
-/** Jev must be at least this sure before `auto` skips the user. Stricter than jev-use's own 0.5 default. */
-export const AUTO_APPROVE_MIN_CONFIDENCE = 0.8;
-
-const JEV_TIMEOUT_MS = 15_000;
 const STATUS_KEY = "autorag-permissions";
 
-/**
- * Largest state the gate shows Jev, in characters. jev-use hands every question back ("oversized") once the
- * state passes {@link DEFAULT_MAX_STATE_TOKENS} estimated tokens (about 4 characters each), and then `auto`
- * would silently become `ask`. The ceiling is read from jev-use so it cannot drift, and 10% is left for
- * jev-use's own estimate being rough.
- */
-export const DEFAULT_MAX_STATE_CHARS = Math.floor(DEFAULT_MAX_STATE_TOKENS * 4 * 0.9);
+function pathExists(path: string): boolean {
+	try {
+		statSync(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 export function parsePermissionMode(value: unknown): PermissionMode | undefined {
 	if (typeof value !== "string") return undefined;
@@ -63,15 +65,17 @@ export function cyclePermissionMode(mode: PermissionMode): PermissionMode {
 
 type ModeListener = (mode: PermissionMode) => void;
 
+/** What a session grant covers: one category of change, or every call Jev could not classify. */
+export type GrantKey = PermissionKind | "unclassified";
+
 /**
- * Session-wide permission state: the mode, the operation kinds the user
- * allowed for the rest of the session, and the files the agent created (which
- * are never gated). One controller is shared by every pi session of an agent.
+ * Session-wide permission state: the mode, and what the user allowed for the rest of the session. One
+ * controller is shared by every pi session of an agent.
  */
 export class PermissionController {
 	private current: PermissionMode;
 	private readonly listeners = new Set<ModeListener>();
-	private readonly granted = new Set<PermissionOperationKind>();
+	private readonly granted = new Set<GrantKey>();
 	private readonly created = new Set<string>();
 
 	constructor(mode: PermissionMode = DEFAULT_PERMISSION_MODE) {
@@ -100,20 +104,21 @@ export class PermissionController {
 		return () => this.listeners.delete(listener);
 	}
 
-	isGranted(kind: PermissionOperationKind): boolean {
-		return this.granted.has(kind);
+	isGranted(key: GrantKey): boolean {
+		return this.granted.has(key);
 	}
 
-	grant(kinds: readonly PermissionOperationKind[]): void {
-		for (const kind of kinds) this.granted.add(kind);
+	grant(keys: readonly GrantKey[]): void {
+		for (const key of keys) this.granted.add(key);
 	}
 
-	/** Marks paths the agent created: they, and anything below them, are never gated. */
-	trust(paths: readonly string[]): void {
+	/** Records paths a successful call brought into existence: the agent's own files, not the user's originals. */
+	markCreated(paths: readonly string[]): void {
 		for (const path of paths) this.created.add(path);
 	}
 
-	isTrusted(path: string): boolean {
+	/** Whether the agent created this path, or a folder it lies in, earlier in this session. */
+	isCreated(path: string): boolean {
 		for (const root of this.created) {
 			if (path === root) return true;
 			const rel = relative(root, path);
@@ -125,33 +130,29 @@ export class PermissionController {
 
 export interface PermissionGateOptions {
 	readonly controller: PermissionController;
-	/** Jev judge for `auto` mode. Without one, `auto` asks the user like `ask`. */
+	/**
+	 * Jev, which classifies every gated call. Without one the gate cannot classify, so in `ask` and `auto` it
+	 * asks the user about every `bash`, `write`, and `edit` call.
+	 */
 	readonly judge?: JevJudge;
 	/**
 	 * What the user has said in this conversation: the first question, every follow-up, every steer. Jev judges
-	 * the operations against all of it. The host feeds it from the user's own input, so AutoRAG's internal phase
+	 * the call against all of it. The host feeds it from the user's own input, so AutoRAG's internal phase
 	 * prompts are never in it.
 	 */
 	readonly requests?: UserRequestLog;
 	/** Cap on the state shown to Jev, in characters. Default: Jev's context ceiling with a safety margin. */
 	readonly maxStateChars?: number;
-	/** Filesystem the classifier reads. Default: the real one, with `~` expanding to the user's home. */
-	readonly fs?: (cwd: string) => ClassifyFs;
+	/** Files the agent may always write and edit without Jev being asked (the config its self-configuration turn edits). */
+	readonly trustedPaths?: readonly string[];
 }
 
 const ALLOW_ONCE = "Allow once";
 const DENY = "Deny";
 const DENY_WITH_NOTE = "Deny and tell the model what to do instead";
 
-const KIND_LABEL: Readonly<Record<PermissionOperationKind, string>> = {
-	create: "create",
-	delete: "delete",
-	move: "move",
-	rename: "rename",
-	overwrite: "overwrite",
-	edit: "edit",
-	script: "run a script that changes files",
-};
+/** Longest part of a command shown in a dialog or a notice. */
+const SHOWN_CALL_CHARS = 1200;
 
 /** Appended to the system prompt while a gate is active, so the model stays on the happy path. */
 export const PERMISSION_PROMPT_ADDENDUM = [
@@ -161,62 +162,52 @@ export const PERMISSION_PROMPT_ADDENDUM = [
 	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
 ].join(" ");
 
-function describeOperation(op: PermissionOperation): string {
-	const target =
-		op.paths.length === 0
-			? "(target known only when the command runs)"
-			: op.dest === undefined
-				? op.paths.join(", ")
-				: `${op.paths[0]} -> ${op.dest}`;
-	return `  ${KIND_LABEL[op.kind]}  ${target}`;
-}
-
-function describeCommands(ops: readonly PermissionOperation[]): string[] {
-	return [...new Set(ops.map((op) => op.detail))].map((detail) => `    $ ${detail}`);
-}
-
-function operationsOf(
-	toolName: string,
-	input: Readonly<Record<string, unknown>>,
-	fs: ClassifyFs,
-): PermissionOperation[] {
-	if (toolName === "bash" && typeof input.command === "string") return classifyBash(input.command, fs);
-	if (toolName === "write" || toolName === "edit") return classifyFileTool(toolName, input, fs);
-	if (toolName === "manage_automations" && input.action === "save") {
-		const rule = input.automation;
-		if (typeof rule === "object" && rule !== null && Array.isArray((rule as { run?: unknown }).run)) {
-			const run = (rule as { run: unknown[] }).run.filter((part): part is string => typeof part === "string");
-			return classifyAutomationRun(run, fs, {
-				appendFiles: (rule as { appendFiles?: unknown }).appendFiles === true,
-			});
-		}
-	}
-	return [];
-}
+const MODE_SUMMARY: Readonly<Record<PermissionMode, string>> = {
+	ask: "Jev checks each call; you approve deleting, moving, renaming, or changing originals",
+	auto: "Jev checks each call and approves first; asks you only when Jev will not",
+	full: "no approvals, the agent does everything itself",
+};
 
 interface Decision {
 	readonly block?: true;
 	readonly reason?: string;
 }
 
+interface Review {
+	readonly call: ProposedCall;
+	/** The category grants this call needs. */
+	readonly needs: readonly GrantKey[];
+	/** Shown above the call in the dialog. */
+	readonly heading: string;
+	/** Why the user is being asked instead of Jev deciding, for a call that is blocked without a UI. */
+	readonly headlessReason: string;
+	readonly sessionChoice: string;
+}
+
+function deny(call: ProposedCall, note?: string): Decision {
+	return {
+		block: true,
+		reason: `Denied by the user: ${cutMiddle(summarizeCall(call), 300)}. Do not retry it for this request. Leave the original untouched: copy it to a new file or folder and change the copy, or tell the user what you would have done. If the user asks again later, that is a new decision.${note === undefined ? "" : ` The user says: ${note}`}`,
+	};
+}
+
 /**
  * pi extension that gates what the agent does to existing files.
  *
- * Every `bash`, `write`, `edit`, and `manage_automations save` call is
- * classified (see {@link classifyBash}); only changes to originals reach the
- * approval step, and what happens there depends on the controller's mode.
- * Shift+Tab and `/permissions` switch the mode; the footer shows it.
+ * Jev classifies every `bash`, `write`, `edit`, and `manage_automations save` call before it runs (reads,
+ * searches, and other tools never touch originals and are not asked about). A call Jev finds safe runs; one it
+ * flags, or cannot classify, is decided by the mode: put to the user in `ask`, put to Jev's approval first in
+ * `auto`. Shift+Tab and `/permissions` switch the mode; the footer shows it.
  */
 export function createPermissionGate(options: PermissionGateOptions): ExtensionFactory {
-	const { controller, judge } = options;
-	const makeFs = options.fs ?? ((cwd: string) => nodeClassifyFs(cwd, homedir()));
+	const { controller, judge, requests } = options;
+	const maxStateChars = options.maxStateChars ?? DEFAULT_MAX_STATE_CHARS;
+	const trustedPaths = new Set(options.trustedPaths ?? []);
 
 	return (pi: ExtensionAPI) => {
-		/** Paths a call creates, trusted once the call succeeds. */
-		const pendingCreations = new Map<string, string[]>();
-		const { requests } = options;
-		const maxStateChars = options.maxStateChars ?? DEFAULT_MAX_STATE_CHARS;
 		let dialogsOpen = 0;
+		/** Paths each gated call names that do not exist yet, until its result shows whether it made them. */
+		const pendingCreations = new Map<string, string[]>();
 		let queue: Promise<unknown> = Promise.resolve();
 		let boundUi: ExtensionContext["ui"] | undefined;
 		let unsubscribeKeys: (() => void) | undefined;
@@ -297,200 +288,139 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 		});
 
 		pi.on("tool_call", async (event, ctx): Promise<Decision | undefined> => {
+			const input = event.input as Record<string, unknown>;
+			if (!isGatedCall(event.toolName, input)) return undefined;
+			const call: ProposedCall = { tool: event.toolName, input, cwd: ctx.cwd };
+			// Whatever the mode, a path this call names that is missing now and exists after it succeeded is the
+			// agent's own file: later calls on it are not changes to the user's originals.
+			pendingCreations.set(
+				event.toolCallId,
+				pathsNamedBy(call)
+					.map((entry) => entry.path)
+					.filter((path) => !pathExists(path)),
+			);
 			if (controller.mode === "full") return undefined;
-			const fs = makeFs(ctx.cwd);
-			const ops = operationsOf(event.toolName, event.input as Record<string, unknown>, fs);
-			if (ops.length === 0) return undefined;
-
-			// Walk the operations in order: what a command creates is free for the rest of that command.
-			const creations: string[] = [];
-			const gated: PermissionOperation[] = [];
-			for (const op of ops) {
-				if (op.kind === "create") {
-					creations.push(...op.paths);
-					continue;
-				}
-				const free =
-					!op.dynamic &&
-					op.paths.length > 0 &&
-					op.paths.every(
-						(path) =>
-							controller.isTrusted(path) ||
-							creations.some((made) => path === made || path.startsWith(made + sep)),
-					);
-				if (free) {
-					// Moving or copying something the agent made leaves the result just as free.
-					if (op.dest !== undefined) creations.push(op.dest);
-					continue;
-				}
-				gated.push(op);
+			if (
+				(event.toolName === "write" || event.toolName === "edit") &&
+				trustedPaths.has(resolveToolPath(String(input.path), ctx.cwd))
+			) {
+				return undefined;
 			}
-
-			const decision = gated.length === 0 ? undefined : await decide(gated, ctx);
-			if (decision?.block === true) return decision;
-			if (creations.length > 0) pendingCreations.set(event.toolCallId, creations);
-			return undefined;
+			const decision = await judgeCall(call, ctx);
+			if (decision?.block === true) pendingCreations.delete(event.toolCallId);
+			return decision;
 		});
 
 		pi.on("tool_result", (event) => {
-			const made = pendingCreations.get(event.toolCallId);
+			const absent = pendingCreations.get(event.toolCallId);
 			pendingCreations.delete(event.toolCallId);
-			if (made !== undefined && !event.isError) controller.trust(made);
+			if (absent !== undefined && !event.isError) controller.markCreated(absent.filter(pathExists));
 			return undefined;
 		});
 
-		async function decide(ops: readonly PermissionOperation[], ctx: ExtensionContext): Promise<Decision | undefined> {
+		/** Jev classifies the call; what follows depends on the mode. */
+		async function judgeCall(call: ProposedCall, ctx: ExtensionContext): Promise<Decision | undefined> {
+			const mode = controller.mode;
+			const classification =
+				judge === undefined
+					? ({ status: "failed", why: "Jev is not configured" } as const)
+					: await classifyCall(judge, {
+							call,
+							requests: requests?.entries() ?? [],
+							history: successfulCalls(branchOf(ctx)),
+							maxStateChars,
+							wantApproval: mode === "auto",
+							isCreated: (path) => controller.isCreated(path),
+						});
+
+			if (classification.status === "failed") {
+				return decide(
+					{
+						call,
+						needs: ["unclassified"],
+						heading: `Jev could not classify this call (${classification.why}), so it needs your approval. It may change your files.`,
+						headlessReason: `Jev could not classify this call (${classification.why}), so it needs approval`,
+						sessionChoice: "Allow all unclassified calls this session",
+					},
+					ctx,
+				);
+			}
+			if (classification.flagged.length === 0) return undefined;
+
+			const kinds = classification.flagged.map((flagged) => flagged.kind);
+			if (mode === "auto" && classification.approval?.approved === true) {
+				ctx.ui.notify(`Jev approved (${kinds.join(", ")}): ${cutMiddle(summarizeCall(call), 300)}`, "info");
+				return undefined;
+			}
+			return decide(
+				reviewOf(call, classification.flagged, mode === "auto" ? classification.approval : undefined),
+				ctx,
+			);
+		}
+
+		async function decide(review: Review, ctx: ExtensionContext): Promise<Decision | undefined> {
 			// One dialog at a time: overlapping tool calls wait their turn, then re-check grants.
-			const turn = queue.then(() => decideNow(ops, ctx));
+			const turn = queue.then(() => ask(review, ctx));
 			queue = turn.catch(() => undefined);
 			return turn;
 		}
 
-		async function decideNow(
-			ops: readonly PermissionOperation[],
-			ctx: ExtensionContext,
-		): Promise<Decision | undefined> {
+		async function ask(review: Review, ctx: ExtensionContext): Promise<Decision | undefined> {
 			if (controller.mode === "full") return undefined;
-			const pending = ops.filter((op) => !controller.isGranted(op.kind));
-			if (pending.length === 0) return undefined;
-			const commands = describeCommands(pending);
-			const lines = pending.map(describeOperation);
-
-			let declined: string | undefined;
-			if (controller.mode === "auto" && judge !== undefined) {
-				const verdict = await askJev(judge, pending, requests?.entries() ?? [], ctx.cwd, maxStateChars);
-				if (verdict.approved) {
-					ctx.ui.notify(`Jev approved: ${pending.map((op) => op.detail).join("; ")}`, "info");
-					return undefined;
-				}
-				declined = verdict.why;
-			}
+			if (review.needs.every((key) => controller.isGranted(key))) return undefined;
 
 			if (!ctx.hasUI) {
-				const why = declined === undefined ? "" : ` Jev did not approve it (${declined}).`;
 				return {
 					block: true,
-					reason: `Blocked: changing existing files needs approval and this session has nobody to ask.${why} Do not retry; work on a copy instead, or ask the user to rerun with --permission-mode full.`,
+					reason: `Blocked: ${review.headlessReason}, and this session has nobody to ask. Do not retry; work on a copy instead, or ask the user to rerun with --permission-mode full.`,
 				};
 			}
 
-			const kinds = [...new Set(pending.map((op) => op.kind))];
-			const heading =
-				declined === undefined
-					? "Approve this change to your files?"
-					: `Jev declined to approve this automatically (${declined}). Approve it yourself?`;
-			const title = [heading, ...lines, ...commands].join("\n");
-			const sessionChoice = `Allow all ${kinds.map((kind) => KIND_LABEL[kind]).join("/")} operations this session`;
+			const title = [
+				review.heading,
+				`    ${review.needs.join(", ")}`,
+				`    $ ${cutMiddle(summarizeCall(review.call), SHOWN_CALL_CHARS)}`,
+			].join("\n");
 			dialogsOpen += 1;
 			let choice: string | undefined;
 			try {
-				choice = await ctx.ui.select(title, [ALLOW_ONCE, sessionChoice, DENY, DENY_WITH_NOTE]);
+				choice = await ctx.ui.select(title, [ALLOW_ONCE, review.sessionChoice, DENY, DENY_WITH_NOTE]);
 				if (choice === DENY_WITH_NOTE) {
 					const note = (await ctx.ui.input("What should the model do instead?", "e.g. work on a copy"))?.trim();
-					return deny(pending, note === undefined || note === "" ? undefined : note);
+					return deny(review.call, note === undefined || note === "" ? undefined : note);
 				}
 			} finally {
 				dialogsOpen -= 1;
 			}
 			if (choice === ALLOW_ONCE) return undefined;
-			if (choice === sessionChoice) {
-				controller.grant(kinds);
+			if (choice === review.sessionChoice) {
+				controller.grant(review.needs);
 				return undefined;
 			}
-			return deny(pending);
+			return deny(review.call);
 		}
 	};
 }
 
-const MODE_SUMMARY: Readonly<Record<PermissionMode, string>> = {
-	ask: "asks before deleting, moving, renaming, or editing originals",
-	auto: "Jev approves first; asks you only when Jev will not",
-	full: "no approvals, the agent does everything itself",
-};
+function branchOf(ctx: ExtensionContext): readonly SessionEntry[] {
+	return ctx.sessionManager.getBranch();
+}
 
-function deny(ops: readonly PermissionOperation[], note?: string): Decision {
-	const what = ops.map((op) => op.detail).join("; ");
+/** The dialog for a call Jev flagged. `approval` is `auto` mode's verdict when Jev was asked and declined. */
+function reviewOf(call: ProposedCall, flagged: readonly FlaggedKind[], approval: Approval | undefined): Review {
+	const kinds = flagged.map((entry) => entry.kind);
+	const heading =
+		approval === undefined
+			? "Approve this change to your files?"
+			: `Jev declined to approve this automatically (${approval.why}). Approve it yourself?`;
 	return {
-		block: true,
-		reason: `Denied by the user: ${what}. Do not retry it for this request. Leave the original untouched: copy it to a new file or folder and change the copy, or tell the user what you would have done. If the user asks again later, that is a new decision.${note === undefined ? "" : ` The user says: ${note}`}`,
+		call,
+		needs: kinds,
+		heading,
+		headlessReason:
+			approval === undefined
+				? `this call ${kinds.join("/")}s existing files and needs approval`
+				: `this call ${kinds.join("/")}s existing files and Jev did not approve it (${approval.why}), so it needs approval`,
+		sessionChoice: `Allow all ${kinds.join("/")} operations this session`,
 	};
-}
-
-interface JevVerdict {
-	readonly approved: boolean;
-	readonly why: string;
-}
-
-const GATE_QUESTION: Question = {
-	id: PERMISSION_GATE_QUESTION_ID,
-	type: "choice",
-	question:
-		"Should the agent run these file operations without asking the user? Choose allow only when the user's request clearly asks for exactly this change, or it is an obviously safe, reversible tidy-up of files the request names. Choose deny when it deletes, moves, renames, or overwrites originals the request did not name, touches system, configuration, or credential locations, or goes beyond the request.",
-	options: {
-		allow: "The request clearly covers exactly these operations and they are safe.",
-		deny: "The operations are destructive, broader than the request, or unclear.",
-	},
-};
-
-/** A run of non-whitespace this long is data, not words: no key, token, or path the gate cares about is. */
-const MAX_UNBROKEN_RUN = 1000;
-const UNBROKEN_RUN = new RegExp(`\\S{${MAX_UNBROKEN_RUN},}`, "g");
-
-/** `text` with every run of {@link MAX_UNBROKEN_RUN}+ non-whitespace characters replaced by a note of its size. */
-function collapseBlobs(text: string): string {
-	return text.replace(UNBROKEN_RUN, (run) => `[unbroken text of ${run.length} characters omitted]`);
-}
-
-/** Jev's yes/no on one batch of operations. Never throws: no answer means "ask the user". */
-async function askJev(
-	judge: JevJudge,
-	ops: readonly PermissionOperation[],
-	requests: readonly UserRequest[],
-	cwd: string,
-	maxStateChars: number,
-): Promise<JevVerdict> {
-	// Only what the user said and the operations leave the machine: never file contents. A long unbroken run
-	// (a pasted blob, a base64 dump) says nothing about what the user wants and jev-use's redaction is quadratic
-	// on it (108k characters took ~19s), so every such run is replaced by a one-line note before anything is
-	// measured or redacted. Redaction then runs over the bounded state.
-	const operations = redactSecrets(
-		[
-			`Working directory: ${cwd}`,
-			"Proposed file operations:",
-			...ops.map((op) => `- ${describeOperation(op).trim()}  [${op.detail}]`),
-		].join("\n"),
-	);
-	const header = "What the user has said in this conversation, oldest first:\n";
-	const budget = Math.max(0, maxStateChars - header.length - operations.length - 2);
-	const conversation = renderUserRequests(
-		requests.map((request) => ({ ...request, text: collapseBlobs(request.text) })),
-		budget,
-	);
-	const state = redactSecrets(`${header}${conversation}\n\n${operations}`);
-	let timer: NodeJS.Timeout | undefined;
-	try {
-		const judgment = await Promise.race([
-			judge(state, [GATE_QUESTION], { confidenceThreshold: AUTO_APPROVE_MIN_CONFIDENCE }),
-			new Promise<never>((_resolve, reject) => {
-				timer = setTimeout(
-					() => reject(new Error(`Jev did not answer within ${JEV_TIMEOUT_MS / 1000}s`)),
-					JEV_TIMEOUT_MS,
-				);
-			}),
-		]);
-		const verdict = judgment.verdicts.find((candidate) => candidate.id === PERMISSION_GATE_QUESTION_ID);
-		if (verdict === undefined) return { approved: false, why: "no verdict" };
-		if (verdict.answer === "allow" && !verdict.escalate && verdict.confidence >= AUTO_APPROVE_MIN_CONFIDENCE) {
-			return { approved: true, why: "" };
-		}
-		if (verdict.escalate) return { approved: false, why: verdict.hint ?? verdict.reason ?? "not sure" };
-		return {
-			approved: false,
-			why: verdict.answer === "allow" ? `only ${Math.round(verdict.confidence * 100)}% sure` : "rejected",
-		};
-	} catch (error) {
-		return { approved: false, why: error instanceof Error ? error.message : String(error) };
-	} finally {
-		clearTimeout(timer);
-	}
 }
