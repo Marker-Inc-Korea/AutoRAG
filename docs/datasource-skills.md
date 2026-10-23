@@ -51,42 +51,111 @@ protected locations. Unavailable on non-macOS hosts.
 }
 ```
 
+### Obsidian
+
+`obsidian` indexes a markdown vault with MinSync — the same engine and
+`minSync.*` binary/embedder configuration used for local files — in its own
+MinSync workspace at
+`<workspace>/.autorag/datasources/obsidian/<instanceId>/minsync`, so vault notes
+never mix with the local-file index. There is no external CLI.
+
+```json
+{
+  "datasources": {
+    "obsidian": {
+      "connector": { "vaultPath": "/path/to/vault" }
+    }
+  }
+}
+```
+
+Only `.md` and `.markdown` notes are staged. Dot-prefixed folders and files
+(`.obsidian`, `.trash`, `.git`), `node_modules`, and symlinks are skipped, and a
+re-index is incremental: only changed or deleted notes are touched. The former
+`connector.binaryPath` and `connector.configPath` options no longer exist.
+Retrieval exposes `obsidian-bm25` (lexical) and `obsidian-semantic` (vector,
+through the shared embedder), and both accept an ordinary `scope`. Sources are
+vault-relative note paths as opaque slash paths —
+`/obsidian/<instanceId>/<folder>/<note>.md`, for example
+`/obsidian/default/Projects/Roadmap.md`, with `#` shown as `%23`. Folder
+filtering is the ordinary `scope`: `scope=/obsidian/default/Projects` matches
+that folder and everything under it, and a scope that already contains `*` is
+matched literally as written, so a nested-folder glob needs an explicit trailing
+`/**`, for example `/obsidian/default/**/Daily/**`. Result metadata `path`
+carries the real note path on disk and `file` the vault-relative path. The index
+is AutoRAG-owned: to reset it, delete
+`<workspace>/.autorag/datasources/obsidian/<instanceId>` and run
+`autorag refresh --method datasources`.
+
 ## Shared embedding runtime and native ownership
 
-The AutoRAG shared embedding runtime is a provider boundary, not a shared
-archive or vector-store boundary. It computes embeddings through the
-loopback-only `autorag-gateway`; each datasource keeps its native archive,
-chunking, credentials, metadata, vector store, generation publication, and
-source identity.
+AutoRAG owns no embedding model and no bundled native runtime. MinSync provisions
+the embedder (`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) in its own cache
+(`~/.cache/minsync/models`), and one shared embedder — a small module AutoRAG
+owns — serves everything that embeds inside AutoRAG. It is a provider boundary,
+not a shared archive or vector-store boundary: each datasource keeps its native
+archive, chunking, credentials, metadata, vector store, generation publication,
+and source identity.
+
+The shared embedder resolves in order: a configured remote endpoint
+(`minSync.embedder`), then a running `minsync serve` daemon (loopback only), then
+MinSync's in-process engine via the optional `@nomadamas/minsync-native` addon.
+The daemon and in-process vectors are identical, so stores keyed on embedder
+identity do not re-embed when the daemon appears or disappears.
 
 The zero-configuration boundary is narrow:
 
-- **MinSync** uses the gateway by default. AutoRAG supplies the endpoint and
-  records the profile identity; MinSync owns `.minsync`, CDC chunks, vectors,
-  and reindex decisions.
+- **MinSync** uses the shared embedder by default. AutoRAG supplies the
+  endpoint; MinSync owns `.minsync`, CDC chunks, vectors, and reindex
+  decisions.
 - **discrawl** can receive a managed native `[search.embeddings]` section. When
   no explicit `connector.configPath` is supplied, AutoRAG writes only
   `.autorag/datasources/discrawl/config.toml`, preceded by the exact marker
-  `# AutoRAG managed discrawl embeddings v1`. It writes `provider`, `model`,
-  `base_url`, and `dimensions`, and checks discrawl metadata before asking the
-  native CLI to rebuild. An explicit `configPath` is authoritative and is
-  never rewritten.
-- **mailcrawl** released its provider contract in 0.2.0: the default
-  `native:Qwen/Qwen3-Embedding-0.6B` profile matches the AutoRAG gateway model
-  and dimension, and `loopback-http` is available as an explicit override.
-  AutoRAG does not rewrite mailcrawl's embedder; it forwards a loopback
-  endpoint when one is configured and refuses a non-loopback one.
-- **lazykatok** remains a pending upstream provider contract
-  ([lazykatok](https://github.com/changeroa/lazykatok)). AutoRAG does not force
-  the shared runtime into it before that contract is released.
-- **qmd** and **clawgallery** are untouched. qmd retains its native retrieval;
-  ClawGallery retains its VDR/native retrieval.
-- **Lexical-only crawlers** are unchanged and receive no semantic provider
-  configuration.
+  `# AutoRAG managed discrawl embeddings v1`. It writes `provider`
+  (`openai_compatible`, with an underscore; discrawl speaks OpenAI
+  `POST {base_url}/embeddings` only, so a TEI remote leaves discrawl on its own
+  config), `model`, `base_url` (the daemon or remote `/v1` URL), `dimensions`,
+  and `api_key_env` (the **name** of the environment variable; AutoRAG passes
+  only that one variable through to discrawl's environment). It checks discrawl
+  metadata before asking the native CLI to rebuild. An explicit `configPath` is
+  authoritative and is never rewritten.
+- **mailcrawl** (`@nomadamas/mailcrawl@0.2.2` or newer) and **kakao**
+  (`lazykatok` 0.3.3 or newer) embed for themselves, so AutoRAG points them at
+  the same backend through the environment variables each CLI documents, for
+  `index` and for semantic and hybrid search only (BM25 never embeds).
+  - mailcrawl runs its `openai` or `tei` provider (`MAILCRAWL_EMBEDDER_PROVIDER`,
+    `MAILCRAWL_EMBED_URL`, `MAILCRAWL_EMBED_MODEL`, `MAILCRAWL_EMBED_DIM`) at a
+    daemon or remote endpoint. A non-loopback remote also sets
+    `MAILCRAWL_EMBED_ALLOW_REMOTE`, which mailcrawl requires and which is only
+    set because the operator configured that remote.
+  - lazykatok runs its OpenAI-compatible embedder (`KATOK_EMBEDDER`,
+    `KATOK_EMBED_URL`, `KATOK_EMBED_MODEL`, `KATOK_EMBED_DIM`). It speaks
+    `/v1/embeddings` only, so a TEI remote is reported as an error rather than
+    silently falling back to fastembed.
+  - A remote key is exported to that one child as the value of the variable
+    `apiKeyEnv` names (`MAILCRAWL_EMBED_API_KEY_ENV` for mailcrawl,
+    `KATOK_EMBED_API_KEY` for lazykatok); no other credential is passed.
+  - Neither CLI falls back to its own model, and AutoRAG starts no daemon for
+    them: with no daemon and no remote endpoint, `index` and the semantic call
+    fail with "no embedding endpoint is available" while BM25 and `sync` keep
+    working. Start `minsync serve --idle-timeout 0` first (see
+    `docs/minsync-setup.md`), so the first `index` finds it.
+  - mailcrawl identity is provider + model + dimension, and lazykatok records
+    vectors under `openai/<model>`, so an archive built with the old native
+    model rebuilds on the next `index` (`mailcrawl repair --semantic`,
+    `lazykatok wipe-index` then `index` force it).
+- **telegram**, **whatsapp**, and **slack** CLIs have no embedding; their
+  AutoRAG sidecars use the shared embedder.
+- **github-gist** semantic retrieval uses the shared embedder;
+  `connector.semantic: false` keeps it lexical-only.
+- **obsidian** semantic retrieval runs through MinSync with the shared embedder,
+  in the datasource's own workspace under
+  `.autorag/datasources/obsidian/<instanceId>/minsync`.
+- **clawgallery** is untouched: it retains its VDR/native retrieval.
 
-Embedding requests contain text and selected model/profile data only. AutoRAG
-does not send archive IDs, source paths, credentials, or native store paths to
-the gateway. If the runtime is unavailable, a datasource keeps its native
+Embedding requests contain text and the selected model only. AutoRAG does not
+send archive IDs, source paths, credentials, or native store paths to the
+embedder. If the embedder is unavailable, a datasource keeps its native
 lexical/FTS lane where supported and reports a diagnostic; a remote embedding
 service is used only when the operator explicitly configures one.
 ## Contract
@@ -116,13 +185,14 @@ answer, never from how an individual search call turned out.
 ## Connector sync/index timeouts
 
 Connector `sync`/`index` steps are not interactive, so AutoRAG gives them a
-30-minute budget (`connector.indexTimeoutMs`) instead of the 60-second
+one-hour budget (`connector.indexTimeoutMs`) instead of the 60-second
 interactive default (`connector.timeoutMs`) used by `search`, `doctor`, and chunk
 reads. Measured first-run costs on a real archive:
 
 | Connector | First-run workload | Measured |
 |---|---|---|
 | `mailcrawl` | Gmail INBOX full sync (~2,300 messages) + native index | ~12 min |
+| `mailcrawl` | No-op `sync` of a 1,000-message INBOX (mailcrawl re-reads every message, NomaDamas/mailcrawl#48) | 16 to 27 min |
 | `kakao` (lazykatok) | Semantic index over a ~50k-message archive (9,373 units) | ~11 min |
 
 A step killed by its timeout does not commit its cursor, so the next refresh
@@ -140,7 +210,7 @@ progress. Raise the budget per connection:
 }
 ```
 
-`indexTimeoutMs` takes precedence, then `timeoutMs`, then the 30-minute default.
+`indexTimeoutMs` takes precedence, then `timeoutMs`, then the one-hour default.
 A `sync`/`index` diagnostic ending in `timeout` carries a hint naming
 `connector.indexTimeoutMs` and the restart behaviour.
 
@@ -166,12 +236,14 @@ separately (#1587, #1586).
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.0` or newer
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.2` or newer
 (Node.js 24+) and configure Himalaya separately; AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
 native archive. Set `connector.dataDir` only when the operator explicitly
-wants a different mailcrawl data directory.
+wants a different mailcrawl data directory. The semantic index embeds through
+the shared backend (see the embedding section above); `connector.env` embedding
+overrides are replaced for `index` and semantic search.
 
 0.2.0 replaced the semantic store and embedder contract:
 
@@ -180,9 +252,9 @@ wants a different mailcrawl data directory.
   table, and a search against a different embedder fails loudly instead of
   returning silently wrong neighbours.
 - The default embedder is the in-process native `Qwen/Qwen3-Embedding-0.6B`
-  (1024 dimensions, the model identity AutoRAG's gateway profile pins), so a
-  cold cache downloads ONNX weights on the first `index`. AutoRAG gives
-  `sync`/`index` a 30-minute budget (`connector.indexTimeoutMs`) while search
+  (1024 dimensions, the same model and dimension as AutoRAG's shared embedder),
+  so a cold cache downloads ONNX weights on the first `index`. AutoRAG gives
+  `sync`/`index` a one-hour budget (`connector.indexTimeoutMs`) while search
   keeps its 60-second interactive budget.
 - `index` reports `{ embedded, reused, archiveRevision, rebuilt, embedder }`
   instead of the 0.1.x generation report.
@@ -364,7 +436,7 @@ matching rows — an unscoped search looks exactly like an empty archive, with n
 diagnostic. `syncSource` is likewise required: `slacrawl sync` without
 `--source` fails and surfaces as `datasource-index-failed`. `timeoutMs` bounds
 the FTS search; the first `sync` (a wiretap import of the whole cache) uses
-`indexTimeoutMs`, default 30 minutes, so it is not cut off at 60 seconds.
+`indexTimeoutMs`, default one hour, so it is not cut off at 60 seconds.
 
 Initialize and refresh the local mirror with:
 
@@ -401,7 +473,7 @@ Tune or opt out per datasource with `connector.sidecar`:
 | `false` or `{ "enabled": false }` | CLI-backed FTS only, as before |
 | `semantic: false` | BM25 only; no embedding calls, and no `<name>-semantic` / `<name>-hybrid` methods |
 | `crawlerDbPath` | archive to read. Otherwise: `connector.databasePath`; for `slack`, the `db_path` in the slacrawl config that `connector.configPath` names (relative paths resolve against that file); otherwise the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
-| `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (2048) |
+| `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (16,384) |
 
 How it works and what it never does:
 
@@ -421,16 +493,17 @@ How it works and what it never does:
 - `channels.ids` / `channels.names` are applied in the sidecar's SQL: excluded chats are never searched,
   embedded, or stored as vectors, and vectors of a chat removed from the allowlist are pruned on the next refresh.
 - `autorag refresh --method datasources` runs the CLI sync first, then embeds new or edited messages with the
-  local embedding gateway (the same Qwen3 model as MinSync), prunes vectors of purged or deleted messages, and
+  shared embedder (the same Qwen3 model as MinSync), prunes vectors of purged or deleted messages, and
   re-embeds everything if the embedding identity changes.
 - Embedding is **bounded per refresh** so the first sync of a large archive does not hold the whole refresh. While
   a backlog remains the datasource reports an info diagnostic (`datasource-index-partial`: `semantic index
   catching up`), and hybrid search uses BM25 for the messages not yet embedded. Measured on 16,591 WhatsApp
-  messages: about 224 messages/s, 2048 per refresh, so 9 refreshes to catch up.
+  messages: about 224 messages/s; at 16,384 per refresh that archive catches up in two refreshes (about 73 s each).
 - Each message's embedding input is its first 8192 characters (BM25 still indexes all of it). A message the
   embedder rejects on its own is skipped with a warning and retried only after it is edited, so it cannot stall
   the backlog behind it.
-- An embedding failure (for example the model is not downloaded: run `autorag models prefetch`) is a
+- An embedding failure (for example the embedder is unavailable: install MinSync, start `minsync serve`, or
+  configure a remote `minSync.embedder`) is a
   `semantic-unavailable` **warning**; BM25 stays available and the CLI sync result is never turned into a failure.
   Two AutoRAG processes (for example `autorag refresh` and a running TUI) share the sidecar file; a writer waits up
   to 5 s for the other's lock.
@@ -438,7 +511,8 @@ How it works and what it never does:
   crawler replaces or deletes its archive, the next search or refresh re-attaches the new file (or detaches).
 - Semantic search is a linear scan over stored vectors (about 280 ms at 16.6k messages). Fine for personal
   archives; measure before pointing it at a multi-million-message archive.
-- Message text is sent only to the local loopback gateway. Vectors of private chats are derived data: treat the
+- Message text is sent only to the shared embedder (local by default; a remote endpoint only when the
+  operator configures one). Vectors of private chats are derived data: treat the
   sidecar file with the same care as the archive itself.
 
 Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` already has semantic and hybrid through
@@ -649,6 +723,119 @@ scopes `search:message` and `search:docs:read`, and confirm with
 `/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
 coverage of older messages is not guaranteed.
 
+## Browser history via Hister
+
+`hister` searches the web pages your browser visited, through a running
+[Hister](https://github.com/asciimoo/hister) server. Hister is a **separate
+program under AGPL-3.0-or-later**: AutoRAG ships none of its code, does not
+modify it, and only sends search requests to its public HTTP API (`GET /search`,
+`GET /api/config`). Hister owns the index, the browser extension, incremental
+capture, and (optionally) the embeddings. AutoRAG never copies the corpus, and
+the datasource manifest names Hister, its license, and its source to the agent.
+See [`licenses/hister-AGPL-3.0-notice.txt`](../licenses/hister-AGPL-3.0-notice.txt).
+
+**Web pages only.** Every query is sent with `type:web`, and any document Hister
+returns with another type is dropped. Hister can also index local directories and
+file snapshots; leave `indexer.directories` empty (the default) and never run
+`hister import file`. If such documents exist anyway, `index()` reports how many
+are excluded.
+
+```bash
+brew install hister                      # or a release binary, Docker, Nix
+hister listen                            # http://127.0.0.1:4433, keep it running
+# install the Hister browser extension in Chrome/Chromium (Chrome Web Store: "Hister")
+hister import browser history            # optional: backfill existing history
+hister search 'domain:example.com'       # must print rows before wiring it up
+```
+
+```json
+{
+  "datasources": {
+    "browser": {
+      "type": "hister",
+      "connector": {
+        "baseUrl": "http://127.0.0.1:4433",
+        "tokenEnv": "HISTER_TOKEN",
+        "semantic": false
+      }
+    }
+  }
+}
+```
+
+`baseUrl` defaults to `http://127.0.0.1:4433`. `tokenEnv` names an environment
+variable holding Hister's `app.access_token`; the token is never written to the
+config, and a non-loopback `http://` URL is refused when a token is configured.
+`semantic: true` also registers Hister's semantic search and requires
+`semantic_search.enable` plus an embedding endpoint in the **Hister** config
+(the page text is sent to that endpoint, so use a loopback one for privacy); with
+it disabled on the server, the semantic method fails loudly instead of returning
+nothing. Plain words in a query are alternatives, sent as one `(a|b|c)` group (Hister's only
+OR; the word `OR` is searched literally); Hister syntax (`"phrases"`, `domain:`, `title:`,
+`-term`, `added:<7d`, `sort:date`) passes through as written.
+
+Incremental indexing is Hister's: each page is indexed when the extension sends
+it, so `autorag refresh` only probes the server (reachability, authentication,
+page count). Sources are `/<id>/<instance>/pages/<domain>/<hash of the URL>`; the
+URL itself is in the hit content and `metadata.url`, so use `web_fetch` to read a
+page as it is now. A scope of `/<id>/<instance>/pages/<domain>/**` is pushed down
+to Hister as `domain:<domain>`.
+
+### Running it day to day
+
+Hister must be running for the extension to capture pages and for AutoRAG to
+search; AutoRAG never starts or stops it (the same rule as the MinSync daemon).
+On macOS, `brew services start hister` makes it a login item and
+`brew services stop hister` removes it. A page visited while Hister is down is
+not sent again later, so backfill the gap with
+`hister import browser history --start-date YYYY-MM-DD`. The web UI that the same
+server also serves is not used by AutoRAG.
+
+### One embedding model for AutoRAG and Hister
+
+Hister keeps its own vector store and embeds with whatever its `config.yml`
+`semantic_search` block says. If that is a different model from AutoRAG's, nothing
+fails: the vectors simply stop lining up and results get worse. So the two must share
+the model, and `autorag setup` does that:
+
+```bash
+autorag setup                # reports `hister.embedding.differs`, the keys that disagree; writes nothing
+autorag setup --sync-hister  # writes them, restarts Hister, waits for it, re-embeds pages when needed
+hister doctor                # `server.index.embeddings` must be ok
+```
+
+The source of truth is the resolved shared embedder (`minsync serve`, model
+`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, with Qwen3's query instruction), so
+Hister embeds queries exactly as AutoRAG does. `--sync-hister` edits only
+`enable`, `embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix` and
+`document_prefix` in Hister's own config (a `config.yml.bak.<time>` stays next to
+it); the rest of the file is untouched. It restarts the service with
+`brew services restart hister`, waits until the server answers, and runs
+`hister reindex` only when a changed key makes stored vectors stale (the query prefix
+alone does not). It is idempotent. The report says `restartRequired` or
+`reindexRequired` when it could not do those steps itself. The daemon's port is chosen
+when it starts, so run `--sync-hister` again after restarting it.
+
+It refuses, and says why, for a remote shared backend (browsing text would leave the
+machine and Hister's config would have to hold the key) and for MinSync's in-process
+engine (Hister cannot reach it): start `minsync serve --idle-timeout 0` first. Pages
+indexed before semantic search was enabled need the reindex; a page whose chunks exceed
+the model's context is kept for keyword search and skipped for vectors, which Hister logs.
+
+### Backfilling existing history safely
+
+`hister import browser history` does not copy page text out of the browser: it
+reads the History database for URLs and then downloads each URL again **without
+your logged-in cookies**. A login-gated URL is therefore saved as its login page,
+and tokens in a URL are sent to that site again. Before importing, put a skip list
+in Hister's `rules.json` (one regular expression per entry, matched against the
+full URL, and also applied to what the extension captures from now on). Cover at
+least login and SSO hosts, mail, documents, drive, social and console
+domains, private hosts and explicit ports, URLs whose query carries a token, key,
+code or session, and `/login`, `/account`, `/settings`, `/admin` style paths.
+This is a deny list: a new, unlisted login page is still captured. Use an `allow`
+list instead if you want the reverse. Check the result with `hister list-urls`.
+
 ## GitHub Gists
 
 `github-gist` indexes the authenticated account's own Gists through the GitHub
@@ -673,9 +860,9 @@ deleted Gists are removed from the index.
 Set `GITHUB_TOKEN` (or the environment variable named by `connector.tokenEnv`);
 if it is unavailable, authentication falls back to the `gh` CLI login. The
 token is not stored in the index or configuration. Search supports lexical
-BM25 and semantic retrieval through the local loopback embedding gateway;
-Gist content stays on the machine for embeddings. If embeddings are
-unavailable, lexical search continues with a `semantic-unavailable` diagnostic.
+BM25 and semantic retrieval through the shared embedder; Gist content stays on
+the machine for local embeddings. If embeddings are unavailable, lexical search
+continues with a `semantic-unavailable` diagnostic.
 Set `connector.semantic: false` (or `{ "enabled": false }`) to keep Gists
 lexical-only: no embedding calls, no vector index, and no
 `<name>-semantic` method.

@@ -17,23 +17,10 @@ afterEach(() => {
 	}
 });
 
-const TAR_ARCHIVE = Uint8Array.from(
-	Buffer.from(
-		"H4sIAGQXqWoC/+3NsQqDQBCE4a19ioi13K4YIY9zgqBwWtwZnz8XG8FahJD/a2Znmg3Bz77uTV9Pc2EvaYjbEOU6mnVtu2d2TlVrjvu7W2OdykPlBu+0+pjfy3+qStdPi0tjIQAAAAAAAAAAAAAAAACAH/IBLt23OQAoAAA=",
-		"base64",
-	),
-);
-const ZIP_ARCHIVE = Uint8Array.from(
-	Buffer.from(
-		"UEsDBBQAAAAAACSYL11dm7CPAgAAAAIAAAAQAAAAbGxhbWEtc2VydmVyLmV4ZU1aUEsBAhQDFAAAAAAAJJgvXV2bsI8CAAAAAgAAABAAAAAAAAAAAAAAAIABAAAAAGxsYW1hLXNlcnZlci5leGVQSwUGAAAAAAEAAQA+AAAAMAAAAAAA",
-		"base64",
-	),
-);
-
 function writeFixture(opts: {
 	readonly withDist: boolean;
 	readonly withSbom: boolean;
-	readonly withEmbedding?: boolean;
+	readonly withNotices?: boolean;
 }): {
 	readonly root: string;
 	readonly outputDir: string;
@@ -45,57 +32,14 @@ function writeFixture(opts: {
 		join(root, "package.json"),
 		JSON.stringify({ name: "fixture-pkg", version: "1.2.3", files: ["dist"] }, null, 2),
 	);
-	writeFileSync(join(root, "LICENSE"), "Apache License\n");
-	writeFileSync(join(root, "NOTICE"), "NOTICE\n");
-	writeFileSync(join(root, "GOVERNANCE.md"), "# Governance\n");
+	if (opts.withNotices !== false) {
+		writeFileSync(join(root, "LICENSE"), "Apache License\n");
+		writeFileSync(join(root, "NOTICE"), "NOTICE\n");
+		writeFileSync(join(root, "GOVERNANCE.md"), "# Governance\n");
+	}
 	if (opts.withDist) {
 		mkdirSync(join(root, "dist"));
 		writeFileSync(join(root, "dist", "index.js"), "export const ok = true;\n");
-	}
-	if (opts.withEmbedding) {
-		const licensesDir = join(root, "licenses");
-		mkdirSync(licensesDir);
-		writeFileSync(join(licensesDir, "llama.cpp-MIT.txt"), "MIT\n");
-		const assets = [
-			{
-				kind: "runtime",
-				id: "mac",
-				filename: "runtime.tar.gz",
-				url: "https://example.invalid/runtime.tar.gz",
-				revision: "test",
-				bytes: TAR_ARCHIVE,
-				archiveMembers: ["llama-b10951/llama-server"],
-			},
-			{
-				kind: "runtime",
-				id: "win-cpu",
-				filename: "runtime-cpu.zip",
-				url: "https://example.invalid/runtime-cpu.zip",
-				revision: "test",
-				bytes: ZIP_ARCHIVE,
-				archiveMembers: ["llama-server.exe"],
-			},
-			{
-				kind: "runtime",
-				id: "win-vulkan",
-				filename: "runtime-vulkan.zip",
-				url: "https://example.invalid/runtime-vulkan.zip",
-				revision: "test",
-				bytes: ZIP_ARCHIVE,
-				archiveMembers: ["llama-server.exe"],
-			},
-		] as const;
-		writeFileSync(
-			join(licensesDir, "embedding-assets.json"),
-			JSON.stringify({
-				assets: assets.map(({ bytes, ...asset }) => ({
-					...asset,
-					sha256: createHash("sha256").update(bytes).digest("hex"),
-					licenseId: "MIT",
-					noticeFile: "licenses/llama.cpp-MIT.txt",
-				})),
-			}),
-		);
 	}
 	const sbomDir = join(root, "sboms");
 	mkdirSync(sbomDir);
@@ -106,19 +50,27 @@ function writeFixture(opts: {
 	return { root, outputDir: join(root, "release-assets"), sbomDir };
 }
 
+type Checksum = { readonly digest: string; readonly name: string };
+
+function parseChecksums(text: string): Checksum[] {
+	return text
+		.split("\n")
+		.filter((line) => line.length > 0)
+		.map((line) => {
+			const match = /^([0-9a-f]{64}) {2}(.+)$/.exec(line);
+			expect(match, `malformed checksum line: ${line}`).toBeTruthy();
+			return { digest: match![1]!, name: match![2]! };
+		});
+}
+
 describe("stageReleaseAssets", () => {
 	it("stages the npm pack tarball, LICENSE, NOTICE, GOVERNANCE, SBOM, and SHA256SUMS", () => {
-		const fixture = writeFixture({ withDist: true, withSbom: true, withEmbedding: true });
+		const fixture = writeFixture({ withDist: true, withSbom: true });
 		const staged = stageReleaseAssets({
 			projectRoot: fixture.root,
 			outputDir: fixture.outputDir,
 			sbomDir: fixture.sbomDir,
-			downloadAsset: (asset) => (asset.id === "mac" ? TAR_ARCHIVE : ZIP_ARCHIVE),
 		});
-		expect(staged.files).toContain("licenses/llama.cpp-MIT.txt");
-		expect(staged.files).toContain("runtime.tar.gz");
-		expect(staged.files).toContain("runtime-cpu.zip");
-		expect(staged.files).toContain("runtime-vulkan.zip");
 		expect(staged.files).toContain("LICENSE");
 		expect(staged.files).toContain("NOTICE");
 		expect(staged.files).toContain("GOVERNANCE.md");
@@ -127,16 +79,38 @@ describe("stageReleaseAssets", () => {
 		expect(staged.files).toContain("SHA256SUMS.txt");
 		expect(staged.files.some((name) => name.endsWith(".tgz"))).toBe(true);
 		expect(staged.files.some((name) => name.includes("node_modules"))).toBe(false);
+	});
 
+	it("writes a SHA256SUMS manifest whose digests match every staged file", () => {
+		const fixture = writeFixture({ withDist: true, withSbom: true });
+		const staged = stageReleaseAssets({
+			projectRoot: fixture.root,
+			outputDir: fixture.outputDir,
+			sbomDir: fixture.sbomDir,
+		});
 		const sums = readFileSync(staged.checksumsPath, "utf8");
-		const licenseLine = sums.split("\n").find((line) => line.endsWith("  LICENSE"));
-		expect(licenseLine).toBeTruthy();
-		const digest = licenseLine?.slice(0, 64);
-		expect(digest).toMatch(/^[0-9a-f]{64}$/);
+		const checksums = parseChecksums(sums);
+		const checksumNames = checksums.map((entry) => entry.name).sort();
+		const covered = staged.files.filter((name) => name !== "SHA256SUMS.txt").sort();
+		expect(checksumNames).toEqual(covered);
+		for (const entry of checksums) {
+			const bytes = readFileSync(join(fixture.outputDir, ...entry.name.split("/")));
+			expect(createHash("sha256").update(bytes).digest("hex"), entry.name).toBe(entry.digest);
+		}
 	});
 
 	it("fails closed when dist/index.js is missing", () => {
 		const fixture = writeFixture({ withDist: false, withSbom: false });
+		expect(() =>
+			stageReleaseAssets({
+				projectRoot: fixture.root,
+				outputDir: fixture.outputDir,
+			}),
+		).toThrow(SupplyChainError);
+	});
+
+	it("fails closed when a required notice file is missing", () => {
+		const fixture = writeFixture({ withDist: true, withSbom: false, withNotices: false });
 		expect(() =>
 			stageReleaseAssets({
 				projectRoot: fixture.root,

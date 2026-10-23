@@ -10,5 +10,4 @@
 /scripts/supply-chain/ @vkehfdl1
 /.github/dependency-review-config.yml @vkehfdl1
 /licenses/ @vkehfdl1
-/src/embedding-runtime/ @vkehfdl1
-/src/p2p/ @vkehfdl1
+/src/embedding/ @vkehfdl1

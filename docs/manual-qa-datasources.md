@@ -13,7 +13,7 @@ through notcrawl.
 Issue #1477 adds the live ClawGallery CLI path.
 Issue #1496 adds the live mailcrawl local email CLI path.
 Issue #1588 adds the live github-gist path (authenticated account gists,
-incremental cursor sync, lexical + local-gateway semantic search).
+incremental cursor sync, lexical + local MinSync semantic search).
 Issue #1672 adds Lark/Feishu remote search through `lark-cli` (no local
 archive). A real tenant run needs `lark-cli auth login` and must not copy
 tenant content into CI fixtures.
@@ -39,6 +39,7 @@ synthetic store inside the container or accept `SKIP`.
 | Harness | Target systems | Command |
 |---|---|---|
 | `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
+| `scripts/manual-qa/run-qa-obsidian-live.ts` | Real local vault fixture through MinSync BM25 + semantic + folder scope + incremental re-index | `bun scripts/manual-qa/run-qa-obsidian-live.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-lazykatok-live.ts` | Real KakaoTalk archive through the external `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval); Apple Silicon macOS with Full Disk Access | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
@@ -46,9 +47,10 @@ synthetic store inside the container or accept `SKIP`.
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
-| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.2.0` fixture sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.2.2` fixture sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `test/datasource/embedding-env.test.ts` | Real child-process boundary for mailcrawl and lazykatok on the shared embedder: provider/URL/model/dimension env, remote key hand-over and egress opt-in, index-only daemon start, BM25 untouched, no native fallback when no endpoint exists, TEI refused for lazykatok | `bunx vitest run test/datasource/embedding-env.test.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
-| `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the local embedding gateway (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
+| `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the shared MinSync embedder (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |
@@ -152,22 +154,6 @@ mapping. Configure credentials in notcrawl itself, then set
       iCloud Drive is documented as experimental/Tier 4.
 - [x] Include/exclude, maximum size, concurrency, bandwidth limit, and
       dry-run are trusted CLI datasource configuration.
-
-## P2P SimpleX live QA
-
-The P2P permission-sharing transport runs over SimpleX Chat (simplex-chat CLI as a local WebSocket server). Live QA exercises a real send/receive round-trip through `src/p2p/simplex-transport.ts` between two local SimpleX profiles — no phone number or external account needed:
-
-```bash
-bun scripts/manual-qa/p2p-simplex-qa.ts
-```
-
-The harness spawns two `simplex-chat` WebSocket servers on loopback with separate database prefixes, connects them via a one-time invitation link, sends a unique payload, and asserts byte-exact delivery. Both CLIs are stopped and their temp databases removed on exit. Gate behavior (injection, policy, quotas, deterministic egress) is covered deterministically by `test/p2p/simplex-server.test.ts` without external services.
-
-The profile-based contact model has its own live harness: one real profile publishes a SimpleX profile, the other receives it, and the harness asserts that `listContacts()` carries it, that the trusted registry stores it next to your local name and note, that an unknown SimpleX contact is never trusted, and that `autorag p2p peers` shows it. Evidence lands in `.omo/evidence/p2p-profile-qa.json`.
-
-```bash
-bun scripts/manual-qa/p2p-simplex-profile-qa.ts
-```
 
 ## Last run
 

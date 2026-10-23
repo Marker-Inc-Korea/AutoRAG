@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { runModels } from "../../src/cli/commands/models.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { buildStoreEntry, mapServerModels } from "../../src/cloud/models.ts";
-import type { ProfileId } from "../../src/embedding-runtime/types.ts";
 
 function context(positionals: string[], flags: CommandContext["flags"] = {}) {
 	const stdout: string[] = [];
@@ -23,35 +22,12 @@ function context(positionals: string[], flags: CommandContext["flags"] = {}) {
 }
 
 describe("models commands", () => {
-	it("prefetches the requested profile and emits JSON", async () => {
-		const prefetchModel = vi.fn(
-			async (): Promise<{ profileId: ProfileId; path: string }> => ({
-				profileId: "qwen3-embedding-0.6b",
-				path: "model.gguf",
-			}),
-		);
-		const { ctx, stdout } = context(["prefetch"], { profile: "qwen3-embedding-0.6b", json: true });
-		expect(await runModels(ctx, { prefetchModel })).toBe(0);
-		expect(prefetchModel).toHaveBeenCalledWith("qwen3-embedding-0.6b");
-		expect(JSON.parse(stdout[0]).ok).toBe(true);
-	});
-
-	it("rejects an import without a path", async () => {
-		const { ctx, stderr } = context(["import"]);
-		expect(await runModels(ctx, { importModel: vi.fn() })).toBe(2);
-		expect(stderr.join("\n")).toContain("Usage");
-	});
-
-	it("returns a failing typed error for a bad verification", async () => {
-		const { ctx, stderr } = context(["verify"]);
-		expect(
-			await runModels(ctx, {
-				verifyModel: vi.fn(async () => {
-					throw new Error("hash mismatch");
-				}),
-			}),
-		).toBe(1);
-		expect(stderr.join("\n")).toContain("hash mismatch");
+	it("no longer manages an embedding cache: prefetch, import and verify are usage errors", async () => {
+		for (const sub of ["prefetch", "import", "verify"]) {
+			const { ctx, stderr } = context([sub]);
+			expect(await runModels(ctx)).toBe(2);
+			expect(stderr.join("\n")).toContain("Usage");
+		}
 	});
 
 	it("lists chat models through the injected pi runtime lister as JSON", async () => {

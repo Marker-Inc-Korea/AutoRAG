@@ -179,7 +179,7 @@ async function defaultProbe(input: ProbeInput, signal: AbortSignal): Promise<Pro
 		const result = await completeSimple(
 			input.model,
 			{ messages: [{ role: "user", content: "Reply with OK.", timestamp: Date.now() }] },
-			{ ...(apiKey !== undefined ? { apiKey } : {}), signal, maxTokens: 64 },
+			{ ...(apiKey !== undefined ? { apiKey } : {}), signal, reasoning: "minimal", maxTokens: 512 },
 		);
 		if (result.stopReason === "error" || result.stopReason === "aborted") {
 			return classifyError(new Error(result.errorMessage ?? `completion ${result.stopReason}`));

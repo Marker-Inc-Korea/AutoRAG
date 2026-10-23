@@ -88,7 +88,7 @@ export async function decomposeQuery(complete: DecompositionCompleter, query: st
 	return queries.length > 0 ? queries : [query];
 }
 
-/** Completer over a pi-ai model: one user turn, thinking off, short output. */
+/** Completer over a pi-ai model: one user turn, minimal thinking, short output. */
 export function createModelDecompositionCompleter(
 	target: DecompositionModel,
 	signal?: AbortSignal,
@@ -100,7 +100,8 @@ export function createModelDecompositionCompleter(
 			{
 				...(target.apiKey !== undefined ? { apiKey: target.apiKey } : {}),
 				...(signal !== undefined ? { signal } : {}),
-				maxTokens: 1024,
+				reasoning: "minimal",
+				maxTokens: 2048,
 			},
 		);
 		if (result.stopReason === "error" || result.stopReason === "aborted") {

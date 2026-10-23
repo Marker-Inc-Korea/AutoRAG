@@ -70,7 +70,8 @@ export type SearchDocumentDiagnosticCode =
 	| "evidence-judgment-fallback"
 	| "memory-search-fallback"
 	| "self-config-unavailable"
-	| "self-config-rolled-back";
+	| "self-config-rolled-back"
+	| "embedding-unavailable";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
@@ -155,7 +156,7 @@ export type SearchDocumentsStreamEvent =
 	  }
 	| {
 			/**
-			 * Immediate first answer from the thinking-off fast phase. Always
+			 * Immediate first answer from the minimal-thinking fast phase. Always
 			 * yielded before `complete` when the two-phase flow produced one; the
 			 * `complete` event's response remains the verified final answer.
 			 */

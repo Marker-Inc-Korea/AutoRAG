@@ -4,12 +4,37 @@ import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSetup } from "../../src/cli/setup.ts";
 
+import type { ManagedEmbedder } from "../../src/embedding/embedder.ts";
+
 const roots: string[] = [];
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function fakeLock() {
 	return { path: "setup.lock", contents: "", assertOwned() {}, release() {} };
+}
+
+function fakeEmbedder(options: {
+	readonly backend?: "daemon" | "in-process" | "remote" | "none";
+	readonly alive?: boolean;
+	readonly detail?: string;
+	readonly identity?: { provider: string; model: string; dimension: number };
+	readonly identityError?: string;
+}): ManagedEmbedder {
+	return {
+		health: async () => ({
+			backend: options.backend ?? "daemon",
+			alive: options.alive ?? true,
+			...(options.detail === undefined ? {} : { detail: options.detail }),
+		}),
+		identity: async () => {
+			if (options.identityError !== undefined) throw new Error(options.identityError);
+			return options.identity ?? { provider: "minsync", model: "Qwen/Qwen3-Embedding-0.6B", dimension: 1024 };
+		},
+		embed: async (texts) => texts.map(() => [0]),
+		describeEndpoint: async () => undefined,
+		close: async () => undefined,
+	};
 }
 
 describe("setup orchestration", () => {
@@ -36,14 +61,7 @@ describe("setup orchestration", () => {
 				executable: (name) => (name === "/bin/sh" ? name : undefined),
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => {
-						throw new Error("health /Users/alice/.secret/token=abc");
-					},
-					verifyModel: async () => {
-						throw new Error("offline");
-					},
-				},
+				embedder: fakeEmbedder({ identityError: "health /Users/alice/.secret/token=abc" }),
 			},
 		});
 		expect(report.mode).toBe("bm25");
@@ -57,7 +75,7 @@ describe("setup orchestration", () => {
 		});
 	});
 
-	it("reports semantic mode when the runtime answers a live health probe", async () => {
+	it("reports semantic mode and the backend that answered, and writes MinSync's local default", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);
 		const configPath = join(root, "config.json");
@@ -70,34 +88,71 @@ describe("setup orchestration", () => {
 				executable: () => undefined,
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => ({
-						state: "ready",
-						backend: "auto",
-						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-						health: { ok: true, profileId: "qwen3-embedding-0.6b", dimension: 1024, runtimeBuild: "b10951" },
-					}),
-					verifyModel: async () => ({
-						profileId: "qwen3-embedding-0.6b",
-						path: "/cache/model.gguf",
-						hash: "sha",
-					}),
-				},
+				embedder: fakeEmbedder({ backend: "daemon" }),
 			},
 		});
 		expect(report.mode).toBe("semantic");
 		expect(report.ok).toBe(true);
 		expect(report.remediation).toBeUndefined();
-		expect(report.runtime).toEqual({
-			state: "ready",
-			health: true,
-			model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+		expect(report.embedding).toEqual({
+			backend: "daemon",
+			provider: "minsync",
+			model: "Qwen/Qwen3-Embedding-0.6B",
+			dimension: 1024,
 		});
 		const config = JSON.parse(readFileSync(configPath, "utf8"));
 		expect(config.minSync.embedder).toEqual({
 			id: "native:Qwen/Qwen3-Embedding-0.6B",
 			dimension: 1024,
 		});
+	});
+
+	it("is still semantic when no daemon runs but MinSync's in-process engine answers", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({ backend: "in-process" }),
+			},
+		});
+		expect(report.mode).toBe("semantic");
+		expect(report.embedding).toMatchObject({ backend: "in-process" });
+	});
+
+	it("reports a configured remote endpoint as the backend and does not rewrite the operator's config", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		const original = {
+			searchPaths: [join(root, "docs")],
+			workspacePath: root,
+			minSync: { embedder: { id: "openai:text-embedding-3-small", apiKeyEnv: "OPENAI_API_KEY" } },
+		};
+		writeFileSync(configPath, JSON.stringify(original));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({
+					backend: "remote",
+					identity: { provider: "openai", model: "text-embedding-3-small", dimension: 1536 },
+				}),
+			},
+		});
+		expect(report.embedding).toMatchObject({ backend: "remote", provider: "openai", dimension: 1536 });
+		expect(JSON.parse(readFileSync(configPath, "utf8")).minSync.embedder).toEqual(original.minSync.embedder);
 	});
 
 	it("never requires an env credential for a CLI-backed datasource", async () => {
@@ -132,19 +187,7 @@ describe("setup orchestration", () => {
 				executable: (name) => (name === "discrawl" || name === "slacrawl" ? `/usr/local/bin/${name}` : undefined),
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => ({
-						state: "ready",
-						backend: "auto",
-						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-						health: { ok: true, profileId: "qwen3-embedding-0.6b", dimension: 1024, runtimeBuild: "b10951" },
-					}),
-					verifyModel: async () => ({
-						profileId: "qwen3-embedding-0.6b",
-						path: "/cache/model.gguf",
-						hash: "sha",
-					}),
-				},
+				embedder: fakeEmbedder({}),
 			},
 		});
 		// The discord datasource reads discrawl's native store: the optional bot
@@ -159,7 +202,33 @@ describe("setup orchestration", () => {
 		});
 	});
 
-	it("surfaces a runtime startup failure instead of discarding it", async () => {
+	it("treats an Obsidian vault as configured without any external binary", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				datasources: { obsidian: { connector: { vaultPath: join(root, "vault") } } },
+			}),
+		);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+			},
+		});
+		expect(report.datasources.find((entry) => entry.name === "obsidian")?.state).toBe("configured");
+	});
+
+	it("reports that no embedding backend is alive, with the way out, instead of discarding it", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);
 		const configPath = join(root, "config.json");
@@ -172,27 +241,17 @@ describe("setup orchestration", () => {
 				executable: () => undefined,
 				pathExists: () => true,
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => ({
-						state: "stopped",
-						backend: "auto",
-						model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-						health: { ok: false, code: "unavailable", message: "Gateway is stopped.", retryable: true },
-					}),
-					verifyModel: async () => ({
-						profileId: "qwen3-embedding-0.6b",
-						path: "/cache/model.gguf",
-						hash: "sha",
-					}),
-					ensureRuntime: async () => {
-						throw new Error("spawn failed at /Users/alice/secret token=abc");
-					},
-				},
+				embedder: fakeEmbedder({
+					alive: false,
+					backend: "none",
+					detail: "addon missing at /Users/alice/secret token=abc",
+				}),
 			},
 		});
 		expect(report.mode).toBe("bm25");
-		expect(report.runtime.reason).toContain("spawn failed");
+		expect(report.embedding.reason).toContain("addon missing");
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
+		expect(report.remediation).toContain("minsync serve");
 	});
 });
 
@@ -213,14 +272,7 @@ describe("discord native store probe", () => {
 				executable: (name) => (name === "discrawl" ? "/opt/homebrew/bin/discrawl" : undefined),
 				pathExists: existing,
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => {
-						throw new Error("offline");
-					},
-					verifyModel: async () => {
-						throw new Error("offline");
-					},
-				},
+				embedder: fakeEmbedder({ alive: false, backend: "none", detail: "offline" }),
 			},
 		});
 		return { root, entry: report.datasources.find((d) => d.name === "discord") };
@@ -266,14 +318,7 @@ describe("discord native store probe", () => {
 					return false;
 				},
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => {
-						throw new Error("offline");
-					},
-					verifyModel: async () => {
-						throw new Error("offline");
-					},
-				},
+				embedder: fakeEmbedder({ alive: false, backend: "none", detail: "offline" }),
 			},
 		});
 		expect(seen.filter((path) => path.includes("discrawl"))).toEqual([explicit]);
@@ -296,14 +341,7 @@ describe("discord native store probe", () => {
 					return false;
 				},
 				acquireLock: fakeLock,
-				runtime: {
-					runtimeStatus: async () => {
-						throw new Error("offline");
-					},
-					verifyModel: async () => {
-						throw new Error("offline");
-					},
-				},
+				embedder: fakeEmbedder({ alive: false, backend: "none", detail: "offline" }),
 			},
 		});
 		return seen.filter((path) => path.includes("discrawl"));

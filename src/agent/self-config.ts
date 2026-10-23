@@ -60,6 +60,8 @@ export interface SelfConfigPromptInput {
 	readonly configPath: string;
 	readonly agentDir: string;
 	readonly skill: string;
+	/** True when `manage_automations` is available: file-triggered automations are then in scope. */
+	readonly automations?: boolean;
 }
 
 /** The config file's current text, or `undefined` when it does not exist. */
@@ -105,7 +107,10 @@ export function buildSelfConfigPrompt(input: SelfConfigPromptInput): string {
 		`- Active AutoRAG config file: ${input.configPath}\n` +
 		`- pi agent directory (auth.json, models.json, settings.json): ${input.agentDir}\n\n` +
 		`## Rules for this run\n\n` +
-		`- Edit only the config file above. Touch nothing else.\n` +
+		(input.automations === true
+			? `- Edit only the config file above and, for file-triggered automation requests, the rules managed through \`manage_automations\`. Touch nothing else.\n` +
+				`- File-triggered automation requests (rules that run a command when files in a folder change, and the background daemon that runs them) are not config.json fields: carry them out with the \`manage_automations\` tool, following its File Automations guidance in your system prompt, and never by hand-editing the rules file or launchd/systemd/Task Scheduler entries.\n`
+			: `- Edit only the config file above. Touch nothing else.\n`) +
 		`- To add a custom or OpenAI-compatible provider, set it on the config's \`model\` object (provider, id, api, model.baseUrl, apiKeyEnv) as the skill shows. Do not create or hand-write ${input.agentDir}/models.json: it has its own schema and a wrong file silently hides models.\n` +
 		`- Read the current config first. Change only the fields the user asked about and keep every other field exactly as it is. The result must stay valid JSON.\n` +
 		`- Pass \`--config ${input.configPath}\` to every \`autorag\` command you run, so you inspect and verify this config and no other one.\n` +

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Embedder, EmbeddingIdentity } from "../../src/embedding-runtime/gateway-embedder.ts";
+import type { Embedder, EmbeddingIdentity } from "../../src/embedding/embedder.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
 import {
 	findSimilarQuestions,
@@ -68,6 +68,21 @@ function tableEmbedder(
 describe("memoryVectorStorePath", () => {
 	it("sits next to the memory file", () => {
 		expect(memoryVectorStorePath("/home/u/.autorag/memory.json")).toBe("/home/u/.autorag/memory.json.vectors.db");
+	});
+});
+
+describe("findSimilarQuestions embedding roles", () => {
+	it("embeds the current question and the stored questions the same way (question-to-question, not query-to-passage)", async () => {
+		const roles: (string | undefined)[] = [];
+		const embedder: Embedder = {
+			identity: async () => ({ provider: "test", model: "roles", dimension: 2 }),
+			embed: async (texts, options) => {
+				roles.push(options?.role);
+				return texts.map(() => [1, 0]);
+			},
+		};
+		await findSimilarQuestions([record("past question")], "current question", { embedder });
+		expect(roles).toEqual(["document"]);
 	});
 });
 

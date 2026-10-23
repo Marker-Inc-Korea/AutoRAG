@@ -1,4 +1,4 @@
-import type { Embedder } from "../embedding-runtime/gateway-embedder.ts";
+import type { Embedder } from "../embedding/embedder.ts";
 import type { JudgedEvidenceRecord } from "./judged-evidence.ts";
 import type { RetrievalInsight, RetrievalMemory } from "./memory.ts";
 import { CURRENT_CONVERSATION_RECORD_LIMIT, renderMemoryContext } from "./renderer.ts";

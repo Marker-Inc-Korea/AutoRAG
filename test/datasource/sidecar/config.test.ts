@@ -41,8 +41,14 @@ describe("resolveSidecarOptions: on by default", () => {
 			crawlerDbPath: "/crawler/telecrawl.db",
 			sidecarDbPath: join("/ws", ".autorag", "datasources", "telegram", "main", "sidecar.sqlite"),
 		});
-		expect(options?.embedder).toBeDefined();
 		expect(options?.workspaceId).toBeUndefined();
+	});
+
+	it("uses the shared embedder it is given, and is lexical-only when it is given none", () => {
+		const embedder = { identity: async () => ({ provider: "p", model: "m", dimension: 1 }), embed: async () => [] };
+		const input = { ...base, connector: {}, defaultCrawlerDb: "/x.db" };
+		expect(resolveSidecarOptions({ ...input, embedder })?.embedder).toBe(embedder);
+		expect(resolveSidecarOptions(input)?.embedder).toBeUndefined();
 	});
 
 	it("prefers an explicit crawlerDbPath, then connector.databasePath, over the default, and expands ~", () => {
@@ -65,6 +71,7 @@ describe("resolveSidecarOptions: on by default", () => {
 			descriptor: CRAWLER_DESCRIPTORS.slack,
 			connector: { workspace: "T9", sidecar: { semantic: false } },
 			defaultCrawlerDb: "/s.db",
+			embedder: { identity: async () => ({ provider: "p", model: "m", dimension: 1 }), embed: async () => [] },
 		});
 		expect(options?.workspaceId).toBe("T9");
 		expect(options?.embedder).toBeUndefined();
@@ -152,11 +159,16 @@ describe("slack: the archive follows slacrawl's own configuration", () => {
 	});
 });
 
+const stubEmbedder = {
+	identity: async () => ({ provider: "minsync", model: "Qwen/Qwen3-Embedding-0.6B", dimension: 2 }),
+	embed: async (texts: readonly string[]) => texts.map(() => [1, 0]),
+};
+
 describe("buildDatasourceSkills: sidecar by default", () => {
 	it.each(["slack", "telegram", "whatsapp", "kakao"] as const)(
 		"%s: a plain connection gets BM25, semantic and hybrid",
 		(name) => {
-			const { skills } = buildDatasourceSkills({ [name]: {} }, "/tmp/ws-never-created");
+			const { skills } = buildDatasourceSkills({ [name]: {} }, "/tmp/ws-never-created", { embedder: stubEmbedder });
 			const methods = skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name));
 			const cliLexical = name === "kakao" ? "kakao-bm25" : `${name}-fts`;
 			expect(methods).toEqual([cliLexical, `${name}-sidecar-bm25`, `${name}-semantic`, `${name}-hybrid`]);

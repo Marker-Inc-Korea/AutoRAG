@@ -79,6 +79,13 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
+export {
+	HISTER_SKILL_TYPE,
+	HisterClient,
+	type HisterClientOptions,
+	HisterSkill,
+	type HisterSkillOptions,
+} from "./skills/hister/index.ts";
 export { LarkClient, type LarkClientOptions, LarkSkill, type LarkSkillOptions } from "./skills/lark/index.ts";
 export type {
 	LazykatokFailureReason,
@@ -125,15 +132,10 @@ export {
 } from "./skills/notion/index.ts";
 export {
 	ObsidianBm25Method,
+	type ObsidianMethodOptions,
 	ObsidianSemanticMethod,
 	ObsidianSkill,
-	type ObsidianSkillClient,
 	type ObsidianSkillOptions,
-	QmdClient,
-	type QmdOptions,
-	type QmdSearchHit,
-	type QmdSearchMode,
-	type QmdSearchResult,
 } from "./skills/obsidian/index.ts";
 export {
 	RssConnector,

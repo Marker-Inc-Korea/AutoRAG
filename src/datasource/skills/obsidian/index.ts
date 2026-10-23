@@ -1,33 +1,10 @@
-export { QmdClient } from "./client.ts";
+export { ObsidianBm25Method, type ObsidianMethodOptions, ObsidianSemanticMethod } from "./methods.ts";
 export {
-	ObsidianBm25Method,
-	type ObsidianMethodOptions,
-	type ObsidianSearchClient,
-	ObsidianSemanticMethod,
-} from "./methods.ts";
-export {
-	obsidianDatasourceRoot,
-	obsidianQmdCacheDir,
-	obsidianQmdConfigDir,
-	obsidianSourcePath,
-	parseObsidianSourcePath,
-	stripEdgeDashes,
-	toQmdCollectionName,
+	encodeSourceSegment,
+	obsidianDatasourceDir,
+	obsidianInstanceSource,
+	obsidianMinSyncWorkspace,
+	obsidianNoteSource,
 } from "./paths.ts";
-export { ObsidianSkill, type ObsidianSkillClient, type ObsidianSkillOptions } from "./skill.ts";
-export type {
-	QmdEmbedResult,
-	QmdEnsureResult,
-	QmdFailureReason,
-	QmdOptions,
-	QmdSearchHit,
-	QmdSearchMode,
-	QmdSearchOptions,
-	QmdSearchResult,
-	QmdUpdateResult,
-} from "./types.ts";
-export {
-	DEFAULT_QMD_BINARY,
-	DEFAULT_QMD_MAX_BUFFER_BYTES,
-	DEFAULT_QMD_TIMEOUT_MS,
-} from "./types.ts";
+export { ObsidianSkill, type ObsidianSkillOptions } from "./skill.ts";
+export type { ObsidianMinSyncOptions, ObsidianSearchMode } from "./vault-index.ts";

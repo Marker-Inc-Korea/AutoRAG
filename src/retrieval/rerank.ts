@@ -12,10 +12,12 @@
  * providers — a configured reranker that cannot run is reported, not replaced.
  */
 
-import { OpenRouter } from "@openrouter/sdk";
 import { API_PATH, PROVIDER_ID as DAZZI_PROVIDER_ID, resolveBaseUrl } from "../cloud/config.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "../cloud/credential.ts";
 import type { RetrievalResult } from "./types.ts";
+
+/** OpenRouter's production API root. */
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /** Default rerank model routed through OpenRouter. */
 export const DEFAULT_RERANK_MODEL = "voyageai/rerank-3-lite";
@@ -29,8 +31,21 @@ export const DEFAULT_RERANK_API_KEY_ENV = "OPENROUTER_API_KEY";
  * chat LLMs, so the project's 2026+ model rule does not cover them.
  */
 export const DEFAULT_DAZZI_RERANK_MODEL = "qwen/qwen3-reranker-8b";
+/**
+ * Default per-request rerank timeout. A reranker that never answers would stall
+ * the fast answer. Measured against the hosted reranker, a 172-document pool
+ * takes ~15s and a 300-document pool ~45s, so 60s clears the largest baseline
+ * pool (3 x 100 candidates) with headroom.
+ */
+export const DEFAULT_RERANK_TIMEOUT_MS = 60_000;
 /** Default number of merged chunks kept after reranking. */
 export const DEFAULT_RERANK_TOP_N = 25;
+/**
+ * Longest document, in UTF-16 units, sent to a reranker. The hosted Dazzi
+ * reranker rejects a document of 131,072 characters or more with HTTP 400 and
+ * fails the whole request; 131,000 stays under that with a small margin.
+ */
+export const RERANK_MAX_DOCUMENT_CHARS = 131_000;
 /** Rerank providers {@link createReranker} can build. */
 export const SUPPORTED_RERANK_PROVIDERS: readonly string[] = [DEFAULT_RERANK_PROVIDER, DAZZI_PROVIDER_ID];
 
@@ -80,7 +95,7 @@ export interface Reranker {
 	rerank(query: string, results: readonly RetrievalResult[], options?: RerankOptions): Promise<RetrievalResult[]>;
 }
 
-/** Minimal rerank client shape, so tests can inject a fake without the SDK. */
+/** Minimal rerank client shape, so tests can inject a fake without network access. */
 export interface RerankClient {
 	rerank(
 		request: {
@@ -95,7 +110,7 @@ export interface RerankClient {
 	): Promise<RerankResponse>;
 }
 
-/** Response body returned by OpenRouter's rerank router. */
+/** Rerank response as {@link OpenRouterReranker} consumes it. */
 export interface RerankResponse {
 	readonly results: ReadonlyArray<{
 		readonly index: number;
@@ -159,7 +174,72 @@ function dazziApiBaseUrl(env: NodeJS.ProcessEnv): string {
 }
 
 /**
- * Reranker backed by an OpenRouter-compatible rerank router.
+ * Rerank client over plain `fetch`. The OpenRouter SDK validates every result
+ * against a schema that requires a `document` echo, which Dazzi does not send:
+ * the SDK then rejects a successful HTTP 200. Only `index` and
+ * `relevance_score` are read here, and a malformed or non-2xx response throws
+ * with the status and body so the failure is reported, not hidden.
+ */
+function createFetchRerankClient(options: {
+	readonly apiKey: string;
+	readonly baseUrl: string;
+	readonly timeoutMs: number;
+}): RerankClient {
+	const url = `${trimTrailingSlashes(options.baseUrl)}/rerank`;
+	return {
+		rerank: async ({ requestBody }, requestOptions) => {
+			const { topN, ...rest } = requestBody;
+			const timeout = AbortSignal.timeout(options.timeoutMs);
+			const signal = AbortSignal.any([requestOptions?.signal, timeout].filter((entry) => entry !== undefined));
+			const response = await fetch(url, {
+				method: "POST",
+				headers: { authorization: `Bearer ${options.apiKey}`, "content-type": "application/json" },
+				body: JSON.stringify({ ...rest, ...(topN !== undefined ? { top_n: topN } : {}) }),
+				signal,
+			});
+			const text = await response.text();
+			if (!response.ok) throw new Error(`rerank request failed (HTTP ${response.status}): ${text.slice(0, 500)}`);
+			let body: unknown;
+			try {
+				body = JSON.parse(text);
+			} catch {
+				throw new Error(`rerank response is not JSON: ${text.slice(0, 200)}`);
+			}
+			const results = readField(body, "results");
+			if (!Array.isArray(results)) throw new Error(`rerank response has no results array: ${text.slice(0, 200)}`);
+			const parsed = results.map((entry: unknown) => {
+				const index = readField(entry, "index");
+				const score = readField(entry, "relevance_score");
+				if (typeof index !== "number" || !Number.isInteger(index) || typeof score !== "number") {
+					throw new Error(`rerank response has a malformed result: ${JSON.stringify(entry).slice(0, 200)}`);
+				}
+				return { index, relevanceScore: score };
+			});
+			const model = readField(body, "model");
+			const provider = readField(body, "provider");
+			return {
+				results: parsed,
+				...(typeof model === "string" ? { model } : {}),
+				...(typeof provider === "string" ? { provider } : {}),
+			};
+		},
+	};
+}
+
+/** `value` without its trailing `/` characters, in one backwards scan. */
+function trimTrailingSlashes(value: string): string {
+	let end = value.length;
+	while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+	return value.slice(0, end);
+}
+
+/** `value[key]` when `value` is an object that has `key`, else `undefined`. */
+function readField(value: unknown, key: string): unknown {
+	return typeof value === "object" && value !== null && key in value ? Reflect.get(value, key) : undefined;
+}
+
+/**
+ * Reranker backed by an OpenRouter-compatible rerank endpoint.
  *
  * OpenRouter is the default provider; the hosted Dazzi Models plan serves the
  * same wire shape at `<root>/v1/rerank`, so {@link createReranker} reuses this
@@ -192,18 +272,12 @@ export class OpenRouterReranker implements Reranker {
 				: `no API key: set ${apiKeyEnv} or configure rerank.apiKeyEnv`;
 			return;
 		}
-		const baseUrl = options.baseUrl ?? (isDazzi ? dazziApiBaseUrl(env) : undefined);
-		const sdkOptions: ConstructorParameters<typeof OpenRouter>[0] = { apiKey };
-		if (baseUrl !== undefined) sdkOptions.serverURL = baseUrl;
-		if (options.timeoutMs !== undefined) sdkOptions.timeoutMs = options.timeoutMs;
-		const sdk = new OpenRouter(sdkOptions);
-		this.client = {
-			rerank: async (request, requestOptions) => {
-				const response = await sdk.rerank.rerank(request, requestOptions);
-				if (typeof response === "string") throw new Error(response);
-				return response;
-			},
-		};
+		const baseUrl = options.baseUrl ?? (isDazzi ? dazziApiBaseUrl(env) : OPENROUTER_BASE_URL);
+		this.client = createFetchRerankClient({
+			apiKey,
+			baseUrl,
+			timeoutMs: options.timeoutMs ?? DEFAULT_RERANK_TIMEOUT_MS,
+		});
 	}
 
 	describe(): RerankerDescriptor {
@@ -226,6 +300,31 @@ export class OpenRouterReranker implements Reranker {
 		}
 		if (results.length === 0) return [];
 
+		// The provider fails the whole request with HTTP 400 for an empty document
+		// and for one above its input limit, so blank (empty or whitespace-only)
+		// content is never sent and long content is cut to RERANK_MAX_DOCUMENT_CHARS
+		// on the wire only; the returned results keep their full content.
+		// `sent[i]` is the index in `results` of the i-th document on the wire.
+		const sent: number[] = [];
+		const documents: string[] = [];
+		for (let index = 0; index < results.length; index += 1) {
+			const content = (results[index] as RetrievalResult).content;
+			if (content.trim() === "") continue;
+			sent.push(index);
+			if (content.length <= RERANK_MAX_DOCUMENT_CHARS) {
+				documents.push(content);
+				continue;
+			}
+			// Do not leave half of a surrogate pair at the cut.
+			const lastKept = content.charCodeAt(RERANK_MAX_DOCUMENT_CHARS - 1);
+			const cut =
+				lastKept >= 0xd800 && lastKept <= 0xdbff ? RERANK_MAX_DOCUMENT_CHARS - 1 : RERANK_MAX_DOCUMENT_CHARS;
+			documents.push(content.slice(0, cut));
+		}
+		if (documents.length === 0) {
+			return options.topN === undefined ? [...results] : results.slice(0, options.topN);
+		}
+
 		const requestBody: {
 			model: string;
 			query: string;
@@ -234,7 +333,7 @@ export class OpenRouterReranker implements Reranker {
 		} = {
 			model: this.model,
 			query,
-			documents: results.map((result) => result.content),
+			documents,
 		};
 		if (options.topN !== undefined) requestBody.topN = options.topN;
 
@@ -243,9 +342,10 @@ export class OpenRouterReranker implements Reranker {
 		const seen = new Set<number>();
 		const reranked: RetrievalResult[] = [];
 		for (const entry of ordered) {
-			const original = results[entry.index];
-			if (original === undefined || seen.has(entry.index)) continue;
-			seen.add(entry.index);
+			const originalIndex = sent[entry.index];
+			if (originalIndex === undefined || seen.has(originalIndex)) continue;
+			const original = results[originalIndex] as RetrievalResult;
+			seen.add(originalIndex);
 			reranked.push({
 				...original,
 				score: entry.relevanceScore,

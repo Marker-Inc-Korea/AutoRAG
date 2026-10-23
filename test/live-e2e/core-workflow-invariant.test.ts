@@ -40,8 +40,8 @@ describe("live-e2e core workflow invariants", () => {
 	it("refuses stale fingerprints rather than treating warm state as reusable", () => {
 		expect(
 			isFingerprintCurrent(
-				{ corpusDigest: "old", embeddingModel: "Qwen3-Embedding-0.6B-Q8_0.gguf" },
-				{ corpusDigest: "new", embeddingModel: "Qwen3-Embedding-0.6B-Q8_0.gguf" },
+				{ corpusDigest: "old", embeddingModel: "Qwen/Qwen3-Embedding-0.6B" },
+				{ corpusDigest: "new", embeddingModel: "Qwen/Qwen3-Embedding-0.6B" },
 			),
 		).toBe(false);
 	});
@@ -124,52 +124,22 @@ describe("live-e2e core workflow invariants", () => {
 		expect(assertAbsoluteReadableSource(alias)).toBe(realpathSync(actual));
 	});
 
-	it("builds the agent with clone-local workspace and shared search path", () => {
+	it("builds the agent with clone-local workspace, shared search path, and MinSync's own embedder", () => {
 		const root = tempRoot();
 		const workspace = join(root, ".autorag-e2e", "workspace");
-		const previous = process.env.AUTORAG_LIVE_E2E_EMBEDDER;
-		try {
-			process.env.AUTORAG_LIVE_E2E_EMBEDDER = "gateway";
-			const options = buildLiveStackOptions(root, workspace);
-			expect(options.workspacePath).toBe(workspace);
-			expect(options.searchPaths).toEqual([join(root, "corpus")]);
-			expect(options.workspacePath).not.toBe(root);
-			// The corpus root is immutable fixture state: jikji must never run
-			// against it, and the gateway embedder points at the pinned loopback TEI.
-			expect(options.jikji).toBe(false);
-			expect(options.minSync).toMatchObject({
-				autoInstall: false,
-				embedder: {
-					id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
-					dimension: 1024,
-				},
-			});
-		} finally {
-			restoreEmbedderEnv(previous);
-		}
+		const options = buildLiveStackOptions(root, workspace);
+		expect(options.workspacePath).toBe(workspace);
+		expect(options.searchPaths).toEqual([join(root, "corpus")]);
+		expect(options.workspacePath).not.toBe(root);
+		// The corpus root is immutable fixture state: jikji must never run against it.
+		expect(options.jikji).toBe(false);
+		// AutoRAG owns no embedding model: MinSync's native Qwen3 is the only local embedder, and the live
+		// lane may install MinSync because the run is the one place a daemon is allowed to start.
+		expect(options.minSync).toMatchObject({
+			autoInstall: true,
+			embedder: { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 },
+		});
 	});
-
-	it("defaults to the native embedder with auto-install inside Docker", () => {
-		const root = tempRoot();
-		const workspace = join(root, ".autorag-e2e", "workspace");
-		const previous = process.env.AUTORAG_LIVE_E2E_EMBEDDER;
-		try {
-			process.env.AUTORAG_LIVE_E2E_EMBEDDER = "native";
-			const options = buildLiveStackOptions(root, workspace);
-			expect(options.jikji).toBe(false);
-			expect(options.minSync).toMatchObject({
-				autoInstall: true,
-				embedder: { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 },
-			});
-		} finally {
-			restoreEmbedderEnv(previous);
-		}
-	});
-
-	function restoreEmbedderEnv(previous: string | undefined): void {
-		if (previous === undefined) delete process.env.AUTORAG_LIVE_E2E_EMBEDDER;
-		else process.env.AUTORAG_LIVE_E2E_EMBEDDER = previous;
-	}
 
 	it("keeps mutable parsed state out of the shared corpus root", () => {
 		const root = tempRoot();

@@ -15,10 +15,13 @@ search, calls MinSync, Jikji, datasource, and filesystem tools, reads
 sources, judges evidence, and curates the final answer. There is no subagent or
 separate model role.
 
-AutoRAG reads source documents and writes indexes only under the configured
+Indexing and refresh read source documents and write only under the configured
 workspace `.autorag/` directory and Jikji's central store (`<OS data dir>/jikji/`,
-plus a `.jikji_agent_map.md` guide in each indexed root). Never
-move, rename, edit, or delete source files.
+plus a `.jikji_agent_map.md` guide in each indexed root). The librarian may
+organize, create, or modify the user's own files in local sessions when the
+user asks; it never deletes permanently (OS trash only) and lists every change
+as old path → new path. Do not move, rename, edit, or delete source files on your own
+initiative while searching or diagnosing.
 
 ## Preflight
 
@@ -165,9 +168,18 @@ autorag index rebuild --yes --json
 autorag index reset --method parsed --yes --json
 autorag memory inspect --json
 autorag tui
-autorag serve --force
-autorag p2p policy list --json
+autorag automate status --json
+autorag automate install --json
+autorag automate uninstall --json
+autorag automate run invoice --event create:/path/to/file.pdf --json
+autorag automate daemon
 ```
+
+File-triggered automations live in `~/.autorag/automations.json` (`automations`
+array of `{ id, paths, events, include, exclude, run, appendFiles, debounceMs, timeoutMs }`).
+Edit `automations.json` directly to add or change rules; matched `[{ type, path }]`
+events are piped on stdin to `run`. Use `autorag automate install` to register
+the background daemon with launchd, `systemd --user`, or Windows Task Scheduler.
 
 Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
 datasources, and (on Windows) the bundled Everything file-name index stay
@@ -176,9 +188,7 @@ aligned. `--method` accepts
 a `--method` name. Use `--method` only for deliberate narrowing. Scheduled
 maintenance should use non-daemon `autorag watch --once`, typically every
 1 hour, with the same config used by search and no overlapping runs.
-`autorag tui` is the shipped beta terminal UI. `autorag serve` / `autorag p2p`
-are opt-in SimpleX peer sharing (disabled until `p2p.enabled` is true, unless
-`--force`).
+`autorag tui` is the shipped beta terminal UI.
 
 Reset and rebuild commands remove only selected workspace `.autorag` indexes.
 Never target source documents. `memory inspect` is read-only and path-opaque.
@@ -192,8 +202,7 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 - Preserve real source mapping.
 - Prefer `--json --debug` when another agent consumes search output.
 - Do not invent CLI commands. `autorag --help` is the command list of record,
-  including the shipped `setup`, `gateway`, `models`, `serve`, `p2p`, `tui`, and `lite`
+  including the shipped `setup`, `models`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
-  `docs/embedding-runtime.md` for the local embedding runtime
-  and gateway setup.
+  `docs/minsync-setup.md#embedding-backends` for MinSync setup and embedding-backend selection.

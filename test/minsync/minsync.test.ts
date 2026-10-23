@@ -30,6 +30,7 @@ import {
 	minSyncConfigPath,
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
+import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
@@ -73,6 +74,18 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
+/** What each fake-minsync invocation saw of OPENAI_API_KEY, kept apart from the call log other tests compare exactly. */
+function loggedEnv(): { command: string; openaiKey: string | null }[] {
+	const path = `${logPath}.env`;
+	return existsSync(path)
+		? readFileSync(path, "utf8")
+				.trim()
+				.split("\n")
+				.filter((line) => line.length > 0)
+				.map((line) => JSON.parse(line) as { command: string; openaiKey: string | null })
+		: [];
+}
+
 function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 0): void {
 	writeFileSync(
 		minsyncBinary,
@@ -84,6 +97,7 @@ const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
 const cursor = join(process.cwd(), ".minsync", "cursor.json");
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
+appendFileSync(${JSON.stringify(`${logPath}.env`)}, JSON.stringify({ command: args[0], openaiKey: process.env.OPENAI_API_KEY ?? null }) + "\\n");
 
 if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
@@ -1519,100 +1533,59 @@ if (args[0] === "sync") process.exit(1);
 	});
 });
 
-describe("AutoRAG embedding runtime integration", () => {
-	it("degrades bootstrap failures to the typed embedder-unavailable diagnostic", async () => {
+describe("MinSync embedder selection", () => {
+	it("defaults to MinSync's own native Qwen3 and never writes an AutoRAG-owned endpoint", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
-		const result = await new MinSyncClient({
-			binaryPath: minsyncBinary,
-			workspacePath: minsyncWorkspace,
-			runtime: {
-				ensureRuntime: async () => {
-					throw new Error("runtime bootstrap failed");
-				},
-			},
-		}).sync();
-		expect(result.ok).toBe(false);
-		expect(result.diagnostic).toMatchObject({ code: "embedder-unavailable", retryable: true });
-	});
-
-	const runtime = {
-		ensureRuntime: async () => ({
-			baseUrl: "http://127.0.0.1:43123",
-			profile: {
-				profileId: "qwen3-embedding-0.6b" as const,
-				provider: "qwen",
-				model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-				dimension: 1024,
-				queryPrefix: "",
-				passagePrefix: "",
-				runtimeBuild: "b10951",
-				modelRevision: "rev",
-				artifactSha256: "hash",
-				backend: "auto" as const,
-				protocolCapabilities: { healthz: true, embed: true, openaiCompatible: true, ollamaCompatible: true },
-			},
-			identity: {
-				profileId: "qwen3-embedding-0.6b" as const,
-				provider: "qwen",
-				model: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-				dimension: 1024,
-				runtimeBuild: "b10951",
-				modelRevision: "rev",
-				artifactSha256: "hash",
-			},
-			supervisor: { state: "ready" as const, backend: "auto" as const, model: "model", port: 43123 },
-		}),
-	};
-
-	it("writes the deterministic gateway config and embedding identity", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-		const result = await new MinSyncClient({
-			binaryPath: minsyncBinary,
-			workspacePath: minsyncWorkspace,
-			runtime,
-		}).sync();
+		const result = await new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace }).sync();
 		expect(result.ok).toBe(true);
 		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
 			string,
 			Record<string, unknown>
 		>;
-		expect(config.embedder).toMatchObject({
-			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
-			base_url: "http://127.0.0.1:43123",
-		});
+		expect(config.embedder).toMatchObject({ id: "native:Qwen/Qwen3-Embedding-0.6B" });
+		expect(config.embedder?.base_url).toBeUndefined();
 		expect(config.vectorstore?.options).toMatchObject({ dimension: 1024 });
-		const identity = JSON.parse(
-			readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"),
-		);
-		expect(identity).toMatchObject({ provider: "qwen", dimension: 1024, runtimeBuild: "b10951" });
 	});
 
-	it("keeps using the runtime for a profile config that also carries the profile's model id", async () => {
-		// `autorag setup` wrote `{ id: <profile model>, profile, dimension, prefixes }` before
-		// native embeddings became the default. Such a workspace must keep resolving through
-		// the gateway instead of handing MinSync a bare model file name with no endpoint.
+	it("passes a configured remote endpoint through to MinSync untouched", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		const result = await new MinSyncClient({
 			binaryPath: minsyncBinary,
 			workspacePath: minsyncWorkspace,
-			runtime,
 			embedder: {
-				id: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-				profile: "qwen3-embedding-0.6b",
-				dimension: 1024,
-				queryPrefix: "",
-				passagePrefix: "",
+				id: "openai:text-embedding-3-small",
+				baseUrl: "https://router.example/api",
+				apiKeyEnv: "REMOTE_EMBED_KEY",
+				dimension: 1536,
 			},
 		}).sync();
-		expect(result.ok).toBe(true);
+		// The key variable is named, not required to exist for this assertion: the fake binary never calls out.
+		expect(result).toMatchObject({ ok: false, reason: "missing-api-key-env:REMOTE_EMBED_KEY" });
+		process.env.REMOTE_EMBED_KEY = "sk-test";
+		try {
+			const ok = await new MinSyncClient({
+				binaryPath: minsyncBinary,
+				workspacePath: minsyncWorkspace,
+				embedder: {
+					id: "openai:text-embedding-3-small",
+					baseUrl: "https://router.example/api",
+					apiKeyEnv: "REMOTE_EMBED_KEY",
+					dimension: 1536,
+				},
+			}).sync();
+			expect(ok.ok).toBe(true);
+		} finally {
+			delete process.env.REMOTE_EMBED_KEY;
+		}
 		const config = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
 			string,
 			Record<string, unknown>
 		>;
 		expect(config.embedder).toMatchObject({
-			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
-			base_url: "http://127.0.0.1:43123",
+			id: "openai:text-embedding-3-small",
+			base_url: "https://router.example/api",
 		});
+		expect(config.vectorstore?.options).toMatchObject({ dimension: 1536 });
 	});
 
 	it("keeps an operator endpoint without an id instead of forcing native embeddings", async () => {
@@ -1636,14 +1609,53 @@ describe("AutoRAG embedding runtime integration", () => {
 		expect(config.embedder?.id).toBe("tei:google/embeddinggemma-300m");
 	});
 
-	it("keeps operator batching settings when a profile selects the runtime", async () => {
+	it("gives the minsync child the key the operator's apiKeyEnv names, because MinSync reads OPENAI_API_KEY only", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		process.env.OPERATOR_EMBED_KEY = "sk-operator";
+		const savedOpenAi = process.env.OPENAI_API_KEY;
+		delete process.env.OPENAI_API_KEY;
+		try {
+			const embedder = {
+				id: "openai:text-embedding-3-small",
+				baseUrl: "https://router.example/api",
+				apiKeyEnv: "OPERATOR_EMBED_KEY",
+				dimension: 1536,
+			};
+			const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace, embedder });
+			expect((await client.sync()).ok).toBe(true);
+			await client.query("q", 3);
+			const calls = loggedEnv();
+			for (const command of ["check", "sync", "query"]) {
+				expect(calls.find((call) => call.command === command)?.openaiKey, command).toBe("sk-operator");
+			}
+		} finally {
+			delete process.env.OPERATOR_EMBED_KEY;
+			if (savedOpenAi !== undefined) process.env.OPENAI_API_KEY = savedOpenAi;
+		}
+	});
+
+	it("does not touch OPENAI_API_KEY for a local native embedder", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const savedOpenAi = process.env.OPENAI_API_KEY;
+		delete process.env.OPENAI_API_KEY;
+		try {
+			const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
+			await client.sync();
+			expect(loggedEnv().find((call) => call.command === "sync")?.openaiKey).toBeNull();
+		} finally {
+			if (savedOpenAi !== undefined) process.env.OPENAI_API_KEY = savedOpenAi;
+		}
+	});
+
+	it("keeps operator batching settings next to a remote endpoint", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		const result = await new MinSyncClient({
 			binaryPath: minsyncBinary,
 			workspacePath: minsyncWorkspace,
-			runtime,
 			embedder: {
-				profile: "qwen3-embedding-0.6b",
+				id: "tei:BAAI/bge-m3",
+				baseUrl: "http://gpu-box:8080",
+				dimension: 1024,
 				batchSize: 32,
 				maxRetries: 5,
 				maxConcurrent: 2,
@@ -1656,8 +1668,8 @@ describe("AutoRAG embedding runtime integration", () => {
 			Record<string, unknown>
 		>;
 		expect(config.embedder).toMatchObject({
-			id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
-			base_url: "http://127.0.0.1:43123",
+			id: "tei:BAAI/bge-m3",
+			base_url: "http://gpu-box:8080",
 			batch_size: 32,
 			max_retries: 5,
 			max_concurrent: 2,
@@ -1694,12 +1706,87 @@ describe("AutoRAG embedding runtime integration", () => {
 			JSON.stringify({ provider: "old" }),
 		);
 		writeFakeMinSync(JSON.stringify({ results: [] }));
-		await new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace, runtime }).sync();
+		await new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace }).sync();
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line))
 			.find((call) => call.args[0] === "sync");
 		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json"]);
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
+	});
+});
+
+describe("Qwen3 query instruction in MinSync config", () => {
+	const QWEN3_QUERY_PREFIX =
+		"Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:";
+
+	type Toml = Record<string, Record<string, unknown>>;
+	const readConfig = (): Toml => parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Toml;
+	const readIdentity = () =>
+		JSON.parse(readFileSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"), "utf8"));
+	const syncCalls = () =>
+		loggedCalls()
+			.map((line) => JSON.parse(line))
+			.filter((call) => call.args[0] === "sync");
+	const client = (embedder?: MinSyncEmbedderConfig) =>
+		new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			...(embedder === undefined ? {} : { embedder }),
+		});
+
+	it("defaults the native Qwen3 embedder to the model card's query instruction", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }).sync();
+		expect(result.ok).toBe(true);
+		expect(readConfig().embedder?.query_prefix).toBe(QWEN3_QUERY_PREFIX);
+		expect(readConfig().embedder?.passage_prefix).toBeUndefined();
+		expect(readIdentity().queryPrefix).toBe(QWEN3_QUERY_PREFIX);
+	});
+
+	it("defaults to the instruction when no embedder is configured at all", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client().sync();
+		expect(readConfig().embedder?.query_prefix).toBe(QWEN3_QUERY_PREFIX);
+	});
+
+	it("lets an operator-set empty queryPrefix win", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, queryPrefix: "" }).sync();
+		expect(readConfig().embedder?.query_prefix).toBe("");
+		expect(readIdentity().queryPrefix).toBe("");
+	});
+
+	it("lets an operator-set custom queryPrefix win", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", queryPrefix: "Instruct: custom\nQuery:" }).sync();
+		expect(readConfig().embedder?.query_prefix).toBe("Instruct: custom\nQuery:");
+	});
+
+	it("does not add the Qwen3 instruction to another native model", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:BAAI/bge-small-en-v1.5", dimension: 384 }).sync();
+		expect(readConfig().embedder?.query_prefix).toBeUndefined();
+		expect(readIdentity().queryPrefix).toBe("");
+	});
+
+	it("does not re-embed stored documents when only the query prefix changes", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		// Index built before the instruction existed: empty query prefix.
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, queryPrefix: "" }).sync();
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
+		// Same documents, new default query prefix: incremental, not --full.
+		const result = await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }).sync();
+		expect(result.ok).toBe(true);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--format", "json"]);
+		expect(readIdentity().queryPrefix).toBe(QWEN3_QUERY_PREFIX);
+		expect(result.diagnostic).toBeUndefined();
+	});
+
+	it("still re-embeds documents when the passage prefix changes", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "" }).sync();
+		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "passage: " }).sync();
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
 	});
 });
 

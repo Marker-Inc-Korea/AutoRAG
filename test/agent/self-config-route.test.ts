@@ -205,6 +205,22 @@ describe("Jev config branch: the agent configures itself", () => {
 		expect(response.answer).toBe("- checked.");
 	});
 
+	it("keeps manage_automations visible on a config turn so an automation request can be carried out", async () => {
+		const seen: Seen = { prompts: [], toolNames: [] };
+		const model = fauxModel(capture(configReport("- Set up the pdf-log automation."), seen));
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("config") },
+			selfConfig: { configPath, skillPath },
+		});
+
+		await collect(agent, "when a PDF lands in my inbox folder, log it");
+
+		expect(seen.toolNames[0]).toEqual(expect.arrayContaining(["bash", "manage_automations"]));
+		expect(seen.prompts[0]).toContain("manage_automations");
+		expect(seen.prompts[0]).toContain("File Automations");
+	});
+
 	it("lets the model edit the config file with its write tool and report the change", async () => {
 		const next = `${JSON.stringify({ model: { provider: "openrouter", id: "new/model" } }, null, 2)}\n`;
 		const model = fauxModel(

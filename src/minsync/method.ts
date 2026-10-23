@@ -1,6 +1,5 @@
-import { accessSync, constants, existsSync, realpathSync } from "node:fs";
-import { basename, delimiter, join, normalize } from "node:path";
-import { ensureRuntime } from "../embedding-runtime/index.ts";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, join, normalize } from "node:path";
 import { abortReason } from "../process/abort-reason.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
@@ -9,13 +8,14 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../retrieval/types.ts";
+import { isMinSyncBinaryMissing, resolveMinSyncBinary } from "./binary.ts";
 import type { MinSyncQueryMode } from "./client.ts";
-import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
-import { minSyncBinaryMissingError, minSyncInstallFailedError } from "./errors.ts";
-import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
+import { MinSyncClient } from "./client.ts";
+import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
+import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
 export interface MinSyncVectorMethodOptions {
 	readonly root: string;
@@ -27,7 +27,6 @@ export interface MinSyncVectorMethodOptions {
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
 	readonly mode?: MinSyncQueryMode;
-	readonly runtime?: MinSyncRuntime;
 	/** Default `topK` used when the caller omits one. Default 50. */
 	readonly defaultTopK?: number;
 	/** Fetch cap applied when a scope narrows the query. Default 100. */
@@ -35,46 +34,6 @@ export interface MinSyncVectorMethodOptions {
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
-
-/** Resolve the `minsync` executable from PATH directories. Returns the first match or undefined. */
-function lookupInPath(env: NodeJS.ProcessEnv): string | undefined {
-	const pathEnv = env.PATH;
-	if (typeof pathEnv !== "string" || pathEnv.length === 0) return undefined;
-	const execName = executableName(process.platform);
-	for (const dir of pathEnv.split(delimiter)) {
-		if (dir.length === 0) continue;
-		const candidate = join(dir, execName);
-		try {
-			accessSync(candidate, constants.X_OK);
-			return candidate;
-		} catch {
-			// not executable in this dir, continue
-		}
-	}
-	return undefined;
-}
-
-/**
- * MinSync allows one operation per workspace: a second concurrent operation fails
- * with "another sync is in progress" while the first holds its lock. AutoRAG
- * registers the vector and hybrid methods over the same workspace and the parallel
- * retriever runs them at once, so operations for one workspace queue here.
- */
-const workspaceOperationTails = new Map<string, Promise<unknown>>();
-const workspaceSyncInFlight = new Map<string, number>();
-
-function withWorkspaceLock<T>(workspacePath: string, run: () => Promise<T>): Promise<T> {
-	const previous = workspaceOperationTails.get(workspacePath) ?? Promise.resolve();
-	const result = previous.then(run, run);
-	workspaceOperationTails.set(
-		workspacePath,
-		result.then(
-			() => undefined,
-			() => undefined,
-		),
-	);
-	return result;
-}
 
 export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly root: string;
@@ -85,7 +44,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
 	private readonly mode: MinSyncQueryMode;
-	private readonly runtime: MinSyncRuntime | undefined;
 	private readonly defaultTopK: number;
 	private readonly scopedTopK: number;
 
@@ -100,11 +58,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.defaultTopK = options.defaultTopK ?? 50;
 		this.scopedTopK = options.scopedTopK ?? 100;
 		this.mode = options.mode ?? "vector";
-		this.runtime =
-			options.runtime ??
-			(this.embedder?.profile !== undefined && options.binaryPath === undefined && options.autoInstall !== false
-				? { ensureRuntime }
-				: undefined);
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -128,13 +81,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		const inFlight = workspaceSyncInFlight.get(this.workspacePath) ?? 0;
-		workspaceSyncInFlight.set(this.workspacePath, inFlight + 1);
-		return withWorkspaceLock(this.workspacePath, () => this.syncUnlocked(force, signal)).finally(() => {
-			const remaining = (workspaceSyncInFlight.get(this.workspacePath) ?? 1) - 1;
-			if (remaining === 0) workspaceSyncInFlight.delete(this.workspacePath);
-			else workspaceSyncInFlight.set(this.workspacePath, remaining);
-		});
+		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal));
 	}
 
 	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
@@ -148,18 +95,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
-			runtime: this.runtime,
 		});
 		return withExcluded(await client.sync(force, signal));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
 	isBinaryMissing(): boolean {
-		if (this.binaryPath !== undefined) return !existsSync(this.binaryPath);
-		if (lookupInPath(process.env) !== undefined) return false;
-		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
-		if (existsSync(cachedBinary)) return false;
-		return true;
+		return isMinSyncBinaryMissing({ root: this.root, binaryPath: this.binaryPath });
 	}
 
 	/** Status distinguishes an explicit missing override from deferred resolution. */
@@ -173,10 +115,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		if ((workspaceSyncInFlight.get(this.workspacePath) ?? 0) > 0) {
-			throw new Error(`another sync is in progress (${this.workspacePath})`);
-		}
-		return withWorkspaceLock(this.workspacePath, () => this.retrieveUnlocked(query, options));
+		return runWorkspaceQuery(this.workspacePath, () => this.retrieveUnlocked(query, options));
 	}
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
@@ -190,7 +129,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
-			runtime: this.runtime,
 		});
 		let hits: readonly MinSyncQueryHit[];
 		try {
@@ -227,30 +165,17 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	/**
-	 * Resolve the MinSync CLI from the user's global PATH first, then the
-	 * workspace cache, and finally the verified auto-install fallback. The
-	 * auto-install runs only for `sync` (refresh); queries pass
-	 * `install: false` so a user's turn never waits on `cargo install`.
-	 *
-	 * Returns the executable path, or throws {@link MinSyncRequiredError}:
-	 * MinSync is required, so there is no "no binary" value to degrade on.
+	 * Queries pass `install: false` so a user's turn never waits on `cargo install`; only `sync` (refresh)
+	 * may install. See {@link resolveMinSyncBinary}.
 	 */
-	protected async resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
-		if (this.binaryPath && existsSync(this.binaryPath)) return this.binaryPath;
-		if (this.binaryPath !== undefined) throw minSyncBinaryMissingError();
-		const pathBinary = lookupInPath(process.env);
-		if (pathBinary) return pathBinary;
-		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
-		if (existsSync(cachedBinary)) return cachedBinary;
-		if (this.autoInstall && options.install !== false) {
-			try {
-				const installed = await ensureMinSyncBinary({ ...this.installer, root: this.root });
-				return installed.binaryPath;
-			} catch (error) {
-				throw minSyncInstallFailedError(error);
-			}
-		}
-		throw minSyncBinaryMissingError();
+	protected resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
+		return resolveMinSyncBinary({
+			root: this.root,
+			binaryPath: this.binaryPath,
+			autoInstall: this.autoInstall,
+			installer: this.installer,
+			...(options.install === undefined ? {} : { install: options.install }),
+		});
 	}
 }
 

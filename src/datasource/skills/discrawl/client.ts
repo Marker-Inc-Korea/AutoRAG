@@ -80,7 +80,6 @@ type SpawnRequest = {
  */
 export class DiscrawlClient {
 	private readonly options: DiscrawlOptions;
-
 	constructor(options: DiscrawlOptions = {}) {
 		this.options = options;
 	}
@@ -110,18 +109,28 @@ export class DiscrawlClient {
 		};
 	}
 
+	private async resolveRuntime(): Promise<{
+		readonly runtime?: DiscrawlEmbeddingRuntime;
+		readonly configured: DiscrawlEmbeddingConfigResult;
+	}> {
+		const source = this.options.embeddingRuntime;
+		const runtime = typeof source === "function" ? await source() : source;
+		if (runtime === undefined) return { configured: { configured: false, rebuildRequired: false } };
+		return { runtime, configured: await this.configureEmbeddings(runtime) };
+	}
+
 	async prepareEmbeddings(): Promise<boolean> {
-		const runtime = this.options.embeddingRuntime;
-		if (runtime === undefined) return false;
-		const configured = await this.configureEmbeddings(runtime);
-		if (!configured.configured) return false;
+		const { runtime, configured } = await this.resolveRuntime();
+		if (runtime === undefined || !configured.configured) return false;
 		const metadata = await this.metadata();
 		if (!metadata.ok) return configured.rebuildRequired;
 		return (
 			configured.rebuildRequired ||
 			(metadata.data.embeddingProvider !== undefined && metadata.data.embeddingProvider !== runtime.provider) ||
 			(metadata.data.embeddingModel !== undefined && metadata.data.embeddingModel !== runtime.model) ||
-			(metadata.data.embeddingDimensions !== undefined && metadata.data.embeddingDimensions !== runtime.dimensions)
+			(runtime.dimensions !== undefined &&
+				metadata.data.embeddingDimensions !== undefined &&
+				metadata.data.embeddingDimensions !== runtime.dimensions)
 		);
 	}
 
@@ -199,10 +208,11 @@ export class DiscrawlClient {
 		if (violatingKey !== undefined) {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
-		const env = controlledEnv(this.options.env);
+		const { runtime, configured } = await this.resolveRuntime();
+		const env = controlledEnv(this.options.env, runtime);
 		return spawnDiscrawl({
 			options: this.options,
-			args: [...commonArgs(this.options), ...args],
+			args: [...commonArgs(this.options, configured.configured), ...args],
 			env,
 			signal,
 		});
@@ -219,16 +229,13 @@ export function discrawlWorkspace(options: DiscrawlOptions): string | undefined 
  * `configPath`, discrawl uses its own default store
  * (`~/Library/Application Support/discrawl` on macOS).
  */
-function commonArgs(options: DiscrawlOptions): readonly string[] {
+function commonArgs(options: DiscrawlOptions, useManagedConfig: boolean): readonly string[] {
 	if (options.configPath !== undefined) return ["--config", options.configPath];
-	if (options.embeddingRuntime !== undefined && (options.workspacePath ?? options.root) !== undefined) {
-		return ["--config", managedConfigPath((options.workspacePath ?? options.root) as string)];
+	const workspace = options.workspacePath ?? options.root;
+	if (useManagedConfig && workspace !== undefined) {
+		return ["--config", `${workspace}/.autorag/datasources/discrawl/config.toml`];
 	}
 	return [];
-}
-
-function managedConfigPath(workspace: string): string {
-	return `${workspace}/.autorag/datasources/discrawl/config.toml`;
 }
 
 function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
@@ -325,7 +332,8 @@ function managedDiscrawlConfig(runtime: DiscrawlEmbeddingRuntime): string {
 		`provider = ${JSON.stringify(runtime.provider)}`,
 		`model = ${JSON.stringify(runtime.model)}`,
 		`base_url = ${JSON.stringify(runtime.baseUrl)}`,
-		`dimensions = ${runtime.dimensions}`,
+		...(runtime.dimensions === undefined ? [] : [`dimensions = ${runtime.dimensions}`]),
+		...(runtime.apiKeyEnv === undefined ? [] : [`api_key_env = ${JSON.stringify(runtime.apiKeyEnv)}`]),
 		"",
 	].join("\n");
 }
@@ -343,10 +351,21 @@ function parseManagedEmbedding(config: string): { provider?: string; model?: str
 	};
 }
 
-function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
+/**
+ * The child gets an allowlisted environment plus, for a remote embedding endpoint, exactly the one variable
+ * the operator's `minSync.embedder.apiKeyEnv` names: discrawl reads its bearer token from the variable its
+ * managed config points at, and no other credential in the parent environment reaches it.
+ */
+function controlledEnv(
+	configuredEnv: Readonly<Record<string, string | undefined>> | undefined,
+	embedding?: DiscrawlEmbeddingRuntime,
+): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(process.env)) {
-		if (value !== undefined && isAllowedDiscrawlEnvKey(key)) env[key] = value;
+		if (value !== undefined && (isAllowedDiscrawlEnvKey(key) || key === embedding?.apiKeyEnv)) env[key] = value;
+	}
+	if (embedding?.apiKeyEnv !== undefined && embedding.apiKeyValue !== undefined) {
+		env[embedding.apiKeyEnv] = embedding.apiKeyValue;
 	}
 	for (const [key, value] of Object.entries(configuredEnv ?? {})) {
 		if (value === undefined) {

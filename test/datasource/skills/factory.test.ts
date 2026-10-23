@@ -45,16 +45,28 @@ describe("datasource skill factory", () => {
 	});
 
 	describe("github-gist semantic index", () => {
-		function gistMethodTypes(connector: Record<string, unknown>): string[] {
+		const embedder = {
+			identity: async () => ({ provider: "minsync", model: "Qwen/Qwen3-Embedding-0.6B", dimension: 2 }),
+			embed: async (texts: readonly string[]) => texts.map(() => [1, 0]),
+		};
+		function gistMethodTypes(
+			connector: Record<string, unknown>,
+			shared: typeof embedder | null = embedder,
+		): string[] {
 			const { skills } = buildDatasourceSkills(
 				{ "my-gists": { type: "github-gist", connector: { tokenEnv: "GITHUB_GIST_TEST_UNSET", ...connector } } },
 				undefined,
+				shared === null ? {} : { embedder: shared },
 			);
 			return skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().type));
 		}
 
 		it("keeps the semantic method by default", () => {
 			expect(gistMethodTypes({})).toContain("vector");
+		});
+
+		it("has no semantic method when no embedder is available, instead of building its own", () => {
+			expect(gistMethodTypes({}, null)).not.toContain("vector");
 		});
 
 		it.each([

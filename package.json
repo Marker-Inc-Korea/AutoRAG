@@ -1,7 +1,7 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.10.5",
-  "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
+  "version": "2.11.1",
+  "description": "Personal librarian agent for office work on the Pi framework, with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -44,7 +44,6 @@
     "check": "biome check --write .",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
-    "check:embedding-manifest": "node scripts/check-embedding-manifest.mjs",
     "supply-chain": "bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json"
   },
   "engines": {
@@ -57,7 +56,7 @@
     "@earendil-works/pi-tui": "1.2.0",
     "@llblab/pi-telegram": "0.57.2",
     "@modelcontextprotocol/server": "^2.3.1",
-    "@openrouter/sdk": "^1.4.25",
+    "@parcel/watcher": "2.6.0",
     "chardet": "^2.2.0",
     "discord.js": "14.27.0",
     "fast-xml-parser": "^5.11.2",

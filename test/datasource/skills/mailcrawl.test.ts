@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MailcrawlClient, MailcrawlSkill } from "../../../src/datasource/skills/mailcrawl/index.ts";
 
 let root: string;
@@ -262,6 +262,31 @@ process.exit(3);
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "stdout-too-large" });
 	});
 });
+
+describe("MailcrawlClient default non-interactive budget", () => {
+	it("gives sync and index one hour, and search the short interactive default", async () => {
+		writeFake(JSON.stringify({ added: 0, updated: 0, unchanged: 1, chunksAdded: 1, archiveRevision: "r1" }));
+		const spy = vi.spyOn(globalThis, "setTimeout");
+		try {
+			const client = new MailcrawlClient({ binaryPath });
+			await client.sync();
+			const syncDelays = spy.mock.calls
+				.map((call) => call[1])
+				.filter((ms) => typeof ms === "number" && ms >= 60_000);
+			expect(syncDelays).toContain(3_600_000);
+			spy.mockClear();
+			await client.search("bm25", "refund");
+			const searchDelays = spy.mock.calls
+				.map((call) => call[1])
+				.filter((ms) => typeof ms === "number" && ms >= 60_000);
+			expect(searchDelays).toContain(60_000);
+			expect(searchDelays).not.toContain(3_600_000);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+});
+
 describe("MailcrawlSkill", () => {
 	it("indexes and exposes BM25, semantic, and hybrid opaque retrieval methods", async () => {
 		const client = {

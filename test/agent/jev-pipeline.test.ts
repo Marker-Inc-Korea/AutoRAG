@@ -405,6 +405,64 @@ describe("Jev query pipeline before the fast answer", () => {
 		}
 	});
 
+	it("reports a failed rerank and falls back to retrieval order cut to topN", async () => {
+		const server = createServer((_request, response) => {
+			response.writeHead(500, { "content-type": "application/json" });
+			response.end(JSON.stringify({ error: "rerank backend down" }));
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		const port = typeof address === "object" && address !== null ? address.port : 0;
+		try {
+			const prompts: string[] = [];
+			const decompositionModel = fauxModel(
+				fauxAssistantMessage('{"queries": ["Who approved the budget?"]}', { stopReason: "stop" }),
+			);
+			const model = fauxModel(
+				capture(fastAnswer("Fast: approvers found."), prompts),
+				finalAnswer("Verified approvers."),
+			);
+			const agent = agentWith({
+				model,
+				queryDecomposition: { model: decompositionModel },
+				jev: { backend: jevRouting("local", 0.9) },
+				rerank: {
+					provider: "openrouter",
+					model: "test-rerank",
+					apiKey: "test-key",
+					baseUrl: `http://127.0.0.1:${port}/`,
+					topN: 2,
+				},
+			});
+			const hits = Array.from({ length: 5 }, (_, rank) => ({
+				id: `hit-${rank}`,
+				source: join(docs, `hit-${rank}.txt`),
+				content: `retrieval rank ${rank}`,
+				score: 1 - rank / 10,
+				metadata: {},
+			}));
+			injectMinSync(agent, {
+				isReady: () => true,
+				isBinaryMissing: () => false,
+				retrieve: async (): Promise<RetrievalResult[]> => hits,
+			});
+
+			const response = await agent.searchDocuments("Who approved the budget?");
+
+			const fastPrompt = prompts[0] ?? "";
+			expect(fastPrompt).toContain("retrieval rank 0");
+			expect(fastPrompt).toContain("retrieval rank 1");
+			expect(fastPrompt).not.toContain("retrieval rank 2");
+			expect(fastPrompt).not.toContain("Reranked initial candidates");
+			const failure = response.diagnostics?.find((diagnostic) => diagnostic.code === "rerank-failed");
+			expect(failure?.message).toContain("HTTP 500");
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
+	});
+
 	it("searches only the datasources Jev judges needed and adds their chunks to the fast-answer evidence", async () => {
 		const prompts: string[] = [];
 		const source = "/slack/default/release-date";
@@ -515,44 +573,6 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(states[1]).toContain('"길드 레이드 언제 하기로 했지?"');
 		expect(states[1]).toContain('"chunk_77ab" [discord]');
 		expect(states[1]).not.toContain("[slack]");
-	});
-
-	it("never shows a remote peer's past searches to the local Jev datasource check", async () => {
-		const states: string[] = [];
-		const routing = judgingEvidenceAs(0.9, jevRouting("local", 0.1, 0.1, { slack: 0.9 }));
-		const recordingJev: JevBackend = {
-			name: "recording",
-			async judge(request) {
-				if (request.questions.some((question) => question.id === datasourceQuestionId("slack"))) {
-					states.push(String(request.state));
-				}
-				return routing.judge(request);
-			},
-		};
-		const memoryPath = join(root, "shared-memory.json");
-		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels", () => ({
-			source: "/slack/default/release-plan",
-		}));
-		const remote = agentWith({
-			model: fauxModel(fastAnswer("Peer answer."), finalAnswer("Peer answer.")),
-			memoryPath,
-			remoteSession: true,
-			datasourceSkills: [slack.skill],
-		});
-		injectMinSync(remote, recordingMinSync().method);
-		await remote.searchDocuments("릴리즈 날짜 언제로 정했지?");
-
-		const local = agentWith({
-			model: fauxModel(fastAnswer("Friday [e2].")),
-			memoryPath,
-			jev: { backend: recordingJev },
-			datasourceSkills: [slack.skill],
-		});
-		injectMinSync(local, recordingMinSync().method);
-		await local.searchDocuments("릴리즈 날짜 언제로 정했어?");
-
-		expect(states).toHaveLength(1);
-		expect(states[0]).not.toContain("Similar past questions");
 	});
 
 	it("attributes evidence from a hyphenated datasource id to that datasource, not a shorter one it contains", async () => {

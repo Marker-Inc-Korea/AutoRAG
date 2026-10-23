@@ -1,4 +1,4 @@
-export type { AutoRAGAgentOptions, AutoRefreshOptions, PeerQueryOptions } from "./agent.ts";
+export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
 	CONVERT_FILES_TOOL_NAME,
@@ -39,13 +39,6 @@ export {
 	type JikjiFindProviderResult,
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
-export {
-	createQueryPeerAgentTool,
-	QUERY_PEER_AGENT_TOOL_NAME,
-	type QueryPeerAgentDetails,
-	type QueryPeerAgentResult,
-	type QueryPeerAgentToolOptions,
-} from "./query-peer-tool.ts";
 export type {
 	AutoRAGEmittedResult,
 	AutoRAGMappingEntry,

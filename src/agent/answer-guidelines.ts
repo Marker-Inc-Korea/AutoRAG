@@ -14,6 +14,38 @@ export const ANSWER_IMAGE_EMBED_RULE =
 export const ANSWER_IMAGE_DELTA_RULE = "An image already embedded in the first answer must not be embedded again.";
 
 /**
+ * Answer readability rules. Every surface that tells the model how to write the
+ * answer (system prompt, fast/complete/delta/search phase prompts, report
+ * schema) carries the same wording, so the answer's shape does not depend on
+ * which phase produced it. Each rule yields to an explicit user request for a
+ * different format.
+ */
+
+/**
+ * Conclusion first. Only complete answers get a lead line: a delta answer holds
+ * only corrections and new findings, and a lead conclusion would restate the
+ * first answer. The lead is outside the 5-bullet cap so the cap stays intact.
+ */
+export const ANSWER_LEAD_RULE =
+	"**Lead with the conclusion**: unless the user explicitly requests a different format, start the answer with one line that states the conclusion in **bold**, followed by the supporting bullet points. The lead line is not counted in the 5-bullet cap. When the whole answer is a single fact, the lead line alone is enough and no bullets are needed.";
+
+/** One claim per bullet; flat list. */
+export const ANSWER_BULLET_RULE =
+	"**One claim per bullet**: each bullet makes one claim in one or two sentences. Never nest bullets; split a bullet that carries two claims into two bullets.";
+
+/** Bold the values a reader scans for; tabulate real comparisons. */
+export const ANSWER_EMPHASIS_RULE =
+	"**Emphasis**: put the values a reader scans for (dates, amounts, names, statuses, deadlines) in **bold**, and nothing else. When comparing three or more items across the same attributes, use a markdown table instead of bullets.";
+
+/** Answer language follows the question, not the sources. */
+export const ANSWER_LANGUAGE_RULE =
+	"**Answer language**: write the answer in the language of the user's question (a Korean question gets a Korean answer) even when the sources are in another language; if the user asks for a specific language, use that one. Keep proper nouns, identifiers, code, and terms quoted from sources in their original form.";
+
+/** Uncertainty goes last so it never buries the conclusion. */
+export const ANSWER_UNCERTAINTY_RULE =
+	"**Uncertainty placement**: when the answer is incomplete or uncertain, state that in one short sentence on the last line of the answer, never before or ahead of the conclusion. Do not hedge the conclusion itself.";
+
+/**
  * Inline evidence citations. The model writes the id the retrieval tools print
  * next to each result; the harness resolves it to the recorded source and
  * renumbers the markers `[1]`, `[2]`, ... in order of first appearance, so the
@@ -33,7 +65,7 @@ export const ANSWER_CITATION_RULE =
  * was generated (citing only the underlying source evidence).
  */
 export const ANSWER_DELIVERABLE_RULE =
-	'**Deliverables and artifacts**: if the user asks you to draft, write, generate, or prepare a deliverable or artifact (a reply email, letter, legal opinion, summary document, standard-format case citation block, checklist, report, or workflow document — including requests phrased as "how should I reply..." to a specific message), produce the finished, ready-to-use artifact as a file (using `write`, `edit`, or `bash` in local sessions, without overwriting existing source files) in a file format, extension, and structure aligned with the context and domain (e.g. `.eml` or `.md`/`.txt` with headers for an email reply; `.md`, `.txt`, `.docx`, `.hwp`, or `.pdf` matching workspace conventions for a legal opinion, insertable case-citation block, or summary document; `.csv`, `.xlsx`, or `.json` for structured tabular data), containing the complete unabridged artifact (including required headers, precedent passages, pinpoint paragraphs, and standard-format citations) inside the file instead of merely describing how to produce it. Do NOT dump the full artifact text into your reply: unless the user explicitly requests otherwise, keep your reply concise within the at-most-5-bullet direct-answer format, clearly stating the created file\'s exact path/location and briefly summarizing what was generated with inline citations to the underlying source evidence (`[eN]` or `[file:<source path>]`); never cite the newly created deliverable file itself as `[file:...]`.';
+	'**Deliverables and artifacts**: if the user asks you to draft, write, generate, or prepare a deliverable or artifact (a reply email, letter, legal opinion, summary document, standard-format case citation block, checklist, report, or workflow document — including requests phrased as "how should I reply..." to a specific message), produce the finished, ready-to-use artifact as a file (using `write`, `edit`, or `bash` in local sessions) in a file format, extension, and structure aligned with the context and domain (e.g. `.eml` or `.md`/`.txt` with headers for an email reply; `.md`, `.txt`, `.docx`, `.hwp`, or `.pdf` matching workspace conventions for a legal opinion, insertable case-citation block, or summary document; `.csv`, `.xlsx`, or `.json` for structured tabular data), containing the complete unabridged artifact (including required headers, precedent passages, pinpoint paragraphs, and standard-format citations) inside the file instead of merely describing how to produce it. Do NOT dump the full artifact text into your reply: unless the user explicitly requests otherwise, keep your reply concise within the at-most-5-bullet direct-answer format, clearly stating the created file\'s exact path/location and briefly summarizing what was generated with inline citations to the underlying source evidence (`[eN]` or `[file:<source path>]`); never cite the newly created deliverable file itself as `[file:...]`.';
 
 /**
  * Verification-phase deliverable rule: create the context-aligned deliverable

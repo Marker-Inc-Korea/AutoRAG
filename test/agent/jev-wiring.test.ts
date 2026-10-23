@@ -89,14 +89,4 @@ describe("jev pi extension", () => {
 		});
 		expect(off.getSystemPrompt()).not.toContain("**jev**");
 	});
-
-	it("omits the jev prompt line for remote P2P sessions even when enabled", () => {
-		const remote = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			jev: {},
-			remoteSession: true,
-		});
-		expect(remote.getSystemPrompt()).not.toContain("**jev**");
-	});
 });

@@ -97,7 +97,7 @@ describe("answer deliverable/artifact guideline (#1832)", () => {
 		expect(prompt).toContain("Never include specific file paths");
 	});
 
-	it("states the deliverable-file rule in all three phase prompts (including delta and complete refinement)", () => {
+	it("states the deliverable-file rule in the search, fast, and complete phase prompts", () => {
 		const agent = new AutoRAGAgent(agentOptions(fauxModel()));
 		const query = "Based on the legal aid email I received from Ms. Tan, how should I reply to her professionally?";
 
@@ -116,18 +116,23 @@ describe("answer deliverable/artifact guideline (#1832)", () => {
 			"How to reply to Ms. Tan: 1. Acknowledge receipt [e1].",
 			false,
 		);
+		expectDeliverableRule(completeWithFastDraft);
+	});
+
+	it("tells the delta prompt only what is different about a deliverable, leaving the full rule to the system prompt", () => {
+		const agent = new AutoRAGAgent(agentOptions(fauxModel()));
 		const delta = agent.buildRefinementPrompt(
-			query,
+			"Based on the legal aid email I received from Ms. Tan, how should I reply to her professionally?",
 			{},
 			"How to reply to Ms. Tan: 1. Acknowledge receipt [e1].",
 			true,
 		);
-		for (const text of [completeWithFastDraft, delta]) {
-			expectDeliverableRule(text);
-			expect(text).toContain(
-				"If a deliverable or artifact was requested and the first answer could not write the file yet (the fast phase runs without tool calls) or only gave advice about it, create the complete context-aligned deliverable file now during verification and report the created file's location and a brief summary concisely.",
-			);
-		}
+		// The delta-specific half: a first answer that only advised must now become a file.
+		expect(delta).toContain(
+			"If a deliverable or artifact was requested and the first answer could not write the file yet (the fast phase runs without tool calls) or only gave advice about it, create the complete context-aligned deliverable file now during verification and report the created file's location and a brief summary concisely.",
+		);
+		// The full rule is not repeated: it already sits in the system prompt, which the verification turn follows.
+		expect(delta).not.toContain("produce the finished, ready-to-use artifact as a file");
 	});
 
 	it("states the deliverable-file rule in the report answer schema", () => {
