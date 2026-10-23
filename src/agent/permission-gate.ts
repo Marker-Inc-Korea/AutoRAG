@@ -25,14 +25,11 @@ export {
 /**
  * How much the agent may do to the user's files without asking.
  *
- * Jev classifies every `bash`, `write`, `edit`, and saved automation first, in `ask` and `auto` alike: it says
- * whether the call deletes, moves, renames, overwrites, or edits an existing file, or runs code whose effect
- * cannot be told. What happens next depends on the mode.
- *
  * - `full`: no gate; the agent does everything on its own, and Jev is never asked.
- * - `ask`: a call Jev finds safe runs; one it flags is put to the user.
- * - `auto`: like `ask`, but Jev also decides whether a flagged call may run without the user; only what Jev
- *   will not approve confidently reaches the user.
+ * - `ask`: every `bash`, `write`, `edit`, and saved automation is put to the user. Jev is not used.
+ * - `auto` (default): Jev classifies each of those calls first. One it finds safe runs; one it flags is approved
+ *   by Jev when the user's request clearly covers it, and only what Jev will not approve confidently reaches
+ *   the user.
  */
 export type PermissionMode = "full" | "ask" | "auto";
 
@@ -40,7 +37,7 @@ export type PermissionMode = "full" | "ask" | "auto";
 export const PERMISSION_MODES: readonly PermissionMode[] = ["ask", "auto", "full"];
 
 /** Mode a fresh interactive or CLI session starts in. */
-export const DEFAULT_PERMISSION_MODE: PermissionMode = "ask";
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "auto";
 
 const STATUS_KEY = "autorag-permissions";
 
@@ -65,8 +62,8 @@ export function cyclePermissionMode(mode: PermissionMode): PermissionMode {
 
 type ModeListener = (mode: PermissionMode) => void;
 
-/** What a session grant covers: one category of change, or every call Jev could not classify. */
-export type GrantKey = PermissionKind | "unclassified";
+/** What a session grant covers: one category of change, every call Jev could not classify, or (`ask`) every call. */
+export type GrantKey = PermissionKind | "unclassified" | "all";
 
 /**
  * Session-wide permission state: the mode, and what the user allowed for the rest of the session. One
@@ -162,8 +159,16 @@ export const PERMISSION_PROMPT_ADDENDUM = [
 	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
 ].join(" ");
 
+/** `ask` addendum: the user sees every call, so the model should batch work and still not refuse requests. */
+export const ASK_PROMPT_ADDENDUM = [
+	"File safety: in this mode the user approves every bash, write, and edit call, and every saved automation, before it runs; reading, searching, and AutoRAG's own tools need no approval.",
+	"Keep such calls few: combine steps into one command where you can, and prefer copying to a new path over changing an original.",
+	"When the user explicitly asks you to delete, move, rename, or edit a specific original, go ahead and run it (delete by moving to the OS trash, as above): do not refuse or ask for confirmation yourself, because the approval prompt is the confirmation.",
+	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
+].join(" ");
+
 const MODE_SUMMARY: Readonly<Record<PermissionMode, string>> = {
-	ask: "Jev checks each call; you approve deleting, moving, renaming, or changing originals",
+	ask: "you approve every bash, write, and edit call; Jev is not used",
 	auto: "Jev checks each call and approves first; asks you only when Jev will not",
 	full: "no approvals, the agent does everything itself",
 };
@@ -194,10 +199,11 @@ function deny(call: ProposedCall, note?: string): Decision {
 /**
  * pi extension that gates what the agent does to existing files.
  *
- * Jev classifies every `bash`, `write`, `edit`, and `manage_automations save` call before it runs (reads,
- * searches, and other tools never touch originals and are not asked about). A call Jev finds safe runs; one it
- * flags, or cannot classify, is decided by the mode: put to the user in `ask`, put to Jev's approval first in
- * `auto`. Shift+Tab and `/permissions` switch the mode; the footer shows it.
+ * Every `bash`, `write`, `edit`, and `manage_automations save` call is gated (reads, searches, and other tools
+ * never touch originals and are not asked about). In `ask` each one is put to the user. In `auto` Jev
+ * classifies it first: a call it finds safe runs, one it flags is approved by Jev when the user's request
+ * clearly covers it, and otherwise put to the user. Shift+Tab and `/permissions` switch the mode; the footer
+ * shows it.
  */
 export function createPermissionGate(options: PermissionGateOptions): ExtensionFactory {
 	const { controller, judge, requests } = options;
@@ -284,7 +290,8 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 
 		pi.on("before_agent_start", (event) => {
 			if (controller.mode === "full") return undefined;
-			return { systemPrompt: `${event.systemPrompt}\n\n${PERMISSION_PROMPT_ADDENDUM}` };
+			const addendum = controller.mode === "ask" ? ASK_PROMPT_ADDENDUM : PERMISSION_PROMPT_ADDENDUM;
+			return { systemPrompt: `${event.systemPrompt}\n\n${addendum}` };
 		});
 
 		pi.on("tool_call", async (event, ctx): Promise<Decision | undefined> => {
@@ -318,9 +325,9 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			return undefined;
 		});
 
-		/** Jev classifies the call; what follows depends on the mode. */
+		/** `ask` puts every gated call to the user; `auto` has Jev classify it and approve first. */
 		async function judgeCall(call: ProposedCall, ctx: ExtensionContext): Promise<Decision | undefined> {
-			const mode = controller.mode;
+			if (controller.mode === "ask") return decide(askReviewOf(call), ctx);
 			const classification =
 				judge === undefined
 					? ({ status: "failed", why: "Jev is not configured" } as const)
@@ -329,7 +336,6 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 							requests: requests?.entries() ?? [],
 							history: successfulCalls(branchOf(ctx)),
 							maxStateChars,
-							wantApproval: mode === "auto",
 							isCreated: (path) => controller.isCreated(path),
 						});
 
@@ -347,15 +353,12 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			}
 			if (classification.flagged.length === 0) return undefined;
 
-			const kinds = classification.flagged.map((flagged) => flagged.kind);
-			if (mode === "auto" && classification.approval?.approved === true) {
+			if (classification.approval.approved) {
+				const kinds = classification.flagged.map((flagged) => flagged.kind);
 				ctx.ui.notify(`Jev approved (${kinds.join(", ")}): ${cutMiddle(summarizeCall(call), 300)}`, "info");
 				return undefined;
 			}
-			return decide(
-				reviewOf(call, classification.flagged, mode === "auto" ? classification.approval : undefined),
-				ctx,
-			);
+			return decide(reviewOf(call, classification.flagged, classification.approval), ctx);
 		}
 
 		async function decide(review: Review, ctx: ExtensionContext): Promise<Decision | undefined> {
@@ -378,7 +381,7 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 
 			const title = [
 				review.heading,
-				`    ${review.needs.join(", ")}`,
+				...(review.needs.includes("all") ? [] : [`    ${review.needs.join(", ")}`]),
 				`    $ ${cutMiddle(summarizeCall(review.call), SHOWN_CALL_CHARS)}`,
 			].join("\n");
 			dialogsOpen += 1;
@@ -406,21 +409,25 @@ function branchOf(ctx: ExtensionContext): readonly SessionEntry[] {
 	return ctx.sessionManager.getBranch();
 }
 
-/** The dialog for a call Jev flagged. `approval` is `auto` mode's verdict when Jev was asked and declined. */
-function reviewOf(call: ProposedCall, flagged: readonly FlaggedKind[], approval: Approval | undefined): Review {
+/** The dialog for a call Jev flagged and would not approve confidently, shown with Jev's reason. */
+function reviewOf(call: ProposedCall, flagged: readonly FlaggedKind[], approval: Approval): Review {
 	const kinds = flagged.map((entry) => entry.kind);
-	const heading =
-		approval === undefined
-			? "Approve this change to your files?"
-			: `Jev declined to approve this automatically (${approval.why}). Approve it yourself?`;
 	return {
 		call,
 		needs: kinds,
-		heading,
-		headlessReason:
-			approval === undefined
-				? `this call ${kinds.join("/")}s existing files and needs approval`
-				: `this call ${kinds.join("/")}s existing files and Jev did not approve it (${approval.why}), so it needs approval`,
+		heading: `Jev declined to approve this automatically (${approval.why}). Approve it yourself?`,
+		headlessReason: `this call ${kinds.join("/")}s existing files and Jev did not approve it (${approval.why}), so it needs approval`,
 		sessionChoice: `Allow all ${kinds.join("/")} operations this session`,
+	};
+}
+
+/** The dialog `ask` shows for every gated call: no classification, so no categories to name. */
+function askReviewOf(call: ProposedCall): Review {
+	return {
+		call,
+		needs: ["all"],
+		heading: `Approve this ${call.tool} call?`,
+		headlessReason: "ask mode needs the user's approval for every file-capable call",
+		sessionChoice: "Allow all such calls this session",
 	};
 }

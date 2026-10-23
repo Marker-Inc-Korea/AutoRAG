@@ -25,8 +25,8 @@ function resolve(options: { file?: unknown; flags?: Record<string, string | bool
 }
 
 describe("permission mode resolution", () => {
-	it("defaults to ask", () => {
-		expect(resolve({}).permissionMode).toBe("ask");
+	it("defaults to auto", () => {
+		expect(resolve({}).permissionMode).toBe("auto");
 	});
 
 	it("reads the config file", () => {

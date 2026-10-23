@@ -1,26 +1,27 @@
 # Permission modes
 
 The AutoRAG agent can organize your files, so changes to **existing files** go through an approval gate.
-Reading, searching, copying, and creating new files never ask. The gate is a pi extension
-(`src/agent/permission-gate.ts`) that sits on every `bash`, `write`, and `edit` call.
+The gate is a pi extension (`src/agent/permission-gate.ts`) that sits on every `bash`, `write`, `edit`, and saved
+automation call. By default (`auto`) Jev reads each call and only what could change an existing file reaches you;
+reading, searching, copying, and creating new files never ask.
 
 ## Modes
 
 | Mode | Behavior |
 | --- | --- |
-| `ask` (default) | Asks before deleting, moving, renaming, overwriting, or editing an original. |
-| `auto` | Jev (the judgment model) answers first. It approves silently when it is at least 80% sure the user's request covers exactly that change. Otherwise, or when Jev is unreachable, the question goes to you, with Jev's reason shown. |
+| `auto` (default) | Jev (the judgment model) classifies each call first. A call that changes no existing file runs. A flagged one is approved silently when Jev is at least 80% sure the user's request covers exactly that change. Otherwise, or when Jev is unreachable, the question goes to you, with Jev's reason shown. |
+| `ask` | You approve every `bash`, `write`, `edit`, and saved-automation call, including harmless ones like `ls`. Jev is never consulted, so it works with no Jev backend. Reads, searches, and AutoRAG's own tools never ask. "Allow all such calls this session" ends the questions until the mode changes. |
 | `full` | No gate. The agent does everything itself. |
 
-Not gated, in every mode: every AutoRAG search tool, and any `bash`, `write`, or `edit` call that Jev (the
-judgment model) finds does not delete, move, rename, overwrite, or edit an existing file: `ls`, `cat`, `grep`,
+Not asked about in `auto`, because Jev finds they do not delete, move, rename, overwrite, or edit an existing file: `ls`, `cat`, `grep`,
 `cp` to a new path, `mkdir`, `touch`, `write` to a new path. Files and folders the agent created itself stay free
 to edit, move, and delete, so the intended workflow is copy first, then change the copy. The system prompt tells
-the model this in `ask` and `auto`.
+the model this in `ask` and `auto` (in `ask` it also tells the model every such call needs your approval, so it
+batches steps).
 
 ## How a call is classified
 
-There is no command parser. Before every `bash`, `write`, `edit`, and `manage_automations save` call, Jev answers six
+This section is about `auto`; `ask` skips classification and asks about every call. There is no command parser. Before every `bash`, `write`, `edit`, and `manage_automations save` call, Jev answers six
 questions in one batched request, each a probability that the call does that to a file that existed before it ran:
 
 | Category | Question |
@@ -32,7 +33,7 @@ questions in one batched request, each a probability that the call does that to 
 | `edit` | changes part of a file in place (`sed -i`, an editor, a script that patches it) |
 | `unclear` | runs code whose effect cannot be told (an unseen script, `make`, an encoded command) |
 
-A category at 0.3 or above, or one Jev is unsure about, counts as flagged and the call is asked about; the dialog
+A category at 0.2 or above, or one Jev is unsure about, counts as flagged and the call is asked about; the dialog
 names the categories. Jev is shown the call, what you said in this conversation, the agent's earlier successful
 calls, and for each path the call names whether it exists right now and whether the agent created it. That is
 how `cp report.md report.edited.md` then `sed -i.bak ... report.edited.md` runs without asking: the copy is the
@@ -41,7 +42,7 @@ agent's own.
 Because Jev reads what a call does rather than matching its text, a one-line `python3 -c` that trashes a file, or
 `f=rm; $f x`, is caught, and a script Jev cannot read is `unclear` and asked about. If Jev cannot be reached,
 times out after 15 seconds, or returns no usable answer, the call is treated as unclassified and goes to you in
-`ask` and `auto` (nothing is let through on a failure). `full` never calls Jev for this.
+`auto` (nothing is let through on a failure). `ask` and `full` never call Jev.
 
 This is a gate against mistakes and runaway agents, not a sandbox: Jev is a model, so it can misjudge, and a
 determined script can still reach files in ways it cannot see. Use `full` only when you trust the task.
@@ -52,12 +53,12 @@ External MCP servers' tools (`mcp__*`) are outside the gate: AutoRAG cannot know
 
 | Where | How |
 | --- | --- |
-| TUI | **Shift+Tab** cycles `ask` → `auto` → `full`. `/permissions` shows a picker, `/permissions auto` sets one. The footer shows `permissions: <mode>`. |
+| TUI | **Shift+Tab** cycles `ask` → `auto` → `full` (the session starts in `auto`). `/permissions` shows a picker, `/permissions auto` sets one. The footer shows `permissions: <mode>`. |
 | CLI | `autorag tui --permission-mode auto`, `autorag search "..." --permission-mode full` |
 | Environment | `AUTORAG_PERMISSION_MODE=full` |
-| Config | `"permissionMode": "ask"` in `~/.autorag/config.json` |
+| Config | `"permissionMode": "auto"` in `~/.autorag/config.json` |
 
-Precedence: flag, then environment, then config file, then `ask`. An unknown value is an error, never a silent
+Precedence: flag, then environment, then config file, then `auto`. An unknown value is an error, never a silent
 fallback. Shift+Tab replaces pi's thinking-level cycle key inside `autorag tui`.
 
 Shift+Tab and `/permissions` apply to the very next tool call and clear any "allow for this session" grants.
@@ -81,8 +82,8 @@ add a note that is passed on. Questions are asked one at a time even when the mo
 
 `autorag search`, automations, and the Discord/Telegram/WhatsApp bridges have nobody to answer a dialog:
 
-- `ask`: gated changes are blocked, and the model is told to use a copy.
-- `auto`: Jev's approval lets it through; anything else is blocked.
+- `auto`: Jev's approval lets it through; anything else is blocked, and the model is told to use a copy.
+- `ask`: every `bash`, `write`, `edit`, and saved-automation call is blocked, so nothing that touches files runs.
 - `full`: nothing is blocked.
 
 Pass `--permission-mode full` (or set the env/config) for an unattended job that must delete or move files.
@@ -109,7 +110,8 @@ a note of its size, because it says nothing about intent and jev-use's secret re
 
 Never file contents. `jev-use` redacts secrets such as API keys and URL passwords before anything leaves the
 machine. Jev needs a backend (`jev` config, `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or a Dazzi login). Without one, every
-bash/write/edit call is unclassified, so even in `ask` each one asks (`full` is the mode for running without Jev).
+bash/write/edit call is unclassified, so `auto` asks about each one like `ask` does (`full` is the mode for running
+without approvals).
 
 ## MCP
 

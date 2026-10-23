@@ -26,8 +26,12 @@ export const PERMISSION_GATE_QUESTION_ID = "permission_gate";
 /** Jev must be at least this sure before `auto` skips the user. Stricter than jev-use's own 0.5 default. */
 export const AUTO_APPROVE_MIN_CONFIDENCE = 0.8;
 
-/** A category Jev puts at or above this probability, or is unsure about, counts as flagged. */
-const FLAG_PROBABILITY = 0.3;
+/**
+ * A category Jev puts at or above this probability, or is unsure about, counts as flagged. Measured on live Jev:
+ * calls that change nothing of the user's score at most 0.15 here, while a one-line interpreter delete scores
+ * 0.27-0.45 and `rm` 0.75 or more, so 0.2 leaves room on both sides (0.3 left `perl -e unlink` on the line).
+ */
+const FLAG_PROBABILITY = 0.2;
 
 const JEV_TIMEOUT_MS = 15_000;
 
@@ -54,7 +58,7 @@ const AGENT_OWN_FILES =
 
 const CATEGORY_QUESTIONS: Readonly<Record<PermissionKind, string>> = {
 	delete:
-		"Does the proposed call delete, trash, or remove any file or folder that existed before it ran, by any means (rm, trash, find -delete, git clean, a one-line perl, python, ruby, or node call that unlinks or removes a file, ...)?" +
+		"Assume the proposed call runs. Is any file or folder that existed before it ran gone afterwards (rm, trash, find -delete, git clean, or code in perl, python, ruby, node, or any shell snippet that unlinks or removes it)?" +
 		AGENT_OWN_FILES,
 	move: "Does the proposed call move any existing file or folder to a different directory?" + AGENT_OWN_FILES,
 	rename: "Does the proposed call rename any existing file or folder within its directory?" + AGENT_OWN_FILES,
@@ -252,14 +256,11 @@ export type Classification =
 	| {
 			readonly status: "classified";
 			readonly flagged: readonly FlaggedKind[];
-			readonly approval: Approval | undefined;
+			readonly approval: Approval;
 	  }
 	| { readonly status: "failed"; readonly why: string };
 
-export interface ClassifyOptions extends JudgedState {
-	/** Also ask Jev whether the call may run without the user (`auto` mode). */
-	readonly wantApproval: boolean;
-}
+export type ClassifyOptions = JudgedState;
 
 /**
  * Asks Jev what `options.call` does to existing files, in one batched request. Never throws: no answer
@@ -272,7 +273,7 @@ export async function classifyCall(judge: JevJudge, options: ClassifyOptions): P
 		type: "noul",
 		question: CATEGORY_QUESTIONS[kind],
 	}));
-	if (options.wantApproval) questions.push(APPROVAL_QUESTION);
+	questions.push(APPROVAL_QUESTION);
 	const timeout = AbortSignal.timeout(JEV_TIMEOUT_MS);
 	try {
 		const state = buildJudgedState(options);
@@ -295,9 +296,7 @@ export async function classifyCall(judge: JevJudge, options: ClassifyOptions): P
 				flagged.push({ kind, probability });
 			}
 		}
-		const approval = options.wantApproval
-			? approvalOf(judgment.verdicts.find((candidate) => candidate.id === PERMISSION_GATE_QUESTION_ID))
-			: undefined;
+		const approval = approvalOf(judgment.verdicts.find((candidate) => candidate.id === PERMISSION_GATE_QUESTION_ID));
 		return { status: "classified", flagged, approval };
 	} catch (error) {
 		return { status: "failed", why: error instanceof Error ? error.message : String(error) };

@@ -227,8 +227,8 @@ export interface CliConfig {
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
 	/**
-	 * Approval gate for file changes by the agent: `ask` (default), `auto` (Jev first, user as fallback), or
-	 * `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
+	 * Approval gate for file changes by the agent: `auto` (default: Jev first, user as fallback), `ask`
+	 * (the user approves every file-capable call, Jev unused), or `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
 	 */
 	permissionMode?: PermissionMode;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
@@ -1004,7 +1004,7 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 /**
- * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then `ask`.
+ * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then `auto`.
  * An unknown value is an error from any source, never a silent fallback to a weaker gate.
  */
 function resolvePermissionMode(

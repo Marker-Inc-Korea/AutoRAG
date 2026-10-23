@@ -175,7 +175,7 @@ describe("gate inside a real pi session (headless)", () => {
 	it("blocks a flagged call and the file survives", async () => {
 		const file = join(root, "keep.txt");
 		writeFileSync(file, "precious");
-		const result = await run("ask", `rm ${file}`, scriptedJev([{ match: "rm ", kinds: { delete: 0.97 } }]));
+		const result = await run("auto", `rm ${file}`, scriptedJev([{ match: "rm ", kinds: { delete: 0.97 } }]));
 		expect(existsSync(file)).toBe(true);
 		expect(result).toMatch(/approval/i);
 	});
@@ -184,7 +184,7 @@ describe("gate inside a real pi session (headless)", () => {
 		const file = join(root, "report.pdf");
 		writeFileSync(file, "precious");
 		const script = `python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['/usr/bin/trash', '${file}'])\nEOF`;
-		const result = await run("ask", script, scriptedJev([{ match: "subprocess", kinds: { delete: 0.95 } }]));
+		const result = await run("auto", script, scriptedJev([{ match: "subprocess", kinds: { delete: 0.95 } }]));
 		expect(existsSync(file)).toBe(true);
 		expect(result).toMatch(/approval/i);
 	});
@@ -193,16 +193,27 @@ describe("gate inside a real pi session (headless)", () => {
 		const file = join(root, "a.md");
 		writeFileSync(file, "hello");
 		const copy = join(root, "a.copy.md");
-		await run("ask", `cp ${file} ${copy}`, scriptedJev());
+		await run("auto", `cp ${file} ${copy}`, scriptedJev());
 		expect(readFileSync(copy, "utf8")).toBe("hello");
 	});
 
 	it("blocks everything gated when there is no Jev to classify, so it fails closed", async () => {
 		const file = join(root, "keep.txt");
 		writeFileSync(file, "precious");
-		const result = await run("ask", `rm ${file}`);
+		const result = await run("auto", `rm ${file}`);
 		expect(existsSync(file)).toBe(true);
 		expect(result).toMatch(/could not classify/i);
+	});
+
+	it("ask mode blocks even a harmless call when nobody can answer, and never asks Jev", async () => {
+		const file = join(root, "a.md");
+		writeFileSync(file, "hello");
+		const copy = join(root, "a.copy.md");
+		const jev = scriptedJev();
+		const result = await run("ask", `cp ${file} ${copy}`, jev);
+		expect(existsSync(copy)).toBe(false);
+		expect(result).toMatch(/approval/i);
+		expect(jev.count()).toBe(0);
 	});
 
 	it("deletes it in full mode without asking Jev", async () => {
@@ -262,7 +273,7 @@ describe("gate inside the agent's interactive runtime", () => {
 		const asked: string[] = [];
 		const jev = scriptedJev([{ match: "mv ", kinds: { move: 0.95 } }]);
 		const t = await tui(
-			"ask",
+			"auto",
 			bashThenDone(`mv ${file} ${join(root, "elsewhere.pdf")}`),
 			jev.backend,
 			async (title) => {
@@ -286,7 +297,7 @@ describe("gate inside the agent's interactive runtime", () => {
 		const file = join(root, "report.pdf");
 		writeFileSync(file, "x");
 		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.95 } }]);
-		const t = await tui("ask", bashThenDone(`rm ${file}`), jev.backend, async () => "Allow once");
+		const t = await tui("auto", bashThenDone(`rm ${file}`), jev.backend, async () => "Allow once");
 		try {
 			await t.session.prompt("delete the report", { source: "extension" });
 			expect(existsSync(file)).toBe(false);
@@ -300,7 +311,7 @@ describe("gate inside the agent's interactive runtime", () => {
 		writeFileSync(file, "x");
 		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.95 } }]);
 		const t = await tui(
-			"ask",
+			"auto",
 			[...bashThenDone(`rm ${file}`), ...bashThenDone(`rm ${file}`)],
 			jev.backend,
 			async () => "Deny",

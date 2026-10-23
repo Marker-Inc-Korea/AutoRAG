@@ -116,7 +116,7 @@ interface Verdict {
 function harness(options: HarnessOptions = {}) {
 	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> }>();
-	const controller = new PermissionController(options.mode ?? "ask");
+	const controller = new PermissionController(options.mode ?? "auto");
 	const judge = options.jev === undefined ? undefined : createJevJudge({ backend: options.jev });
 	const pi = {
 		on: (event: string, handler: Handler) => {
@@ -275,17 +275,6 @@ describe("which tool calls Jev classifies", () => {
 		await h.call("manage_automations", { action: "list" });
 		expect(jev.requests).toHaveLength(4);
 	});
-
-	it("asks the six category questions in one batch", async () => {
-		const jev = spy(SAFE());
-		const h = harness({ jev: jev.backend });
-		await h.bash("ls");
-		expect(jev.requests).toHaveLength(1);
-		const ids = jev.requests[0]?.questions.map((question) => question.id);
-		expect(ids).toEqual(PERMISSION_KINDS.map(permissionKindQuestionId));
-		// ask mode has no use for Jev's approval verdict
-		expect(ids).not.toContain(PERMISSION_GATE_QUESTION_ID);
-	});
 });
 
 /** Jev answering with each backend in turn, one per request; the last one repeats. */
@@ -302,6 +291,69 @@ function sequence(...backends: JevBackend[]): JevBackend {
 }
 
 describe("ask mode", () => {
+	it("asks about every bash, write, and edit call, even one Jev would find safe, and never asks Jev", async () => {
+		const jev = spy(SAFE());
+		const h = harness({ mode: "ask", jev: jev.backend, answers: [ALLOW_ONCE, ALLOW_ONCE, ALLOW_ONCE] });
+		expect(await h.bash("ls")).toBeUndefined();
+		expect(await h.call("write", { path: join(root, "fresh.md"), content: "x" })).toBeUndefined();
+		expect(await h.call("edit", { path: original("a.md") })).toBeUndefined();
+		expect(h.dialogs).toHaveLength(3);
+		expect(jev.requests).toHaveLength(0);
+	});
+
+	it("asks even when no Jev is configured, without saying anything about classification", async () => {
+		const h = harness({ mode: "ask", answers: [DENY] });
+		expect((await h.bash("ls"))?.block).toBe(true);
+		expect(h.dialogs[0]?.title).not.toMatch(/classify|Jev/i);
+	});
+
+	it("shows the tool and the command, and blocks a denied call with advice to use a copy", async () => {
+		const h = harness({ mode: "ask", answers: [DENY] });
+		const a = original("a.pdf");
+		const result = await h.bash(`rm ${a}`);
+		expect(h.dialogs[0]?.title).toContain("bash");
+		expect(h.dialogs[0]?.title).toContain(`rm ${a}`);
+		expect(result?.block).toBe(true);
+		expect(result?.reason).toMatch(/copy/i);
+	});
+
+	it("does not ask about tools that never touch files", async () => {
+		const h = harness({ mode: "ask" });
+		expect(await h.call("read", { path: original("a.md") })).toBeUndefined();
+		expect(await h.call("grep", { pattern: "x" })).toBeUndefined();
+		expect(h.select).not.toHaveBeenCalled();
+	});
+
+	it("lets the user allow every such call for the session, and that ends with the mode", async () => {
+		const allowSession = (_title: string, options: string[]) =>
+			options.find((option) => option.startsWith("Allow all"));
+		const h = harness({ mode: "ask", answers: [allowSession, DENY] });
+		expect(await h.bash("ls")).toBeUndefined();
+		expect(await h.call("write", { path: join(root, "n.md"), content: "x" })).toBeUndefined();
+		expect(h.dialogs).toHaveLength(1);
+		h.controller.set("auto");
+		h.controller.set("ask");
+		expect((await h.bash("pwd"))?.block).toBe(true);
+		expect(h.dialogs).toHaveLength(2);
+	});
+
+	it("blocks every gated call when nobody can answer, pointing at the way out", async () => {
+		const h = harness({ mode: "ask", hasUI: false });
+		const result = await h.bash("ls");
+		expect(result?.block).toBe(true);
+		expect(result?.reason).toMatch(/--permission-mode/);
+		expect(h.select).not.toHaveBeenCalled();
+	});
+
+	it("still lets a trusted file be written without asking", async () => {
+		const config = original("config.json");
+		const h = harness({ mode: "ask", trustedPaths: [config] });
+		expect(await h.call("write", { path: config, content: "x" })).toBeUndefined();
+		expect(h.select).not.toHaveBeenCalled();
+	});
+});
+
+describe("default mode (auto): what Jev flags", () => {
 	it("lets a call through silently when Jev finds no category", async () => {
 		const h = harness({ jev: SAFE() });
 		expect(await h.bash(`ls ${root} && cp a.pdf copy.pdf`)).toBeUndefined();
@@ -481,7 +533,7 @@ describe("allowing for the session", () => {
 		const h = harness({ jev: jevSays({ delete: 0.95, move: 0.95 }), answers: [allowSession, DENY] });
 		await h.bash("mv a b && rm c");
 		expect(h.dialogs[0]?.options.join("\n")).toMatch(/Allow all (delete\/move|move\/delete)/);
-		h.controller.set("ask");
+
 		expect(h.controller.isGranted("delete")).toBe(true);
 		expect(h.controller.isGranted("move")).toBe(true);
 		expect(h.controller.isGranted("edit")).toBe(false);
@@ -492,7 +544,7 @@ describe("allowing for the session", () => {
 		await h.bash(`rm ${original("a.txt")}`);
 		h.controller.set("full");
 		expect(await h.bash(`rm ${original("b.txt")}`)).toBeUndefined();
-		h.controller.set("ask");
+		h.controller.set("auto");
 		expect((await h.bash(`rm ${original("c.txt")}`))?.block).toBe(true);
 		expect(h.dialogs).toHaveLength(2);
 	});
@@ -557,7 +609,7 @@ describe("auto mode", () => {
 		expect(await approved.bash(`rm ${original("b.txt")}`)).toBeUndefined();
 	});
 
-	it("without a configured Jev behaves like ask: it cannot classify, so it asks", async () => {
+	it("without a configured Jev it cannot classify, so it asks about every gated call", async () => {
 		const h = harness({ mode: "auto", answers: [DENY] });
 		expect((await h.bash("ls"))?.block).toBe(true);
 		expect(h.dialogs[0]?.title).toMatch(/could not classify/i);
@@ -811,7 +863,7 @@ describe("switching modes", () => {
 		const pending = h.bash(`rm ${original("a.txt")}`);
 		await vi.waitFor(() => expect(h.select).toHaveBeenCalled());
 		expect(h.press("\u001b[Z")).toBe(true);
-		expect(h.controller.mode).toBe("ask");
+		expect(h.controller.mode).toBe("auto");
 		resolveDialog(ALLOW_ONCE);
 		await pending;
 	});
@@ -838,7 +890,7 @@ describe("switching modes", () => {
 });
 
 describe("system prompt", () => {
-	it("tells the model to copy before editing in ask and auto, and says nothing in full", async () => {
+	it("tells the model to copy before editing in auto, and says nothing in full", async () => {
 		const prompt = async (mode: PermissionMode) =>
 			(
 				await harness({ mode }).emit("before_agent_start", {
@@ -847,14 +899,26 @@ describe("system prompt", () => {
 					systemPrompt: "BASE",
 				})
 			)?.systemPrompt;
-		for (const mode of ["ask", "auto"] as const) {
-			const text = await prompt(mode);
-			expect(text).toContain("BASE");
-			expect(text).toMatch(/copy/i);
-			// An explicit request must reach the approval prompt instead of being refused by the model.
-			expect(text).toMatch(/explicitly asks/i);
-			expect(text).toMatch(/do not refuse/i);
-		}
+		const text = await prompt("auto");
+		expect(text).toContain("BASE");
+		expect(text).toMatch(/copy/i);
+		// An explicit request must reach the approval prompt instead of being refused by the model.
+		expect(text).toMatch(/explicitly asks/i);
+		expect(text).toMatch(/do not refuse/i);
 		expect(await prompt("full")).toBeUndefined();
+	});
+
+	it("in ask, says every file-capable call is approved by the user, and still does not refuse for them", async () => {
+		const text = (
+			await harness({ mode: "ask" }).emit("before_agent_start", {
+				messageType: "user",
+				prompt: "hi",
+				systemPrompt: "BASE",
+			})
+		)?.systemPrompt;
+		expect(text).toContain("BASE");
+		expect(text).toMatch(/every/i);
+		expect(text).toMatch(/do not refuse/i);
+		expect(text).not.toMatch(/never need approval/i);
 	});
 });
