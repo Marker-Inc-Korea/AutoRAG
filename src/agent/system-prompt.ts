@@ -89,6 +89,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"jev",
 			"ask the Jev judgment model for calibrated probabilities — classification, triage, comparison, ranking",
 		),
+		toolLine(
+			config,
+			"ask_user",
+			"ask the person at the terminal a multiple-choice or open question when the request is ambiguous or a decision is theirs; do not guess",
+		),
 		toolLine(config, "check_memory", "inspect evidence earlier searches found for similar questions"),
 		...config.toolNames
 			.filter((name) => name.startsWith("search_datasource_"))
@@ -120,6 +125,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"web_search",
 						"web_fetch",
 						"jev",
+						"ask_user",
 						"check_memory",
 					].includes(name) && !name.startsWith("search_datasource_"),
 			)

@@ -70,6 +70,7 @@
     "kordoc": "^4.21.30",
     "mailparser": "^3.9.38",
     "pdfjs-dist": "^6.4.299",
+    "pi-ask-user": "0.17.0",
     "pi-discord-remote": "0.2.4",
     "puppeteer-core": "^25.13.0",
     "slides-grab": "^1.5.2",

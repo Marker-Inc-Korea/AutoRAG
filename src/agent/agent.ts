@@ -112,6 +112,7 @@ import {
 	ANSWER_LEAD_RULE,
 	ANSWER_UNCERTAINTY_RULE,
 } from "./answer-guidelines.ts";
+import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
@@ -960,6 +961,8 @@ export class AutoRAGAgent {
 	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
 	private readonly discordRemote: boolean;
+	/** Whether the bound interactive session offers `ask_user`; the phase prompts name it only then. */
+	private askUserOffered = false;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private readonly toolBurstGuard: ToolBurstGuard;
 	private readonly limits: ResolvedRetrievalLimits;
@@ -1612,6 +1615,9 @@ export class AutoRAGAgent {
 		const resolved = this.configuredModel === undefined ? undefined : await this.resolveSessionModel();
 		// Loaded on demand: the bridge is large and most sessions never enable it.
 		const telegramBridge = this.telegram ? (await import("@llblab/pi-telegram")).default : undefined;
+		// ask_user opens a dialog at the terminal. A session a chat bridge drives has nobody there to answer it
+		// (Discord brings its own question tool), so the tool is offered only when the terminal is the user's.
+		const askUser = !this.discordRemote && !this.telegram && this.piExtensionPaths === undefined;
 		const runtime = await createAutoRAGPiInteractiveRuntime({
 			cwd: this.workspaceProjectRoot,
 			agentDir: this.piAgentDir,
@@ -1628,6 +1634,7 @@ export class AutoRAGAgent {
 				buildSystemPrompt(
 					this.currentSystemPromptConfig({
 						modelId: this.boundPiRuntime?.session.model?.id ?? resolved?.model.id,
+						...(askUser ? { toolNames: [...this.baseSystemPromptConfig.toolNames, ASK_USER_TOOL_NAME] } : {}),
 					}),
 				),
 			// The model sees each steer framed as a correction of the running search;
@@ -1668,19 +1675,26 @@ export class AutoRAGAgent {
 			extensionToolNames: [
 				...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
 				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
+				...(askUser ? [ASK_USER_TOOL_NAME] : []),
 			],
 			...(this.updateNotice === undefined ? {} : { updateNotice: this.updateNotice }),
 			...(this.welcomeVersion === undefined ? {} : { welcomeVersion: this.welcomeVersion }),
-			...(this.piExtensionPaths === undefined ? {} : { extensionPaths: this.piExtensionPaths }),
+			...(askUser
+				? { extensionPaths: [resolveAskUserExtensionPath()] }
+				: this.piExtensionPaths === undefined
+					? {}
+					: { extensionPaths: this.piExtensionPaths }),
 			...(this.piExtensionFlags === undefined ? {} : { extensionFlags: this.piExtensionFlags }),
 		});
 		this.boundPiRuntime = runtime.runtime;
+		this.askUserOffered = askUser;
 		const dispose = runtime.dispose;
 		return {
 			...runtime,
 			dispose: async () => {
 				if (this.boundPiRuntime === runtime.runtime) {
 					this.boundPiRuntime = undefined;
+					this.askUserOffered = false;
 					// A disposed session must not receive later numbers.
 					this.citationNumbers.setSink(undefined);
 					this.conversationQueries.setSink(undefined);
@@ -3103,6 +3117,17 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Sentence for the phase prompts that forbid tool calls: `ask_user` is not a search tool, and a request
+	 * that hinges on a choice only the user can make must be asked, not guessed. Empty when the session does
+	 * not offer the tool.
+	 */
+	private askUserException(): string {
+		return this.askUserOffered
+			? `The one exception is ${ASK_USER_TOOL_NAME}: if the request cannot be answered without a choice or fact only the user can give, call ${ASK_USER_TOOL_NAME} first instead of guessing. `
+			: "";
+	}
+
+	/**
 	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
 	 * is already gathered, so the model answers immediately with minimal thinking,
 	 * as plain text, without any further tool calls.
@@ -3113,7 +3138,7 @@ export class AutoRAGAgent {
 		return (
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
 			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ${this.askUserException()}` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
@@ -3150,7 +3175,7 @@ export class AutoRAGAgent {
 	buildDirectAnswerPrompt(query: string): string {
 		return (
 			`Answer this query directly from your own general knowledge: ${query}\n\n` +
-			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ` +
+			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ${this.askUserException()}` +
 			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.`
 		);
 	}
