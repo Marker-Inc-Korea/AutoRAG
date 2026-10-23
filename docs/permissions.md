@@ -58,8 +58,10 @@ External MCP servers' tools (`mcp__*`) are outside the gate: AutoRAG cannot know
 | Environment | `AUTORAG_PERMISSION_MODE=full` |
 | Config | `"permissionMode": "auto"` in `~/.autorag/config.json` |
 
-Precedence: flag, then environment, then config file, then `auto`. An unknown value is an error, never a silent
-fallback. Shift+Tab replaces pi's thinking-level cycle key inside `autorag tui`.
+Precedence: flag, then environment, then config file, then the command's own default. An unknown value is an error,
+never a silent fallback. The defaults are `auto` for the interactive `autorag tui`, and `full` for `autorag search`
+and for a `tui` started with `--telegram`, `--discord`, or `--whatsapp`, because nobody can answer a terminal dialog
+there. Any of the flag, environment, or config file overrides these. Shift+Tab replaces pi's thinking-level cycle key inside `autorag tui`.
 
 Shift+Tab and `/permissions` apply to the very next tool call and clear any "allow for this session" grants.
 
@@ -80,13 +82,16 @@ add a note that is passed on. Questions are asked one at a time even when the mo
 
 ## Without a terminal
 
-`autorag search`, automations, and the Discord/Telegram/WhatsApp bridges have nobody to answer a dialog:
+`autorag search` (and so an automation that runs it) and a `tui` with a Discord/Telegram/WhatsApp bridge default to
+`full`, since nobody can answer a dialog there. If you set a mode yourself, it behaves like this when no terminal
+is attached:
 
 - `auto`: Jev's approval lets it through; anything else is blocked, and the model is told to use a copy.
 - `ask`: every `bash`, `write`, `edit`, and saved-automation call is blocked, so nothing that touches files runs.
 - `full`: nothing is blocked.
 
-Pass `--permission-mode full` (or set the env/config) for an unattended job that must delete or move files.
+To gate an unattended job anyway, pass `--permission-mode auto` (Jev decides, anything it will not approve is blocked)
+or set the env/config.
 
 ## Jev in `auto`
 

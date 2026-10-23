@@ -29,6 +29,25 @@ describe("permission mode resolution", () => {
 		expect(resolve({}).permissionMode).toBe("auto");
 	});
 
+	it("takes a command's own default when nothing else says, and flag, env, and file still win over it", () => {
+		const withDefault = (extra: Parameters<typeof resolve>[0]) => {
+			const path = join(root, "config.json");
+			writeFileSync(path, JSON.stringify(extra.file === undefined ? {} : { permissionMode: extra.file }), "utf8");
+			return resolveConfig({
+				flags: { config: path, ...extra.flags },
+				env: { HOME: root, ...extra.env },
+				cwd: root,
+				defaultPermissionMode: "full",
+			}).permissionMode;
+		};
+		expect(withDefault({})).toBe("full");
+		expect(withDefault({ file: "ask" })).toBe("ask");
+		expect(withDefault({ file: "ask", env: { AUTORAG_PERMISSION_MODE: "auto" } })).toBe("auto");
+		expect(withDefault({ env: { AUTORAG_PERMISSION_MODE: "auto" }, flags: { "permission-mode": "ask" } })).toBe(
+			"ask",
+		);
+	});
+
 	it("reads the config file", () => {
 		expect(resolve({ file: "auto" }).permissionMode).toBe("auto");
 	});

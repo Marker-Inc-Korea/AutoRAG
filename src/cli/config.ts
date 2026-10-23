@@ -227,7 +227,7 @@ export interface CliConfig {
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
 	/**
-	 * Approval gate for file changes by the agent: `auto` (default: Jev first, user as fallback), `ask`
+	 * Approval gate for file changes by the agent: `auto` (default for the TUI: Jev first, user as fallback; `full` for `search` and a bridged TUI), `ask`
 	 * (the user approves every file-capable call, Jev unused), or `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
 	 */
 	permissionMode?: PermissionMode;
@@ -255,6 +255,11 @@ export interface ResolveConfigInput {
 	env?: NodeJS.ProcessEnv;
 	cwd?: string;
 	readOnly?: boolean;
+	/**
+	 * Mode when no flag, environment variable, or config file sets one. Commands that run with nobody to approve
+	 * (`search`) or through a remote bridge pass `full`; the interactive TUI leaves it to the default (`auto`).
+	 */
+	defaultPermissionMode?: PermissionMode;
 }
 
 export interface ResolvedConfigPath {
@@ -969,7 +974,12 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
 	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
-	config.permissionMode = resolvePermissionMode(flags, env, file.permissionMode);
+	config.permissionMode = resolvePermissionMode(
+		flags,
+		env,
+		file.permissionMode,
+		input.defaultPermissionMode ?? DEFAULT_PERMISSION_MODE,
+	);
 	if (file.queryDecomposition !== undefined) {
 		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
 	}
@@ -1004,13 +1014,15 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 /**
- * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then `auto`.
- * An unknown value is an error from any source, never a silent fallback to a weaker gate.
+ * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then the
+ * command's own default (`auto` unless the command says otherwise). An unknown value is an error from any
+ * source, never a silent fallback to a weaker gate.
  */
 function resolvePermissionMode(
 	flags: Record<string, string | boolean | undefined>,
 	env: NodeJS.ProcessEnv,
 	fileValue: unknown,
+	fallback: PermissionMode,
 ): PermissionMode {
 	const valid = PERMISSION_MODES.join(", ");
 	const flag = flagString(flags, "permission-mode");
@@ -1025,7 +1037,7 @@ function resolvePermissionMode(
 		if (mode === undefined) throw new ConfigError(`AUTORAG_PERMISSION_MODE must be one of: ${valid}`);
 		return mode;
 	}
-	if (fileValue === undefined) return DEFAULT_PERMISSION_MODE;
+	if (fileValue === undefined) return fallback;
 	const mode = parsePermissionMode(fileValue);
 	if (mode === undefined) throw new ConfigError(`Config field 'permissionMode' must be one of: ${valid}`);
 	return mode;
