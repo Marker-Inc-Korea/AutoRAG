@@ -11,7 +11,8 @@ import {
 	matchesAutomation,
 	saveAutomation,
 } from "../automation/config.ts";
-import { type AutomationRunRecord, runAutomation } from "../automation/run.ts";
+import { runRule } from "../automation/dispatch.ts";
+import type { AutomationRunRecord } from "../automation/run.ts";
 import {
 	type AutomationServiceOptions,
 	getAutomationStatus,
@@ -20,6 +21,7 @@ import {
 	uninstallAutomationService,
 } from "../automation/service.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import { listAutomationProfiles } from "../profiles/automation-profiles.ts";
 
 export const MANAGE_AUTOMATIONS_TOOL_NAME = "manage_automations";
 
@@ -58,10 +60,49 @@ const manageAutomationsSchema = Type.Object({
 					}),
 				),
 				exclude: Type.Optional(Type.Array(Type.String(), { description: "Globs to ignore." })),
-				run: Type.Array(Type.String(), {
-					description:
-						'Command argv, run without a shell. "autorag" runs this AutoRAG CLI and "node" runs this Node (it executes .ts files directly). Use ["sh","-c","…"] only when shell syntax is needed.',
-				}),
+				run: Type.Optional(
+					Type.Array(Type.String(), {
+						description:
+							'Command argv, run without a shell. "autorag" runs this AutoRAG CLI and "node" runs this Node (it executes .ts files directly). Use ["sh","-c","…"] only when shell syntax is needed. Give `run` or `agent`, never both.',
+					}),
+				),
+				agent: Type.Optional(
+					Type.Object(
+						{
+							profile: Type.String({
+								description: `Agent profile to start on each batch of changes. Available: ${listAutomationProfiles()
+									.map(
+										(profile) =>
+											`${profile.id} (${profile.writes ? "may change files" : "read-only"}: ${profile.description})`,
+									)
+									.join("; ")}.`,
+							}),
+							task: Type.String({ description: "What the agent should do for the changed files." }),
+							retrieval: Type.Optional(
+								Type.Object(
+									{
+										searchAll: Type.Optional(
+											Type.Boolean({ description: "Offer search_all_documents. Default false." }),
+										),
+										datasources: Type.Optional(
+											Type.Array(Type.String(), {
+												description: "Datasource ids to offer one search_datasource_<id> tool each.",
+											}),
+										),
+									},
+									{
+										description:
+											"Optional AutoRAG search tools for the agent. Retrieval memory is never connected.",
+									},
+								),
+							),
+						},
+						{
+							description:
+								"Run an AI agent instead of a command. The system always forbids the agent from changing the watched folders in a way that would trigger this rule again.",
+						},
+					),
+				),
 				appendFiles: Type.Optional(
 					Type.Boolean({ description: "Append changed file paths to argv (capped at 100)." }),
 				),
@@ -109,7 +150,17 @@ function describeRule(rule: Automation): string {
 		`events=${rule.events.join(",")}`,
 		`include=${rule.include.join(",")}`,
 		...(rule.exclude.length > 0 ? [`exclude=${rule.exclude.join(",")}`] : []),
-		`run=${JSON.stringify(rule.run)}`,
+		...(rule.agent === undefined
+			? [`run=${JSON.stringify(rule.run)}`]
+			: [
+					`agent=${rule.agent.profile}`,
+					`task=${JSON.stringify(rule.agent.task)}`,
+					...(rule.agent.retrieval.searchAll || rule.agent.retrieval.datasources.length > 0
+						? [
+								`retrieval=${[...(rule.agent.retrieval.searchAll ? ["search_all_documents"] : []), ...rule.agent.retrieval.datasources.map((id) => `search_datasource_${id}`)].join(",")}`,
+							]
+						: []),
+				]),
 		...(rule.appendFiles ? ["appendFiles"] : []),
 	];
 	return parts.join("; ");
@@ -191,7 +242,7 @@ export function createManageAutomationsTool(
 					const matched = supplied.filter((event) =>
 						rule.paths.some((root) => matchesAutomation(rule, root, event)),
 					);
-					const record = await runAutomation(rule, matched, { home, env });
+					const record = await runRule(rule, matched, { home, env });
 					const lines = [
 						`Ran automation ${id}: ${describeRun(record)} (${supplied.length - matched.length} test event(s) did not match).`,
 						...(record.stdout.trim() ? [`stdout:\n${record.stdout.trimEnd()}`] : []),

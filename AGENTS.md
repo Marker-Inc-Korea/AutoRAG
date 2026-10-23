@@ -639,3 +639,10 @@ configured for the run is never shown. See
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
+| `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
+| `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |
+| `src/profiles/retrieval-tools.ts` | Optional `search_all_documents` / `search_datasource_<id>` tools for a profile, backed by an agent whose memory file is a throwaway |
+| `src/profiles/automation-profiles.ts` | Code-defined profiles an automation rule may name (`file-triage` read-only, `file-organizer` writes); a rule carries an id, never a prompt or tool list |
+| `src/profiles/loop-guard.ts` | The mandatory system-prompt section appended to every automation agent run: names the rule's folders, file types and events and forbids triggering the rule again |
+| `src/automation/run-agent.ts` | Runs an agent rule: profile + loop guard, changed files as the user message, final reply logged like a command's stdout |
+| `src/automation/dispatch.ts` | `runRule`: the one entry for command and agent rules; at most one agent run in flight across rules |

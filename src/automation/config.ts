@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { writeFileAtomic } from "../mirror/atomic-write.ts";
+import { getAutomationProfile, listAutomationProfiles } from "../profiles/automation-profiles.ts";
 
 export type AutomationEventType = "create" | "update" | "delete";
 
@@ -12,13 +13,28 @@ export interface AutomationEvent {
 	readonly path: string;
 }
 
+/** Which retrieval tools an agent rule's session is offered; retrieval memory is never connected. */
+export interface AutomationAgentRetrieval {
+	readonly searchAll: boolean;
+	readonly datasources: readonly string[];
+}
+
+/** What an agent rule runs: a registered agent profile, spawned in-process on each batch of events. */
+export interface AutomationAgent {
+	readonly profile: string;
+	readonly task: string;
+	readonly retrieval: AutomationAgentRetrieval;
+}
+
+/** A rule runs exactly one of `run` (a command) or `agent` (a profile session). */
 export interface Automation {
 	readonly id: string;
 	readonly paths: readonly string[];
 	readonly events: readonly AutomationEventType[];
 	readonly include: readonly string[];
 	readonly exclude: readonly string[];
-	readonly run: readonly string[];
+	readonly run?: readonly string[];
+	readonly agent?: AutomationAgent;
 	readonly appendFiles: boolean;
 	readonly debounceMs: number;
 	readonly timeoutMs: number;
@@ -46,6 +62,7 @@ const KNOWN_KEYS: Readonly<Record<string, true>> = {
 	include: true,
 	exclude: true,
 	run: true,
+	agent: true,
 	appendFiles: true,
 	debounceMs: true,
 	timeoutMs: true,
@@ -84,6 +101,52 @@ function parsePositiveInt(value: unknown, field: string, fallback: number): numb
 		throw new AutomationConfigError(`Automation "${field}" must be a positive integer`);
 	}
 	return value;
+}
+
+const AGENT_KEYS: Readonly<Record<string, true>> = { profile: true, task: true, retrieval: true };
+const RETRIEVAL_KEYS: Readonly<Record<string, true>> = { searchAll: true, datasources: true };
+
+function parseAgent(value: unknown, id: string): AutomationAgent {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new AutomationConfigError(`Automation "${id}.agent" must be an object`);
+	}
+	const record = value as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!AGENT_KEYS[key]) throw new AutomationConfigError(`Unknown field "${key}" in automation "${id}.agent"`);
+	}
+	if (typeof record.profile !== "string" || getAutomationProfile(record.profile) === undefined) {
+		const known = listAutomationProfiles()
+			.map((profile) => profile.id)
+			.join(", ");
+		throw new AutomationConfigError(
+			`Automation "${id}.agent.profile" must be one of: ${known} (got ${JSON.stringify(record.profile)})`,
+		);
+	}
+	if (typeof record.task !== "string" || record.task.trim().length === 0) {
+		throw new AutomationConfigError(`Automation "${id}.agent.task" must be a non-empty string`);
+	}
+	let searchAll = false;
+	let datasources: string[] = [];
+	if (record.retrieval !== undefined) {
+		const retrieval = record.retrieval;
+		if (typeof retrieval !== "object" || retrieval === null || Array.isArray(retrieval)) {
+			throw new AutomationConfigError(`Automation "${id}.agent.retrieval" must be an object`);
+		}
+		const fields = retrieval as Record<string, unknown>;
+		for (const key of Object.keys(fields)) {
+			if (!RETRIEVAL_KEYS[key]) {
+				throw new AutomationConfigError(`Unknown field "${key}" in automation "${id}.agent.retrieval"`);
+			}
+		}
+		if (fields.searchAll !== undefined && typeof fields.searchAll !== "boolean") {
+			throw new AutomationConfigError(`Automation "${id}.agent.retrieval.searchAll" must be a boolean`);
+		}
+		searchAll = fields.searchAll === true;
+		if (fields.datasources !== undefined) {
+			datasources = requireStringArray(fields.datasources, `${id}.agent.retrieval.datasources`, false);
+		}
+	}
+	return { profile: record.profile, task: record.task.trim(), retrieval: { searchAll, datasources } };
 }
 
 export function parseAutomations(raw: unknown, env: NodeJS.ProcessEnv = process.env): Automation[] {
@@ -143,7 +206,14 @@ export function parseAutomations(raw: unknown, env: NodeJS.ProcessEnv = process.
 
 		const include = obj.include === undefined ? ["**"] : requireStringArray(obj.include, `${obj.id}.include`, true);
 		const exclude = obj.exclude === undefined ? [] : requireStringArray(obj.exclude, `${obj.id}.exclude`, false);
-		const run = requireStringArray(obj.run, `${obj.id}.run`, true).map((token) => expandTilde(token, userHome));
+		if (obj.agent !== undefined && obj.run !== undefined) {
+			throw new AutomationConfigError(`Automation "${obj.id}" must have either "run" or "agent", not both`);
+		}
+		const agent = obj.agent === undefined ? undefined : parseAgent(obj.agent, obj.id);
+		const run =
+			agent === undefined
+				? requireStringArray(obj.run, `${obj.id}.run`, true).map((token) => expandTilde(token, userHome))
+				: undefined;
 
 		if (obj.appendFiles !== undefined && typeof obj.appendFiles !== "boolean") {
 			throw new AutomationConfigError(`Automation "${obj.id}.appendFiles" must be a boolean`);
@@ -155,7 +225,8 @@ export function parseAutomations(raw: unknown, env: NodeJS.ProcessEnv = process.
 			events: eventsRaw as AutomationEventType[],
 			include,
 			exclude,
-			run,
+			...(run !== undefined ? { run } : {}),
+			...(agent !== undefined ? { agent } : {}),
 			appendFiles: obj.appendFiles === true,
 			debounceMs: parsePositiveInt(obj.debounceMs, `${obj.id}.debounceMs`, DEFAULT_DEBOUNCE_MS),
 			timeoutMs: parsePositiveInt(obj.timeoutMs, `${obj.id}.timeoutMs`, DEFAULT_TIMEOUT_MS),

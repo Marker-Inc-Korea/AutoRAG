@@ -156,10 +156,33 @@ autorag automate daemon
 ```
 
 File-triggered automations live in `~/.autorag/automations.json` (`automations`
-array of `{ id, paths, events, include, exclude, run, appendFiles, debounceMs, timeoutMs }`).
+array of `{ id, paths, events, include, exclude, run | agent, appendFiles, debounceMs, timeoutMs }`).
 Edit `automations.json` directly to add or change rules; matched `[{ type, path }]`
 events are piped on stdin to `run`. Use `autorag automate install` to register
 the background daemon with launchd, `systemd --user`, or Windows Task Scheduler.
+
+A rule runs exactly one of `run` (a command) or `agent` (an AI agent started in
+the daemon on each batch of changes):
+
+```json
+{ "id": "inbox-triage", "paths": ["~/Downloads"], "include": ["**/*.pdf"],
+  "agent": { "profile": "file-triage", "task": "Summarize each new PDF.",
+             "retrieval": { "searchAll": true, "datasources": ["kakao"] } } }
+```
+
+`agent.profile` names a profile defined in code: `file-triage` (reads, lists and
+searches files; changes nothing) or `file-organizer` (also `bash`, `edit`,
+`write`). A rule never carries a prompt or a tool list, so the rules file cannot
+grant an agent more than its profile has. `retrieval` optionally adds
+`search_all_documents` and one `search_datasource_<id>` per listed datasource.
+Retrieval memory is never connected to an automation agent.
+
+Every agent run gets a loop guard appended to its system prompt, naming the
+rule's folders, file types and events, and forbidding any change that would
+fire the rule again, editing the rules file, and running `autorag automate`. At
+most one agent run is in flight across all rules, and an agent rule is
+disabled after 6 runs within 60 seconds (command rules: 20). The run's final
+reply is the `stdout` of its log entry.
 
 Prefer a full refresh so parsed mirrors, MinSync, Jikji, configured
 datasources, and (on Windows) the bundled Everything file-name index stay

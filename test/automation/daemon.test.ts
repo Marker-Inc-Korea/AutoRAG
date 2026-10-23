@@ -194,6 +194,49 @@ describe("startAutomationDaemon (unit)", () => {
 		}
 	});
 
+	it("trips the breaker sooner for an agent rule than for a command rule", async () => {
+		vi.useFakeTimers();
+		writeAutomations([
+			{ id: "cmd", paths: [inbox], debounceMs: 10, include: ["cmd/**"], run: ["node", "-e", "0"] },
+			{
+				id: "agent",
+				paths: [inbox],
+				debounceMs: 10,
+				include: ["agent/**"],
+				agent: { profile: "file-triage", task: "look" },
+			},
+		]);
+		const fb = fakeBackend();
+		const errors: string[] = [];
+		const counts: Record<string, number> = { cmd: 0, agent: 0 };
+
+		const daemon = await startAutomationDaemon({
+			home,
+			watcher: fb.backend,
+			onError: (msg) => errors.push(msg),
+			runner: async (a, evs) => {
+				counts[a.id] = (counts[a.id] ?? 0) + 1;
+				return okRecord(a.id, evs);
+			},
+		});
+
+		try {
+			for (let i = 0; i < 10; i++) {
+				fb.emit(inbox, [
+					{ type: "update", path: join(inbox, "cmd", "x.txt") },
+					{ type: "update", path: join(inbox, "agent", "x.txt") },
+				]);
+				await vi.advanceTimersByTimeAsync(10);
+			}
+			expect(counts.cmd).toBe(10);
+			expect(counts.agent).toBe(6);
+			expect(errors.some((e) => e.includes('"agent"') && e.includes("disabled after 6 runs"))).toBe(true);
+			expect(errors.some((e) => e.includes('"cmd"'))).toBe(false);
+		} finally {
+			await daemon.stop();
+		}
+	});
+
 	it("enforces a single daemon instance per home and keeps previous rules when reload hits invalid JSON", async () => {
 		writeAutomations([{ id: "a", paths: [inbox], run: ["node", "-e", "0"] }]);
 		const fb = fakeBackend();
