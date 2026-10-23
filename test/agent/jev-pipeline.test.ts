@@ -16,6 +16,7 @@ import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { type JevBackend, MockBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
+import { CITATION_QUESTION_ID_PREFIX } from "../../src/agent/citation-relevance.ts";
 import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
@@ -31,6 +32,7 @@ import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
+import { citationsRelevant } from "../helpers/citations-relevant.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
@@ -89,17 +91,19 @@ function jevRouting(
 	datasourceProbabilities: Readonly<Record<string, number>> = {},
 ): JevBackend {
 	const distribution = { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 };
-	return new MockBackend({
-		[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.8 },
-		[DECOMPOSE_QUESTION_ID]: { answer: decomposeProbability },
-		[FOLLOW_UP_QUESTION_ID]: { answer: followUpProbability },
-		...Object.fromEntries(
-			Object.entries(datasourceProbabilities).map(([datasourceId, answer]) => [
-				datasourceQuestionId(datasourceId),
-				{ answer },
-			]),
-		),
-	});
+	return citationsRelevant(
+		new MockBackend({
+			[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.8 },
+			[DECOMPOSE_QUESTION_ID]: { answer: decomposeProbability },
+			[FOLLOW_UP_QUESTION_ID]: { answer: followUpProbability },
+			...Object.fromEntries(
+				Object.entries(datasourceProbabilities).map(([datasourceId, answer]) => [
+					datasourceQuestionId(datasourceId),
+					{ answer },
+				]),
+			),
+		}),
+	);
 }
 
 /**
@@ -899,6 +903,99 @@ describe("Jev query pipeline before the fast answer", () => {
 				})),
 		};
 	}
+
+	describe("citation relevance", () => {
+		/** Scores every citation question by whether its evidence text contains `unrelated`. */
+		function citationJudge(unrelated: string): { backend: JevBackend; asked: string[] } {
+			const asked: string[] = [];
+			const inner = jevRouting("local", 0.1, 0.9, { slack: 0.9 });
+			const backend: JevBackend = {
+				name: inner.name,
+				async judge(request) {
+					const isCitation = (id: string | undefined): boolean =>
+						id?.startsWith(CITATION_QUESTION_ID_PREFIX) === true;
+					if (!request.questions.some((question) => isCitation(question.id))) return inner.judge(request);
+					const rest = await inner.judge({
+						...request,
+						questions: request.questions.filter((question) => !isCitation(question.id)),
+					});
+					let next = 0;
+					return {
+						...rest,
+						answers: request.questions.map((question) => {
+							if (!isCitation(question.id)) return rest.answers[next++] ?? { answer: 0 };
+							asked.push(question.question);
+							return { answer: question.question.includes(unrelated) ? 0.02 : 0.95 };
+						}),
+					};
+				},
+			};
+			return { backend, asked };
+		}
+
+		it("removes a cited chunk Jev finds unrelated from the answer, the results, and the memory judgment", async () => {
+			const judge = citationJudge("Moved in May");
+			const model = fauxModel(fastAnswer("Not sure."), twoEvidenceAnswer());
+			const agent = agentWith({ model, jev: { backend: judge.backend }, datasourceSkills: [evidenceDatasource()] });
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+			expect(judge.asked).toHaveLength(2);
+			expect(response.answer).toBe("Mina Park approved the Q3 budget [1]. The office moved in May.");
+			expect(response.results.map((result) => result.title)).toEqual(["budget"]);
+			const removed = response.diagnostics?.find((diagnostic) => diagnostic.code === "citation-irrelevant");
+			expect(removed?.message).toContain("/slack/default/office");
+			expect(removed?.message).not.toContain("/slack/default/budget");
+			const judged = response.diagnostics?.find((diagnostic) => diagnostic.code === "evidence-judged");
+			expect(judged?.message).toContain("of 1 cited evidence");
+		});
+
+		it("keeps every citation and says why when Jev cannot judge relevance", async () => {
+			const inner = jevRouting("local", 0.1, 0.9, { slack: 0.9 });
+			const failing: JevBackend = {
+				name: "flaky",
+				async judge(request) {
+					if (request.questions.some((question) => question.id?.startsWith(CITATION_QUESTION_ID_PREFIX))) {
+						throw new Error("citation backend exploded");
+					}
+					return inner.judge(request);
+				},
+			};
+			const model = fauxModel(fastAnswer("Not sure."), twoEvidenceAnswer());
+			const agent = agentWith({ model, jev: { backend: failing }, datasourceSkills: [evidenceDatasource()] });
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+			expect(response.answer).toBe("Mina Park approved the Q3 budget [1]. The office moved in May [2].");
+			expect(response.results).toHaveLength(2);
+			const fallback = response.diagnostics?.find((diagnostic) => diagnostic.code === "citation-relevance-fallback");
+			expect(fallback?.message).toContain("citation backend exploded");
+		});
+
+		it("never asks Jev about citations when Jev is disabled", async () => {
+			const model = fauxModel(
+				fauxAssistantMessage([fauxToolCall("search_datasource_slack", { query: "who approved the Q3 budget?" })], {
+					stopReason: "toolUse",
+				}),
+				twoEvidenceAnswer(),
+				twoEvidenceAnswer(),
+			);
+			const agent = agentWith({ model, datasourceSkills: [evidenceDatasource()] });
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("who approved the Q3 budget?");
+
+			expect(response.results).toHaveLength(2);
+			expect(
+				response.diagnostics?.some(
+					(diagnostic) =>
+						diagnostic.code === "citation-irrelevant" || diagnostic.code === "citation-relevance-fallback",
+				),
+			).toBe(false);
+		});
+	});
 	describe("evidence judgment for retrieval memory", () => {
 		/** Records every evidence question Jev is asked, answering each from `byEvidence` (default 0.9). */
 		function evidenceJudge(
