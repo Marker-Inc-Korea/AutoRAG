@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import type { CitationNumbers } from "./citation-numbers.ts";
 import { answerMarkers } from "./citations.ts";
 import { type EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
+import { findUnverifiedLineClaims } from "./location-claims.ts";
 import type {
 	AutoRAGEmittedResult,
 	AutoRAGEvidenceRef,
@@ -198,7 +199,12 @@ export function deriveResultsFromAnswer(
 			summary: cited.claim,
 			evidence: cited.refs.map((ref) => {
 				const excerpt = (ref.content ?? "").replace(/\s+/gu, " ").trim().slice(0, MAX_EXCERPT_CHARS);
-				return ref.lineNumber !== undefined ? { excerpt, lineNumber: ref.lineNumber } : { excerpt };
+				return {
+					excerpt,
+					...(ref.lineNumber !== undefined ? { lineNumber: ref.lineNumber } : {}),
+					...(ref.lineEnd !== undefined ? { lineEnd: ref.lineEnd } : {}),
+					...(ref.section !== undefined ? { section: ref.section } : {}),
+				};
 			}),
 		});
 		mapping.push({
@@ -210,16 +216,28 @@ export function deriveResultsFromAnswer(
 		});
 	}
 
-	const diagnostics: SearchDocumentDiagnostic[] =
-		dropped.size === 0
-			? []
-			: [
-					{
-						code: "citation-without-result",
-						severity: "warning",
-						message: `Dropped ${dropped.size} answer citation(s) that matched no evidence retrieved in this conversation: ${[...dropped].join(", ")}. Every remaining citation resolves to a recorded source.`,
-						source: "agent",
-					},
-				];
+	const diagnostics: SearchDocumentDiagnostic[] = [];
+	if (dropped.size > 0) {
+		diagnostics.push({
+			code: "citation-without-result",
+			severity: "warning",
+			message: `Dropped ${dropped.size} answer citation(s) that matched no evidence retrieved in this conversation: ${[...dropped].join(", ")}. Every remaining citation resolves to a recorded source.`,
+			source: "agent",
+		});
+	}
+	const unverifiedLines = findUnverifiedLineClaims(
+		answer,
+		[...sources.values()].flatMap((cited) =>
+			cited.refs.map((ref) => ({ lineStart: ref.lineNumber, lineEnd: ref.lineEnd })),
+		),
+	);
+	if (unverifiedLines.length > 0) {
+		diagnostics.push({
+			code: "line-reference-unverified",
+			severity: "warning",
+			message: `The answer names line number(s) ${unverifiedLines.join(", ")} that no cited evidence covers. Trust results[].evidence lineNumber/lineEnd, which the harness measured, over the answer's prose.`,
+			source: "agent",
+		});
+	}
 	return { details: { answer: answer.trim(), results, mapping, warnings: [] }, diagnostics };
 }
