@@ -2261,7 +2261,7 @@ export class AutoRAGAgent {
 						steering.acceptingSteers = false;
 						if (this.interactive.userAborted) return;
 						const reportText = finalAnswerText(transcript());
-						if (reportText !== undefined) captured = this.deriveAnswer(reportText);
+						if (reportText !== undefined) captured = await this.deriveAnswer(reportText);
 					} finally {
 						// A bound interactive session outlives this run: give it its search tools back.
 						if (sessionAgent !== undefined && previousTools !== undefined) {
