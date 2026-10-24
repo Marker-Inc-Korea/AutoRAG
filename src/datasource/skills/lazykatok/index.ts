@@ -9,9 +9,9 @@
 export { LazykatokClient } from "./client.ts";
 export {
 	LazykatokBm25Method,
+	LazykatokHybridMethod,
 	type LazykatokMethodOptions,
 	type LazykatokSearchClient,
-	LazykatokSemanticMethod,
 } from "./methods.ts";
 export { LazykatokSkill, type LazykatokSkillClient, type LazykatokSkillOptions } from "./skill.ts";
 export type {

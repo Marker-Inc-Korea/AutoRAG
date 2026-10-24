@@ -23,6 +23,7 @@ import {
 	ensureMinSyncBinary,
 	MINSYNC_VERSION,
 	MinSyncClient,
+	MinSyncHybridMethod,
 	MinSyncQueryError,
 	MinSyncReleaseError,
 	MinSyncRequiredError,
@@ -33,6 +34,7 @@ import {
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
+import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
 
 let root: string;
 let source: string;
@@ -783,6 +785,30 @@ process.exit(0);
 
 		expect(semantic).toHaveLength(1);
 		expect(hybridResults).toHaveLength(1);
+	});
+
+	it("answers a failed hybrid query from BM25 and tells the pipeline the semantic half was down", async () => {
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[args.indexOf("--mode") + 1] === "hybrid") {
+  console.error("embedder unreachable at http://127.0.0.1:9");
+  process.exit(2);
+}
+console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "BM25 answer." }] }));
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const hybrid = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const events: RetrievalFallbackEvent[] = [];
+
+		const results = await hybrid.retrieve("renewal", { topK: 2, onFallback: (event) => events.push(event) });
+
+		expect(results.map((result) => result.content)).toEqual(["BM25 answer."]);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ method: "hybrid", fallback: "bm25" });
+		expect(events[0]?.reason).toContain("embedder unreachable at http://127.0.0.1:9");
 	});
 
 	it("fails fast instead of waiting behind a refresh sync", async () => {

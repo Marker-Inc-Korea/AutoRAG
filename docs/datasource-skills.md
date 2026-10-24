@@ -279,8 +279,8 @@ overrides are replaced for `index` and semantic search.
 ```
 
 Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
-Retrieval exposes independent BM25, semantic, and hybrid methods and maps
-results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
+Retrieval is hybrid-first: one `mailcrawl search --mode hybrid` per query, and BM25 only when hybrid cannot run
+(for example when no semantic index exists). Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
 datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
 path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
@@ -469,9 +469,9 @@ Tune or opt out per datasource with `connector.sidecar`:
 
 | `connector.sidecar` | Meaning |
 |---|---|
-| absent / `true` / `{}` | BM25 + semantic + hybrid (default) |
-| `false` or `{ "enabled": false }` | CLI-backed FTS only, as before |
-| `semantic: false` | BM25 only; no embedding calls, and no `<name>-semantic` / `<name>-hybrid` methods |
+| absent / `true` / `{}` | One hybrid method per connection; BM25 then the CLI search only if it throws (default) |
+| `false` or `{ "enabled": false }` | CLI-backed FTS only, as before (kakao: hybrid, then BM25) |
+| `semantic: false` | BM25 only; no embedding calls, and no `<name>-hybrid` method (the CLI search is the fallback) |
 | `crawlerDbPath` | archive to read. Otherwise: `connector.databasePath`; for `slack`, the `db_path` in the slacrawl config that `connector.configPath` names (relative paths resolve against that file); otherwise the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
 | `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (16,384) |
 
@@ -485,11 +485,12 @@ How it works and what it never does:
 - It is created lazily: building a skill creates no file, directory, or handle. Nothing is written until the
   crawler archive exists and a search or refresh actually runs. Without an AutoRAG workspace there is nowhere to
   keep it, so the datasource behaves as before.
-- Methods added next to the CLI-backed `<name>-fts`: `<name>-sidecar-bm25`, `<name>-semantic`, `<name>-hybrid`
-  (reciprocal rank fusion, k=60). Natural-language queries are OR-ed term by term; FTS operators in user text are
-  quoted away. A message found by both the CLI and the sidecar carries the same id (`event_id` for telegram and
-  whatsapp), so it is merged, not repeated. The semantic and hybrid methods of one search share one query
-  embedding and one vector scan.
+- One method per connection, `<name>-hybrid` (reciprocal rank fusion, k=60): it runs the sidecar's hybrid search
+  and never also runs the CLI or the sidecar's BM25 and semantic components. Only if the hybrid search throws does
+  the sidecar's BM25 answer (`<name>-sidecar-bm25`, with `fallbackFrom` in each hit's metadata), and only if that
+  throws the CLI-backed `<name>-fts`. A search that finds nothing is an answer and starts no fallback. Natural-language
+  queries are OR-ed term by term; FTS operators in user text are quoted away. A message found by the CLI and by the
+  sidecar carries the same id (`event_id` for telegram and whatsapp), so a fallback keeps stable evidence ids.
 - `channels.ids` / `channels.names` are applied in the sidecar's SQL: excluded chats are never searched,
   embedded, or stored as vectors, and vectors of a chat removed from the allowlist are pruned on the next refresh.
 - `autorag refresh --method datasources` runs the CLI sync first, then embeds new or edited messages with the
@@ -515,8 +516,8 @@ How it works and what it never does:
   operator configures one). Vectors of private chats are derived data: treat the
   sidecar file with the same care as the archive itself.
 
-Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` already has semantic and hybrid through
-discrawl.
+Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` is already hybrid-first through discrawl
+(FTS only when embeddings are unavailable).
 
 ## Cloud drives via rclone
 

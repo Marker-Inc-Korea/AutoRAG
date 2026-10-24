@@ -1,3 +1,4 @@
+import { FallbackRetrievalMethod } from "../../../retrieval/fallback.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
@@ -143,16 +144,16 @@ export class ClawGallerySkill implements DatasourceSkill {
 			diagnostics,
 		};
 	}
+	/**
+	 * Hybrid RRF-fuses every channel the index has, so it runs alone and keyword search stands in only
+	 * when hybrid fails. A mode the operator pinned explicitly runs by itself with no fallback.
+	 */
 	retrievalMethods(): readonly RetrievalMethod[] {
-		const order: ClawGallerySearchMode[] =
-			this.mode === "keyword"
-				? ["keyword", "hybrid", "lexical", "embedding"]
-				: this.mode === "lexical"
-					? ["lexical", "hybrid", "keyword", "embedding"]
-					: this.mode === "embedding"
-						? ["embedding", "hybrid", "keyword", "lexical"]
-						: ["hybrid", "keyword", "lexical", "embedding"];
-		return order.map((mode) => new ClawGalleryMethod(mode, this.options.client, this.instanceId, this.tags));
+		const { client } = this.options;
+		const method = (mode: ClawGallerySearchMode): ClawGalleryMethod =>
+			new ClawGalleryMethod(mode, client, this.instanceId, this.tags);
+		if (this.mode !== "hybrid") return [method(this.mode)];
+		return [new FallbackRetrievalMethod(method("hybrid"), [method("keyword")])];
 	}
 	describeSources(): readonly SourceDescription[] {
 		return this.instances.map((instanceId) => ({

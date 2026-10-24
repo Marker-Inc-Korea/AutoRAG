@@ -318,11 +318,7 @@ describe("MailcrawlSkill", () => {
 		};
 		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 2 });
-		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
-			"mailcrawl-bm25",
-			"mailcrawl-semantic",
-			"mailcrawl-hybrid",
-		]);
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual(["mailcrawl-hybrid"]);
 		const result = await skill
 			.retrievalMethods()[0]
 			?.retrieve("approval", { topK: 5, scope: "/mailcrawl/personal/**" });
@@ -391,6 +387,76 @@ describe("MailcrawlSkill", () => {
 
 		expect(result).toHaveLength(1);
 		expect(result?.[0]?.metadata.accountId).toBe("personal");
+	});
+
+	it("falls back to BM25 when hybrid search cannot run, and searches hybrid first", async () => {
+		const modes: string[] = [];
+		const hit = {
+			chunkId: "m1:latest:0",
+			messageId: "m1",
+			threadId: "t1",
+			accountId: "acct",
+			mailbox: "INBOX",
+			subject: "Policy",
+			from: "a@example.com",
+			to: [],
+			date: "2026-08-31",
+			snippet: "Director approval required.",
+			score: 1,
+			mode: "bm25" as const,
+		};
+		const client = {
+			async sync() {
+				return { ok: true as const, data: { messages: 1, chunksAdded: 1 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return { ok: true as const, data: { embedded: 0 }, stdout: "", stderr: "", code: 0 };
+			},
+			async search(mode: string) {
+				modes.push(mode);
+				if (mode === "hybrid") {
+					return {
+						ok: false as const,
+						reason: "nonzero-exit" as const,
+						stdout: "",
+						stderr: "semantic index missing",
+						code: 1,
+					};
+				}
+				return { ok: true as const, hits: [hit], stdout: "", stderr: "", code: 0 };
+			},
+		};
+		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
+
+		const methods = skill.retrievalMethods();
+		const results = await Promise.all(methods.map((method) => method.retrieve("approval", { topK: 5 })));
+
+		expect(modes).toEqual(["hybrid", "bm25"]);
+		expect(results[0]?.[0]).toMatchObject({
+			source: "/mailcrawl/personal/chunks/m1:latest:0",
+			metadata: { fallbackFrom: "mailcrawl-hybrid" },
+		});
+	});
+
+	it("does not touch BM25 when hybrid search succeeds", async () => {
+		const modes: string[] = [];
+		const client = {
+			async sync() {
+				return { ok: true as const, data: { messages: 0, chunksAdded: 0 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return { ok: true as const, data: { embedded: 0 }, stdout: "", stderr: "", code: 0 };
+			},
+			async search(mode: string) {
+				modes.push(mode);
+				return { ok: true as const, hits: [], stdout: "", stderr: "", code: 0 };
+			},
+		};
+		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
+
+		await Promise.all(skill.retrievalMethods().map((method) => method.retrieve("approval", { topK: 5 })));
+
+		expect(modes).toEqual(["hybrid"]);
 	});
 
 	it("keeps BM25 available and maps sources when the 0.2.0 semantic index is unavailable", async () => {

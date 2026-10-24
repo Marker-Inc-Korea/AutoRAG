@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
 import { abortReason } from "../process/abort-reason.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
+import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -136,6 +137,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		} catch (error) {
 			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
 			hits = await client.query(query, queryK, "bm25", options.signal);
+			// Hybrid is the only MinSync method searched, so a semantic half that is down (embedder
+			// unreachable, stale index) would vanish from the result unless the pipeline is told.
+			options.onFallback?.({
+				method: this.describe().name,
+				fallback: "bm25",
+				reason: describeRetrievalError(error),
+			});
 		}
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {

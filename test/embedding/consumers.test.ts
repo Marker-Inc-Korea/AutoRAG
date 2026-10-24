@@ -24,7 +24,7 @@ describe("buildDatasourceSkills shared embedder", () => {
 		const { embedder, calls } = recordingEmbedder();
 		const { skills } = buildDatasourceSkills({ telegram: {} }, "/tmp/ws-never-created", { embedder });
 		const methods = skills.flatMap((skill) => skill.retrievalMethods());
-		expect(methods.map((method) => method.describe().name)).toContain("telegram-semantic");
+		expect(methods.map((method) => method.describe().name)).toEqual(["telegram-hybrid"]);
 		expect(calls).toEqual([]);
 	});
 
@@ -36,7 +36,7 @@ describe("buildDatasourceSkills shared embedder", () => {
 			{ embedder },
 		);
 		const names = skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name));
-		expect(names).not.toContain("telegram-semantic-vector");
+		expect(names).toEqual(["telegram-sidecar-bm25"]);
 	});
 
 	it("builds no sidecar embedder at all when no embedder is supplied", () => {

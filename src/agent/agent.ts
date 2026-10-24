@@ -1032,8 +1032,11 @@ export class AutoRAGAgent {
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
 		};
+		// The vector method owns sync, readiness and the dedicated semantic tool, but is not part of the
+		// fan-out: the hybrid method already fuses BM25 and vectors over the same chunks and degrades to
+		// BM25 by itself, so registering both would search the workspace twice and let the merger count one
+		// index as two corroborating methods.
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
-		this.methodRegistry.register(this.minSyncMethod);
 		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {

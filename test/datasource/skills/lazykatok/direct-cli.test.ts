@@ -194,10 +194,10 @@ process.exit(1);
 
 		expect(indexed).toMatchObject({ ok: true, chunkCount: 33272 });
 
-		const bm25 = skill.retrievalMethods().find((method) => method.describe().type === "bm25");
-		expect(bm25).toBeDefined();
-		if (bm25 === undefined) return;
-		const results = await bm25.retrieve("회의", { topK: 5 });
+		const hybrid = skill.retrievalMethods().find((method) => method.describe().type === "hybrid");
+		expect(hybrid).toBeDefined();
+		if (hybrid === undefined) return;
+		const results = await hybrid.retrieve("회의", { topK: 5 });
 
 		expect(results.map((result) => result.source)).toEqual(["/kakao/default/chunks/chunk_58b3852eace05c64"]);
 		expect(loggedArgs().map((args) => args[0])).toEqual(["doctor", "sync", "index", "search"]);

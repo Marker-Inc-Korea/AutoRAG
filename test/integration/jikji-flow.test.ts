@@ -120,7 +120,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			fsearch: false,
 		});
 
-		expect(methodNames(agent)).toEqual(["minsync", "hybrid"]);
+		expect(methodNames(agent)).toEqual(["hybrid"]);
 	});
 
 	it("registers jikji_find tool when jikji is configured", () => {
