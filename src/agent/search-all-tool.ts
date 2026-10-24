@@ -1,5 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { locationSuffix } from "../retrieval/chunk-location.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
@@ -98,7 +99,7 @@ function formatResults(
 	if (results.length === 0) return `No results.${diagnosticSummary}`;
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ");
-		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}\n${line}`;
 	});
 	return `Merged results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}${diagnosticSummary}`;
 }

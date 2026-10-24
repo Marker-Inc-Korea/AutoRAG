@@ -674,6 +674,38 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
 	});
 
+	it("stamps the line range and enclosing article of a chunk found in the parsed mirror (#1692)", async () => {
+		// Given
+		writeFileSync(
+			parsedOutput,
+			[
+				"# 이용약관",
+				"",
+				"제5조(회원의 의무)",
+				"① 회원은 관계 법령을 준수하여야 한다.",
+				"② 회원은 타인의 계정을 도용하여서는 아니 된다.",
+				"",
+			].join("\n"),
+		);
+		writeFakeMinSync(
+			JSON.stringify({
+				results: [
+					{ path: parsedOutput, score: 0.9, text: "② 회원은 타인의 계정을 도용하여서는 아니 된다." },
+					{ path: parsedOutput, score: 0.8, text: "text the mirror does not contain" },
+				],
+			}),
+		);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+		// When
+		const results = await method.retrieve("계정 도용", { topK: 2 });
+
+		// Then
+		expect(results[0]?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 5, section: "제5조(회원의 의무)" });
+		expect(results[1]?.metadata).not.toHaveProperty("lineNumber");
+		expect(results[1]?.metadata).not.toHaveProperty("section");
+	});
+
 	it("returns vector results with the canonical virtual source", async () => {
 		// Given
 		writeFakeMinSync(
