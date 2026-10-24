@@ -1,6 +1,6 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../process/terminate-tree.ts";
 import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "./connector-timeouts.ts";
 import type {
 	CrawlerCliOptions,
@@ -113,56 +113,23 @@ function spawnCrawler(
 		const child = spawn(portable.command, [...portable.args], {
 			env,
 			...(cwd === undefined ? {} : { cwd }),
+			// POSIX: lead our own process group so terminateProcessTree reaches descendants that inherited
+			// the pipes. Windows keeps the parent/child chain that `taskkill /t` walks.
+			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;
 		let finalReason: CrawlerFailure["reason"] | undefined;
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
 		const maxBuffer = options.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
-		const timeout = setTimeout(() => {
-			finalReason = "timeout";
-			terminate(child);
-		}, timeoutMs);
-		const abortHandler = (): void => {
-			finalReason = "aborted";
-			terminate(child);
-		};
-		if (signal?.aborted) abortHandler();
-		signal?.addEventListener("abort", abortHandler, { once: true });
-		child.stdout.setEncoding("utf8");
-		child.stderr.setEncoding("utf8");
-		child.stdout.on("data", (chunk: string) => {
-			stdout = appendBounded(stdout, chunk, maxBuffer);
-			if (stdout.capped) {
-				finalReason = "stdout-too-large";
-				terminate(child);
-			}
-		});
-		child.stderr.on("data", (chunk: string) => {
-			stderr = appendBounded(stderr, chunk, maxBuffer);
-			if (stderr.capped) {
-				finalReason = "stderr-too-large";
-				terminate(child);
-			}
-		});
-		child.on("error", (error: NodeJS.ErrnoException) => {
+		const finish = (code: number | null): void => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			signal?.removeEventListener("abort", abortHandler);
-			resolve({
-				ok: false,
-				reason: error.code === "ENOENT" ? "binary-missing" : "spawn-error",
-				stdout: stdout.text,
-				stderr: "",
-				code: null,
-			});
-		});
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
+			clearTimeout(pipeGuard);
 			signal?.removeEventListener("abort", abortHandler);
 			resolve({
 				ok: code === 0 && finalReason === undefined,
@@ -175,7 +142,55 @@ function spawnCrawler(
 				stderr: stderr.text,
 				code,
 			});
+		};
+		const timeout = setTimeout(() => {
+			finalReason = "timeout";
+			terminateProcessTree(child, "SIGKILL");
+		}, timeoutMs);
+		const abortHandler = (): void => {
+			finalReason ??= "aborted";
+			terminateProcessTree(child, "SIGKILL");
+		};
+		if (signal?.aborted) abortHandler();
+		signal?.addEventListener("abort", abortHandler, { once: true });
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stdout.on("data", (chunk: string) => {
+			stdout = appendBounded(stdout, chunk, maxBuffer);
+			if (stdout.capped) {
+				finalReason ??= "stdout-too-large";
+				terminateProcessTree(child, "SIGKILL");
+			}
 		});
+		child.stderr.on("data", (chunk: string) => {
+			stderr = appendBounded(stderr, chunk, maxBuffer);
+			if (stderr.capped) {
+				finalReason ??= "stderr-too-large";
+				terminateProcessTree(child, "SIGKILL");
+			}
+		});
+		child.on("error", (error: NodeJS.ErrnoException) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			clearTimeout(pipeGuard);
+			signal?.removeEventListener("abort", abortHandler);
+			resolve({
+				ok: false,
+				reason: error.code === "ENOENT" ? "binary-missing" : "spawn-error",
+				stdout: stdout.text,
+				stderr: "",
+				code: null,
+			});
+		});
+		// A descendant that inherited the stdio pipes keeps `close` from firing after the direct child
+		// exits. Reap the whole group and bound the wait so the promise can never stay pending.
+		child.on("exit", () => {
+			if (settled) return;
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
+		});
+		child.on("close", (code) => finish(code));
 	});
 }
 
@@ -209,10 +224,6 @@ function appendBounded(state: BufferState, chunk: string, maxBytes: number): Buf
 	if (nextBytes <= maxBytes) return { text: state.text + chunk, bytes: nextBytes, capped: false };
 	const remaining = Math.max(maxBytes - state.bytes, 0);
 	return { text: state.text + chunk.slice(0, remaining), bytes: maxBytes, capped: true };
-}
-
-function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
 }
 
 function toFailure(result: ProcessResult, reason?: CrawlerFailure["reason"]): CrawlerFailure {
