@@ -3,8 +3,9 @@
  *
  * `lsjson` inventories a remote, a workspace manifest computes its diff, and
  * only added/changed indexable files are copied into a managed mirror. The
- * manifest is published only after every changed file is available, so search
- * can continue using the previous completed snapshot after an interrupted run.
+ * downloads finish before publication. A read/parse failure retains that file's
+ * completed mirror and manifest version, so the next refresh retries it while
+ * successful files and deletions can still advance.
  */
 
 import { spawn } from "node:child_process";
@@ -162,23 +163,24 @@ export class RcloneConnector implements DatasourceConnector {
 		const changed = changedEntries.length > 0 || deletedEntries.length > 0;
 
 		if (this.options.dryRun === true) {
+			const { documents } = await loadMirroredDocuments(
+				paths.mirrorRoot,
+				previous?.entries ?? [],
+				skillName,
+				instanceId,
+				remote,
+				this.options.parserOptions,
+				this.options.maxContentChars,
+			);
 			return {
 				ok: true,
 				changed: false,
-				...(await loadMirroredDocuments(
-					paths.mirrorRoot,
-					previous?.entries ?? [],
-					skillName,
-					instanceId,
-					remote,
-					this.options.parserOptions,
-					this.options.maxContentChars,
-				)),
+				documents,
 				warnings: [`dry-run: ${changedEntries.length} download(s), ${deletedEntries.length} deletion(s) planned`],
 			};
 		}
 
-		const staged: Array<{ readonly temp: string; readonly destination: string }> = [];
+		const staged: Array<{ readonly entry: ManifestEntry; readonly temp: string; readonly destination: string }> = [];
 		let nextEntry = 0;
 		let copyFailure:
 			| {
@@ -210,7 +212,7 @@ export class RcloneConnector implements DatasourceConnector {
 				rmSync(temp, { force: true });
 				return;
 			}
-			staged.push({ temp, destination });
+			staged.push({ entry, temp, destination });
 			await copyOne();
 		};
 		const concurrency = Math.max(1, Math.min(this.options.concurrency ?? 4, changedEntries.length || 1));
@@ -219,10 +221,6 @@ export class RcloneConnector implements DatasourceConnector {
 			for (const file of staged) rmSync(file.temp, { force: true });
 			return { ok: false, reason: copyFailure.reason, message: copyFailure.message };
 		}
-		for (const file of staged) renameWithRetry(file.temp, file.destination);
-		for (const entry of deletedEntries) rmSync(mirrorFilePath(paths.mirrorRoot, entry.path), { force: true });
-		saveManifest(paths.manifestPath, { version: 1, remoteName: remoteName(remote), entries: inventory });
-
 		const mirrorWarnings = await loadMirroredDocuments(
 			paths.mirrorRoot,
 			changedEntries,
@@ -231,7 +229,19 @@ export class RcloneConnector implements DatasourceConnector {
 			remote,
 			this.options.parserOptions,
 			this.options.maxContentChars,
+			new Map(staged.map((file) => [file.entry.path, file.temp])),
 		);
+		for (const file of staged) {
+			if (mirrorWarnings.failedPaths.has(file.entry.path)) rmSync(file.temp, { force: true });
+			else renameWithRetry(file.temp, file.destination);
+		}
+		for (const entry of deletedEntries) rmSync(mirrorFilePath(paths.mirrorRoot, entry.path), { force: true });
+		const completedEntries = inventory.flatMap((entry) => {
+			if (!mirrorWarnings.failedPaths.has(entry.path)) return [entry];
+			const completed = previousByPath.get(entry.path);
+			return completed === undefined ? [] : [completed];
+		});
+		saveManifest(paths.manifestPath, { version: 1, remoteName: remoteName(remote), entries: completedEntries });
 		const warnings = [
 			...(skipped > 0 ? [`${skipped} file(s) skipped (filtered, non-text, or oversized)`] : []),
 			...(mirrorWarnings.warnings ?? []),
@@ -400,29 +410,39 @@ async function loadMirroredDocuments(
 	remote: string,
 	parserOptions?: DefaultParserRegistryOptions,
 	maxContentChars: number = MAX_CONTENT_CHARS,
-): Promise<{ readonly documents: readonly ConnectorDocument[]; readonly warnings?: readonly string[] }> {
+	stagedPaths?: ReadonlyMap<string, string>,
+): Promise<{
+	readonly documents: readonly ConnectorDocument[];
+	readonly warnings?: readonly string[];
+	readonly failedPaths: ReadonlySet<string>;
+}> {
 	const documents: ConnectorDocument[] = [];
 	const warnings: string[] = [];
-	let failures = 0;
+	const failedPaths = new Set<string>();
 	const registry = createDefaultParserRegistry(parserOptions);
 	for (const entry of entries) {
 		try {
-			const sourcePath = mirrorFilePath(root, entry.path);
+			const sourcePath = stagedPaths?.get(entry.path) ?? mirrorFilePath(root, entry.path);
 			const parser = registry.getForVirtualPath(entry.path);
-			if (parser === undefined) continue;
+			if (parser === undefined) {
+				documents.push(documentFromEntry(entry, "", skillName, instanceId, remote));
+				continue;
+			}
 			const bytes = await readFile(sourcePath);
 			const parsed = await parser.parse({ virtualPath: entry.path, sourcePath, bytes });
 			for (const diagnostic of parsed.diagnostics ?? []) {
 				warnings.push(`${diagnostic.code}: ${diagnostic.message}`);
 			}
 			const content = parsed.markdown.trim().slice(0, maxContentChars);
-			if (content.length > 0) documents.push(documentFromEntry(entry, content, skillName, instanceId, remote));
-		} catch {
-			failures += 1;
+			// Empty successful replacements must remove the document's previous chunks.
+			documents.push(documentFromEntry(entry, content, skillName, instanceId, remote));
+		} catch (error) {
+			failedPaths.add(entry.path);
+			warnings.push(error instanceof Error ? error.message : String(error));
 		}
 	}
-	if (failures > 0) warnings.push(`${failures} mirrored document(s) failed to parse`);
-	return { documents, ...(warnings.length > 0 ? { warnings } : {}) };
+	if (failedPaths.size > 0) warnings.push(`${failedPaths.size} mirrored document(s) failed to parse`);
+	return { documents, failedPaths, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 function defaultParserExtensions(): readonly string[] {
