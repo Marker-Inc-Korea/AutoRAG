@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildAgentOptions, ConfigError, resolveConfig } from "../../src/cli/config.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
+import { withPlatform } from "../helpers/platform.ts";
 
 let tmpRoot: string;
 
@@ -354,7 +355,7 @@ describe("CLI config datasources wiring", () => {
 				},
 			},
 		});
-		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const options = withPlatform("darwin", () => buildAgentOptions(resolveConfig({ flags: { config: configPath } })));
 		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
 
 		expect(skills.map((skill) => skill.describe().name).sort()).toEqual([

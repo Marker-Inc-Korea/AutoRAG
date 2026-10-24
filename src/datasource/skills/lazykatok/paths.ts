@@ -18,15 +18,6 @@ export const LAZYKATOK_DATASOURCE_DIRNAME = "lazykatok";
 export const LAZYKATOK_SOURCE_KIND = "kakao" as const;
 
 /**
- * lazykatok's own default data directory. Its only live KakaoTalk adapter is the macOS app, so the
- * default store exists on darwin alone; elsewhere there is no default to assume and the caller must be
- * given an explicit path (`connector.workspacePath`, `connector.sidecar.crawlerDbPath`).
- */
-export function defaultLazykatokDataDir(platform: NodeJS.Platform, home: string): string | undefined {
-	return platform === "darwin" ? join(home, "Library", "Application Support", "katok") : undefined;
-}
-
-/**
  * Root directory for lazykatok-managed state under a workspace. This is where the
  * external `lazykatok` CLI stores its index, chunks, and sync state.
  */

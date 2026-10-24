@@ -11,6 +11,7 @@ import type {
 	LazykatokSearchOptions,
 	LazykatokSearchResult,
 } from "../../../../src/datasource/skills/lazykatok/types.ts";
+import { withPlatform } from "../../../helpers/platform.ts";
 
 let root: string;
 let binDir: string;
@@ -183,9 +184,11 @@ process.exit(1);
 		);
 		chmodSync(binaryPath, 0o755);
 
-		const built = buildDatasourceSkills({
-			kakao: { connector: { env: { PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}` } } },
-		});
+		const built = withPlatform("darwin", () =>
+			buildDatasourceSkills({
+				kakao: { connector: { env: { PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}` } } },
+			}),
+		);
 		const skill = built.skills.find((candidate) => candidate.describe().datasourceId === "kakao");
 		expect(skill).toBeDefined();
 		if (skill === undefined) return;

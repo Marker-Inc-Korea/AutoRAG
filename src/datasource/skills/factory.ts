@@ -30,7 +30,6 @@ import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/
 import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
-import { defaultLazykatokDataDir } from "./lazykatok/paths.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
@@ -247,14 +246,14 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		const dataDir =
 			typeof connector.workspacePath === "string" && connector.workspacePath.length > 0
 				? connector.workspacePath
-				: defaultLazykatokDataDir(process.platform, homedir());
+				: join(homedir(), "Library", "Application Support", "katok");
 		const sidecar = resolveSidecarOptions({
 			descriptor: CRAWLER_DESCRIPTORS.kakao,
 			connector: config.connector,
 			workspaceRoot,
 			registrationName,
 			instanceId: config.instanceId ?? "default",
-			...(dataDir === undefined ? {} : { defaultCrawlerDb: join(dataDir, "archive.sqlite3") }),
+			defaultCrawlerDb: join(dataDir, "archive.sqlite3"),
 			...(embedding.embedder === undefined ? {} : { embedder: embedding.embedder }),
 		});
 		return new LazykatokSkill({
@@ -342,18 +341,20 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		}),
 };
 
-/**
- * Skills whose backend only runs on one platform. They stay buildable from an explicit config entry (an
- * operator may point them at their own adapter), but are not offered by default elsewhere.
- */
+/** Skills whose backend runs on one platform only; elsewhere they are neither offered nor built. */
 const PLATFORM_ONLY_SKILLS: Readonly<Record<string, NodeJS.Platform>> = { kakao: "darwin" };
 
-/** Skill names offered by default on `platform`: every built-in except those whose backend is another platform's. */
-export function builtinDatasourceSkillNames(platform: NodeJS.Platform = process.platform): readonly string[] {
-	return Object.keys(BUILDERS).filter((name) => (PLATFORM_ONLY_SKILLS[name] ?? platform) === platform);
+/** Whether the skill's backend exists on `platform`. Names with no platform restriction are always supported. */
+export function datasourceSkillSupported(name: string, platform: NodeJS.Platform = process.platform): boolean {
+	return (PLATFORM_ONLY_SKILLS[name] ?? platform) === platform;
 }
 
-/** Skill names this factory offers on the running platform. */
+/** Skill names this factory can build on `platform`. */
+export function builtinDatasourceSkillNames(platform: NodeJS.Platform = process.platform): readonly string[] {
+	return Object.keys(BUILDERS).filter((name) => datasourceSkillSupported(name, platform));
+}
+
+/** Skill names this factory can build on the running platform. */
 export const BUILTIN_DATASOURCE_SKILL_NAMES: readonly string[] = builtinDatasourceSkillNames();
 
 function larkConnectorOptions(connector: Record<string, unknown> | undefined): {
@@ -400,7 +401,10 @@ export function buildDatasourceSkills(
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
 		const templateName = entry.type ?? name;
-		const builder = Object.hasOwn(BUILDERS, templateName) ? BUILDERS[templateName] : undefined;
+		const builder =
+			Object.hasOwn(BUILDERS, templateName) && datasourceSkillSupported(templateName)
+				? BUILDERS[templateName]
+				: undefined;
 		if (builder === undefined) {
 			unknown.push(name);
 			continue;

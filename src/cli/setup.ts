@@ -2,6 +2,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { type ResolvedFileeBinary, type ResolveFileeBinaryOptions, resolveFileeBinary } from "../convert/index.ts";
+import { datasourceSkillSupported } from "../datasource/skills/factory.ts";
 import {
 	findHisterEntries,
 	type HisterServiceDeps,
@@ -172,8 +173,8 @@ function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platf
 		...new Set([
 			...configured,
 			"discord",
-			// lazykatok's only live adapter is the macOS KakaoTalk app: elsewhere kakao runs only when configured.
-			...(platform === "darwin" ? ["kakao"] : []),
+			// Platform-bound datasources (kakao: macOS only) are offered only where their backend exists.
+			...(datasourceSkillSupported("kakao", platform) ? ["kakao"] : []),
 			"lark",
 			"slack",
 			"telegram",
@@ -243,7 +244,8 @@ export async function runSetup(options: {
 		const source = (raw.datasources ?? {}) as Record<string, unknown>;
 		const exists = options.deps?.pathExists ?? existsSync;
 		const executable = options.deps?.executable ?? ((name: string) => executableInPath(name, env));
-		for (const name of datasourceNames(raw, options.deps?.platform ?? process.platform)) {
+		const platform = options.deps?.platform ?? process.platform;
+		for (const name of datasourceNames(raw, platform)) {
 			const value = source[name];
 			if (value === false) {
 				datasources.push({ name, state: "skipped", reason: "disabled by operator" });
@@ -251,6 +253,10 @@ export async function runSetup(options: {
 			}
 			const entry = value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 			const type = typeof entry?.type === "string" ? entry.type : name;
+			if (!datasourceSkillSupported(type, platform)) {
+				datasources.push({ name, state: "skipped", reason: `not supported on ${platform}` });
+				continue;
+			}
 			const binary = BUILTIN_BINARIES[type];
 			if (
 				binary &&

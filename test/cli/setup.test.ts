@@ -249,23 +249,35 @@ describe("setup orchestration", () => {
 					embedder: fakeEmbedder({}),
 				},
 			});
-			return report.datasources.map((entry) => entry.name);
+			return report.datasources;
 		}
 
+		const names = async (platform: NodeJS.Platform, datasources: Record<string, unknown> = {}) =>
+			(await setupOn(platform, datasources)).map((entry) => entry.name);
+
 		it("does not offer kakao on linux or windows when nothing configures it", async () => {
-			expect(await setupOn("linux", {})).not.toContain("kakao");
-			expect(await setupOn("win32", {})).not.toContain("kakao");
+			expect(await names("linux")).not.toContain("kakao");
+			expect(await names("win32")).not.toContain("kakao");
 		});
 
 		it("still offers it on darwin, and every other built-in stays offered everywhere", async () => {
-			const darwin = await setupOn("darwin", {});
+			const darwin = await names("darwin");
 			expect(darwin).toContain("kakao");
-			expect(await setupOn("linux", {})).toEqual(darwin.filter((name) => name !== "kakao"));
+			expect(await names("linux")).toEqual(darwin.filter((name) => name !== "kakao"));
 		});
 
-		it("keeps probing a kakao connection the operator configured explicitly", async () => {
-			expect(await setupOn("linux", { kakao: { connector: { binaryPath: "/opt/lazykatok" } } })).toContain("kakao");
-			expect(await setupOn("linux", { "family-kakao": { type: "kakao" } })).toContain("family-kakao");
+		it("reports a configured kakao connection as unsupported instead of probing it", async () => {
+			const report = await setupOn("linux", {
+				kakao: { connector: { binaryPath: "/opt/lazykatok" } },
+				"family-kakao": { type: "kakao" },
+			});
+			for (const name of ["kakao", "family-kakao"]) {
+				expect(report.find((entry) => entry.name === name)).toEqual({
+					name,
+					state: "skipped",
+					reason: "not supported on linux",
+				});
+			}
 		});
 	});
 
