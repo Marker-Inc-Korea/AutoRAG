@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 import {
 	isPathOpaqueIdentifier,
 	type NormalizedEvidenceRef,
@@ -436,7 +437,7 @@ export class RetrievalMemory {
 			tmpPath = `${this.storagePath}.${randomUUID()}.tmp`;
 			writeFileSync(tmpPath, `${JSON.stringify(this.data, null, 2)}\n`, "utf-8");
 			lock.assertOwned();
-			renameSync(tmpPath, this.storagePath);
+			renameWithRetry(tmpPath, this.storagePath);
 			this.persistedData = cloneMemory(this.data);
 		} catch (error) {
 			this.data = localData;

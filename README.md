@@ -461,7 +461,9 @@ mirrored are kept and not re-parsed on the next run. `onProgress` reports `parse
 (`processed`/`total` are files, `currentVirtualPath` is the file about to be processed) and
 `datasources` (`processed`/`total` are datasource skills). During the parse phase
 `.autorag/refresh-progress.json` also carries the running `sourceFiles.total` and
-`parsedCounts`. Without these options a refresh behaves as before.
+`parsedCounts`, refreshed every 25 files rather than per file. The marker is replaced with a
+retried rename (an in-place overwrite if a reader keeps the destination held, as on Windows).
+Without these options a refresh behaves as before.
 
 ---
 

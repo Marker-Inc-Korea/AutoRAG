@@ -78,6 +78,7 @@ import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	isPathExcluded,
+	MIRROR_CHECKPOINT_EVERY,
 	MirrorWorkspaceError,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncOptions,
@@ -3405,13 +3406,13 @@ export class AutoRAGAgent {
 			startedAt,
 			updatedAt: startedAt,
 		};
-		writeRefreshProgress(this.workspaceProjectRoot, progress);
 		this.refreshState = {
 			...this.refreshState,
 			inFlight: true,
 			lastStartedAt: startedAt,
 		};
 		try {
+			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
@@ -3426,7 +3427,14 @@ export class AutoRAGAgent {
 									skipped: parsedProgress.skipped,
 								},
 							});
-							writeRefreshProgress(this.workspaceProjectRoot, progress);
+							// One marker rewrite per mirror checkpoint (plus the first and last file), not per file: on Windows
+							// every rewrite is a rename that can collide with another reader of the same marker.
+							if (
+								parsedProgress.processed % MIRROR_CHECKPOINT_EVERY === 0 ||
+								parsedProgress.processed >= parsedProgress.total
+							) {
+								writeRefreshProgress(this.workspaceProjectRoot, progress);
+							}
 							emitProgress({
 								phase: "parsed",
 								processed: parsedProgress.processed,
