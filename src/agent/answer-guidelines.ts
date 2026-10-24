@@ -46,6 +46,29 @@ export const ANSWER_UNCERTAINTY_RULE =
 	"**Uncertainty placement**: when the answer is incomplete or uncertain, state that in one short sentence on the last line of the answer, never before or ahead of the conclusion. Do not hedge the conclusion itself.";
 
 /**
+ * Every sentence answers the question. Models that find nothing on point tend to
+ * prove the search was thorough by listing what they found instead and why it
+ * does not match; the caller never asked for that, so it is left out for every
+ * phase, delta included.
+ */
+export const ANSWER_RELEVANCE_RULE =
+	'**Answer only what was asked**: every sentence must answer the user\'s question. Never list retrieved items, topics, documents, or figures that do not answer it, never describe how or where you searched, and never explain why something was left out or how it differs from what was asked (no "I also found X, but it is not what you asked", no near-miss lists, no "nothing about Y, only Z", no inventory of the sources that lacked it). Unrelated or merely adjacent material is omitted entirely unless the user asked for related items or alternatives.';
+
+/**
+ * Fast phase, no supporting evidence: park the question in one line. The
+ * verification phase that follows keeps searching, so the line is true.
+ */
+export const ANSWER_UNCONFIRMED_FAST_RULE =
+	'**When the evidence does not answer the question yet**: do not build an answer out of what was found instead, and do not argue that the answer is absent by naming what the sources did contain (no "only X exists" contrast). The whole answer is then one short line saying it is not confirmed yet and that you are searching further (the verification phase that follows does the searching), with no bullets and no citations. A different subject, place, year, or party is unrelated evidence, not part of the answer. If a part the user actually asked for is answered, answer that part normally and say on the last line what is still being searched.';
+
+/**
+ * Phases that can end the run: search before giving up, and when the search
+ * still finds nothing the answer is one line, not an inventory of the corpus.
+ */
+export const ANSWER_UNCONFIRMED_FINAL_RULE =
+	'**When the answer cannot be found**: keep searching first (different terms, synonyms, other retrieval methods or datasources) instead of answering from unrelated results. If it still cannot be confirmed, the whole answer is one short line saying so, with no bullets, no citations, no mention of what was found instead (no "only X exists" contrast), and no account of where you looked or what the documents do contain. A different subject, place, year, or party is unrelated evidence, not part of the answer. If a part the user actually asked for is answered, answer that part normally and say on the last line what is still unconfirmed.';
+
+/**
  * Inline evidence citations. The model writes the id the retrieval tools print
  * next to each result; the harness resolves it to the recorded source and
  * renumbers the markers `[1]`, `[2]`, ... (a source keeps its number for the whole

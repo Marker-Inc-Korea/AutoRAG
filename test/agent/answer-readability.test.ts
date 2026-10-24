@@ -15,7 +15,10 @@ import {
 	ANSWER_IMAGE_EMBED_RULE,
 	ANSWER_LANGUAGE_RULE,
 	ANSWER_LEAD_RULE,
+	ANSWER_RELEVANCE_RULE,
 	ANSWER_UNCERTAINTY_RULE,
+	ANSWER_UNCONFIRMED_FAST_RULE,
+	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "../../src/agent/answer-guidelines.ts";
 import { reportSchema } from "../../src/agent/results.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
@@ -141,5 +144,75 @@ describe("answer readability rules", () => {
 	it("puts uncertainty after the answer instead of before the conclusion", () => {
 		expect(ANSWER_UNCERTAINTY_RULE).toMatch(/last line|final line|end of the answer/i);
 		expect(ANSWER_UNCERTAINTY_RULE).toMatch(/never (before|ahead)/i);
+	});
+});
+
+describe("unconfirmed-answer rules", () => {
+	const query = "B사와의 유지보수 계약 해지 위약금은 얼마야?";
+
+	it("every answer surface tells the model to answer only what was asked", () => {
+		const agent = newAgent();
+		const surfaces: Record<string, string> = {
+			system: buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" }),
+			search: agent.buildSearchPrompt(query, {}),
+			fast: agent.buildFastAnswerPrompt(query, {}, "baseline"),
+			complete: agent.buildRefinementPrompt(query, {}, undefined, false),
+			report: answerDescription(reportSchema),
+		};
+		for (const [name, text] of Object.entries(surfaces)) {
+			expect(text, `${name} is missing the relevance rule`).toContain(ANSWER_RELEVANCE_RULE);
+		}
+	});
+
+	it("a delta answer leaves out adjacent findings in one line, leaning on the system prompt for the rest", () => {
+		const delta = newAgent().buildRefinementPrompt(query, {}, "draft [e1]", true);
+		expect(delta).toMatch(/Leave out unrelated or merely adjacent findings/);
+		expect(delta).not.toContain(ANSWER_RELEVANCE_RULE);
+	});
+
+	it("the fast answer parks an unsupported question as one line while verification keeps searching", () => {
+		const agent = newAgent();
+		expect(agent.buildFastAnswerPrompt(query, {}, "baseline")).toContain(ANSWER_UNCONFIRMED_FAST_RULE);
+		expect(buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" })).toContain(ANSWER_UNCONFIRMED_FAST_RULE);
+		expect(ANSWER_UNCONFIRMED_FAST_RULE).toMatch(/one (short )?line/i);
+		expect(ANSWER_UNCONFIRMED_FAST_RULE).toMatch(/searching further/i);
+	});
+
+	it("every phase that can end the run searches further before giving up, then answers in one line", () => {
+		const agent = newAgent();
+		const surfaces: Record<string, string> = {
+			system: buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" }),
+			search: agent.buildSearchPrompt(query, {}),
+			complete: agent.buildRefinementPrompt(query, {}, undefined, false),
+			completeAfterDraft: agent.buildRefinementPrompt(query, {}, "draft [e1]", false),
+			report: answerDescription(reportSchema),
+		};
+		for (const [name, text] of Object.entries(surfaces)) {
+			expect(text, `${name} is missing the unconfirmed rule`).toContain(ANSWER_UNCONFIRMED_FINAL_RULE);
+		}
+		expect(ANSWER_UNCONFIRMED_FINAL_RULE).toMatch(/keep searching/i);
+		expect(ANSWER_UNCONFIRMED_FINAL_RULE).toMatch(/one (short )?line/i);
+	});
+
+	it("a delta answer carries neither unconfirmed variant, but covers a still-unconfirmed first answer in one line", () => {
+		const delta = newAgent().buildRefinementPrompt(query, {}, "draft [e1]", true);
+		expect(delta).not.toContain(ANSWER_UNCONFIRMED_FAST_RULE);
+		expect(delta).not.toContain(ANSWER_UNCONFIRMED_FINAL_RULE);
+		expect(delta).toMatch(/still (could not be|cannot be) confirmed/i);
+	});
+
+	it("no surface invites listing clues, leads, or negative findings in place of an answer", () => {
+		const agent = newAgent();
+		const surfaces = [
+			buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" }),
+			agent.buildSearchPrompt(query, {}),
+			agent.buildFastAnswerPrompt(query, {}, "baseline"),
+			agent.buildRefinementPrompt(query, {}, undefined, false),
+			agent.buildRefinementPrompt(query, {}, "draft [e1]", true),
+			answerDescription(reportSchema),
+		];
+		for (const text of surfaces) {
+			expect(text).not.toMatch(/mention (those |them |the )?clues|partial leads exist|report a negative result/i);
+		}
 	});
 });
