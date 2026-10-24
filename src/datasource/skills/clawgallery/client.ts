@@ -1,7 +1,7 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
 import type {
 	ClawGalleryFailure,
 	ClawGalleryHit,
@@ -145,19 +145,41 @@ function spawnCli(
 ): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const portable = portableSpawnCommand(binary, args);
-		const child = spawn(portable.command, [...portable.args], { env, stdio: ["ignore", "pipe", "pipe"] });
+		const child = spawn(portable.command, [...portable.args], {
+			env,
+			// POSIX: lead our own process group so terminateProcessTree reaches descendants that inherited
+			// the pipes. Windows keeps the parent/child chain that `taskkill /t` walks.
+			detached: process.platform !== "win32",
+			windowsHide: true,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 		let stdout = "";
 		let stderr = "";
 		let settled = false;
 		let reason: ClawGalleryFailure["reason"] | undefined;
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
 		const max = options.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
+		const finish = (code: number | null): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			clearTimeout(pipeGuard);
+			signal?.removeEventListener("abort", abort);
+			resolve({
+				ok: reason === undefined && code === 0,
+				stdout,
+				stderr: stderr.slice(0, max),
+				code,
+				reason: reason ?? (code === 0 ? undefined : "nonzero-exit"),
+			});
+		};
 		const timeout = setTimeout(() => {
 			reason = "timeout";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 		const abort = (): void => {
-			reason = "aborted";
-			terminate(child);
+			reason ??= "aborted";
+			terminateProcessTree(child, "SIGKILL");
 		};
 		if (signal?.aborted) abort();
 		signal?.addEventListener("abort", abort, { once: true });
@@ -166,21 +188,22 @@ function spawnCli(
 		child.stdout.on("data", (chunk: string) => {
 			stdout += chunk;
 			if (Buffer.byteLength(stdout) > max) {
-				reason = "stdout-too-large";
-				terminate(child);
+				reason ??= "stdout-too-large";
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr += chunk;
 			if (Buffer.byteLength(stderr) > max) {
-				reason = "stderr-too-large";
-				terminate(child);
+				reason ??= "stderr-too-large";
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.on("error", (error: NodeJS.ErrnoException) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
+			clearTimeout(pipeGuard);
 			signal?.removeEventListener("abort", abort);
 			resolve({
 				ok: false,
@@ -190,24 +213,15 @@ function spawnCli(
 				reason: error.code === "ENOENT" ? "binary-missing" : "spawn-error",
 			});
 		});
-		child.on("close", (code) => {
+		// A descendant that inherited the stdio pipes keeps `close` from firing after the direct child
+		// exits. Reap the whole group and bound the wait so the promise can never stay pending.
+		child.on("exit", () => {
 			if (settled) return;
-			settled = true;
-			clearTimeout(timeout);
-			signal?.removeEventListener("abort", abort);
-			resolve({
-				ok: reason === undefined && code === 0,
-				stdout,
-				stderr: stderr.slice(0, max),
-				code,
-				reason: reason ?? (code === 0 ? undefined : "nonzero-exit"),
-			});
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
 		});
+		child.on("close", (code) => finish(code));
 	});
-}
-
-function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
 }
 function parseJson(value: string): Record<string, unknown> | readonly unknown[] | undefined {
 	if (value.trim().length === 0) return [];
