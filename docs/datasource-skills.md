@@ -613,7 +613,13 @@ the result with the workspace-local manifest at
 added/changed indexable files into `mirror/`. Deleted and renamed virtual paths
 are removed from the completed snapshot. A no-op refresh downloads zero bodies
 and does not rewrite `chunks.json`. A failed copy leaves the previous manifest
-and mirror available for query-time search. `include`, `exclude`,
+and mirror available for query-time search. Downloaded files are parsed before
+replacing their completed mirror versions. If a file cannot be read or parsed,
+its previous version and searchable chunks remain available, its error appears
+in refresh diagnostics, and the next refresh retries it even if the remote has
+not changed again. Other successful updates and deletions still proceed. A
+successful empty parse removes that file's previous chunks.
+`include`, `exclude`,
 `maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
 `bandwidthLimit`, and `dryRun` are trusted server configuration; model/tool
 arguments cannot change them. The RSS connector takes the same trusted
