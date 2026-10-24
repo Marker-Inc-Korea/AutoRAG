@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import type { RetrievalMethod } from "../../src/retrieval/types.ts";
+import { withPlatform } from "../helpers/platform.ts";
 
 const embedder = {
 	identity: async () => ({ provider: "minsync", model: "Qwen/Qwen3-Embedding-0.6B", dimension: 2 }),
@@ -12,9 +13,10 @@ const HYBRID_DATASOURCES = ["discord", "mailcrawl", "kakao", "slack", "telegram"
 
 function methodsByDatasource(sidecar: boolean): Map<string, RetrievalMethod[]> {
 	const config = Object.fromEntries(HYBRID_DATASOURCES.map((name) => [name, {}]));
-	const { skills } = sidecar
-		? buildDatasourceSkills(config, "/tmp/ws-never-created", { embedder })
-		: buildDatasourceSkills(config);
+	// kakao is built on macOS only; the other datasources are platform-independent.
+	const { skills } = withPlatform("darwin", () =>
+		sidecar ? buildDatasourceSkills(config, "/tmp/ws-never-created", { embedder }) : buildDatasourceSkills(config),
+	);
 	const grouped = new Map<string, RetrievalMethod[]>();
 	for (const skill of skills) {
 		const id = skill.describe().datasourceId ?? skill.describe().name;

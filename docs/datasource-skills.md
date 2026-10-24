@@ -671,6 +671,10 @@ Rules:
 - `sync` names the live adapter explicitly (`--source macos` on macOS). A bare `sync --json`
   falls back to the CLI's config file, whose default adapter is `fixture` and fails without a
   JSONL path; set `connector.source` to use another adapter.
+- `kakao` is macOS-only. On Linux and Windows it is not built: a `kakao` entry in `datasources` is
+  reported as unknown by the agent, `autorag setup` lists it as `skipped` ("not supported on <platform>"),
+  and setup never offers it unprompted. The default store
+  (`~/Library/Application Support/katok`) is therefore only ever used on macOS.
 - Remote embedding egress configuration is rejected before spawning `lazykatok`.
 - `connector.indexTimeoutMs` (default 30 min) bounds `sync`/`index`;
   `connector.timeoutMs` (default 60 s) bounds interactive reads

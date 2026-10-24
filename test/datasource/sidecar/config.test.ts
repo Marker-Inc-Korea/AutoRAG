@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveSidecarOptions } from "../../../src/datasource/sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
 import { buildDatasourceSkills } from "../../../src/datasource/skills/factory.ts";
+import { withPlatform } from "../../helpers/platform.ts";
 
 const base = {
 	descriptor: CRAWLER_DESCRIPTORS.telegram,
@@ -168,7 +169,9 @@ describe("buildDatasourceSkills: sidecar by default", () => {
 	it.each(["slack", "telegram", "whatsapp", "kakao"] as const)(
 		"%s: a plain connection registers one hybrid method",
 		(name) => {
-			const { skills } = buildDatasourceSkills({ [name]: {} }, "/tmp/ws-never-created", { embedder: stubEmbedder });
+			const { skills } = withPlatform("darwin", () =>
+				buildDatasourceSkills({ [name]: {} }, "/tmp/ws-never-created", { embedder: stubEmbedder }),
+			);
 			const methods = skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name));
 			expect(methods).toEqual([`${name}-hybrid`]);
 		},
@@ -177,9 +180,8 @@ describe("buildDatasourceSkills: sidecar by default", () => {
 	it.each(["slack", "telegram", "whatsapp", "kakao"] as const)(
 		"%s: connector.sidecar=false restores the CLI-only behavior",
 		(name) => {
-			const { skills } = buildDatasourceSkills(
-				{ [name]: { connector: { sidecar: false } } },
-				"/tmp/ws-never-created",
+			const { skills } = withPlatform("darwin", () =>
+				buildDatasourceSkills({ [name]: { connector: { sidecar: false } } }, "/tmp/ws-never-created"),
 			);
 			const expected = name === "kakao" ? ["kakao-hybrid"] : [`${name}-fts`];
 			expect(skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name))).toEqual(

@@ -15,6 +15,7 @@ import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { datasourceSearchToolName } from "../../src/datasource/tool-naming.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
+import { withPlatform } from "../helpers/platform.ts";
 
 let tmpDir: string;
 
@@ -234,23 +235,25 @@ describe("every configured datasource connection stays individually callable", (
 	});
 
 	it("covers every built-in configured skill, including an aliased connection", () => {
-		const { skills, unknown } = buildDatasourceSkills({
-			kakao: true,
-			discord: true,
-			slack: true,
-			notion: true,
-			whatsapp: true,
-			telegram: true,
-			mailcrawl: true,
-			obsidian: true,
-			clawgallery: true,
-			github: true,
-			rss: true,
-			spotlight: true,
-			"cloud-drive": true,
-			"mail-export": true,
-			"kakao-work": { type: "kakao" },
-		});
+		const { skills, unknown } = withPlatform("darwin", () =>
+			buildDatasourceSkills({
+				kakao: true,
+				discord: true,
+				slack: true,
+				notion: true,
+				whatsapp: true,
+				telegram: true,
+				mailcrawl: true,
+				obsidian: true,
+				clawgallery: true,
+				github: true,
+				rss: true,
+				spotlight: true,
+				"cloud-drive": true,
+				"mail-export": true,
+				"kakao-work": { type: "kakao" },
+			}),
+		);
 		expect(unknown).toEqual([]);
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],

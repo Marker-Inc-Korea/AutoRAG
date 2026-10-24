@@ -228,6 +228,59 @@ describe("setup orchestration", () => {
 		expect(report.datasources.find((entry) => entry.name === "obsidian")?.state).toBe("configured");
 	});
 
+	describe("macOS-only kakao (#1998)", () => {
+		async function setupOn(platform: NodeJS.Platform, datasources: Record<string, unknown>) {
+			const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+			roots.push(root);
+			const configPath = join(root, "config.json");
+			writeFileSync(
+				configPath,
+				JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root, datasources }),
+			);
+			const report = await runSetup({
+				configPath,
+				workspacePath: root,
+				deps: {
+					platform,
+					env: { PATH: "/bin", HOME: root },
+					executable: () => undefined,
+					pathExists: () => true,
+					acquireLock: fakeLock,
+					embedder: fakeEmbedder({}),
+				},
+			});
+			return report.datasources;
+		}
+
+		const names = async (platform: NodeJS.Platform, datasources: Record<string, unknown> = {}) =>
+			(await setupOn(platform, datasources)).map((entry) => entry.name);
+
+		it("does not offer kakao on linux or windows when nothing configures it", async () => {
+			expect(await names("linux")).not.toContain("kakao");
+			expect(await names("win32")).not.toContain("kakao");
+		});
+
+		it("still offers it on darwin, and every other built-in stays offered everywhere", async () => {
+			const darwin = await names("darwin");
+			expect(darwin).toContain("kakao");
+			expect(await names("linux")).toEqual(darwin.filter((name) => name !== "kakao"));
+		});
+
+		it("reports a configured kakao connection as unsupported instead of probing it", async () => {
+			const report = await setupOn("linux", {
+				kakao: { connector: { binaryPath: "/opt/lazykatok" } },
+				"family-kakao": { type: "kakao" },
+			});
+			for (const name of ["kakao", "family-kakao"]) {
+				expect(report.find((entry) => entry.name === name)).toEqual({
+					name,
+					state: "skipped",
+					reason: "not supported on linux",
+				});
+			}
+		});
+	});
+
 	it("reports that no embedding backend is alive, with the way out, instead of discarding it", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);
