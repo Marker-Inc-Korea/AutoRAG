@@ -340,13 +340,16 @@ const descendant = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => u
 writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid));
 setInterval(() => undefined, 1000);
 `);
-			const client = new MailcrawlClient({ binaryPath, timeoutMs: 500 });
+			// The wall must outlive Node startup under load, or the fixture is killed before it records the
+			// descendant pid. A fixed 500ms raced that and left the pid file missing intermittently.
+			const client = new MailcrawlClient({ binaryPath, timeoutMs: 3_000 });
 
-			const result = await settleWithin(client.search("keyword", "anything"), 5_000, "mailcrawl search");
-
-			expect(result).toMatchObject({ ok: false, reason: "timeout" });
+			const pending = client.search("keyword", "anything");
+			await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true), { timeout: 10_000 });
 			const pid = Number(readFileSync(pidFile, "utf8"));
 			spawnedPids.push(pid);
+
+			expect(await settleWithin(pending, 8_000, "mailcrawl search")).toMatchObject({ ok: false, reason: "timeout" });
 			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
 		},
 	);
