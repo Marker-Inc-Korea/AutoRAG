@@ -25,6 +25,7 @@ import {
 	type DiscrawlOptions,
 	DiscrawlSkill,
 } from "./discrawl/index.ts";
+import { resolveDiscrawlSidecarOptions } from "./discrawl/sidecar.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
 import { HisterSkill } from "./hister/index.ts";
@@ -177,6 +178,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		),
 	discord: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
+		const sidecar = resolveDiscrawlSidecarOptions({
+			connector: config.connector,
+			workspaceRoot,
+			registrationName,
+			instanceId: config.instanceId ?? "default",
+		});
 		const clientOptions: DiscrawlOptions = {
 			...connector,
 			...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
@@ -188,6 +195,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
+			...(sidecar === undefined ? {} : { sidecar }),
 			client: new DiscrawlClient({
 				...clientOptions,
 				...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),

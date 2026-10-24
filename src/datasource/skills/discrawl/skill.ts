@@ -1,5 +1,7 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { CRAWLER_DESCRIPTORS } from "../../sidecar/descriptors.ts";
+import { SidecarRetrievalMethod } from "../../sidecar/methods.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
@@ -18,6 +20,8 @@ import {
 	type DiscrawlSearchClient,
 	DiscrawlSemanticMethod,
 } from "./methods.ts";
+import { DiscrawlRankedMethod, type DiscrawlRankedMethodOptions } from "./ranked-method.ts";
+import { DiscrawlSidecar, type DiscrawlSidecarOptions, type DiscrawlStatusClient } from "./sidecar.ts";
 import type {
 	DiscrawlDoctorResult,
 	DiscrawlEmbedResult,
@@ -27,7 +31,7 @@ import type {
 } from "./types.ts";
 import { DEFAULT_DISCRAWL_EMBEDDING_MODEL, DEFAULT_DISCRAWL_MODE, ENGLISH_ONLY_EMBEDDING_MODELS } from "./types.ts";
 
-export interface DiscrawlSkillClient extends DiscrawlSearchClient {
+export interface DiscrawlSkillClient extends DiscrawlSearchClient, DiscrawlStatusClient {
 	doctor(signal?: AbortSignal): Promise<DiscrawlDoctorResult>;
 	sync(signal?: AbortSignal): Promise<DiscrawlSyncResult>;
 	embed(limit?: number, rebuild?: boolean, signal?: AbortSignal): Promise<DiscrawlEmbedResult>;
@@ -48,6 +52,8 @@ export interface DiscrawlSkillOptions {
 	readonly embedLimit?: number;
 	readonly channelIds?: readonly string[];
 	readonly channelNames?: readonly string[];
+	/** Optional lexical-only sidecar. Its archive path is discovered through native status when omitted. */
+	readonly sidecar?: DiscrawlSidecarOptions;
 }
 
 const DISCORD_DATASOURCE_ID = "discord";
@@ -60,7 +66,7 @@ const DEFAULT_DISCORD_TAGS = ["discord", "chat", "pii"] as const;
  * Discord datasource skill backed by the external `discrawl` CLI.
  *
  * Mirrors the lazykatok model: the CLI owns the archive, the FTS5 index, and the
- * vector index; AutoRAG only spawns it and maps results. AutoRAG never calls
+ * vector index; an optional read-only sidecar adds BM25 lexical ranking. AutoRAG never calls
  * the Discord API itself and never reads the Discord Desktop cache directly.
  *
  * `index()` runs the CLI's two-phase pipeline — `sync` (incremental, cursor
@@ -76,6 +82,8 @@ export class DiscrawlSkill implements DatasourceSkill {
 	private readonly embeddingModel: string;
 	private readonly defaultMode: DiscrawlSearchMode;
 	private readonly embedLimit: number | undefined;
+	private readonly sidecar: DiscrawlSidecar | undefined;
+	private readonly retrievalScope: Pick<DiscrawlRankedMethodOptions, "workspaceId" | "channelIds" | "channelNames">;
 	private lastIndexedAt: number | undefined;
 
 	constructor(options: DiscrawlSkillOptions) {
@@ -89,6 +97,23 @@ export class DiscrawlSkill implements DatasourceSkill {
 		this.defaultMode = options.defaultMode ?? DEFAULT_DISCRAWL_MODE;
 		this.embedLimit = options.embedLimit;
 		this.lastIndexedAt = options.lastIndexedAt;
+		this.retrievalScope = {
+			workspaceId: options.sidecar?.workspaceId,
+			channelIds: options.channelIds ?? options.sidecar?.channelIds,
+			channelNames: options.channelNames ?? options.sidecar?.channelNames,
+		};
+		this.sidecar =
+			options.sidecar === undefined
+				? undefined
+				: new DiscrawlSidecar(
+						{
+							...options.sidecar,
+							descriptor: CRAWLER_DESCRIPTORS.discord,
+							channelIds: options.channelIds ?? options.sidecar.channelIds,
+							channelNames: options.channelNames ?? options.sidecar.channelNames,
+						},
+						this.client,
+					);
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -97,7 +122,16 @@ export class DiscrawlSkill implements DatasourceSkill {
 			id: DISCORD_DATASOURCE_ID,
 			type: DISCORD_SKILL_TYPE,
 			description: "Discord datasource via the external discrawl CLI",
-			capabilities: ["chat", "external-cli", "polling", "fts5", "semantic", "hybrid", "incremental"],
+			capabilities: [
+				"chat",
+				"external-cli",
+				"polling",
+				"fts5",
+				"semantic",
+				"hybrid",
+				"incremental",
+				...(this.sidecar === undefined ? [] : ["bm25"]),
+			],
 			tags: this.tags,
 			status: "active",
 			requiresExternalCli: true,
@@ -192,9 +226,36 @@ export class DiscrawlSkill implements DatasourceSkill {
 		const hybrid = new DiscrawlHybridMethod(options);
 		const fts = new DiscrawlFtsMethod(options);
 		const semantic = new DiscrawlSemanticMethod(options);
-		if (this.defaultMode === "fts") return [fts, semantic, hybrid];
-		if (this.defaultMode === "semantic") return [semantic, fts, hybrid];
-		return [hybrid, fts, semantic];
+		const methods =
+			this.defaultMode === "fts"
+				? [fts, semantic, hybrid]
+				: this.defaultMode === "semantic"
+					? [semantic, fts, hybrid]
+					: [hybrid, fts, semantic];
+		const sidecar = this.sidecar;
+		if (sidecar === undefined) return methods;
+		return [
+			new DiscrawlRankedMethod({
+				mode: this.defaultMode,
+				lexical: new SidecarRetrievalMethod({
+					sidecar: (signal) => sidecar.get(signal),
+					descriptor: CRAWLER_DESCRIPTORS.discord,
+					mode: "bm25",
+					datasourceId: DISCORD_DATASOURCE_ID,
+					skillType: DISCORD_SKILL_TYPE,
+					instanceId: this.instanceId,
+					tags: this.tags,
+				}),
+				nativeFts: fts,
+				semantic,
+				...this.retrievalScope,
+			}),
+		];
+	}
+
+	/** Release the optional sidecar without changing the native archive. */
+	close(): void {
+		this.sidecar?.close();
 	}
 
 	describeSources(): readonly SourceDescription[] {
@@ -244,7 +305,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"Never pass datasource virtual paths (`/discord/...`) to bash; they are not OS paths.",
 				"",
 				"## Time-based questions (today, latest, recent)",
-				"The search tool ranks by relevance, not time, so a question such as “what came in today” or “the latest messages” has no keyword to match. List messages by time with `discrawl messages` instead (it needs at least one filter):",
+				"Search needs matching query terms. For a question such as “what came in today” or “the latest messages”, list messages by time with `discrawl messages` (it needs at least one filter):",
 				"- `discrawl --json messages --since <RFC3339> --limit 200` — messages at or after a timestamp; for “today” use local midnight with its UTC offset (e.g. `2026-10-09T00:00:00+09:00`)",
 				"- `discrawl --json messages --hours 24 --limit 200` (or `--days N`) — a rolling window",
 				"- `discrawl --json messages --since 1970-01-01T00:00:00Z --last 20` — the newest 20 archived messages, including archives older than a year",
@@ -252,6 +313,13 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"An empty window prints `null`. Run the same command without `--json` to see the newest archived timestamp, and tell the user when the archive simply has nothing that recent: it only holds what discrawl has synced or imported (wiretap captures only what Discord Desktop has cached).",
 				"",
 				"## Retrieval quality",
+				...(this.sidecar === undefined
+					? []
+					: [
+							`With the sidecar enabled, the configured \`defaultMode\` selects one retrieval method: \`discord-${this.defaultMode}\`. Lexical search ranks BM25 matches first and adds distinct native FTS candidates afterward. Hybrid search fuses that lexical ranking with native semantic results once, so repeated native lexical matches cannot overturn BM25 order by receiving extra votes. No additional embedding index is built.`,
+							"BM25 ranks the base `message_fts` index and any tokenizer-specific language indexes discrawl built (`message_fts_ko`, `message_fts_ja`, `message_fts_zh`, `message_fts_ar`), fusing their rankings, so inflected Korean, Japanese, Chinese, or Arabic messages are ranked lexically. Native FTS supplies supplemental candidates from the same language indexes for recall. Partial backend failures are recorded in result metadata; an unavailable semantic backend leaves the lexical ranking intact.",
+							"Set `connector.sidecar` to `false` to restore the separate native `discord-hybrid`, `discord-fts`, and `discord-semantic` methods, or use the native CLI directly to select another mode.",
+						]),
 				"Hybrid retrieval is the default. The underlying FTS index merges words across line breaks into a single token, so lexical-only search can miss terms that appear immediately after a newline; semantic recall covers that gap. Prefer natural-language queries over single exact keywords.",
 				"",
 				"## Output rules",
