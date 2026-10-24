@@ -6,13 +6,13 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
 	rmdirSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { opendir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
+import { renameWithRetry } from "../../../mirror/atomic-write.ts";
 
 /**
  * Vault walking and staging.
@@ -162,7 +162,7 @@ function saveStagingState(statePath: string, state: StagingState): void {
 	const temporary = `${statePath}.${randomUUID()}.tmp`;
 	try {
 		writeFileSync(temporary, `${JSON.stringify(state)}\n`);
-		renameSync(temporary, statePath);
+		renameWithRetry(temporary, statePath);
 	} finally {
 		rmSync(temporary, { force: true });
 	}
@@ -232,7 +232,7 @@ function copyAtomically(source: string, destination: string): void {
 	const temporary = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
 	try {
 		copyFileSync(source, temporary);
-		renameSync(temporary, destination);
+		renameWithRetry(temporary, destination);
 	} finally {
 		rmSync(temporary, { force: true });
 	}

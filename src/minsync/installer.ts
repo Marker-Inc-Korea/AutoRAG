@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
 import { chmod, mkdtemp } from "node:fs/promises";
 import { get } from "node:https";
 import { basename, delimiter, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { spawnProcess } from "./process.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
@@ -155,7 +156,7 @@ async function installReleaseAsset(asset: MinSyncReleaseAsset, destination: stri
 		}
 		const extracted = await spawnProcess("tar", ["-xf", archive, "-C", tempDir], tempDir);
 		if (!extracted.ok) throw new MinSyncReleaseError(extracted.stderr || `Could not extract ${asset.name}`);
-		renameSync(join(tempDir, basename(destination)), destination);
+		renameWithRetry(join(tempDir, basename(destination)), destination);
 	} finally {
 		rmSync(tempDir, { recursive: true, force: true });
 	}

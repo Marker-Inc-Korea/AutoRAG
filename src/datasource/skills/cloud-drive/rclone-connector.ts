@@ -8,9 +8,10 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
+import { renameWithRetry } from "../../../mirror/atomic-write.ts";
 import type { DefaultParserRegistryOptions } from "../../../parser/defaults.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
@@ -218,7 +219,7 @@ export class RcloneConnector implements DatasourceConnector {
 			for (const file of staged) rmSync(file.temp, { force: true });
 			return { ok: false, reason: copyFailure.reason, message: copyFailure.message };
 		}
-		for (const file of staged) renameSync(file.temp, file.destination);
+		for (const file of staged) renameWithRetry(file.temp, file.destination);
 		for (const entry of deletedEntries) rmSync(mirrorFilePath(paths.mirrorRoot, entry.path), { force: true });
 		saveManifest(paths.manifestPath, { version: 1, remoteName: remoteName(remote), entries: inventory });
 
@@ -388,7 +389,7 @@ function saveManifest(path: string, manifest: RcloneManifest): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const temp = `${path}.autorag-tmp`;
 	writeFileSync(temp, `${JSON.stringify(manifest)}\n`, "utf8");
-	renameSync(temp, path);
+	renameWithRetry(temp, path);
 }
 
 async function loadMirroredDocuments(
