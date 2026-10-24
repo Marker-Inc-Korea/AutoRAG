@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -261,6 +262,121 @@ process.exit(3);
 
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "stdout-too-large" });
 	});
+});
+
+describe("MailcrawlClient process lifecycle", () => {
+	/** kill(pid, 0) succeeds for zombies until init reaps them; those are not running. */
+	function isRunning(pid: number): boolean {
+		try {
+			process.kill(pid, 0);
+		} catch {
+			return false;
+		}
+		try {
+			return !/^Z/.test(execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim());
+		} catch {
+			return false;
+		}
+	}
+
+	function writeScript(body: string): void {
+		writeFileSync(binaryPath, `#!/usr/bin/env node\n${body}`);
+		chmodSync(binaryPath, 0o755);
+	}
+
+	const spawnedPids: number[] = [];
+	afterEach(() => {
+		for (const pid of spawnedPids.splice(0)) {
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {}
+		}
+	});
+
+	// Real wall-clock bound on purpose: the failure under test is a promise that never settles,
+	// which fake timers cannot observe. The tsconfig lib predates Promise.withResolvers.
+	async function settleWithin<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const bound = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => reject(new Error(`${what} stayed pending for ${ms}ms`)), ms);
+		});
+		try {
+			return await Promise.race([promise, bound]);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
+	it.skipIf(process.platform === "win32")(
+		"settles and reaps a descendant that keeps the inherited stdio open after the direct child exits",
+		{ timeout: 15_000 },
+		async () => {
+			writeScript(`import { spawn } from "node:child_process";
+const descendant = spawn(process.execPath, ["-e", "setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+process.stdout.write(JSON.stringify({ added: 1, grandchildPid: descendant.pid }));
+process.exit(0);
+`);
+			const client = new MailcrawlClient({ binaryPath, timeoutMs: 30_000, indexTimeoutMs: 30_000 });
+
+			const result = await settleWithin(client.sync(), 4_000, "mailcrawl sync");
+
+			expect(result.ok).toBe(true);
+			const pid = Number(/"grandchildPid":(\d+)/.exec(result.stdout)?.[1]);
+			expect(pid).toBeGreaterThan(0);
+			spawnedPids.push(pid);
+			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
+		},
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"escalates past a SIGTERM-ignoring child and reaps its descendant on timeout",
+		{ timeout: 15_000 },
+		async () => {
+			const pidFile = join(root, "descendant.pid");
+			writeScript(`import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => undefined);
+const descendant = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid));
+setInterval(() => undefined, 1000);
+`);
+			const client = new MailcrawlClient({ binaryPath, timeoutMs: 500 });
+
+			const result = await settleWithin(client.search("keyword", "anything"), 5_000, "mailcrawl search");
+
+			expect(result).toMatchObject({ ok: false, reason: "timeout" });
+			const pid = Number(readFileSync(pidFile, "utf8"));
+			spawnedPids.push(pid);
+			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
+		},
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"still honors abort after an output-cap termination was already requested",
+		{ timeout: 15_000 },
+		async () => {
+			const pidFile = join(root, "descendant.pid");
+			writeScript(`import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => undefined);
+const descendant = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid));
+process.stdout.write("x".repeat(64));
+setInterval(() => undefined, 1000);
+`);
+			const controller = new AbortController();
+			const client = new MailcrawlClient({ binaryPath, maxBufferBytes: 8, timeoutMs: 30_000 });
+
+			const pending = client.search("keyword", "anything", { signal: controller.signal });
+			await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true), { timeout: 5_000 });
+			controller.abort();
+
+			expect(await settleWithin(pending, 5_000, "mailcrawl search")).toMatchObject({ ok: false });
+			const pid = Number(readFileSync(pidFile, "utf8"));
+			spawnedPids.push(pid);
+			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
+		},
+	);
 });
 
 describe("MailcrawlClient default non-interactive budget", () => {
