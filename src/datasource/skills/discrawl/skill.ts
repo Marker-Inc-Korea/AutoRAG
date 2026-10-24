@@ -187,14 +187,16 @@ export class DiscrawlSkill implements DatasourceSkill {
 		};
 	}
 
+	/**
+	 * One method per query. Hybrid is the default and already degrades to FTS inside the single
+	 * `discrawl search` call when embeddings are unavailable, so FTS and semantic are not registered
+	 * beside it; an operator who pins `defaultMode` to `fts` or `semantic` gets exactly that mode.
+	 */
 	retrievalMethods(): readonly RetrievalMethod[] {
 		const options = { client: this.client, instanceId: this.instanceId, tags: this.tags };
-		const hybrid = new DiscrawlHybridMethod(options);
-		const fts = new DiscrawlFtsMethod(options);
-		const semantic = new DiscrawlSemanticMethod(options);
-		if (this.defaultMode === "fts") return [fts, semantic, hybrid];
-		if (this.defaultMode === "semantic") return [semantic, fts, hybrid];
-		return [hybrid, fts, semantic];
+		if (this.defaultMode === "fts") return [new DiscrawlFtsMethod(options)];
+		if (this.defaultMode === "semantic") return [new DiscrawlSemanticMethod(options)];
+		return [new DiscrawlHybridMethod(options)];
 	}
 
 	describeSources(): readonly SourceDescription[] {

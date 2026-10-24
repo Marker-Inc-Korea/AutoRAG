@@ -1,5 +1,6 @@
 export { bm25Scores, tokenize } from "./bm25.ts";
 export { RetrievalEngine, type RetrievalEngineOptions } from "./engine.ts";
+export { FallbackRetrievalMethod } from "./fallback.ts";
 export type { MergeOptions } from "./merger.ts";
 export { ParallelRetriever, ResultMerger } from "./merger.ts";
 export { RetrievalMethodRegistry } from "./registry.ts";

@@ -100,7 +100,7 @@ export type {
 export {
 	LazykatokBm25Method,
 	LazykatokClient,
-	LazykatokSemanticMethod,
+	LazykatokHybridMethod,
 	LazykatokSkill,
 } from "./skills/lazykatok/index.ts";
 export {

@@ -166,12 +166,11 @@ const stubEmbedder = {
 
 describe("buildDatasourceSkills: sidecar by default", () => {
 	it.each(["slack", "telegram", "whatsapp", "kakao"] as const)(
-		"%s: a plain connection gets BM25, semantic and hybrid",
+		"%s: a plain connection registers one hybrid method",
 		(name) => {
 			const { skills } = buildDatasourceSkills({ [name]: {} }, "/tmp/ws-never-created", { embedder: stubEmbedder });
 			const methods = skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name));
-			const cliLexical = name === "kakao" ? "kakao-bm25" : `${name}-fts`;
-			expect(methods).toEqual([cliLexical, `${name}-sidecar-bm25`, `${name}-semantic`, `${name}-hybrid`]);
+			expect(methods).toEqual([`${name}-hybrid`]);
 		},
 	);
 
@@ -182,7 +181,7 @@ describe("buildDatasourceSkills: sidecar by default", () => {
 				{ [name]: { connector: { sidecar: false } } },
 				"/tmp/ws-never-created",
 			);
-			const expected = name === "kakao" ? ["kakao-bm25", "kakao-semantic"] : [`${name}-fts`];
+			const expected = name === "kakao" ? ["kakao-hybrid"] : [`${name}-fts`];
 			expect(skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().name))).toEqual(
 				expected,
 			);

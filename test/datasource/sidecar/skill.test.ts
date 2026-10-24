@@ -6,11 +6,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CrawlerDatasourceSkill, CrawlerSkillClient } from "../../../src/datasource/crawler-skill.ts";
 import type { CrawlerSearchResult, CrawlerSyncResult } from "../../../src/datasource/crawler-types.ts";
 import { CRAWLER_DESCRIPTORS } from "../../../src/datasource/sidecar/descriptors.ts";
+import { CrawlerSidecar, type SidecarHit } from "../../../src/datasource/sidecar/index.ts";
+import { sidecarFirstMethod } from "../../../src/datasource/sidecar/methods.ts";
 import { LazykatokSkill, type LazykatokSkillClient } from "../../../src/datasource/skills/lazykatok/index.ts";
 import { SlackSkill } from "../../../src/datasource/skills/slack/index.ts";
 import { TelecrawlSkill } from "../../../src/datasource/skills/telecrawl/index.ts";
 import { WacrawlSkill } from "../../../src/datasource/skills/wacrawl/index.ts";
 import type { Embedder } from "../../../src/embedding/embedder.ts";
+import type { RetrievalMethod } from "../../../src/retrieval/types.ts";
 
 let root: string;
 let crawlerDb: string;
@@ -84,17 +87,12 @@ function slackWithSidecar(extra: Record<string, unknown> = {}): SlackSkill {
 }
 
 describe("crawler skills with a sidecar", () => {
-	it("keeps the CLI-backed FTS method and adds BM25-ranked, semantic and hybrid methods", () => {
+	it("registers one method per query: sidecar hybrid, with BM25 and the CLI only as fallbacks", () => {
 		const methods = slackWithSidecar()
 			.retrievalMethods()
 			.map((method) => method.describe());
-		expect(methods.map((method) => method.name)).toEqual([
-			"slack-fts",
-			"slack-sidecar-bm25",
-			"slack-semantic",
-			"slack-hybrid",
-		]);
-		expect(methods.map((method) => method.type)).toEqual(["bm25", "bm25", "vector", "hybrid"]);
+		expect(methods.map((method) => method.name)).toEqual(["slack-hybrid"]);
+		expect(methods.map((method) => method.type)).toEqual(["hybrid"]);
 		expect(methods.every((method) => method.datasourceId === "slack")).toBe(true);
 	});
 
@@ -111,21 +109,21 @@ describe("crawler skills with a sidecar", () => {
 	it("maps sidecar hits to path-opaque sources and honors the datasource scope", async () => {
 		const skill = slackWithSidecar();
 		await skill.index();
-		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "slack-sidecar-bm25");
-		const [hit] = (await bm25?.retrieve("release", { topK: 3 })) ?? [];
+		const [hybrid] = skill.retrievalMethods();
+		const [hit] = (await hybrid?.retrieve("release", { topK: 3 })) ?? [];
 		expect(hit?.source).toBe("/slack/main/chunks/C1-10-000001");
 		expect(hit?.source).not.toContain(root);
 		expect(hit?.metadata).toMatchObject({
-			method: "slack-sidecar-bm25",
+			method: "slack-hybrid",
 			datasourceId: "slack",
 			instanceId: "main",
 			channelName: "eng",
 		});
-		expect(await bm25?.retrieve("release", { topK: 3, scope: "/slack/other" })).toEqual([]);
-		expect(await bm25?.retrieve("release", { topK: 3, scope: "/slack/main" })).toHaveLength(1);
+		expect(await hybrid?.retrieve("release", { topK: 3, scope: "/slack/other" })).toEqual([]);
+		expect(await hybrid?.retrieve("release", { topK: 3, scope: "/slack/main" })).toHaveLength(1);
 	});
 
-	it("names a message exactly like the CLI-backed method does, so the merger can deduplicate across methods", async () => {
+	it("names a message exactly like the CLI-backed method does, so falling back to the CLI keeps evidence identities stable", async () => {
 		const cli: CrawlerSkillClient = {
 			sync: cliMustNotSearch.sync,
 			search: async () => ({
@@ -138,9 +136,10 @@ describe("crawler skills with a sidecar", () => {
 				code: 0,
 			}),
 		};
-		const skill = track(
+		const cliOnly = new SlackSkill({ client: cli, datasourceId: "slack", instanceId: "main" });
+		const withSidecar = track(
 			new SlackSkill({
-				client: cli,
+				client: cliMustNotSearch,
 				datasourceId: "slack",
 				instanceId: "main",
 				sidecar: {
@@ -151,11 +150,75 @@ describe("crawler skills with a sidecar", () => {
 				},
 			}),
 		);
-		const [cliMethod, bm25] = skill.retrievalMethods();
+		const [cliMethod] = cliOnly.retrievalMethods();
+		const [sidecarMethod] = withSidecar.retrievalMethods();
 		const fromCli = (await cliMethod?.retrieve("release", { topK: 3 }))?.[0];
-		const fromSidecar = (await bm25?.retrieve("release", { topK: 3 }))?.[0];
+		const fromSidecar = (await sidecarMethod?.retrieve("release", { topK: 3 }))?.[0];
 		expect(fromSidecar?.source).toBe(fromCli?.source);
 		expect(fromSidecar?.id).toBe(fromCli?.id);
+	});
+
+	it("falls back from a throwing sidecar to its BM25, then to the CLI-backed search, and not earlier", async () => {
+		class BrokenSidecar extends CrawlerSidecar {
+			private readonly breakLexical: boolean;
+			constructor(breakLexical: boolean) {
+				super({
+					descriptor: CRAWLER_DESCRIPTORS.slack,
+					crawlerDbPath: crawlerDb,
+					sidecarDbPath: join(root, `broken-${breakLexical}.sqlite`),
+					workspaceId: "T1",
+					embedder,
+				});
+				this.breakLexical = breakLexical;
+			}
+			override async searchHybrid(): Promise<never> {
+				throw new Error("sqlite: disk I/O error");
+			}
+			override searchLexical(query: string, topK: number): SidecarHit[] {
+				if (this.breakLexical) throw new Error("sqlite: disk I/O error");
+				return super.searchLexical(query, topK);
+			}
+		}
+		const cliQueries: string[] = [];
+		const cli: RetrievalMethod = {
+			describe: () => ({
+				name: "slack-fts",
+				type: "bm25",
+				description: "cli",
+				status: "active",
+				capabilities: [],
+				datasourceId: "slack",
+			}),
+			retrieve: async (query) => {
+				cliQueries.push(query);
+				return [
+					{ id: "slack:main:cli", content: "from cli", source: "/slack/main/chunks/cli", score: 1, metadata: {} },
+				];
+			},
+		};
+		for (const breakLexical of [false, true]) {
+			const sidecar = new BrokenSidecar(breakLexical);
+			try {
+				const method = sidecarFirstMethod(
+					{
+						sidecar,
+						descriptor: CRAWLER_DESCRIPTORS.slack,
+						datasourceId: "slack",
+						skillType: "slack",
+						instanceId: "main",
+						tags: [],
+					},
+					cli,
+				);
+				const hits = await method.retrieve("release", { topK: 3 });
+				expect(hits[0]?.metadata).toMatchObject({ fallbackFrom: "slack-hybrid" });
+				expect(hits[0]?.content).toBe(breakLexical ? "from cli" : "we ship the release friday");
+				expect(cliQueries).toEqual(breakLexical ? ["release"] : []);
+			} finally {
+				sidecar.close();
+			}
+			cliQueries.length = 0;
+		}
 	});
 
 	it("honors the channel allowlist for sidecar hits", async () => {
@@ -193,8 +256,8 @@ describe("crawler skills with a sidecar", () => {
 				message: expect.stringContaining("semantic-unavailable: gateway down"),
 			}),
 		]);
-		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "slack-sidecar-bm25");
-		expect(await bm25?.retrieve("release", { topK: 3 })).toHaveLength(1);
+		const [hybrid] = skill.retrievalMethods();
+		expect(await hybrid?.retrieve("release", { topK: 3 })).toHaveLength(1);
 	});
 
 	it("says how many messages still wait for a vector so a partial semantic index is not mistaken for a complete one", async () => {
@@ -225,10 +288,7 @@ describe("crawler skills with a sidecar", () => {
 				},
 			}),
 		);
-		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
-			"slack-fts",
-			"slack-sidecar-bm25",
-		]);
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual(["slack-sidecar-bm25"]);
 		expect(await skill.index()).toMatchObject({ ok: true, diagnostics: [] });
 	});
 
@@ -310,12 +370,7 @@ describe("crawler skills with a sidecar", () => {
 				"whatsapp",
 			],
 		] as const) {
-			expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
-				`${id}-fts`,
-				`${id}-sidecar-bm25`,
-				`${id}-semantic`,
-				`${id}-hybrid`,
-			]);
+			expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([`${id}-hybrid`]);
 		}
 	});
 });
@@ -357,7 +412,8 @@ describe("telegram/whatsapp: CLI and sidecar agree on message identity", () => {
 			const binaryPath = fakeCrawlerCli(id, [
 				{ event_id: "evt-1", message_id: "m1", chat_jid: "family@s", chat_name: "Family", text: "dinner at seven" },
 			]);
-			const skill = track(
+			const cliOnly = track(new Skill({ instanceId: "main", connectorOptions: { binaryPath } }));
+			const withSidecar = track(
 				new Skill({
 					instanceId: "main",
 					connectorOptions: { binaryPath },
@@ -368,9 +424,10 @@ describe("telegram/whatsapp: CLI and sidecar agree on message identity", () => {
 					},
 				}),
 			);
-			const [cliMethod, bm25] = skill.retrievalMethods();
+			const [cliMethod] = cliOnly.retrievalMethods();
+			const [sidecarMethod] = withSidecar.retrievalMethods();
 			const fromCli = (await cliMethod?.retrieve("dinner seven", { topK: 3 }))?.[0];
-			const fromSidecar = (await bm25?.retrieve("dinner seven", { topK: 3 }))?.[0];
+			const fromSidecar = (await sidecarMethod?.retrieve("dinner seven", { topK: 3 }))?.[0];
 			expect(fromCli).toBeDefined();
 			expect(fromSidecar?.id).toBe(fromCli?.id);
 			expect(fromSidecar?.source).toBe(fromCli?.source);
@@ -419,8 +476,10 @@ describe("telegram/whatsapp: CLI and sidecar agree on message identity", () => {
 		);
 		await skill.index();
 		expect(embedded).toEqual(["Family\nrelease on sunday"]);
-		const bm25 = skill.retrievalMethods().find((method) => method.describe().name === "whatsapp-sidecar-bm25");
-		expect((await bm25?.retrieve("release", { topK: 5 }))?.map((hit) => hit.content)).toEqual(["release on sunday"]);
+		const [hybrid] = skill.retrievalMethods();
+		expect((await hybrid?.retrieve("release", { topK: 5 }))?.map((hit) => hit.content)).toEqual([
+			"release on sunday",
+		]);
 	});
 });
 
@@ -492,19 +551,16 @@ describe("kakao: LazykatokSkill with a read-only sidecar", () => {
 		});
 		try {
 			const methods = skill.retrievalMethods().map((method) => method.describe().name);
-			expect(methods).toEqual(["kakao-bm25", "kakao-sidecar-bm25", "kakao-semantic", "kakao-hybrid"]);
+			expect(methods).toEqual(["kakao-hybrid"]);
 
 			const indexed = await skill.index();
 			expect(nativeIndexCalled).toBe(false);
 			expect(indexed).toMatchObject({ ok: true, chunkCount: 2, diagnostics: [] });
 
-			const [cliMethod, sidecarBm25, , hybrid] = skill.retrievalMethods();
-			const fromCli = (await cliMethod?.retrieve("release", { topK: 3 }))?.[0];
-			const fromSidecar = (await sidecarBm25?.retrieve("release", { topK: 3 }))?.[0];
-			expect(fromSidecar?.id).toBe(fromCli?.id);
-			expect(fromSidecar?.source).toBe("/kakao/default/chunks/chunk_1");
-
+			const [hybrid] = skill.retrievalMethods();
 			const hybridHits = await hybrid?.retrieve("release deploy", { topK: 3 });
+			expect(hybridHits?.[0]?.id).toBe("kakao:default:chunk_1");
+			expect(hybridHits?.[0]?.source).toBe("/kakao/default/chunks/chunk_1");
 			expect(hybridHits?.[0]?.content).toBe("we ship the release friday");
 		} finally {
 			skill.close();
