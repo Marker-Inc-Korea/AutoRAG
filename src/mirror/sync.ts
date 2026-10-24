@@ -32,7 +32,7 @@ import { parsedMirrorIndexPath, parsedOutputPath } from "./paths.ts";
 export const DEFAULT_MAX_SOURCE_BYTES = 50 * 1024 * 1024;
 
 /** Persist partial mirror progress this often so an OOM mid-run still restarts incrementally. */
-const MIRROR_CHECKPOINT_EVERY = 25;
+export const MIRROR_CHECKPOINT_EVERY = 25;
 
 /** A refresh may delete at most this share of the indexed documents (above {@link MASS_DELETE_FLOOR}). */
 export const DEFAULT_MAX_DELETE_RATIO = 0.3;
