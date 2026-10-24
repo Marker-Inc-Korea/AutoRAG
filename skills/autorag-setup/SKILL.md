@@ -239,9 +239,11 @@ fast and multi-part questions thorough.
 - **Jev** (`jev`, default `{ "backend": "dazzi" }` when signed in to Dazzi
   Models, else `{ "backend": "openrouter" }`; model `jev-1.13` on Dazzi,
   `typesafe/jev-1.13` on OpenRouter) runs before the fast answer. It routes each question to
-  local search, web search, a direct answer (general knowledge or small
-  talk skips retrieval entirely), or the `config` branch, and decides whether
-  to decompose it. On
+  local search, a direct answer (general knowledge or small
+  talk skips retrieval entirely), `organize` (moving, renaming, converting, or
+  sorting files and folders), `extra` (any other action that needs no
+  retrieval, such as committing code), or the `config` branch, and decides
+  whether to decompose it. On
   local search it also decides, per registered datasource, whether to search
   it before the fast answer, using each datasource's `description` and where
   similar past questions were answered (retrieval memory). When setting up a
