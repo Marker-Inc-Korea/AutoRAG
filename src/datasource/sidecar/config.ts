@@ -28,8 +28,8 @@ export interface ResolveSidecarInput {
 	readonly workspaceRoot: string | undefined;
 	readonly registrationName: string;
 	readonly instanceId: string;
-	/** Where the crawler keeps its archive when the user did not say. */
-	readonly defaultCrawlerDb: string;
+	/** Where the crawler keeps its archive when the user did not say; absent when the crawler has no portable default. */
+	readonly defaultCrawlerDb?: string;
 	/** The embedder shared with the rest of AutoRAG. Without one the sidecar is lexical-only. */
 	readonly embedder?: Embedder;
 }
@@ -46,7 +46,9 @@ export function resolveSidecarOptions(input: ResolveSidecarInput): CrawlerSideca
 	const configured = [object.crawlerDbPath, connector?.databasePath].find(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
-	const crawlerDbPath = expandHome(configured ?? archivePathFromCrawlerConfig(input) ?? input.defaultCrawlerDb);
+	const resolvedDb = configured ?? archivePathFromCrawlerConfig(input) ?? input.defaultCrawlerDb;
+	if (resolvedDb === undefined) return undefined;
+	const crawlerDbPath = expandHome(resolvedDb);
 	const workspaceId =
 		typeof connector?.workspace === "string" && connector.workspace.length > 0 ? connector.workspace : undefined;
 	return {

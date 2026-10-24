@@ -64,6 +64,8 @@ export interface SetupDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly pathExists?: (path: string) => boolean;
 	readonly executable?: (name: string) => string | undefined;
+	/** Host platform; defaults to `process.platform`. Decides which platform-bound datasources setup offers. */
+	readonly platform?: NodeJS.Platform;
 	readonly acquireLock?: (path: string) => FileLockHandle;
 	/** Hister's config path, health, restart and reindex; defaults to the real programs. */
 	readonly hister?: HisterServiceDeps;
@@ -164,13 +166,14 @@ function discrawlStoreCandidates(workspace: string, env: NodeJS.ProcessEnv): rea
 		join(workspace, ".autorag", "datasources", "discrawl", "discrawl.db"),
 	];
 }
-function datasourceNames(config: Record<string, unknown>): string[] {
+function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platform): string[] {
 	const configured = Object.keys((config.datasources ?? {}) as Record<string, unknown>);
 	return [
 		...new Set([
 			...configured,
 			"discord",
-			"kakao",
+			// lazykatok's only live adapter is the macOS KakaoTalk app: elsewhere kakao runs only when configured.
+			...(platform === "darwin" ? ["kakao"] : []),
 			"lark",
 			"slack",
 			"telegram",
@@ -240,7 +243,7 @@ export async function runSetup(options: {
 		const source = (raw.datasources ?? {}) as Record<string, unknown>;
 		const exists = options.deps?.pathExists ?? existsSync;
 		const executable = options.deps?.executable ?? ((name: string) => executableInPath(name, env));
-		for (const name of datasourceNames(raw)) {
+		for (const name of datasourceNames(raw, options.deps?.platform ?? process.platform)) {
 			const value = source[name];
 			if (value === false) {
 				datasources.push({ name, state: "skipped", reason: "disabled by operator" });
