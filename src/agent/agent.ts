@@ -2087,8 +2087,8 @@ export class AutoRAGAgent {
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;
-		/** True when this run took the Jev `config` branch; its report never feeds retrieval memory. */
-		let selfConfigRun = false;
+		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, `extra`); it never feeds retrieval memory. */
+		let isolatedRun = false;
 		/**
 		 * Without Jev every fast answer goes on to verification, so it is
 		 * published as soon as it is written. With Jev, publishing waits
@@ -2198,7 +2198,7 @@ export class AutoRAGAgent {
 					// Self-configuration: no retrieval and no fast answer. The model
 					// gets the full setup skill and edits the config itself, then
 					// reports what it changed as its final message.
-					selfConfigRun = true;
+					isolatedRun = true;
 					// pi's bash tool refuses to run from a missing cwd, and a freshly
 					// initialised config has not created its workspace yet.
 					mkdirSync(this.workspaceProjectRoot, { recursive: true });
@@ -2235,6 +2235,47 @@ export class AutoRAGAgent {
 								};
 							}
 						}
+					} finally {
+						// A bound interactive session outlives this run: give it its search tools back.
+						if (sessionAgent !== undefined && previousTools !== undefined) {
+							sessionAgent.setActiveToolsByName(previousTools);
+						}
+					}
+					return;
+				}
+				if (plan.route === "organize" || plan.route === "extra") {
+					// Acting on files or on any other task: no retrieval, no fast answer,
+					// no verification. One tool-capable turn does the work and its plain
+					// final message reports what changed.
+					isolatedRun = true;
+					mkdirSync(this.workspaceProjectRoot, { recursive: true });
+					const previousTools = sessionAgent?.getActiveToolNames();
+					setThinking(this.finalThinkingLevel);
+					// Organizing needs the file tools and the converter, not the search tools.
+					if (plan.route === "organize" && sessionAgent !== undefined) {
+						sessionAgent.setActiveToolsByName(this.organizeToolNames());
+					}
+					try {
+						const label = plan.route === "organize" ? "Organizing files and folders" : "Carrying out the request";
+						await this.searchProgress.step(plan.route, label, () =>
+							activeSession.prompt(
+								plan.route === "organize"
+									? this.buildOrganizePrompt(trimmedQuery)
+									: this.buildExtraPrompt(trimmedQuery),
+							),
+						);
+						// A steer typed after the turn's last model request is still owed an answer.
+						while (
+							!this.interactive.userAborted &&
+							!planAbort.signal.aborted &&
+							this.interactive.queuedSteers.length > 0
+						) {
+							await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+						}
+						steering.acceptingSteers = false;
+						if (this.interactive.userAborted) return;
+						const reportText = finalAnswerText(transcript());
+						if (reportText !== undefined) captured = await this.deriveAnswer(reportText);
 					} finally {
 						// A bound interactive session outlives this run: give it its search tools back.
 						if (sessionAgent !== undefined && previousTools !== undefined) {
@@ -2391,10 +2432,10 @@ export class AutoRAGAgent {
 				captured,
 				this.memory,
 				componentDiagnostics,
-				{ isolateMemory: selfConfigRun },
+				{ isolateMemory: isolatedRun },
 			);
-			// A self-config report is about AutoRAG's settings, not retrieved evidence.
-			const memoryDiagnostic = selfConfigRun
+			// A config, organize, or extra report is not retrieved evidence.
+			const memoryDiagnostic = isolatedRun
 				? undefined
 				: await this.recordJudgedEvidence(sessionId, trimmedQuery, captured);
 			const response: SearchDocumentsResponse =
@@ -2755,7 +2796,7 @@ export class AutoRAGAgent {
 					)
 				: Promise.resolve([]);
 		let queries: readonly string[] = [query];
-		if (decision.decompose && route !== "direct") {
+		if (decision.decompose && route === "local") {
 			const target = this.queryDecompositionModel ?? {
 				model: resolved.model,
 				...((resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider]) !== undefined
@@ -2789,7 +2830,11 @@ export class AutoRAGAgent {
 					? "answering directly without retrieval."
 					: route === "config"
 						? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
-						: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
+						: route === "organize"
+							? "organizing files and folders with the file tools; no retrieval and no verification."
+							: route === "extra"
+								? "carrying out the request with the agent's tools; no retrieval and no verification."
+								: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
 			source: "jev",
 		});
 		return { route, queries, datasources, ...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}) };
@@ -3177,6 +3222,56 @@ export class AutoRAGAgent {
 			`Answer this query directly from your own general knowledge: ${query}\n\n` +
 			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ${this.askUserException()}` +
 			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.`
+		);
+	}
+
+	/**
+	 * Tools an `organize` turn keeps: pi's file tools plus the converter, the
+	 * duplicate scan, and file-name discovery, whichever this agent registered.
+	 * The retrieval, datasource, and web tools stay out: the turn acts on files.
+	 */
+	private organizeToolNames(): string[] {
+		const keep = new Set<string>([
+			CONVERT_FILES_TOOL_NAME,
+			LIST_FILE_CONVERSIONS_TOOL_NAME,
+			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			JIKJI_FIND_TOOL_NAME,
+			EVERYTHING_SEARCH_TOOL_NAME,
+			FSEARCH_SEARCH_TOOL_NAME,
+		]);
+		return [...PI_BUILTIN_TOOL_NAMES, ...this.tools.map((tool) => tool.name).filter((name) => keep.has(name))];
+	}
+
+	/**
+	 * Prompt for a request Jev routed to `organize`: act on files and folders
+	 * (move, rename, convert, sort). No retrieval ran and no verification
+	 * follows; the model's plain final message is the answer.
+	 */
+	buildOrganizePrompt(query: string): string {
+		return (
+			`The user asks you to organize files and folders: ${query}\n\n` +
+			`This is a file-organization task, not a document search. Do NOT answer from retrieval or search the user's datasources. ` +
+			`Look at the folders involved with bash (ls, a bounded find), read a file with bash or read only when its content decides the new name or folder, ` +
+			`then carry the change out with bash (mkdir, mv, cp) or the file tools. Use convert_files for format conversions.\n\n` +
+			`Rules:\n` +
+			`- Plan first: list what you found, decide every target path, and check that no two targets share a name and no target already exists before you move anything. Never overwrite an existing file.\n` +
+			`- Touch only what the request names. When the request does not name a folder, ask which one instead of guessing, unless the conversation already says.\n` +
+			`- Never delete permanently (no rm, rmdir, unlink, find -delete). Move what must go to the OS trash.\n` +
+			`- After the changes, list the destination to confirm they happened.\n` +
+			`- Finish with a short report as your final message, with no tool call: every change as old path → new path (one per line), what you skipped and why, and anything that needs the user. Write in the language of the request.`
+		);
+	}
+
+	/**
+	 * Prompt for a request Jev routed to `extra`: a task that is neither
+	 * knowledge, the user's records, file organization, nor configuration.
+	 * The model acts with every tool it has; there is no retrieval or verification phase.
+	 */
+	buildExtraPrompt(query: string): string {
+		return (
+			`${query}\n\n` +
+			`Carry this request out with the tools you have. It needs no document search. ` +
+			`When done, reply with a short report as your final message, with no tool call: what you did, the result, and anything that still needs the user. Write in the language of the request.`
 		);
 	}
 
