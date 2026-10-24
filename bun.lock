@@ -21,6 +21,7 @@
         "kordoc": "^4.21.30",
         "mailparser": "^3.9.38",
         "pdfjs-dist": "^6.4.299",
+        "pi-ask-user": "0.17.0",
         "pi-discord-remote": "0.2.4",
         "puppeteer-core": "^25.13.0",
         "slides-grab": "^1.5.2",
@@ -1087,6 +1088,8 @@
     "pdfjs-dist": ["pdfjs-dist@6.4.299", "", { "optionalDependencies": { "@napi-rs/canvas": "^1.0.10" } }, "sha512-AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g=="],
 
     "peberminta": ["peberminta@0.10.0", "", {}, "sha512-80B2AsU+I4Qdb0ZAPSfe9UwvGzwkM37IKIFEvdS3D/3Ndgv2bsuJ0bfG1+iEYO+l7Gfd4EUJmuRyq7efLgRMzQ=="],
+
+    "pi-ask-user": ["pi-ask-user@0.17.0", "", { "peerDependencies": { "@earendil-works/pi-coding-agent": ">=0.74.0", "@earendil-works/pi-tui": ">=0.74.0", "@sinclair/typebox": "*" } }, "sha512-BXe62FLXH+yEIJ64p9lwYjcTcSP/Xm4zoU5aZZma3DcVAIlvD6wVMkEv6+MhRMgcLf2GYjrc6RtcrwDR8F3yTg=="],
 
     "pi-discord-remote": ["pi-discord-remote@0.2.4", "", { "dependencies": { "discord.js": "^14.26.4" }, "peerDependencies": { "@earendil-works/pi-coding-agent": "*" } }, "sha512-TrwDNlUkCgCivb6eiqNd2W5fyE0hCNOmAmmLuIeo6m/+F3bmas+laJScdSLGT0Y69+YG5jgipRZjHD8REc481A=="],
 
