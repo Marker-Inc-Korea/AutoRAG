@@ -112,7 +112,10 @@ import {
 	ANSWER_IMAGE_EMBED_RULE,
 	ANSWER_LANGUAGE_RULE,
 	ANSWER_LEAD_RULE,
+	ANSWER_RELEVANCE_RULE,
 	ANSWER_UNCERTAINTY_RULE,
+	ANSWER_UNCONFIRMED_FAST_RULE,
+	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
@@ -3205,7 +3208,9 @@ export class AutoRAGAgent {
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE} If there are partial clues or leads (even if not the exact answer), mention those clues concisely.\n\n` +
+			`- ${ANSWER_RELEVANCE_RULE}\n` +
+			`- ${ANSWER_UNCONFIRMED_FAST_RULE}\n` +
+			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
 			`Write the answer as your reply, then stop.`
 		);
 	}
@@ -3322,10 +3327,11 @@ export class AutoRAGAgent {
 		const answerRules = fastAnswerDelivered
 			? `Rules for your final answer (DELTA ONLY; the system prompt's answer guidelines still apply):\n` +
 				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer. Mark each item as a correction or a new finding.\n` +
-				`- NEVER restate or re-list first-answer facts that remain correct, and never repeat its bullet list. If verification changed nothing and found nothing new, say so in one short line (the first answer is confirmed as-is).\n` +
-				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text, and do not describe how you verified it.\n` +
+				`- NEVER restate first-answer facts that remain correct or repeat its bullet list. If verification changed nothing and found nothing new, the final answer is ONE short line and nothing more (if the first answer said the answer was not confirmed yet, the line says it still could not be confirmed): no mention of what was found instead (no "only X exists" contrast), no account of where or how you searched or what the documents contain.\n` +
+				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
 				`- ${ANSWER_LANGUAGE_RULE}\n` +
+				`- Leave out unrelated or merely adjacent findings.\n` +
 				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
 				`- ${ANSWER_IMAGE_DELTA_RULE}`
 			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
@@ -3335,6 +3341,8 @@ export class AutoRAGAgent {
 				`- ${ANSWER_EMPHASIS_RULE}\n` +
 				`- ${ANSWER_LANGUAGE_RULE}\n` +
 				`- ${ANSWER_UNCERTAINTY_RULE}\n` +
+				`- ${ANSWER_RELEVANCE_RULE}\n` +
+				`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
 				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
 				`- ${ANSWER_DELIVERABLE_RULE}${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}\n` +
 				`- ${ANSWER_CITATION_RULE}\n` +
@@ -3375,7 +3383,9 @@ export class AutoRAGAgent {
 			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
 			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
 			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE} If there are partial clues or leads, mention them concisely.\n\n` +
+			`- ${ANSWER_RELEVANCE_RULE}\n` +
+			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
+			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
 			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`

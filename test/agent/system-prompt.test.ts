@@ -96,7 +96,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("Answer Guidelines");
 		expect(text).toContain("5 bullet points");
 		expect(text).toContain("No per-source negative reports");
-		expect(text).toContain("Honest and concise uncertainty");
+		expect(text).toContain("Not-found handling");
 		expect(text).not.toContain("Read before curating");
 	});
 
