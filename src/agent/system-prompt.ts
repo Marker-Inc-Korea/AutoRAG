@@ -92,7 +92,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(
 			config,
 			"ask_user",
-			"ask the person at the terminal a multiple-choice or open question when the request is ambiguous or a decision is theirs; do not guess",
+			"search and explore first, with the tools above, and use this only when something still cannot be verified or the choice is the user's alone. Whenever you must ask the user anything, ask through this tool instead of in plain text, and do not use it for anything a search could settle; never guess",
 		),
 		toolLine(config, "check_memory", "inspect evidence earlier searches found for similar questions"),
 		...config.toolNames

@@ -3123,7 +3123,7 @@ export class AutoRAGAgent {
 	 */
 	private askUserException(): string {
 		return this.askUserOffered
-			? `The one exception is ${ASK_USER_TOOL_NAME}: if the request cannot be answered without a choice or fact only the user can give, call ${ASK_USER_TOOL_NAME} first instead of guessing. `
+			? `${ASK_USER_TOOL_NAME} is the one tool this rule does not forbid. Use it only when nothing you already have can settle something or the choice is the user's alone, and then ask through it instead of in plain text; never guess. `
 			: "";
 	}
 
