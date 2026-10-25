@@ -868,6 +868,9 @@ token is not stored in the index or configuration. Search supports lexical
 BM25 and semantic retrieval through the shared embedder; Gist content stays on
 the machine for local embeddings. If embeddings are unavailable, lexical search
 continues with a `semantic-unavailable` diagnostic.
+When a Gist's title or content changes, its previous vector is excluded from
+semantic results until re-embedding succeeds; unchanged chunks remain searchable.
+The next refresh retries pending embeddings even if the Gist content is unchanged.
 Set `connector.semantic: false` (or `{ "enabled": false }`) to keep Gists
 lexical-only: no embedding calls, no vector index, and no
 `<name>-semantic` method.
