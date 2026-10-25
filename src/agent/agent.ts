@@ -3304,7 +3304,7 @@ export class AutoRAGAgent {
 	 */
 	private askUserException(): string {
 		return this.askUserOffered
-			? `${ASK_USER_TOOL_NAME} is the one tool this rule does not forbid. Use it only when nothing you already have can settle something or the choice is the user's alone, and then ask through it instead of in plain text; never guess. `
+			? `This rule does not cover ${ASK_USER_TOOL_NAME}: use it only when nothing you already have can settle something or the choice is the user's alone, and then ask through it instead of in plain text; never guess. `
 			: "";
 	}
 
@@ -3317,7 +3317,7 @@ export class AutoRAGAgent {
 		const names = new Set(this.tools.map((tool) => tool.name));
 		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
 		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` or ${WEB_FETCH_TOOL_NAME}` : "";
-		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is the one exception: when the question concerns public facts that may be recent or that changed since your training and the baseline lacks them, call it before answering.`;
+		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is allowed: when the question concerns public facts that may be recent or that changed since your training and the baseline lacks them, call it before answering.`;
 	}
 
 	/**
@@ -3451,9 +3451,9 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Verification-phase nudge toward the internet. Jev no longer routes to web
-	 * search, so the agent decides after the fast answer: when local evidence is
-	 * missing, thin, or possibly stale, it searches the web. Empty when web tools are off.
+	 * Verification-phase nudge toward the internet, for when the web was not
+	 * selected before the fast answer or its evidence fell short: when local
+	 * evidence is missing, thin, or possibly stale, the agent searches the web. Empty when web tools are off.
 	 */
 	private webFallbackHint(): string {
 		const names = new Set(this.tools.map((tool) => tool.name));
