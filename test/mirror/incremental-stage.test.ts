@@ -1,9 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MinSyncStageSession } from "../../src/minsync/stage.ts";
+import { syncMinSyncWorkspace } from "../../src/minsync/workspace.ts";
 import { detectMirrorStaleness, loadMirrorIndex, syncParsedMirrors } from "../../src/mirror/index.ts";
+import { mirrorStageKey } from "../../src/mirror/index-store.ts";
+import { parsedOutputPath } from "../../src/mirror/paths.ts";
+import { ParseError } from "../../src/parser/errors.ts";
 import { type ParseInput, type ParseOutput, ParserRegistry, PlainTextParser } from "../../src/parser/index.ts";
+import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let source: string;
@@ -31,6 +37,131 @@ function output(key: string): string {
 }
 
 describe("MinSync-owned incremental parsing", () => {
+	it("leaves the staged corpus untouched on repeated warm refreshes", async () => {
+		const parser = new VersionedParser();
+		const options = { root, searchPaths: [source], registry: new ParserRegistry([parser]) };
+		await syncParsedMirrors(options);
+		const staged = syncMinSyncWorkspace(root).entries.map((entry) => entry.minSyncPath);
+		const before = staged.map((path) => statSync(path, { bigint: true }).mtimeNs);
+		parser.attempts.length = 0;
+		await syncParsedMirrors(options);
+		syncMinSyncWorkspace(root);
+		expect(parser.attempts).toEqual([]);
+		expect(staged.map((path) => statSync(path, { bigint: true }).mtimeNs)).toEqual(before);
+	});
+
+	it("keeps the last good mirror when a source changes during parsing, including interrupted recovery", async () => {
+		const options = { root, searchPaths: [source] };
+		await syncParsedMirrors({ ...options, registry: new ParserRegistry([new VersionedParser()]) });
+		const priorOutput = output("a");
+		writeFileSync(join(source, "a.txt"), "New source\n");
+		class ChangingParser extends VersionedParser {
+			async parse(input: ParseInput): Promise<ParseOutput> {
+				const result = await super.parse(input);
+				if (input.virtualPath === "/docs/a.txt") writeFileSync(join(source, "a.txt"), "Still changing\n");
+				return result;
+			}
+		}
+		const controller = new AbortController();
+		await expect(
+			syncParsedMirrors({
+				...options,
+				registry: new ParserRegistry([new ChangingParser()]),
+				signal: controller.signal,
+				onProgress: (progress) => {
+					if (progress.processed === 1) controller.abort();
+				},
+			}),
+		).rejects.toBeDefined();
+		rmSync(join(root, ".autorag", "parsed", "index.json"));
+		expect(readFileSync(output("a"), "utf8")).toBe("Alpha parsed-1\n");
+		expect(output("a")).toBe(priorOutput);
+		expect(await detectMirrorStaleness(options)).toContainEqual(expect.objectContaining({ source: "/docs/a.txt" }));
+		await syncParsedMirrors({ ...options, registry: new ParserRegistry([new VersionedParser()]) });
+		expect(readFileSync(output("a"), "utf8")).toBe("Still changing parsed-1\n");
+	});
+
+	it.skipIf(process.platform === "win32")("does not reparse content after a permissions-only change", async () => {
+		const parser = new VersionedParser();
+		const options = { root, searchPaths: [source], registry: new ParserRegistry([parser]) };
+		await syncParsedMirrors(options);
+		chmodSync(join(source, "a.txt"), 0o600);
+		parser.attempts.length = 0;
+		expect(await detectMirrorStaleness(options)).toEqual([]);
+		await syncParsedMirrors(options);
+		expect(parser.attempts).toEqual([]);
+	});
+
+	it.each([`/docs/${"한".repeat(500)}.txt`, "/docs/unpaired-\ud800.txt"])(
+		"recovers stage outputs for unusual virtual path %s",
+		async (virtualPath) => {
+			const binary = join(root, "minsync.mjs");
+			writeFakeMinSync(binary);
+			const session = new MinSyncStageSession(binary, join(root, ".autorag", "parsed", "stage"), root);
+			const key = mirrorStageKey(virtualPath);
+			const version = JSON.stringify({
+				virtualPath,
+				sourcePath: join(source, "a.txt"),
+				parserName: "plain-text",
+				sourceMtimeNs: 1,
+				sourceSizeBytes: 6,
+			});
+			try {
+				await session.open({
+					stage: "parse",
+					source_id: "autorag-parsed-mirror",
+					fingerprint: "test",
+					output_root: join(root, ".autorag", "parsed", "files"),
+					items: [{ key, version }],
+				});
+				const outputPath = parsedOutputPath(root, virtualPath);
+				writeFileSync(outputPath, "Long path content\n");
+				await session.commit(key, version, { path: basename(outputPath) });
+				await session.finish();
+			} finally {
+				await session.close();
+			}
+			expect(readFileSync(loadMirrorIndex(root).entries[virtualPath]!.outputPath, "utf8")).toBe(
+				"Long path content\n",
+			);
+		},
+	);
+
+	it("changes execution limits without reparsing healthy outputs but retries prior parser failures", async () => {
+		class FailingParser extends VersionedParser {
+			fail = true;
+			async parse(input: ParseInput): Promise<ParseOutput> {
+				const result = await super.parse(input);
+				if (this.fail && input.virtualPath === "/docs/a.txt")
+					throw new ParseError(this.name, input.virtualPath, "timeout");
+				return result;
+			}
+		}
+		const parser = new FailingParser();
+		const options = { root, searchPaths: [source], registry: new ParserRegistry([parser]) };
+		await syncParsedMirrors({
+			...options,
+			parserOptions: {
+				fileTimeoutMs: 1000,
+				maxHeapMb: 128,
+				ocr: { enabled: false, cachePath: "/old", timeoutMs: 1000 },
+			},
+		});
+		parser.fail = false;
+		parser.attempts.length = 0;
+		await syncParsedMirrors({
+			...options,
+			parserOptions: {
+				fileTimeoutMs: 2000,
+				maxHeapMb: 256,
+				ocr: { enabled: false, cachePath: "/new", timeoutMs: 2000 },
+			},
+		});
+		expect(parser.attempts).toEqual(["/docs/a.txt"]);
+		expect(readFileSync(output("a"), "utf8")).toBe("Alpha parsed-1\n");
+		expect(readFileSync(output("b"), "utf8")).toBe("Bravo parsed-1\n");
+	});
+
 	it("rebuilds unchanged sources when the parser implementation version changes", async () => {
 		const parser = new VersionedParser();
 		const options = { root, searchPaths: [source], registry: new ParserRegistry([parser]) };

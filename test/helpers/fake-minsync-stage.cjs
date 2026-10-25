@@ -810,7 +810,7 @@ function finish(state, respond) {
 	}).filter((decision) => decision.action === "process" || decision.action === "retry" || decision.action === "delete").length;
 
 	const fingerprint = state.ledger.header.fingerprint;
-	const next = emptySnapshot(state.spec.stage, state.spec.sourceId);
+	const next = state.snapshot;
 	let committed = 0;
 	let deleted = 0;
 	let failed = 0;

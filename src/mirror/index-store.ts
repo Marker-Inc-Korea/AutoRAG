@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic } from "./atomic-write.ts";
@@ -43,7 +44,7 @@ export interface ParsedMirrorSkipEntry {
 	readonly parserName?: string;
 	/** `Parser.version` the skip was decided with. Absent on records written before version stamps. */
 	readonly parserVersion?: string;
-	/** Output-affecting parser options under which this skip was decided. */
+	/** Parser settings, including execution limits, under which this skip was decided. */
 	readonly parserFingerprint?: string;
 }
 
@@ -58,13 +59,9 @@ export function emptyMirrorIndex(): ParsedMirrorIndex {
 	return { version: 1, entries: {} };
 }
 
-/** Stable opaque stage IDs: filesystem names may contain backslashes, controls or drive-like colons. */
+/** Fixed-size opaque IDs independent of path length, encoding and platform separators. */
 export function mirrorStageKey(virtualPath: string): string {
-	return encodeURIComponent(virtualPath.slice(1));
-}
-
-export function mirrorStageVirtualPath(key: string): string {
-	return `/${decodeURIComponent(key)}`;
+	return createHash("sha256").update(virtualPath).digest("hex");
 }
 
 function readOptionalText(path: string): string | undefined {
@@ -83,11 +80,12 @@ export function loadMirrorIndex(root: string): ParsedMirrorIndex {
 	const index = isParsedMirrorIndex(parsed) ? parsed : emptyMirrorIndex();
 	const entries: Record<string, ParsedMirrorEntry> = { ...index.entries };
 	const skipped = { ...index.skipped };
+	const pathsByKey = new Map(Object.keys(entries).map((path) => [mirrorStageKey(path), path]));
 	const stageDir = join(parsedMirrorRoot(root), "stage");
 	// Read-only projection, never a resume planner. Stable source metadata travels
 	// in MinSync's opaque version so a hard host crash cannot orphan committed
 	// mirrors before index.json is published. MinSync alone validates completions.
-	const project = (key: string, version: unknown, updatedAt: string, fingerprint: unknown): void => {
+	const project = (key: string, version: unknown, updatedAt: string, fingerprint: unknown, snapshot = false): void => {
 		if (typeof version !== "string") return;
 		let source: unknown;
 		try {
@@ -95,22 +93,34 @@ export function loadMirrorIndex(root: string): ParsedMirrorIndex {
 		} catch {
 			return;
 		}
-		const virtualPath = mirrorStageVirtualPath(key);
+		if (!isRecord(source) || typeof source.virtualPath !== "string" || mirrorStageKey(source.virtualPath) !== key)
+			return;
+		const virtualPath = source.virtualPath;
 		const outputPath = parsedOutputPath(root, virtualPath);
-		const entry = isRecord(source)
-			? {
-					...source,
-					outputPath,
-					updatedAt,
-					...(typeof fingerprint === "string" ? { parserFingerprint: fingerprint } : {}),
-				}
-			: undefined;
+		const entry = {
+			...source,
+			outputPath,
+			updatedAt,
+			...(typeof fingerprint === "string" ? { parserFingerprint: fingerprint } : {}),
+		};
 		if (!isParsedMirrorEntry(entry) || entry.virtualPath !== virtualPath) return;
 		if (!existsSync(outputPath)) {
 			delete entries[virtualPath];
 			return;
 		}
-		entries[entry.virtualPath] = entry;
+		const prior = entries[virtualPath];
+		const unchanged =
+			snapshot &&
+			prior !== undefined &&
+			prior.sourcePath === entry.sourcePath &&
+			prior.sourceVersion === entry.sourceVersion &&
+			prior.sourceMtimeNs === entry.sourceMtimeNs &&
+			prior.sourceSizeBytes === entry.sourceSizeBytes &&
+			prior.parserName === entry.parserName &&
+			prior.parserVersion === entry.parserVersion &&
+			prior.parserFingerprint === entry.parserFingerprint;
+		pathsByKey.set(key, virtualPath);
+		entries[entry.virtualPath] = unchanged ? { ...entry, updatedAt: prior.updatedAt } : entry;
 		delete skipped[entry.virtualPath];
 	};
 	const snapshotPath = join(stageDir, "snapshot.json");
@@ -125,7 +135,7 @@ export function loadMirrorIndex(root: string): ParsedMirrorIndex {
 			typeof snapshot.updated_at === "string"
 		) {
 			for (const [key, item] of Object.entries(snapshot.items))
-				if (isRecord(item)) project(key, item.version, snapshot.updated_at, item.fingerprint);
+				if (isRecord(item)) project(key, item.version, snapshot.updated_at, item.fingerprint, true);
 		}
 	}
 	const journalPath = join(stageDir, "progress.jsonl");
@@ -154,8 +164,11 @@ export function loadMirrorIndex(root: string): ParsedMirrorIndex {
 			for (const item of items) {
 				if (!isRecord(item) || typeof item.item !== "string") continue;
 				if (item.outcome === "committed") project(item.item, item.version, header.created_at, header.fingerprint);
-				else if (item.outcome === "deleted" || item.outcome === "failed")
-					delete entries[mirrorStageVirtualPath(item.item)];
+				else if (item.outcome === "deleted" || item.outcome === "failed") {
+					const path = pathsByKey.get(item.item);
+					if (path !== undefined && (item.outcome === "deleted" || !existsSync(parsedOutputPath(root, path))))
+						delete entries[path];
+				}
 			}
 		}
 	}

@@ -396,9 +396,21 @@ under `.autorag/parsed/stage/`. AutoRAG owns parsing and atomic Markdown writes
 under `.autorag/parsed/files/`. Completion is recorded only after the final
 Markdown file exists and MinSync has measured and verified it.
 
-- Unchanged, verified mirrors are not read or parsed again. A source identity
-  includes nanosecond modification/change times, size, device and inode; parser
-  name/version and parser options also invalidate the relevant work.
+- Unchanged, verified mirrors are not read or parsed again. Their document-level
+  timestamps stay stable, so warm refreshes do not copy the entire corpus into
+  the retrieval workspace again. The durable source revision uses nanosecond
+  mtime and size; chmod, xattr, inode and device changes alone do not reparse it.
+  A stronger stat identity is checked before committing within a run. As with
+  other stat-based scans, a content edit preserving both source mtime and size
+  between runs is not detected.
+- Parser name/version and output-affecting options invalidate completed work.
+  Execution deadlines, worker heap limits and OCR cache location only invalidate
+  recorded failure skips, not healthy outputs. Language and OCR enablement changes
+  still invalidate output. Stage keys are fixed-length SHA-256 IDs, independent
+  of the length or encoding of the virtual source path.
+- A source changed during parsing is not committed. Its last good mirror stays
+  available, remains reported as stale, and is retried on the next refresh,
+  including when the interrupted run's metadata must be recovered from MinSync.
 - Missing or damaged mirrors are rebuilt. MinSync's fast verification hashes an
   output when its modification time changes; it does not detect deliberate edits
   that preserve both size and modification time.

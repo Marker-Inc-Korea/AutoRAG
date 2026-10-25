@@ -25,7 +25,6 @@ import { writeFileAtomic } from "./atomic-write.ts";
 import {
 	loadMirrorIndex,
 	mirrorStageKey,
-	mirrorStageVirtualPath,
 	type ParsedMirrorEntry,
 	type ParsedMirrorIndex,
 	type ParsedMirrorSkipEntry,
@@ -183,6 +182,7 @@ interface CurrentEntry {
 	readonly sizeBytes: number;
 	readonly mtimeNs: number;
 	readonly sourceVersion: string;
+	readonly statIdentity: string;
 }
 
 const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";
@@ -306,11 +306,36 @@ function parseFingerprint(options: ParsedMirrorSyncOptions): string {
 		return value;
 	};
 	return createHash("sha256")
-		.update(JSON.stringify(stable({ format: 1, parser: options.parserOptions ?? {} })))
+		.update(JSON.stringify(stable({ format: 1, parser: outputParserOptions(options.parserOptions) })))
 		.digest("hex");
 }
 
-function sourceVersion(info: { size: bigint; mtimeNs: bigint; ctimeNs: bigint; ino: bigint; dev: bigint }): string {
+function outputParserOptions(options: DefaultParserRegistryOptions = {}): unknown {
+	const { fileTimeoutMs: _timeout, maxHeapMb: _heap, ocr, ...parser } = options;
+	return { ...parser, ...(ocr === undefined ? {} : { ocr: { enabled: ocr.enabled } }) };
+}
+
+function retryFingerprint(options: ParsedMirrorSyncOptions, fingerprint: string): string {
+	const parser = options.parserOptions;
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				fingerprint,
+				fileTimeoutMs: parser?.fileTimeoutMs,
+				maxHeapMb: parser?.maxHeapMb,
+				ocrTimeoutMs: parser?.ocr?.timeoutMs,
+				ocrCachePath: parser?.ocr?.cachePath,
+			}),
+		)
+		.digest("hex");
+}
+
+function sourceVersion(info: { size: bigint; mtimeNs: bigint }): string {
+	return `${info.size}:${info.mtimeNs}`;
+}
+
+/** Strong observation within this run; remounts and metadata edits are not content revisions. */
+function statIdentity(info: BigIntStats): string {
 	return [info.size, info.mtimeNs, info.ctimeNs, info.ino, info.dev].join(":");
 }
 
@@ -341,6 +366,7 @@ async function syncWithRegistry(
 	const transientRetries = Math.max(0, options.transientRetries ?? DEFAULT_TRANSIENT_RETRIES);
 	const transientBackoffMs = options.transientRetryBackoffMs ?? DEFAULT_TRANSIENT_BACKOFF_MS;
 	const fingerprint = parseFingerprint(options);
+	const failureFingerprint = retryFingerprint(options, fingerprint);
 	const retryPass = options.force === true || options.retrySkipped === true;
 	const maxSourceBytes = options.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES;
 	const versions = new Map<string, string>();
@@ -375,7 +401,7 @@ async function syncWithRegistry(
 			const skip = previous.skipped?.[entry.virtualPath];
 			if (
 				skip !== undefined &&
-				skip.parserFingerprint === fingerprint &&
+				skip.parserFingerprint === failureFingerprint &&
 				isSkipHonored(skip, entry, parser, retryPass)
 			) {
 				omitted.set(entry.virtualPath, {
@@ -399,6 +425,12 @@ async function syncWithRegistry(
 		}
 	}
 	const currentPaths = new Set(current.map((entry) => entry.virtualPath));
+	const pathsByKey = new Map(
+		[...currentPaths, ...Object.keys(previous.entries), ...Object.keys(previous.skipped ?? {})].map((path) => [
+			mirrorStageKey(path),
+			path,
+		]),
+	);
 	const staleCandidates = new Set(
 		Object.keys(previous.entries).filter(
 			(path) =>
@@ -449,7 +481,7 @@ async function syncWithRegistry(
 			updatedAt: new Date().toISOString(),
 			...(parser === undefined
 				? {}
-				: { parserName: parser.name, parserVersion: parser.version, parserFingerprint: fingerprint }),
+				: { parserName: parser.name, parserVersion: parser.version, parserFingerprint: failureFingerprint }),
 		};
 	};
 	const skipFile = async (
@@ -480,12 +512,13 @@ async function syncWithRegistry(
 		const pending = new Set(
 			plan.decisions
 				.filter((decision) => decision.action === "process" || decision.action === "retry")
-				.map((decision) => mirrorStageVirtualPath(decision.key)),
+				.map((decision) => decision.key),
 		);
 		for (const decision of plan.decisions) {
 			if (decision.action !== "delete") continue;
-			const path = mirrorStageVirtualPath(decision.key);
+			const path = pathsByKey.get(decision.key);
 			await session.delete(decision.key);
+			if (path === undefined) continue;
 			if (previous.entries[path]) deleted += 1;
 			delete nextEntries[path];
 			delete nextSkipped[path];
@@ -527,7 +560,7 @@ async function syncWithRegistry(
 			}
 			const parser = registry.getForVirtualPath(entry.virtualPath)!;
 			const outputPath = parsedOutputPath(options.root, entry.virtualPath);
-			if (pending.has(entry.virtualPath)) {
+			if (pending.has(mirrorStageKey(entry.virtualPath))) {
 				let bytes: Awaited<ReturnType<typeof readFile>>;
 				try {
 					bytes = await withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs);
@@ -589,12 +622,20 @@ async function syncWithRegistry(
 					await skipFile(entry, sourceReadFailure(error));
 					continue;
 				}
-				if (sourceVersion(info) !== entry.sourceVersion) {
-					await skipFile(entry, {
+				if (statIdentity(info) !== entry.statIdentity) {
+					skipped += 1;
+					diagnostics.push({
 						code: "source-changed",
 						severity: "warning",
-						message: "The source changed while parsing; it will be retried on the next refresh.",
+						message:
+							"The source changed while parsing; its last good mirror was kept and it will be retried on the next refresh.",
+						source: entry.virtualPath,
 					});
+					await session.fail(
+						mirrorStageKey(entry.virtualPath),
+						versions.get(entry.virtualPath)!,
+						"source-changed",
+					);
 					continue;
 				}
 				const markdown = normalizeMarkdown(parsed.markdown);
@@ -635,7 +676,7 @@ async function syncWithRegistry(
 				parserFingerprint: fingerprint,
 				sourceMtimeNs: entry.mtimeNs,
 				sourceSizeBytes: entry.sizeBytes,
-				updatedAt: pending.has(entry.virtualPath)
+				updatedAt: pending.has(mirrorStageKey(entry.virtualPath))
 					? new Date().toISOString()
 					: (previousEntry?.updatedAt ?? new Date().toISOString()),
 			};
@@ -980,6 +1021,7 @@ async function collectFiles(state: WalkState, directory: string, depth: number):
 				sizeBytes: Number(fileStat.size),
 				mtimeNs: Number(fileStat.mtimeNs),
 				sourceVersion: sourceVersion(fileStat),
+				statIdentity: statIdentity(fileStat),
 			});
 		}
 	} catch (error) {
