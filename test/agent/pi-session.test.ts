@@ -22,6 +22,7 @@ import {
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
+	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
@@ -714,6 +715,8 @@ describe("AutoRAG pi coding-agent host", () => {
 			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
 			[datasourceQuestionId("kakao")]: { answer: 0.9 },
+			// The gate also asks about the public web; this run must not search it.
+			[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
 		});
 		const tui = await tuiAgent(
 			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris.", seen)],
@@ -1409,6 +1412,8 @@ describe("AutoRAG pi coding-agent host", () => {
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 				[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
 				[datasourceQuestionId("kakao")]: { answer: 0.9 },
+				// The gate also asks about the public web; these runs must not search it.
+				[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
 			});
 		}
 

@@ -219,15 +219,20 @@ What happens next:
 | `organize` | Skips retrieval, decomposition, the fast answer, and verification. One turn with `bash`/`read`/`edit`/`write` plus the converter (`convert_files`, `list_file_conversions`), the duplicate scan, and file-name discovery; the datasource, retrieval, and web tools are withheld. The prompt requires a plan first, no overwrites, no permanent deletion (trash only), a listing check afterwards, and a final report of every change as old path → new path. No results; the run is not recorded in retrieval memory. |
 | `extra` | Skips retrieval, decomposition, the fast answer, and verification. One turn with **every** tool the session has and no tool ban: the prompt has the model answer from its own knowledge when that is reliable, look facts up with the retrieval/datasource tools or `web_search`/`web_fetch` when they are not, and otherwise do the work. The final message is either the answer (the same language and citation rules the other answer prompts use) or a short report of what was done. Cited retrieved evidence becomes results and feeds retrieval memory exactly like a local run (`recordStructuredResultsSession` without `isolateMemory`, plus the evidence judgment); an answer or report that cites nothing stays out of memory. |
 | `config` | Skips retrieval, decomposition, the fast answer, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new as its final message (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
-| `local`  | Decompose (if needed) and datasource check, in parallel → Jikji + MinSync + every selected datasource, per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
+| `local`  | Decompose (if needed) and datasource check (configured datasources **and** the public web), in parallel → Jikji + MinSync + every selected datasource + one web search per query (when the web was selected), per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 
 The `extra` turn keeps the session's tool set untouched. `organize` still swaps
 in the file tools for its one turn and restores the previous set afterwards.
 
-Web search is not part of routing. When verification runs after the fast answer,
-the agent decides on its own whether to call `web_search` / `web_fetch` (when web
-tools are enabled) — for example when local evidence is missing, thin, or
-possibly outdated.
+The public web is one more source the `local` branch can search, chosen by Jev
+in the datasource check (see below) whenever the web tools are enabled. When it
+is selected, one web search runs per search query in parallel with Jikji and
+MinSync, and its hits join the same reranked pool under their URL as the source.
+The fast phase may also call `web_search` itself (and `web_fetch`, to read a
+promising page) when the question turns on a public fact that may be recent or
+that changed since the model's training and the baseline does not settle it; no
+other tool is allowed in that phase. Verification keeps its own web nudge, for
+when local evidence turns out missing, thin, or possibly outdated.
 
 After a `config` turn that changed the config file, the host re-resolves it the way the next launch will (JSON, schema, and that the model id exists in the pi catalog or a declared endpoint). If it no longer resolves, the pre-turn file is restored, a warning is appended to the report, and a `self-config-rolled-back` diagnostic is recorded, so a bad model id can never leave the agent unable to start. A missing credential is not a rollback reason; that is reported by `autorag health` as `auth_missing`. An unchanged file is never touched.
 
@@ -235,23 +240,49 @@ After a `config` turn that changed the config file, the host re-resolves it the 
 
 On the `local` branch, Jev answers one more batched call: one `noul` per
 registered datasource (configured, with retrieval methods), "Should the `<id>`
-datasource be searched to answer the user question?". The registered set comes
-from the config: `autorag search` reads it on every call, while `autorag tui`
-reads it at startup, so restart it after adding,
-disabling, or re-describing a datasource. Every datasource at 0.5 or
+datasource be searched to answer the user question?". When the web tools are
+enabled, the public web is one more candidate in that same batch, under the
+reserved id `web`, asked in the same `noul` shape but worded for what the public
+internet holds (current events, recent releases, prices, exchange rates, version
+numbers, public facts beyond the model's knowledge or likely to have changed
+since its training — never the user's private records). The gate runs even when
+no datasource is configured, so a web-only run still asks it. The registered set
+comes from the config: `autorag search` reads it on every call, while `autorag
+tui` reads it at startup, so restart it after adding,
+disabling, or re-describing a datasource. Every candidate at 0.5 or
 above is searched with every search query (the original or the decomposed
-ones), and its chunks join Jikji and MinSync in the pool the reranker orders,
-before the fast answer. The rest are not searched before the fast answer (the
-verification phase can still call `search_datasource_<id>`). A
-`datasources-selected` diagnostic lists the selected and skipped datasources
-with their probabilities. If the check fails (missing credential, unreachable
-backend), no datasource is searched before the fast answer
+ones), and its hits join Jikji and MinSync in the pool the reranker orders,
+before the fast answer; the skipped ones are not searched before the fast answer
+(the verification phase can still call `search_datasource_<id>`). A
+`datasources-selected` diagnostic lists the selected and skipped candidates —
+including `web (p=…)` — with their probabilities. If the check fails (missing
+credential, unreachable
+backend), neither a datasource nor the web is searched before the fast answer
 (`datasource-selection-fallback`), which is the behavior without Jev.
+
+Datasource ids come from the config's `datasources` keys, which are only
+required to be non-empty, so an operator can name one `web`. When that happens
+the web candidate is withheld and a `web-datasource-id-taken` diagnostic says
+so: the question id `datasource:web` then names the configured datasource and
+that alone, which is judged as usual, and the run searches no web before the
+fast answer. (With web tools disabled there is no web candidate at all — no
+question, and web-attributed past results are dropped from the state.)
+
+A selected web candidate runs one web search per search query in parallel with
+the other sources, on the same provider chain, ordering, and credentials as the
+`web_search` tool. Its hits enter the merged pool with the URL as their source
+and title plus snippet as their content, are reranked against the original
+question with everything else, and are registered in the evidence ledger under
+the `web_search` method, so the fast answer cites them as `[eN]` and they become
+results whose source is the URL. A failed web search contributes no evidence and
+a `web-search-failed` diagnostic naming the query and the reason; the run
+continues without it.
 
 The state Jev judges has three parts, followed by the question:
 
-1. **Datasource catalog**: `id (type): description` for every datasource.
-   Write each `description` in the config to say what the datasource holds
+1. **Datasource catalog**: `id (type): description` for every datasource, plus
+   the public web as `web (web): …` when its tools are enabled. Write each
+   `description` in the config to say what the datasource holds
    (channels, rooms, people, topics, time range). The state tells Jev that
    every description is a **short, non-exhaustive summary**: a datasource can
    hold other topics, people, and conversations that its description does not
@@ -269,10 +300,11 @@ The state Jev judges has three parts, followed by the question:
    These titles are model-written text about your private content and the
    state goes to the Jev backend (OpenRouter by default), so a past result is
    shown only when it is safe for the **current** run: a result is shown only
-   when every piece of its evidence comes from a datasource configured for this
-   run, a configured search path, or the web. Evidence with no recognizable
-   origin drops the whole result; a search left with no result is not shown at
-   all.
+   when every place its evidence came from is a candidate this run searches —
+   a datasource configured for this run, a configured search path (`local
+   files`), or the web when the web candidate is offered. Evidence with no
+   recognizable origin drops the whole result, a `[web]` hint is dropped when
+   web tools are off, and a search left with no result is not shown at all.
 3. **User question**.
 
 The question wording was checked on live OpenRouter Jev (`typesafe/jev-1.13`)
@@ -289,6 +321,15 @@ similar past question sharpens the choice: for "dependabot PR 알림", Discord,
 Spotlight, and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
 showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉님
 랄프톤 공지" rose from 0.91 to 0.98.
+
+The web candidate was checked the same way on live Jev with the maintainer's 11
+real datasources (web tools enabled). A recent public fact ("What is the latest
+stable Node.js LTS version right now?") scored the web at 0.95 with every
+datasource at 0.24 or below, and a question about the user's own records ("내
+릴리즈 플랜 노트에 Q3 런치 날짜가 뭐라고 적혀 있어?") scored it 0.05 and selected
+KakaoTalk (0.61), Slack (0.57), Spotlight (0.88), and NomaDamas (0.58) instead
+(`bun src/cli/index.ts search "<q>" --json --debug`, plus
+`test/live-e2e/jev-web-datasource.test.ts` for the prefetch end to end).
 
 ### Follow-up check after the fast answer
 

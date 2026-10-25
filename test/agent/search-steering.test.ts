@@ -18,6 +18,7 @@ import {
 	datasourceQuestionId,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
+	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
@@ -161,6 +162,8 @@ function jevLocal(followUp: number, datasources: readonly string[] = []): JevBac
 		},
 		[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 		[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
+		// The gate also asks about the public web; these runs must not search it.
+		[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
 		...Object.fromEntries(datasources.map((id) => [datasourceQuestionId(id), { answer: 0.9 }])),
 	});
 }
