@@ -21,7 +21,9 @@ import {
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
 } from "../../src/agent/query-routing.ts";
+import { SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "../../src/agent/search-all-tool.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
+import { SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "../../src/agent/search-minsync-tool.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 
@@ -158,11 +160,25 @@ describe("Jev config branch: the agent configures itself", () => {
 		expect(seen.prompts[0]).toContain(SKILL_MARKER);
 		expect(seen.prompts[0]).toContain("Second paragraph of the skill.");
 		expect(seen.prompts[0]).not.toContain("description: test");
+		// The skill arrives as a `<skill …>` invocation with a path-opaque location:
+		// the turn prompt never names the file it was read from.
+		expect(seen.prompts[0]).toContain('<skill name="autorag-setup" location="autorag-skill://autorag-setup">');
+		expect(seen.prompts[0]).not.toContain(skillPath);
 		expect(seen.prompts[0]).toContain(configPath);
 		expect(seen.prompts[0]).toContain("change the default model to new/model");
-		// The emit tools are gone: no tool the model sees is an emit tool.
-		expect(seen.toolNames[0]?.some((name) => name.includes("emit"))).toBe(false);
-		expect(seen.toolNames[0]).toEqual(expect.arrayContaining(["bash", "read", "edit", "write"]));
+		expect(seen.prompts[0]).toMatch(/do NOT call the retrieval, datasource, or web search tools/u);
+		// No route withholds tools: the file tools the turn needs and the search
+		// tools it must not use are all still visible to the model.
+		expect(seen.toolNames[0]).toEqual(
+			expect.arrayContaining([
+				"bash",
+				"read",
+				"edit",
+				"write",
+				SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+				SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+			]),
+		);
 		expect(minSync.queries).toEqual([]);
 		expect(events.some((event) => event.type === "preliminary")).toBe(false);
 		const complete = events.find((event) => event.type === "complete");
@@ -363,5 +379,53 @@ describe("Jev config branch: the agent configures itself", () => {
 				(diagnostic) => diagnostic.code === "self-config-unavailable" && diagnostic.severity === "warning",
 			),
 		).toBe(true);
+	});
+});
+
+describe("no Jev route changes the active tool set", () => {
+	/** A TUI-hosted agent on the faux model: the bound session outlives the run, so a swap would show here. */
+	async function hostedConfigAgent(...responses: FauxResponseStep[]) {
+		const registration = registerFauxProvider({ api: `faux-hosted-${randomUUID()}`, models: [{ id: "faux-model" }] });
+		registration.setResponses(responses);
+		registrations.push(registration);
+		const agent = agentWith({
+			model: registration.getModel(),
+			apiKey: "test-key",
+			piSessionDir: join(root, "sessions"),
+			jev: { backend: jevRouting("config") },
+			selfConfig: { configPath, skillPath },
+		});
+		const hosted = await agent.createPiInteractiveRuntime();
+		return { agent, session: hosted.runtime.session, dispose: () => hosted.dispose() };
+	}
+
+	it("leaves an interactive session's tools exactly as they were across a config turn", async () => {
+		const seen: Seen = { prompts: [], toolNames: [] };
+		const hosted = await hostedConfigAgent(capture(configReport("- Nothing to change."), seen));
+		try {
+			const before = hosted.session.getActiveToolNames();
+			expect(before).toEqual(
+				expect.arrayContaining([
+					"bash",
+					"write",
+					"manage_automations",
+					SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+					SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+				]),
+			);
+
+			const response = await hosted.agent.searchDocuments("how is my model configured?");
+
+			expect(
+				response.diagnostics?.some(
+					(diagnostic) => diagnostic.code === "query-routed" && diagnostic.message.includes("config"),
+				),
+			).toBe(true);
+			// After the run, and during it: the same set the session started with.
+			expect(hosted.session.getActiveToolNames()).toEqual(before);
+			expect([...(seen.toolNames[0] ?? [])].sort()).toEqual([...before].sort());
+		} finally {
+			await hosted.dispose();
+		}
 	});
 });

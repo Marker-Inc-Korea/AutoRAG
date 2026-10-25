@@ -15,6 +15,7 @@ import { type JevBackend, MockBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
+import { packagedSkillLocation } from "../../src/agent/packaged-skill.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
@@ -234,18 +235,110 @@ describe.each(["organize", "extra"] as const)(
 );
 
 describe("Jev organize branch prompt", () => {
-	it("carries the file-organization rules and keeps conversion tools visible", async () => {
+	it("carries the organize skill invocation, the tool scope, and the file-organization rules", async () => {
 		const seen: Seen = { prompts: [], toolNames: [] };
 		const model = fauxModel(capture(report("- Done."), seen));
 		const agent = agentWith({ model, jev: { backend: jevRouting("organize") } });
 
 		await agent.searchDocuments("convert every docx in Downloads to pdf");
 
-		expect(seen.prompts[0]).toMatch(/organiz/iu);
-		expect(seen.prompts[0]).toMatch(/old path → new path/u);
-		expect(seen.prompts[0]).toMatch(/trash/iu);
-		expect(seen.toolNames[0]).toEqual(expect.arrayContaining(["convert_files", "list_file_conversions"]));
-		expect(seen.toolNames[0]).not.toContain("search_all_documents");
+		const prompt = seen.prompts[0] ?? "";
+		// The rules arrive as a loaded skill with a path-opaque location: the turn
+		// prompt never names the file the skill came from.
+		expect(prompt).toContain(`<skill name="organize" location="${packagedSkillLocation("organize")}">`);
+		expect(prompt).toContain("</skill>");
+		expect(prompt).toMatch(/old path → new path/u);
+		expect(prompt).toMatch(/trash/iu);
+		expect(prompt).not.toContain("SKILL.md");
+		expect(prompt).not.toContain("internal-skills");
+		// The prompt, not the tool list, scopes this turn: it names the tools to
+		// use and the retrieval/web tools not to call.
+		expect(prompt).toMatch(/work with bash/u);
+		expect(prompt).toContain("convert_files");
+		expect(prompt).toMatch(/do NOT call the retrieval, datasource, or web tools/u);
+		expect(prompt).toContain(SEARCH_ALL_DOCUMENTS_TOOL_NAME);
+		expect(prompt).toContain(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME);
+		// Nothing is withheld any more: the converter and the search tools are both
+		// visible to the model on an organize turn.
+		expect(seen.toolNames[0]).toEqual(
+			expect.arrayContaining([
+				"convert_files",
+				"list_file_conversions",
+				SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+				SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+			]),
+		);
+	});
+
+	it("falls back to local search with a diagnostic when the organize skill cannot be loaded", async () => {
+		const decompositionModel = fauxModel(
+			fauxAssistantMessage('["move the PDFs into a pdf folder"]', { stopReason: "stop" }),
+		);
+		const model = fauxModel(
+			fauxAssistantMessage("Fast.", { stopReason: "stop" }),
+			fauxAssistantMessage("Verified.", { stopReason: "stop" }),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("organize") },
+			queryDecomposition: { model: decompositionModel },
+			organizeSkillPath: join(root, "missing", "SKILL.md"),
+		});
+
+		const response = await agent.searchDocuments("move the PDFs in Downloads into a pdf folder");
+
+		expect(response.answer).toBe("Verified.");
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "organize-skill-unavailable" && diagnostic.severity === "warning",
+			),
+		).toBe(true);
+	});
+});
+
+describe("no Jev route changes the active tool set", () => {
+	/** A TUI-hosted agent on the faux model: the bound session outlives the run, so a swap would show here. */
+	async function hostedAgent(route: QueryRoute, ...responses: FauxResponseStep[]) {
+		const registration = registerFauxProvider({ api: `faux-hosted-${randomUUID()}`, models: [{ id: "faux-model" }] });
+		registration.setResponses(responses);
+		registrations.push(registration);
+		const agent = agentWith({
+			model: registration.getModel(),
+			apiKey: "test-key",
+			piSessionDir: join(root, "sessions"),
+			jev: { backend: jevRouting(route) },
+		});
+		const hosted = await agent.createPiInteractiveRuntime();
+		return { agent, session: hosted.runtime.session, dispose: () => hosted.dispose() };
+	}
+
+	it("leaves an interactive session's tools exactly as they were across an organize turn", async () => {
+		const seen: Seen = { prompts: [], toolNames: [] };
+		const hosted = await hostedAgent("organize", capture(report("- Done."), seen));
+		try {
+			const before = hosted.session.getActiveToolNames();
+			expect(before).toEqual(
+				expect.arrayContaining([
+					"bash",
+					"convert_files",
+					SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+					SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+				]),
+			);
+
+			const response = await hosted.agent.searchDocuments("move the PDFs in Downloads into a pdf folder");
+
+			expect(
+				response.diagnostics?.some(
+					(diagnostic) => diagnostic.code === "query-routed" && diagnostic.message.includes("organize"),
+				),
+			).toBe(true);
+			// After the run, and during it: the same set the session started with.
+			expect(hosted.session.getActiveToolNames()).toEqual(before);
+			expect([...(seen.toolNames[0] ?? [])].sort()).toEqual([...before].sort());
+		} finally {
+			await hosted.dispose();
+		}
 	});
 });
 

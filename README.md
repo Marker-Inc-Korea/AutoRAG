@@ -603,7 +603,10 @@ and `skills/autorag-setup` only when the agent should also drive the
 model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
 agents read their own skill directories; copy the same setup folder there and
 reload the agent session so it picks up the MCP registration instructions.
-Do not copy or retain the removed `autorag-lite-search` skill.
+Do not copy or retain the removed `autorag-lite-search` skill. The package also
+ships `internal-skills/`, which holds the librarian's own turn rules (for
+example `internal-skills/organize/`) — those are never parent-agent skills, so
+do not copy them into another agent.
 
 ### Quick Agent Workflow
 

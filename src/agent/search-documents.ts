@@ -76,6 +76,7 @@ export type SearchDocumentDiagnosticCode =
 	| "memory-search-fallback"
 	| "self-config-unavailable"
 	| "self-config-rolled-back"
+	| "organize-skill-unavailable"
 	| "embedding-unavailable";
 
 export interface SearchDocumentDiagnostic {

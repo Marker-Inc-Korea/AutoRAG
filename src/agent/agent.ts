@@ -166,6 +166,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { loadPackagedSkill, ORGANIZE_SKILL_NAME, type PackagedAgentSkill, SETUP_SKILL_NAME } from "./packaged-skill.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
 	type AutoRAGInputDisposition,
@@ -218,13 +219,8 @@ import {
 	type SingleDatasourceToolSpec,
 	singleDatasourceToolName,
 } from "./search-single-datasource-tool.ts";
-import {
-	buildSelfConfigPrompt,
-	loadSetupSkill,
-	rollbackIfBroken,
-	type SelfConfigOptions,
-	snapshotConfigFile,
-} from "./self-config.ts";
+import { buildSelfConfigPrompt, rollbackIfBroken, type SelfConfigOptions, snapshotConfigFile } from "./self-config.ts";
+import { formatSkillInvocation } from "./skill-invocation.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import { ToolBurstGuard, type ToolBurstGuardOptions } from "./tool-burst-guard.ts";
 import { createUserRequestPersistence, UserRequestLog } from "./user-requests.ts";
@@ -684,6 +680,12 @@ export interface AutoRAGAgentOptions {
 	 */
 	selfConfig?: SelfConfigOptions;
 	/**
+	 * Override for the packaged `organize` skill file that the Jev `organize`
+	 * branch loads into its turn; defaults to the packaged skill. Present for a
+	 * host that ships its own organize rules, and for tests.
+	 */
+	organizeSkillPath?: string;
+	/**
 	 * Question decomposition used by the Jev query pipeline. `model` (with its
 	 * `apiKey`) is the LLM that splits one question into at most five search
 	 * queries; omitted, the search session's own model decomposes. The CLI
@@ -950,6 +952,8 @@ export class AutoRAGAgent {
 	private readonly permissionGate: ExtensionFactory;
 	/** Self-configuration, enabled only with Jev on a local session. */
 	private readonly selfConfig: SelfConfigOptions | undefined;
+	/** Override for the packaged organize skill the `organize` branch loads; undefined keeps the packaged one. */
+	private readonly organizeSkillPath: string | undefined;
 	private readonly queryDecompositionModel: DecompositionModel | undefined;
 	/** Web search options for the agent's `web_search` / `web_fetch` tools; undefined when web tools are off. */
 	private readonly webSearchOptions: WebSearchToolOptions | undefined;
@@ -1134,6 +1138,7 @@ export class AutoRAGAgent {
 				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
 		this.selfConfig = this.jevJudge === undefined ? undefined : options.selfConfig;
+		this.organizeSkillPath = options.organizeSkillPath;
 		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
@@ -2221,99 +2226,82 @@ export class AutoRAGAgent {
 				if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
 					// Self-configuration: no retrieval and no fast answer. The model
 					// gets the full setup skill and edits the config itself, then
-					// reports what it changed as its final message.
+					// reports what it changed as its final message. No route changes
+					// the active tools, so the loaded skill and the turn prompt scope
+					// the work.
 					isolatedRun = true;
 					// pi's bash tool refuses to run from a missing cwd, and a freshly
 					// initialised config has not created its workspace yet.
 					mkdirSync(this.workspaceProjectRoot, { recursive: true });
-					const previousTools = sessionAgent?.getActiveToolNames();
 					setThinking(this.finalThinkingLevel);
-					if (sessionAgent !== undefined) {
-						sessionAgent.setActiveToolsByName([...PI_BUILTIN_TOOL_NAMES, MANAGE_AUTOMATIONS_TOOL_NAME]);
-					} else activeSession.agent.state.tools = [];
 					const configBefore = snapshotConfigFile(this.selfConfig.configPath);
-					try {
-						await activeSession.prompt(
-							buildSelfConfigPrompt({
-								query: trimmedQuery,
-								configPath: this.selfConfig.configPath,
-								agentDir: this.piAgentDir ?? getAgentDir(),
-								skill: plan.selfConfigSkill,
-								automations: true,
-							}),
-						);
-						const report = finalAnswerText(transcript());
-						if (report !== undefined) captured = await this.deriveAnswer(report);
-						const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
-						if (rolledBack !== undefined) {
-							this.routingDiagnostics.push({
-								code: "self-config-rolled-back",
-								severity: "warning",
-								message: `The edited config did not validate, so the previous config was restored. ${rolledBack}`,
-								source: "self-config",
-							});
-							if (captured !== undefined) {
-								captured = {
-									...captured,
-									answer: `${captured.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
-								};
-							}
-						}
-					} finally {
-						// A bound interactive session outlives this run: give it its search tools back.
-						if (sessionAgent !== undefined && previousTools !== undefined) {
-							sessionAgent.setActiveToolsByName(previousTools);
+					await activeSession.prompt(
+						buildSelfConfigPrompt({
+							query: trimmedQuery,
+							configPath: this.selfConfig.configPath,
+							agentDir: this.piAgentDir ?? getAgentDir(),
+							skill: plan.selfConfigSkill,
+							automations: true,
+						}),
+					);
+					const report = finalAnswerText(transcript());
+					if (report !== undefined) captured = await this.deriveAnswer(report);
+					const rolledBack = await rollbackIfBroken(this.selfConfig, configBefore);
+					if (rolledBack !== undefined) {
+						this.routingDiagnostics.push({
+							code: "self-config-rolled-back",
+							severity: "warning",
+							message: `The edited config did not validate, so the previous config was restored. ${rolledBack}`,
+							source: "self-config",
+						});
+						if (captured !== undefined) {
+							captured = {
+								...captured,
+								answer: `${captured.answer}\n\nWarning: the edited config did not validate, so the previous config was restored (nothing was changed). Problem: ${rolledBack}`,
+							};
 						}
 					}
 					return;
 				}
-				if (plan.route === "organize" || plan.route === "extra") {
-					// Acting on files, or on any other task that needs no search first:
-					// no retrieval, no fast answer, no verification. One tool-capable
-					// turn does the work and its plain final message answers or reports.
-					mkdirSync(this.workspaceProjectRoot, { recursive: true });
+				if (plan.route === "organize" && plan.organizeSkill !== undefined) {
+					// Acting on files: no retrieval, no fast answer, no verification.
+					// The loaded organize skill carries the rules and the turn prompt
+					// names the tools the task uses; both replace the tool swap this
+					// branch used to make.
+					isolatedRun = true;
 					setThinking(this.finalThinkingLevel);
-					// Organizing needs the file tools and the converter, not the search
-					// tools. An extra turn keeps the session's whole tool set, so it never
-					// snapshots or restores one: restoring a snapshot read before the turn
-					// would drop a tool that registered meanwhile (an MCP server connecting).
-					const previousTools = plan.route === "organize" ? sessionAgent?.getActiveToolNames() : undefined;
-					if (plan.route === "organize" && sessionAgent !== undefined) {
-						sessionAgent.setActiveToolsByName(this.organizeToolNames());
-					}
-					try {
-						const label = plan.route === "organize" ? "Organizing files and folders" : "Carrying out the request";
-						await this.searchProgress.step(plan.route, label, () =>
-							activeSession.prompt(
-								plan.route === "organize"
-									? this.buildOrganizePrompt(trimmedQuery)
-									: this.buildExtraPrompt(trimmedQuery),
-							),
-						);
-						// A steer typed after the turn's last model request is still owed an answer.
-						while (
-							!this.interactive.userAborted &&
-							!planAbort.signal.aborted &&
-							this.interactive.queuedSteers.length > 0
-						) {
-							await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
-						}
-						steering.acceptingSteers = false;
-						if (this.interactive.userAborted) return;
-						const reportText = finalAnswerText(transcript());
-						if (reportText !== undefined) captured = await this.deriveAnswer(reportText);
-					} finally {
-						// A bound interactive session outlives this run: give it its search tools back.
-						if (sessionAgent !== undefined && previousTools !== undefined) {
-							sessionAgent.setActiveToolsByName(previousTools);
-						}
-					}
-					// An `organize` report is never retrieved evidence. An `extra` turn
-					// that looked facts up with a search, datasource, or web tool and
-					// cited them did retrieve evidence, so it feeds retrieval memory
-					// exactly like a local run; a pure-knowledge answer or an action
-					// report that cites nothing stays isolated.
-					isolatedRun = plan.route === "organize" || captured === undefined || captured.mapping.length === 0;
+					const organizeReport = await this.runActionTurn(
+						activeSession,
+						planAbort.signal,
+						{
+							id: "organize",
+							label: "Organizing files and folders",
+							prompt: this.buildOrganizePrompt(trimmedQuery, plan.organizeSkill),
+						},
+						transcript,
+					);
+					if (organizeReport !== undefined) captured = await this.deriveAnswer(organizeReport);
+					return;
+				}
+				if (plan.route === "extra") {
+					// Any other request that needs no search first: no retrieval, no
+					// fast answer, no verification. One tool-capable turn with every
+					// tool the session has answers or does the work, and its plain
+					// final message is the answer or the report.
+					isolatedRun = true;
+					setThinking(this.finalThinkingLevel);
+					const extraReport = await this.runActionTurn(
+						activeSession,
+						planAbort.signal,
+						{ id: "extra", label: "Carrying out the request", prompt: this.buildExtraPrompt(trimmedQuery) },
+						transcript,
+					);
+					if (extraReport !== undefined) captured = await this.deriveAnswer(extraReport);
+					// An `extra` turn that looked facts up with a search, datasource, or
+					// web tool and cited them did retrieve evidence, so it feeds
+					// retrieval memory exactly like a local run; a pure-knowledge answer
+					// or an action report that cites nothing stays isolated.
+					isolatedRun = captured === undefined || captured.mapping.length === 0;
 					return;
 				}
 				const steered = (): boolean => this.interactive.steers.length > 0;
@@ -2772,7 +2760,8 @@ export class AutoRAGAgent {
 		readonly datasources: readonly string[];
 		/** True when Jev selected the public web, prefetched with the datasources. */
 		readonly web: boolean;
-		readonly selfConfigSkill?: string;
+		readonly selfConfigSkill?: PackagedAgentSkill;
+		readonly organizeSkill?: PackagedAgentSkill;
 	}> {
 		const judge = this.jevJudge;
 		if (judge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
@@ -2797,16 +2786,30 @@ export class AutoRAGAgent {
 			}
 		}
 		let route = decision.route;
-		let selfConfigSkill: string | undefined;
+		let selfConfigSkill: PackagedAgentSkill | undefined;
 		if (route === "config") {
 			try {
-				selfConfigSkill = loadSetupSkill(this.selfConfig?.skillPath);
+				selfConfigSkill = loadPackagedSkill(SETUP_SKILL_NAME, this.selfConfig?.skillPath);
 			} catch (error) {
 				this.routingDiagnostics.push({
 					code: "self-config-unavailable",
 					severity: "warning",
 					message: `Jev routed the question to AutoRAG configuration, but the setup skill could not be loaded; searching local sources instead. ${error instanceof Error ? error.message : String(error)}`,
 					source: "self-config",
+				});
+				route = FALLBACK_QUERY_ROUTE;
+			}
+		}
+		let organizeSkill: PackagedAgentSkill | undefined;
+		if (route === "organize") {
+			try {
+				organizeSkill = loadPackagedSkill(ORGANIZE_SKILL_NAME, this.organizeSkillPath);
+			} catch (error) {
+				this.routingDiagnostics.push({
+					code: "organize-skill-unavailable",
+					severity: "warning",
+					message: `Jev routed the question to file organization, but the organize skill could not be loaded; searching local sources instead. ${error instanceof Error ? error.message : String(error)}`,
+					source: "organize",
 				});
 				route = FALLBACK_QUERY_ROUTE;
 			}
@@ -2857,7 +2860,7 @@ export class AutoRAGAgent {
 				(route === "config"
 					? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
 					: route === "organize"
-						? "organizing files and folders with the file tools; no retrieval and no verification."
+						? "organizing files and folders with the organize skill loaded into the turn; every tool stays available, and no retrieval or verification runs."
 						: route === "extra"
 							? "carrying out the request with every tool; no retrieval and no verification."
 							: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
@@ -2869,6 +2872,7 @@ export class AutoRAGAgent {
 			datasources: selection.datasources,
 			web: selection.web,
 			...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}),
+			...(organizeSkill !== undefined ? { organizeSkill } : {}),
 		};
 	}
 
@@ -3364,39 +3368,54 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Tools an `organize` turn keeps: pi's file tools plus the converter, the
-	 * duplicate scan, and file-name discovery, whichever this agent registered.
-	 * The retrieval, datasource, and web tools stay out: the turn acts on files.
+	 * Prompt for a request Jev routed to `organize`: act on files and folders
+	 * (move, rename, convert, sort). No route changes the active tools any more,
+	 * so the prompt names the tools the task uses and the ones it must not, and
+	 * carries the loaded organize skill with the rules. No retrieval ran and no
+	 * verification follows; the model's plain final message is the answer.
 	 */
-	private organizeToolNames(): string[] {
-		const keep = new Set<string>([
-			CONVERT_FILES_TOOL_NAME,
-			LIST_FILE_CONVERSIONS_TOOL_NAME,
-			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
-			JIKJI_FIND_TOOL_NAME,
-			EVERYTHING_SEARCH_TOOL_NAME,
-			FSEARCH_SEARCH_TOOL_NAME,
-		]);
-		return [...PI_BUILTIN_TOOL_NAMES, ...this.tools.map((tool) => tool.name).filter((name) => keep.has(name))];
+	buildOrganizePrompt(query: string, skill: PackagedAgentSkill): string {
+		return (
+			`The user asks you to organize files and folders: ${query}\n\n` +
+			`${this.organizeToolScope()}\n\n` +
+			`${formatSkillInvocation(skill)}\n\n` +
+			`Finish with a short report as your final message, with no tool call: every change as old path → new path (one per line), what you skipped and why, and anything that needs the user. Write in the language of the request.`
+		);
 	}
 
 	/**
-	 * Prompt for a request Jev routed to `organize`: act on files and folders
-	 * (move, rename, convert, sort). No retrieval ran and no verification
-	 * follows; the model's plain final message is the answer.
+	 * The tool-scope sentence of an `organize` turn: the tools the task uses and
+	 * the content-retrieval and web tools it must not call. Every route keeps the
+	 * whole tool set now, so the prompt is what scopes the turn; both lists name
+	 * only tools this agent actually registered, so the prompt never points the
+	 * model at a tool the session does not have.
 	 */
-	buildOrganizePrompt(query: string): string {
+	private organizeToolScope(): string {
+		const registered = new Set(this.tools.map((tool) => tool.name));
+		const discovery = [JIKJI_FIND_TOOL_NAME, EVERYTHING_SEARCH_TOOL_NAME, FSEARCH_SEARCH_TOOL_NAME].filter((name) =>
+			registered.has(name),
+		);
+		const usable = [
+			"bash",
+			"read",
+			"edit",
+			"write",
+			"ls",
+			...[CONVERT_FILES_TOOL_NAME, LIST_FILE_CONVERSIONS_TOOL_NAME, SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME].filter(
+				(name) => registered.has(name),
+			),
+			...discovery,
+		];
+		const forbidden = this.tools
+			.map((tool) => tool.name)
+			.filter(
+				(name) =>
+					!discovery.includes(name) &&
+					(this.searchToolNames.has(name) || name === WEB_SEARCH_TOOL_NAME || name === WEB_FETCH_TOOL_NAME),
+			);
 		return (
-			`The user asks you to organize files and folders: ${query}\n\n` +
-			`This is a file-organization task, not a document search. Do NOT answer from retrieval or search the user's datasources. ` +
-			`Look at the folders involved with bash (ls, a bounded find), read a file with bash or read only when its content decides the new name or folder, ` +
-			`then carry the change out with bash (mkdir, mv, cp) or the file tools. Use convert_files for format conversions.\n\n` +
-			`Rules:\n` +
-			`- Plan first: list what you found, decide every target path, and check that no two targets share a name and no target already exists before you move anything. Never overwrite an existing file.\n` +
-			`- Touch only what the request names. When the request does not name a folder, ask which one instead of guessing, unless the conversation already says.\n` +
-			`- Never delete permanently (no rm, rmdir, unlink, find -delete). Move what must go to the OS trash.\n` +
-			`- After the changes, list the destination to confirm they happened.\n` +
-			`- Finish with a short report as your final message, with no tool call: every change as old path → new path (one per line), what you skipped and why, and anything that needs the user. Write in the language of the request.`
+			`This is a file-organization task, not a document search: work with ${usable.join(", ")}` +
+			`${forbidden.length === 0 ? "" : `, and do NOT call the retrieval, datasource, or web tools (${forbidden.join(", ")})`}.`
 		);
 	}
 
@@ -3440,6 +3459,33 @@ export class AutoRAGAgent {
 			`- When something you need is not available to you and only the user can settle it, ${askUser}.\n\n` +
 			`Write the answer or the report as your final message, then stop.`
 		);
+	}
+
+	/**
+	 * One tool-capable turn for an action route (`organize`, `extra`): the model
+	 * carries the request out with the tools it has and reports through its plain
+	 * final message. No retrieval, no fast answer, no verification — and no route
+	 * changes the session's active tools, so the turn prompt is what scopes the
+	 * work. Returns the report, or `undefined` when the user stopped the run or
+	 * the turn ended without one.
+	 */
+	private async runActionTurn(
+		session: AutoRAGSearchSession,
+		signal: AbortSignal,
+		step: { readonly id: string; readonly label: string; readonly prompt: string },
+		transcript: () => readonly AgentMessage[],
+	): Promise<string | undefined> {
+		// pi's bash tool refuses to run from a missing cwd, and the request may
+		// name paths under a workspace that has not been created yet.
+		mkdirSync(this.workspaceProjectRoot, { recursive: true });
+		await this.searchProgress.step(step.id, step.label, () => session.prompt(step.prompt));
+		// A steer typed after the turn's last model request is still owed an answer.
+		while (!this.interactive.userAborted && !signal.aborted && this.interactive.queuedSteers.length > 0) {
+			await session.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+		}
+		this.interactive.acceptingSteers = false;
+		if (this.interactive.userAborted) return undefined;
+		return finalAnswerText(transcript());
 	}
 
 	/** Discovery-tool hint naming only the registered discovery tools; empty when none. */
