@@ -382,16 +382,54 @@ legacy configuration, not the AutoRAG default. An explicit external
 `minSync.embedder` endpoint remains authoritative and is not overwritten by the
 daemon or the in-process engine.
 
+## Durable incremental parsing
+
+Parsed mirrors require **MinSync 0.5.0 or newer**, including a refresh that selects
+only `parsed`. Upgrade an older binary on `PATH` with
+`cargo install minsync --version 0.5.0 --locked`; an existing executable is not
+silently replaced by AutoRAG. Parsing itself uses no embedding model or endpoint.
+
+AutoRAG inventories supported sources and supplies their identities and parser
+configuration to one `minsync stage` session. MinSync owns the stage lock,
+verified completions, deletion decisions, interrupted-run journal, and snapshot
+under `.autorag/parsed/stage/`. AutoRAG owns parsing and atomic Markdown writes
+under `.autorag/parsed/files/`. Completion is recorded only after the final
+Markdown file exists and MinSync has measured and verified it.
+
+- Unchanged, verified mirrors are not read or parsed again. A source identity
+  includes nanosecond modification/change times, size, device and inode; parser
+  name/version and parser options also invalidate the relevant work.
+- Missing or damaged mirrors are rebuilt. MinSync's fast verification hashes an
+  output when its modification time changes; it does not detect deliberate edits
+  that preserve both size and modification time.
+- An interruption leaves committed items in MinSync's journal. The next matching
+  refresh resumes them, including an interrupted forced refresh. There is no
+  AutoRAG-specific periodic full-index checkpoint.
+- `.autorag/parsed/index.json` remains a downstream metadata view, published once
+  per completed or gracefully interrupted run. A read-only projection of MinSync
+  state reconstructs committed source mappings after a hard host crash; it does
+  not decide whether work is reusable.
+- Deliberate skips and parser-failure retry pacing remain AutoRAG policy. Failed
+  work is never recorded as a successful MinSync completion. Unobservable roots
+  and mass-deletion candidates are explicitly preserved rather than deleted.
+- Existing workspaces without a parse-stage baseline are parsed once to establish
+  verified completions. Subsequent refreshes use the stage baseline; the old
+  checkpoint-based resume path is not retained.
+
+The inventory and stage plan still hold the source listing in memory. This
+cutover eliminates repeated whole-index writes during parsing; it does not make
+the inventory or MinSync's stage-open request a streaming API.
+
 ## Refresh diagnostics
 
-Parsed refresh reads each scanned file before MinSync indexes its mirror. A
-source deleted or replaced after the scan (`ENOENT`, `ENOTDIR`, or `EISDIR`)
+Parsed refresh reads only sources that need processing before MinSync indexes their mirrors.
+A source deleted or replaced after the scan (`ENOENT`, `ENOTDIR`, or `EISDIR`)
 records a `source-vanished` informational diagnostic. A source that cannot be
 read (`EACCES` or `EPERM`) records a `source-unreadable` warning. The
 diagnostic `source` is the virtual path, and the message is the underlying
 filesystem error. Refresh removes any previous mirror for that path and
-continues with the remaining files. These transient reads are not stored as
-skip records, so a later refresh tries the source again once it can be read.
+continues with the remaining files. Permission failures are paced using a skip
+record until the source/parser changes or `--retry-skipped` is requested.
 Any other read error, a parser that throws something other than `ParseError`, and
 a failed mirror write are also isolated to the one file. Each is skipped and the
 refresh continues:
@@ -399,6 +437,7 @@ refresh continues:
 | Code | Severity | Cause |
 | --- | --- | --- |
 | `source-read-failed` | warning | Read error not listed above (`EMFILE`, `EIO`, `EBUSY`, `ETIMEDOUT`, …); `reason` carries the errno code. |
+| `source-changed` | warning | The source identity changed during parsing; no completion is committed and the next refresh retries it. |
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
 
@@ -410,7 +449,7 @@ refresh continues:
 { "refresh": { "transientRetries": 3 } }
 ```
 
-Like `source-unreadable`, these skips are not persisted, so the next refresh
+Unlike permission-denied skips, these transient skips are not persisted, so the next refresh
 tries the file again. Mirror writes go through a temp file that is removed on
 any failure, so a failed write never leaves a `*.tmp` orphan.
 

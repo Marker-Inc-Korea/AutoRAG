@@ -168,7 +168,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	 * Queries pass `install: false` so a user's turn never waits on `cargo install`; only `sync` (refresh)
 	 * may install. See {@link resolveMinSyncBinary}.
 	 */
-	protected resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
+	resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
 		return resolveMinSyncBinary({
 			root: this.root,
 			binaryPath: this.binaryPath,

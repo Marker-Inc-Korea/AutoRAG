@@ -33,6 +33,7 @@ import {
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let source: string;
@@ -92,6 +93,7 @@ function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 
 		`#!/usr/bin/env node
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
@@ -99,6 +101,7 @@ const cursor = join(process.cwd(), ".minsync", "cursor.json");
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
 appendFileSync(${JSON.stringify(`${logPath}.env`)}, JSON.stringify({ command: args[0], openaiKey: process.env.OPENAI_API_KEY ?? null }) + "\\n");
 
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   const languageIndex = args.indexOf("--language");
@@ -129,6 +132,7 @@ if (args[0] === "query") {
 
 console.error("unexpected fake minsync command: " + args.join(" "));
 process.exit(2);
+}
 `,
 	);
 	chmodSync(minsyncBinary, 0o755);

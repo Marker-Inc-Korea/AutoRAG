@@ -10,6 +10,7 @@ import {
 	type DatasourceIndexResult,
 	type DatasourceSkill,
 } from "../../src/index.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -56,27 +57,34 @@ async function waitFor(condition: () => boolean, label: string): Promise<void> {
 	throw new Error(`timed out waiting for ${label}`);
 }
 
-/** A MinSync stand-in whose `sync` records its pid and then hangs until killed. */
+/**
+ * A MinSync stand-in whose `sync` records its pid and then hangs until killed.
+ * `stage` is delegated to the shared simulator, so the parsed mirror that runs
+ * before the sync completes normally instead of failing the refresh.
+ */
 function writeHangingMinSync(binaryPath: string, pidPath: string): void {
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({
+    stateDir: args[args.indexOf("--state-dir") + 1],
+  });
+} else if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
-}
-if (args[0] === "sync") {
+} else if (args[0] === "sync") {
   writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
   setInterval(() => {}, 1000);
 } else {

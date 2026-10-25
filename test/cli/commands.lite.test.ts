@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 function writeConfig(root: string, configPath: string, model = false): void {
 	const docs = join(root, "docs");
@@ -220,14 +221,22 @@ describe("autorag lite lifecycle dispatch", () => {
 				binary,
 				`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({
+    stateDir: args[args.indexOf("--state-dir") + 1],
+  });
+} else if (args[0] === "init") {
   mkdirSync(".minsync", { recursive: true });
   writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
   process.exit(0);
+} else if (args[0] === "check" || args[0] === "sync") {
+  console.error("Error: another sync is in progress");
+  process.exit(3);
+} else {
+  process.exit(2);
 }
-if (args[0] === "check" || args[0] === "sync") { console.error("Error: another sync is in progress"); process.exit(3); }
-process.exit(2);
 `,
 			);
 			chmodSync(binary, 0o755);

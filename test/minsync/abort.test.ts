@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { MinSyncClient, MinSyncVectorMethod, minSyncConfigPath } from "../../src/minsync/index.ts";
 import { spawnProcess } from "../../src/minsync/process.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -58,7 +59,9 @@ function writeHangingSyncBinary(): void {
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(join(process.cwd(), ".minsync"), { recursive: true });
   writeFileSync(join(process.cwd(), ".minsync", "config.toml"), "[embedder]\\nid = \\"openai\\"\\n");
@@ -76,6 +79,7 @@ if (args[0] === "sync") {
 } else {
   process.exit(2);
 }
+}
 `,
 	);
 	chmodSync(binary, 0o755);
@@ -87,7 +91,9 @@ function writeLockHeldBinary(heldAt: "check" | "sync" = "sync"): void {
 		binary,
 		`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(".minsync", { recursive: true });
   writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
@@ -101,6 +107,7 @@ if (args[0] === "sync") {
   process.exit(3);
 }
 process.exit(2);
+}
 `,
 	);
 	chmodSync(binary, 0o755);
@@ -330,7 +337,9 @@ posixOnly("refresh cancellation", () => {
 			binary,
 			`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(".minsync", { recursive: true });
   writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
@@ -340,6 +349,7 @@ if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, em
 writeFileSync(".minsync/cursor.json", "{}");
 console.log(JSON.stringify({ files_processed: 1, partial: true, files_failed: [{ path: "files/docs/a.txt.md", stage: "read", error: "Permission denied" }] }));
 process.exit(6);
+}
 `,
 		);
 		chmodSync(binary, 0o755);

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runRefresh } from "../../src/cli/commands/refresh.ts";
 import { runStatus } from "../../src/cli/commands/status.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -210,18 +211,20 @@ const { existsSync, mkdirSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  require(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({
+    stateDir: args[args.indexOf("--state-dir") + 1],
+  });
+} else if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   writeFileSync(join(process.cwd(), ".minsync", "sync-started"), "1");
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
-}
-if (args[0] === "sync") {
+} else if (args[0] === "sync") {
   mkdirSync(dirname(join(process.cwd(), ".minsync", "cursor.json")), { recursive: true });
   writeFileSync(join(process.cwd(), ".minsync", "sync-started"), "1");
   const timer = setInterval(() => {
@@ -313,17 +316,21 @@ const { dirname, join } = require("node:path");
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  require(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({
+    stateDir: args[args.indexOf("--state-dir") + 1],
+  });
+} else if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false }));
   process.exit(0);
+} else {
+  process.exit(2);
 }
-process.exit(2);
 `,
 		);
 		chmodSync(fakeBinary, 0o755);

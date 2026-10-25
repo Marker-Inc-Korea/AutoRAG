@@ -28,6 +28,7 @@ export type SearchDocumentDiagnosticCode =
 	| "parser-skipped"
 	| "parser-failed"
 	| "parser-crashed"
+	| "source-changed"
 	| "source-vanished"
 	| "source-unreadable"
 	| "source-read-failed"

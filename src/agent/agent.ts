@@ -3815,6 +3815,7 @@ export class AutoRAGAgent {
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
+			minSyncBinaryPath: await this.minSyncMethod.resolveBinary(),
 			force,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
