@@ -24,6 +24,7 @@ import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
+import { runtimeContextAddendum } from "./environment-prompt.ts";
 import { registerIntentTracing } from "./intent-tracing.ts";
 import { createAutoRAGMcpClient, mcpPromptAddendum } from "./mcp-client.ts";
 import { fitRequestLimits } from "./request-limits.ts";
@@ -236,12 +237,14 @@ function guardContext(
 }
 
 function createAutoRAGExtension(
+	cwd: string,
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", (event) => ({
-			systemPrompt: getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections),
+			systemPrompt:
+				getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections) + runtimeContextAddendum(cwd),
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
@@ -309,6 +312,7 @@ function userInputText(event: { readonly source: string; readonly text: string }
 }
 
 function createAutoRAGInteractiveExtension(
+	cwd: string,
 	getSystemPrompt: () => string,
 	contextTransform: ((messages: AgentMessage[]) => Promise<AgentMessage[]>) | undefined,
 	options: Pick<AutoRAGPiInteractiveRuntimeOptions, "onInput" | "isSearchRunning" | "onKey">,
@@ -316,7 +320,8 @@ function createAutoRAGInteractiveExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", (event) => ({
-			systemPrompt: getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections),
+			systemPrompt:
+				getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections) + runtimeContextAddendum(cwd),
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
@@ -404,7 +409,7 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		settingsManager,
 		extensionFactories: [
 			...(mcp?.extensionFactories ?? []),
-			createAutoRAGExtension(options.getSystemPrompt, options.contextTransform),
+			createAutoRAGExtension(options.cwd, options.getSystemPrompt, options.contextTransform),
 			...(options.extensionFactories ?? []),
 		],
 		systemPromptOverride: () => options.getSystemPrompt(),
@@ -496,6 +501,7 @@ export async function createAutoRAGPiInteractiveRuntime(
 						? []
 						: [createWelcomeHeader({ version: options.welcomeVersion, settings: settingsManager })]),
 					createAutoRAGInteractiveExtension(
+						options.cwd,
 						options.getSystemPrompt,
 						options.contextTransform,
 						{ onInput: options.onInput, isSearchRunning: options.isSearchRunning, onKey: options.onKey },
