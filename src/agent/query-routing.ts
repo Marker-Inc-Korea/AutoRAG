@@ -4,21 +4,25 @@ import type { JevJudge } from "./jev-extension.ts";
 /**
  * Where a user question is answered from:
  * - `local`: anything needing information beyond the model's own knowledge —
- *   the user's files, chats, mail, or any fact the model cannot reliably recall.
- *   Local retrieval runs first; web search is left to the agent after the fast
- *   answer, when local evidence falls short.
- * - `direct`: intrinsic knowledge or small talk the model answers on its own.
+ *   the user's files, chats, mail, or any fact the model cannot reliably recall,
+ *   recent, specific, or changing public facts included. Local retrieval runs
+ *   first; web search is left to the agent after the fast answer, when local
+ *   evidence falls short.
  * - `organize`: the user wants files or folders acted on — move, rename in
  *   bulk, rename by content, convert, sort, tidy — rather than information
  *   found. No retrieval and no verification: one tool-capable turn does it.
- * - `extra`: none of the other branches (committing code, opening a pull
- *   request, running a build, any other task for the agent's tools). The Jev
- *   gate is skipped: no retrieval, no verification, tools stay available.
+ * - `extra`: neither of the other branches, and no search of the user's own
+ *   records is needed first: the request is answerable from the model's own
+ *   knowledge (stable general knowledge, definitions, simple reasoning, small
+ *   talk), or it is a task for the agent's tools that is not file organization
+ *   and not AutoRAG configuration (commit, PR, build, write code, run a
+ *   script). No retrieval, decomposition, fast answer, follow-up check, or
+ *   verification: one tool-capable turn does it, with every tool available.
  * - `config`: the user wants to inspect or change AutoRAG's own settings
  *   (model, providers, datasources). Offered only when the host enables
  *   agent self-configuration.
  */
-export type QueryRoute = "local" | "direct" | "organize" | "extra" | "config";
+export type QueryRoute = "local" | "organize" | "extra" | "config";
 
 /** Jev question id of the intrinsic-knowledge / local branch. */
 export const QUERY_ROUTE_QUESTION_ID = "route";
@@ -35,6 +39,23 @@ export const DECOMPOSE_PROBABILITY_THRESHOLD = 0.5;
 
 /** A `noul` probability at or above this sends the fast answer on to verification. */
 export const FOLLOW_UP_PROBABILITY_THRESHOLD = 0.5;
+
+/**
+ * Minimum Jev branch probability required to leave local search. A non-local
+ * branch (`organize`, `extra`, `config`) at or below this floor — or one Jev
+ * reported without a probability — keeps the run on local search, the
+ * corpus-grounded default, with a `query-route-fallback` diagnostic naming the
+ * floor as the reason (the rejected branch's probability is still reported as
+ * `routeProbability`). Without the floor a weakly-favored non-local verdict
+ * skips retrieval entirely, so a question that depends on the user's own
+ * records can be answered from general knowledge instead.
+ *
+ * The floor does not weaken a real non-local verdict: the fallback is a
+ * full local plan (datasource selection and decomposition still run). Removed
+ * by #1995 (982e464d) together with the intrinsic-knowledge branch, restored
+ * here because the reasons above did not go away.
+ */
+export const NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD = 0.75;
 
 /** A `noul` probability at or above this searches that datasource before the fast answer. */
 export const DATASOURCE_PROBABILITY_THRESHOLD = 0.5;
@@ -95,54 +116,51 @@ export async function needsFollowUp(judge: JevJudge, query: string, answer: stri
 
 const BASE_ROUTE_OPTIONS: Record<Exclude<QueryRoute, "config">, string> = {
 	local: "Answering needs additional information beyond the assistant's intrinsic knowledge: private information only the user can access (files on their computer, their chats such as Discord, KakaoTalk, Slack, their email, notes, calendar, or history), documents, or any fact that may be recent, specific, niche, or changing (current events, recent releases, prices, versions). Prefer local whenever the question refers to the user's own life, situation, plans, or records — questions phrased with words like 'my', 'I', 'we', 'our', a named friend, family member, or colleague, or 'my case/hearing/appointment/routine' — even when a generic answer would also be possible. When unsure whether intrinsic knowledge suffices, choose local.",
-	direct:
-		"The assistant's intrinsic knowledge alone reliably answers it: stable common knowledge, a definition, simple reasoning, or small talk, with no need to look anything up. Never direct when the question refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine'), and never direct for facts that may have changed recently.",
+	extra: "None of the other options fits and no search of the user's own records is needed first. Either the request is answerable without looking anything up — stable common knowledge, a definition, simple reasoning, or small talk — or it is a task for the assistant's tools that is not file organization and not AutoRAG configuration: committing code, pushing a branch, opening a pull request, running tests or a build, installing a package, running a script, writing or editing code. Programming work is extra even when the code names the user's files or folders ('write a script that lowercases every PNG', 'add this to my parser'): the assistant is asked to produce or change code, not to act on those files now. So is a request to run something (tests, a build, a script, a command) and report the outcome, even when what it runs lives in the user's own repository: running it is a task for the tool, not a search of the user's records. Never extra when the request refers to the user's own life, files, records, chats, calendar, or history (e.g. 'my', 'I', 'our', 'my girlfriend', 'my case', 'my routine'), and never extra when the answer depends on facts that may be recent, specific, or changing (current events, recent releases, prices, versions): search those locally instead. If any other option fits, do not choose extra.",
 	organize:
 		"The user asks the assistant to DO something to files or folders instead of finding information: move or copy files into folders, tidy or sort a folder, bulk or pattern rename (for example by date or number), rename files according to what their content says, convert files to another format, create folder structures, group files by type or topic, archive, or move to the trash ('정리해줘', '폴더 이동', '파일 이름 일괄 변경', '내용에 맞게 파일명 바꿔줘', 'convert these to PDF', 'sort my Downloads folder'). It is about acting on files and folders, never about looking up what a document says or where something is. A question that only asks to find or read a file's content is local, not organize.",
-	extra: "None of the other options fits and no retrieval is needed: an action or task for the assistant's tools that is not about answering from knowledge, not about the user's records, and not about organizing files or folders. Examples: committing code, pushing a branch, opening a pull request, running tests or a build, installing a package, running a script, writing or editing code. If any other option fits, do not choose extra.",
 };
 
 const CONFIG_ROUTE_OPTION =
 	"The user asks to view, change, or test the settings of this AutoRAG agent itself: its model, model providers, API-key environment variables, Jev routing, search roots, or datasource setup (config.json). It also covers everything about the assistant's file-triggered automations (자동화, 폴더 감시, 파일 기반 규칙): creating, listing, showing status or the last run of, editing, testing, deleting, or turning on or off the automation rules and the background daemon that run a command or an AutoRAG task by themselves whenever files in a folder are created, changed, or deleted (for example 'when a PDF lands in Downloads, summarize it', '새 파일이 생기면 자동으로 ... 해줘', 'watch this folder', 'show my automations', 'turn the folder-watch daemon off'). It is about configuring the assistant and its background rules, not about the content of the user's documents.";
 
-const BASE_ROUTE_QUESTION = pick(
-	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",
-	BASE_ROUTE_OPTIONS,
-);
-const SELF_CONFIG_ROUTE_QUESTION = pick(
-	"Can the assistant answer this user question reliably from its intrinsic knowledge alone, or does it need additional information?",
-	{ ...BASE_ROUTE_OPTIONS, config: CONFIG_ROUTE_OPTION },
-);
+const BASE_ROUTE_QUESTION = pick("How must the assistant handle this user question?", BASE_ROUTE_OPTIONS);
+const SELF_CONFIG_ROUTE_QUESTION = pick("How must the assistant handle this user question?", {
+	...BASE_ROUTE_OPTIONS,
+	config: CONFIG_ROUTE_OPTION,
+});
 
 const DECOMPOSE_QUESTION = check(
 	"Does answering this question need several separate search queries instead of one search for the question as written?",
 	{
 		true: "It combines several sub-questions, compares items, or needs multiple independent facts confirmed, so one search would miss parts of it.",
-		false: "One direct search for the question as written would already find the answer.",
+		false: "A single search for the question as written would already find the answer.",
 	},
 );
 
 export interface QueryRouteDecision {
-	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none. */
+	/** Most probable branch; {@link FALLBACK_QUERY_ROUTE} when Jev gave none or its non-local branch missed {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD}. */
 	readonly route: QueryRoute;
-	/** True when Jev judged the question needs decomposition (only ever for `local`). */
+	/** True when Jev judged the question needs decomposition; only a `local` route acts on it. */
 	readonly decompose: boolean;
-	/** Probability Jev gave the winning branch; absent when Jev reported none. */
+	/** Probability Jev gave the winning branch, including a rejected non-local branch whose floor moved the route to local. */
 	readonly routeProbability?: number;
 	/** Jev's P(decomposition needed), when it answered. */
 	readonly decomposeProbability?: number;
 	/** Why the decision fell back instead of following Jev; absent when Jev decided. */
 	readonly fallbackReason?: string;
+	/**
+	 * True when a non-local branch won but did not clear
+	 * {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD}: `route` is `local` and the
+	 * full local plan still runs (datasource selection and decomposition),
+	 * unlike a fallback from an unavailable or unusable verdict, which keeps a
+	 * bare single-query local search.
+	 */
+	readonly floorApplied?: boolean;
 }
 
 function isQueryRoute(value: unknown, selfConfig: boolean): value is QueryRoute {
-	return (
-		value === "local" ||
-		value === "direct" ||
-		value === "organize" ||
-		value === "extra" ||
-		(selfConfig && value === "config")
-	);
+	return value === "local" || value === "organize" || value === "extra" || (selfConfig && value === "config");
 }
 
 /** The highest-probability branch, even when Jev escalates the verdict as unsure. */
@@ -166,11 +184,13 @@ export interface RouteQueryOptions {
 }
 
 /**
- * Ask Jev, in one batched call about the user question, which branch answers
- * it and whether it needs decomposition. The most probable branch wins, with
- * no confidence floor. Never throws: a missing credential, an unreachable
- * backend, or an unusable verdict falls back to a single local search, with
- * the reason recorded.
+ * Ask Jev, in one batched call about the user question, which branch handles it
+ * and whether it needs decomposition. The most probable branch wins once it
+ * clears {@link NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD}: a weakly-favored or
+ * probability-less `organize`, `extra`, or `config` verdict keeps the local
+ * default and still runs the full local plan (`floorApplied`). Never throws: a
+ * missing credential, an unreachable backend, or an unusable verdict falls back
+ * to a single local search, with the reason recorded.
  */
 export async function routeQuery(
 	judge: JevJudge,
@@ -203,10 +223,29 @@ export async function routeQuery(
 	}
 	const decomposeVerdict = verdicts.find((verdict) => verdict.id === DECOMPOSE_QUESTION_ID);
 	const decomposeProbability = typeof decomposeVerdict?.answer === "number" ? decomposeVerdict.answer : undefined;
-	const decompose = decomposeProbability !== undefined && decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD;
+	const decomposeWanted =
+		decomposeProbability !== undefined && decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD;
+	// Leaving local search drops corpus evidence, so it needs a confident
+	// branch: a weak or probability-less non-local verdict keeps the local
+	// default, which still runs decomposition and the datasource check.
+	if (
+		best.route !== "local" &&
+		(best.probability === undefined || best.probability <= NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD)
+	) {
+		return {
+			route: FALLBACK_QUERY_ROUTE,
+			decompose: decomposeWanted,
+			floorApplied: true,
+			fallbackReason:
+				`Jev's ${best.route} route probability (${best.probability ?? "not reported"}) is not above the ` +
+				`${NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD} confidence floor; using local search.`,
+			...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
+			...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
+		};
+	}
 	return {
 		route: best.route,
-		decompose: best.route === "local" && decompose,
+		decompose: best.route === "local" && decomposeWanted,
 		...(best.probability !== undefined ? { routeProbability: best.probability } : {}),
 		...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
 	};

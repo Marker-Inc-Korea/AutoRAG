@@ -101,7 +101,7 @@ interface ScriptedJev {
 }
 
 /**
- * Jev that answers a query-routing question `direct` and a permission request by looking up the proposed call's
+ * Jev that answers a query-routing question `extra` and a permission request by looking up the proposed call's
  * text in `rules`: the first rule whose `match` the state contains decides the categories (default: safe) and
  * whether it approves.
  */
@@ -122,7 +122,7 @@ function scriptedJev(
 			};
 		}
 		if (question.id === QUERY_ROUTE_QUESTION_ID) {
-			return { answer: "direct", distribution: { local: 0.05, web: 0.05, direct: 0.9 }, confidence: 0.9 };
+			return { answer: "extra", distribution: { local: 0.05, organize: 0.05, extra: 0.9 }, confidence: 0.9 };
 		}
 		for (const kind of PERMISSION_KINDS) {
 			if (question.id === permissionKindQuestionId(kind)) return { answer: rule?.kinds?.[kind] ?? 0.02 };

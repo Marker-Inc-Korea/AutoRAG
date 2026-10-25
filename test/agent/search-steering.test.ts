@@ -156,7 +156,7 @@ function jevLocal(followUp: number, datasources: readonly string[] = []): JevBac
 	return new MockBackend({
 		[QUERY_ROUTE_QUESTION_ID]: {
 			answer: "local",
-			distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+			distribution: { local: 0.8, organize: 0.1, extra: 0.1 },
 			confidence: 0.8,
 		},
 		[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
