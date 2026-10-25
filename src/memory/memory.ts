@@ -18,7 +18,10 @@ export interface EvidenceContext {
 	readonly documentType?: string;
 	readonly documentArea?: string;
 	readonly evidenceType?: string;
-	readonly evidenceLocation?: string;
+	/** Last line of the chunk in its parsed document; the first line is the ref's `lineNumber`. */
+	readonly lineEnd?: number;
+	/** Article or heading the chunk sits in. */
+	readonly section?: string;
 	readonly confidence?: number;
 }
 
@@ -275,7 +278,11 @@ function normalizeEvidenceContext(context: EvidenceContext): EvidenceContext {
 	const documentType = normalizeContextLabel(context.documentType);
 	const documentArea = normalizeContextLabel(context.documentArea);
 	const evidenceType = normalizeContextLabel(context.evidenceType);
-	const evidenceLocation = normalizeContextLabel(context.evidenceLocation);
+	const section = normalizeContextLabel(context.section);
+	const lineEnd =
+		context.lineEnd !== undefined && Number.isInteger(context.lineEnd) && context.lineEnd > 0
+			? context.lineEnd
+			: undefined;
 	const confidence =
 		context.confidence !== undefined && Number.isFinite(context.confidence)
 			? Math.max(0, Math.min(1, context.confidence))
@@ -286,7 +293,8 @@ function normalizeEvidenceContext(context: EvidenceContext): EvidenceContext {
 		...(documentType !== undefined ? { documentType } : {}),
 		...(documentArea !== undefined ? { documentArea } : {}),
 		...(evidenceType !== undefined ? { evidenceType } : {}),
-		...(evidenceLocation !== undefined ? { evidenceLocation } : {}),
+		...(lineEnd !== undefined ? { lineEnd } : {}),
+		...(section !== undefined ? { section } : {}),
 		...(confidence !== undefined ? { confidence } : {}),
 	};
 }
@@ -298,10 +306,13 @@ function normalizeEvidenceChunkRecord(record: EvidenceChunkRecord): EvidenceChun
 		documentType: _documentType,
 		documentArea: _documentArea,
 		evidenceType: _evidenceType,
-		evidenceLocation: _evidenceLocation,
+		lineEnd: _lineEnd,
+		section: _section,
 		confidence: _confidence,
+		// Memory files written before #1692 carry this removed free-text field; drop it on load.
+		evidenceLocation: _evidenceLocation,
 		...base
-	} = record;
+	} = record as EvidenceChunkRecord & { readonly evidenceLocation?: unknown };
 	return { ...base, ...normalizeEvidenceContext(record) };
 }
 
@@ -738,7 +749,8 @@ export function normalizeSessionEvidenceRef(
 		documentType: _documentType,
 		documentArea: _documentArea,
 		evidenceType: _evidenceType,
-		evidenceLocation: _evidenceLocation,
+		lineEnd: _lineEnd,
+		section: _section,
 		confidence: _confidence,
 		...base
 	} = input;
