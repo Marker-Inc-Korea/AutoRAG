@@ -90,7 +90,7 @@ function jevRouting(
 	followUpProbability = 0.9,
 	datasourceProbabilities: Readonly<Record<string, number>> = {},
 ): JevBackend {
-	const distribution = { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 };
+	const distribution = { local: 0.1, organize: 0.1, extra: 0.1, [route]: 0.8 };
 	return citationsRelevant(
 		new MockBackend({
 			[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.8 },
@@ -313,10 +313,10 @@ async function collect(agent: AutoRAGAgent, query: string): Promise<SearchDocume
 }
 
 describe("Jev query pipeline before the fast answer", () => {
-	it("answers a direct question immediately without any retrieval or verification phase", async () => {
+	it("answers a general-knowledge question immediately without any retrieval or verification phase", async () => {
 		const prompts: string[] = [];
 		const model = fauxModel(capture(fastAnswer("Paris is the capital of France."), prompts));
-		const agent = agentWith({ model, jev: { backend: jevRouting("direct", 0.9) } });
+		const agent = agentWith({ model, jev: { backend: jevRouting("extra", 0.9) } });
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
 
@@ -677,7 +677,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				if (request.questions.some((question) => question.id === QUERY_ROUTE_QUESTION_ID)) {
 					return {
 						answers: [
-							{ answer: "local", distribution: { local: 0.9, web: 0.05, direct: 0.05 } },
+							{ answer: "local", distribution: { local: 0.9, organize: 0.05, extra: 0.05 } },
 							{ answer: 0.1 },
 						],
 					};
@@ -806,6 +806,97 @@ describe("Jev query pipeline before the fast answer", () => {
 					diagnostic.code === "query-route-fallback" && diagnostic.message.includes("connection refused"),
 			),
 		).toBe(true);
+	});
+
+	it("runs the full local plan when a non-local branch misses the confidence floor", async () => {
+		const prompts: string[] = [];
+		const decompositionPrompts: string[] = [];
+		const decompositionModel = fauxModel(
+			capture(
+				fauxAssistantMessage('{"queries": ["Q3 budget approver", "Q4 budget approver"]}', { stopReason: "stop" }),
+				decompositionPrompts,
+			),
+		);
+		const model = fauxModel(
+			capture(fastAnswer("Fast: approvers found."), prompts),
+			capture(finalAnswer("Verified approvers."), prompts),
+		);
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		// An extra verdict at 0.6: below the floor, so it must not run as an extra turn.
+		const routing = citationsRelevant(
+			new MockBackend({
+				[QUERY_ROUTE_QUESTION_ID]: {
+					answer: "extra",
+					distribution: { local: 0.4, extra: 0.6 },
+					confidence: 0.2,
+				},
+				[DECOMPOSE_QUESTION_ID]: { answer: 0.9 },
+				[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+				[datasourceQuestionId("slack")]: { answer: 0.8 },
+			}),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: routing },
+			queryDecomposition: { model: decompositionModel },
+			datasourceSkills: [slack.skill],
+		});
+		const minSync = recordingMinSync();
+		injectMinSync(agent, minSync.method);
+
+		const response = await agent.searchDocuments("Who approved the Q3 and Q4 budgets?");
+
+		// A floor fallback is a real local plan: decomposition and the datasource
+		// check both ran, and every search query reached both sources.
+		expect(decompositionPrompts).toHaveLength(1);
+		expect([...minSync.queries].sort()).toEqual(["Q3 budget approver", "Q4 budget approver"]);
+		expect([...slack.queries].sort()).toEqual(["Q3 budget approver", "Q4 budget approver"]);
+		expect(prompts[0]).toContain("Baseline retrieval evidence");
+		expect(response.answer).toBe("Verified approvers.");
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) =>
+					diagnostic.code === "query-route-fallback" &&
+					diagnostic.message.includes("confidence floor") &&
+					diagnostic.message.includes("extra"),
+			),
+		).toBe(true);
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) =>
+					diagnostic.code === "query-routed" &&
+					diagnostic.message.includes("local") &&
+					diagnostic.message.includes("p=0.60"),
+			),
+		).toBe(true);
+	});
+
+	it("keeps the bare single-query local fallback when the routing verdict itself is unusable", async () => {
+		const unusable: JevBackend = {
+			name: "unusable",
+			async judge() {
+				return {
+					answers: [{ answer: "web", distribution: { web: 0.9, direct: 0.1 } }, { answer: 0.9 }],
+				};
+			},
+		};
+		const decompositionModel = fauxModel(fauxAssistantMessage('{"queries": ["never used"]}', { stopReason: "stop" }));
+		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
+		const slack = recordingDatasource("slack", "Company Slack: engineering channels");
+		const agent = agentWith({
+			model,
+			jev: { backend: unusable },
+			queryDecomposition: { model: decompositionModel },
+			datasourceSkills: [slack.skill],
+		});
+		const minSync = recordingMinSync();
+		injectMinSync(agent, minSync.method);
+
+		const response = await agent.searchDocuments("where is the signed lease?");
+
+		expect([...minSync.queries]).toEqual(["where is the signed lease?"]);
+		expect(slack.queries).toEqual([]);
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "query-route-fallback")).toBe(true);
 	});
 
 	it("does not route when Jev is disabled", async () => {

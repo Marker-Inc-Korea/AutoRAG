@@ -639,8 +639,9 @@ export interface AutoRAGAgentOptions {
 	/**
 	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
 	 * probabilities out). When set, the two-phase search asks Jev before the
-	 * fast answer whether the question is answerable from intrinsic knowledge
-	 * (direct answer) or needs local search, and whether to decompose it; after the fast answer, whether
+	 * fast answer which branch handles the question (local search, file
+	 * organization, an extra task, or — in a local host — its own configuration)
+	 * and whether to decompose it; after the fast answer, whether
 	 * verification is needed. It also exposes the `jev` tool.
 	 *
 	 * The CLI config enables this by default on OpenRouter (`buildAgentOptions`
@@ -2095,13 +2096,13 @@ export class AutoRAGAgent {
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;
-		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, `extra`); it never feeds retrieval memory. */
+		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, or an `extra` turn that cited nothing); it never feeds retrieval memory. */
 		let isolatedRun = false;
 		/**
 		 * Without Jev every fast answer goes on to verification, so it is
-		 * published as soon as it is written. With Jev, publishing waits
-		 * for the direct route and the follow-up check: an answer that turns out
-		 * to be final reaches the caller once, as the complete response.
+		 * published as soon as it is written. With Jev, publishing waits for
+		 * the follow-up check: an answer that turns out to be final reaches the
+		 * caller once, as the complete response.
 		 */
 		const publishOnCapture = this.jevJudge === undefined;
 		let published = false;
@@ -2173,8 +2174,9 @@ export class AutoRAGAgent {
 				// evidence, then a thinking-on verification pass. Each phase ends in
 				// plain assistant text; the harness resolves its inline [eN]
 				// citations against the evidence ledger.
-				// With Jev enabled, Jev first picks a direct answer (intrinsic knowledge)
-				// or local search, and whether the question needs decomposition.
+				// With Jev enabled, Jev first picks the branch that handles the
+				// question — local search, file organization, an extra task, or its
+				// own configuration — and whether the question needs decomposition.
 				const activeSession = session;
 				const sessionAgent = activeSession.piSession;
 				const transcript = (): readonly AgentMessage[] =>
@@ -2252,14 +2254,16 @@ export class AutoRAGAgent {
 					return;
 				}
 				if (plan.route === "organize" || plan.route === "extra") {
-					// Acting on files or on any other task: no retrieval, no fast answer,
-					// no verification. One tool-capable turn does the work and its plain
-					// final message reports what changed.
-					isolatedRun = true;
+					// Acting on files, or on any other task that needs no search first:
+					// no retrieval, no fast answer, no verification. One tool-capable
+					// turn does the work and its plain final message answers or reports.
 					mkdirSync(this.workspaceProjectRoot, { recursive: true });
-					const previousTools = sessionAgent?.getActiveToolNames();
 					setThinking(this.finalThinkingLevel);
-					// Organizing needs the file tools and the converter, not the search tools.
+					// Organizing needs the file tools and the converter, not the search
+					// tools. An extra turn keeps the session's whole tool set, so it never
+					// snapshots or restores one: restoring a snapshot read before the turn
+					// would drop a tool that registered meanwhile (an MCP server connecting).
+					const previousTools = plan.route === "organize" ? sessionAgent?.getActiveToolNames() : undefined;
 					if (plan.route === "organize" && sessionAgent !== undefined) {
 						sessionAgent.setActiveToolsByName(this.organizeToolNames());
 					}
@@ -2290,47 +2294,35 @@ export class AutoRAGAgent {
 							sessionAgent.setActiveToolsByName(previousTools);
 						}
 					}
+					// An `organize` report is never retrieved evidence. An `extra` turn
+					// that looked facts up with a search, datasource, or web tool and
+					// cited them did retrieve evidence, so it feeds retrieval memory
+					// exactly like a local run; a pure-knowledge answer or an action
+					// report that cites nothing stays isolated.
+					isolatedRun = plan.route === "organize" || captured === undefined || captured.mapping.length === 0;
 					return;
 				}
 				const steered = (): boolean => this.interactive.steers.length > 0;
 				// Esc aborted the phase that just ran: the user stopped the search.
 				const stopped = (): boolean => this.interactive.userAborted;
 				if (stopped()) return;
-				// The direct answer, when this search ran the direct prompt; a steer can
-				// skip it, and the bound session then still ends on an earlier query's answer.
-				let directText: string | undefined;
-				if (plan.route === "direct" && !steered()) {
-					// Direct answers skip every retrieval step and the verification
-					// phase: the fast answer is the final answer. Only Jev routes
-					// here, so the preliminary was never published.
-					setThinking(this.fastThinkingLevel);
-					await this.searchProgress.step("direct", "Answering from the model's own knowledge", () =>
-						activeSession.prompt(this.buildDirectAnswerPrompt(trimmedQuery)),
-					);
-					if (stopped()) return;
-					directText = finalAnswerText(transcript());
-					// A steer typed while the direct answer streamed questions it: verify instead.
-					if (!steered()) {
-						if (directText !== undefined) captured = await this.deriveAnswer(directText);
-						return;
-					}
-				}
-				const baseline =
-					plan.route === "direct"
-						? ""
-						: await this.prefetchInitialRetrievalContext(trimmedQuery, plan.queries, options, plan.datasources);
+				// Only `local` reaches here: `config`, `organize`, and `extra` ended
+				// the run in their own single turn above.
+				const baseline = await this.prefetchInitialRetrievalContext(
+					trimmedQuery,
+					plan.queries,
+					options,
+					plan.datasources,
+				);
 				if (stopped()) return;
-				let fastText: string | undefined = directText;
-				let preliminary: AutoRAGResultsDetails | undefined;
-				if (plan.route !== "direct") {
-					setThinking(this.fastThinkingLevel);
-					await this.searchProgress.step("fast", "Drafting a first answer", () =>
-						activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline)),
-					);
-					if (stopped()) return;
-					fastText = finalAnswerText(transcript());
-					preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText);
-				}
+				let fastText: string | undefined;
+				setThinking(this.fastThinkingLevel);
+				await this.searchProgress.step("fast", "Drafting a first answer", () =>
+					activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline)),
+				);
+				if (stopped()) return;
+				fastText = finalAnswerText(transcript());
+				const preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText);
 				if (preliminary !== undefined) {
 					emitPreliminary(preliminary);
 					// With Jev enabled, a fast answer that needs no correction,
@@ -2442,7 +2434,8 @@ export class AutoRAGAgent {
 				componentDiagnostics,
 				{ isolateMemory: isolatedRun },
 			);
-			// A config, organize, or extra report is not retrieved evidence.
+			// A config or organize report, or an extra turn that cited no evidence,
+			// is not retrieved evidence.
 			const memoryDiagnostic = isolatedRun
 				? undefined
 				: await this.recordJudgedEvidence(sessionId, trimmedQuery, captured);
@@ -2740,13 +2733,15 @@ export class AutoRAGAgent {
 
 	/**
 	 * Jev query pipeline, run before the fast answer. Jev picks the branch
-	 * (direct answer or local search) and whether the question
-	 * needs decomposition; a "yes" splits it into at most five search queries
-	 * with the configured decomposition model (default: the session model). On
-	 * the local branch, Jev also judges, per registered datasource, whether it
-	 * must be searched (in parallel with decomposition). Without Jev, and on any
-	 * routing failure, this is today's single local search for the original
-	 * question with no datasource search.
+	 * (local search, file organization, an extra task, AutoRAG configuration)
+	 * and whether the question needs decomposition; a "yes" splits it into at
+	 * most five search queries with the configured decomposition model
+	 * (default: the session model). On the local branch, Jev also judges, per
+	 * registered datasource, whether it must be searched (in parallel with
+	 * decomposition). Without Jev, and on any routing failure, this is today's
+	 * single local search for the original question with no datasource search.
+	 * A non-local branch that misses the confidence floor is not a failure: it
+	 * becomes a full local plan, decomposition and datasource check included.
 	 */
 	private async planQuery(
 		query: string,
@@ -2777,7 +2772,12 @@ export class AutoRAGAgent {
 				message: `Jev query routing fell back to local search. ${decision.fallbackReason}`,
 				source: "jev",
 			});
-			return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+			// The confidence floor keeps a real non-local verdict off the run but
+			// the question is still answerable: run the full local plan. Only an
+			// unavailable backend or an unusable verdict keeps the bare fallback.
+			if (decision.floorApplied !== true) {
+				return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+			}
 		}
 		let route = decision.route;
 		let selfConfigSkill: string | undefined;
@@ -2834,15 +2834,13 @@ export class AutoRAGAgent {
 			severity: "info",
 			message:
 				`Jev routed the question to ${route}${probability}; ` +
-				(route === "direct"
-					? "answering directly without retrieval."
-					: route === "config"
-						? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
-						: route === "organize"
-							? "organizing files and folders with the file tools; no retrieval and no verification."
-							: route === "extra"
-								? "carrying out the request with the agent's tools; no retrieval and no verification."
-								: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
+				(route === "config"
+					? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
+					: route === "organize"
+						? "organizing files and folders with the file tools; no retrieval and no verification."
+						: route === "extra"
+							? "carrying out the request with every tool; no retrieval and no verification."
+							: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
 			source: "jev",
 		});
 		return { route, queries, datasources, ...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}) };
@@ -3226,19 +3224,6 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Prompt for a question Jev routed to a direct answer: general knowledge or
-	 * small talk. No retrieval ran and no verification phase follows, so the
-	 * reply is the final answer.
-	 */
-	buildDirectAnswerPrompt(query: string): string {
-		return (
-			`Answer this query directly from your own general knowledge: ${query}\n\n` +
-			`It needs no search: it is general knowledge, simple reasoning, or conversation. Do NOT call any search, retrieval, web, or file-reading tools. ${this.askUserException()}` +
-			`Reply naturally and concisely; for small talk, just respond conversationally. Do not cite sources or mention retrieval.`
-		);
-	}
-
-	/**
 	 * Tools an `organize` turn keeps: pi's file tools plus the converter, the
 	 * duplicate scan, and file-name discovery, whichever this agent registered.
 	 * The retrieval, datasource, and web tools stay out: the turn acts on files.
@@ -3276,15 +3261,42 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Prompt for a request Jev routed to `extra`: a task that is neither
-	 * knowledge, the user's records, file organization, nor configuration.
-	 * The model acts with every tool it has; there is no retrieval or verification phase.
+	 * Prompt for a request Jev routed to `extra`: no branch had a confident
+	 * non-local verdict, and handling it needs no search of the user's records
+	 * first. Nothing was retrieved and nothing follows this turn — no fast
+	 * answer, follow-up check, or verification — so the single tool-capable
+	 * turn either answers the question or carries the task out. No tool is
+	 * forbidden: the model looks facts up itself when they are not its own.
 	 */
 	buildExtraPrompt(query: string): string {
+		const registered = new Set(this.tools.map((tool) => tool.name));
+		// Name the tools that can settle a question this turn cannot answer from
+		// memory alone: the retrieval tools this agent registered, plus the web
+		// tools when they are on. Never name a tool the model does not have.
+		const lookups = [...registered].filter(
+			(name) => this.searchToolNames.has(name) || name === WEB_SEARCH_TOOL_NAME || name === WEB_FETCH_TOOL_NAME,
+		);
+		const lookupHint = lookups.length === 0 ? "" : ` (${lookups.join(", ")})`;
+		const askUser = this.askUserOffered
+			? `ask through ${ASK_USER_TOOL_NAME} rather than guessing`
+			: "say so in the reply rather than guessing";
 		return (
-			`${query}\n\n` +
-			`Carry this request out with the tools you have. It needs no document search. ` +
-			`When done, reply with a short report as your final message, with no tool call: what you did, the result, and anything that still needs the user. Write in the language of the request.`
+			`Handle this request now, in this one turn, with the tools you have: ${query}\n\n` +
+			`Nothing has been retrieved for you and no other turn follows: the message you end with is the final answer.\n\n` +
+			`How to handle it:\n` +
+			`- Answer from your own knowledge when that reliably settles the question: stable general knowledge, a definition, simple reasoning, or small talk.\n` +
+			`- Look it up first when the answer depends on the user's own records (their files, chats, mail, notes, calendar, or history) or on facts that may be recent, specific, or changed${lookupHint}.\n` +
+			`- Otherwise carry the task out with the tools.\n\n` +
+			`Rules for your reply:\n` +
+			`- ${ANSWER_LEAD_RULE}\n` +
+			`- ${ANSWER_BULLET_RULE}\n` +
+			`- ${ANSWER_EMPHASIS_RULE}\n` +
+			`- ${ANSWER_LANGUAGE_RULE}\n` +
+			`- ${ANSWER_UNCERTAINTY_RULE}\n` +
+			`- ${ANSWER_CITATION_RULE}\n` +
+			`- When you did work instead of answering a question, reply with a short report as your final message, with no tool call: what you did, the result, and anything that still needs the user. The answer-format rules above do not apply to a report; write it in the language of the request.\n` +
+			`- When something you need is not available to you and only the user can settle it, ${askUser}.\n\n` +
+			`Write the answer or the report as your final message, then stop.`
 		);
 	}
 

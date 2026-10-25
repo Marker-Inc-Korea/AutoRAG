@@ -97,7 +97,7 @@ function configReport(answer: string): FauxResponseStep {
 }
 
 function jevRouting(route: QueryRoute | "config"): MockBackend {
-	const distribution = { local: 0.05, web: 0.05, direct: 0.05, config: 0.05, [route]: 0.85 };
+	const distribution = { local: 0.05, organize: 0.05, extra: 0.05, config: 0.05, [route]: 0.85 };
 	return new MockBackend({
 		[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.9 },
 		[DECOMPOSE_QUESTION_ID]: { answer: 0.9 },

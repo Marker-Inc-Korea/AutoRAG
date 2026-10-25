@@ -150,12 +150,32 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 		expect(response.results).toEqual([]);
 	}, 240_000);
 
-	it("keeps information questions on their own branches", async () => {
-		const direct = await agent.searchDocuments("프랑스의 수도는 어디야?");
-		expect(routeOf(direct)).toBe("direct");
+	it("answers a general-knowledge question in one extra turn (extra)", async () => {
+		const response = await agent.searchDocuments("프랑스의 수도는 어디야?");
 
+		expect(routeOf(response)).toBe("extra");
+		// One turn: no retrieval prefetch, no fast-phase preliminary, no verification.
+		expect(response.results).toEqual([]);
+		expect(response.answer).toMatch(/파리|Paris/u);
+	}, 240_000);
+
+	it("answers a general-knowledge question without a preliminary in the stream (extra)", async () => {
+		const events: string[] = [];
+		let answer = "";
+		for await (const event of agent.searchDocumentsStream("What is the capital of Australia?")) {
+			events.push(event.type);
+			if (event.type === "complete") answer = event.response.answer;
+		}
+
+		expect(events).toContain("complete");
+		expect(events).not.toContain("preliminary");
+		expect(answer).toMatch(/Canberra/u);
+	}, 240_000);
+
+	it("keeps a personal-records question on local search (local)", async () => {
 		writeFileSync(join(root, "docs", "budget.txt"), "The Q3 budget was approved by Mina Park.\n");
-		const local = await agent.searchDocuments("내 문서에서 Q3 예산을 누가 승인했는지 찾아줘");
-		expect(routeOf(local)).toBe("local");
+		const response = await agent.searchDocuments("내 문서에서 Q3 예산을 누가 승인했는지 찾아줘");
+
+		expect(routeOf(response)).toBe("local");
 	}, 360_000);
 });
