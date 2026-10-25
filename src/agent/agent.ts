@@ -3292,6 +3292,8 @@ export class AutoRAGAgent {
 			`- ${ANSWER_BULLET_RULE}\n` +
 			`- ${ANSWER_EMPHASIS_RULE}\n` +
 			`- ${ANSWER_LANGUAGE_RULE}\n` +
+			`- ${ANSWER_RELEVANCE_RULE}\n` +
+			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
 			`- ${ANSWER_UNCERTAINTY_RULE}\n` +
 			`- ${ANSWER_CITATION_RULE}\n` +
 			`- When you did work instead of answering a question, reply with a short report as your final message, with no tool call: what you did, the result, and anything that still needs the user. The answer-format rules above do not apply to a report; write it in the language of the request.\n` +
