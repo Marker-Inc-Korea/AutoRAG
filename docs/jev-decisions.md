@@ -216,13 +216,27 @@ What happens next:
 
 | Branch   | Pipeline                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
-| `organize` | Skips retrieval, decomposition, the fast answer, and verification. One turn with `bash`/`read`/`edit`/`write` plus the converter (`convert_files`, `list_file_conversions`), the duplicate scan, and file-name discovery; the datasource, retrieval, and web tools are withheld. The prompt requires a plan first, no overwrites, no permanent deletion (trash only), a listing check afterwards, and a final report of every change as old path → new path. No results; the run is not recorded in retrieval memory. |
+| `organize` | Skips retrieval, decomposition, the fast answer, and verification. One tool-capable turn with every tool the session has: no route changes the active tool set, so the turn prompt names the tools the task uses (`bash`, the file tools, `convert_files`/`list_file_conversions`, the duplicate scan, and file-name discovery) and the retrieval, datasource, and web tools it must not call. The prompt also carries the packaged `organize` skill as a `<skill name="organize" location="autorag-skill://organize">` invocation, which holds the rules: plan first, no overwrites, no permanent deletion (trash only), a listing check afterwards, and a final report of every change as old path → new path. If the skill cannot be loaded the run falls back to `local` with an `organize-skill-unavailable` diagnostic. No results; the run is not recorded in retrieval memory. |
 | `extra` | Skips retrieval, decomposition, the fast answer, and verification. One turn with **every** tool the session has and no tool ban: the prompt has the model answer from its own knowledge when that is reliable, look facts up with the retrieval/datasource tools or `web_search`/`web_fetch` when they are not, and otherwise do the work. The final message is either the answer (the same language and citation rules the other answer prompts use) or a short report of what was done. Cited retrieved evidence becomes results and feeds retrieval memory exactly like a local run (`recordStructuredResultsSession` without `isolateMemory`, plus the evidence judgment); an answer or report that cites nothing stays out of memory. |
-| `config` | Skips retrieval, decomposition, the fast answer, and verification. The turn prompt carries the full `autorag-setup` skill, the active config path, and the pi agent dir; the model edits the config with `bash`/`read`/`edit`/`write`, verifies with `autorag health`/`models list`, and reports old → new as its final message (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
+| `config` | Skips retrieval, decomposition, the fast answer, and verification. The turn prompt carries the packaged `autorag-setup` skill as a `<skill name="autorag-setup" location="autorag-skill://autorag-setup">` invocation, the active config path, and the pi agent dir, names `bash`/`read`/`edit`/`write` as the tools to use, and keeps retrieval, datasource, and web search out of the turn. The model edits the config, verifies with `autorag health`/`models list`, and reports old → new as its final message (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
 | `local`  | Decompose (if needed) and datasource check (configured datasources **and** the public web), in parallel → Jikji + MinSync + every selected datasource + one web search per query (when the web was selected), per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 
-The `extra` turn keeps the session's tool set untouched. `organize` still swaps
-in the file tools for its one turn and restores the previous set afterwards.
+### One tool set for every route
+
+No route changes the session's active tools: `organize` and `config` no longer
+swap in a narrower or builtin-only list, and a run without a bound TUI session
+keeps the tools it was built with. A stable tool list keeps the model's cached
+prefix intact and never leaves it referring to a tool that just vanished, so
+what a turn may use is stated in its prompt and in the skill it loads.
+
+A packaged agent skill reaches the turn as a `<skill name="…" location="…">`
+block whose location is opaque (`autorag-skill://<name>`) — never a filesystem
+path. Skills live under two shipped directories: `skills/<name>/SKILL.md` for a
+skill a parent agent may also copy (`autorag-setup`, which is both the
+config-branch skill and a parent-agent skill, as the README documents), and
+`internal-skills/<name>/SKILL.md` for a skill that is the librarian's own
+(`organize`), so parent-agent skill folders never grow a skill that only makes
+sense inside the librarian's own turn.
 
 The public web is one more source the `local` branch can search, chosen by Jev
 in the datasource check (see below) whenever the web tools are enabled. When it

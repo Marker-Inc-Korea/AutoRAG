@@ -6,7 +6,7 @@ These bind every agent and human working in this checkout. Force is CI, CODEOWNE
 
 ### Allowed
 
-Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay within the task.
+Edits inside `src/`, `test/`, `scripts/`, `skills/`, `internal-skills/`, and `docs/` that stay within the task.
 
 ### Forbidden
 
@@ -388,6 +388,15 @@ write new files, edit or replace existing files, and move files to the OS trash
   that" works from the conversation alone.
 - **Only when asked.** Retrieval, answering, and curation never modify files on
   their own.
+- **The organize turn's rules are a packaged skill.** When Jev routes a request
+  to `organize`, the turn loads `internal-skills/organize/SKILL.md` as a
+  `<skill name="organize" location="autorag-skill://organize">` invocation
+  (plan first, never overwrite, trash instead of deleting, confirm with a
+  listing, report every change as old path → new path) and its prompt names the
+  tools to use while keeping retrieval, datasource, and web search out of the
+  turn. No route changes the session's active tool set, so the prompt and the
+  skill are what scope the work. If the skill cannot be loaded, the run falls
+  back to `local` with an `organize-skill-unavailable` diagnostic.
 - **Indexing is separate.** `refresh`, `watch`, `lite`, `setup`, and `doctor`
   never modify source documents; they write only under the workspace
   `.autorag/` directory, Jikji's central store, and `~/.autorag`. Agents that
