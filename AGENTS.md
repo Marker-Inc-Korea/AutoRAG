@@ -49,11 +49,7 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 1. Commit and push **tracked** changes only (`git add -u`, then commit, then push). This is a standing request to commit at finish — do not wait for a per-session "please commit."
 2. Do not add untracked files. `git add .` and `git add -A` are forbidden at this step. Untracked files stay untracked. If the finished work introduced new files that must ship, add those paths explicitly by name — never a recursive add of the working tree.
-3. If there is nothing tracked to commit, skip commit/push and still return to `main`.
-4. `git checkout main`.
-5. Sync local `main` with `origin/main` (`git pull --ff-only origin main`).
-
-Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
+3. If there is nothing tracked to commit, skip commit/push.
 
 ### DCO sign-off (binding)
 

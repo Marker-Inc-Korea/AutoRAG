@@ -24,6 +24,7 @@ import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
+import { currentDateAddendum } from "./current-date.ts";
 import { registerIntentTracing } from "./intent-tracing.ts";
 import { createAutoRAGMcpClient, mcpPromptAddendum } from "./mcp-client.ts";
 import { fitRequestLimits } from "./request-limits.ts";
@@ -241,7 +242,8 @@ function createAutoRAGExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", (event) => ({
-			systemPrompt: getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections),
+			systemPrompt:
+				getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections) + currentDateAddendum(),
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
@@ -316,7 +318,8 @@ function createAutoRAGInteractiveExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", (event) => ({
-			systemPrompt: getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections),
+			systemPrompt:
+				getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections) + currentDateAddendum(),
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
