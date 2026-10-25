@@ -27,8 +27,8 @@ and the system prompt does not mention it. Discord brings its own question tool.
 Priority the model is given (system prompt and phase prompts): search and explore first with the other tools,
 use `ask_user` only for what still cannot be verified or a decision that is the user's alone, and when it must
 ask the user anything, ask through the tool instead of in plain text. The two-phase search's "no tools"
-instruction for the fast and direct answers does not cover `ask_user`; those prompts name it as the one
-exception under the same rule.
+instruction for the fast answer does not cover `ask_user`; that prompt names it as the one exception under
+the same rule.
 
 ## Settings
 
