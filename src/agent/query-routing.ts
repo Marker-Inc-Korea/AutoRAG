@@ -6,8 +6,8 @@ import type { JevJudge } from "./jev-extension.ts";
  * - `local`: anything needing information beyond the model's own knowledge —
  *   the user's files, chats, mail, or any fact the model cannot reliably recall,
  *   recent, specific, or changing public facts included. Local retrieval runs
- *   first; web search is left to the agent after the fast answer, when local
- *   evidence falls short.
+ *   first, together with every datasource Jev selects, the public web among
+ *   them when web tools are enabled.
  * - `organize`: the user wants files or folders acted on — move, rename in
  *   bulk, rename by content, convert, sort, tidy — rather than information
  *   found. No retrieval and no verification: one tool-capable turn does it.
@@ -64,6 +64,21 @@ export const DATASOURCE_PROBABILITY_THRESHOLD = 0.5;
 export function datasourceQuestionId(datasourceId: string): string {
 	return `datasource:${datasourceId}`;
 }
+
+/**
+ * Reserved candidate id of the public web in the datasource gate.
+ *
+ * Datasource ids come from the config's `datasources` keys, which are only
+ * required to be non-empty (see `DatasourceSkillRegistry.register`), so a
+ * configured datasource *can* be called `web`. When one is, the web candidate
+ * is withheld and {@link DatasourceSelection.webIdTaken} says so, so the
+ * question id `datasource:web` always names exactly one candidate.
+ */
+export const WEB_DATASOURCE_ID = "web";
+
+/** What the web candidate holds, in the same shape as a configured datasource. */
+const WEB_DATASOURCE_DESCRIPTION =
+	"The public internet: current events, recent releases, prices, exchange rates, version numbers, and public facts beyond the assistant's knowledge or likely to have changed since its training. It never holds the user's private records (their files, chats, mail, or notes).";
 
 /**
  * Wording calibrated against live Jev (OpenRouter `typesafe/jev-1.13`): asking
@@ -261,12 +276,24 @@ export interface DatasourceCandidate {
 }
 
 export interface DatasourceSelection {
-	/** Datasource ids to search, in registration order. */
+	/** Datasource ids to search, in registration order; the web candidate's id is {@link WEB_DATASOURCE_ID}. */
 	readonly selected: readonly string[];
-	/** Jev's P(search needed) per datasource id, for every datasource it answered. */
+	/** Jev's P(search needed) per candidate id, for every candidate it answered. */
 	readonly probabilities: Readonly<Record<string, number>>;
 	/** Why no datasource is searched instead of following Jev; absent when Jev decided. */
 	readonly fallbackReason?: string;
+	/**
+	 * True when the web candidate was withheld because a configured datasource
+	 * already uses {@link WEB_DATASOURCE_ID}: `datasource:web` then names that
+	 * configured datasource, and the run searches no web before the fast answer.
+	 */
+	readonly webIdTaken?: boolean;
+}
+
+/** Options of {@link selectDatasources}. */
+export interface SelectDatasourcesOptions {
+	/** Offer the public web as one more candidate (the host has web tools enabled). */
+	readonly web?: boolean;
 }
 
 /** A similar question asked before, its results, and where each was found. */
@@ -283,19 +310,33 @@ function describeDatasources(
 	query: string,
 	datasources: readonly DatasourceCandidate[],
 	pastSearches: readonly PastSearchHint[],
+	webOffered: boolean,
 ): string {
 	const catalog = datasources
 		.map((datasource) => `- ${datasource.datasourceId} (${datasource.type}): ${datasource.description}`)
 		.join("\n");
+	// A past result is shown only for a place this run actually searches: a
+	// candidate above, or the local files, which are always searched. A hint
+	// from the web when the web candidate was not offered (or was withheld by
+	// the reserved-id collision) names nothing the run will search, so it is
+	// dropped rather than shown as a place Jev can pick.
+	const searched = new Set<string>(["local files", ...datasources.map((datasource) => datasource.datasourceId)]);
+	const shown = pastSearches.flatMap((past) => {
+		const results = past.results.flatMap((result) => {
+			const foundIn = result.foundIn.filter((place) => searched.has(place));
+			return foundIn.length === 0 ? [] : [{ title: result.title, foundIn }];
+		});
+		return results.length === 0 ? [] : [{ query: past.query, results }];
+	});
 	// Past questions and titles are model- or caller-written text: JSON-quote
 	// them so a newline or a fake "User question:" line cannot forge the
 	// state's structure.
 	const history =
-		pastSearches.length === 0
+		shown.length === 0
 			? ""
 			: `\n\nSimilar past questions, the results they returned, and where each result came from. A hint, ` +
 				`not a rule: the same question can need other datasources this time. A result titled as not ` +
-				`found / no result / negative means that datasource was searched and did NOT have the answer.\n${pastSearches
+				`found / no result / negative means that datasource was searched and did NOT have the answer.\n${shown
 					.map(
 						(past) =>
 							`- ${JSON.stringify(past.query)}${past.results
@@ -304,8 +345,12 @@ function describeDatasources(
 					)
 					.join("\n")}`;
 	return (
-		`An assistant answers the user's question from their local files and a set of registered datasources. ` +
-		`Local files are always searched. Each registered datasource is searched only when its content could hold ` +
+		`An assistant answers the user's question from their local files${
+			webOffered ? ", the public web," : ""
+		} and a set of registered datasources. ` +
+		`Local files are always searched. ` +
+		(webOffered ? `The public web is searched only when the question needs current or recent public facts. ` : "") +
+		`Each registered datasource is searched only when its content could hold ` +
 		`part of the answer.\n\n` +
 		`Each description below is only a short summary of what the operator knows is in that datasource, not a ` +
 		`complete list: every datasource can also hold other topics, people, and conversations that are not ` +
@@ -316,33 +361,62 @@ function describeDatasources(
 }
 
 /**
- * Ask Jev, in one batched call, one `noul` per registered datasource: does
- * answering the question need that datasource searched? The state describes
- * every datasource (descriptions are flagged as non-exhaustive summaries), so
- * Jev judges each one against the others, plus where similar past questions
- * were answered, when retrieval memory has any. Never throws: a missing
- * credential or an unreachable backend searches no datasource, which is the
- * behavior without Jev.
+ * The `noul` asked about one candidate. It keeps the configured datasources'
+ * question shape; only the yes/no wording differs for the web candidate, which
+ * holds the public internet rather than a connector's archive.
+ */
+function candidateQuestion(candidate: DatasourceCandidate, webCandidate: boolean): Question {
+	const { datasourceId } = candidate;
+	const labels = webCandidate
+		? {
+				true: `Answering needs public facts from the internet that may be recent, or that changed since the assistant's training: current events, recent releases, prices, exchange rates, version numbers, or other public facts the assistant cannot reliably recall.`,
+				false: `The question is about the user's own files, records, chats, or other private sources, or it is stable knowledge the assistant already has; the public internet is not needed.`,
+			}
+		: {
+				true: `The "${datasourceId}" datasource's content could contain information that answers some part of the question.`,
+				false: `The "${datasourceId}" datasource's content is unrelated to the question, or the question needs no datasource at all.`,
+			};
+	return {
+		...check(`Should the "${datasourceId}" datasource be searched to answer the user question?`, labels),
+		id: datasourceQuestionId(datasourceId),
+	};
+}
+
+/**
+ * Ask Jev, in one batched call, one `noul` per candidate: does answering the
+ * question need that datasource searched? The state describes every candidate
+ * (descriptions are flagged as non-exhaustive summaries), so Jev judges each
+ * one against the others, plus where similar past questions were answered,
+ * when retrieval memory has any. With `options.web`, the public web is one
+ * more candidate, under the reserved id {@link WEB_DATASOURCE_ID}; it is
+ * withheld when a configured datasource already uses that id
+ * ({@link DatasourceSelection.webIdTaken}), so a question id never names two
+ * candidates. Never throws: a missing credential or an unreachable backend
+ * searches nothing, which is the behavior without Jev.
  */
 export async function selectDatasources(
 	judge: JevJudge,
 	query: string,
 	datasources: readonly DatasourceCandidate[],
 	pastSearches: readonly PastSearchHint[] = [],
+	options: SelectDatasourcesOptions = {},
 ): Promise<DatasourceSelection> {
-	if (datasources.length === 0) return { selected: [], probabilities: {} };
+	// A configured datasource under the reserved id keeps it: the web candidate
+	// is withheld rather than sharing the question id.
+	const webIdTaken = options.web === true && datasources.some((entry) => entry.datasourceId === WEB_DATASOURCE_ID);
+	const webOffered = options.web === true && !webIdTaken;
+	const candidates: DatasourceCandidate[] = webOffered
+		? [...datasources, { datasourceId: WEB_DATASOURCE_ID, type: "web", description: WEB_DATASOURCE_DESCRIPTION }]
+		: [...datasources];
+	if (candidates.length === 0) return { selected: [], probabilities: {} };
 	let verdicts: readonly Verdict[];
 	try {
 		verdicts = (
 			await judge(
-				describeDatasources(query, datasources, pastSearches),
-				datasources.map(({ datasourceId }) => ({
-					...check(`Should the "${datasourceId}" datasource be searched to answer the user question?`, {
-						true: `The "${datasourceId}" datasource's content could contain information that answers some part of the question.`,
-						false: `The "${datasourceId}" datasource's content is unrelated to the question, or the question needs no datasource at all.`,
-					}),
-					id: datasourceQuestionId(datasourceId),
-				})),
+				describeDatasources(query, candidates, pastSearches, webOffered),
+				candidates.map((candidate) =>
+					candidateQuestion(candidate, webOffered && candidate.datasourceId === WEB_DATASOURCE_ID),
+				),
 			)
 		).verdicts;
 	} catch (error) {
@@ -353,9 +427,9 @@ export async function selectDatasources(
 		};
 	}
 	const probabilities: Record<string, number> = {};
-	for (const datasource of datasources) {
-		const answer = verdicts.find((verdict) => verdict.id === datasourceQuestionId(datasource.datasourceId))?.answer;
-		if (typeof answer === "number") probabilities[datasource.datasourceId] = answer;
+	for (const candidate of candidates) {
+		const answer = verdicts.find((verdict) => verdict.id === datasourceQuestionId(candidate.datasourceId))?.answer;
+		if (typeof answer === "number") probabilities[candidate.datasourceId] = answer;
 	}
 	if (Object.keys(probabilities).length === 0) {
 		return {
@@ -367,9 +441,10 @@ export async function selectDatasources(
 		};
 	}
 	return {
-		selected: datasources
-			.map((datasource) => datasource.datasourceId)
+		selected: candidates
+			.map((candidate) => candidate.datasourceId)
 			.filter((datasourceId) => (probabilities[datasourceId] ?? 0) >= DATASOURCE_PROBABILITY_THRESHOLD),
 		probabilities,
+		...(webIdTaken ? { webIdTaken: true } : {}),
 	};
 }

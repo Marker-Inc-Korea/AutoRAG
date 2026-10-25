@@ -11,6 +11,7 @@ import {
 	QUERY_ROUTE_QUESTION_ID,
 	routeQuery,
 	selectDatasources,
+	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 
 function judgeWith(backend: JevBackend) {
@@ -627,5 +628,144 @@ describe("selectDatasources (Jev noul per registered datasource)", () => {
 		);
 		expect(selection.selected).toEqual([]);
 		expect(selection.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
+	});
+});
+
+describe("the public web as one more candidate in the datasource gate", () => {
+	const datasources: DatasourceCandidate[] = [
+		{ datasourceId: "slack", type: "chat", description: "Company Slack workspace: engineering and release channels" },
+	];
+	const webQuestionId = datasourceQuestionId(WEB_DATASOURCE_ID);
+
+	/** Records the batch's state and questions, then answers `byId` (default 0.1). */
+	function recordingBackend(byId: Readonly<Record<string, number>> = {}): {
+		backend: JevBackend;
+		seen: { state: unknown; questions: readonly { id: string; type: string; question: string }[] }[];
+	} {
+		const seen: { state: unknown; questions: readonly { id: string; type: string; question: string }[] }[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				seen.push({
+					state: request.state,
+					questions: request.questions.map(({ id, type, question }) => ({ id, type, question })),
+				});
+				return { answers: request.questions.map((question) => ({ answer: byId[question.id] ?? 0.1 })) };
+			},
+		};
+		return { backend, seen };
+	}
+
+	it("offers the public web as a noul candidate, judged with the other datasources in one batch", async () => {
+		const { backend, seen } = recordingBackend({ [webQuestionId]: 0.8 });
+		const selection = await selectDatasources(
+			judgeWith(backend),
+			"what is the latest Node.js LTS release?",
+			datasources,
+			[],
+			{ web: true },
+		);
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.questions.map((question) => question.id)).toEqual([datasourceQuestionId("slack"), webQuestionId]);
+		expect(seen[0]?.questions.map((question) => question.type)).toEqual(["noul", "noul"]);
+		expect(seen[0]?.questions[1]?.question).toContain(WEB_DATASOURCE_ID);
+		// The state names the public web and what it is for; the reserved id and the
+		// configured datasource both appear in the same catalog.
+		const state = String(seen[0]?.state);
+		expect(state).toContain(WEB_DATASOURCE_ID);
+		expect(state).toMatch(/public web|internet/iu);
+		expect(state).toMatch(/current events|recent releases|changed since/iu);
+		expect(state).toMatch(/private/iu);
+		expect(selection.selected).toEqual([WEB_DATASOURCE_ID]);
+		expect(selection.probabilities[WEB_DATASOURCE_ID]).toBe(0.8);
+	});
+
+	it("uses the same one-half threshold for the web candidate", async () => {
+		const { backend } = recordingBackend({ [webQuestionId]: 0.5 });
+		const selection = await selectDatasources(
+			judgeWith(backend),
+			"what is the latest Node.js LTS release?",
+			datasources,
+			[],
+			{ web: true },
+		);
+		expect(selection.selected).toEqual([WEB_DATASOURCE_ID]);
+	});
+
+	it("does not offer the web candidate when web tools are disabled", async () => {
+		const { backend, seen } = recordingBackend({ [webQuestionId]: 0.9 });
+		const selection = await selectDatasources(
+			judgeWith(backend),
+			"what is the latest Node.js LTS release?",
+			datasources,
+		);
+
+		expect(seen[0]?.questions.map((question) => question.id)).toEqual([datasourceQuestionId("slack")]);
+		expect(String(seen[0]?.state)).not.toMatch(/public web|internet/iu);
+		expect(selection.selected).toEqual([]);
+		expect(selection.probabilities[WEB_DATASOURCE_ID]).toBeUndefined();
+	});
+
+	it("runs the gate for the web alone when no datasource is registered", async () => {
+		const { backend, seen } = recordingBackend({ [webQuestionId]: 0.7 });
+		const selection = await selectDatasources(judgeWith(backend), "who won the 2026 election?", [], [], {
+			web: true,
+		});
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.questions.map((question) => question.id)).toEqual([webQuestionId]);
+		expect(selection.selected).toEqual([WEB_DATASOURCE_ID]);
+		expect(selection.fallbackReason).toBeUndefined();
+	});
+
+	it("withholds the web candidate and says so when a configured datasource owns the reserved id", async () => {
+		const web = { datasourceId: WEB_DATASOURCE_ID, type: "chat", description: "A chat datasource named web" };
+		const { backend, seen } = recordingBackend({ [webQuestionId]: 0.9 });
+		const selection = await selectDatasources(
+			judgeWith(backend),
+			"what is the latest Node.js LTS release?",
+			[web],
+			[],
+			{ web: true },
+		);
+
+		// One question, not two: the reserved id cannot be asked about twice.
+		expect(seen[0]?.questions.map((question) => question.id)).toEqual([webQuestionId]);
+		expect(String(seen[0]?.state)).toContain("A chat datasource named web");
+		expect(String(seen[0]?.state)).not.toMatch(/current events|recent releases/iu);
+		expect(selection.webIdTaken).toBe(true);
+		// The reserved id selects the configured datasource, never the public web.
+		expect(selection.selected).toEqual([WEB_DATASOURCE_ID]);
+	});
+
+	it("maps a past search answered on the web onto the web candidate", async () => {
+		const { backend, seen } = recordingBackend();
+		await selectDatasources(
+			judgeWith(backend),
+			"what is the latest Node.js LTS release?",
+			datasources,
+			[
+				{
+					query: "Node.js LTS schedule",
+					results: [{ title: "Node.js Releases", foundIn: [WEB_DATASOURCE_ID] }],
+				},
+			],
+			{ web: true },
+		);
+
+		expect(String(seen[0]?.state)).toMatch(/Node\.js Releases.*web/u);
+	});
+
+	it("drops web-attributed past results when web tools are disabled", async () => {
+		const { backend, seen } = recordingBackend();
+		await selectDatasources(judgeWith(backend), "what is the latest Node.js LTS release?", datasources, [
+			{
+				query: "Node.js LTS schedule",
+				results: [{ title: "Node.js Releases", foundIn: [WEB_DATASOURCE_ID] }],
+			},
+		]);
+
+		expect(String(seen[0]?.state)).not.toContain("Node.js Releases");
 	});
 });

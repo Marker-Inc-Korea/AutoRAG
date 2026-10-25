@@ -159,13 +159,17 @@ default, OpenRouter), Jev first routes the question:
   verification, and reports every change as old path → new path.
 - Anything else that needs no retrieval (commit, push, open a PR, run a build)
   is carried out in one tool turn the same way.
-- Private-data questions use local search; the agent decides on web search
-  after the fast answer.
+- Private-data questions use local search. Questions about public facts that may
+  be recent or have changed can use the public web: Jev picks the web in the
+  same check as the registered connections, one web search runs per search
+  query before the fast answer, and the fast phase may also call `web_search`
+  itself when the baseline lacks the answer.
 - A multi-part question is split into up to five parallel search queries.
 - On local search, Jev also picks which registered datasources (Slack,
-  Discord, KakaoTalk, email, ...) to search before the fast answer, from each
-  datasource's description and where similar past questions were answered;
-  their chunks are reranked together with local file evidence.
+  Discord, KakaoTalk, email, ...) to search before the fast answer — and
+  whether to search the public web — from each description and where similar
+  past questions were answered; their hits are reranked together with local
+  file evidence.
 
 After the fast answer, Jev ends the run if the answer is complete and
 evidence-backed. So `results` may come straight from the fast answer, with no

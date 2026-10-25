@@ -65,6 +65,8 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-check-fallback"
 	| "datasources-selected"
 	| "datasource-selection-fallback"
+	| "web-datasource-id-taken"
+	| "web-search-failed"
 	| "citation-without-result"
 	| "line-reference-unverified"
 	| "citation-irrelevant"

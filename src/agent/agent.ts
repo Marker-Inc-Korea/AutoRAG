@@ -100,6 +100,7 @@ import {
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
@@ -185,6 +186,7 @@ import {
 	type QueryRoute,
 	routeQuery,
 	selectDatasources,
+	WEB_DATASOURCE_ID,
 } from "./query-routing.ts";
 import {
 	isRefreshOwnerAlive,
@@ -340,6 +342,18 @@ type ResolvedRetrievalLimits = {
 		readonly sectionLimit: number;
 	};
 };
+
+/** What the local branch searches alongside Jikji and MinSync: Jev's datasource ids and, when selected, the web. */
+interface SearchDatasourceChoice {
+	readonly datasources: readonly string[];
+	readonly web: boolean;
+}
+
+/** One prefetched web search: its candidate hits, or the reason it contributed none. */
+interface PrefetchedWebSearch {
+	readonly results: readonly RetrievalResult[];
+	readonly error?: string;
+}
 
 function positiveLimit(value: number | undefined, fallback: number, path: string): number {
 	if (value === undefined) return fallback;
@@ -2313,6 +2327,7 @@ export class AutoRAGAgent {
 					plan.queries,
 					options,
 					plan.datasources,
+					plan.web,
 				);
 				if (stopped()) return;
 				let fastText: string | undefined;
@@ -2755,10 +2770,12 @@ export class AutoRAGAgent {
 		readonly route: QueryRoute;
 		readonly queries: readonly string[];
 		readonly datasources: readonly string[];
+		/** True when Jev selected the public web, prefetched with the datasources. */
+		readonly web: boolean;
 		readonly selfConfigSkill?: string;
 	}> {
 		const judge = this.jevJudge;
-		if (judge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+		if (judge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
 		const decision = await this.searchProgress.step(
 			"route",
 			"Routing the question",
@@ -2776,7 +2793,7 @@ export class AutoRAGAgent {
 			// the question is still answerable: run the full local plan. Only an
 			// unavailable backend or an unusable verdict keeps the bare fallback.
 			if (decision.floorApplied !== true) {
-				return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [] };
+				return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
 			}
 		}
 		let route = decision.route;
@@ -2794,15 +2811,18 @@ export class AutoRAGAgent {
 				route = FALLBACK_QUERY_ROUTE;
 			}
 		}
-		const datasourcesPromise =
+		const selectionPromise: Promise<SearchDatasourceChoice> =
 			route === "local"
 				? this.searchProgress.step(
 						"datasource-select",
 						"Choosing datasources to search",
 						() => this.selectSearchDatasources(query),
-						(ids) => (ids.length === 0 ? "none" : ids.join(", ")),
+						(chosen) => {
+							const ids = [...chosen.datasources, ...(chosen.web ? [WEB_DATASOURCE_ID] : [])];
+							return ids.length === 0 ? "none" : ids.join(", ");
+						},
 					)
-				: Promise.resolve([]);
+				: Promise.resolve({ datasources: [], web: false });
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route === "local") {
 			const target = this.queryDecompositionModel ?? {
@@ -2827,7 +2847,7 @@ export class AutoRAGAgent {
 				});
 			}
 		}
-		const datasources = await datasourcesPromise;
+		const selection = await selectionPromise;
 		const probability = decision.routeProbability === undefined ? "" : ` (p=${decision.routeProbability.toFixed(2)})`;
 		this.routingDiagnostics.push({
 			code: "query-routed",
@@ -2843,17 +2863,25 @@ export class AutoRAGAgent {
 							: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
 			source: "jev",
 		});
-		return { route, queries, datasources, ...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}) };
+		return {
+			route,
+			queries,
+			datasources: selection.datasources,
+			web: selection.web,
+			...(selfConfigSkill !== undefined ? { selfConfigSkill } : {}),
+		};
 	}
 
 	/**
 	 * Jev datasource check for the local branch: one `noul` per configured
-	 * datasource that has retrieval methods, with where similar past questions
-	 * were answered (from retrieval memory) in the state. Returns the ids to
-	 * search with every query before the rerank; a failed check searches none.
+	 * datasource that has retrieval methods, plus the public web when its tools
+	 * are enabled, with where similar past questions were answered (from
+	 * retrieval memory) in the state. Returns the datasource ids and whether the
+	 * web is to be searched with every query before the rerank; a failed check
+	 * searches neither.
 	 */
-	private async selectSearchDatasources(query: string): Promise<readonly string[]> {
-		if (this.jevJudge === undefined) return [];
+	private async selectSearchDatasources(query: string): Promise<SearchDatasourceChoice> {
+		if (this.jevJudge === undefined) return { datasources: [], web: false };
 		const searchable = new Set(
 			this.methodRegistry
 				.list()
@@ -2866,7 +2894,10 @@ export class AutoRAGAgent {
 			type,
 			description,
 		}));
-		if (candidates.length === 0) return [];
+		// Web tools off means the web is not a candidate at all: no question, no
+		// web-attributed past hints, no web search.
+		const webEnabled = this.webSearchOptions !== undefined;
+		if (candidates.length === 0 && !webEnabled) return { datasources: [], web: false };
 		const whereFound = this.evidenceAttribution(catalog);
 		// A past result is shown only when its evidence is attributed to
 		// something this run searches (a configured datasource, a configured
@@ -2888,42 +2919,62 @@ export class AutoRAGAgent {
 			pastSearches.push({ query: past.question, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
 			if (pastSearches.length === SIMILAR_PAST_SEARCH_LIMIT) break;
 		}
-		const selection = await selectDatasources(this.jevJudge, query, candidates, pastSearches);
+		const selection = await selectDatasources(
+			this.jevJudge,
+			query,
+			candidates,
+			pastSearches,
+			webEnabled ? { web: true } : {},
+		);
 		if (selection.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "datasource-selection-fallback",
 				severity: "warning",
-				message: `Jev datasource check was unavailable; no datasource was searched before the fast answer. ${selection.fallbackReason}`,
+				message: `Jev datasource check was unavailable; ${webEnabled ? "no datasource and no web search ran" : "no datasource was searched"} before the fast answer. ${selection.fallbackReason}`,
 				source: "jev",
 			});
-			return [];
+			return { datasources: [], web: false };
+		}
+		// A configured datasource under the reserved id keeps it: the web
+		// candidate was withheld, so the reserved id names that datasource.
+		const webOffered = webEnabled && selection.webIdTaken !== true;
+		if (selection.webIdTaken === true) {
+			this.routingDiagnostics.push({
+				code: "web-datasource-id-taken",
+				severity: "warning",
+				message: `The public web was not offered to Jev: a configured datasource already uses the reserved id "${WEB_DATASOURCE_ID}", so that question id would name two candidates. The configured datasource was judged as usual.`,
+				source: "jev",
+			});
 		}
 		const describe = (ids: readonly string[]): string =>
 			ids.length === 0
 				? "none"
 				: ids.map((id) => `${id} (p=${selection.probabilities[id]?.toFixed(2) ?? "?"})`).join(", ");
-		const skipped = candidates.map((entry) => entry.datasourceId).filter((id) => !selection.selected.includes(id));
+		const judged = [...candidates.map((entry) => entry.datasourceId), ...(webOffered ? [WEB_DATASOURCE_ID] : [])];
+		const skipped = judged.filter((id) => !selection.selected.includes(id));
 		this.routingDiagnostics.push({
 			code: "datasources-selected",
 			severity: "info",
 			message: `Jev selected datasources to search before the fast answer: ${describe(selection.selected)}; skipped: ${describe(skipped)}.`,
 			source: "jev",
 		});
-		return selection.selected;
+		const datasources = webOffered ? selection.selected.filter((id) => id !== WEB_DATASOURCE_ID) : selection.selected;
+		return { datasources, web: webOffered && selection.selected.includes(WEB_DATASOURCE_ID) };
 	}
 
 	/**
-	 * Baseline local evidence for the fast answer. Jikji, MinSync, and every
-	 * Jev-selected datasource run for every search query in parallel (MinSync
-	 * itself queues per workspace), the per-query hits are interleaved and
-	 * deduplicated into one pool, and that pool is reranked against the
-	 * original question.
+	 * Baseline local evidence for the fast answer. Jikji, MinSync, every
+	 * Jev-selected datasource, and (when Jev selected it) one web search run for
+	 * every search query in parallel (MinSync itself queues per workspace), the
+	 * per-query hits are interleaved and deduplicated into one pool, and that
+	 * pool is reranked against the original question.
 	 */
 	private async prefetchInitialRetrievalContext(
 		query: string,
 		searchQueries: readonly string[],
 		options: RetrievalOptions,
 		datasources: readonly string[] = [],
+		web = false,
 	): Promise<string> {
 		// A steer typed during the prefetch stops it: the fast phase then starts with
 		// whatever already returned plus the steer, instead of waiting on a slow source.
@@ -2979,12 +3030,19 @@ export class AutoRAGAgent {
 								.catch((): RetrievalResult[] => []),
 						),
 					),
+					web
+						? this.searchProgress.track("web", "Web search", this.prefetchWebSearch(searchQuery, signal), {
+								count: (outcome) => outcome.results.length,
+							})
+						: Promise.resolve<PrefetchedWebSearch>({ results: [] }),
 				]),
 			),
 		);
-		for (const [index, [jikji, vector, perDatasource]] of perQuery.entries()) {
+		const webFailures: string[] = [];
+		for (const [index, [jikji, vector, perDatasource, webSearch]] of perQuery.entries()) {
 			const searchQuery = searchQueries[index];
 			if (searchQuery === undefined) continue;
+			if (webSearch.error !== undefined) webFailures.push(`${JSON.stringify(searchQuery)}: ${webSearch.error}`);
 			for (const path of jikji?.answerPack?.answerPaths ?? []) {
 				this.evidenceOrigins.add({ query: searchQuery, method: JIKJI_FIND_TOOL_NAME, source: path, content: "" });
 			}
@@ -2996,11 +3054,28 @@ export class AutoRAGAgent {
 						fallback: singleDatasourceToolName(datasources[datasourceIndex] ?? ""),
 					})),
 				),
+				// Web hits are remembered under the web tool's method, so cited
+				// evidence from a prefetched search is attributed to the web.
+				...webSearch.results.map((result) => ({
+					result,
+					fallback: WEB_SEARCH_TOOL_NAME,
+				})),
 			];
 			for (const { result, fallback } of labelled) {
 				const method = typeof result.metadata.method === "string" ? result.metadata.method : fallback;
 				this.evidenceOrigins.add({ query: searchQuery, method, source: result.source, content: result.content });
 			}
+		}
+		if (webFailures.length > 0) {
+			this.routingDiagnostics.push({
+				code: "web-search-failed",
+				severity: "warning",
+				message:
+					`The web search before the fast answer failed for ${webFailures.length} of ${searchQueries.length} ` +
+					`${searchQueries.length === 1 ? "query" : "queries"}: ${webFailures.join("; ")}. ` +
+					`The run continued without that web evidence.`,
+				source: "web",
+			});
 		}
 		const interleave = <T>(lists: readonly (readonly T[])[]): T[] => {
 			const merged: T[] = [];
@@ -3026,19 +3101,20 @@ export class AutoRAGAgent {
 		const datasourceResults = interleave(perQuery.map(([, , perDatasource]) => interleave(perDatasource))).filter(
 			unseen,
 		);
+		const webResults = interleave(perQuery.map(([, , , webSearch]) => webSearch.results)).filter(unseen);
 		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths,
-		// MinSync chunks, and selected-datasource chunks) against the original
-		// question, so decomposed sub-query hits compete on relevance to what the
-		// user asked. A configured reranker that fails is reported like a model
-		// error and the baseline falls back to retrieval order cut to `rerank.topN`;
-		// with reranking disabled the sections stay uncut.
+		// MinSync chunks, selected-datasource chunks, and web hits) against the
+		// original question, so decomposed sub-query hits compete on relevance to
+		// what the user asked. A configured reranker that fails is reported like a
+		// model error and the baseline falls back to retrieval order cut to
+		// `rerank.topN`; with reranking disabled the sections stay uncut.
 		let reranked: RetrievalResult[] | undefined;
 		let rerankFailed = false;
 		try {
 			reranked = await this.searchProgress.step(
 				"rerank",
 				"Ranking the candidates",
-				() => this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults, signal),
+				() => this.rerankPrefetchPool(query, jikjiPaths, minSyncResults, datasourceResults, webResults, signal),
 				(ranked) => (ranked === undefined ? undefined : `${ranked.length} kept`),
 			);
 		} catch (error) {
@@ -3062,11 +3138,12 @@ export class AutoRAGAgent {
 		let shownPaths = jikjiPaths.slice(0, this.limits.prefetch.jikjiPathLimit);
 		let shownMinSync = minSyncResults.slice(0, this.limits.prefetch.sectionLimit);
 		let shownDatasource = datasourceResults.slice(0, this.limits.prefetch.sectionLimit);
+		let shownWeb = webResults.slice(0, this.limits.prefetch.sectionLimit);
 		if (rerankFailed && this.rerankTopN !== undefined) {
 			// Retrieval order, not rerank order: fill the cut round-robin by rank
-			// across the three sources so one source cannot take every slot, and
+			// across the sources so one source cannot take every slot, and
 			// each source keeps its own order.
-			const sources = [shownPaths, shownMinSync, shownDatasource];
+			const sources = [shownPaths, shownMinSync, shownDatasource, shownWeb];
 			const quota = sources.map(() => 0);
 			for (let taken = 0, rank = 0; taken < this.rerankTopN; rank++) {
 				let advanced = false;
@@ -3081,6 +3158,7 @@ export class AutoRAGAgent {
 			shownPaths = shownPaths.slice(0, quota[0]);
 			shownMinSync = shownMinSync.slice(0, quota[1]);
 			shownDatasource = shownDatasource.slice(0, quota[2]);
+			shownWeb = shownWeb.slice(0, quota[3]);
 		}
 		if (jikjiFound && shownPaths.length > 0) {
 			sections.push(
@@ -3109,26 +3187,74 @@ export class AutoRAGAgent {
 					.join("\n")}`,
 			);
 		}
+		if (shownWeb.length > 0) {
+			sections.push(
+				`Web initial candidates:\n${shownWeb
+					.map((result) => `[${idFor(result)}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.join("\n")}`,
+			);
+		}
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
 	}
 
 	/**
+	 * One web search for the baseline, on the same provider chain, ordering, and
+	 * credentials as the `web_search` tool. Hits carry the URL as their source
+	 * and the title plus snippet as their content, so they merge, rerank, and
+	 * register like any other candidate. A failure contributes no evidence and
+	 * is reported by the caller; a steer abort is the user stopping the search,
+	 * not a failure.
+	 */
+	private async prefetchWebSearch(searchQuery: string, signal: AbortSignal): Promise<PrefetchedWebSearch> {
+		const web = this.webSearchOptions;
+		if (web === undefined) return { results: [] };
+		const modelAuth = web.modelAuth?.();
+		try {
+			const search = await executeWebSearch(
+				{ query: searchQuery, ...(web.provider !== undefined ? { provider: web.provider } : {}) },
+				{
+					signal,
+					...(web.timeoutSeconds !== undefined ? { timeoutMs: web.timeoutSeconds * 1_000 } : {}),
+					...(web.order !== undefined ? { order: web.order } : {}),
+					...(web.exclude !== undefined ? { exclude: web.exclude } : {}),
+					...(modelAuth !== undefined ? { modelAuth } : {}),
+				},
+			);
+			if (search.details.error !== undefined) return { results: [], error: search.details.error };
+			const sources = search.details.response.sources;
+			return {
+				results: sources.map((source, index) => ({
+					id: `web:${index}:${source.url}`,
+					source: source.url,
+					content: source.snippet ? `${source.title} — ${source.snippet}` : source.title,
+					score: 1 - index / Math.max(sources.length, 1),
+					metadata: { method: WEB_SEARCH_TOOL_NAME },
+				})),
+			};
+		} catch (error) {
+			if (signal.aborted) return { results: [] };
+			return { results: [], error: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	/**
 	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths, MinSync
-	 * chunks, and Jev-selected datasource chunks — down to the configured
-	 * `rerank.topN`. With decomposition the pool merges every search query's
-	 * hits (interleaved), capped at the same per-source sizes as a single query
-	 * so the rerank request does not grow with the query count. Returns
-	 * `undefined` when reranking is disabled or the pool is empty. A configured
-	 * reranker that is unavailable, throws, or returns nothing for a non-empty
-	 * pool throws, so the caller can report it and fall back.
+	 * chunks, Jev-selected datasource chunks, and prefetched web hits — down to
+	 * the configured `rerank.topN`. With decomposition the pool merges every
+	 * search query's hits (interleaved), capped at the same per-source sizes as a
+	 * single query so the rerank request does not grow with the query count.
+	 * Returns `undefined` when reranking is disabled or the pool is empty. A
+	 * configured reranker that is unavailable, throws, or returns nothing for a
+	 * non-empty pool throws, so the caller can report it and fall back.
 	 */
 	private async rerankPrefetchPool(
 		query: string,
 		answerPaths: readonly string[],
 		minSyncResults: readonly RetrievalResult[],
 		datasourceResults: readonly RetrievalResult[],
+		webResults: readonly RetrievalResult[],
 		signal: AbortSignal,
 	): Promise<RetrievalResult[] | undefined> {
 		const reranker = this.reranker;
@@ -3144,6 +3270,7 @@ export class AutoRAGAgent {
 			}));
 		candidates.push(...minSyncResults.slice(0, this.limits.prefetch.minSyncTopK));
 		candidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
+		candidates.push(...webResults.slice(0, this.limits.prefetch.sectionLimit));
 		if (candidates.length === 0) return undefined;
 		const descriptor = reranker.describe();
 		if (!descriptor.available) throw new Error(`reranker is unavailable: ${descriptor.reason ?? "unknown reason"}`);
@@ -3182,9 +3309,22 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Fast-phase exception to the no-tools rule, naming only the web tools this
+	 * session actually registered. Empty when web tools are off, so the prompt
+	 * never mentions a tool the model does not have.
+	 */
+	private fastPhaseWebHint(): string {
+		const names = new Set(this.tools.map((tool) => tool.name));
+		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
+		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` or ${WEB_FETCH_TOOL_NAME}` : "";
+		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is the one exception: when the question concerns public facts that may be recent or that changed since your training and the baseline lacks them, call it before answering.`;
+	}
+
+	/**
 	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
 	 * is already gathered, so the model answers immediately with minimal thinking,
-	 * as plain text, without any further tool calls.
+	 * as plain text, without further retrieval; the web tools are the only
+	 * exception, for public facts the baseline cannot settle.
 	 */
 	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
@@ -3192,7 +3332,7 @@ export class AutoRAGAgent {
 		return (
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
 			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ${this.askUserException()}` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${this.askUserException()}` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
