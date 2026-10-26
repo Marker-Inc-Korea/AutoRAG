@@ -39,7 +39,7 @@ export const ANSWER_EMPHASIS_RULE =
 
 /** Answer language follows the question, not the sources. */
 export const ANSWER_LANGUAGE_RULE =
-	"**Answer language**: write the answer in the language of the user's question (a Korean question gets a Korean answer) even when the sources are in another language; if the user asks for a specific language, use that one. Keep proper nouns, identifiers, code, and terms quoted from sources in their original form.";
+	"**Answer language**: write the answer in the language of the user's question (an English question gets an English answer), even when the retrieved sources, file names, or tool outputs are in another language. Never switch to the language of the sources; translate or paraphrase their content into the question's language. If the user asks for a specific language, use that one. Keep proper nouns, identifiers, code, and terms quoted from sources in their original form.";
 
 /** Uncertainty goes last so it never buries the conclusion. */
 export const ANSWER_UNCERTAINTY_RULE =
