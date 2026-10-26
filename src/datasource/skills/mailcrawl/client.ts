@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
 import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
 import { mailcrawlEmbeddingEnv } from "../../embedding-env.ts";
 import { ensurePrivateMailcrawlDataDir, validateMailcrawlInstanceId } from "./config.ts";
@@ -263,15 +264,30 @@ function spawnMailcrawl(
 		let stdout: BoundedOutput = { text: "", bytes: 0, exceeded: false },
 			stderr: BoundedOutput = { text: "", bytes: 0, exceeded: false },
 			settled = false,
-			reason: MailcrawlFailureReason | undefined;
+			reason: MailcrawlFailureReason | undefined,
+			pipeGuard: ReturnType<typeof setTimeout> | undefined;
 		const max = options.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
+		const finish = (code: number | null): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			clearTimeout(pipeGuard);
+			signal?.removeEventListener("abort", abort);
+			resolveResult({
+				ok: code === 0 && reason === undefined,
+				...(reason === undefined ? (code === 0 ? {} : { reason: "nonzero-exit" as const }) : { reason }),
+				stdout: stdout.text,
+				stderr: stderr.text,
+				code,
+			});
+		};
 		const timer = setTimeout(() => {
 			reason = "timeout";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		}, timeoutMs);
 		const abort = () => {
-			reason = "aborted";
-			terminate(child);
+			reason ??= "aborted";
+			terminateProcessTree(child, "SIGKILL");
 		};
 		if (signal?.aborted) abort();
 		signal?.addEventListener("abort", abort, { once: true });
@@ -281,20 +297,21 @@ function spawnMailcrawl(
 			stdout = appendOutput(stdout, chunk, max);
 			if (stdout.exceeded && reason === undefined) {
 				reason = "stdout-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr = appendOutput(stderr, chunk, max);
 			if (stderr.exceeded && reason === undefined) {
 				reason = "stderr-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.on("error", (error: NodeJS.ErrnoException) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			clearTimeout(pipeGuard);
 			signal?.removeEventListener("abort", abort);
 			resolveResult({
 				ok: false,
@@ -304,33 +321,15 @@ function spawnMailcrawl(
 				code: null,
 			});
 		});
-		child.on("close", (code) => {
+		// A descendant that inherited the stdio pipes keeps `close` from firing after the direct child
+		// exits. Reap the whole group and bound the wait so the promise can never stay pending.
+		child.on("exit", () => {
 			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			signal?.removeEventListener("abort", abort);
-			resolveResult({
-				ok: code === 0 && reason === undefined,
-				...(reason === undefined ? (code === 0 ? {} : { reason: "nonzero-exit" as const }) : { reason }),
-				stdout: stdout.text,
-				stderr: stderr.text,
-				code,
-			});
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
 		});
+		child.on("close", (code) => finish(code));
 	});
-}
-
-function terminate(child: ChildProcess): void {
-	if (child.killed) return;
-	if (process.platform !== "win32" && child.pid !== undefined) {
-		try {
-			process.kill(-child.pid, "SIGTERM");
-			return;
-		} catch {
-			/* swallow process-group fallback */
-		}
-	}
-	child.kill("SIGTERM");
 }
 function parseJson(text: string): unknown {
 	try {

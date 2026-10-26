@@ -7,7 +7,9 @@ import {
 	ANSWER_IMAGE_EMBED_RULE,
 	ANSWER_LANGUAGE_RULE,
 	ANSWER_LEAD_RULE,
+	ANSWER_RELEVANCE_RULE,
 	ANSWER_UNCERTAINTY_RULE,
+	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
 
 const evidenceRefSchema = Type.Object({
@@ -29,12 +31,15 @@ const evidenceRefSchema = Type.Object({
 	documentType: Type.Optional(Type.String({ description: "Document type, if known", maxLength: 120 })),
 	documentArea: Type.Optional(Type.String({ description: "Document collection area, if known", maxLength: 120 })),
 	evidenceType: Type.Optional(Type.String({ description: "Evidence type, if known", maxLength: 120 })),
-	evidenceLocation: Type.Optional(Type.String({ description: "Human-readable evidence location", maxLength: 120 })),
+	lineEnd: Type.Optional(Type.Integer({ description: "Last line of the chunk, if known" })),
+	section: Type.Optional(
+		Type.String({ description: "Article or heading the chunk sits in, if known", maxLength: 120 }),
+	),
 	confidence: Type.Optional(Type.Number({ description: "Evidence confidence, 0..1", minimum: 0, maximum: 1 })),
 });
 
 const answerSchema = Type.String({
-	description: `Answer for the caller. Unless the user explicitly requests otherwise, provide at most 5 bullet points (plus optional explanation) and answer directly; reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_LEAD_RULE} ${ANSWER_BULLET_RULE} ${ANSWER_EMPHASIS_RULE} ${ANSWER_LANGUAGE_RULE} ${ANSWER_UNCERTAINTY_RULE} ${ANSWER_DELIVERABLE_RULE} ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
+	description: `Answer for the caller. Unless the user explicitly requests otherwise, provide at most 5 bullet points (plus optional explanation) and answer directly; reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_LEAD_RULE} ${ANSWER_BULLET_RULE} ${ANSWER_EMPHASIS_RULE} ${ANSWER_LANGUAGE_RULE} ${ANSWER_UNCERTAINTY_RULE} ${ANSWER_RELEVANCE_RULE} ${ANSWER_UNCONFIRMED_FINAL_RULE} ${ANSWER_DELIVERABLE_RULE} ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
 });
 
 const warningsSchema = Type.Optional(
@@ -49,6 +54,8 @@ const curatedResultFields = {
 		Type.Object({
 			excerpt: Type.String({ description: "Supporting excerpt" }),
 			lineNumber: Type.Optional(Type.Integer({ description: "Line number of the excerpt, if known" })),
+			lineEnd: Type.Optional(Type.Integer({ description: "Last line of the excerpt, if known" })),
+			section: Type.Optional(Type.String({ description: "Article or heading the excerpt sits in, if known" })),
 		}),
 	),
 	confidence: Type.Number({ description: "Confidence in this result, 0..1", minimum: 0, maximum: 1 }),
@@ -85,6 +92,10 @@ export const reportSchema = Type.Object({
 export interface AutoRAGEmittedEvidence {
 	readonly excerpt: string;
 	readonly lineNumber?: number;
+	/** Last line of the chunk; with {@link lineNumber} the exact range in the parsed document. */
+	readonly lineEnd?: number;
+	/** Article or heading the chunk sits in. */
+	readonly section?: string;
 }
 
 export interface AutoRAGEmittedResult {
@@ -104,13 +115,14 @@ export interface AutoRAGEvidenceRef {
 	readonly retrievalResultId?: string;
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
+	readonly lineEnd?: number;
+	readonly section?: string;
 	readonly stableEvidenceId?: string;
 	readonly retrieverMix?: readonly string[];
 	readonly parserType?: string;
 	readonly documentType?: string;
 	readonly documentArea?: string;
 	readonly evidenceType?: string;
-	readonly evidenceLocation?: string;
 	readonly confidence?: number;
 }
 

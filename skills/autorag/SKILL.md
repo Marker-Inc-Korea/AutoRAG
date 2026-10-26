@@ -123,14 +123,21 @@ autorag evidence <sessionId> --result 1 --json
 ```
 
 The response includes the original source, retrieval method, stable evidence
-ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber`,
-`retrievalResultId`, and metadata. Omit `--result` to inspect every result in
+ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber` and
+`lineEnd` (the chunk's line range in the parsed document), `section` (the
+article or heading it sits in), `retrievalResultId`, and metadata. Omit `--result` to inspect every result in
 the session. Prefer this command whenever the caller wants detailed chunk text
 rather than only the curated summary.
 
 - `--scope` narrows datasource retrieval to a requested sub-path (ordinary
   per-query filtering).
 - `--json` is required for programmatic consumption.
+- Each search result carries `locations` (`lineStart`, `lineEnd`, `section`)
+  when the harness measured where its evidence sits in the parsed document. Quote
+  those, not line numbers or counts written in the answer prose; a
+  `line-reference-unverified` diagnostic (with `--debug`) flags prose line
+  numbers no cited evidence covers. Locations are absent for chunks the chunker
+  rewrote (such as flattened tables).
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.
 
@@ -152,13 +159,17 @@ default, OpenRouter), Jev first routes the question:
   verification, and reports every change as old path → new path.
 - Anything else that needs no retrieval (commit, push, open a PR, run a build)
   is carried out in one tool turn the same way.
-- Private-data questions use local search; the agent decides on web search
-  after the fast answer.
+- Private-data questions use local search. Questions about public facts that may
+  be recent or have changed can use the public web: Jev picks the web in the
+  same check as the registered connections, one web search runs per search
+  query before the fast answer, and the fast phase may also call `web_search`
+  itself when the baseline lacks the answer.
 - A multi-part question is split into up to five parallel search queries.
 - On local search, Jev also picks which registered datasources (Slack,
-  Discord, KakaoTalk, email, ...) to search before the fast answer, from each
-  datasource's description and where similar past questions were answered;
-  their chunks are reranked together with local file evidence.
+  Discord, KakaoTalk, email, ...) to search before the fast answer — and
+  whether to search the public web — from each description and where similar
+  past questions were answered; their hits are reranked together with local
+  file evidence.
 
 After the fast answer, Jev ends the run if the answer is complete and
 evidence-backed. So `results` may come straight from the fast answer, with no

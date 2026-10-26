@@ -1,7 +1,9 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
 import { abortReason } from "../process/abort-reason.ts";
+import { type ChunkLocation, locateChunk } from "../retrieval/chunk-location.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
+import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -136,8 +138,16 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		} catch (error) {
 			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
 			hits = await client.query(query, queryK, "bm25", options.signal);
+			// Hybrid is the only MinSync method searched, so a semantic half that is down (embedder
+			// unreachable, stale index) would vanish from the result unless the pipeline is told.
+			options.onFallback?.({
+				method: this.describe().name,
+				fallback: "bm25",
+				reason: describeRetrievalError(error),
+			});
 		}
 		const results: RetrievalResult[] = [];
+		const mirrorTexts = new Map<string, string | undefined>();
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
@@ -147,6 +157,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// merger would treat them as the same evidence.
 			const chunkDiscriminator = hit.docId ?? basename(hit.path);
 			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
+			const location = locateChunkInMirror(mirrorTexts, entry, hit.text);
 			results.push({
 				id: chunkId,
 				content: hit.text,
@@ -157,6 +168,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 					virtualPath: entry.virtualPath,
 					minsyncChunkId: chunkId,
 					minsyncPath: hit.path,
+					...(location !== undefined
+						? {
+								lineNumber: location.lineStart,
+								lineEnd: location.lineEnd,
+								...(location.section !== undefined ? { section: location.section } : {}),
+							}
+						: {}),
 				},
 			});
 			if (results.length >= topK) break;
@@ -193,4 +211,33 @@ export class MinSyncHybridMethod extends MinSyncVectorMethod {
 			capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
 		};
 	}
+}
+
+/** Parsed mirrors bigger than this are not searched for a chunk's line range. */
+const MAX_MIRROR_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Where `chunk` sits in the parsed markdown MinSync indexed for `entry`. The
+ * staged copy is what MinSync chunked; the parsed mirror is the same text and is
+ * the fallback before the first sync. Undefined when the document cannot be read
+ * or the chunk is not found in exactly one place, so a line is never guessed.
+ */
+function locateChunkInMirror(
+	cache: Map<string, string | undefined>,
+	entry: { readonly minSyncPath: string; readonly parsedOutputPath: string },
+	chunk: string,
+): ChunkLocation | undefined {
+	let text: string | undefined;
+	const path = existsSync(entry.minSyncPath) ? entry.minSyncPath : entry.parsedOutputPath;
+	if (cache.has(path)) {
+		text = cache.get(path);
+	} else {
+		try {
+			text = statSync(path).size <= MAX_MIRROR_BYTES ? readFileSync(path, "utf8") : undefined;
+		} catch {
+			text = undefined;
+		}
+		cache.set(path, text);
+	}
+	return text === undefined ? undefined : locateChunk(text, chunk);
 }

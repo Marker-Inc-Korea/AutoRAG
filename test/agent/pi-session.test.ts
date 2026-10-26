@@ -22,6 +22,7 @@ import {
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
+	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
@@ -55,7 +56,7 @@ function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
 		new MockBackend({
 			[QUERY_ROUTE_QUESTION_ID]: {
 				answer: route,
-				distribution: { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 },
+				distribution: { local: 0.1, organize: 0.1, extra: 0.1, [route]: 0.8 },
 				confidence: 0.8,
 			},
 			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
@@ -64,10 +65,10 @@ function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
 	);
 }
 
-/** A TUI-hosted agent on the faux model, routed by `jev` (direct route by default). */
+/** A TUI-hosted agent on the faux model, routed by `jev` (the extra route by default). */
 async function tuiAgent(
 	responses: FauxResponseStep[],
-	jev: JevBackend = jevRoute("direct"),
+	jev: JevBackend = jevRoute("extra"),
 	extra: Pick<AutoRAGAgentOptions, "datasourceSkills"> = {},
 	ui: Partial<ExtensionUIContext> = {},
 ) {
@@ -524,12 +525,12 @@ describe("AutoRAG pi coding-agent host", () => {
 		// The bound pi session already records and renders the model's own
 		// assistant message. Re-sending the answer as a custom message would show
 		// it twice and put it in the model's context twice (as a user message).
-		// The direct route ends in one plain answer, so no extra turn runs either.
+		// The extra route ends in one plain answer, so no extra turn runs either.
 		const tui = await tuiAgent([fauxAssistantMessage("Paris.", { stopReason: "stop" })]);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await tui.agent.waitForIdle();
-			// One model call: the direct route ends in a single plain answer.
+			// One model call: the extra route ends in a single plain answer.
 			expect(tui.registration.state.callCount).toBe(1);
 			const copies = tui.session.messages.filter((message) => message.role === "custom");
 			expect(copies).toEqual([]);
@@ -544,19 +545,16 @@ describe("AutoRAG pi coding-agent host", () => {
 
 	it("steers a running TUI search with a message typed during a model turn", async () => {
 		// Enter while the search streams is a correction of the running search, not
-		// a new query: the model sees it in the same run, before its next request,
-		// and the steered direct answer goes on to verification.
+		// a new query: the model sees it in the same run, before its next request.
+		// The extra branch has no verification phase, so that next request's answer
+		// is the run's final answer to the correction.
 		const seen: string[] = [];
 		const first = heldStep(
 			fauxAssistantMessage([fauxToolCall("search_custom", { query: "capital of france" })], {
 				stopReason: "toolUse",
 			}),
 		);
-		const tui = await tuiAgent([
-			first.held,
-			seeingStep("Lyon is not the capital.", seen),
-			seeingStep("Verified: Paris, not Lyon.", seen),
-		]);
+		const tui = await tuiAgent([first.held, seeingStep("Lyon is not the capital. Paris is.", seen)]);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await first.entered;
@@ -566,13 +564,12 @@ describe("AutoRAG pi coding-agent host", () => {
 
 			// The very next model request carried the steer, inside the same run.
 			expect(seen[0]).toContain("Check Lyon too.");
-			// Verification restates the correction and the run ends on its answer.
-			expect(seen[1]).toContain("Check Lyon too.");
-			expect(tui.registration.state.callCount).toBe(3);
+			// No verification phase followed: the steer's own turn answered it.
+			expect(tui.registration.state.callCount).toBe(2);
 			const answers = tui.session.messages.flatMap((message) =>
-				message.role === "assistant" ? [textOf(message.content)] : [],
+				message.role === "assistant" && message.stopReason === "stop" ? [textOf(message.content)] : [],
 			);
-			expect(answers.at(-1)).toBe("Verified: Paris, not Lyon.");
+			expect(answers).toEqual(["Lyon is not the capital. Paris is."]);
 			expect(tui.session.sessionName).toBe("What is the capital of France?");
 			const userTexts = tui.session.messages.flatMap((message) =>
 				message.role === "user" ? [textOf(message.content)] : [],
@@ -684,7 +681,7 @@ describe("AutoRAG pi coding-agent host", () => {
 				},
 				fauxAssistantMessage("Verified: Paris.", { stopReason: "stop" }),
 			],
-			jevRoute("direct"),
+			jevRoute("extra"),
 			{ datasourceSkills: [datasource.skill] },
 		);
 		try {
@@ -712,12 +709,14 @@ describe("AutoRAG pi coding-agent host", () => {
 		const routing = new MockBackend({
 			[QUERY_ROUTE_QUESTION_ID]: {
 				answer: "local",
-				distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+				distribution: { local: 0.8, organize: 0.1, extra: 0.1 },
 				confidence: 0.8,
 			},
 			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
 			[datasourceQuestionId("kakao")]: { answer: 0.9 },
+			// The gate also asks about the public web; this run must not search it.
+			[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
 		});
 		const tui = await tuiAgent(
 			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris.", seen)],
@@ -856,7 +855,7 @@ describe("AutoRAG pi coding-agent host", () => {
 		// With no turn streaming, pi submits Alt+Enter like Enter. AutoRAG reads
 		// the key itself, so it still queues a new question rather than a correction.
 		const seen: string[] = [];
-		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID);
+		const routing = holdingJev(jevRoute("extra"), QUERY_ROUTE_QUESTION_ID);
 		const tui = await tuiAgent([seeingStep("Paris.", seen), seeingStep("Leonardo da Vinci.", seen)], routing.backend);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
@@ -982,7 +981,7 @@ describe("AutoRAG pi coding-agent host", () => {
 
 		it("answers the second query in the same session without the Jev gate or a second search pipeline", async () => {
 			const seen: string[] = [];
-			const jev = countingJev(jevRoute("direct"));
+			const jev = countingJev(jevRoute("extra"));
 			const tui = await tuiAgent(
 				[seeingStep("Paris.", seen), seeingStep("About 2.1 million people.", seen)],
 				jev.backend,
@@ -1010,7 +1009,7 @@ describe("AutoRAG pi coding-agent host", () => {
 
 		it("lets the model search by tool call on a follow-up", async () => {
 			const seen: string[] = [];
-			const jev = countingJev(jevRoute("direct"));
+			const jev = countingJev(jevRoute("extra"));
 			const tui = await tuiAgent(
 				[
 					seeingStep("Paris.", seen),
@@ -1058,7 +1057,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					citingStep((ids) => `Beta [${ids[1]}].`, seen),
 					citingStep((ids) => `Alpha [${ids[0]}] and beta [${ids[1]}].`, seen),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{ datasourceSkills: [kakao] },
 			);
 			try {
@@ -1082,7 +1081,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					}),
 					citingStep((ids) => `Alpha [${ids[0]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
@@ -1107,7 +1106,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					}),
 					citingStep((ids) => `Old [${ids[0]}], new [${ids[1]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
@@ -1143,7 +1142,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					citingStep((ids) => `Beta [${ids[1]}].`),
 					citingStep((ids) => `Beta [${ids[1]}] and alpha [${ids[0]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{ datasourceSkills: [kakao] },
 			);
 			try {
@@ -1166,7 +1165,7 @@ describe("AutoRAG pi coding-agent host", () => {
 
 		describe("what Jev reads as the user's messages when it judges citations", () => {
 			/** Records the state of every citation-relevance batch and keeps every chunk. */
-			function citationStates(route: JevBackend = jevRoute("direct")): { backend: JevBackend; states: string[] } {
+			function citationStates(route: JevBackend = jevRoute("extra")): { backend: JevBackend; states: string[] } {
 				const states: string[] = [];
 				const inner = route;
 				const backend: JevBackend = {
@@ -1252,7 +1251,7 @@ describe("AutoRAG pi coding-agent host", () => {
 			});
 
 			it("keeps the earlier questions when the conversation is resumed in a new process", async () => {
-				const first = await tuiAgent([search, citingStep((ids) => `Alpha [${ids[0]}].`)], jevRoute("direct"), {
+				const first = await tuiAgent([search, citingStep((ids) => `Alpha [${ids[0]}].`)], jevRoute("extra"), {
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
 					],
@@ -1294,7 +1293,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					}),
 					citingStep((ids) => `Alpha [${ids[0]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
@@ -1318,7 +1317,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					}),
 					citingStep((ids) => `New [${ids[1]}], old [${ids[0]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
@@ -1407,12 +1406,14 @@ describe("AutoRAG pi coding-agent host", () => {
 			return new MockBackend({
 				[QUERY_ROUTE_QUESTION_ID]: {
 					answer: "local",
-					distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+					distribution: { local: 0.8, organize: 0.1, extra: 0.1 },
 					confidence: 0.8,
 				},
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 				[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
 				[datasourceQuestionId("kakao")]: { answer: 0.9 },
+				// The gate also asks about the public web; these runs must not search it.
+				[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
 			});
 		}
 
@@ -1495,7 +1496,7 @@ describe("AutoRAG pi coding-agent host", () => {
 			const widgets = widgetRecorder();
 			const tui = await tuiAgent(
 				[first.held, fauxAssistantMessage("Second answer.", { stopReason: "stop" })],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{},
 				widgets.ui,
 			);

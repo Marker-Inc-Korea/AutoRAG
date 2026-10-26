@@ -461,7 +461,9 @@ mirrored are kept and not re-parsed on the next run. `onProgress` reports `parse
 (`processed`/`total` are files, `currentVirtualPath` is the file about to be processed) and
 `datasources` (`processed`/`total` are datasource skills). During the parse phase
 `.autorag/refresh-progress.json` also carries the running `sourceFiles.total` and
-`parsedCounts`. Without these options a refresh behaves as before.
+`parsedCounts`, refreshed every 25 files rather than per file. The marker is replaced with a
+retried rename (an in-place overwrite if a reader keeps the destination held, as on Windows).
+Without these options a refresh behaves as before.
 
 ---
 
@@ -601,7 +603,10 @@ and `skills/autorag-setup` only when the agent should also drive the
 model-backed librarian, and `skills/autorag-doctor` for diagnostics. Other
 agents read their own skill directories; copy the same setup folder there and
 reload the agent session so it picks up the MCP registration instructions.
-Do not copy or retain the removed `autorag-lite-search` skill.
+Do not copy or retain the removed `autorag-lite-search` skill. The package also
+ships `internal-skills/`, which holds the librarian's own turn rules (for
+example `internal-skills/organize/`) — those are never parent-agent skills, so
+do not copy them into another agent.
 
 ### Quick Agent Workflow
 
@@ -634,7 +639,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 |---|---|---|---|---|
 | **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | BM25, Semantic, Hybrid |
 | **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
-| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25, Semantic, Hybrid |
+| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25 + native semantic hybrid ranking by default via a [read-only sidecar](docs/datasource-skills.md#discord-bm25-ranking); native FTS supplements lexical recall |
 | **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
 | **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
 | **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
@@ -730,7 +735,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[Telegram Remote Control](docs/telegram.md):** Ask the librarian from a Telegram chat through a running `autorag tui --telegram` session: setup, commands, and keeping it alive.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Apple Calendar & Reminders via EventKit MCP](docs/eventkit-mcp.md):** macOS-only: read Calendar events and Reminders (Google/iCloud/Exchange accounts already in Calendar.app) by running `mcp-server-apple-events` beside `autorag-mcp`. Live, read-only; not indexed.
-- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to a direct answer (intrinsic knowledge), local search (everything needing more information; web search is left to the agent after the fast answer), `organize` (move, rename, convert, or sort files and folders), or `extra` (any other action such as committing code; no retrieval), splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
+- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to local search (everything needing more information, including the public web when the question needs recent public facts), `extra` (a knowledge answer or any other action such as committing code; one turn with every tool, no retrieval), `organize` (move, rename, convert, or sort files and folders), or its own `config` branch, and keeps a weakly-favored non-local verdict on local search through a 0.75 confidence floor. It also splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
 - **[Competitive Landscape Study](docs/competitive-landscape-2026-09.md):** In-depth analysis of why in-place federation outperforms centralized RAG.

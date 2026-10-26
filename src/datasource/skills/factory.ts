@@ -25,6 +25,7 @@ import {
 	type DiscrawlOptions,
 	DiscrawlSkill,
 } from "./discrawl/index.ts";
+import { resolveDiscrawlSidecarOptions } from "./discrawl/sidecar.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
 import { HisterSkill } from "./hister/index.ts";
@@ -177,6 +178,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		),
 	discord: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
+		const sidecar = resolveDiscrawlSidecarOptions({
+			connector: config.connector,
+			workspaceRoot,
+			registrationName,
+			instanceId: config.instanceId ?? "default",
+		});
 		const clientOptions: DiscrawlOptions = {
 			...connector,
 			...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
@@ -188,6 +195,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
+			...(sidecar === undefined ? {} : { sidecar }),
 			client: new DiscrawlClient({
 				...clientOptions,
 				...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),
@@ -341,8 +349,21 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		}),
 };
 
-/** Skill names this factory can build. */
-export const BUILTIN_DATASOURCE_SKILL_NAMES: readonly string[] = Object.keys(BUILDERS);
+/** Skills whose backend runs on one platform only; elsewhere they are neither offered nor built. */
+const PLATFORM_ONLY_SKILLS: Readonly<Record<string, NodeJS.Platform>> = { kakao: "darwin" };
+
+/** Whether the skill's backend exists on `platform`. Names with no platform restriction are always supported. */
+export function datasourceSkillSupported(name: string, platform: NodeJS.Platform = process.platform): boolean {
+	return (PLATFORM_ONLY_SKILLS[name] ?? platform) === platform;
+}
+
+/** Skill names this factory can build on `platform`. */
+export function builtinDatasourceSkillNames(platform: NodeJS.Platform = process.platform): readonly string[] {
+	return Object.keys(BUILDERS).filter((name) => datasourceSkillSupported(name, platform));
+}
+
+/** Skill names this factory can build on the running platform. */
+export const BUILTIN_DATASOURCE_SKILL_NAMES: readonly string[] = builtinDatasourceSkillNames();
 
 function larkConnectorOptions(connector: Record<string, unknown> | undefined): {
 	readonly binaryPath?: string;
@@ -388,7 +409,10 @@ export function buildDatasourceSkills(
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
 		const templateName = entry.type ?? name;
-		const builder = Object.hasOwn(BUILDERS, templateName) ? BUILDERS[templateName] : undefined;
+		const builder =
+			Object.hasOwn(BUILDERS, templateName) && datasourceSkillSupported(templateName)
+				? BUILDERS[templateName]
+				: undefined;
 		if (builder === undefined) {
 			unknown.push(name);
 			continue;

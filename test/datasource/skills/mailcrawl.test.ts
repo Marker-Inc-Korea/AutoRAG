@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -263,6 +264,124 @@ process.exit(3);
 	});
 });
 
+describe("MailcrawlClient process lifecycle", () => {
+	/** kill(pid, 0) succeeds for zombies until init reaps them; those are not running. */
+	function isRunning(pid: number): boolean {
+		try {
+			process.kill(pid, 0);
+		} catch {
+			return false;
+		}
+		try {
+			return !/^Z/.test(execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim());
+		} catch {
+			return false;
+		}
+	}
+
+	function writeScript(body: string): void {
+		writeFileSync(binaryPath, `#!/usr/bin/env node\n${body}`);
+		chmodSync(binaryPath, 0o755);
+	}
+
+	const spawnedPids: number[] = [];
+	afterEach(() => {
+		for (const pid of spawnedPids.splice(0)) {
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {}
+		}
+	});
+
+	// Real wall-clock bound on purpose: the failure under test is a promise that never settles,
+	// which fake timers cannot observe. The tsconfig lib predates Promise.withResolvers.
+	async function settleWithin<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const bound = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => reject(new Error(`${what} stayed pending for ${ms}ms`)), ms);
+		});
+		try {
+			return await Promise.race([promise, bound]);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
+	it.skipIf(process.platform === "win32")(
+		"settles and reaps a descendant that keeps the inherited stdio open after the direct child exits",
+		{ timeout: 15_000 },
+		async () => {
+			writeScript(`import { spawn } from "node:child_process";
+const descendant = spawn(process.execPath, ["-e", "setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+process.stdout.write(JSON.stringify({ added: 1, grandchildPid: descendant.pid }));
+process.exit(0);
+`);
+			const client = new MailcrawlClient({ binaryPath, timeoutMs: 30_000, indexTimeoutMs: 30_000 });
+
+			const result = await settleWithin(client.sync(), 4_000, "mailcrawl sync");
+
+			expect(result.ok).toBe(true);
+			const pid = Number(/"grandchildPid":(\d+)/.exec(result.stdout)?.[1]);
+			expect(pid).toBeGreaterThan(0);
+			spawnedPids.push(pid);
+			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
+		},
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"escalates past a SIGTERM-ignoring child and reaps its descendant on timeout",
+		{ timeout: 15_000 },
+		async () => {
+			const pidFile = join(root, "descendant.pid");
+			writeScript(`import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => undefined);
+const descendant = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid));
+setInterval(() => undefined, 1000);
+`);
+			// The wall must outlive Node startup under load, or the fixture is killed before it records the
+			// descendant pid. A fixed 500ms raced that and left the pid file missing intermittently.
+			const client = new MailcrawlClient({ binaryPath, timeoutMs: 3_000 });
+
+			const pending = client.search("keyword", "anything");
+			await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true), { timeout: 10_000 });
+			const pid = Number(readFileSync(pidFile, "utf8"));
+			spawnedPids.push(pid);
+
+			expect(await settleWithin(pending, 8_000, "mailcrawl search")).toMatchObject({ ok: false, reason: "timeout" });
+			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
+		},
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"still honors abort after an output-cap termination was already requested",
+		{ timeout: 15_000 },
+		async () => {
+			const pidFile = join(root, "descendant.pid");
+			writeScript(`import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => undefined);
+const descendant = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000)"], { stdio: "inherit" });
+writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid));
+process.stdout.write("x".repeat(64));
+setInterval(() => undefined, 1000);
+`);
+			const controller = new AbortController();
+			const client = new MailcrawlClient({ binaryPath, maxBufferBytes: 8, timeoutMs: 30_000 });
+
+			const pending = client.search("keyword", "anything", { signal: controller.signal });
+			await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true), { timeout: 5_000 });
+			controller.abort();
+
+			expect(await settleWithin(pending, 5_000, "mailcrawl search")).toMatchObject({ ok: false });
+			const pid = Number(readFileSync(pidFile, "utf8"));
+			spawnedPids.push(pid);
+			await vi.waitFor(() => expect(isRunning(pid)).toBe(false), { timeout: 3_000 });
+		},
+	);
+});
+
 describe("MailcrawlClient default non-interactive budget", () => {
 	it("gives sync and index one hour, and search the short interactive default", async () => {
 		writeFake(JSON.stringify({ added: 0, updated: 0, unchanged: 1, chunksAdded: 1, archiveRevision: "r1" }));
@@ -318,11 +437,7 @@ describe("MailcrawlSkill", () => {
 		};
 		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 2 });
-		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
-			"mailcrawl-bm25",
-			"mailcrawl-semantic",
-			"mailcrawl-hybrid",
-		]);
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual(["mailcrawl-hybrid"]);
 		const result = await skill
 			.retrievalMethods()[0]
 			?.retrieve("approval", { topK: 5, scope: "/mailcrawl/personal/**" });
@@ -391,6 +506,76 @@ describe("MailcrawlSkill", () => {
 
 		expect(result).toHaveLength(1);
 		expect(result?.[0]?.metadata.accountId).toBe("personal");
+	});
+
+	it("falls back to BM25 when hybrid search cannot run, and searches hybrid first", async () => {
+		const modes: string[] = [];
+		const hit = {
+			chunkId: "m1:latest:0",
+			messageId: "m1",
+			threadId: "t1",
+			accountId: "acct",
+			mailbox: "INBOX",
+			subject: "Policy",
+			from: "a@example.com",
+			to: [],
+			date: "2026-08-31",
+			snippet: "Director approval required.",
+			score: 1,
+			mode: "bm25" as const,
+		};
+		const client = {
+			async sync() {
+				return { ok: true as const, data: { messages: 1, chunksAdded: 1 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return { ok: true as const, data: { embedded: 0 }, stdout: "", stderr: "", code: 0 };
+			},
+			async search(mode: string) {
+				modes.push(mode);
+				if (mode === "hybrid") {
+					return {
+						ok: false as const,
+						reason: "nonzero-exit" as const,
+						stdout: "",
+						stderr: "semantic index missing",
+						code: 1,
+					};
+				}
+				return { ok: true as const, hits: [hit], stdout: "", stderr: "", code: 0 };
+			},
+		};
+		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
+
+		const methods = skill.retrievalMethods();
+		const results = await Promise.all(methods.map((method) => method.retrieve("approval", { topK: 5 })));
+
+		expect(modes).toEqual(["hybrid", "bm25"]);
+		expect(results[0]?.[0]).toMatchObject({
+			source: "/mailcrawl/personal/chunks/m1:latest:0",
+			metadata: { fallbackFrom: "mailcrawl-hybrid" },
+		});
+	});
+
+	it("does not touch BM25 when hybrid search succeeds", async () => {
+		const modes: string[] = [];
+		const client = {
+			async sync() {
+				return { ok: true as const, data: { messages: 0, chunksAdded: 0 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return { ok: true as const, data: { embedded: 0 }, stdout: "", stderr: "", code: 0 };
+			},
+			async search(mode: string) {
+				modes.push(mode);
+				return { ok: true as const, hits: [], stdout: "", stderr: "", code: 0 };
+			},
+		};
+		const skill = new MailcrawlSkill({ client, instanceId: "personal" });
+
+		await Promise.all(skill.retrievalMethods().map((method) => method.retrieve("approval", { topK: 5 })));
+
+		expect(modes).toEqual(["hybrid"]);
 	});
 
 	it("keeps BM25 available and maps sources when the 0.2.0 semantic index is unavailable", async () => {

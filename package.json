@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.11.1",
+  "version": "2.13.1",
   "description": "Personal librarian agent for office work on the Pi framework, with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
@@ -31,6 +31,7 @@
   "files": [
     "dist",
     "skills",
+    "internal-skills",
     "README.md",
     "NOTICE",
     "licenses",

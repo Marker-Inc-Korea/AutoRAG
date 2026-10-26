@@ -23,6 +23,7 @@ import {
 	ensureMinSyncBinary,
 	MINSYNC_VERSION,
 	MinSyncClient,
+	MinSyncHybridMethod,
 	MinSyncQueryError,
 	MinSyncReleaseError,
 	MinSyncRequiredError,
@@ -33,6 +34,7 @@ import {
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
+import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
 
 let root: string;
 let source: string;
@@ -672,6 +674,38 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
 	});
 
+	it("stamps the line range and enclosing article of a chunk found in the parsed mirror (#1692)", async () => {
+		// Given
+		writeFileSync(
+			parsedOutput,
+			[
+				"# 이용약관",
+				"",
+				"제5조(회원의 의무)",
+				"① 회원은 관계 법령을 준수하여야 한다.",
+				"② 회원은 타인의 계정을 도용하여서는 아니 된다.",
+				"",
+			].join("\n"),
+		);
+		writeFakeMinSync(
+			JSON.stringify({
+				results: [
+					{ path: parsedOutput, score: 0.9, text: "② 회원은 타인의 계정을 도용하여서는 아니 된다." },
+					{ path: parsedOutput, score: 0.8, text: "text the mirror does not contain" },
+				],
+			}),
+		);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+		// When
+		const results = await method.retrieve("계정 도용", { topK: 2 });
+
+		// Then
+		expect(results[0]?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 5, section: "제5조(회원의 의무)" });
+		expect(results[1]?.metadata).not.toHaveProperty("lineNumber");
+		expect(results[1]?.metadata).not.toHaveProperty("section");
+	});
+
 	it("returns vector results with the canonical virtual source", async () => {
 		// Given
 		writeFakeMinSync(
@@ -783,6 +817,30 @@ process.exit(0);
 
 		expect(semantic).toHaveLength(1);
 		expect(hybridResults).toHaveLength(1);
+	});
+
+	it("answers a failed hybrid query from BM25 and tells the pipeline the semantic half was down", async () => {
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[args.indexOf("--mode") + 1] === "hybrid") {
+  console.error("embedder unreachable at http://127.0.0.1:9");
+  process.exit(2);
+}
+console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "BM25 answer." }] }));
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const hybrid = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const events: RetrievalFallbackEvent[] = [];
+
+		const results = await hybrid.retrieve("renewal", { topK: 2, onFallback: (event) => events.push(event) });
+
+		expect(results.map((result) => result.content)).toEqual(["BM25 answer."]);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ method: "hybrid", fallback: "bm25" });
+		expect(events[0]?.reason).toContain("embedder unreachable at http://127.0.0.1:9");
 	});
 
 	it("fails fast instead of waiting behind a refresh sync", async () => {

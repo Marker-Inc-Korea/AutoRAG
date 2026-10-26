@@ -521,7 +521,7 @@ describe("AutoRAGAgent", () => {
 });
 
 describe("AutoRAGAgent default method registration", () => {
-	it("registers MinSync and hybrid by default when options omit them", () => {
+	it("searches local files through MinSync hybrid only, keeping the vector method for its dedicated tool", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
@@ -529,6 +529,12 @@ describe("AutoRAGAgent default method registration", () => {
 		const internal = internals(agent);
 		expect(internal.minSyncMethod).toBeDefined();
 		expect(internal.minSyncMethod?.describe().name).toBe("minsync");
+		const registered = agent
+			.getMethodRegistry()
+			.list()
+			.map((method) => method.describe().name);
+		expect(registered).toContain("hybrid");
+		expect(registered).not.toContain("minsync");
 		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
 	});
 
@@ -548,8 +554,8 @@ describe("AutoRAGAgent.getRetrievalEngine delegation", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const engine = agent.getRetrievalEngine();
-		// Should include the registered methods (minsync, hybrid, etc.)
-		expect(engine.getMethodRegistry().get("minsync")).toBeDefined();
+		// Should include the registered methods (hybrid MinSync, etc.)
+		expect(engine.getMethodRegistry().get("hybrid")).toBeDefined();
 		expect(engine.getMethodRegistry().list().length).toBeGreaterThanOrEqual(1);
 	});
 

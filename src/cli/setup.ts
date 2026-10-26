@@ -2,6 +2,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { type ResolvedFileeBinary, type ResolveFileeBinaryOptions, resolveFileeBinary } from "../convert/index.ts";
+import { datasourceSkillSupported } from "../datasource/skills/factory.ts";
 import {
 	findHisterEntries,
 	type HisterServiceDeps,
@@ -64,6 +65,8 @@ export interface SetupDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly pathExists?: (path: string) => boolean;
 	readonly executable?: (name: string) => string | undefined;
+	/** Host platform; defaults to `process.platform`. Decides which platform-bound datasources setup offers. */
+	readonly platform?: NodeJS.Platform;
 	readonly acquireLock?: (path: string) => FileLockHandle;
 	/** Hister's config path, health, restart and reindex; defaults to the real programs. */
 	readonly hister?: HisterServiceDeps;
@@ -164,13 +167,14 @@ function discrawlStoreCandidates(workspace: string, env: NodeJS.ProcessEnv): rea
 		join(workspace, ".autorag", "datasources", "discrawl", "discrawl.db"),
 	];
 }
-function datasourceNames(config: Record<string, unknown>): string[] {
+function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platform): string[] {
 	const configured = Object.keys((config.datasources ?? {}) as Record<string, unknown>);
 	return [
 		...new Set([
 			...configured,
 			"discord",
-			"kakao",
+			// Platform-bound datasources (kakao: macOS only) are offered only where their backend exists.
+			...(datasourceSkillSupported("kakao", platform) ? ["kakao"] : []),
 			"lark",
 			"slack",
 			"telegram",
@@ -240,7 +244,8 @@ export async function runSetup(options: {
 		const source = (raw.datasources ?? {}) as Record<string, unknown>;
 		const exists = options.deps?.pathExists ?? existsSync;
 		const executable = options.deps?.executable ?? ((name: string) => executableInPath(name, env));
-		for (const name of datasourceNames(raw)) {
+		const platform = options.deps?.platform ?? process.platform;
+		for (const name of datasourceNames(raw, platform)) {
 			const value = source[name];
 			if (value === false) {
 				datasources.push({ name, state: "skipped", reason: "disabled by operator" });
@@ -248,6 +253,10 @@ export async function runSetup(options: {
 			}
 			const entry = value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 			const type = typeof entry?.type === "string" ? entry.type : name;
+			if (!datasourceSkillSupported(type, platform)) {
+				datasources.push({ name, state: "skipped", reason: `not supported on ${platform}` });
+				continue;
+			}
 			const binary = BUILTIN_BINARIES[type];
 			if (
 				binary &&

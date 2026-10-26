@@ -333,3 +333,55 @@ describe("deriveResultsFromAnswer", () => {
 		});
 	});
 });
+
+describe("structured evidence location (#1692)", () => {
+	const located = {
+		method: "minsync",
+		source: "/docs/terms.md",
+		content: "① 회원은 관계 법령을 준수하여야 한다.\n② 회원은 타인의 계정을 도용하여서는 아니 된다.",
+		lineNumber: 7,
+		lineEnd: 8,
+		section: "제5조(회원의 의무)",
+	};
+
+	it("copies the recorded line range and section into results[].evidence", () => {
+		const ledger = new EvidenceLedger();
+		const id = ledger.register(located);
+
+		const { details } = deriveResultsFromAnswer(`제5조는 두 항입니다 ${cite(id)}.`, ledger, denyLocal());
+
+		expect(details.results[0]?.evidence).toEqual([
+			{ excerpt: located.content.replace(/\s+/gu, " "), lineNumber: 7, lineEnd: 8, section: "제5조(회원의 의무)" },
+		]);
+	});
+
+	it("yields the same machine fields for every prose variant of the same cited evidence", () => {
+		const prose = [
+			(id: string) => `제5조는 2개 항입니다 ${cite(id)}.`,
+			(id: string) => `**제5조(회원의 의무)** ①②항 ${cite(id)}`,
+			(id: string) => `Article 5 has two paragraphs ${cite(id)}.`,
+			(id: string) => `${cite(id)} 12행에 있습니다.`,
+			(id: string) => `근거는 다음과 같습니다.\n\n- 내용 ${cite(id)}`,
+		];
+		const fields = new Set<string>();
+		for (const write of prose) {
+			const ledger = new EvidenceLedger();
+			const id = ledger.register(located);
+			const { details } = deriveResultsFromAnswer(write(id), ledger, denyLocal());
+			const evidence = details.results[0]?.evidence[0];
+			fields.add(JSON.stringify([evidence?.lineNumber, evidence?.lineEnd, evidence?.section]));
+		}
+		expect([...fields]).toEqual([JSON.stringify([7, 8, "제5조(회원의 의무)"])]);
+	});
+
+	it("reports a prose line number that contradicts the cited evidence", () => {
+		const ledger = new EvidenceLedger();
+		const id = ledger.register(located);
+
+		const wrong = deriveResultsFromAnswer(`제5조는 12행에 있습니다 ${cite(id)}.`, ledger, denyLocal());
+		const right = deriveResultsFromAnswer(`제5조는 7~8행에 있습니다 ${cite(id)}.`, ledger, denyLocal());
+
+		expect(wrong.diagnostics.map((d) => d.code)).toContain("line-reference-unverified");
+		expect(right.diagnostics.map((d) => d.code)).not.toContain("line-reference-unverified");
+	});
+});

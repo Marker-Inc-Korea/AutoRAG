@@ -4,6 +4,7 @@
  * (the channel allowlist is applied by the sidecar's SQL).
  */
 
+import { FallbackRetrievalMethod } from "../../retrieval/fallback.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -14,10 +15,11 @@ import { datasourceSourcePath, matchesDatasourceScope } from "../scope.ts";
 import type { CrawlerDescriptor } from "./descriptors.ts";
 import type { CrawlerSidecar, SidecarHit } from "./index.ts";
 
-export type SidecarMode = "bm25" | "semantic" | "hybrid";
+export type SidecarMode = "bm25" | "hybrid";
 
 export interface SidecarMethodOptions {
-	readonly sidecar: CrawlerSidecar;
+	/** Resolve lazily when the native CLI owns the archive location. */
+	readonly sidecar: CrawlerSidecar | ((signal?: AbortSignal) => Promise<CrawlerSidecar>);
 	readonly descriptor: CrawlerDescriptor;
 	readonly mode: SidecarMode;
 	readonly datasourceId: string;
@@ -38,7 +40,6 @@ const DESCRIPTIONS: Record<
 	{ type: RetrievalMethodDescriptor["type"]; text: string; capabilities: string[] }
 > = {
 	bm25: { type: "bm25", text: "BM25-ranked FTS5 retrieval", capabilities: ["lexical", "fts5", "bm25"] },
-	semantic: { type: "vector", text: "Semantic (embedding) retrieval", capabilities: ["semantic"] },
 	hybrid: {
 		type: "hybrid",
 		text: "Hybrid BM25 + semantic retrieval (reciprocal rank fusion)",
@@ -71,13 +72,13 @@ export class SidecarRetrievalMethod implements RetrievalMethod {
 		const trimmed = query.trim();
 		if (trimmed.length === 0) return [];
 		const topK = options.topK ?? DEFAULT_TOP_K;
-		const { sidecar, mode } = this.options;
-		const hits =
-			mode === "bm25"
-				? sidecar.searchLexical(trimmed, topK)
-				: mode === "semantic"
-					? await sidecar.searchSemantic(trimmed, topK)
-					: await sidecar.searchHybrid(trimmed, topK);
+		if (topK <= 0) return [];
+		options.signal?.throwIfAborted();
+		const { mode } = this.options;
+		const sidecar =
+			typeof this.options.sidecar === "function" ? await this.options.sidecar(options.signal) : this.options.sidecar;
+		options.signal?.throwIfAborted();
+		const hits = mode === "bm25" ? sidecar.searchLexical(trimmed, topK) : await sidecar.searchHybrid(trimmed, topK);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const result = this.toResult(hit, options);
@@ -109,4 +110,19 @@ export class SidecarRetrievalMethod implements RetrievalMethod {
 			},
 		};
 	}
+}
+
+/**
+ * The one method a sidecar-backed crawler registers. The sidecar's hybrid search leads when semantic
+ * search is enabled and its BM25 search leads otherwise. When the leader throws, the sidecar's own BM25
+ * answers next and the crawler's CLI search last, so the datasource still searches when the embedder or
+ * the sidecar index is down. A leader that answers with no hits is final.
+ */
+export function sidecarFirstMethod(
+	options: Omit<SidecarMethodOptions, "mode" | "sidecar"> & { readonly sidecar: CrawlerSidecar },
+	cli: RetrievalMethod,
+): RetrievalMethod {
+	const bm25 = new SidecarRetrievalMethod({ ...options, mode: "bm25" });
+	if (!options.sidecar.semanticEnabled) return new FallbackRetrievalMethod(bm25, [cli]);
+	return new FallbackRetrievalMethod(new SidecarRetrievalMethod({ ...options, mode: "hybrid" }), [bm25, cli]);
 }

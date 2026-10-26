@@ -9,7 +9,10 @@ import {
 	ANSWER_IMAGE_EMBED_RULE,
 	ANSWER_LANGUAGE_RULE,
 	ANSWER_LEAD_RULE,
+	ANSWER_RELEVANCE_RULE,
 	ANSWER_UNCERTAINTY_RULE,
+	ANSWER_UNCONFIRMED_FAST_RULE,
+	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
@@ -220,7 +223,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 ## Workflow
 
 Searches follow a progressive, two-phase loop:
-1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting.
+1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided and answers the question, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting. When it does not answer the question, the first answer is a single line saying it is not confirmed yet and you are still searching.
 2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
 3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed, and in local sessions to organize files when the user asks (see File Organization); rely on Jikji and retrieval rather than blind directory browsing.
 4. **JUDGE & RESOLVE** — Evaluate relevance, sufficiency, conflicts, and temporal context. When search results or evidence contain conflicting information, treat the freshest (most recent) information as authoritative and correct.
@@ -291,11 +294,12 @@ Your answer is your final reply, written as plain text, never as a tool call. Ci
 - ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}
 - **No per-source negative reports**: Never report individual negative findings per source (e.g. "no information found in Slack" or "checked Drive but found nothing"). Simply omit unproductive sources from the answer and focus on what was found or provide a concise overall conclusion.
 - **Conflict resolution (recency preference)**: When conflicting information exists among search results or evidence, treat the freshest and most recent information as the correct source of truth. Resolve discrepancies in favor of newer dates or timestamps.
-- **Honest and concise uncertainty**: When information is incomplete or uncertain, acknowledge it briefly without lengthy explanations of why it is uncertain. State that it is difficult to answer fully with the currently available information and searching continues. If any relevant clues or partial leads exist (even if not the exact answer), mention those clues concisely.
+- **Relevance**: ${ANSWER_RELEVANCE_RULE}
+- **Not-found handling**: In the fast answer: ${ANSWER_UNCONFIRMED_FAST_RULE} In any answer that can end the run: ${ANSWER_UNCONFIRMED_FINAL_RULE}
 
 ## Constraints${retrievedContentGuard}
 - **Prefer recent truth**: resolve conflicts between sources in favor of the freshest, most recent information.
-- **No fabrication**: report a negative result when evidence is absent.
+- **No fabrication**: never state what the evidence does not support; when evidence is absent, say so in one short line instead of describing what else was found.
 - **Curate, don't dump**: return useful knowledge units, not raw search output.
 - **Address intent**: answer the caller's actual need.
 - **Preserve traceability**: cite evidence by the ids retrieval tools show, so source paths and excerpts are attached for you.
