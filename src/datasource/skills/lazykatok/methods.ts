@@ -61,12 +61,12 @@ export class LazykatokBm25Method implements RetrievalMethod {
 }
 
 /**
- * Semantic (vector) retrieval over a KakaoTalk datasource via the external
- * `lazykatok` CLI in semantic mode. Lazykatok does not expose source scopes; access is
- * controlled at the datasource/tag level. All client failures collapse to an
- * empty result set; retrieval never throws.
+ * Hybrid retrieval over a KakaoTalk datasource via the external `lazykatok` CLI in hybrid mode
+ * (BM25 and semantic rankings fused by reciprocal rank fusion inside the CLI). Lazykatok does not
+ * expose source scopes; access is controlled at the datasource/tag level. Client failures reach the
+ * caller verbatim so the pipeline can fall back to {@link LazykatokBm25Method}.
  */
-export class LazykatokSemanticMethod implements RetrievalMethod {
+export class LazykatokHybridMethod implements RetrievalMethod {
 	private readonly client: LazykatokSearchClient;
 	private readonly instanceId: string;
 	private readonly tags: readonly string[];
@@ -79,18 +79,18 @@ export class LazykatokSemanticMethod implements RetrievalMethod {
 
 	describe(): RetrievalMethodDescriptor {
 		return {
-			name: "kakao-semantic",
-			type: "vector",
-			description: "Semantic vector retrieval over KakaoTalk chat chunks via the external lazykatok CLI",
+			name: "kakao-hybrid",
+			type: "hybrid",
+			description: "Hybrid BM25 + semantic retrieval over KakaoTalk chat chunks via the external lazykatok CLI",
 			status: "active",
-			capabilities: ["semantic", "vector-mode", "external-cli", "path-opaque-sources"],
+			capabilities: ["lexical", "semantic", "hybrid", "external-cli", "path-opaque-sources"],
 			datasourceId: KAKAO_DATASOURCE_ID,
 			tags: this.tags,
 		};
 	}
 
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		return retrieveLazykatok(this.client, "semantic", "kakao-semantic", this.instanceId, query, options);
+		return retrieveLazykatok(this.client, "hybrid", "kakao-hybrid", this.instanceId, query, options);
 	}
 }
 

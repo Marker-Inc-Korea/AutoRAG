@@ -80,15 +80,4 @@ describe("AutoRAGAgent web tool surface", () => {
 		expect(names).not.toContain(WEB_SEARCH_TOOL_NAME);
 		expect(names).not.toContain(WEB_FETCH_TOOL_NAME);
 	});
-
-	it("omits both web tools for remote P2P sessions", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			remoteSession: true,
-		});
-		const names = toolNames(agent);
-		expect(names).not.toContain(WEB_SEARCH_TOOL_NAME);
-		expect(names).not.toContain(WEB_FETCH_TOOL_NAME);
-	});
 });

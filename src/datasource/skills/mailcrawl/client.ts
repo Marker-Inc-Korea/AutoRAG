@@ -1,6 +1,9 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
+import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
+import { mailcrawlEmbeddingEnv } from "../../embedding-env.ts";
 import { ensurePrivateMailcrawlDataDir, validateMailcrawlInstanceId } from "./config.ts";
 import type {
 	MailcrawlFailure,
@@ -36,7 +39,7 @@ const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
  * outlives an interactive timeout. A process-wide kill timer must not truncate
  * that run.
  */
-const DEFAULT_INDEX_TIMEOUT_MS = 1_800_000;
+const DEFAULT_INDEX_TIMEOUT_MS = DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const SAFE_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR"]);
@@ -55,6 +58,9 @@ const SAFE_MAILCRAWL_ENV_KEYS = new Set([
 	"MAILCRAWL_NATIVE_DEVICE",
 	"MAILCRAWL_NATIVE_DTYPE",
 	"MAILCRAWL_KIWI_MODEL",
+	"MAILCRAWL_KIWI_WASM",
+	"MAILCRAWL_KIWI_CACHE",
+	"MAILCRAWL_LEXICAL_MODE",
 	"MAILCRAWL_JA_HELPER",
 	"MAILCRAWL_ZH_HELPER",
 ]);
@@ -129,7 +135,12 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			"--json",
 			query.trim(),
 		];
-		const result = await this.run(args, options?.signal, this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
+		const result = await this.run(
+			args,
+			options?.signal,
+			this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+			mode === "semantic" || mode === "hybrid",
+		);
 		if (!result.ok) return failure(result);
 		const parsed = parseJson(result.stdout);
 		if (parsed === undefined) return failure({ ...result, ok: false, reason: "invalid-output" });
@@ -157,6 +168,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 		args: readonly string[],
 		signal: AbortSignal | undefined,
 		timeoutMs: number,
+		embeds = false,
 	): Promise<ProcessResult> {
 		const violation = findRemoteEmbeddingViolation({ ...process.env, ...(this.options.env ?? {}) });
 		if (violation !== undefined) {
@@ -173,11 +185,40 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			else if (SAFE_ENV_KEYS.has(key) || SAFE_MAILCRAWL_ENV_KEYS.has(key)) env[key] = value;
 		}
 		if (dataDir !== undefined) env.MAILCRAWL_DATA_DIR = dataDir;
+		if (embeds && this.options.embeddingEndpoint !== undefined) {
+			// The shared backend replaces whatever embedder the environment selected: mailcrawl never falls
+			// back to its own native model while the operator has pointed AutoRAG at a shared one.
+			try {
+				const endpoint = await this.options.embeddingEndpoint();
+				if (endpoint === undefined) {
+					return {
+						ok: false,
+						reason: "embedding-unavailable",
+						stdout: "",
+						stderr:
+							"no embedding endpoint is available: start `minsync serve` (docs/minsync-setup.md) or set minSync.embedder to a remote endpoint",
+						code: null,
+					};
+				}
+				for (const key of Object.keys(env)) {
+					if (key.startsWith("MAILCRAWL_EMBED") || key.startsWith("MAILCRAWL_NATIVE_")) delete env[key];
+				}
+				Object.assign(env, mailcrawlEmbeddingEnv(endpoint));
+			} catch (error) {
+				return {
+					ok: false,
+					reason: "embedding-unavailable",
+					stdout: "",
+					stderr: error instanceof Error ? error.message : String(error),
+					code: null,
+				};
+			}
+		}
 		return spawnMailcrawl(this.options.binaryPath ?? DEFAULT_BINARY, args, env, this.options, signal, timeoutMs);
 	}
 
 	async index(signal?: AbortSignal): Promise<MailcrawlOk<MailcrawlIndexInfo> | MailcrawlFailure> {
-		const result = await this.run(["index", "--json"], signal, this.indexTimeoutMs());
+		const result = await this.run(["index", "--json"], signal, this.indexTimeoutMs(), true);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (
@@ -223,15 +264,30 @@ function spawnMailcrawl(
 		let stdout: BoundedOutput = { text: "", bytes: 0, exceeded: false },
 			stderr: BoundedOutput = { text: "", bytes: 0, exceeded: false },
 			settled = false,
-			reason: MailcrawlFailureReason | undefined;
+			reason: MailcrawlFailureReason | undefined,
+			pipeGuard: ReturnType<typeof setTimeout> | undefined;
 		const max = options.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
+		const finish = (code: number | null): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			clearTimeout(pipeGuard);
+			signal?.removeEventListener("abort", abort);
+			resolveResult({
+				ok: code === 0 && reason === undefined,
+				...(reason === undefined ? (code === 0 ? {} : { reason: "nonzero-exit" as const }) : { reason }),
+				stdout: stdout.text,
+				stderr: stderr.text,
+				code,
+			});
+		};
 		const timer = setTimeout(() => {
 			reason = "timeout";
-			terminate(child);
+			terminateProcessTree(child, "SIGKILL");
 		}, timeoutMs);
 		const abort = () => {
-			reason = "aborted";
-			terminate(child);
+			reason ??= "aborted";
+			terminateProcessTree(child, "SIGKILL");
 		};
 		if (signal?.aborted) abort();
 		signal?.addEventListener("abort", abort, { once: true });
@@ -241,20 +297,21 @@ function spawnMailcrawl(
 			stdout = appendOutput(stdout, chunk, max);
 			if (stdout.exceeded && reason === undefined) {
 				reason = "stdout-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr = appendOutput(stderr, chunk, max);
 			if (stderr.exceeded && reason === undefined) {
 				reason = "stderr-too-large";
-				terminate(child);
+				terminateProcessTree(child, "SIGKILL");
 			}
 		});
 		child.on("error", (error: NodeJS.ErrnoException) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			clearTimeout(pipeGuard);
 			signal?.removeEventListener("abort", abort);
 			resolveResult({
 				ok: false,
@@ -264,33 +321,15 @@ function spawnMailcrawl(
 				code: null,
 			});
 		});
-		child.on("close", (code) => {
+		// A descendant that inherited the stdio pipes keeps `close` from firing after the direct child
+		// exits. Reap the whole group and bound the wait so the promise can never stay pending.
+		child.on("exit", () => {
 			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			signal?.removeEventListener("abort", abort);
-			resolveResult({
-				ok: code === 0 && reason === undefined,
-				...(reason === undefined ? (code === 0 ? {} : { reason: "nonzero-exit" as const }) : { reason }),
-				stdout: stdout.text,
-				stderr: stderr.text,
-				code,
-			});
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(() => finish(child.exitCode), TREE_KILL_GRACE_MS);
 		});
+		child.on("close", (code) => finish(code));
 	});
-}
-
-function terminate(child: ChildProcess): void {
-	if (child.killed) return;
-	if (process.platform !== "win32" && child.pid !== undefined) {
-		try {
-			process.kill(-child.pid, "SIGTERM");
-			return;
-		} catch {
-			/* swallow process-group fallback */
-		}
-	}
-	child.kill("SIGTERM");
 }
 function parseJson(text: string): unknown {
 	try {

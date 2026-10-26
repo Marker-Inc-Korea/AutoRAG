@@ -6,12 +6,12 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { normalizeVirtualPath } from "../filesystem/source-paths.ts";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
 
@@ -114,7 +114,7 @@ function saveStagingState(workspacePath: string, state: MinSyncStagingState): vo
 	const path = stagingStatePath(workspacePath);
 	const temporaryPath = `${path}.${randomUUID()}.tmp`;
 	writeFileSync(temporaryPath, `${JSON.stringify(state, null, 2)}\n`);
-	renameSync(temporaryPath, path);
+	renameWithRetry(temporaryPath, path);
 }
 
 function isMinSyncStagingState(value: unknown): value is MinSyncStagingState {
@@ -158,7 +158,7 @@ function copyFileAtomically(source: string, destination: string): void {
 	const temporaryPath = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
 	try {
 		copyFileSync(source, temporaryPath);
-		renameSync(temporaryPath, destination);
+		renameWithRetry(temporaryPath, destination);
 	} finally {
 		rmSync(temporaryPath, { force: true });
 	}

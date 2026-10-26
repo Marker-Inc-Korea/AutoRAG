@@ -16,11 +16,12 @@ export interface LedgerEvidenceInput {
 	readonly retrievalResultId?: string;
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
+	readonly lineEnd?: number;
+	readonly section?: string;
 	readonly parserType?: string;
 	readonly documentType?: string;
 	readonly documentArea?: string;
 	readonly evidenceType?: string;
-	readonly evidenceLocation?: string;
 }
 
 /** Custom session entry type under which a conversation persists its evidence ledger. */
@@ -37,11 +38,12 @@ const ledgerEntrySchema = Type.Object({
 	retrievalResultId: Type.Optional(Type.String()),
 	chunkIndex: Type.Optional(Type.Number()),
 	lineNumber: Type.Optional(Type.Number()),
+	lineEnd: Type.Optional(Type.Number()),
+	section: Type.Optional(Type.String()),
 	parserType: Type.Optional(Type.String()),
 	documentType: Type.Optional(Type.String()),
 	documentArea: Type.Optional(Type.String()),
 	evidenceType: Type.Optional(Type.String()),
-	evidenceLocation: Type.Optional(Type.String()),
 });
 
 /** One recorded piece of evidence: what a retrieval tool returned, under the id it printed. */
@@ -115,11 +117,12 @@ function toEvidenceRef(entry: LedgerEntry): AutoRAGEvidenceRef {
 		...(entry.retrievalResultId !== undefined ? { retrievalResultId: entry.retrievalResultId } : {}),
 		...(entry.chunkIndex !== undefined ? { chunkIndex: entry.chunkIndex } : {}),
 		...(entry.lineNumber !== undefined ? { lineNumber: entry.lineNumber } : {}),
+		...(entry.lineEnd !== undefined ? { lineEnd: entry.lineEnd } : {}),
+		...(entry.section !== undefined ? { section: entry.section } : {}),
 		...(entry.parserType !== undefined ? { parserType: entry.parserType } : {}),
 		...(entry.documentType !== undefined ? { documentType: entry.documentType } : {}),
 		...(entry.documentArea !== undefined ? { documentArea: entry.documentArea } : {}),
 		...(entry.evidenceType !== undefined ? { evidenceType: entry.evidenceType } : {}),
-		...(entry.evidenceLocation !== undefined ? { evidenceLocation: entry.evidenceLocation } : {}),
 	};
 }
 
@@ -186,11 +189,12 @@ export class EvidenceLedger {
 		const metadata = result.metadata;
 		const chunkIndex = metadataNumber(metadata, "chunkIndex");
 		const lineNumber = metadataNumber(metadata, "lineNumber");
+		const lineEnd = metadataNumber(metadata, "lineEnd");
+		const section = metadataString(metadata, "section");
 		const parserType = metadataString(metadata, "parserType");
 		const documentType = metadataString(metadata, "documentType");
 		const documentArea = metadataString(metadata, "documentArea");
 		const evidenceType = metadataString(metadata, "evidenceType");
-		const evidenceLocation = metadataString(metadata, "evidenceLocation");
 		return this.register({
 			method: metadataString(metadata, "method") ?? tool,
 			source: result.source,
@@ -198,11 +202,12 @@ export class EvidenceLedger {
 			retrievalResultId: result.id,
 			...(chunkIndex !== undefined ? { chunkIndex } : {}),
 			...(lineNumber !== undefined ? { lineNumber } : {}),
+			...(lineEnd !== undefined ? { lineEnd } : {}),
+			...(section !== undefined ? { section } : {}),
 			...(parserType !== undefined ? { parserType } : {}),
 			...(documentType !== undefined ? { documentType } : {}),
 			...(documentArea !== undefined ? { documentArea } : {}),
 			...(evidenceType !== undefined ? { evidenceType } : {}),
-			...(evidenceLocation !== undefined ? { evidenceLocation } : {}),
 		});
 	}
 

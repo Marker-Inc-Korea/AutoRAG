@@ -8,12 +8,14 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
+import { renameWithRetry } from "../../../mirror/atomic-write.ts";
 import type { DefaultParserRegistryOptions } from "../../../parser/defaults.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
 import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
 import { asArray, asRecord, asString, parseEpochMs } from "../../http.ts";
 
@@ -218,7 +220,7 @@ export class RcloneConnector implements DatasourceConnector {
 			for (const file of staged) rmSync(file.temp, { force: true });
 			return { ok: false, reason: copyFailure.reason, message: copyFailure.message };
 		}
-		for (const file of staged) renameSync(file.temp, file.destination);
+		for (const file of staged) renameWithRetry(file.temp, file.destination);
 		for (const entry of deletedEntries) rmSync(mirrorFilePath(paths.mirrorRoot, entry.path), { force: true });
 		saveManifest(paths.manifestPath, { version: 1, remoteName: remoteName(remote), entries: inventory });
 
@@ -388,7 +390,7 @@ function saveManifest(path: string, manifest: RcloneManifest): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const temp = `${path}.autorag-tmp`;
 	writeFileSync(temp, `${JSON.stringify(manifest)}\n`, "utf8");
-	renameSync(temp, path);
+	renameWithRetry(temp, path);
 }
 
 async function loadMirroredDocuments(
@@ -487,24 +489,41 @@ function runBinary(
 		const child = spawn(portable.command, [...portable.args], {
 			...(env === undefined ? {} : { env: { ...process.env, ...env } }),
 			...(cwd === undefined ? {} : { cwd }),
+			// POSIX: lead our own process group so terminateProcessTree reaches descendants that inherited
+			// the pipes. Windows keeps the parent/child chain that `taskkill /t` walks.
+			detached: process.platform !== "win32",
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout = "";
 		let stderr = "";
-		const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+		let settled = false;
+		let pipeGuard: ReturnType<typeof setTimeout> | undefined;
+		const finish = (result: RcloneRunResult): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			clearTimeout(pipeGuard);
+			resolvePromise(result);
+		};
+		const timer = setTimeout(() => terminateProcessTree(child, "SIGKILL"), timeoutMs);
 		child.stdout.on("data", (chunk: Buffer) => {
 			stdout += chunk.toString("utf8");
 		});
 		child.stderr.on("data", (chunk: Buffer) => {
 			stderr += chunk.toString("utf8");
 		});
-		child.on("error", () => {
-			clearTimeout(timer);
-			resolvePromise({ ok: false, stdout, stderr, code: null });
+		child.on("error", () => finish({ ok: false, stdout, stderr, code: null }));
+		// A descendant that inherited the stdio pipes keeps `close` from firing after the direct child
+		// exits. Reap the whole group and bound the wait so the promise can never stay pending.
+		child.on("exit", () => {
+			if (settled) return;
+			terminateProcessTree(child, "SIGKILL");
+			pipeGuard = setTimeout(
+				() => finish({ ok: child.exitCode === 0, stdout, stderr, code: child.exitCode }),
+				TREE_KILL_GRACE_MS,
+			);
 		});
-		child.on("close", (code) => {
-			clearTimeout(timer);
-			resolvePromise({ ok: code === 0, stdout, stderr, code });
-		});
+		child.on("close", (code) => finish({ ok: code === 0, stdout, stderr, code }));
 	});
 }

@@ -217,7 +217,24 @@ export class ParallelRetriever {
 				const descriptor = method.describe();
 				const name = descriptor.name;
 				try {
-					results.set(name, await method.retrieve(query, options));
+					results.set(
+						name,
+						await method.retrieve(query, {
+							...options,
+							// A method that answered through a fallback still searched, but not with the strength it
+							// was registered for: report the surface with the primary's real error, like a skip.
+							onFallback: ({ method: failed, fallback, reason }) => {
+								skips.push({ method: failed, surface: retrievalSurfaceFor(descriptor), reason });
+								diagnostics.push({
+									code: "retrieval-method-failed",
+									severity: "warning",
+									message: `Retrieval method "${failed}" failed and was answered by its fallback "${fallback}": ${reason}`,
+									source: failed,
+									reason,
+								});
+							},
+						}),
+					);
 				} catch (error) {
 					if (error instanceof MinSyncRequiredError) throw error;
 					results.set(name, []);

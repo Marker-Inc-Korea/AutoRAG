@@ -44,7 +44,7 @@ Before judgment, each inline citation in the answer (`[e3]`, `[file:<path>]`) is
 resolved against the conversation's `EvidenceLedger`: retrieval-issued ids attach the
 harness-recorded source, method, and chunk, not model-written text. The origin
 index then recovers the query that retrieved that chunk. Local files read
-outside retrieval may be cited by absolute path; remote sessions cannot. A
+outside retrieval may be cited by absolute path. A
 config report has no citations and does not enter retrieval memory.
 
 - **Questions.** Each cited evidence becomes one `noul` question: *does this
@@ -108,9 +108,6 @@ rule.
   strictly — only evidence from a configured datasource, a configured search
   path, or the web contributes a past result. Evidence with no recognizable
   origin is dropped, and a search left with no result is not shown at all.
-- **Remote P2P sessions never read or write judged memory.** A remote peer's
-  run neither consults nor stores it; its `check_memory` answers as if memory
-  were empty.
 - **Evidence text leaves the machine.** The question wording is judged against
   evidence excerpts and titles, so those go to Jev's backend (OpenRouter by
   default). Warming the vector cache also sends the past question texts to the

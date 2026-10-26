@@ -178,4 +178,36 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(progress).toContain("류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다.");
 		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "확인된 답변 [1]" } });
 	});
+
+	it("reports each tool call's intent as progress, once, instead of a note written before the call", async () => {
+		const source = groundedSource("확인된 답변");
+		const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "intent-agent" }] });
+		registration.setResponses([
+			fauxAssistantMessage("초기 확인 중입니다.", { stopReason: "stop" }),
+			fauxAssistantMessage(
+				[
+					{ type: "text", text: "이 메모는 intent가 있으므로 진행 상황으로 보내지 않는다." },
+					fauxToolCall("check_memory", { i: "류동현 선임의 이전 기록을 확인하는 중.", query: "류동현 선임" }),
+				],
+				{ stopReason: "toolUse" },
+			),
+			fauxAssistantMessage(`확인된 답변 [file:${source}]`, { stopReason: "stop" }),
+		]);
+		registrations.push(registration);
+		const agent = new AutoRAGAgent({
+			model: registration.getModel(),
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			jikji: false,
+		});
+
+		const events = [];
+		for await (const event of agent.searchDocumentsStream("류동현 선임 전화번호")) events.push(event);
+
+		const progress = events.flatMap((event) => (event.type === "progress" ? [event.text] : []));
+		expect(progress.filter((text) => text === "류동현 선임의 이전 기록을 확인하는 중")).toHaveLength(1);
+		expect(progress.some((text) => text.includes("이 메모는"))).toBe(false);
+		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "확인된 답변 [1]" } });
+	});
 });

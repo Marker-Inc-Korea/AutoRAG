@@ -81,10 +81,17 @@ Catalog fields are mapped as follows:
 |---|---|
 | `id`, `name` | `id`, `name` (`name` falls back to `id`) |
 | `context_window` | `contextWindow` (default 128000) |
-| `max_output_tokens` | `maxTokens` (default 16384) |
+| `max_output_tokens` | `maxTokens` (default 16384; a session request asks for at most 32,000 of it, see below) |
 | `input_modalities` | `input` (`text`/`image`; unknown modalities are dropped) |
 | `reasoning` | `reasoning` |
 | `pricing.{input,output,cache_read,cache_write}` | `cost` — USD per million tokens, Pi's cost unit |
+
+A session never asks a model for more than 32,000 output tokens, whatever the
+catalog lists. pi sizes each request's `max_tokens` from its own estimate of the
+window left, and that estimate leaves out the system prompt and the tool
+declarations, so a catalog `maxTokens` near the context window (some OpenRouter
+models list about 90% of it) overshoots the window and the provider answers 400.
+The context guard budgets the input against this same 32,000-token reserve.
 
 ### Offline resolution
 
@@ -135,7 +142,7 @@ picks a default. OpenRouter stays the fallback when you are signed out.
 
 | What | Signed in to Dazzi Models | Signed out (fallback) |
 |---|---|---|
-| Chat model (no `model` in config, none in Pi settings) | `dazzi/anthropic/claude-haiku-5.5`, else the catalog's first model | Pi default, then the local Codex runtime |
+| Chat model (no `model` in config, none in Pi settings) | `dazzi/z-ai/glm-5.3-flash`, else the catalog's first model | CLI: Pi default, then the local Codex runtime. `autorag tui`: Pi's own picker, no local fallback |
 | Jev (`jev.backend` unset) | `dazzi` | `openrouter` |
 | Question decomposition (`queryDecomposition.model` unset) | `dazzi/openai/gpt-6-luna` | `openrouter/qwen/qwen3.7-flash` |
 | Rerank block `autorag init` writes | `dazzi` / `qwen/qwen3-reranker-8b` | `openrouter` / `voyageai/rerank-3-lite` |
@@ -145,10 +152,12 @@ has; `autorag init` writes the signed-in or signed-out set once, when it creates
 the file. The chat default needs a catalog snapshot (a prior `/login` or refresh);
 without one it is skipped.
 
-**Embeddings are not part of this.** They stay on the local gateway
-(`qwen3-embedding-0.6b`) by default. Sending corpus text to a remote embedder
-requires an explicit opt-in, the hosted embeddings endpoint is Pro-only, and
-making it the default would send every indexed document off the machine.
+**Embeddings are not part of this.** They stay on MinSync's local
+Qwen3-Embedding-0.6B engine (1024 dimensions) by default, through a
+`minsync serve` daemon or MinSync's in-process engine. Sending corpus text to a
+remote embedder requires an explicit remote `minSync.embedder` endpoint, the
+hosted embeddings endpoint is Pro-only, and making it the default would send
+every indexed document off the machine.
 
 ## Jev and rerank on the hosted plan
 

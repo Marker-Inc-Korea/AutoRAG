@@ -10,6 +10,7 @@ import { type JevBackend, MockBackend } from "jev-use";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
+import { CITATION_QUESTION_ID_PREFIX } from "../../src/agent/citation-relevance.ts";
 import {
 	createAutoRAGPiInteractiveRuntime,
 	createAutoRAGPiSession,
@@ -21,9 +22,11 @@ import {
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
+	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
+import { citationsRelevant } from "../helpers/citations-relevant.ts";
 
 let root: string;
 
@@ -49,22 +52,25 @@ function customTool(): AgentTool {
 
 /** Jev routing every query to `route`; `followUp` is the post-fast-answer "verify?" probability. */
 function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
-	return new MockBackend({
-		[QUERY_ROUTE_QUESTION_ID]: {
-			answer: route,
-			distribution: { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 },
-			confidence: 0.8,
-		},
-		[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
-		[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
-	});
+	return citationsRelevant(
+		new MockBackend({
+			[QUERY_ROUTE_QUESTION_ID]: {
+				answer: route,
+				distribution: { local: 0.1, organize: 0.1, extra: 0.1, [route]: 0.8 },
+				confidence: 0.8,
+			},
+			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+			[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
+		}),
+	);
 }
 
-/** A TUI-hosted agent on the faux model, routed by `jev` (direct route by default). */
+/** A TUI-hosted agent on the faux model, routed by `jev` (the extra route by default). */
 async function tuiAgent(
 	responses: FauxResponseStep[],
-	jev: JevBackend = jevRoute("direct"),
+	jev: JevBackend = jevRoute("extra"),
 	extra: Pick<AutoRAGAgentOptions, "datasourceSkills"> = {},
+	ui: Partial<ExtensionUIContext> = {},
 ) {
 	const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
 	registration.setResponses(responses);
@@ -94,6 +100,7 @@ async function tuiAgent(
 	await hosted.runtime.session.bindExtensions({
 		uiContext: {
 			...noUi(),
+			...ui,
 			onTerminalInput: (handler) => {
 				keyListeners.add(handler);
 				return () => keyListeners.delete(handler);
@@ -390,6 +397,33 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
+	it("starts the interactive session on the configured model, not pi's own pick", async () => {
+		const registration = registerFauxProvider({
+			api: `faux-configured-${Date.now()}`,
+			models: [{ id: "configured-model" }],
+		});
+		try {
+			const model = registration.getModel();
+			const runtime = await createAutoRAGPiInteractiveRuntime({
+				cwd: root,
+				agentDir: join(root, "agent"),
+				sessionDir: join(root, "sessions"),
+				model,
+				getSystemPrompt: () => "interactive prompt",
+				customTools: [],
+				onInput: () => ({ kind: "handled" }),
+			});
+			try {
+				expect(runtime.runtime.session.model?.provider).toBe(model.provider);
+				expect(runtime.runtime.session.model?.id).toBe("configured-model");
+			} finally {
+				await runtime.dispose();
+			}
+		} finally {
+			registration.unregister();
+		}
+	});
+
 	it("lets pi choose the interactive model when AutoRAG has no configured model", async () => {
 		const runtime = await createAutoRAGPiInteractiveRuntime({
 			cwd: root,
@@ -491,12 +525,12 @@ describe("AutoRAG pi coding-agent host", () => {
 		// The bound pi session already records and renders the model's own
 		// assistant message. Re-sending the answer as a custom message would show
 		// it twice and put it in the model's context twice (as a user message).
-		// The direct route ends in one plain answer, so no extra turn runs either.
+		// The extra route ends in one plain answer, so no extra turn runs either.
 		const tui = await tuiAgent([fauxAssistantMessage("Paris.", { stopReason: "stop" })]);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await tui.agent.waitForIdle();
-			// One model call: the direct route ends in a single plain answer.
+			// One model call: the extra route ends in a single plain answer.
 			expect(tui.registration.state.callCount).toBe(1);
 			const copies = tui.session.messages.filter((message) => message.role === "custom");
 			expect(copies).toEqual([]);
@@ -511,19 +545,16 @@ describe("AutoRAG pi coding-agent host", () => {
 
 	it("steers a running TUI search with a message typed during a model turn", async () => {
 		// Enter while the search streams is a correction of the running search, not
-		// a new query: the model sees it in the same run, before its next request,
-		// and the steered direct answer goes on to verification.
+		// a new query: the model sees it in the same run, before its next request.
+		// The extra branch has no verification phase, so that next request's answer
+		// is the run's final answer to the correction.
 		const seen: string[] = [];
 		const first = heldStep(
 			fauxAssistantMessage([fauxToolCall("search_custom", { query: "capital of france" })], {
 				stopReason: "toolUse",
 			}),
 		);
-		const tui = await tuiAgent([
-			first.held,
-			seeingStep("Lyon is not the capital.", seen),
-			seeingStep("Verified: Paris, not Lyon.", seen),
-		]);
+		const tui = await tuiAgent([first.held, seeingStep("Lyon is not the capital. Paris is.", seen)]);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
 			await first.entered;
@@ -533,13 +564,12 @@ describe("AutoRAG pi coding-agent host", () => {
 
 			// The very next model request carried the steer, inside the same run.
 			expect(seen[0]).toContain("Check Lyon too.");
-			// Verification restates the correction and the run ends on its answer.
-			expect(seen[1]).toContain("Check Lyon too.");
-			expect(tui.registration.state.callCount).toBe(3);
+			// No verification phase followed: the steer's own turn answered it.
+			expect(tui.registration.state.callCount).toBe(2);
 			const answers = tui.session.messages.flatMap((message) =>
-				message.role === "assistant" ? [textOf(message.content)] : [],
+				message.role === "assistant" && message.stopReason === "stop" ? [textOf(message.content)] : [],
 			);
-			expect(answers.at(-1)).toBe("Verified: Paris, not Lyon.");
+			expect(answers).toEqual(["Lyon is not the capital. Paris is."]);
 			expect(tui.session.sessionName).toBe("What is the capital of France?");
 			const userTexts = tui.session.messages.flatMap((message) =>
 				message.role === "user" ? [textOf(message.content)] : [],
@@ -651,7 +681,7 @@ describe("AutoRAG pi coding-agent host", () => {
 				},
 				fauxAssistantMessage("Verified: Paris.", { stopReason: "stop" }),
 			],
-			jevRoute("direct"),
+			jevRoute("extra"),
 			{ datasourceSkills: [datasource.skill] },
 		);
 		try {
@@ -679,12 +709,14 @@ describe("AutoRAG pi coding-agent host", () => {
 		const routing = new MockBackend({
 			[QUERY_ROUTE_QUESTION_ID]: {
 				answer: "local",
-				distribution: { local: 0.8, web: 0.1, direct: 0.1 },
+				distribution: { local: 0.8, organize: 0.1, extra: 0.1 },
 				confidence: 0.8,
 			},
 			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
 			[datasourceQuestionId("kakao")]: { answer: 0.9 },
+			// The gate also asks about the public web; this run must not search it.
+			[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
 		});
 		const tui = await tuiAgent(
 			[seeingStep("Fast answer: Paris.", seen), seeingStep("Verified: Paris.", seen)],
@@ -823,7 +855,7 @@ describe("AutoRAG pi coding-agent host", () => {
 		// With no turn streaming, pi submits Alt+Enter like Enter. AutoRAG reads
 		// the key itself, so it still queues a new question rather than a correction.
 		const seen: string[] = [];
-		const routing = holdingJev(jevRoute("direct"), QUERY_ROUTE_QUESTION_ID);
+		const routing = holdingJev(jevRoute("extra"), QUERY_ROUTE_QUESTION_ID);
 		const tui = await tuiAgent([seeingStep("Paris.", seen), seeingStep("Leonardo da Vinci.", seen)], routing.backend);
 		try {
 			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
@@ -949,7 +981,7 @@ describe("AutoRAG pi coding-agent host", () => {
 
 		it("answers the second query in the same session without the Jev gate or a second search pipeline", async () => {
 			const seen: string[] = [];
-			const jev = countingJev(jevRoute("direct"));
+			const jev = countingJev(jevRoute("extra"));
 			const tui = await tuiAgent(
 				[seeingStep("Paris.", seen), seeingStep("About 2.1 million people.", seen)],
 				jev.backend,
@@ -977,7 +1009,7 @@ describe("AutoRAG pi coding-agent host", () => {
 
 		it("lets the model search by tool call on a follow-up", async () => {
 			const seen: string[] = [];
-			const jev = countingJev(jevRoute("direct"));
+			const jev = countingJev(jevRoute("extra"));
 			const tui = await tuiAgent(
 				[
 					seeingStep("Paris.", seen),
@@ -1025,7 +1057,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					citingStep((ids) => `Beta [${ids[1]}].`, seen),
 					citingStep((ids) => `Alpha [${ids[0]}] and beta [${ids[1]}].`, seen),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{ datasourceSkills: [kakao] },
 			);
 			try {
@@ -1049,7 +1081,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					}),
 					citingStep((ids) => `Alpha [${ids[0]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
@@ -1074,7 +1106,7 @@ describe("AutoRAG pi coding-agent host", () => {
 					}),
 					citingStep((ids) => `Old [${ids[0]}], new [${ids[1]}].`),
 				],
-				jevRoute("direct"),
+				jevRoute("extra"),
 				{
 					datasourceSkills: [
 						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
@@ -1091,6 +1123,397 @@ describe("AutoRAG pi coding-agent host", () => {
 				expect(response.results.map((result) => result.title)).toEqual(["a.txt", "b.txt"]);
 			} finally {
 				await resumed.dispose();
+			}
+		});
+
+		it("keeps a source's [n] across turns and numbers a new source with the next unused number", async () => {
+			const kakao = scriptedDatasource("kakao", [
+				[{ source: "/kakao/room/a.txt", content: "alpha fact" }],
+				[{ source: "/kakao/room/b.txt", content: "beta fact" }],
+			]);
+			const search = fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+				stopReason: "toolUse",
+			});
+			const tui = await tuiAgent(
+				[
+					search,
+					citingStep((ids) => `Alpha [${ids[0]}].`),
+					search,
+					citingStep((ids) => `Beta [${ids[1]}].`),
+					citingStep((ids) => `Beta [${ids[1]}] and alpha [${ids[0]}].`),
+				],
+				jevRoute("extra"),
+				{ datasourceSkills: [kakao] },
+			);
+			try {
+				const first = await tui.agent.searchDocuments("what is alpha?");
+				const second = await tui.agent.searchDocuments("what is beta?");
+				const third = await tui.agent.searchDocuments("how do they relate?");
+
+				expect(first.answer).toBe("Alpha [1].");
+				expect(second.answer).toBe("Beta [2].");
+				expect(second.results.map((result) => [result.number, result.title])).toEqual([[2, "b.txt"]]);
+				expect(third.answer).toBe("Beta [2] and alpha [1].");
+				expect(third.results.map((result) => [result.number, result.title])).toEqual([
+					[2, "b.txt"],
+					[1, "a.txt"],
+				]);
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		describe("what Jev reads as the user's messages when it judges citations", () => {
+			/** Records the state of every citation-relevance batch and keeps every chunk. */
+			function citationStates(route: JevBackend = jevRoute("extra")): { backend: JevBackend; states: string[] } {
+				const states: string[] = [];
+				const inner = route;
+				const backend: JevBackend = {
+					name: inner.name,
+					async judge(request) {
+						if (request.questions.some((question) => question.id?.startsWith(CITATION_QUESTION_ID_PREFIX))) {
+							states.push(String(request.state));
+						}
+						return inner.judge(request);
+					},
+				};
+				return { backend, states };
+			}
+
+			const search = fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+				stopReason: "toolUse",
+			});
+
+			it("holds every question of the conversation, as typed, oldest first", async () => {
+				const { backend, states } = citationStates();
+				const tui = await tuiAgent(
+					[search, citingStep((ids) => `Alpha [${ids[0]}].`), search, citingStep((ids) => `Beta [${ids[1]}].`)],
+					backend,
+					{
+						datasourceSkills: [
+							scriptedDatasource("kakao", [
+								[{ source: "/kakao/room/a.txt", content: "alpha fact" }],
+								[{ source: "/kakao/room/b.txt", content: "beta fact" }],
+							]),
+						],
+					},
+				);
+				try {
+					await tui.agent.searchDocuments("what is alpha?");
+					await tui.agent.searchDocuments("and what about beta?");
+
+					expect(states).toHaveLength(2);
+					expect(states[0]).toContain(JSON.stringify("what is alpha?"));
+					expect(states[0]).not.toContain("and what about beta?");
+					const second = states[1] ?? "";
+					const alpha = second.indexOf(JSON.stringify("what is alpha?"));
+					expect(alpha).toBeGreaterThan(-1);
+					expect(second.indexOf(JSON.stringify("and what about beta?"))).toBeGreaterThan(alpha);
+					// The harness prompt that wraps a question never stands in for what the user typed.
+					expect(second).not.toContain("Baseline retrieval evidence");
+					expect(second).not.toContain("Answer this original query");
+				} finally {
+					await tui.dispose();
+				}
+			});
+
+			it("includes a steer the user typed while the search ran", async () => {
+				const { backend, states } = citationStates(jevRoute("local", 0.05));
+				const fast = heldStep(fauxAssistantMessage("Fast answer: Lyon.", { stopReason: "stop" }));
+				const tui = await tuiAgent(
+					[
+						fast.held,
+						// The steer lands after the fast turn: pi answers it within the fast phase, then verification runs.
+						fauxAssistantMessage("Noted: checking Paris.", { stopReason: "stop" }),
+						search,
+						citingStep((ids) => `Paris [${ids[0]}].`),
+					],
+					backend,
+					{
+						datasourceSkills: [
+							scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "paris fact" }]]),
+						],
+					},
+				);
+				try {
+					const run = tui.agent.searchDocuments("capital of france?");
+					await fast.entered;
+					expect(tui.agent.steer("Lyon is wrong, check Paris.")).toBe(true);
+					fast.release();
+					await run;
+
+					const last = states.at(-1) ?? "";
+					expect(last).toContain(JSON.stringify("capital of france?"));
+					expect(last).toContain(JSON.stringify("Lyon is wrong, check Paris."));
+				} finally {
+					await tui.dispose();
+				}
+			});
+
+			it("keeps the earlier questions when the conversation is resumed in a new process", async () => {
+				const first = await tuiAgent([search, citingStep((ids) => `Alpha [${ids[0]}].`)], jevRoute("extra"), {
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
+					],
+				});
+				let sessionFile: string | undefined;
+				try {
+					await first.agent.searchDocuments("what is alpha?");
+					sessionFile = first.session.sessionFile;
+				} finally {
+					await first.dispose();
+				}
+				if (sessionFile === undefined) throw new Error("expected a persisted pi session");
+
+				const { backend, states } = citationStates();
+				const resumed = await tuiAgent([search, citingStep((ids) => `Beta [${ids[1]}].`)], backend, {
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
+					],
+				});
+				try {
+					await resumed.runtime.switchSession(sessionFile);
+					await resumed.runtime.session.bindExtensions({ uiContext: noUi() });
+					await resumed.agent.searchDocuments("and what about beta?");
+
+					const state = states.at(-1) ?? "";
+					expect(state).toContain(JSON.stringify("what is alpha?"));
+					expect(state).toContain(JSON.stringify("and what about beta?"));
+				} finally {
+					await resumed.dispose();
+				}
+			});
+		});
+
+		it("keeps result numbers when the conversation is resumed in a new process", async () => {
+			const first = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `Alpha [${ids[0]}].`),
+				],
+				jevRoute("extra"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/a.txt", content: "alpha fact" }]]),
+					],
+				},
+			);
+			let sessionFile: string | undefined;
+			try {
+				const answered = await first.agent.searchDocuments("what is alpha?");
+				expect(answered.answer).toBe("Alpha [1].");
+				sessionFile = first.session.sessionFile;
+			} finally {
+				await first.dispose();
+			}
+			if (sessionFile === undefined) throw new Error("expected a persisted pi session");
+
+			const resumed = await tuiAgent(
+				[
+					fauxAssistantMessage([fauxToolCall("search_datasource_kakao", { query: "q" })], {
+						stopReason: "toolUse",
+					}),
+					citingStep((ids) => `New [${ids[1]}], old [${ids[0]}].`),
+				],
+				jevRoute("extra"),
+				{
+					datasourceSkills: [
+						scriptedDatasource("kakao", [[{ source: "/kakao/room/b.txt", content: "beta fact" }]]),
+					],
+				},
+			);
+			try {
+				await resumed.runtime.switchSession(sessionFile);
+				await resumed.runtime.session.bindExtensions({ uiContext: noUi() });
+
+				const response = await resumed.agent.searchDocuments("and what about beta?");
+
+				expect(response.answer).toBe("New [2], old [1].");
+				expect(response.results.map((result) => [result.number, result.title])).toEqual([
+					[2, "b.txt"],
+					[1, "a.txt"],
+				]);
+			} finally {
+				await resumed.dispose();
+			}
+		});
+
+		it("numbers the quick answer and the verification answer of one search from one sequence", async () => {
+			const alpha = join(root, "alpha.txt");
+			const beta = join(root, "beta.txt");
+			writeFileSync(alpha, "alpha fact");
+			writeFileSync(beta, "beta fact");
+			const tui = await tuiAgent(
+				[
+					fauxAssistantMessage(`Beta first [file:${beta}]. Then alpha [file:${alpha}].`, { stopReason: "stop" }),
+					fauxAssistantMessage(`Alpha first [file:${alpha}]. Then beta [file:${beta}].`, { stopReason: "stop" }),
+				],
+				jevRoute("local", 0.9),
+			);
+			try {
+				const preliminaries: string[] = [];
+				let finalAnswer = "";
+				for await (const event of tui.agent.searchDocumentsStream("what are alpha and beta?")) {
+					if (event.type === "preliminary") preliminaries.push(event.response.answer);
+					if (event.type === "complete") finalAnswer = event.response.answer;
+				}
+
+				expect(preliminaries).toEqual(["Beta first [1]. Then alpha [2]."]);
+				// The verification answer cites the same sources in the other order: each keeps the number the quick answer showed.
+				expect(finalAnswer).toBe("Alpha first [2]. Then beta [1].");
+			} finally {
+				await tui.dispose();
+			}
+		});
+	});
+
+	describe("search progress widget", () => {
+		const PROGRESS_KEY = "autorag-search-progress";
+		interface WidgetComponent {
+			render(width: number): string[];
+			dispose?(): void;
+		}
+		type WidgetFactory = (
+			tui: { requestRender(): void },
+			theme: { fg(color: string, text: string): string },
+		) => WidgetComponent;
+
+		/** Records pi widget calls; `lines()` renders whatever progress widget is currently shown. */
+		function widgetRecorder() {
+			const calls: { key: string; shown: boolean }[] = [];
+			let current: WidgetComponent | undefined;
+			let disposed = 0;
+			const setWidget = (key: string, content: unknown): void => {
+				current?.dispose?.();
+				if (current !== undefined) disposed += 1;
+				current = undefined;
+				calls.push({ key, shown: content !== undefined });
+				if (typeof content === "function") {
+					current = (content as WidgetFactory)({ requestRender: () => undefined }, { fg: (_c, text) => text });
+				}
+			};
+			return {
+				ui: { setWidget } as unknown as Partial<ExtensionUIContext>,
+				calls,
+				lines: (): string[] => current?.render(100) ?? [],
+				disposed: () => disposed,
+			};
+		}
+
+		function localRouting() {
+			return new MockBackend({
+				[QUERY_ROUTE_QUESTION_ID]: {
+					answer: "local",
+					distribution: { local: 0.8, organize: 0.1, extra: 0.1 },
+					confidence: 0.8,
+				},
+				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
+				[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
+				[datasourceQuestionId("kakao")]: { answer: 0.9 },
+				// The gate also asks about the public web; these runs must not search it.
+				[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
+			});
+		}
+
+		it("shows a live progress widget the moment a question is submitted, before any retrieval returns", async () => {
+			const routing = holdingJev(localRouting(), QUERY_ROUTE_QUESTION_ID);
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent(
+				[fauxAssistantMessage("Fast answer.", { stopReason: "stop" })],
+				routing.backend,
+				{},
+				widgets.ui,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await routing.entered;
+
+				expect(widgets.calls).toEqual([{ key: PROGRESS_KEY, shown: true }]);
+				const lines = widgets.lines();
+				expect(lines[0]).toContain("Searching");
+				expect(lines.join("\n")).toContain("Routing the question");
+				routing.release();
+				await tui.agent.waitForIdle();
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("names the source the baseline prefetch is still waiting on, and removes the widget when the search ends", async () => {
+			const datasource = slowDatasource("kakao");
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent(
+				[
+					fauxAssistantMessage("Fast answer.", { stopReason: "stop" }),
+					fauxAssistantMessage("Verified.", { stopReason: "stop" }),
+				],
+				localRouting(),
+				{ datasourceSkills: [datasource.skill] },
+				widgets.ui,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await datasource.entered;
+
+				const waiting = widgets.lines().join("\n");
+				expect(waiting).toMatch(/✓ Routing the question — local/u);
+				expect(waiting).toMatch(/Datasource kakao · \d+s/u);
+				expect(waiting).toContain("MinSync");
+
+				datasource.release();
+				await tui.agent.waitForIdle();
+
+				expect(widgets.calls.at(-1)).toEqual({ key: PROGRESS_KEY, shown: false });
+				expect(widgets.lines()).toEqual([]);
+				expect(widgets.disposed()).toBe(1);
+			} finally {
+				datasource.release();
+				await tui.dispose();
+			}
+		});
+
+		it("removes the widget when the user stops the search with Esc", async () => {
+			const routing = holdingJev(localRouting(), QUERY_ROUTE_QUESTION_ID);
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent([], routing.backend, {}, widgets.ui);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await routing.entered;
+				expect(tui.pressKey("\x1b")).toBe(true);
+				routing.release();
+				await tui.agent.waitForIdle();
+
+				expect(widgets.calls.at(-1)).toEqual({ key: PROGRESS_KEY, shown: false });
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("shows the progress of each follow-up question queued behind the first", async () => {
+			const first = heldStep(fauxAssistantMessage("First answer.", { stopReason: "stop" }));
+			const widgets = widgetRecorder();
+			const tui = await tuiAgent(
+				[first.held, fauxAssistantMessage("Second answer.", { stopReason: "stop" })],
+				jevRoute("extra"),
+				{},
+				widgets.ui,
+			);
+			try {
+				await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+				await first.entered;
+				await tui.session.prompt("Who painted the Mona Lisa?", {
+					source: "interactive",
+					streamingBehavior: "followUp",
+				});
+				first.release();
+				await tui.agent.waitForIdle();
+
+				// One widget per question: shown, removed, shown, removed.
+				expect(widgets.calls.map((call) => call.shown)).toEqual([true, false, true, false]);
+			} finally {
+				await tui.dispose();
 			}
 		});
 	});

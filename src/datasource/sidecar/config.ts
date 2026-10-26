@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { createGatewayEmbedder } from "../../embedding-runtime/gateway-embedder.ts";
+import type { Embedder } from "../../embedding/embedder.ts";
 import { sanitizeIdSegment } from "../connector.ts";
 import type { CrawlerDescriptor } from "./descriptors.ts";
 import type { CrawlerSidecarOptions } from "./index.ts";
@@ -30,6 +30,8 @@ export interface ResolveSidecarInput {
 	readonly instanceId: string;
 	/** Where the crawler keeps its archive when the user did not say. */
 	readonly defaultCrawlerDb: string;
+	/** The embedder shared with the rest of AutoRAG. Without one the sidecar is lexical-only. */
+	readonly embedder?: Embedder;
 }
 
 export function resolveSidecarOptions(input: ResolveSidecarInput): CrawlerSidecarOptions | undefined {
@@ -59,7 +61,7 @@ export function resolveSidecarOptions(input: ResolveSidecarInput): CrawlerSideca
 			"sidecar.sqlite",
 		),
 		...(workspaceId === undefined ? {} : { workspaceId }),
-		...(object.semantic === false ? {} : { embedder: createGatewayEmbedder() }),
+		...(object.semantic === false || input.embedder === undefined ? {} : { embedder: input.embedder }),
 	};
 }
 

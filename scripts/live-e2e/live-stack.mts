@@ -1,7 +1,8 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { QWEN3_QUERY_PREFIX } from "../../src/embedding/prefixes.ts";
 import {
 	assertKoreanLexicalHit,
 	assertLiteRetrieveHealthy,
@@ -71,11 +72,46 @@ function writeConfig(path: string, embedderOverride: Record<string, unknown> = {
 	return path;
 }
 
-function runLiteRetrieve(configPath: string, extraArgs: readonly string[] = []) {
+/** Starts the stub in its own process (see openai-stub.mjs) and resolves once it is listening. */
+async function startOpenAiStub(dimension: number) {
+	const child = spawn("node", [join(REPO_ROOT, "scripts", "live-e2e", "openai-stub.mjs"), String(dimension)], {
+		stdio: ["ignore", "pipe", "inherit"],
+	});
+	let output = "";
+	const port = await new Promise<number>((resolvePort, reject) => {
+		child.stdout.setEncoding("utf8");
+		child.stdout.on("data", (chunk: string) => {
+			output += chunk;
+			const line = output.split("\n").find((candidate) => candidate.startsWith("{") && candidate.includes("port"));
+			if (line !== undefined) resolvePort((JSON.parse(line) as { port: number }).port);
+		});
+		child.once("error", reject);
+		child.once("exit", (code) => reject(new Error(`openai-stub-exited-${code}`)));
+	});
+	return {
+		baseUrl: `http://127.0.0.1:${port}`,
+		/** Stops the stub and returns how many embedding requests it served. */
+		stop: () =>
+			new Promise<number>((resolveStop) => {
+				child.removeAllListeners("exit");
+				child.stdout.on("data", () => {
+					const done = output.split("\n").find((candidate) => candidate.includes("requests"));
+					if (done !== undefined) resolveStop((JSON.parse(done) as { requests: number }).requests);
+				});
+				child.once("exit", () => {
+					const done = output.split("\n").find((candidate) => candidate.includes("requests"));
+					resolveStop(done === undefined ? 0 : (JSON.parse(done) as { requests: number }).requests);
+				});
+				child.kill("SIGTERM");
+			}),
+	};
+}
+
+function runLiteRetrieve(configPath: string, extraArgs: readonly string[] = [], env: NodeJS.ProcessEnv = process.env) {
 	const run = spawnSync(
 		"bun",
 		["src/cli/index.ts", "lite", "retrieve", QUERY, "--config", configPath, ...extraArgs],
-		{ cwd: REPO_ROOT, env: process.env, encoding: "utf8", timeout: 5 * 60 * 1000 },
+		{ cwd: REPO_ROOT, env, encoding: "utf8", timeout: 5 * 60 * 1000 },
 	);
 	return { exitCode: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
 }
@@ -99,37 +135,70 @@ let embedderDown:
 	  }
 	| undefined;
 
-if (process.env.AUTORAG_LIVE_E2E_EMBEDDER !== "native") {
-	// Point MinSync at a closed loopback port so the embedder is genuinely down for
-	// this call. Retrieval must still answer, name the skipped surface, and hand
-	// back the real error instead of a generic sentence.
-	const brokenConfig = writeConfig(join(workspace, "lite-retrieve-embedder-down.json"), {
-		baseUrl: "http://127.0.0.1:9",
-		timeoutMs: 5_000,
-	});
-	const degradedRun = runLiteRetrieve(brokenConfig, ["--json"]);
-	if (degradedRun.exitCode !== 0) throw new Error(`lite-retrieve-degraded-exit-${degradedRun.exitCode}`);
-	const degradedEnvelope = JSON.parse(degradedRun.stdout);
-	const skipped = assertLiteRetrieveReportsSkippedSurface(degradedEnvelope, "minsync");
+// A remote endpoint is a first-class backend, and `minsync query` reads the embedder recorded in the
+// workspace's own config, so "the embedder is down" has to be tested on a workspace that was SYNCED through
+// that endpoint. Build one against a loopback OpenAI-compatible stub, then stop the stub: retrieval must
+// still answer, name the skipped surface, and hand back the real error instead of a generic sentence.
+const remoteWorkspace = join(workspace, "remote-embedder");
+const remoteCorpus = join(remoteWorkspace, "corpus");
+// The fixture corpus is read-only, and a copy keeps that mode, so a warm run could not overwrite the previous
+// run's copy. Write the content instead of the mode.
+mkdirSync(remoteCorpus, { recursive: true });
+rmSync(join(remoteCorpus, "sample.txt"), { force: true });
+writeFileSync(join(remoteCorpus, "sample.txt"), readFileSync(source));
+const stub = await startOpenAiStub(1024);
+// The key is a placeholder under an operator-chosen variable name: the stub ignores it, and the run proves the
+// name is mapped to the OPENAI_API_KEY that `minsync` reads.
+process.env.AUTORAG_LIVE_E2E_REMOTE_KEY = "live-e2e-placeholder";
+const remoteEmbedder = {
+	id: "openai:stub-embedding",
+	baseUrl: stub.baseUrl,
+	apiKeyEnv: "AUTORAG_LIVE_E2E_REMOTE_KEY",
+	dimension: 1024,
+	timeoutMs: 5_000,
+};
+const remoteOptions = {
+	...buildLiveStackOptions(root, remoteWorkspace),
+	searchPaths: [remoteCorpus],
+	minSync: { workspacePath: remoteWorkspace, autoInstall: true, embedder: remoteEmbedder },
+};
+const remoteConfig = join(remoteWorkspace, "config.json");
+// The runner points this process at the main workspace through AUTORAG_* variables, and the environment wins
+// over a config file. This lane has its own workspace and corpus, so those variables are dropped for its calls.
+const remoteEnv: NodeJS.ProcessEnv = { ...process.env };
+for (const name of ["AUTORAG_WORKSPACE", "AUTORAG_SEARCH_PATHS", "AUTORAG_MEMORY_PATH", "AUTORAG_CONFIG"]) delete remoteEnv[name];
+writeFileSync(remoteConfig, `${JSON.stringify(remoteOptions, null, 2)}\n`);
+const remoteAgent = new AutoRAGAgent(remoteOptions);
+const remoteRefresh = await remoteAgent.refresh(true, { methods: ["parsed", "minsync"] });
+if (remoteRefresh.minsync?.ok !== true) throw new Error(`remote-embedder-sync-${remoteRefresh.minsync?.reason ?? "unready"}`);
+const remoteHealthy = runLiteRetrieve(remoteConfig, ["--json"], remoteEnv);
+if (remoteHealthy.exitCode !== 0) throw new Error(`remote-retrieve-exit-${remoteHealthy.exitCode}`);
+assertLiteRetrieveHealthy(JSON.parse(remoteHealthy.stdout), realpathSync(join(remoteCorpus, "sample.txt")));
+const stubRequests = await stub.stop();
+if (stubRequests === 0) throw new Error("remote-embedder-never-called");
 
-	// The same skip must reach human output without --debug.
-	const degradedHuman = runLiteRetrieve(brokenConfig);
-	if (!degradedHuman.stdout.includes("warning: not searched: minsync")) {
-		throw new Error("lite-retrieve-human-skip-missing");
-	}
-	embedderDown = {
-		exitCode: degradedRun.exitCode,
-		ok: degradedEnvelope.ok,
-		unsearched: degradedEnvelope.unsearched,
-		diagnostics: degradedEnvelope.diagnostics,
-		skippedSurface: skipped.surface,
-		skippedMethods: skipped.methods,
-		reasonVerbatim: skipped.reason,
-		humanWarningWithoutDebug: degradedHuman.stdout
-			.split("\n")
-			.filter((line: string) => line.startsWith("warning: not searched:")),
-	};
+const degradedRun = runLiteRetrieve(remoteConfig, ["--json"], remoteEnv);
+if (degradedRun.exitCode !== 0) throw new Error(`lite-retrieve-degraded-exit-${degradedRun.exitCode}`);
+const degradedEnvelope = JSON.parse(degradedRun.stdout);
+const skipped = assertLiteRetrieveReportsSkippedSurface(degradedEnvelope, "minsync");
+
+// The same skip must reach human output without --debug.
+const degradedHuman = runLiteRetrieve(remoteConfig, [], remoteEnv);
+if (!degradedHuman.stdout.includes("warning: not searched: minsync")) {
+	throw new Error("lite-retrieve-human-skip-missing");
 }
+embedderDown = {
+	exitCode: degradedRun.exitCode,
+	ok: degradedEnvelope.ok,
+	unsearched: degradedEnvelope.unsearched,
+	diagnostics: degradedEnvelope.diagnostics,
+	skippedSurface: skipped.surface,
+	skippedMethods: skipped.methods,
+	reasonVerbatim: skipped.reason,
+	humanWarningWithoutDebug: degradedHuman.stdout
+		.split("\n")
+		.filter((line: string) => line.startsWith("warning: not searched:")),
+};
 
 const status = await agent.getRefreshStatus();
 const result = {
@@ -155,16 +224,12 @@ const result = {
 		...(embedderDown !== undefined ? { embedderDown } : {}),
 	},
 	embedding: {
-		endpoint: process.env.AUTORAG_GATEWAY_ENDPOINT,
-		model:
-			process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native"
-				? "Qwen/Qwen3-Embedding-0.6B"
-				: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-		profileId: "qwen3-embedding-0.6b",
+		endpoint: process.env.AUTORAG_EMBED_ENDPOINT,
+		model: "Qwen/Qwen3-Embedding-0.6B",
 		dimension: 1024,
-		queryPrefix: "",
+		queryPrefix: QWEN3_QUERY_PREFIX,
 		passagePrefix: "",
-		loopbackOnly: process.env.AUTORAG_LIVE_E2E_EMBEDDER !== "native",
+		loopbackOnly: true,
 	},
 	openaiKeyPresent: Boolean(process.env.OPENAI_API_KEY || process.env.AUTORAG_OPENAI_API_KEY),
 	incremental: mode === "warm" && cursorExistedBefore && refresh.written === 0,

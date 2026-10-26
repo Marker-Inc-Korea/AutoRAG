@@ -2,7 +2,7 @@
  * Live mailcrawl 0.2.0 QA (#1496 / #1499, refreshed for the 0.2.0 contract).
  *
  * Prerequisites:
- *   npm install -g @nomadamas/mailcrawl@0.2.0
+ *   npm install -g @nomadamas/mailcrawl@0.2.2
  *   Node.js 24+
  *
  * Fixture sync needs no Himalaya account or credentials. Since 0.2.0 the

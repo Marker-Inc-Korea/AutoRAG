@@ -181,6 +181,29 @@ describe("parent-agent skill docs", () => {
 		expect(pkg.files).toContain("skills");
 	});
 
+	it("keeps the librarian's own skills out of the parent-agent folder but shipped", () => {
+		// `skills/` is what parent agents copy; a skill that is only the librarian's
+		// own turn rules belongs in `internal-skills/`, which the package still ships.
+		const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+			files: string[];
+		};
+		const internal = readdirSync(join(repoRoot, "internal-skills"), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+		expect(internal.length).toBeGreaterThan(0);
+		for (const name of internal) {
+			expect(skillFolders()).not.toContain(name);
+			const fields = parseFrontmatter(
+				readFileSync(join(repoRoot, "internal-skills", name, "SKILL.md"), "utf8").replace(/\r\n?/g, "\n"),
+			);
+			expect(fields, `internal-skills/${name}: missing frontmatter`).toBeDefined();
+			expect(fields?.name).toBe(name);
+			expect((fields?.description ?? "").length, `internal-skills/${name}: description length`).toBeGreaterThan(0);
+		}
+		expect(pkg.files).toContain("internal-skills");
+	});
+
 	it("documents the lite refresh method values and force flags", () => {
 		const setup = readSkill("autorag-lite-setup");
 		for (const method of ["parsed", "minsync", "datasources", "jikji", "all"]) {
@@ -249,13 +272,14 @@ describe("parent-agent skill docs", () => {
 		expect(setup).toMatch(/Do not present legacy\n`\.doc` as a supported parsed format/s);
 	});
 
-	it("documents Qwen3 native embeddings as default and demotes Ollama/EmbeddingGemma to legacy/QA", () => {
+	it("names Qwen3 at 1024 dimensions as the default embedding and never tells users to manage a model cache", () => {
 		for (const name of ["autorag-setup", "autorag-lite-setup"] as const) {
 			const skill = readSkill(name);
 			expect(skill).toMatch(/Qwen3/);
 			expect(skill).toMatch(/1024/);
-			expect(skill).not.toMatch(/MinSync's default embedder is local EmbeddingGemma/);
-			expect(skill).toMatch(/legacy Ollama\/TEI/i);
+			// The removed `models prefetch|import|verify` and `gateway` commands must not be taught.
+			expect(skill).not.toMatch(/autorag models (prefetch|import|verify)/);
+			expect(skill).not.toMatch(/autorag gateway/);
 		}
 	});
 
@@ -266,6 +290,6 @@ describe("parent-agent skill docs", () => {
 		expect(setup).toMatch(/Discord uses discrawl's local\s+desktop wiretap archive/);
 		const mainSkill = readSkill("autorag");
 		expect(mainSkill).toContain("autorag setup --format json");
-		expect(mainSkill).toMatch(/`setup`.*`gateway`/);
+		expect(mainSkill).not.toMatch(/autorag gateway/);
 	});
 });

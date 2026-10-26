@@ -1,7 +1,7 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.10.4",
-  "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
+  "version": "2.13.1",
+  "description": "Personal librarian agent for office work on the Pi framework, with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -18,6 +18,10 @@
     "./core": {
       "types": "./dist/core.d.ts",
       "default": "./dist/core.js"
+    },
+    "./profiles": {
+      "types": "./dist/profiles.d.ts",
+      "default": "./dist/profiles.js"
     }
   },
   "bin": {
@@ -27,6 +31,7 @@
   "files": [
     "dist",
     "skills",
+    "internal-skills",
     "README.md",
     "NOTICE",
     "licenses",
@@ -36,7 +41,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/core.ts src/cli/index.ts src/mcp/index.ts src/parser/parse-worker.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "build": "bun build src/index.ts src/core.ts src/profiles.ts src/cli/index.ts src/mcp/index.ts src/parser/parse-worker.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",
@@ -44,7 +49,6 @@
     "check": "biome check --write .",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
-    "check:embedding-manifest": "node scripts/check-embedding-manifest.mjs",
     "supply-chain": "bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json"
   },
   "engines": {
@@ -55,9 +59,11 @@
     "@earendil-works/pi-ai": "^1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0",
     "@earendil-works/pi-tui": "1.2.0",
+    "@llblab/pi-telegram": "0.57.2",
     "@modelcontextprotocol/server": "^2.3.1",
-    "@openrouter/sdk": "^1.4.25",
+    "@parcel/watcher": "2.6.0",
     "chardet": "^2.2.0",
+    "discord.js": "14.27.0",
     "fast-xml-parser": "^5.11.2",
     "iconv-lite": "^0.7.3",
     "jev-use": "^0.8.0",
@@ -65,6 +71,8 @@
     "kordoc": "^4.21.30",
     "mailparser": "^3.9.38",
     "pdfjs-dist": "^6.4.299",
+    "pi-ask-user": "0.17.0",
+    "pi-discord-remote": "0.2.4",
     "puppeteer-core": "^25.13.0",
     "slides-grab": "^1.5.2",
     "smol-toml": "1.9.1",

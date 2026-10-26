@@ -1,4 +1,4 @@
-# AutoRAG — Pi-Powered Librarian Agent
+# AutoRAG — Pi-Powered Personal Librarian Agent
 
 ## Guardrails
 
@@ -6,7 +6,7 @@ These bind every agent and human working in this checkout. Force is CI, CODEOWNE
 
 ### Allowed
 
-Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay within the task.
+Edits inside `src/`, `test/`, `scripts/`, `skills/`, `internal-skills/`, and `docs/` that stay within the task.
 
 ### Forbidden
 
@@ -14,7 +14,7 @@ Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay withi
 - Adding or committing secrets (`.env`, `*.key`, tokens, cookies, private corpus dumps)
 - Rewriting git history
 - Attaching `node_modules` to releases
-- Sending corpus text to a remote provider without an explicit trusted-config opt-in (remote embedders and rerankers are supported; the local gateway remains the zero-config default)
+- Sending corpus text to a remote provider without an explicit trusted-config opt-in (remote embedders and rerankers are supported; the local MinSync embedder remains the zero-config default)
 - Hard-coding provider credentials in config files or argv; store only environment-variable, keychain, or profile references
 - Creating git worktrees (this clone is the isolation boundary)
 
@@ -24,7 +24,7 @@ Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay withi
 
 ### Ask first
 
-A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding profile or its license, and P2P default changes.
+A new runtime dependency, a license-allowlist change, SECURITY / GOVERNANCE / AI policy, an embedding backend change or its license, and P2P default changes.
 
 ## Git Workflow (binding)
 
@@ -49,11 +49,7 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 1. Commit and push **tracked** changes only (`git add -u`, then commit, then push). This is a standing request to commit at finish — do not wait for a per-session "please commit."
 2. Do not add untracked files. `git add .` and `git add -A` are forbidden at this step. Untracked files stay untracked. If the finished work introduced new files that must ship, add those paths explicitly by name — never a recursive add of the working tree.
-3. If there is nothing tracked to commit, skip commit/push and still return to `main`.
-4. `git checkout main`.
-5. Sync local `main` with `origin/main` (`git pull --ff-only origin main`).
-
-Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
+3. If there is nothing tracked to commit, skip commit/push.
 
 ### DCO sign-off (binding)
 
@@ -71,7 +67,7 @@ Never merge a PR on your own initiative. Merge only when the user explicitly ask
 
 ## Manual QA on a shared machine (binding)
 
-The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, the embedding-model cache, TUI sessions, P2P policy). The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
+The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, TUI sessions). MinSync's model cache is separate and shared at `~/.cache/minsync/models`. The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
 
 That home belongs to the maintainer, not to your task. Every write your QA makes there silently changes every other clone, every app checkout, and the real setup. This already happened more than once: an ad-hoc QA step ran `autorag init --workspace "$TMP" --search-paths "$TMP/docs" --force` with no `--config` and no `AUTORAG_HOME`. `--workspace` does not move the config, so `--force` replaced the real `~/.autorag/config.json`. It dropped every configured datasource and pointed search at a temp directory that was deleted minutes later. From then on, every search on the machine, the desktop app included, failed with `AutoRAG search root does not exist: /var/folders/.../tmp.XXXX/docs` (#1743).
 
@@ -90,7 +86,7 @@ Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
    A tool that starts a fresh shell per call (an agent `bash` tool, `tool.bash`, `Bun.$`, `spawn`) does not inherit a previous call's `export`. Repeat the exports in each call, or pass them through `env`.
 3. **`--workspace` is not isolation.** It moves the workspace only. The config path comes from `--config`, then `AUTORAG_CONFIG`, then `$AUTORAG_HOME/config.json`, then `~/.autorag/config.json`. Never run `autorag init --force` (or anything else that writes config) unless `AUTORAG_CONFIG` or `--config` points inside your temp root.
 4. **Check before you write.** Right before the first command that writes config, confirm the target is yours: `echo "$AUTORAG_CONFIG"` must print a path under `$QA_ROOT`. If it is empty or under `$HOME/.autorag`, stop.
-5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' gateways and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
+5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' `minsync serve` daemons and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
 6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
 
 The fixed live-E2E runner below is clone-local, but host execution still exposes the
@@ -111,9 +107,10 @@ The container sets an ephemeral `HOME`, `AUTORAG_HOME`, and `AUTORAG_CONFIG`,
 bind-mounts this clone at `/workspace`, and does not mount the host `~/.autorag`
 or native datasource stores. Only the model credential allowlist in `QA_MODEL_ENV`
 is forwarded; set it empty (`QA_MODEL_ENV=`) to forward no credentials at all.
-Live E2E defaults to the local native MinSync embedder; set `E2E_EMBEDDER=gateway`
-only when the Docker image has a compatible gateway runtime. Use `QA_PLATFORM`
-and `QA_MODEL_ENV` to select a supported architecture or credential allowlist.
+The live runner starts a `minsync serve` daemon for the run, checks its `/health`
+endpoint for `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions, and stops it after
+the run. Use `QA_PLATFORM` and `QA_MODEL_ENV` to select a supported architecture
+or credential allowlist.
 The live target keeps runner state inside the clone's `.autorag-e2e` directory;
 evidence remains in the mounted clone under `.omo/evidence`.
 
@@ -180,13 +177,18 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- The gateway profile pinned in the clone-local `.autorag-e2e` home. The
-  workflow self-ensures this via `autorag models prefetch --profile qwen3-embedding-0.6b`
-  before starting the gateway; no manual Ollama serve, TEI adapter, or model
-  pull is required.
-- `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings are local
-  only; do not configure a remote embedding endpoint or send corpus text off
-  the machine.
+- MinSync 0.4.12 or newer on `PATH`. The runner starts a `minsync serve` daemon
+  for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
+  model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
+  the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
+  nothing on the host. MinSync publishes a Linux build for x86_64 only, so that
+  image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host
+  it runs under emulation, and building it for arm64 fails with that reason.
+  Bump `MINSYNC_VERSION`/`MINSYNC_SHA256` in the Dockerfile with
+  `MINSYNC_VERSION` in `src/minsync/installer.ts`.
+- `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings stay local
+  during live E2E: do not configure a remote `minSync.embedder` endpoint or
+  send corpus text off the machine.
 
 Run the cold path (fresh runner state and core local-file/MinSync verification):
 
@@ -201,8 +203,9 @@ make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 ```
 
 Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
-executes the `local` lane plus every native CLI lane (lazykatok, discrawl, wacrawl,
-telecrawl, slacrawl, lark, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
+executes the `local` lane, the self-contained `obsidian` vault lane, and every
+native CLI lane (lazykatok, discrawl, wacrawl, telecrawl, slacrawl, lark,
+notcrawl, rclone, mailcrawl, and macOS Spotlight).
 `E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
 skips native lanes entirely). The summary separates the core MinSync result
 (`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
@@ -232,21 +235,27 @@ filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
-only. Leave lazykatok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight
+only. Leave lazykatok, discrawl, crawler, rclone, mailcrawl, and Spotlight
 native stores untouched.
 Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
 
 ## Required MinSync Live QA
 
 When validating local-file retrieval changes, run a real semantic query
-through the product default gateway path. The local gateway is the default;
-a remote embedding service is used only when the operator explicitly
-configures one.
+through the shared embedder. The local MinSync backend is the default; a remote
+embedding service is used only when the operator explicitly configures
+`minSync.embedder`.
 
-The default product path uses the AutoRAG-owned `autorag-gateway` with the
-`qwen3-embedding-0.6b` profile (1024 dimensions, no query/passage prefixes).
-The gateway is started on demand by the semantic MinSync path and stays
-loopback-only.
+The default product path uses MinSync's Qwen3-Embedding-0.6B engine (1024
+dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are
+raw). Vectors come from a loopback
+`minsync serve` daemon when one answers, otherwise from MinSync's in-process
+engine through the optional `@nomadamas/minsync-native` addon. AutoRAG never
+starts or stops the daemon: the operator runs `minsync serve --idle-timeout 0`
+(launchd/systemd, see `docs/minsync-setup.md`) or presses Ctrl+Shift+E in the
+TUI. `autorag setup` and `autorag status` only report the resolved
+`embedding.backend` (`daemon`, `in-process`, or `remote`) with the provider,
+model, and dimension, or why none is alive.
 
 Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag` (see the manual-QA rules above):
 
@@ -261,10 +270,7 @@ printf '%s\n' \
   > "$WORKSPACE/docs/refund-policy.txt"
 
 cd "$WORKSPACE"
-# Pin the model to the local cache (no Ollama, no adapter)
-autorag models prefetch --profile qwen3-embedding-0.6b
-
-# Init with the default gateway profile
+# Init with the default local MinSync embedder
 autorag init \
   --search-paths "$WORKSPACE/docs" \
   --force
@@ -280,11 +286,12 @@ The QA gate is not complete until all of the following are observed:
 2. The semantic query returns a hit for the fixture document.
 3. AutoRAG maps that hit to an OS-absolute original `source` path.
 4. `fs.existsSync(source)` and reading `source` succeed.
-5. The run used the local gateway (no remote embedding endpoint configured).
+5. The run used a local backend (`daemon` or `in-process`), with no remote
+   `minSync.embedder` endpoint configured.
 
-If the model prefetch fails, the gateway is unavailable, or MinSync reports a
-semantic failure, report the exact blocking diagnostic and do not claim live
-MinSync verification.
+If MinSync is missing, no daemon answers and the in-process addon is absent or
+fails (`embedder-unavailable`), or MinSync reports a semantic failure, report
+the exact blocking diagnostic and do not claim live MinSync verification.
 
 ### Legacy/manual variant (Ollama + TEI adapter)
 
@@ -316,7 +323,7 @@ autorag search --json "semantic question about refund approval"
 The adapter translates MinSync's `POST /embed` request to Ollama's
 `POST /api/embeddings` request and returns the TEI response shape (a bare JSON
 array of embedding arrays). Do not use this variant as a fresh-install
-requirement or as an implicit fallback from the gateway.
+requirement or as an implicit fallback from the MinSync embedder.
 
 Docker can reproduce the Linux job on macOS, Linux, or Windows hosts. The
 `test-linux` target uses an isolated container volume for `node_modules`, so it
@@ -329,7 +336,7 @@ runner.
 
 ## Purpose
 
-AutoRAG is an **over-powered librarian agent** for **document collections** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a librarian, used through one library/programmatic API (and a thin CLI).
+AutoRAG is a **personal librarian agent** that assists the user's everyday office work. It finds what is in the user's **documents, mail, chats, notes, and cloud drives** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus — and, in local sessions, acts on the user's own files when asked. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a librarian, used through one library/programmatic API (and a thin CLI).
 
 Searches run in one agent loop: the librarian chooses retrieval methods, reads source files directly, judges the evidence, and curates structured results. The model and provider come from the user's authenticated runtime; the distributed package does not assume a private provider.
 
@@ -349,14 +356,14 @@ Three core values drive every design decision. Features and PRs that conflict
 with any of them should be rejected or reshaped:
 
 1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
-   stores (lazykatok, discrawl, qmd, msgvault, rclone, …) in place. No forced
+   stores (lazykatok, discrawl, msgvault, rclone, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
    (`/kakao/<instance>/chunks/<chunk>`), and secrets
    stay with the tool that owns them.
 2. **Just works — no RAG degree required.** A non-developer installs it and
    it works: minimal configuration, no pipeline tuning, no vector-DB
-   operations, no OpenAI keys. The local embedder (EmbeddingGemma via Ollama)
+   operations, no OpenAI keys. The local MinSync embedder (Qwen3-Embedding-0.6B)
    and MinSync auto-install handle the "RAG plumbing" invisibly.
 3. **Fast by design.** One configured model owns the whole loop; retrieval
    runs locally over MinSync CDC chunks (BM25 / vector / hybrid); interactive
@@ -367,9 +374,45 @@ Rationale for value 1 comes from the competitive landscape study
 hybrid retrieval are commoditized, while harness-free federation with
 source-native provenance is the durable differentiator.
 
+### Acting on the user's files
+
+The librarian is not read-only. In local sessions it may organize, create, and
+modify the user's files when the user asks: rename, move, copy, create folders,
+write new files, edit or replace existing files, and move files to the OS trash
+(`src/agent/system-prompt.ts`, "Local File Organization"). The boundaries are:
+
+- **No permanent deletion.** Never `rm`, `shred`, or `find -delete`. Deletion
+  goes to the OS trash. Overwriting an existing file is allowed when the user
+  asks for it.
+- **Every change is reported** as old path → new path in the answer, so "undo
+  that" works from the conversation alone.
+- **Only when asked.** Retrieval, answering, and curation never modify files on
+  their own.
+- **The organize turn's rules are a packaged skill.** When Jev routes a request
+  to `organize`, the turn loads `internal-skills/organize/SKILL.md` as a
+  `<skill name="organize" location="autorag-skill://organize">` invocation
+  (plan first, never overwrite, trash instead of deleting, confirm with a
+  listing, report every change as old path → new path) and its prompt names the
+  tools to use while keeping retrieval, datasource, and web search out of the
+  turn. No route changes the session's active tool set, so the prompt and the
+  skill are what scope the work. If the skill cannot be loaded, the run falls
+  back to `local` with an `organize-skill-unavailable` diagnostic.
+- **Indexing is separate.** `refresh`, `watch`, `lite`, `setup`, and `doctor`
+  never modify source documents; they write only under the workspace
+  `.autorag/` directory, Jikji's central store, and `~/.autorag`. Agents that
+  install, configure, or repair AutoRAG (Claude Code, Codex, …) follow that
+  rule; it is a statement about those procedures, not a limit on the librarian.
+- **Datasource native stores are owned by their CLIs.** AutoRAG reads them
+  (the sidecar opens crawler archives `mode=ro`) and never deletes or rewrites
+  them; rebuilding is the owning CLI's job.
+- **Acting on external systems** (sending mail or messages, creating calendar
+  events, writing to a SaaS) needs its own design for credential location,
+  explicit user approval, and an audit trail before it ships. Secrets still
+  stay with the tool that owns them.
+
 ## New CLI-backed datasource
 
-External datasource CLIs (lazykatok, discrawl, slacrawl, qmd, rclone,
+External datasource CLIs (lazykatok, discrawl, slacrawl, rclone,
 crawlers) are driven **directly** with their own native stores. There is no
 AutoRAG-managed workspace/config forcing and no bash gate: the agent may run
 these CLIs through `bash` as well as through the datasource tools.
@@ -443,9 +486,8 @@ The librarian agent owns the full workflow:
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
 | `web_search` | Internet web search through the oh-my-pi-style provider chain; credential-free by default, keyed providers via env vars with quota-fallback | Current/public web information |
 | `web_fetch` | Fetch a public http(s) URL and render it as markdown/text | Reading pages found via `web_search` or known URLs |
-| `recommend_peer_targets` | Rank local SimpleX peer contacts (the profile a peer shared plus your local name and note) by keyword overlap | P2P routing; never contacts peers |
 
-There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`. `recommend_peer_targets`, `web_search`, and `web_fetch` are omitted in remote P2P sessions.
+There is no `lexical_search_local_docs` tool. BM25 runs inside MinSync (and some datasource methods) and is reached through `search_all_documents`.
 
 `web_search`/`web_fetch` are ported from oh-my-pi's web module: a credential-free-only provider chain — model-native search reusing the agent's own model credentials (`gemini`/`anthropic`/`codex`/`xai`), the anonymous `perplexity` ask endpoint, Parallel's keyless MCP (`parallel`), then the scraped engines (`startpage`/`duckduckgo`/`ecosia`/`google`/`mojeek`, plus the `public` fan-out aggregate) with headless-browser escalation for bot challenges — where quota, auth, and bot-challenge failures automatically fall back to the next provider. No API key or signup is required; a self-hosted `SEARXNG_ENDPOINT` is the only env-gated, explicitly-advanced option. Web queries leave the machine: never include private corpus content or secrets in them.
 
@@ -459,7 +501,7 @@ Agent Tools                 AutoRAGAgent (customized Pi agent)
 │ semantic_search   │       │ check_memory (advisory reference) │
 │ search_datasource │       │ Datasource Skills (ext. stores)   │
 │ scan_duplicates   │       │ Retrieval Registry (pluggable)    │
-│ peer_targets      │       │ Result Merger (cross-method)      │
+│                   │       │ Result Merger (cross-method)      │
 └──────────────────┘       └──────────────────────────────────┘
 ```
 
@@ -483,7 +525,7 @@ Datasource skills are retrieval-method factories plus indexing hooks for externa
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault via external `qmd` CLI: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
 ## Directory Access
 
@@ -491,7 +533,7 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
-- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows, local sessions), `fsearch_search` (macOS/Linux, local sessions), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per configured datasource connection, `load_datasource_skill`, `scan_duplicate_documents`, and `recommend_peer_targets` (local sessions). There is no answer-emitting tool: the fast first answer and the final answer are ordinary assistant messages.
+- **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows), `fsearch_search` (macOS/Linux), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per configured datasource connection, `load_datasource_skill`, and `scan_duplicate_documents`. There is no answer-emitting tool: the fast first answer and the final answer are ordinary assistant messages.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Document parsing** — `kordoc` is the default parser for `.hwp`, `.hwpx`, `.hml`, `.hwpml`, `.pdf`, `.docx`, `.xlsx` and `.xls`; it runs in-process (no Java, no subprocess) and keeps nested tables and per-sheet workbook structure. `.pptx`, `.eml` and plain text keep their own parsers. kordoc failures surface as `ParseError` with kordoc's own code and message verbatim, and kordoc warnings become `parser-warning` diagnostics.
 - **Global language setting** — one `languages` list (config `languages`, `--languages`, or `AUTORAG_LANGUAGES`; default `["ko", "en"]`) describes the corpus. Accepted tags are curated in `src/language.ts` because every tag must map to a Tesseract traineddata code. Format parsing is language-agnostic; `languages` only selects the OCR engine when `parserOptions.ocr.enabled` is true: all-`ko`/`en` uses kordoc's built-in PP-OCRv5, any other tag injects Tesseract (all languages joined, e.g. `kor+jpn`) as kordoc's OCR provider. kordoc is the single owner of scanned PDF pages and `.png .jpg .jpeg .webp` images; image extensions are registered only while OCR is enabled, because kordoc OCRs every image it is handed. `.bmp`/`.tiff` are unsupported by kordoc and not claimed. OCR stays opt-in, so a default refresh downloads no recognition model. Tesseract traineddata is cached under `<workspace>/.autorag/models/tessdata` (`ocr.cachePath` overrides), never the working directory.
@@ -499,8 +541,8 @@ Model authentication stays with the configured provider or authenticated local r
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **No indexing during inference** — a query (`searchDocuments`, TUI, MCP retrieve) only reads prebuilt indexes. It never runs `jikji prepare`, `minsync sync`/`init`, parsed-mirror sync, fsearch/Everything index builds or instance startup, or a binary auto-install. All of that runs only in `refresh`/`watch` (incremental: MinSync syncs changed mirrors, `jikji prepare` reuses unchanged docs; Jikji roots prepare one at a time, because every root shares one central SQLite file that fails with "database is locked" under concurrent writers, and a search root nested inside or duplicating another is skipped since upstream rejects overlapping roots). A never-refreshed source simply contributes no evidence.
 - **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync is **required**: it auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` only stops the auto-install; there is no way to turn MinSync off, `minSync: false` and `minSync.enabled: false` are config errors). A search, refresh, or MCP tool call with no resolvable `minsync` binary fails with `MinSyncRequiredError` and a non-zero exit instead of answering from the remaining retrieval paths. Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). Jikji, `lazykatok`, and `discrawl` degrade gracefully when missing; MinSync does not.
-- **Everything (Windows)** — the npm package bundles the unmodified voidtools portable Everything 1.4.1.1032 and ES 1.1.0.38 ZIPs (x64/ARM64) in `vendor/everything`, pinned by SHA-256 in `vendor/everything/manifest.json`, with their MIT (and PCRE BSD) texts in `licenses/` and NOTICE. On Windows only, AutoRAG extracts and verifies them into `<workspace>/.autorag/everything/<version>/<arch>/` and starts a named, user-level instance (`autorag-<hash>`) with its own `Everything.ini`/`Everything.db` that indexes only the configured search roots as folder indexes. It never requests elevation, installs the Everything service, indexes whole NTFS/ReFS volumes, or enables the HTTP/ETP servers, and it does not touch a user's own Everything. `refresh` (all methods, any parsed refresh, or `--method everything`) rewrites the config, restarts the instance, and waits for the index; failures surface as `everything-index-failed` with ES's exit code and stderr verbatim. `everything: false` disables it; on macOS/Linux it is absent. Remote P2P sessions never receive `everything_search`.
-- **FSearch (macOS/Linux)** — the Everything-analog on non-Windows hosts, via the user's [`fsearch-cli`](https://github.com/NomaDamas/fsearch-mac) (GPL-2.0-or-later). fsearch-cli is NOT bundled: the user installs it separately and AutoRAG only spawns it as a separate process over its CLI and Unix-socket daemon protocol — mere aggregation per the FSF GPL FAQ, never a combined work, so AutoRAG keeps its own license. On macOS/Linux only, AutoRAG builds a per-workspace database at `<workspace>/.autorag/fsearch/fsearch.db` that indexes only the configured search roots (excluding `.autorag` state dirs) and keeps a `fsearch-cli watch` daemon (pid file `watch.pid`) live from FSEvents/inotify so `fsearch-cli search` answers over its socket — an explicit short socket at `/tmp/autorag-fsearch-<uid>-<sha12(db realpath)>.sock`, because fsearch-cli's default `<db>.sock` overflows the 104-byte unix sun_path limit for deep workspace paths and daemon/client rendezvous silently breaks; `stopFsearch()` terminates the daemon, and it never touches the user's own FSearch app database (`$XDG_DATA_HOME/fsearch/fsearch.db`). `refresh` (all methods, any parsed refresh, or `--method fsearch`) rebuilds the database and re-verifies the daemon; a missing binary surfaces as a `fsearch-binary-missing` warning (not an error), other failures as `fsearch-index-failed` with the CLI's exit code and stderr verbatim. When fsearch-cli is not installed, `fsearch_search` still answers through a bounded slow filesystem walk (substring/regex name matching) and labels its output as such. `fsearch: false` disables it; on Windows it is absent (Everything covers it). Remote P2P sessions never receive `fsearch_search`.
+- **Everything (Windows)** — the npm package bundles the unmodified voidtools portable Everything 1.4.1.1032 and ES 1.1.0.38 ZIPs (x64/ARM64) in `vendor/everything`, pinned by SHA-256 in `vendor/everything/manifest.json`, with their MIT (and PCRE BSD) texts in `licenses/` and NOTICE. On Windows only, AutoRAG extracts and verifies them into `<workspace>/.autorag/everything/<version>/<arch>/` and starts a named, user-level instance (`autorag-<hash>`) with its own `Everything.ini`/`Everything.db` that indexes only the configured search roots as folder indexes. It never requests elevation, installs the Everything service, indexes whole NTFS/ReFS volumes, or enables the HTTP/ETP servers, and it does not touch a user's own Everything. `refresh` (all methods, any parsed refresh, or `--method everything`) rewrites the config, restarts the instance, and waits for the index; failures surface as `everything-index-failed` with ES's exit code and stderr verbatim. `everything: false` disables it; on macOS/Linux it is absent.
+- **FSearch (macOS/Linux)** — the Everything-analog on non-Windows hosts, via the user's [`fsearch-cli`](https://github.com/NomaDamas/fsearch-mac) (GPL-2.0-or-later). fsearch-cli is NOT bundled: the user installs it separately and AutoRAG only spawns it as a separate process over its CLI and Unix-socket daemon protocol — mere aggregation per the FSF GPL FAQ, never a combined work, so AutoRAG keeps its own license. On macOS/Linux only, AutoRAG builds a per-workspace database at `<workspace>/.autorag/fsearch/fsearch.db` that indexes only the configured search roots (excluding `.autorag` state dirs) and keeps a `fsearch-cli watch` daemon (pid file `watch.pid`) live from FSEvents/inotify so `fsearch-cli search` answers over its socket — an explicit short socket at `/tmp/autorag-fsearch-<uid>-<sha12(db realpath)>.sock`, because fsearch-cli's default `<db>.sock` overflows the 104-byte unix sun_path limit for deep workspace paths and daemon/client rendezvous silently breaks; `stopFsearch()` terminates the daemon, and it never touches the user's own FSearch app database (`$XDG_DATA_HOME/fsearch/fsearch.db`). `refresh` (all methods, any parsed refresh, or `--method fsearch`) rebuilds the database and re-verifies the daemon; a missing binary surfaces as a `fsearch-binary-missing` warning (not an error), other failures as `fsearch-index-failed` with the CLI's exit code and stderr verbatim. When fsearch-cli is not installed, `fsearch_search` still answers through a bounded slow filesystem walk (substring/regex name matching) and labels its output as such. `fsearch: false` disables it; on Windows it is absent (Everything covers it).
 - **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by per-query scope, and indexed during `refresh()`.
 
 ## Usage
@@ -546,8 +588,8 @@ their judged evidence, and (3) matching long-term insights — injected as a
 `<memory_context>` user message and offered through the `check_memory` tool.
 Jev's datasource-selection step also receives up to 5 similar past questions as
 hints. Memory never reorders search results. Evidence from datasources not
-configured for the run is never shown, and remote P2P sessions never read or
-write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
+configured for the run is never shown. See
+[docs/retrieval-memory.md](docs/retrieval-memory.md).
 
 ## Files
 
@@ -556,12 +598,15 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 | `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
-| `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
+| `src/agent/mcp-client.ts` | Connects the user's external MCP servers (`<piAgentDir>/mcp.json` only; project `.pi/mcp.json` is ignored) through pi's MCP, codemode, and tool-search extensions, carries pi's `mcp_servers` prompt section into AutoRAG's forced system prompt, and names the tools the session allow-list must keep |
+| `src/agent/query-routing.ts` | Jev query router: local / organize (file and folder actions) / extra (a knowledge answer or any other action, one turn with every tool) / config branches, the 0.75 non-local confidence floor, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/results.ts` | Result types (`AutoRAGResultsDetails`) and `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
 | `src/agent/answer-citations.ts` | `deriveResultsFromAnswer`: resolves the model's inline `[eN]` / `[file:<path>]` citations against the evidence ledger and derives the numbered results, mapping, and `citation-without-result` diagnostics from the plain answer |
-| `src/agent/evidence-ledger.ts` | `EvidenceLedger`: every retrieval tool (including `query_peer_agent`) registers what it returned and prints an `[eN]` id; `lookup` resolves a cited id back to the recorded source, method, and chunk without throwing. Ids only count up and are never reissued, so a stale id can never alias new evidence. A bound TUI conversation keeps one ledger for its whole life; a programmatic run with no transcript starts from an empty one. `takeUnsaved` / `restore` let the hosting session persist and rebuild it |
+| `src/agent/evidence-ledger.ts` | `EvidenceLedger`: every retrieval tool registers what it returned and prints an `[eN]` id; `lookup` resolves a cited id back to the recorded source, method, and chunk without throwing. Ids only count up and are never reissued, so a stale id can never alias new evidence. A bound TUI conversation keeps one ledger for its whole life; a programmatic run with no transcript starts from an empty one. `takeUnsaved` / `restore` let the hosting session persist and rebuild it |
 | `src/agent/evidence-persistence.ts` | pi extension that appends new ledger entries to the session file as `autorag.evidence` entries and rebuilds the ledger from the branch in view on `session_start` (resume, `/new`, fork) and `session_tree`, so an id the model saw keeps resolving across turns, tool calls, resumes, and restarts |
+| `src/agent/search-progress.ts` | `SearchProgressTracker` (what the running search is doing: routing, decomposition, each retrieval source's hits/failures/time, ranking, model phases), `renderSearchProgress` (pure widget lines), and `createSearchProgressExtension`, the pi extension that shows it as the `autorag-search-progress` widget from submit until the answer is final. Reports outside a begun search are ignored, so the library path pays nothing |
+| `src/agent/intent-tracing.ts` | Intent tracing (ported from oh-my-pi): declares a required `i` argument on every tool in each model request, strips it before the tool runs, and shows the newest one as pi's working message; `searchDocumentsStream` reports the same text as `progress` |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
 | `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |
@@ -574,7 +619,6 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 | `src/web/search/` | oh-my-pi-ported web search: provider chain, structured query parsing, keyed + credential-free providers |
 | `src/web/fetch/` | oh-my-pi-ported URL render pipeline: page loader, HTML→markdown reader chain, feeds, content negotiation |
 | `src/agent/dupey-tool.ts` | `scan_duplicate_documents` read-only dupey scan |
-| `src/agent/peer-target-tool.ts` | `recommend_peer_targets` local SimpleX peer-contact ranking (shared profile + your name/note) |
 | `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
 | `src/memory/memory.ts` | Retrieval memory store: judged evidence, curated results, evidence chunks, insights, and v4→v5 file parsing |
 | `src/memory/similar-queries.ts` | Similar past questions via hybrid BM25 + vector search with reciprocal-rank fusion and the SQLite question-vector cache |
@@ -595,12 +639,15 @@ write it. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 | `src/parser/kordoc.ts` | Default document parser (kordoc) for HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS |
 | `src/parser/ocr-engines.ts` | OCR switch options, Tesseract runtime (worker lifecycle, timeout, cache path) and the language → engine split |
 | `src/datasource/` | Datasource skill contracts, scope filtering, polling metadata, diagnostics, and KakaoTalk/lazykatok skill implementation |
-| `src/p2p/` | SimpleX P2P sharing: policy, injection/PII gates, approval store, wire protocol |
-| `src/cli/commands/serve.ts` | `autorag serve` P2P peer query server |
-| `src/cli/commands/p2p.ts` | `autorag p2p` peer trust and request approval |
-| `src/cli/commands/p2p-policy.ts` | `autorag p2p policy` sharing-rule CLI |
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
+| `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
+| `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |
+| `src/profiles/retrieval-tools.ts` | Optional `search_all_documents` / `search_datasource_<id>` tools for a profile, backed by an agent whose memory file is a throwaway |
+| `src/profiles/automation-profiles.ts` | Code-defined profiles an automation rule may name (`file-triage` read-only, `file-organizer` writes); a rule carries an id, never a prompt or tool list |
+| `src/profiles/loop-guard.ts` | The mandatory system-prompt section appended to every automation agent run: names the rule's folders, file types and events and forbids triggering the rule again |
+| `src/automation/run-agent.ts` | Runs an agent rule: profile + loop guard, changed files as the user message, final reply logged like a command's stdout |
+| `src/automation/dispatch.ts` | `runRule`: the one entry for command and agent rules; at most one agent run in flight across rules |

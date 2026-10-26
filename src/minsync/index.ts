@@ -1,5 +1,4 @@
 export {
-	MINSYNC_OLLAMA_MIGRATION_MESSAGE,
 	MinSyncClient,
 	type MinSyncClientOptions,
 	MinSyncQueryError,

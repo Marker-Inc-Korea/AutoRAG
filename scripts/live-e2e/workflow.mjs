@@ -1,4 +1,4 @@
-import { accessSync, constants, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, closeSync, constants, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,17 +14,6 @@ export function isFingerprintCurrent(previous, current) {
 }
 export function assertServiceReady(result) { if (result.verdict === "refused") throw new Error(result.code ?? "live-e2e-service-refused"); }
 export function buildLiveStackOptions(root, workspace) {
-	const embedder =
-		process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native"
-			? { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }
-			: {
-					id: "tei:Qwen3-Embedding-0.6B-Q8_0.gguf",
-					baseUrl: process.env.AUTORAG_GATEWAY_ENDPOINT,
-					dimension: 1024,
-					queryPrefix: "",
-					passagePrefix: "",
-					timeoutMs: 120_000,
-				};
 	return {
 		searchPaths: [join(resolve(root), "corpus")],
 		workspacePath: resolve(workspace),
@@ -32,10 +21,12 @@ export function buildLiveStackOptions(root, workspace) {
 		// Never let E2E write .jikji state into the shared corpus root or
 		// trigger a jikji/cargo install mid-run: the corpus root is immutable.
 		jikji: false,
+		// AutoRAG owns no embedding model. MinSync's native Qwen3 does the embedding: through a running
+		// `minsync serve` daemon when one answers (refresh starts one), in-process otherwise.
 		minSync: {
 			workspacePath: resolve(workspace),
-			autoInstall: process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native",
-			embedder,
+			autoInstall: true,
+			embedder: { id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 },
 		},
 	};
 }
@@ -120,9 +111,8 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 	if (mode === "warm") { let previous; try { previous = loadFingerprint(); } catch { return finish(evidence, "live-e2e-fingerprint-mismatch", evidencePath, 1); } if (previous !== null && !isFingerprintCurrent(previous, env.fingerprint)) return finish(evidence, "live-e2e-fingerprint-mismatch", evidencePath, 1); }
 	writeFingerprint(env.fingerprint);
 	const lock = tryAcquireWorkflowLock(); if (!lock.ok) return finish(evidence, lock.code, evidencePath, 1);
-	let diagnostic; let exitCode = 0; let gatewayProcess;
+	let diagnostic; let exitCode = 0; let daemonPid;
 	try {
-		const nativeEmbedder = process.env.AUTORAG_LIVE_E2E_EMBEDDER === "native";
 		const childEnv = {
 			...process.env,
 			AUTORAG_HOME: env.AUTORAG_HOME,
@@ -130,31 +120,21 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 			AUTORAG_WORKSPACE: env.AUTORAG_WORKSPACE,
 			AUTORAG_SEARCH_PATHS: env.AUTORAG_SEARCH_PATHS,
 			AUTORAG_MEMORY_PATH: env.AUTORAG_MEMORY_PATH,
-			AUTORAG_LIVE_E2E_EMBEDDER: nativeEmbedder ? "native" : "gateway",
 			OPENAI_API_KEY: "",
 			AUTORAG_OPENAI_API_KEY: "",
 		};
-		if (!nativeEmbedder) {
-			const prefetch = record(
-				commandResult("bun", ["src/cli/index.ts", "models", "prefetch", "--profile", "qwen3-embedding-0.6b"], REPO_ROOT, childEnv),
-			);
-			if (prefetch.exitCode !== 0) {
-				diagnostic = "live-e2e-runtime-prefetch-failed";
-				exitCode = 1;
-			}
-			if (exitCode === 0) {
-				const started = await startGatewayProcess(childEnv);
-				gatewayProcess = started.child;
-				childEnv.AUTORAG_GATEWAY_ENDPOINT = started.endpoint;
-				const preflight = await runPreflight({ endpoint: started.endpoint });
-				evidence.preflight = preflight;
-				try {
-					assertServiceReady(preflight);
-				} catch (error) {
-					diagnostic = error instanceof Error ? error.message : "live-e2e-service-refused";
-					exitCode = 1;
-				}
-			}
+		// The run owns its daemon: start `minsync serve` here, prove it answers /health as the pinned model,
+		// then let the stack under test discover it exactly as a user's refresh would.
+		const started = await startMinSyncDaemon(childEnv);
+		daemonPid = started.pid;
+		childEnv.AUTORAG_EMBED_ENDPOINT = started.endpoint;
+		const preflight = await runPreflight({ endpoint: started.endpoint });
+		evidence.preflight = preflight;
+		try {
+			assertServiceReady(preflight);
+		} catch (error) {
+			diagnostic = error instanceof Error ? error.message : "live-e2e-service-refused";
+			exitCode = 1;
 		}
 		const child =
 			exitCode === 0
@@ -184,22 +164,42 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 			}
 		}
 	} catch (error) {
-		diagnostic = error instanceof Error ? error.message : "live-e2e-gateway-start-failed";
+		diagnostic = error instanceof Error ? error.message : "live-e2e-daemon-start-failed";
 		exitCode = 1;
 	} finally {
 		lock.release?.();
 		evidence.cleanup.lockReleased = true;
-		if (gatewayProcess) {
-			gatewayProcess.kill("SIGTERM");
-			await new Promise((resolve) => gatewayProcess.once("exit", resolve));
-		}
+		// The daemon belongs to MinSync and would stop itself when idle; stop it now so the run leaves nothing behind.
+		if (daemonPid) { try { process.kill(daemonPid, "SIGTERM"); } catch { /* already gone */ } }
 	}
 	return finish(evidence, diagnostic, evidencePath, exitCode);
 }
 
-async function startGatewayProcess(env) {
-	const child = spawn("bun", ["scripts/live-e2e/gateway-process.mts"], { cwd: REPO_ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
-	return await new Promise((resolve, reject) => { let output = ""; const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error("live-e2e-gateway-readiness-timeout")); }, 75_000); child.stdout.setEncoding("utf8"); child.stdout.on("data", (chunk) => { output += chunk; const endpoint = output.trim().split("\n").find((line) => /^http:\/\/127\.0\.0\.1:\d+$/.test(line)); if (endpoint) { clearTimeout(timer); resolve({ child, endpoint }); } }); child.once("error", (error) => { clearTimeout(timer); reject(error); }); child.once("exit", (code) => { if (code !== 0) { clearTimeout(timer); reject(new Error(`live-e2e-gateway-exited:${code}`)); } }); });
+async function startMinSyncDaemon(env) {
+	// The daemon reports its endpoint as one JSON line on stdout, then keeps running while the stack under test
+	// blocks this process in synchronous spawns. Nothing may keep reading its pipes after readiness (an
+	// unread pipe, or a closed one, would stall or kill it), so the report goes through a file instead.
+	const reportPath = join(E2E_DIR, "daemon-ready.json");
+	rmSync(reportPath, { force: true });
+	const out = openSync(reportPath, "w");
+	const child = spawn("minsync", ["serve", "--format", "json", "--idle-timeout", "0"], { env, stdio: ["ignore", out, "ignore"], detached: true });
+	child.unref();
+	closeSync(out);
+	const deadline = Date.now() + 600_000;
+	let exited;
+	child.once("exit", (code) => { exited = code; });
+	while (Date.now() < deadline) {
+		if (exited !== undefined) throw new Error(`live-e2e-daemon-exited:${exited}`);
+		for (const line of readFileSync(reportPath, "utf8").split("\n")) {
+			try {
+				const event = JSON.parse(line);
+				if (event.status === "ok" && typeof event.url === "string") return { pid: event.pid ?? child.pid, endpoint: event.url };
+			} catch { /* partial line */ }
+		}
+		await new Promise((resolve) => setTimeout(resolve, 200));
+	}
+	child.kill("SIGTERM");
+	throw new Error("live-e2e-daemon-readiness-timeout");
 }
 function finish(evidence, diagnostic, evidencePath, exitCode) { if (diagnostic && !evidence.diagnostics.includes(diagnostic)) evidence.diagnostics.push(diagnostic); evidence.finishedAt = new Date().toISOString(); evidence.exitCode = exitCode; writeFileSync(join(evidencePath, "result.json"), `${JSON.stringify(evidence, null, 2)}\n`); const taskEvidencePath = join(REPO_ROOT, ".omo", "evidence", "task-6-fixed-live-e2e-environment.json"); mkdirSync(join(REPO_ROOT, ".omo", "evidence"), { recursive: true }); writeFileSync(taskEvidencePath, `${JSON.stringify({ ...evidence, task: "6", scenario: "fixed-live-e2e-environment", cleanupReceipt: "runner lock released; native stores untouched" }, null, 2)}\n`); return { ...evidence, evidencePath }; }
 export { REPO_ROOT };

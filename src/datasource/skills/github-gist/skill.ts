@@ -9,11 +9,7 @@
  */
 
 import { join } from "node:path";
-import {
-	createGatewayEmbedder,
-	type Embedder,
-	type GatewayEmbedderOptions,
-} from "../../../embedding-runtime/gateway-embedder.ts";
+import type { Embedder } from "../../../embedding/embedder.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { boundDiagnosticText, sanitizeIdSegment } from "../../connector.ts";
 import {
@@ -47,9 +43,8 @@ export function gistDatasourceDir(workspaceRoot: string, skillName: string, inst
 export interface GitHubGistSemanticOptions {
 	/** Set false to run lexical-only. Default true. */
 	readonly enabled?: boolean;
-	/** Injected embedder (tests); defaults to the loopback gateway embedder. */
+	/** The embedder shared with the rest of AutoRAG. Without one the gist index is lexical-only. */
 	readonly embedder?: Embedder;
-	readonly embedderOptions?: GatewayEmbedderOptions;
 	/** Vector sidecar path override; defaults under `.autorag/datasources/…`. */
 	readonly statePath?: string;
 }
@@ -88,7 +83,7 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 					...(statePath !== undefined && connectorOptions?.statePath === undefined ? { statePath } : {}),
 				}),
 		});
-		if (semantic?.enabled !== false) {
+		if (semantic?.enabled !== false && semantic?.embedder !== undefined) {
 			this.semanticIndex = new GistSemanticIndex({
 				statePath:
 					semantic?.statePath ??
@@ -99,7 +94,7 @@ export class GitHubGistSkill extends ConnectorDatasourceSkill {
 								"vectors.json",
 							)),
 			});
-			this.semanticEmbedder = semantic?.embedder ?? createGatewayEmbedder(semantic?.embedderOptions ?? {});
+			this.semanticEmbedder = semantic.embedder;
 			this.semanticMethod = new GitHubGistSemanticMethod({
 				skillName: this.describe().name,
 				skillType: GITHUB_GIST_SKILL_DEFINITION.skillType,

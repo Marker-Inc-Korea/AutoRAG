@@ -338,16 +338,13 @@ const COMMANDS_WITH_OWN_HELP = [
 	"health",
 	"duplicates",
 	"tui",
-	"serve",
-	"p2p",
 	"models",
-	"gateway",
 ] as const;
 
 /** Tokens each command's own help must name so it cannot be the global list. */
 const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], readonly string[]> = {
 	init: ["--search-paths", "--workspace", "--memory-path", "--force"],
-	setup: ["--search-paths", "--workspace", "--profile", "--format json"],
+	setup: ["--search-paths", "--workspace", "--format json"],
 	refresh: ["--method", "--force"],
 	status: ["Usage: autorag status"],
 	search: ["--top-k", "--scope", "--fast-thinking", "--final-thinking"],
@@ -357,11 +354,8 @@ const COMMAND_HELP_TOKENS: Record<(typeof COMMANDS_WITH_OWN_HELP)[number], reado
 	watch: ["--once", "--immediate", "--debounce-ms"],
 	health: ["--skip-probes", "--timeout-ms"],
 	duplicates: ["DIR"],
-	tui: ["Usage: autorag tui"],
-	serve: ["--port", "--force"],
-	p2p: ["peers", "requests", "--contact-id"],
-	models: ["prefetch", "import", "verify", "--profile"],
-	gateway: ["status", "stop"],
+	tui: ["Usage: autorag tui", "--telegram", "/telegram-connect"],
+	models: ["list", "--provider", "--available"],
 };
 
 const GLOBAL_USAGE_HEADER = "Usage: autorag <command> [args] [flags]";
@@ -459,6 +453,13 @@ describe("two-phase thinking flags", () => {
 		const parsed = parseArgs(["tui", "--fast-thinking=high"]);
 		if ("error" in parsed) throw new Error(parsed.error);
 		expect(parsed.flags["fast-thinking"]).toBe("high");
+	});
+
+	it("accepts --telegram as a boolean flag on the tui command", () => {
+		const parsed = parseArgs(["tui", "--telegram", "--fast-thinking", "low"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags.telegram).toBe(true);
+		expect(parsed.flags["fast-thinking"]).toBe("low");
 	});
 
 	it("routes the thinking flags past argument parsing in main", async () => {

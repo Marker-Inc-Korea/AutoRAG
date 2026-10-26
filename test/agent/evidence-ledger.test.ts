@@ -236,7 +236,8 @@ describe("EvidenceLedger", () => {
 				documentType: "pdf",
 				documentArea: "body",
 				evidenceType: "quote",
-				evidenceLocation: "page 3",
+				lineEnd: 14,
+				section: "제5조(회원의 의무)",
 			}),
 		);
 		expect(ledger.lookup(id, allowLocal)[0]).toMatchObject({
@@ -246,7 +247,9 @@ describe("EvidenceLedger", () => {
 			documentType: "pdf",
 			documentArea: "body",
 			evidenceType: "quote",
-			evidenceLocation: "page 3",
+			lineEnd: 14,
+			section: "제5조(회원의 의무)",
 		});
+		expect(ledger.lookup(id, allowLocal)[0]).not.toHaveProperty("evidenceLocation");
 	});
 });

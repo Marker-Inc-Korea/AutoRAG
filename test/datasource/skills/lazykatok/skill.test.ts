@@ -15,6 +15,8 @@ class StubSkillClient {
 	public syncResult: StepResult = okStep();
 	public indexResult: StepResult = okStep();
 	public searchResult: LazykatokSearchResult = okSearch([]);
+	public searchImpl: ((mode: string) => LazykatokSearchResult) | undefined;
+	public searchModes: string[] = [];
 
 	async doctor(): Promise<StepResult> {
 		return this.doctorResult;
@@ -25,8 +27,9 @@ class StubSkillClient {
 	async index(): Promise<StepResult> {
 		return this.indexResult;
 	}
-	async search(): Promise<LazykatokSearchResult> {
-		return this.searchResult;
+	async search(mode: string): Promise<LazykatokSearchResult> {
+		this.searchModes.push(mode);
+		return this.searchImpl?.(mode) ?? this.searchResult;
 	}
 }
 
@@ -246,7 +249,7 @@ describe("LazykatokSkill index", () => {
 });
 
 describe("LazykatokSkill retrievalMethods", () => {
-	it("returns kakao-bm25 and kakao-semantic methods sharing the client and instance", async () => {
+	it("registers a single kakao-hybrid method and searches only that mode when it works", async () => {
 		const stub = new StubSkillClient();
 		stub.searchResult = okSearch(HITS);
 		const skill = new LazykatokSkill({
@@ -257,14 +260,30 @@ describe("LazykatokSkill retrievalMethods", () => {
 		const methods = skill.retrievalMethods();
 		const descriptors = methods.map((m) => m.describe());
 
-		expect(descriptors.map((d) => d.name)).toEqual(["kakao-bm25", "kakao-semantic"]);
-		expect(descriptors.map((d) => d.type)).toEqual(["bm25", "vector"]);
+		expect(descriptors.map((d) => d.name)).toEqual(["kakao-hybrid"]);
+		expect(descriptors.map((d) => d.type)).toEqual(["hybrid"]);
 		expect(descriptors.every((d) => d.datasourceId === "kakao")).toBe(true);
 
-		const [bm25] = methods;
-		const results = await bm25.retrieve("refund", { topK: 1 });
+		const [hybrid] = methods;
+		const results = await hybrid.retrieve("refund", { topK: 1 });
 		expect(results.map((r) => r.source)).toEqual(["/kakao/default/chunks/chunk-001"]);
-		expect(results[0]?.metadata).toMatchObject({ method: "kakao-bm25", instanceId: "default" });
+		expect(results[0]?.metadata).toMatchObject({ method: "kakao-hybrid", instanceId: "default", mode: "hybrid" });
+		expect(stub.searchModes).toEqual(["hybrid"]);
+	});
+
+	it("falls back to keyword search when hybrid search fails", async () => {
+		const stub = new StubSkillClient();
+		const ok = okSearch(HITS);
+		stub.searchImpl = (mode) =>
+			mode === "hybrid"
+				? { ok: false, reason: "nonzero-exit", hits: [], stdout: "", stderr: "no embedder", code: 1 }
+				: ok;
+		const [hybrid] = new LazykatokSkill({ client: asClient(stub), instanceId: "default" }).retrievalMethods();
+
+		const results = await hybrid.retrieve("refund", { topK: 1 });
+
+		expect(stub.searchModes).toEqual(["hybrid", "keyword"]);
+		expect(results[0]?.metadata).toMatchObject({ method: "kakao-bm25", fallbackFrom: "kakao-hybrid" });
 	});
 
 	it("degrades to [] when the underlying search fails", async () => {

@@ -10,6 +10,7 @@ import {
 	normalizeIndexingConfig,
 	resolveAgentModel,
 	resolveConfig,
+	resolveTuiAgentModel,
 	writeDefaultConfig,
 } from "../../src/cli/config.ts";
 import { buildStoreEntry, mapServerModels } from "../../src/cloud/models.ts";
@@ -182,6 +183,27 @@ describe("single-model CLI config", () => {
 		expect(opts.parserOptions).toEqual({ pdf: true });
 		expect(opts.dupey).toBe(false);
 		expect(opts.excludeExactDuplicates).toBe(false);
+	});
+
+	it("maps the filee config to agent options, and disables conversion with enabled:false", () => {
+		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
+		expect(buildAgentOptions({ ...base }).filee).toEqual({});
+		expect(buildAgentOptions({ ...base, filee: { autoInstall: false } }).filee).toEqual({ autoInstall: false });
+		expect(
+			buildAgentOptions({
+				...base,
+				filee: { binaryPath: "/opt/filee", timeoutMs: 5000, dataDir: join(root, "filee-data") },
+			}).filee,
+		).toEqual({ executable: "/opt/filee", timeoutMs: 5000, dataDir: join(root, "filee-data") });
+		expect(buildAgentOptions({ ...base, filee: { enabled: false } }).filee).toBe(false);
+	});
+
+	it("rejects a non-object filee field in config.json", () => {
+		const path = join(root, "config.json");
+		writeFileSync(path, JSON.stringify({ searchPaths: ["."], filee: true }));
+		expect(() => resolveConfig({ flags: { config: path }, env: { HOME: root }, cwd: root })).toThrow(
+			"'filee' must be an object",
+		);
 	});
 
 	it("includes resolved languages in agent options", () => {
@@ -387,7 +409,7 @@ describe("single-model CLI config", () => {
 	});
 
 	describe("hosted dazzi provider", () => {
-		const MODEL_ID = "anthropic/claude-haiku-5.5";
+		const MODEL_ID = "z-ai/glm-5.3-flash";
 		const base = () => ({ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") });
 		const options = (agentDir: string, env: NodeJS.ProcessEnv = {}) => ({
 			configPath: join(root, "missing.toml"),
@@ -396,21 +418,19 @@ describe("single-model CLI config", () => {
 		});
 
 		/** Persist a catalog snapshot the way a prior /v1/models refresh would. */
-		function seedSnapshot(agentDir: string): void {
+		function seedSnapshot(agentDir: string, ids: readonly string[] = [MODEL_ID]): void {
 			mkdirSync(agentDir, { recursive: true });
 			const models = mapServerModels({
 				object: "list",
-				data: [
-					{
-						id: MODEL_ID,
-						name: "Claude Haiku 5.5",
-						context_window: 200_000,
-						max_output_tokens: 8_192,
-						input_modalities: ["text", "image"],
-						reasoning: true,
-						pricing: { input: 1, output: 2 },
-					},
-				],
+				data: ids.map((id) => ({
+					id,
+					name: id,
+					context_window: 200_000,
+					max_output_tokens: 8_192,
+					input_modalities: ["text", "image"],
+					reasoning: true,
+					pricing: { input: 1, output: 2 },
+				})),
 			});
 			writeFileSync(
 				join(agentDir, "models-store.json"),
@@ -435,6 +455,46 @@ describe("single-model CLI config", () => {
 
 			expect(resolved.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
 			expect(resolved.apiKey).toBe("dz_stored");
+		});
+
+		it("defaults to glm-5.3-flash even when the catalog lists other models first", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir, ["anthropic/claude-haiku-5.5", MODEL_ID]);
+			signIn(agentDir);
+
+			const resolved = await resolveAgentModel(base(), options(agentDir));
+
+			expect(resolved.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
+		});
+
+		it("TUI: picks the dazzi default when signed in and no model is configured", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			signIn(agentDir);
+
+			const resolved = await resolveTuiAgentModel(base(), options(agentDir));
+
+			expect(resolved?.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
+		});
+
+		it("TUI: leaves the model unset when signed out so pi shows nothing", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+
+			expect(await resolveTuiAgentModel(base(), options(agentDir))).toBeUndefined();
+		});
+
+		it("TUI: resolves the configured model when one is set", async () => {
+			const agentDir = join(root, "agent");
+			seedSnapshot(agentDir);
+			signIn(agentDir);
+
+			const resolved = await resolveTuiAgentModel(
+				{ ...base(), model: { provider: "dazzi", id: MODEL_ID } },
+				options(agentDir),
+			);
+
+			expect(resolved?.model).toMatchObject({ provider: "dazzi", id: MODEL_ID });
 		});
 
 		it("does not pick a Dazzi model when signed out", async () => {
@@ -594,6 +654,28 @@ describe("single-model CLI config", () => {
 			dimension: 3,
 		});
 		expect(() => normalizeEmbedder({ dimension: 0 }, "minSync.embedder")).toThrow(ConfigError);
+	});
+
+	it("reads a config written for the removed llama-server runtime without failing, keeping what still applies", () => {
+		// `autorag setup --profile` used to write `{ id: <gguf file>, profile, dimension, prefixes }`. The profile
+		// and the GGUF id name a runtime that no longer exists; dropping them lets the embedder fall back to
+		// MinSync's own Qwen3, while the dimension and prefixes the operator may have tuned are preserved.
+		expect(
+			normalizeEmbedder(
+				{
+					id: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+					profile: "qwen3-embedding-0.6b",
+					dimension: 1024,
+					queryPrefix: "q:",
+					passagePrefix: "p:",
+				},
+				"minSync.embedder",
+			),
+		).toEqual({ dimension: 1024, queryPrefix: "q:", passagePrefix: "p:" });
+	});
+
+	it("keeps rejecting an unknown embedder field", () => {
+		expect(() => normalizeEmbedder({ extraArgs: ["--x"] }, "minSync.embedder")).toThrow(ConfigError);
 	});
 
 	it("validates the MinSync chunk size", () => {

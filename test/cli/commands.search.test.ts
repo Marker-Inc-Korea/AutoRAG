@@ -83,16 +83,16 @@ function completeStream(result: SearchDocumentsResponse = response, onOptions?: 
 }
 
 describe("runSearch", () => {
-	it("stops the embedding runtime after a completed search so the process can exit", async () => {
-		const stopRuntime = vi.fn(async () => {});
+	it("unloads the in-process embedding model after a completed search so the process can exit", async () => {
+		const releaseEmbedders = vi.fn(async () => {});
 		const { ctx } = context(["krill habitats"]);
-		const code = await runSearch(ctx, { agentFactory: () => completeStream(), stopRuntime });
+		const code = await runSearch(ctx, { agentFactory: () => completeStream(), releaseEmbedders });
 		expect(code).toBe(0);
-		expect(stopRuntime).toHaveBeenCalledTimes(1);
+		expect(releaseEmbedders).toHaveBeenCalledTimes(1);
 	});
 
-	it("stops the embedding runtime even when the search fails", async () => {
-		const stopRuntime = vi.fn(async () => {});
+	it("unloads the in-process embedding model even when the search fails", async () => {
+		const releaseEmbedders = vi.fn(async () => {});
 		const { ctx } = context(["krill habitats"]);
 		const code = await runSearch(ctx, {
 			agentFactory: () => ({
@@ -101,10 +101,10 @@ describe("runSearch", () => {
 					throw new Error("model exploded");
 				},
 			}),
-			stopRuntime,
+			releaseEmbedders,
 		});
 		expect(code).toBe(1);
-		expect(stopRuntime).toHaveBeenCalledTimes(1);
+		expect(releaseEmbedders).toHaveBeenCalledTimes(1);
 	});
 
 	it("reports usage for an empty query", async () => {
@@ -127,6 +127,20 @@ describe("runSearch", () => {
 		).toBe(0);
 		expect(received).toEqual({ model: "single-agent", apiKey: "secret" });
 		expect(JSON.parse(stdout[0]).answer).toBe("[1] answer");
+	});
+
+	it("runs ungated by default, since nobody is there to approve, and honours an explicit mode", async () => {
+		const modes: unknown[] = [];
+		const factory = (options: { permissionMode?: unknown }) => {
+			modes.push(options.permissionMode);
+			return completeStream();
+		};
+		await runSearch(context(["query"]).ctx, { modelResolver: () => ({ model: model() }), agentFactory: factory });
+		await runSearch(context(["query"], { "permission-mode": "ask" }).ctx, {
+			modelResolver: () => ({ model: model() }),
+			agentFactory: factory,
+		});
+		expect(modes).toEqual(["full", "ask"]);
 	});
 
 	it("forwards retrieval options", async () => {

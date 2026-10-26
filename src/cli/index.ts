@@ -2,8 +2,9 @@
 import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { releaseRuntimeHandles } from "../embedding-runtime/index.ts";
+import { releaseEmbedders } from "../embedding/index.ts";
 import { commandUsage } from "./command-help.ts";
+import { runAutomate } from "./commands/automate.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 import { readPackageVersion } from "./version.ts";
@@ -23,6 +24,10 @@ const BOOLEAN_FLAGS = new Set([
 	"strict",
 	"refresh",
 	"available",
+	"whatsapp",
+	"telegram",
+	"discord",
+	"sync-hister",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -49,23 +54,15 @@ const VALUE_FLAGS = new Set([
 	"minsync-max-chunk-size",
 	"timeout-ms",
 	"port",
-	"peer",
-	"accept",
-	"alias",
-	"endpoint",
-	"remove",
-	"add",
-	"contact-id",
-	"edit",
-	"show",
-	"rank",
-	"description",
 	"input",
 	"profile",
 	"format",
 	"provider",
 	"fast-thinking",
 	"final-thinking",
+	"permission-mode",
+	"whatsapp-group",
+	"event",
 ]);
 
 const COMMANDS = [
@@ -81,12 +78,10 @@ const COMMANDS = [
 	"health",
 	"duplicates",
 	"tui",
-	"serve",
-	"p2p",
 	"lite",
 	"models",
-	"gateway",
 	"update-check",
+	"automate",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -124,21 +119,10 @@ Commands:
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
-  serve                Start the P2P peer query server over SimpleX
-                       (--port N  --force)
-  p2p                  SimpleX peer trust management
-                       (peers [--add <alias> --contact-id <n>] [--edit <alias>]
-                        [--description <text>]
-                        [--show <alias>] [--rank <query>] [--remove <alias>])
-                       (requests [approve|deny <id>])
-  p2p policy list      Show effective merged sharing policy (virtual-path keys)
-  p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
-  p2p policy unset     Remove a sharing rule by key
+                       (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
   models list          List chat models from the pi runtime (--provider ID --available)
-  models prefetch|import|verify
-                       Manage verified embedding model cache (--profile ID)
-  gateway status|stop  Inspect or stop the on-demand embedding gateway (--format json)
   update-check         Compare the running autorag against the published npm version
+  automate <subcmd>    File-triggered automations (daemon|install|uninstall|status|run)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -154,6 +138,7 @@ Global flags:
   --languages <csv>    OCR/parser languages (also AUTORAG_LANGUAGES)
   --model-provider <name>  Override the model provider
   --model-id <id>          Override the model
+  --permission-mode <m>    Approval gate for file changes by the agent: auto (default; full for search and bridged tui), ask, full
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
@@ -198,8 +183,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 		if (value === undefined || (eq === -1 && value.startsWith("--"))) {
 			return { error: `Flag --${key} requires a value` };
 		}
-		if (key === "exclude") {
-			if (value.trim().length === 0) return { error: "Flag --exclude requires a non-empty path" };
+		if (key === "exclude" || key === "event") {
+			if (value.trim().length === 0) return { error: `Flag --${key} requires a non-empty value` };
 			repeatedFlags[key] ??= [];
 			repeatedFlags[key].push(value);
 		}
@@ -272,19 +257,6 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 			const { runTui } = await import("./commands/tui.ts");
 			return runTui(ctx);
 		}
-		case "serve": {
-			const { runServe } = await import("./commands/serve.ts");
-			return runServe(ctx);
-		}
-		case "p2p": {
-			if (ctx.positionals[0] === "policy") {
-				const { runP2pPolicy } = await import("./commands/p2p-policy.ts");
-				ctx.positionals = ctx.positionals.slice(1);
-				return runP2pPolicy(ctx);
-			}
-			const { runP2p } = await import("./commands/p2p.ts");
-			return runP2p(ctx);
-		}
 		case "lite": {
 			return dispatchLite(ctx);
 		}
@@ -292,13 +264,12 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 			const { runModels } = await import("./commands/models.ts");
 			return runModels(ctx);
 		}
-		case "gateway": {
-			const { runGateway } = await import("./commands/gateway.ts");
-			return runGateway(ctx);
-		}
 		case "update-check": {
 			const { runUpdateCheck } = await import("./commands/update-check.ts");
 			return runUpdateCheck(ctx);
+		}
+		case "automate": {
+			return runAutomate(ctx);
 		}
 	}
 }
@@ -349,11 +320,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 		process.stderr.write(`${renderError(error, { json, debug })}\n`);
 		return 1;
 	} finally {
-		// The local embedding gateway listens on loopback for the whole run, so a
-		// command that used it would keep the process alive after its output is
-		// written (and after its answer is already on stdout). Release it here, where
-		// every command is covered, and the shared supervisor's model stays warm.
-		await releaseRuntimeHandles();
+		// MinSync's in-process model runs native threads that would keep the process alive after its answer
+		// is on stdout. Unload it here, where every command is covered; a `minsync serve` daemon is MinSync's
+		// own process and is left to stop itself when idle.
+		await releaseEmbedders();
 	}
 }
 

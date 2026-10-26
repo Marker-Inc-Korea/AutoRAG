@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildDatasourceSkills } from "../../../src/datasource/skills/factory.ts";
+import {
+	BUILTIN_DATASOURCE_SKILL_NAMES,
+	buildDatasourceSkills,
+	builtinDatasourceSkillNames,
+} from "../../../src/datasource/skills/factory.ts";
+import { withPlatform } from "../../helpers/platform.ts";
 
 describe("datasource skill factory", () => {
 	it("does not register Gmail REST datasources", () => {
@@ -45,16 +50,28 @@ describe("datasource skill factory", () => {
 	});
 
 	describe("github-gist semantic index", () => {
-		function gistMethodTypes(connector: Record<string, unknown>): string[] {
+		const embedder = {
+			identity: async () => ({ provider: "minsync", model: "Qwen/Qwen3-Embedding-0.6B", dimension: 2 }),
+			embed: async (texts: readonly string[]) => texts.map(() => [1, 0]),
+		};
+		function gistMethodTypes(
+			connector: Record<string, unknown>,
+			shared: typeof embedder | null = embedder,
+		): string[] {
 			const { skills } = buildDatasourceSkills(
 				{ "my-gists": { type: "github-gist", connector: { tokenEnv: "GITHUB_GIST_TEST_UNSET", ...connector } } },
 				undefined,
+				shared === null ? {} : { embedder: shared },
 			);
 			return skills.flatMap((skill) => skill.retrievalMethods().map((method) => method.describe().type));
 		}
 
 		it("keeps the semantic method by default", () => {
 			expect(gistMethodTypes({})).toContain("vector");
+		});
+
+		it("has no semantic method when no embedder is available, instead of building its own", () => {
+			expect(gistMethodTypes({}, null)).not.toContain("vector");
 		});
 
 		it.each([
@@ -69,5 +86,44 @@ describe("datasource skill factory", () => {
 			expect(gistMethodTypes({ semantic: true })).toContain("vector");
 			expect(gistMethodTypes({ semantic: { enabled: true } })).toContain("vector");
 		});
+	});
+});
+
+describe("macOS-only kakao datasource (#1998)", () => {
+	it("offers kakao only on darwin and every other built-in on every platform", () => {
+		const darwin = builtinDatasourceSkillNames("darwin");
+		expect(darwin).toContain("kakao");
+		for (const platform of ["linux", "win32"] as const) {
+			const names = builtinDatasourceSkillNames(platform);
+			expect(names).not.toContain("kakao");
+			expect(names).toEqual(darwin.filter((name) => name !== "kakao"));
+		}
+	});
+
+	it("derives the exported list from the running platform", () => {
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).toEqual(builtinDatasourceSkillNames(process.platform));
+	});
+
+	it("builds kakao on darwin", () => {
+		const { skills, unknown } = withPlatform("darwin", () =>
+			buildDatasourceSkills({ kakao: {}, "family-kakao": { type: "kakao" } }, "/ws"),
+		);
+		expect(unknown).toEqual([]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["kakao", "family-kakao"]);
+	});
+
+	it.each(["linux", "win32"] as const)("does not build kakao on %s, even when configured", (platform) => {
+		const { skills, unknown } = withPlatform(platform, () =>
+			buildDatasourceSkills(
+				{
+					kakao: { connector: { binaryPath: "/opt/lazykatok" } },
+					"family-kakao": { type: "kakao" },
+					rss: { connector: { feeds: [{ url: "https://example.com/feed.xml" }] } },
+				},
+				"/ws",
+			),
+		);
+		expect(unknown).toEqual(["kakao", "family-kakao"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
 	});
 });

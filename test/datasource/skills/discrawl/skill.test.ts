@@ -285,19 +285,33 @@ describe("DiscrawlSkill index", () => {
 });
 
 describe("DiscrawlSkill retrieval methods", () => {
-	it("orders hybrid first by default", () => {
+	it("registers only the hybrid method by default", () => {
 		const names = new DiscrawlSkill({ client: asClient(new StubClient()) })
 			.retrievalMethods()
 			.map((m) => m.describe().name);
-		expect(names[0]).toBe("discord-hybrid");
-		expect(names).toEqual(expect.arrayContaining(["discord-fts", "discord-semantic"]));
+		expect(names).toEqual(["discord-hybrid"]);
 	});
 
-	it("honors an explicit fts default mode", () => {
+	it("honors an explicit fts default mode by running that mode alone", () => {
 		const names = new DiscrawlSkill({ client: asClient(new StubClient()), defaultMode: "fts" })
 			.retrievalMethods()
 			.map((m) => m.describe().name);
-		expect(names[0]).toBe("discord-fts");
+		expect(names).toEqual(["discord-fts"]);
+	});
+
+	it("honors an explicit semantic default mode by running that mode alone", () => {
+		const names = new DiscrawlSkill({ client: asClient(new StubClient()), defaultMode: "semantic" })
+			.retrievalMethods()
+			.map((m) => m.describe().name);
+		expect(names).toEqual(["discord-semantic"]);
+	});
+
+	it("issues exactly one discrawl search per query, falling back to fts inside the hybrid call", async () => {
+		const stub = new StubClient();
+		stub.searchResult = okSearch(HITS);
+		const methods = new DiscrawlSkill({ client: asClient(stub), instanceId: "guild-1" }).retrievalMethods();
+		await Promise.all(methods.map((m) => m.retrieve("공금", { topK: 5 })));
+		expect(stub.searchCalls).toHaveLength(1);
 	});
 
 	it("maps hits to traceable /discord sources with guild and channel metadata", async () => {

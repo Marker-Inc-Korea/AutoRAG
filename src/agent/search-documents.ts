@@ -65,12 +65,19 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-check-fallback"
 	| "datasources-selected"
 	| "datasource-selection-fallback"
+	| "web-datasource-id-taken"
+	| "web-search-failed"
 	| "citation-without-result"
+	| "line-reference-unverified"
+	| "citation-irrelevant"
+	| "citation-relevance-fallback"
 	| "evidence-judged"
 	| "evidence-judgment-fallback"
 	| "memory-search-fallback"
 	| "self-config-unavailable"
-	| "self-config-rolled-back";
+	| "self-config-rolled-back"
+	| "organize-skill-unavailable"
+	| "embedding-unavailable";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
@@ -82,7 +89,12 @@ export interface SearchDocumentDiagnostic {
 
 export interface SearchDocumentEvidence {
 	readonly excerpt: string;
+	/** First line of the chunk in its parsed document, measured by the harness. */
 	readonly lineNumber?: number;
+	/** Last line of the chunk in its parsed document. */
+	readonly lineEnd?: number;
+	/** Article or heading the chunk sits in. */
+	readonly section?: string;
 }
 
 export interface SearchDocumentResult {
@@ -155,7 +167,7 @@ export type SearchDocumentsStreamEvent =
 	  }
 	| {
 			/**
-			 * Immediate first answer from the thinking-off fast phase. Always
+			 * Immediate first answer from the minimal-thinking fast phase. Always
 			 * yielded before `complete` when the two-phase flow produced one; the
 			 * `complete` event's response remains the verified final answer.
 			 */
@@ -210,11 +222,12 @@ function toSearchResults(
 		number: result.number,
 		title: result.title,
 		summary: result.summary,
-		evidence: result.evidence.map((evidence) =>
-			evidence.lineNumber !== undefined
-				? { excerpt: evidence.excerpt, lineNumber: evidence.lineNumber }
-				: { excerpt: evidence.excerpt },
-		),
+		evidence: result.evidence.map((evidence) => ({
+			excerpt: evidence.excerpt,
+			...(evidence.lineNumber !== undefined ? { lineNumber: evidence.lineNumber } : {}),
+			...(evidence.lineEnd !== undefined ? { lineEnd: evidence.lineEnd } : {}),
+			...(evidence.section !== undefined ? { section: evidence.section } : {}),
+		})),
 		...(result.confidence !== undefined ? { confidence: confidenceFrom(result.confidence) } : {}),
 		source: sourceByNumber.get(result.number),
 	}));
@@ -283,7 +296,8 @@ export function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionE
 			...(ref.documentType !== undefined ? { documentType: ref.documentType } : {}),
 			...(ref.documentArea !== undefined ? { documentArea: ref.documentArea } : {}),
 			...(ref.evidenceType !== undefined ? { evidenceType: ref.evidenceType } : {}),
-			...(ref.evidenceLocation !== undefined ? { evidenceLocation: ref.evidenceLocation } : {}),
+			...(ref.lineEnd !== undefined ? { lineEnd: ref.lineEnd } : {}),
+			...(ref.section !== undefined ? { section: ref.section } : {}),
 			...(ref.confidence !== undefined ? { confidence: ref.confidence } : {}),
 		});
 	});

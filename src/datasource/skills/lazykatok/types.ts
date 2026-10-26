@@ -1,5 +1,6 @@
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
 import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
+import type { EmbeddingEndpointSource } from "../../embedding-env.ts";
 
 /**
  * Search modes accepted by the external `lazykatok search` subcommand.
@@ -25,7 +26,7 @@ export interface LazykatokOptions {
 	 */
 	readonly timeoutMs?: number;
 	/**
-	 * Spawn timeout for `sync`/`index` in milliseconds. Default 1_800_000 (30 min):
+	 * Spawn timeout for `sync`/`index` in milliseconds. Default 3_600_000 (1 hour):
 	 * the first semantic index over a large archive was measured at ~11 minutes, and
 	 * a timed-out build restarts from scratch on the next refresh.
 	 */
@@ -46,6 +47,13 @@ export interface LazykatokOptions {
 	readonly source?: string;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/**
+	 * Where lazykatok gets its vectors. When set, `index` and the semantic and hybrid searches run lazykatok's
+	 * OpenAI-compatible embedder against the endpoint it returns (a `minsync serve` daemon or the operator's
+	 * remote), and lazykatok's own fastembed model is never used; with no endpoint, or a TEI one, those commands
+	 * fail instead. Without it lazykatok keeps whatever embedder its own environment selects.
+	 */
+	readonly embeddingEndpoint?: EmbeddingEndpointSource;
 }
 
 export const DEFAULT_LAZYKATOK_BINARY = "lazykatok";
@@ -83,7 +91,8 @@ export type LazykatokFailureReason =
 	| "stdout-too-large"
 	| "stderr-too-large"
 	| "invalid-json"
-	| "invalid-shape";
+	| "invalid-shape"
+	| "embedding-unavailable";
 
 /** Common failure payload shared by every method result union. */
 export interface LazykatokFailure {

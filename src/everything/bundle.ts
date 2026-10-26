@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 
 /**
  * voidtools Everything (MIT, closed source) and its MIT-licensed ES command
@@ -216,7 +217,7 @@ function writeAtomic(path: string, bytes: Buffer): void {
 	const temp = `${path}.${process.pid}.tmp`;
 	try {
 		writeFileSync(temp, bytes);
-		renameSync(temp, path);
+		renameWithRetry(temp, path);
 	} finally {
 		rmSync(temp, { force: true });
 	}

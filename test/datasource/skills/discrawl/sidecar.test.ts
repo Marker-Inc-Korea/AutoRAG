@@ -370,11 +370,7 @@ describe("Discord sidecar factory configuration", () => {
 
 	it.each([false, { enabled: false }])("allows the operator to disable the sidecar: %j", (setting) => {
 		const { skills } = buildDatasourceSkills({ discord: { connector: { sidecar: setting } } }, root);
-		expect(skills[0]?.retrievalMethods().map((method) => method.describe().name)).toEqual([
-			"discord-hybrid",
-			"discord-fts",
-			"discord-semantic",
-		]);
+		expect(skills[0]?.retrievalMethods().map((method) => method.describe().name)).toEqual(["discord-hybrid"]);
 	});
 
 	it("retains CLI-only retrieval when no workspace is configured", () => {
