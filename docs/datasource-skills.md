@@ -705,6 +705,41 @@ all-channel. The agent skill manifest states whether it is all-channel or
 allowlisted, so the orchestrator can select the correct datasource before
 searching.
 
+## Discord attachments
+
+Discord signs every attachment link for 24 hours. After that the file can no longer be downloaded, so
+anything not saved inside that window is lost. With `connector.downloadAttachments: true`, each refresh of
+a Discord connection saves attachments right after the `discrawl wiretap` import:
+
+```json
+{ "datasources": { "discord": { "connector": { "downloadAttachments": true } } } }
+```
+
+Files go to `~/.autorag/attachments/discord/<connection>/<server>/<channel>/<original name>` on every OS
+(under `$AUTORAG_HOME` when that is set). discrawl still does the downloading; AutoRAG gives it a private
+config inside the folder (`.discrawl/`) so its cache is there, then moves each file into place. AutoRAG never
+talks to Discord and uses no Discord token.
+
+`download-status.json` at the top of the folder lists every attachment with its state:
+
+| State | Meaning |
+|---|---|
+| `downloaded` | The saved file still has the exact bytes Discord served (checked by SHA-256). |
+| `not-downloaded` | Not saved yet. |
+| `missing` | The saved file was deleted, moved, or renamed. |
+| `changed` | The saved file was edited. It stays as your file. |
+| `failed` | The last attempt failed; `error` says why (for example `HTTP 404`). |
+| `skipped` | discrawl refused it (for example `too_large`, over 100 MB) and it is not retried. |
+
+`downloadable` is true while the file is not saved intact and the link (`linkExpiresAt`) still works.
+`missing` and `changed` files are downloaded again while their link works; an edited file is never
+overwritten, so the original lands beside it as `name (2).ext`. Nothing in the folder is deleted.
+
+`autorag attachments` (alias for `status`) re-checks the folder and rewrites the status file;
+`autorag attachments download` saves everything still downloadable, whether or not the option is on.
+Both take `--connection <name>`. A refresh reports the counts as a `datasource-index-partial` diagnostic;
+a failed or expired download never fails the index. Attachments are saved only, not indexed for search.
+
 ## KakaoTalk via lazykatok
 
 KakaoTalk support is implemented through the external [`lazykatok`](https://github.com/changeroa/lazykatok) CLI.

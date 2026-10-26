@@ -14,6 +14,7 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
+import type { DiscordAttachmentSyncer, DiscordAttachmentSyncResult } from "./attachments.ts";
 import {
 	DiscrawlFtsMethod,
 	DiscrawlHybridMethod,
@@ -54,6 +55,11 @@ export interface DiscrawlSkillOptions {
 	readonly channelNames?: readonly string[];
 	/** Optional lexical-only sidecar. Its archive path is discovered through native status when omitted. */
 	readonly sidecar?: DiscrawlSidecarOptions;
+	/**
+	 * Saves attachments right after each successful import, while Discord's 24-hour signed links still work.
+	 * Absent means attachments are never downloaded (`connector.downloadAttachments` is off).
+	 */
+	readonly attachments?: DiscordAttachmentSyncer;
 }
 
 const DISCORD_DATASOURCE_ID = "discord";
@@ -84,6 +90,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 	private readonly embedLimit: number | undefined;
 	private readonly sidecar: DiscrawlSidecar | undefined;
 	private readonly retrievalScope: Pick<DiscrawlRankedMethodOptions, "workspaceId" | "channelIds" | "channelNames">;
+	private readonly attachments: DiscordAttachmentSyncer | undefined;
 	private lastIndexedAt: number | undefined;
 
 	constructor(options: DiscrawlSkillOptions) {
@@ -96,6 +103,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 		this.embeddingModel = options.embeddingModel ?? DEFAULT_DISCRAWL_EMBEDDING_MODEL;
 		this.defaultMode = options.defaultMode ?? DEFAULT_DISCRAWL_MODE;
 		this.embedLimit = options.embedLimit;
+		this.attachments = options.attachments;
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.retrievalScope = {
 			workspaceId: options.sidecar?.workspaceId,
@@ -187,6 +195,9 @@ export class DiscrawlSkill implements DatasourceSkill {
 			return this.fail("datasource-index-failed", "discrawl sync failed unexpectedly", diagnostics);
 		}
 		if (!sync.ok) return this.fail(failureCode(sync, "datasource-index-failed"), describe(sync), diagnostics);
+		if (this.attachments !== undefined) {
+			diagnostics.push(await this.downloadAttachments(this.attachments, options?.signal));
+		}
 
 		if (doctor.data.embeddingsOk) {
 			const embed = await this.runEmbed(rebuildEmbeddings, options?.signal);
@@ -328,6 +339,44 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"## Output rules",
 				`Source identifiers such as \`/${DISCORD_DATASOURCE_ID}/<instance>/chunks/<message-id>\` are stable Discord message ids and are traceable. Result metadata carries guild, channel, author, and timestamp; you may cite them when they help the user locate the message. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.`,
 			].join("\n"),
+		};
+	}
+
+	/** Best effort: a failed or expired download never fails the index, and messages stay searchable. */
+	private async downloadAttachments(
+		attachments: DiscordAttachmentSyncer,
+		signal?: AbortSignal,
+	): Promise<DatasourceDiagnostic> {
+		const base = { instanceId: this.instanceId, source: DISCORD_DATASOURCE_ID };
+		let result: DiscordAttachmentSyncResult;
+		try {
+			result = await attachments.sync({ download: true, ...(signal === undefined ? {} : { signal }) });
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			return {
+				...base,
+				code: "datasource-index-partial",
+				severity: "warning",
+				message: `attachment download failed: ${reason}`,
+			};
+		}
+		if (!result.ok) {
+			return {
+				...base,
+				code: "datasource-index-partial",
+				severity: result.reason === "busy" ? "info" : "warning",
+				message: `attachment download skipped: ${result.message}`,
+			};
+		}
+		const { run, summary } = result;
+		return {
+			...base,
+			code: "datasource-index-partial",
+			severity: run.failed > 0 ? "warning" : "info",
+			message:
+				`attachments: fetched=${run.fetched} failed=${run.failed} skipped=${run.skipped} bytes=${run.bytes}; ` +
+				`folder holds ${summary.downloaded}/${summary.total} intact, ${summary.expired} expired before download ` +
+				`(status: ${result.statusPath})`,
 		};
 	}
 

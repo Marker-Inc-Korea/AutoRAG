@@ -117,6 +117,11 @@ export interface DiscrawlOptions {
 	 * issue #1413.
 	 */
 	readonly defaultMode?: DiscrawlSearchMode;
+	/**
+	 * Spawn timeout for `discrawl attachments fetch`. Defaults to the shared connector sync budget, because a
+	 * burst of attachments downloads far longer than one wiretap import.
+	 */
+	readonly attachmentTimeoutMs?: number;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
 }
@@ -239,6 +244,45 @@ export type DiscrawlMetadataResult = DiscrawlOk<DiscrawlMetadataInfo> | Discrawl
 export type DiscrawlSyncResult = DiscrawlOk<DiscrawlSyncInfo> | DiscrawlFailure;
 export type DiscrawlEmbedResult = DiscrawlOk<DiscrawlEmbedInfo> | DiscrawlFailure;
 export type DiscrawlSearchResult = DiscrawlSearchOk | DiscrawlFailure;
+
+/** One row of `discrawl --json attachments`: metadata plus discrawl's own fetch bookkeeping. */
+export interface DiscrawlAttachmentRow {
+	readonly attachmentId: string;
+	readonly messageId: string;
+	readonly guildId: string;
+	readonly guildName?: string;
+	readonly channelId: string;
+	readonly channelName?: string;
+	readonly authorName?: string;
+	readonly filename: string;
+	readonly contentType?: string;
+	readonly size: number;
+	readonly url?: string;
+	readonly proxyUrl?: string;
+	/** Path relative to `<cache_dir>/media`, set once discrawl stored the file. */
+	readonly mediaPath?: string;
+	readonly contentSha256?: string;
+	readonly contentSize?: number;
+	/** `fetched`, `failed`, a skip reason such as `too_large`, or empty when never attempted. */
+	readonly fetchStatus?: string;
+	readonly fetchError?: string;
+	/** When discrawl last attempted the download (RFC 3339). */
+	readonly fetchedAt?: string;
+	readonly createdAt?: string;
+}
+
+/** Result of `discrawl --json attachments fetch`. */
+export interface DiscrawlAttachmentFetchStats {
+	readonly attachments: number;
+	readonly fetched: number;
+	readonly reused: number;
+	readonly skipped: number;
+	readonly failed: number;
+	readonly bytes: number;
+}
+
+export type DiscrawlAttachmentListResult = DiscrawlOk<readonly DiscrawlAttachmentRow[]> | DiscrawlFailure;
+export type DiscrawlAttachmentFetchResult = DiscrawlOk<DiscrawlAttachmentFetchStats> | DiscrawlFailure;
 
 /**
  * Search-specific options. Reuses the shared {@link RetrievalOptions} so the
