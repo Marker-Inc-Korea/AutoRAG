@@ -4613,7 +4613,7 @@ function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): Sear
 		diagnostics.push({
 			code: "lexical-tokenizer-unavailable",
 			severity: "warning",
-			message: `The "${minsync.lexicalFallback.requested}" BM25 tokenizer needs the Kiwi native library and model, which were not found, so MinSync tokenizes on whitespace and a Korean word with a particle (인증서를) does not match its stem (인증서). Install Kiwi (set KIWI_LIBRARY_PATH and KIWI_MODEL_PATH, or install it under ~/.local/kiwi), then refresh again.`,
+			message: `The "${minsync.lexicalFallback.requested}" BM25 tokenizer needs the Kiwi native library and model, which were not found, so MinSync tokenizes on whitespace and a word with an inflectional suffix (e.g. a Korean word with a particle) does not match its stem. Install Kiwi (set KIWI_LIBRARY_PATH and KIWI_MODEL_PATH, or install it under ~/.local/kiwi), then refresh again.`,
 			source: "minsync",
 		});
 	}
