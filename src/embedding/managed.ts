@@ -1,12 +1,5 @@
 import { DEFAULT_DAEMON_MODEL, type MinSyncDaemon, probeMinSyncDaemon } from "./daemon.ts";
-import type {
-	Embedder,
-	EmbedderEndpoint,
-	EmbedderHealth,
-	EmbeddingIdentity,
-	EmbedOptions,
-	ManagedEmbedder,
-} from "./embedder.ts";
+import type { Embedder, EmbedderHealth, EmbeddingIdentity, EmbedOptions, ManagedEmbedder } from "./embedder.ts";
 import { createHttpEmbedder, type EmbeddingProtocol } from "./http-embedder.ts";
 import { type InProcessEmbedder, loadNativeEmbedder } from "./in-process.ts";
 import type { EmbeddingPrefixes } from "./prefixes.ts";
