@@ -333,7 +333,13 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		}
 	}
 
-	const staleDiagnostics = (await lite.getRefreshStatus()).diagnostics.flatMap((diagnostic) =>
+	const refreshStatus = await lite.getRefreshStatus();
+	const protocolFailure = refreshStatus.diagnostics.find((diagnostic) => diagnostic.reason === "unsupported_protocol");
+	if (protocolFailure !== undefined) {
+		ctx.stderr(renderError(new Error(protocolFailure.message), { json: ctx.json, debug: ctx.debug }));
+		return 1;
+	}
+	const staleDiagnostics = refreshStatus.diagnostics.flatMap((diagnostic) =>
 		diagnostic.code === "stale-index" && diagnostic.source !== undefined
 			? [{ source: diagnostic.source, reason: diagnostic.reason }]
 			: [],
@@ -391,7 +397,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const envelope: LiteRetrieveEnvelope = {
 		ok: true,
 		query,
-		stale: staleEnvelopeDiagnostics.length > 0,
+		stale: refreshStatus.stale,
 		results,
 		unsearched: retrievalResult.unsearched.map(unsearchedProjection),
 		diagnostics,

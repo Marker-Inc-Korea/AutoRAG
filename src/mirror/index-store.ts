@@ -55,6 +55,8 @@ export interface ParsedMirrorIndex {
 	readonly version: 1;
 	readonly entries: Readonly<Record<string, ParsedMirrorEntry>>;
 	readonly skipped?: Readonly<Record<string, ParsedMirrorSkipEntry>>;
+	/** All engine-held identities, including missing outputs and ordinary failures; never reusable outputs. */
+	readonly known?: readonly string[];
 }
 
 export function emptyMirrorIndex(): ParsedMirrorIndex {
@@ -124,7 +126,11 @@ export function mirrorIndexFromStage(root: string, report: MinSyncStageInspectRe
 		if (source === undefined || mirrorStageKey(source.virtualPath) !== item.key) continue;
 		skipped[source.virtualPath] = { ...source, reason: item.error };
 	}
-	return { version: 1, entries, skipped };
+	const known = report.known.flatMap((item) => {
+		const source = mirrorSourceMetadata(item.version);
+		return source !== undefined && mirrorStageKey(source.virtualPath) === item.key ? [source.virtualPath] : [];
+	});
+	return { version: 1, entries, skipped, known };
 }
 
 function isSkipReason(value: string): value is ParsedMirrorSkipReason {

@@ -394,12 +394,7 @@ async function syncWithRegistry(
 	const failureFingerprint = retryFingerprint(options, fingerprint);
 	const { versions, omitted } = sourcePlan(current, registry, options);
 	const currentPaths = new Set(current.map((entry) => entry.virtualPath));
-	const pathsByKey = new Map(
-		[...currentPaths, ...Object.keys(previous.entries), ...Object.keys(previous.skipped ?? {})].map((path) => [
-			mirrorStageKey(path),
-			path,
-		]),
-	);
+	const pathsByKey = new Map([...currentPaths, ...(previous.known ?? [])].map((path) => [mirrorStageKey(path), path]));
 	const staleCandidates = new Set(
 		Object.keys(previous.entries).filter(
 			(path) =>
@@ -421,7 +416,7 @@ async function syncWithRegistry(
 			source: "parsed-mirror",
 		});
 	const unknown = new Set<string>();
-	for (const path of [...Object.keys(previous.entries), ...Object.keys(previous.skipped ?? {})]) {
+	for (const path of previous.known ?? []) {
 		if (
 			!currentPaths.has(path) &&
 			((massDelete && staleCandidates.has(path)) ||
@@ -817,7 +812,7 @@ function walkLimits(options: ParsedMirrorSyncOptions): WalkLimits {
 
 function hasIndexedUnder(index: ParsedMirrorIndex, prefix: string): boolean {
 	const inside = (virtualPath: string): boolean => virtualPath === prefix || virtualPath.startsWith(`${prefix}/`);
-	return Object.keys(index.entries).some(inside) || Object.keys(index.skipped ?? {}).some(inside);
+	return (index.known ?? []).some(inside);
 }
 
 function errnoCode(error: unknown): string | undefined {

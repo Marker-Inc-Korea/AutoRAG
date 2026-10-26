@@ -231,6 +231,31 @@ describe("MinSync-owned incremental parsing", () => {
 		expect(readFileSync(output("b"), "utf8")).toBe("Bravo parsed-1\n");
 	});
 
+	it("preserves invalid-output and ordinary-failure identities while their root is unavailable", async () => {
+		class CrashingParser extends VersionedParser {
+			async parse(input: ParseInput): Promise<ParseOutput> {
+				if (input.virtualPath === "/docs/b.txt") throw new Error("crashed");
+				return super.parse(input);
+			}
+		}
+		const options = { root, searchPaths: [source], registry: new ParserRegistry([new CrashingParser()]) };
+		await syncParsedMirrors(options);
+		const damagedPath = output("a");
+		writeFileSync(damagedPath, "corrupt\n");
+		renameSync(source, `${source}-offline`);
+		const offline = await syncParsedMirrors(options);
+		expect(offline.deleted).toBe(0);
+		expect(offline.diagnostics.some((d) => d.code === "deleted-mirror")).toBe(false);
+		expect([...(loadMirrorIndex(root).known ?? [])].sort()).toEqual(["/docs/a.txt", "/docs/b.txt"]);
+		expect(readFileSync(damagedPath, "utf8")).toBe("corrupt\n");
+		renameSync(`${source}-offline`, source);
+		const parser = new VersionedParser();
+		await syncParsedMirrors({ ...options, registry: new ParserRegistry([parser]) });
+		expect(parser.attempts).toEqual(["/docs/a.txt", "/docs/b.txt"]);
+		expect(readFileSync(output("a"), "utf8")).toBe("Alpha parsed-1\n");
+		expect(readFileSync(output("b"), "utf8")).toBe("Bravo parsed-1\n");
+	});
+
 	it("does not commit a source that changes while its parser is running", async () => {
 		class ChangingParser extends VersionedParser {
 			async parse(input: ParseInput): Promise<ParseOutput> {

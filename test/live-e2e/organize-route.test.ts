@@ -1,6 +1,9 @@
 /**
  * Live E2E: real Jev routing plus a real model carry out file organization and
  * a non-search task through AutoRAGAgent, then the files on disk are checked.
+ * Every organize/extra query also records the agent's tool calls and asserts no
+ * retrieval or web tool ran: no route changes the active tool set any more, so
+ * the turn prompt is what keeps a file-organization turn from searching.
  *
  * Gated on AUTORAG_ORGANIZE_LIVE=1 plus OPENROUTER_API_KEY. The agent model id
  * comes from AUTORAG_ORGANIZE_MODEL (an OpenRouter id); pick one released in 2026 or later.
@@ -15,8 +18,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "../../src/agent/search-all-tool.ts";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
+import { SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "../../src/agent/search-minsync-tool.ts";
+import { WEB_FETCH_TOOL_NAME } from "../../src/agent/web-fetch-tool.ts";
+import { WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
 import { resolveModel } from "../../src/cli/config.ts";
+
+/** Tools a file-organization or other-action turn must never call. */
+const RETRIEVAL_TOOL_NAMES = [
+	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+	WEB_SEARCH_TOOL_NAME,
+	WEB_FETCH_TOOL_NAME,
+] as const;
 
 const MODEL_ID = process.env.AUTORAG_ORGANIZE_MODEL ?? "";
 const LIVE =
@@ -57,12 +72,35 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 	});
 	afterAll(() => rmSync(root, { recursive: true, force: true }));
 
+	/**
+	 * Runs one live query with the agent's tool calls recorded, and fails when a
+	 * retrieval or web tool ran: an `organize` or `extra` turn may not search.
+	 */
+	async function searchAction(query: string): Promise<SearchDocumentsResponse> {
+		const called: string[] = [];
+		const unsubscribe = agent.subscribe((event) => {
+			if (event.type === "tool_execution_start") called.push(event.toolName);
+		});
+		try {
+			const response = await agent.searchDocuments(query);
+			expect(called.length, "the turn called no tool at all").toBeGreaterThan(0);
+			const offending = called.filter(
+				(name) =>
+					(RETRIEVAL_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith("search_datasource_"),
+			);
+			expect(offending, `retrieval or web tools ran on this turn: ${offending.join(", ")}`).toEqual([]);
+			return response;
+		} finally {
+			unsubscribe();
+		}
+	}
+
 	it("sorts a messy folder into per-type folders (organize)", async () => {
 		const messy = join(root, "messy");
 		mkdirSync(messy, { recursive: true });
 		for (const name of ["a.pdf", "b.pdf", "c.png", "d.png", "e.txt"]) writeFileSync(join(messy, name), name);
 
-		const response = await agent.searchDocuments(
+		const response = await searchAction(
 			`${messy} 폴더에 파일이 뒤죽박죽이야. 확장자별로 하위 폴더(pdf, png, txt)를 만들어서 정리해줘.`,
 		);
 
@@ -81,7 +119,7 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 		mkdirSync(folder, { recursive: true });
 		for (const name of ["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"]) writeFileSync(join(folder, name), name);
 
-		const response = await agent.searchDocuments(
+		const response = await searchAction(
 			`${folder} 안의 IMG_ 로 시작하는 파일 이름을 전부 trip_ 으로 시작하게 일괄 변경해줘. (IMG_001.jpg -> trip_001.jpg)`,
 		);
 
@@ -99,7 +137,7 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 			"MEETING MINUTES\nTopic: Q4 roadmap review\nAttendees: Mina, Joon\nDate 2026-10-02\n",
 		);
 
-		const response = await agent.searchDocuments(
+		const response = await searchAction(
 			`${folder} 안의 scan001.txt, scan002.txt 는 이름이 의미가 없어. 각 파일의 내용을 읽고 invoice 인지 meeting 인지 알 수 있게 이름을 바꿔줘. 확장자는 유지하고 이름에 invoice 또는 meeting 이라는 단어를 넣어줘.`,
 		);
 
@@ -117,7 +155,7 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 		mkdirSync(folder, { recursive: true });
 		writeFileSync(join(folder, "notes.md"), "# Notes\n\nHello from the live conversion test.\n");
 
-		const response = await agent.searchDocuments(
+		const response = await searchAction(
 			`${folder}/notes.md 파일을 html 로 변환해서 같은 폴더에 notes.html 로 저장해줘.`,
 		);
 
@@ -141,7 +179,7 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 		git("config", "user.name", "QA");
 		writeFileSync(join(repo, "hello.txt"), "hello\n");
 
-		const response = await agent.searchDocuments(
+		const response = await searchAction(
 			`${repo} git 저장소에 hello.txt 가 새로 생겼어. 이 변경을 커밋해줘. 커밋 메시지는 "add hello"로 해줘.`,
 		);
 
@@ -150,12 +188,32 @@ describe.skipIf(!LIVE)("live: Jev routes file organization and other actions, an
 		expect(response.results).toEqual([]);
 	}, 240_000);
 
-	it("keeps information questions on their own branches", async () => {
-		const direct = await agent.searchDocuments("프랑스의 수도는 어디야?");
-		expect(routeOf(direct)).toBe("direct");
+	it("answers a general-knowledge question in one extra turn (extra)", async () => {
+		const response = await agent.searchDocuments("프랑스의 수도는 어디야?");
 
+		expect(routeOf(response)).toBe("extra");
+		// One turn: no retrieval prefetch, no fast-phase preliminary, no verification.
+		expect(response.results).toEqual([]);
+		expect(response.answer).toMatch(/파리|Paris/u);
+	}, 240_000);
+
+	it("answers a general-knowledge question without a preliminary in the stream (extra)", async () => {
+		const events: string[] = [];
+		let answer = "";
+		for await (const event of agent.searchDocumentsStream("What is the capital of Australia?")) {
+			events.push(event.type);
+			if (event.type === "complete") answer = event.response.answer;
+		}
+
+		expect(events).toContain("complete");
+		expect(events).not.toContain("preliminary");
+		expect(answer).toMatch(/Canberra/u);
+	}, 240_000);
+
+	it("keeps a personal-records question on local search (local)", async () => {
 		writeFileSync(join(root, "docs", "budget.txt"), "The Q3 budget was approved by Mina Park.\n");
-		const local = await agent.searchDocuments("내 문서에서 Q3 예산을 누가 승인했는지 찾아줘");
-		expect(routeOf(local)).toBe("local");
+		const response = await agent.searchDocuments("내 문서에서 Q3 예산을 누가 승인했는지 찾아줘");
+
+		expect(routeOf(response)).toBe("local");
 	}, 360_000);
 });

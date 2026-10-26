@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
 import { chmod, mkdtemp } from "node:fs/promises";
 import { get } from "node:https";
 import { basename, delimiter, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { spawnProcess } from "./process.ts";
 import { MinSyncStageSession } from "./stage.ts";
 
@@ -12,7 +13,7 @@ const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 export const MINSYNC_VERSION = "0.5.0";
 // Protocol 2 is not in the published 0.5.0 crate; pin the reviewed source, never a moving branch.
 const MINSYNC_SOURCE = "https://github.com/NomaDamas/MinSync.git";
-const MINSYNC_REVISION = "a305cddc2b1e5e9b12a700c1302b069f94f2a1e9";
+const MINSYNC_REVISION = "1e9bb7eeff53a35cca86309c1086950ea0ad2c5f";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
@@ -178,7 +179,7 @@ async function installReleaseAsset(asset: MinSyncReleaseAsset, destination: stri
 		}
 		const extracted = await spawnProcess("tar", ["-xf", archive, "-C", tempDir], tempDir);
 		if (!extracted.ok) throw new MinSyncReleaseError(extracted.stderr || `Could not extract ${asset.name}`);
-		renameSync(join(tempDir, basename(destination)), destination);
+		renameWithRetry(join(tempDir, basename(destination)), destination);
 	} finally {
 		rmSync(tempDir, { recursive: true, force: true });
 	}

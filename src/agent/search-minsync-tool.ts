@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { MinSyncVectorMethod } from "../minsync/method.ts";
+import { locationSuffix } from "../retrieval/chunk-location.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
@@ -74,7 +75,7 @@ function formatResults(results: readonly RetrievalResult[], evidenceIds: readonl
 	if (results.length === 0) return "No MinSync results.";
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ");
-		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}\n${line}`;
 	});
 	return `MinSync results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}`;
 }

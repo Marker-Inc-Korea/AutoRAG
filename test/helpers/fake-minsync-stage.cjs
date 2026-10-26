@@ -8,8 +8,10 @@
 // committed snapshot (snapshot.rs) and the PID lock (state.rs) on top of the
 // plain filesystem — including the durable-outcome extensions the host relies
 // on: deliberate `skip`, deferred failures with their retry fingerprint, and
-// the read-only `inspect` and `plan` ops. It also answers `capabilities`,
-// which is how a host checks for those extensions before it mutates anything.
+// the read-only `inspect` (whose `known` list names every key the durable
+// state still holds, verified output or not) and `plan` ops. It also answers
+// `capabilities`, which is how a host checks for those extensions before it
+// mutates anything.
 // Nothing here talks to a real `minsync`, the network, or a vector store: a
 // test writes the output files itself and this process only validates and
 // records them.
@@ -1182,15 +1184,17 @@ function planRun(stateDir, open, respond) {
 
 /**
  * Reconstruct the durable state and verify every recorded output: the
- * committed items that still verify, the failures (deferred or not) and the
- * deliberate omissions. Takes no lock and writes nothing.
+ * committed items that still verify, the failures (deferred or not), the
+ * deliberate omissions, and `known` — every key the state holds, including the
+ * ones no list above reports because their output stopped verifying. Takes no
+ * lock and writes nothing.
  */
 function inspectState(stateDir, request, respond) {
 	const { snapshot, ledger } = readState(stateDir, request.stage, request.sourceId);
 	const root = existingOutputRoot(request.outputRoot);
 	const items = [];
-	const known = [...new Set([...Object.keys(snapshot.items), ...ledgerCommittedItems(ledger)])].sort(byteCompare);
-	for (const key of known) {
+	const completions = [...new Set([...Object.keys(snapshot.items), ...ledgerCommittedItems(ledger)])].sort(byteCompare);
+	for (const key of completions) {
 		const done = completion(snapshot, ledger, key);
 		if (done === null || done.output === null) continue;
 		if (!outputMatches(root, done.output, request.verify)) continue;
@@ -1230,7 +1234,30 @@ function inspectState(stateDir, request, respond) {
 		if (omission === null) continue;
 		skipped.push({ key, version: omission.version, reason: omission.reason, fingerprint: omission.fingerprint });
 	}
-	respond({ ok: true, op: "inspect", items, failed, skipped });
+	// Every key the durable state still holds, whatever the filtering above
+	// dropped: an output that no longer verifies and a deferred failure are
+	// still state the host must preserve. Read from the same snapshot and
+	// ledger as the three lists, with the same precedence — a failure's version
+	// wins over an omission's, which wins over a completion's. A `deleted` or
+	// superseded record resolves to no identity at all, so its key drops out.
+	const identities = [
+		...Object.keys(snapshot.items),
+		...Object.keys(snapshot.failed),
+		...Object.keys(snapshot.skipped),
+		// The interrupted run's records, whichever outcome they hold.
+		...ledger.done.keys(),
+		...ledger.failed.keys(),
+	];
+	const known = [];
+	for (const key of [...new Set(identities)].sort(byteCompare)) {
+		const failure = failureRecord(snapshot, ledger, key);
+		const omission = skipRecord(snapshot, ledger, key);
+		const done = completion(snapshot, ledger, key);
+		if (failure !== null || omission !== null || done !== null) {
+			known.push({ key, version: failure?.version ?? omission?.version ?? done?.version ?? null });
+		}
+	}
+	respond({ ok: true, op: "inspect", items, failed, skipped, known });
 }
 
 function finish(state, respond) {
@@ -1250,6 +1277,8 @@ function finish(state, respond) {
 
 	const fingerprint = state.ledger.header.fingerprint;
 	const next = state.snapshot;
+	// Finishing a legacy run upgrades its snapshot before extended outcomes persist.
+	next.format = SNAPSHOT_FORMAT;
 	let committed = 0;
 	let deleted = 0;
 	let failed = 0;

@@ -141,7 +141,7 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("AutoRAGAgent MinSync integration", () => {
-	it("includes MinSync vector results in retrieve() with original source paths", async () => {
+	it("includes MinSync hybrid results in retrieve() with original source paths", async () => {
 		// Given
 		writeFileSync(join(docs, "handbook.txt"), "Refund decisions require manager review.\n");
 		writeFakeMinSync();
@@ -168,7 +168,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 		expect(result.source).toBe(realpathSync(join(docs, "handbook.txt")));
 		expect(readFileSync(result.source, "utf8")).toBe("Refund decisions require manager review.\n");
 		expect(result.content).toContain("refunds are approved");
-		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/handbook.txt" });
+		expect(result.metadata).toMatchObject({ method: "minsync-hybrid", virtualPath: "/docs/handbook.txt" });
 	});
 
 	it("over-queries before filtering scoped vector results", async () => {

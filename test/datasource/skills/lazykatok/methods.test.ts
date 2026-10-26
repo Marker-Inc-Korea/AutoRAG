@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	LazykatokBm25Method,
+	LazykatokHybridMethod,
 	type LazykatokSearchClient,
-	LazykatokSemanticMethod,
 } from "../../../../src/datasource/skills/lazykatok/methods.ts";
 import type {
 	LazykatokFailureReason,
@@ -100,13 +100,13 @@ describe("LazykatokBm25Method descriptor", () => {
 	});
 });
 
-describe("LazykatokSemanticMethod descriptor", () => {
-	it("exposes kakao-semantic name and vector type", () => {
-		const method = new LazykatokSemanticMethod({ client: makeClient(), instanceId: INSTANCE_ID });
+describe("LazykatokHybridMethod descriptor", () => {
+	it("exposes kakao-hybrid name and hybrid type", () => {
+		const method = new LazykatokHybridMethod({ client: makeClient(), instanceId: INSTANCE_ID });
 		const descriptor = method.describe();
 
-		expect(descriptor.name).toBe("kakao-semantic");
-		expect(descriptor.type).toBe("vector");
+		expect(descriptor.name).toBe("kakao-hybrid");
+		expect(descriptor.type).toBe("hybrid");
 		expect(descriptor.datasourceId).toBe("kakao");
 		expect(descriptor.status).toBe("active");
 	});
@@ -215,30 +215,28 @@ describe("LazykatokBm25Method retrieve", () => {
 	});
 });
 
-describe("LazykatokSemanticMethod retrieve", () => {
-	it("calls client.search in semantic mode", async () => {
+describe("LazykatokHybridMethod retrieve", () => {
+	it("calls client.search in hybrid mode", async () => {
 		const client = makeClient();
-		const method = new LazykatokSemanticMethod({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokHybridMethod({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("chargeback", { topK: 2 });
 
-		expect(client.calls).toEqual([
-			{ mode: "semantic", query: "chargeback", options: { topK: 2, signal: undefined } },
-		]);
+		expect(client.calls).toEqual([{ mode: "hybrid", query: "chargeback", options: { topK: 2, signal: undefined } }]);
 		expect(results[0]?.metadata).toMatchObject({
-			method: "kakao-semantic",
-			mode: "semantic",
+			method: "kakao-hybrid",
+			mode: "hybrid",
 			datasourceId: "kakao",
 		});
 	});
 
-	it("surfaces a failed semantic search with the CLI reason", async () => {
+	it("surfaces a failed hybrid search with the CLI reason", async () => {
 		const client = makeClient();
 		client.failReason = "nonzero-exit";
-		const method = new LazykatokSemanticMethod({ client, instanceId: INSTANCE_ID });
+		const method = new LazykatokHybridMethod({ client, instanceId: INSTANCE_ID });
 
 		await expect(method.retrieve("chargeback", {})).rejects.toThrow(
-			"kakao search --mode semantic failed (nonzero-exit",
+			"kakao search --mode hybrid failed (nonzero-exit",
 		);
 	});
 });

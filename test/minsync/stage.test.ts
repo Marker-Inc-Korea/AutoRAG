@@ -176,6 +176,11 @@ const INSPECT_OK = JSON.stringify({
 	],
 	failed: [{ key: "docs/b.pdf", version: "sha256:y", error: "parser crashed", deferred: true }],
 	skipped: [{ key: "docs/c.pdf", version: "sha256:z", reason: "unsupported type", fingerprint: "parser-1" }],
+	known: [
+		{ key: "docs/a.pdf", version: "sha256:x" },
+		{ key: "docs/b.pdf", version: "sha256:y" },
+		{ key: "docs/c.pdf", version: "sha256:z" },
+	],
 });
 
 describe("MinSyncStageSession against the stage protocol", () => {
@@ -452,6 +457,11 @@ describe("MinSyncStageSession transport", () => {
 			expect(state.skipped).toEqual([
 				{ key: "docs/c.pdf", version: "sha256:z", reason: "unsupported type", fingerprint: "parser-1" },
 			]);
+			expect(state.known).toEqual([
+				{ key: "docs/a.pdf", version: "sha256:x" },
+				{ key: "docs/b.pdf", version: "sha256:y" },
+				{ key: "docs/c.pdf", version: "sha256:z" },
+			]);
 		});
 
 		const numeric = join(root, "inspect-numeric.mjs");
@@ -477,6 +487,7 @@ describe("MinSyncStageSession transport", () => {
 					],
 					failed: [],
 					skipped: [],
+					known: [],
 				}),
 			],
 		});
@@ -489,6 +500,55 @@ describe("MinSyncStageSession transport", () => {
 			},
 			{ stateDir: join(root, "numeric-state") },
 		);
+	});
+
+	it("reads a `known` list, null version included, and refuses an unreadable entry", async () => {
+		const binary = join(root, "known.mjs");
+		writeStub(binary, {
+			kind: "responses",
+			lines: [
+				JSON.stringify({
+					ok: true,
+					op: "inspect",
+					items: [],
+					failed: [],
+					skipped: [],
+					known: [
+						{ key: "docs/a.pdf", version: "sha256:x" },
+						// A legacy failure the host never named a version for.
+						{ key: "docs/b.pdf", version: null },
+					],
+				}),
+			],
+		});
+
+		await withSession(binary, async (session) => {
+			const state = await session.inspect({ stage: "parse", source_id: "corpus", output_root: join(root, "out") });
+			expect(state.items).toEqual([]);
+			expect(state.known).toEqual([
+				{ key: "docs/a.pdf", version: "sha256:x" },
+				{ key: "docs/b.pdf", version: null },
+			]);
+		});
+
+		// A `known` entry has to name a key, and its version has to be text or null.
+		const unreadable: readonly unknown[] = [{ version: "sha256:x" }, { key: "docs/a.pdf", version: 7 }];
+		for (const [index, entry] of unreadable.entries()) {
+			const stub = join(root, `known-bad-${index}.mjs`);
+			writeStub(stub, {
+				kind: "responses",
+				lines: [JSON.stringify({ ok: true, op: "inspect", items: [], failed: [], skipped: [], known: [entry] })],
+			});
+			await withSession(
+				stub,
+				async (session) => {
+					await expect(
+						session.inspect({ stage: "parse", source_id: "corpus", output_root: join(root, "out") }),
+					).rejects.toMatchObject({ code: "invalid_response", op: "inspect" });
+				},
+				{ stateDir: join(root, `known-bad-state-${index}`) },
+			);
+		}
 	});
 
 	it("reads a plan report with every decision on it", async () => {
@@ -694,6 +754,7 @@ describe("MinSyncStageSession durable outcomes", () => {
 				expect(state.skipped).toEqual([
 					{ key: "a.md", version: "v1", reason: "unsupported type", fingerprint: "parser-1" },
 				]);
+				expect(state.known).toEqual([{ key: "a.md", version: "v1" }]);
 				await session.finish();
 			},
 			{ stateDir },
@@ -886,6 +947,8 @@ describe("MinSyncStageSession deferred failures", () => {
 				// The failure did not erase the last good output of the older version.
 				expect(state.items).toEqual([expect.objectContaining({ key: "a.md", version: "v1" })]);
 				expect(state.failed).toEqual([{ key: "a.md", version: "v2", error: "parser crashed", deferred: true }]);
+				// The deferral drops the item from the run, never from `known`.
+				expect(state.known).toEqual([{ key: "a.md", version: "v2" }]);
 			},
 			{ stateDir },
 		);
@@ -1003,6 +1066,7 @@ describe("MinSyncStageSession deferred failures", () => {
 					items: [],
 					failed: [],
 					skipped: [],
+					known: [],
 				});
 			},
 			{ stateDir },
@@ -1027,6 +1091,8 @@ describe("MinSyncStageSession deferred failures", () => {
 				const state = await session.inspect({ stage: "parse", source_id: "corpus", output_root: output });
 				expect(state.items).toEqual([expect.objectContaining({ key: "a.md", version: "v1" })]);
 				expect(state.failed).toEqual([{ key: "a.md", version: "v2", error: "parser crashed", deferred: false }]);
+				// The failure's version wins over the completion `known` still holds.
+				expect(state.known).toEqual([{ key: "a.md", version: "v2" }]);
 			},
 			{ stateDir },
 		);
@@ -1130,6 +1196,52 @@ describe("MinSyncStageSession read-only state", () => {
 		expect(readFileSync(join(stateDir, "snapshot.json"), "utf8")).toBe(snapshot);
 	});
 
+	it("keeps a key whose output no longer verifies, and an ordinary failure, in `known`", async () => {
+		const binary = join(root, "fake-minsync.mjs");
+		writeFakeMinSync(binary);
+		const output = join(root, "out");
+		mkdirSync(output, { recursive: true });
+		writeFileSync(join(output, "a.md"), "alpha");
+		writeFileSync(join(output, "b.md"), "bravo");
+		const stateDir = join(root, "state");
+		const items = [
+			{ key: "a.md", version: "v1" },
+			{ key: "b.md", version: "v1" },
+		];
+
+		await withSession(
+			binary,
+			async (session) => {
+				await session.open(openInput({ output_root: output, items }));
+				await session.commit("a.md", "v1", { path: "a.md" });
+				await session.commit("b.md", "v1", { path: "b.md" });
+				await session.fail("b.md", "v1", "parser crashed");
+				await session.finish();
+			},
+			{ stateDir },
+		);
+
+		// a.md's output is gone and b.md's no longer matches what was committed:
+		// neither verifies, yet both are still durable state with a version.
+		rmSync(join(output, "a.md"));
+		writeFileSync(join(output, "b.md"), "bravo and then some");
+
+		await withSession(
+			binary,
+			async (session) => {
+				const state = await session.inspect({ stage: "parse", source_id: "corpus", output_root: output });
+				expect(state.items).toEqual([]);
+				expect(state.failed).toEqual([{ key: "b.md", version: "v1", error: "parser crashed", deferred: false }]);
+				expect(state.skipped).toEqual([]);
+				expect(state.known).toEqual([
+					{ key: "a.md", version: "v1" },
+					{ key: "b.md", version: "v1" },
+				]);
+			},
+			{ stateDir },
+		);
+	});
+
 	it("reports nothing for a state directory that has none", async () => {
 		const binary = join(root, "fake-minsync.mjs");
 		writeFakeMinSync(binary);
@@ -1143,6 +1255,7 @@ describe("MinSyncStageSession read-only state", () => {
 					items: [],
 					failed: [],
 					skipped: [],
+					known: [],
 				});
 				expect(
 					await session.plan(openInput({ output_root: output, items: [{ key: "a.md", version: "v1" }] })),

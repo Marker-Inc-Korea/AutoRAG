@@ -279,8 +279,8 @@ overrides are replaced for `index` and semantic search.
 ```
 
 Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
-Retrieval exposes independent BM25, semantic, and hybrid methods and maps
-results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
+Retrieval is hybrid-first: one `mailcrawl search --mode hybrid` per query, and BM25 only when hybrid cannot run
+(for example when no semantic index exists). Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
 datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
 path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
@@ -465,13 +465,13 @@ No configuration is needed:
 { "datasources": { "slack-work": { "type": "slack", "connector": { "workspace": "T0123456789" } } } }
 ```
 
-Tune or opt out per datasource with `connector.sidecar`:
+For these three crawlers, tune or opt out per datasource with `connector.sidecar`:
 
 | `connector.sidecar` | Meaning |
 |---|---|
-| absent / `true` / `{}` | BM25 + semantic + hybrid (default) |
-| `false` or `{ "enabled": false }` | CLI-backed FTS only, as before |
-| `semantic: false` | BM25 only; no embedding calls, and no `<name>-semantic` / `<name>-hybrid` methods |
+| absent / `true` / `{}` | One hybrid method per connection; BM25 then the CLI search only if it throws (default) |
+| `false` or `{ "enabled": false }` | CLI-backed FTS only, as before (kakao: hybrid, then BM25) |
+| `semantic: false` | BM25 only; no embedding calls, and no `<name>-hybrid` method (the CLI search is the fallback) |
 | `crawlerDbPath` | archive to read. Otherwise: `connector.databasePath`; for `slack`, the `db_path` in the slacrawl config that `connector.configPath` names (relative paths resolve against that file); otherwise the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
 | `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (16,384) |
 
@@ -485,11 +485,12 @@ How it works and what it never does:
 - It is created lazily: building a skill creates no file, directory, or handle. Nothing is written until the
   crawler archive exists and a search or refresh actually runs. Without an AutoRAG workspace there is nowhere to
   keep it, so the datasource behaves as before.
-- Methods added next to the CLI-backed `<name>-fts`: `<name>-sidecar-bm25`, `<name>-semantic`, `<name>-hybrid`
-  (reciprocal rank fusion, k=60). Natural-language queries are OR-ed term by term; FTS operators in user text are
-  quoted away. A message found by both the CLI and the sidecar carries the same id (`event_id` for telegram and
-  whatsapp), so it is merged, not repeated. The semantic and hybrid methods of one search share one query
-  embedding and one vector scan.
+- One method per connection, `<name>-hybrid` (reciprocal rank fusion, k=60): it runs the sidecar's hybrid search
+  and never also runs the CLI or the sidecar's BM25 and semantic components. Only if the hybrid search throws does
+  the sidecar's BM25 answer (`<name>-sidecar-bm25`, with `fallbackFrom` in each hit's metadata), and only if that
+  throws the CLI-backed `<name>-fts`. A search that finds nothing is an answer and starts no fallback. Natural-language
+  queries are OR-ed term by term; FTS operators in user text are quoted away. A message found by the CLI and by the
+  sidecar carries the same id (`event_id` for telegram and whatsapp), so a fallback keeps stable evidence ids.
 - `channels.ids` / `channels.names` are applied in the sidecar's SQL: excluded chats are never searched,
   embedded, or stored as vectors, and vectors of a chat removed from the allowlist are pruned on the next refresh.
 - `autorag refresh --method datasources` runs the CLI sync first, then embeds new or edited messages with the
@@ -515,8 +516,53 @@ How it works and what it never does:
   operator configures one). Vectors of private chats are derived data: treat the
   sidecar file with the same care as the archive itself.
 
-Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` already has semantic and hybrid through
-discrawl.
+`notion` (notcrawl) keeps its page/comment FTS. Without the Discord BM25 sidecar below, `discord` is hybrid-first
+through discrawl (FTS only when embeddings are unavailable).
+
+### Discord BM25 ranking
+
+When an AutoRAG workspace is available, `discord` ranks lexical matches in discrawl's existing FTS5 index
+by BM25 relevance. An older, relevant message can therefore outrank newer mentions before the result limit.
+Queries use the same term-by-term OR matching as the other sidecars. Native FTS-only hits supplement the
+lexical candidate list after BM25 hits; duplicate evidence contributes only once. Hybrid retrieval combines
+this one lexical ranking with native semantic results using reciprocal rank fusion (RRF).
+
+With the sidecar enabled, the skill registers one method matching `connector.defaultMode`:
+`discord-hybrid` by default, `discord-fts` for lexical ranking, or `discord-semantic` for native semantic-only
+search. This prevents the outer result merger from treating overlapping native FTS, native hybrid, and BM25
+results as independent votes. Datasource-scoped searches use the configured method. Explicit method-name
+selection must use that registered name. With the sidecar disabled, the skill registers the single native
+method for `connector.defaultMode`.
+
+To keep only the native method, set `connector.sidecar` to `false` (or `{ "enabled": false }`):
+
+```json
+{ "datasources": { "discord-local": { "type": "discord", "connector": { "sidecar": false } } } }
+```
+
+The archive path comes from the read-only `discrawl --json status` command, using the connector's config and
+the crawler's platform-specific defaults. An explicit `connector.sidecar.crawlerDbPath` or
+`connector.databasePath` takes precedence for the sidecar only; the native CLI still uses its own config.
+The sidecar reads the archive through SQLite's read-only attachment;
+it does not change discrawl's native embeddings, invoke an additional embedder, or build another vector index.
+Native embedding configuration and refresh behavior remain the same. `connector.sidecar.semantic` does not
+enable a separate vector index; `connector.defaultMode` selects the retrieval mode.
+
+Discord message IDs remain strings and match the IDs returned by the native methods, so retrieval can merge
+duplicate hits. Soft-deleted and empty normalized messages are excluded from BM25, and `channels.ids` /
+`channels.names` filter its results in SQL. Native candidates are checked against the configured guild and
+channel allowlists before combination. Without a workspace, the native method remains available. If BM25 or
+semantic retrieval fails, healthy candidates can still answer; returned hit metadata retains the original
+partial-failure reasons. If a backend fails and no candidates remain, retrieval surfaces the failure instead
+of reporting a successful empty search.
+
+BM25 ranks the base `message_fts` index and, when discrawl's `search.lexical.languages` has built them, the
+tokenizer-specific `message_fts_ko`, `message_fts_ja`, `message_fts_zh`, and `message_fts_ar` indexes as well.
+The sidecar discovers those tables from the archive's `sqlite_master` and fuses each present table's BM25
+ranking with the base ranking using reciprocal rank fusion, so an inflected Korean, Japanese, Chinese, or
+Arabic message that the base tokenizer splits differently is still ranked lexically instead of only arriving as
+a supplemental native candidate. Tables that are not configured are ignored. Set `sidecar: false` to retain the
+native method and its language-index fusion throughout.
 
 ## Cloud drives via rclone
 
@@ -670,6 +716,10 @@ Rules:
 - `sync` names the live adapter explicitly (`--source macos` on macOS). A bare `sync --json`
   falls back to the CLI's config file, whose default adapter is `fixture` and fails without a
   JSONL path; set `connector.source` to use another adapter.
+- `kakao` is macOS-only. On Linux and Windows it is not built: a `kakao` entry in `datasources` is
+  reported as unknown by the agent, `autorag setup` lists it as `skipped` ("not supported on <platform>"),
+  and setup never offers it unprompted. The default store
+  (`~/Library/Application Support/katok`) is therefore only ever used on macOS.
 - Remote embedding egress configuration is rejected before spawning `lazykatok`.
 - `connector.indexTimeoutMs` (default 30 min) bounds `sync`/`index`;
   `connector.timeoutMs` (default 60 s) bounds interactive reads

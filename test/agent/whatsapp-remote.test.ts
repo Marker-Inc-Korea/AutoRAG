@@ -65,11 +65,11 @@ afterEach(() => {
 	globalThis.__chatBridge = undefined;
 });
 
-function jevDirect(): JevBackend {
+function jevExtra(): JevBackend {
 	return new MockBackend({
 		[QUERY_ROUTE_QUESTION_ID]: {
-			answer: "direct",
-			distribution: { local: 0.1, web: 0.1, direct: 0.8 },
+			answer: "extra",
+			distribution: { local: 0.1, organize: 0.1, extra: 0.8 },
 			confidence: 0.8,
 		},
 		[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
@@ -119,7 +119,7 @@ async function hostedAgent(responses: FauxResponseStep[], flags: Record<string, 
 		jikji: false,
 		piAgentDir: agentDir,
 		piSessionDir: join(root, "sessions"),
-		jev: { backend: jevDirect() },
+		jev: { backend: jevExtra() },
 		piExtensionPaths: [bridgePath],
 		piExtensionFlags: flags,
 	});
@@ -157,6 +157,7 @@ describe("remote chat extension hosted by the interactive session", () => {
 			// Only AutoRAG's search driver names the session after the query; a raw pi prompt would not.
 			expect(host.session.sessionName).toContain("What is the capital of France?");
 			const users = host.session.messages.flatMap((m) => (m.role === "user" ? [textOf(m.content)] : []));
+
 			expect(users).toHaveLength(1);
 		} finally {
 			await host.dispose();

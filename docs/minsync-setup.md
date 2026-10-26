@@ -25,7 +25,7 @@ manually when upgrading an existing binary on `PATH`:
 
 ```bash
 cargo install minsync --git https://github.com/NomaDamas/MinSync.git \
-  --rev a305cddc2b1e5e9b12a700c1302b069f94f2a1e9 --locked --force
+  --rev 1e9bb7eeff53a35cca86309c1086950ea0ad2c5f --locked --force
 ```
 
 Existing executables are not silently replaced. New installations, including
@@ -399,6 +399,12 @@ the original durable stage, but not `capabilities`, `plan`, `inspect`, deliberat
 skips or deferred-failure policy. AutoRAG probes capabilities before opening a
 run and refuses an older build before mutating stage state. Parsing itself uses
 no embedding model or endpoint.
+
+`inspect` also exposes all held source identities, independently of output
+verification. AutoRAG uses that inventory to preserve unknown/offline sources,
+including damaged outputs and ordinary failures; only verified `items` become
+searchable mirrors. Status remains available when a previously used binary is
+missing or incompatible and reports the component unavailable and corpus stale.
 
 AutoRAG inventories supported sources and supplies their identities and parser
 configuration to one `minsync stage` session. MinSync owns the stage lock,

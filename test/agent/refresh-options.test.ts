@@ -142,22 +142,6 @@ describe("AutoRAGRefreshOptions.onProgress", () => {
 		]);
 	});
 
-	it("writes the running parsed counts to refresh-progress.json while files are parsed", async () => {
-		const agent = makeAgent();
-		const seen: { processed: number; total: number | undefined }[] = [];
-		await agent.refresh(true, {
-			methods: ["parsed"],
-			onProgress: (progress) => {
-				const persisted = readRefreshProgress(root);
-				if (progress.phase === "parsed") {
-					seen.push({ processed: persisted?.parsedCounts?.scanned ?? -1, total: persisted?.sourceFiles?.total });
-				}
-			},
-		});
-		expect(seen.map((entry) => entry.total)).toEqual([3, 3, 3, 3]);
-		expect(seen.map((entry) => entry.processed)).toEqual([0, 1, 2, 3]);
-	});
-
 	it("reports one datasources event per source with processed/total sources", async () => {
 		const agent = makeAgent({
 			datasourceSkills: [

@@ -98,8 +98,8 @@ async function telegramAgent(answer: string) {
 		jev: {
 			backend: new MockBackend({
 				[QUERY_ROUTE_QUESTION_ID]: {
-					answer: "direct",
-					distribution: { local: 0.1, web: 0.1, direct: 0.8 },
+					answer: "extra",
+					distribution: { local: 0.1, organize: 0.1, extra: 0.8 },
 					confidence: 0.8,
 				},
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
@@ -143,15 +143,14 @@ describe("Telegram remote control of the librarian", () => {
 			await vi.waitFor(() => expect(fake.replies.join("\n")).toContain("Paris is the capital of France."), {
 				timeout: 30_000,
 			});
-			// One model call, issued by AutoRAG's direct route: not a raw pi turn.
+			// One model call, issued by AutoRAG's extra route: not a raw pi turn.
 			expect(tg.registration.state.callCount).toBe(1);
 			const prompts = tg.session.messages.flatMap((message) =>
 				message.role === "user" ? [JSON.stringify(message.content)] : [],
 			);
-			// Same prompt a terminal user gets: the bridge's envelope never reaches the model or the session name.
-			expect(prompts.join("\n")).toContain(
-				"Answer this query directly from your own general knowledge: What is the capital of France?",
-			);
+			// Same prompt a terminal user gets: the bridge's envelope never reaches
+			// the model. AutoRAG's own extra turn carries the stripped text.
+			expect(prompts.join("\n")).toContain("What is the capital of France?");
 			expect(prompts.join("\n")).not.toMatch(/\[telegram\]|\[time\]/u);
 			expect(tg.session.sessionName).toBe("What is the capital of France?");
 		} finally {

@@ -209,6 +209,16 @@ export interface MinSyncStageInspectSkip {
 	readonly fingerprint: string;
 }
 
+/** A key MinSync still holds durable state for, and the version it holds it at. */
+export interface MinSyncStageInspectKnown {
+	readonly key: string;
+	/**
+	 * The failure's version when MinSync holds one, else the omission's, else
+	 * the completion's. `null` only for a legacy failure the host never named.
+	 */
+	readonly version: string | null;
+}
+
 /**
  * The durable state of a stage: every output that still verifies, every
  * failure and every deliberate omission. An item can appear in `items` with
@@ -218,6 +228,12 @@ export interface MinSyncStageInspectReport {
 	readonly items: readonly MinSyncStageInspectItem[];
 	readonly failed: readonly MinSyncStageInspectFailure[];
 	readonly skipped: readonly MinSyncStageInspectSkip[];
+	/**
+	 * Every key the durable state holds, whatever the three lists above report:
+	 * a key stays here when its output no longer verifies or when its failure is
+	 * deferred. Always present, empty when the state holds nothing.
+	 */
+	readonly known: readonly MinSyncStageInspectKnown[];
 }
 
 export interface MinSyncStagePlanReport {
@@ -919,15 +935,28 @@ function readInspectSkip(value: unknown): MinSyncStageInspectSkip {
 	return { key, version, reason, fingerprint };
 }
 
+function readInspectKnown(value: unknown): MinSyncStageInspectKnown {
+	const op = "inspect";
+	if (!isRecord(value)) throw invalid("The `inspect` response carried a known entry that is not an object.", op);
+	const { key, version } = value;
+	if (typeof key !== "string") throw invalid("A `known` entry carried no `key`.", op);
+	if (version !== null && version !== undefined && typeof version !== "string") {
+		throw invalid(`The \`known\` entry for \`${key}\` carried a non-text \`version\`.`, op);
+	}
+	return { key, version: typeof version === "string" ? version : null };
+}
+
 function readInspectReport(response: Record<string, unknown>): MinSyncStageInspectReport {
-	const { items, failed, skipped } = response;
+	const { items, failed, skipped, known } = response;
 	if (!Array.isArray(items)) throw invalid("The `inspect` response carried no `items` list.", "inspect");
 	if (!Array.isArray(failed)) throw invalid("The `inspect` response carried no `failed` list.", "inspect");
 	if (!Array.isArray(skipped)) throw invalid("The `inspect` response carried no `skipped` list.", "inspect");
+	if (!Array.isArray(known)) throw invalid("The `inspect` response carried no `known` list.", "inspect");
 	return {
 		items: items.map(readInspectItem),
 		failed: failed.map(readInspectFailure),
 		skipped: skipped.map(readInspectSkip),
+		known: known.map(readInspectKnown),
 	};
 }
 

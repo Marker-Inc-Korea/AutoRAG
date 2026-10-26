@@ -180,6 +180,38 @@ describe("getRefreshStatus", () => {
 		expect(JSON.stringify(status)).not.toContain(root);
 	});
 
+	it("reports a missing engine after an earlier refresh without failing during construction", async () => {
+		await makeAgent().refresh(false, { methods: ["parsed"] });
+		const agent = makeAgent({ minSync: { binaryPath: join(root, "missing-minsync") } });
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("unavailable");
+		expect(status.stale).toBe(true);
+		await expect(agent.refresh(false, { methods: ["parsed"] })).rejects.toThrow(/MinSync is required/);
+	});
+
+	it("reports unsupported stage protocol after an earlier refresh instead of failing during construction", async () => {
+		await makeAgent().refresh(false, { methods: ["parsed"] });
+		const oldBinary = join(root, "old-minsync.mjs");
+		writeFileSync(
+			oldBinary,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+createInterface({ input: process.stdin }).on("line", () => console.log(JSON.stringify({ ok: false, op: "unknown", error: { code: "invalid_request", message: "unsupported" } })));
+`,
+		);
+		chmodSync(oldBinary, 0o755);
+		const agent = makeAgent({ minSync: { binaryPath: oldBinary } });
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("unavailable");
+		expect(status.stale).toBe(true);
+		expect(status.diagnostics).toContainEqual(
+			expect.objectContaining({ source: "minsync", reason: "unsupported_protocol" }),
+		);
+		await expect(agent.refresh(false, { methods: ["parsed"] })).rejects.toMatchObject({
+			code: "unsupported_protocol",
+		});
+	});
+
 	it("surfaces unknown-datasource-skill startup diagnostics on status", async () => {
 		const agent = makeAgent({
 			startupDiagnostics: [

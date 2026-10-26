@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { datasourceSearchToolName } from "../../src/datasource/tool-naming.ts";
+import { withPlatform } from "../helpers/platform.ts";
 
 /**
  * Manifest contract for the per-datasource search tools: every built-in skill
@@ -10,23 +11,25 @@ import { datasourceSearchToolName } from "../../src/datasource/tool-naming.ts";
  * connections must name the alias's tool, not the template's.
  */
 describe("datasource skill manifests and dedicated search tools", () => {
-	const { skills, unknown } = buildDatasourceSkills({
-		kakao: true,
-		discord: true,
-		slack: true,
-		notion: true,
-		whatsapp: true,
-		telegram: true,
-		mailcrawl: true,
-		obsidian: true,
-		clawgallery: true,
-		github: true,
-		rss: true,
-		spotlight: true,
-		"cloud-drive": true,
-		"mail-export": true,
-		lark: true,
-	});
+	const { skills, unknown } = withPlatform("darwin", () =>
+		buildDatasourceSkills({
+			kakao: true,
+			discord: true,
+			slack: true,
+			notion: true,
+			whatsapp: true,
+			telegram: true,
+			mailcrawl: true,
+			obsidian: true,
+			clawgallery: true,
+			github: true,
+			rss: true,
+			spotlight: true,
+			"cloud-drive": true,
+			"mail-export": true,
+			lark: true,
+		}),
+	);
 
 	it("builds every requested built-in skill", () => {
 		expect(unknown).toEqual([]);
@@ -61,9 +64,9 @@ describe("datasource skill manifests and dedicated search tools", () => {
 	});
 
 	it("an aliased connection's manifest names the alias's tool, never the template's", () => {
-		const { skills: aliasedSkills, unknown: aliasedUnknown } = buildDatasourceSkills({
-			"kakao-work": { type: "kakao" },
-		});
+		const { skills: aliasedSkills, unknown: aliasedUnknown } = withPlatform("darwin", () =>
+			buildDatasourceSkills({ "kakao-work": { type: "kakao" } }),
+		);
 		expect(aliasedUnknown).toEqual([]);
 		const skill = aliasedSkills[0];
 		expect(skill).toBeDefined();

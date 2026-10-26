@@ -24,14 +24,16 @@ import {
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
+	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
+import type { WebSearchToolOptions } from "../../src/agent/web-search-tool.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
-import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
+import { SEARCH_PROVIDER_ORDER, type SearchSource } from "../../src/web/search/types.ts";
 import { citationsRelevant } from "../helpers/citations-relevant.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
@@ -89,13 +91,18 @@ function jevRouting(
 	decomposeProbability: number,
 	followUpProbability = 0.9,
 	datasourceProbabilities: Readonly<Record<string, number>> = {},
+	webProbability = 0,
 ): JevBackend {
-	const distribution = { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 };
+	const distribution = { local: 0.1, organize: 0.1, extra: 0.1, [route]: 0.8 };
 	return citationsRelevant(
 		new MockBackend({
 			[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.8 },
 			[DECOMPOSE_QUESTION_ID]: { answer: decomposeProbability },
 			[FOLLOW_UP_QUESTION_ID]: { answer: followUpProbability },
+			// The gate asks about the public web whenever web tools are enabled, so
+			// every test pins that answer too: unpinned, the mock synthesizes one and
+			// a run would start a real web search.
+			[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: webProbability },
 			...Object.fromEntries(
 				Object.entries(datasourceProbabilities).map(([datasourceId, answer]) => [
 					datasourceQuestionId(datasourceId),
@@ -288,6 +295,66 @@ function recordingMinSync() {
 	};
 }
 
+/**
+ * Registers the one web search provider a test's chain may use and records
+ * every query it receives. `outcome` is the sources to answer with, or an
+ * error to fail every query with.
+ */
+function registerFakeWebSearch(outcome: readonly SearchSource[] | { readonly error: string }): string[] {
+	const queries: string[] = [];
+	registerSearchProvider({
+		id: "duckduckgo",
+		label: "Fake DuckDuckGo",
+		isAvailable: () => true,
+		search: async ({ query }) => {
+			queries.push(query);
+			if ("error" in outcome) throw new Error(outcome.error);
+			return { provider: "duckduckgo", sources: [...outcome] };
+		},
+	});
+	return queries;
+}
+
+/** Chain restriction that leaves the fake DuckDuckGo provider as the only one a run may use. */
+const WEB_ONLY_CHAIN = {
+	order: ["duckduckgo"],
+	exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "duckduckgo"),
+} satisfies WebSearchToolOptions;
+
+/** The evidence id the baseline printed directly before `url`. */
+function baselineEvidenceId(prompt: string, url: string): string | undefined {
+	const escaped = url.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+	return new RegExp(`\\[(e\\d+)\\] ${escaped}`, "u").exec(prompt)?.[1];
+}
+
+/** Records the fast prompt and answers with `render(id)` for the baseline id of `url`. */
+function citeBaselineEvidence(
+	prompts: string[],
+	url: string,
+	render: (evidenceId: string) => string,
+): FauxResponseStep {
+	return (context) => {
+		const prompt = lastUserText(context);
+		prompts.push(prompt);
+		return fauxAssistantMessage(render(baselineEvidenceId(prompt, url) ?? "e1"), {
+			stopReason: "stop",
+		}) as AssistantMessage;
+	};
+}
+
+/** The evidence id the `web_search` tool printed for `url`, read from its own tool result. */
+function webEvidenceIdFromContext(context: Context, url: string): string | undefined {
+	const text = context.messages
+		.flatMap((message) =>
+			message.role === "toolResult" && message.toolName === "web_search"
+				? message.content.map((part) => (part.type === "text" ? part.text : ""))
+				: [],
+		)
+		.join("\n");
+	const escaped = url.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+	return new RegExp(`\\[(e\\d+)\\][^\\n]*\\n\\s*${escaped}`, "u").exec(text)?.[1];
+}
+
 function agentWith(options: Partial<AutoRAGAgentOptions> & Pick<AutoRAGAgentOptions, "model">): AutoRAGAgent {
 	return new AutoRAGAgent({
 		searchPaths: [docs],
@@ -313,10 +380,10 @@ async function collect(agent: AutoRAGAgent, query: string): Promise<SearchDocume
 }
 
 describe("Jev query pipeline before the fast answer", () => {
-	it("answers a direct question immediately without any retrieval or verification phase", async () => {
+	it("answers a general-knowledge question immediately without any retrieval or verification phase", async () => {
 		const prompts: string[] = [];
 		const model = fauxModel(capture(fastAnswer("Paris is the capital of France."), prompts));
-		const agent = agentWith({ model, jev: { backend: jevRouting("direct", 0.9) } });
+		const agent = agentWith({ model, jev: { backend: jevRouting("extra", 0.9) } });
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
 
@@ -677,7 +744,7 @@ describe("Jev query pipeline before the fast answer", () => {
 				if (request.questions.some((question) => question.id === QUERY_ROUTE_QUESTION_ID)) {
 					return {
 						answers: [
-							{ answer: "local", distribution: { local: 0.9, web: 0.05, direct: 0.05 } },
+							{ answer: "local", distribution: { local: 0.9, organize: 0.05, extra: 0.05 } },
 							{ answer: 0.1 },
 						],
 					};
@@ -735,54 +802,180 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect(minSync.queries).toEqual(["where is the signed lease?"]);
 	});
 
-	it("searches locally first for a current-events question and leaves web search to the verification phase", async () => {
-		const webQueries: string[] = [];
-		registerSearchProvider({
-			id: "duckduckgo",
-			label: "Fake DuckDuckGo",
-			isAvailable: () => true,
-			search: async ({ query }) => {
-				webQueries.push(query);
-				return {
-					provider: "duckduckgo",
-					sources: [{ title: query, url: "https://example.com/x", snippet: query }],
-				};
-			},
-		});
+	it("offers the public web in the datasource gate and prefetches its hits when Jev selects it", async () => {
+		const url = "https://nodejs.org/en/about/previous-releases";
+		const webQueries = registerFakeWebSearch([
+			{ title: "Node.js Previous Releases", url, snippet: "Node.js 26 is the current LTS." },
+		]);
 		const prompts: string[] = [];
 		const model = fauxModel(
-			capture(fastAnswer("Fast local answer."), prompts),
-			capture(finalAnswer("Verified answer."), prompts),
+			citeBaselineEvidence(prompts, url, (id) => `Node.js 26 is the current Active LTS [${id}].`),
+			finalAnswer("Verified: 26."),
 		);
 		const agent = agentWith({
 			model,
-			jev: { backend: jevRouting("local", 0.1) },
-			webSearch: { order: ["duckduckgo"], exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "duckduckgo") },
+			// The fast answer is final, so its cited evidence stands as the run's results.
+			jev: { backend: jevRouting("local", 0.1, 0.1, {}, 0.9) },
+			webSearch: WEB_ONLY_CHAIN,
 		});
 		const minSync = recordingMinSync();
 		injectMinSync(agent, minSync.method);
 
 		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
 
-		// Local retrieval ran for the baseline; no web search was prefetched.
+		// One web search for the original question, alongside the local sources.
+		expect(webQueries).toEqual(["What is the latest Node.js LTS?"]);
+		expect(minSync.queries).toEqual(["What is the latest Node.js LTS?"]);
+		const fastPrompt = prompts[0] ?? "";
+		expect(fastPrompt).toContain("Web initial candidates:");
+		expect(fastPrompt).toContain(url);
+		expect(fastPrompt).toContain("Node.js Previous Releases — Node.js 26 is the current LTS.");
+		expect(fastPrompt).toContain("evidence for What is the latest Node.js LTS?");
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "datasources-selected" && diagnostic.message.includes("web (p=0.90)"),
+			),
+		).toBe(true);
+		// The cited web evidence becomes a result whose source is the URL.
+		expect(response.results.map((result) => result.source)).toContain(url);
+		expect(response.answer).toContain("[1]");
+	});
+
+	it("searches no web when Jev does not select the web candidate, and still lists it as skipped", async () => {
+		const webQueries = registerFakeWebSearch([{ title: "unused", url: "https://example.com/x" }]);
+		const prompts: string[] = [];
+		const model = fauxModel(
+			capture(fastAnswer("Fast local answer."), prompts),
+			capture(finalAnswer("Verified answer."), prompts),
+		);
+		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1) }, webSearch: WEB_ONLY_CHAIN });
+		const minSync = recordingMinSync();
+		injectMinSync(agent, minSync.method);
+
+		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
+
 		expect(minSync.queries).toEqual(["What is the latest Node.js LTS?"]);
 		expect(webQueries).toEqual([]);
-		expect(prompts[0]).toContain("evidence for What is the latest Node.js LTS?");
-		// After the fast answer the agent is told it may search the web itself.
+		const fastPrompt = prompts[0] ?? "";
+		expect(fastPrompt).toContain("evidence for What is the latest Node.js LTS?");
+		expect(fastPrompt).not.toContain("Web initial candidates");
+		expect(fastPrompt).not.toContain("example.com");
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) =>
+					diagnostic.code === "datasources-selected" && /skipped: web \(p=0\.00\)/u.test(diagnostic.message),
+			),
+		).toBe(true);
+		// The web tools stay callable by the model itself, in both phases.
+		expect(fastPrompt).toContain("web_search");
 		expect(prompts[1]).toContain("web_search");
 		expect(prompts[1]).toMatch(/outdated|missing|thin/iu);
+	});
+
+	it("reports a failed web search and runs normally without its evidence", async () => {
+		const webQueries = registerFakeWebSearch({ error: "all providers failed" });
+		const prompts: string[] = [];
+		const model = fauxModel(capture(fastAnswer("Fast local answer."), prompts), finalAnswer("Verified answer."));
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("local", 0.1, 0.9, {}, 0.9) },
+			webSearch: WEB_ONLY_CHAIN,
+		});
+		injectMinSync(agent, recordingMinSync().method);
+
+		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
+
+		expect(webQueries).toEqual(["What is the latest Node.js LTS?"]);
+		expect(prompts[0]).toContain("evidence for What is the latest Node.js LTS?");
+		expect(prompts[0]).not.toContain("Web initial candidates");
+		const failure = response.diagnostics?.find((diagnostic) => diagnostic.code === "web-search-failed");
+		expect(failure?.message).toContain("all providers failed");
+		expect(failure?.message).toContain("What is the latest Node.js LTS?");
 		expect(response.answer).toBe("Verified answer.");
 	});
 
-	it("does not mention web search in the verification phase when web tools are disabled", async () => {
+	it("withholds the web candidate when a configured datasource owns the reserved id", async () => {
+		const webQueries = registerFakeWebSearch([{ title: "unused", url: "https://example.com/x" }]);
 		const prompts: string[] = [];
-		const model = fauxModel(fastAnswer("Fast."), capture(finalAnswer("Verified."), prompts));
+		const model = fauxModel(
+			capture(fastAnswer("Configured web datasource answer."), prompts),
+			finalAnswer("Verified."),
+		);
+		const configured = recordingDatasource(WEB_DATASOURCE_ID, "A chat datasource the operator called web", () => ({
+			source: "/web/default/hit",
+		}));
+		const agent = agentWith({
+			model,
+			jev: { backend: jevRouting("local", 0.1, 0.9, { [WEB_DATASOURCE_ID]: 0.9 }) },
+			webSearch: WEB_ONLY_CHAIN,
+			datasourceSkills: [configured.skill],
+		});
+		injectMinSync(agent, recordingMinSync().method);
+
+		const response = await agent.searchDocuments("what did the team say?");
+
+		// The reserved id names the configured datasource: it was searched, and no
+		// web search ran for it.
+		expect(configured.queries).toEqual(["what did the team say?"]);
+		expect(webQueries).toEqual([]);
+		const taken = response.diagnostics?.find((diagnostic) => diagnostic.code === "web-datasource-id-taken");
+		expect(taken?.message).toContain(WEB_DATASOURCE_ID);
+		expect(prompts[0]).toContain("/web/default/hit");
+	});
+
+	it("lets the fast phase call web_search itself and turns the cited evidence into results", async () => {
+		const url = "https://nodejs.org/en/about/previous-releases";
+		const webQueries = registerFakeWebSearch([
+			{ title: "Node.js Previous Releases", url, snippet: "Node.js 26 is the current LTS." },
+		]);
+		const prompts: string[] = [];
+		const model = fauxModel(
+			(context) => {
+				prompts.push(lastUserText(context));
+				return fauxAssistantMessage([fauxToolCall("web_search", { query: "latest Node.js LTS release" })], {
+					stopReason: "toolUse",
+				}) as AssistantMessage;
+			},
+			(context) => {
+				prompts.push(lastUserText(context));
+				const id = webEvidenceIdFromContext(context, url) ?? "e1";
+				return fauxAssistantMessage(`The current LTS is Node.js 26 [${id}].`, {
+					stopReason: "stop",
+				}) as AssistantMessage;
+			},
+		);
+		const agent = agentWith({
+			model,
+			// No correction needed: the fast answer is final, so its results stand.
+			jev: { backend: jevRouting("local", 0.1, 0.1) },
+			webSearch: WEB_ONLY_CHAIN,
+		});
+		injectMinSync(agent, recordingMinSync().method);
+
+		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
+
+		expect(prompts[0]).toContain("web_search");
+		expect(webQueries).toEqual(["latest Node.js LTS release"]);
+		expect(response.results.map((result) => result.source)).toContain(url);
+		expect(response.answer).toContain("Node.js 26");
+	});
+
+	it("does not mention web search in either phase when web tools are disabled", async () => {
+		const prompts: string[] = [];
+		const model = fauxModel(capture(fastAnswer("Fast."), prompts), capture(finalAnswer("Verified."), prompts));
 		const agent = agentWith({ model, jev: { backend: jevRouting("local", 0.1) }, webSearch: false });
 		injectMinSync(agent, recordingMinSync().method);
 
-		await agent.searchDocuments("What is the latest Node.js LTS?");
+		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
 
 		expect(prompts[0]).not.toContain("web_search");
+		expect(prompts[1]).not.toContain("web_search");
+		// No web candidate at all: the gate does not even ask about it.
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) => diagnostic.code === "datasources-selected" && diagnostic.message.includes("web"),
+			),
+		).toBe(false);
 	});
 
 	it("keeps today's single-query local search when Jev is unreachable", async () => {
@@ -806,6 +999,97 @@ describe("Jev query pipeline before the fast answer", () => {
 					diagnostic.code === "query-route-fallback" && diagnostic.message.includes("connection refused"),
 			),
 		).toBe(true);
+	});
+
+	it("runs the full local plan when a non-local branch misses the confidence floor", async () => {
+		const prompts: string[] = [];
+		const decompositionPrompts: string[] = [];
+		const decompositionModel = fauxModel(
+			capture(
+				fauxAssistantMessage('{"queries": ["Q3 budget approver", "Q4 budget approver"]}', { stopReason: "stop" }),
+				decompositionPrompts,
+			),
+		);
+		const model = fauxModel(
+			capture(fastAnswer("Fast: approvers found."), prompts),
+			capture(finalAnswer("Verified approvers."), prompts),
+		);
+		const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+		// An extra verdict at 0.6: below the floor, so it must not run as an extra turn.
+		const routing = citationsRelevant(
+			new MockBackend({
+				[QUERY_ROUTE_QUESTION_ID]: {
+					answer: "extra",
+					distribution: { local: 0.4, extra: 0.6 },
+					confidence: 0.2,
+				},
+				[DECOMPOSE_QUESTION_ID]: { answer: 0.9 },
+				[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+				[datasourceQuestionId("slack")]: { answer: 0.8 },
+			}),
+		);
+		const agent = agentWith({
+			model,
+			jev: { backend: routing },
+			queryDecomposition: { model: decompositionModel },
+			datasourceSkills: [slack.skill],
+		});
+		const minSync = recordingMinSync();
+		injectMinSync(agent, minSync.method);
+
+		const response = await agent.searchDocuments("Who approved the Q3 and Q4 budgets?");
+
+		// A floor fallback is a real local plan: decomposition and the datasource
+		// check both ran, and every search query reached both sources.
+		expect(decompositionPrompts).toHaveLength(1);
+		expect([...minSync.queries].sort()).toEqual(["Q3 budget approver", "Q4 budget approver"]);
+		expect([...slack.queries].sort()).toEqual(["Q3 budget approver", "Q4 budget approver"]);
+		expect(prompts[0]).toContain("Baseline retrieval evidence");
+		expect(response.answer).toBe("Verified approvers.");
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) =>
+					diagnostic.code === "query-route-fallback" &&
+					diagnostic.message.includes("confidence floor") &&
+					diagnostic.message.includes("extra"),
+			),
+		).toBe(true);
+		expect(
+			response.diagnostics?.some(
+				(diagnostic) =>
+					diagnostic.code === "query-routed" &&
+					diagnostic.message.includes("local") &&
+					diagnostic.message.includes("p=0.60"),
+			),
+		).toBe(true);
+	});
+
+	it("keeps the bare single-query local fallback when the routing verdict itself is unusable", async () => {
+		const unusable: JevBackend = {
+			name: "unusable",
+			async judge() {
+				return {
+					answers: [{ answer: "web", distribution: { web: 0.9, direct: 0.1 } }, { answer: 0.9 }],
+				};
+			},
+		};
+		const decompositionModel = fauxModel(fauxAssistantMessage('{"queries": ["never used"]}', { stopReason: "stop" }));
+		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
+		const slack = recordingDatasource("slack", "Company Slack: engineering channels");
+		const agent = agentWith({
+			model,
+			jev: { backend: unusable },
+			queryDecomposition: { model: decompositionModel },
+			datasourceSkills: [slack.skill],
+		});
+		const minSync = recordingMinSync();
+		injectMinSync(agent, minSync.method);
+
+		const response = await agent.searchDocuments("where is the signed lease?");
+
+		expect([...minSync.queries]).toEqual(["where is the signed lease?"]);
+		expect(slack.queries).toEqual([]);
+		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "query-route-fallback")).toBe(true);
 	});
 
 	it("does not route when Jev is disabled", async () => {

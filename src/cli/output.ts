@@ -1,6 +1,7 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchema } from "../memory/memory.ts";
+import { describeLocation } from "../retrieval/chunk-location.ts";
 import type { HealthReportV1 } from "./commands/health.ts";
 import type { SearchHealthHint } from "./commands/search.ts";
 
@@ -187,6 +188,31 @@ export function renderStatus(status: AutoRAGRefreshStatus, opts: RenderOptions):
 	return renderStatusHuman(status, opts.debug ?? false);
 }
 
+interface MeasuredLocation {
+	readonly lineStart?: number;
+	readonly lineEnd?: number;
+	readonly section?: string;
+}
+
+/** The distinct measured locations of a result's evidence, in evidence order; none when nothing was measured. */
+function measuredLocations(result: SearchDocumentsResponse["results"][number]): MeasuredLocation[] {
+	const seen = new Set<string>();
+	const locations: MeasuredLocation[] = [];
+	for (const e of result.evidence) {
+		if (e.lineNumber === undefined && e.section === undefined) continue;
+		const location: MeasuredLocation = {
+			...(e.lineNumber !== undefined ? { lineStart: e.lineNumber } : {}),
+			...(e.lineEnd !== undefined ? { lineEnd: e.lineEnd } : {}),
+			...(e.section !== undefined ? { section: e.section } : {}),
+		};
+		const key = JSON.stringify(location);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		locations.push(location);
+	}
+	return locations;
+}
+
 function searchEnvelope(resp: SearchDocumentsResponse, debug: boolean) {
 	const results = resp.results.map((r) => {
 		const base: Record<string, unknown> = {
@@ -195,11 +221,15 @@ function searchEnvelope(resp: SearchDocumentsResponse, debug: boolean) {
 			summary: r.summary,
 		};
 		if (r.source !== undefined) base.source = r.source;
+		const locations = measuredLocations(r);
+		if (locations.length > 0) base.locations = locations;
 		if (debug) {
 			if (r.confidence !== undefined) base.confidence = r.confidence;
 			base.evidence = r.evidence.map((e) => {
 				const ev: Record<string, unknown> = { excerpt: e.excerpt };
 				if (e.lineNumber !== undefined) ev.lineNumber = e.lineNumber;
+				if (e.lineEnd !== undefined) ev.lineEnd = e.lineEnd;
+				if (e.section !== undefined) ev.section = e.section;
 				return ev;
 			});
 		}
@@ -229,11 +259,19 @@ function renderSearchHuman(resp: SearchDocumentsResponse, debug: boolean): strin
 		const header = `${r.number}. ${r.title}`;
 		lines.push(header);
 		if (r.source !== undefined) lines.push(`   source: ${r.source}`);
+		for (const location of measuredLocations(r)) {
+			const described = describeLocation(location);
+			if (described !== undefined) lines.push(`   location: ${described}`);
+		}
 		if (r.summary) lines.push(`   ${r.summary}`);
 		if (debug) {
 			if (r.confidence !== undefined) lines.push(`   confidence: ${r.confidence}`);
 			for (const ev of r.evidence) {
-				const ln = ev.lineNumber !== undefined ? ` (line ${ev.lineNumber})` : "";
+				const described = describeLocation({
+					...(ev.lineNumber !== undefined ? { lineStart: ev.lineNumber } : {}),
+					...(ev.lineEnd !== undefined ? { lineEnd: ev.lineEnd } : {}),
+				});
+				const ln = described !== undefined ? ` (${described})` : "";
 				lines.push(`   evidence${ln}: ${ev.excerpt}`);
 			}
 		}
