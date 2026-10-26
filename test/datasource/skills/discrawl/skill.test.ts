@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AliasedDatasourceSkill } from "../../../../src/datasource/aliased-skill.ts";
+import { DescribedDatasourceSkill } from "../../../../src/datasource/described-skill.ts";
+import { indexWithRetry } from "../../../../src/datasource/retry.ts";
+import { discordDescriptor } from "../../../../src/datasource/sidecar/descriptors.ts";
 import { DiscrawlSkill, type DiscrawlSkillClient } from "../../../../src/datasource/skills/discrawl/skill.ts";
 import type {
 	DiscrawlDoctorResult,
@@ -78,6 +82,18 @@ function asClient(stub: StubClient): DiscrawlSkillClient {
 	return stub as unknown as DiscrawlSkillClient;
 }
 
+function indexClient() {
+	return {
+		doctor: vi.fn<DiscrawlSkillClient["doctor"]>().mockResolvedValue(okDoctor()),
+		sync: vi.fn<DiscrawlSkillClient["sync"]>().mockResolvedValue(okSync(5)),
+		embed: vi.fn<DiscrawlSkillClient["embed"]>().mockResolvedValue(okEmbed()),
+		search: vi.fn<DiscrawlSkillClient["search"]>().mockRejectedValue(new Error("Indexing must not search")),
+		status: vi
+			.fn<NonNullable<DiscrawlSkillClient["status"]>>()
+			.mockRejectedValue(new Error("Indexing must not discover the sidecar archive")),
+	} satisfies DiscrawlSkillClient;
+}
+
 const HITS: readonly DiscrawlSearchHit[] = [
 	{
 		messageId: "1513467741523415161",
@@ -119,6 +135,56 @@ describe("DiscrawlSkill index", () => {
 		const result = await new DiscrawlSkill({ client: asClient(stub) }).index();
 		expect(result).toMatchObject({ ok: true, skill: "discord", chunkCount: 5 });
 		expect(stub.embedCalled).toBe(true);
+	});
+
+	it("forwards the refresh signal to native stages without opening the enabled sidecar", async () => {
+		const client = indexClient();
+		const signal = new AbortController().signal;
+		const skill = new DiscrawlSkill({
+			client,
+			embedLimit: 7,
+			sidecar: { descriptor: discordDescriptor, sidecarDbPath: "unused-sidecar.sqlite" },
+		});
+		try {
+			await expect(skill.index({ signal })).resolves.toMatchObject({ ok: true, chunkCount: 5 });
+			expect(client.doctor.mock.calls).toEqual([[signal]]);
+			expect(client.sync.mock.calls).toEqual([[signal]]);
+			expect(client.embed.mock.calls).toEqual([[7, false, signal]]);
+			expect(client.status).not.toHaveBeenCalled();
+			expect(client.search).not.toHaveBeenCalled();
+		} finally {
+			skill.close();
+		}
+	});
+
+	it("preserves a sync cancellation through datasource wrappers without retrying or embedding", async () => {
+		const client = indexClient();
+		const controller = new AbortController();
+		const reason = new Error("refresh cancelled by caller");
+		client.sync.mockImplementation(async () => {
+			controller.abort(reason);
+			return { ok: false, reason: "aborted", stdout: "", stderr: "discrawl process stopped", code: null };
+		});
+		const skill = new DiscrawlSkill({
+			client,
+			sidecar: { descriptor: discordDescriptor, sidecarDbPath: "unused-sidecar.sqlite" },
+		});
+		const wrapped = new DescribedDatasourceSkill(
+			new AliasedDatasourceSkill(skill, { alias: "work-discord" }),
+			"Work Discord",
+		);
+		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined);
+		try {
+			await expect(indexWithRetry(wrapped, { sleep }, controller.signal)).rejects.toBe(reason);
+			expect(client.doctor.mock.calls).toEqual([[controller.signal]]);
+			expect(client.sync.mock.calls).toEqual([[controller.signal]]);
+			expect(client.embed).not.toHaveBeenCalled();
+			expect(client.status).not.toHaveBeenCalled();
+			expect(client.search).not.toHaveBeenCalled();
+			expect(sleep).not.toHaveBeenCalled();
+		} finally {
+			skill.close();
+		}
 	});
 
 	it("skips embed and warns when embeddings are not configured", async () => {

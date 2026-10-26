@@ -465,7 +465,7 @@ No configuration is needed:
 { "datasources": { "slack-work": { "type": "slack", "connector": { "workspace": "T0123456789" } } } }
 ```
 
-Tune or opt out per datasource with `connector.sidecar`:
+For these three crawlers, tune or opt out per datasource with `connector.sidecar`:
 
 | `connector.sidecar` | Meaning |
 |---|---|
@@ -516,8 +516,53 @@ How it works and what it never does:
   operator configures one). Vectors of private chats are derived data: treat the
   sidecar file with the same care as the archive itself.
 
-Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` is already hybrid-first through discrawl
-(FTS only when embeddings are unavailable).
+`notion` (notcrawl) keeps its page/comment FTS. Without the Discord BM25 sidecar below, `discord` is hybrid-first
+through discrawl (FTS only when embeddings are unavailable).
+
+### Discord BM25 ranking
+
+When an AutoRAG workspace is available, `discord` ranks lexical matches in discrawl's existing FTS5 index
+by BM25 relevance. An older, relevant message can therefore outrank newer mentions before the result limit.
+Queries use the same term-by-term OR matching as the other sidecars. Native FTS-only hits supplement the
+lexical candidate list after BM25 hits; duplicate evidence contributes only once. Hybrid retrieval combines
+this one lexical ranking with native semantic results using reciprocal rank fusion (RRF).
+
+With the sidecar enabled, the skill registers one method matching `connector.defaultMode`:
+`discord-hybrid` by default, `discord-fts` for lexical ranking, or `discord-semantic` for native semantic-only
+search. This prevents the outer result merger from treating overlapping native FTS, native hybrid, and BM25
+results as independent votes. Datasource-scoped searches use the configured method. Explicit method-name
+selection must use that registered name. With the sidecar disabled, the skill registers the single native
+method for `connector.defaultMode`.
+
+To keep only the native method, set `connector.sidecar` to `false` (or `{ "enabled": false }`):
+
+```json
+{ "datasources": { "discord-local": { "type": "discord", "connector": { "sidecar": false } } } }
+```
+
+The archive path comes from the read-only `discrawl --json status` command, using the connector's config and
+the crawler's platform-specific defaults. An explicit `connector.sidecar.crawlerDbPath` or
+`connector.databasePath` takes precedence for the sidecar only; the native CLI still uses its own config.
+The sidecar reads the archive through SQLite's read-only attachment;
+it does not change discrawl's native embeddings, invoke an additional embedder, or build another vector index.
+Native embedding configuration and refresh behavior remain the same. `connector.sidecar.semantic` does not
+enable a separate vector index; `connector.defaultMode` selects the retrieval mode.
+
+Discord message IDs remain strings and match the IDs returned by the native methods, so retrieval can merge
+duplicate hits. Soft-deleted and empty normalized messages are excluded from BM25, and `channels.ids` /
+`channels.names` filter its results in SQL. Native candidates are checked against the configured guild and
+channel allowlists before combination. Without a workspace, the native method remains available. If BM25 or
+semantic retrieval fails, healthy candidates can still answer; returned hit metadata retains the original
+partial-failure reasons. If a backend fails and no candidates remain, retrieval surfaces the failure instead
+of reporting a successful empty search.
+
+BM25 ranks the base `message_fts` index and, when discrawl's `search.lexical.languages` has built them, the
+tokenizer-specific `message_fts_ko`, `message_fts_ja`, `message_fts_zh`, and `message_fts_ar` indexes as well.
+The sidecar discovers those tables from the archive's `sqlite_master` and fuses each present table's BM25
+ranking with the base ranking using reciprocal rank fusion, so an inflected Korean, Japanese, Chinese, or
+Arabic message that the base tokenizer splits differently is still ranked lexically instead of only arriving as
+a supplemental native candidate. Tables that are not configured are ignored. Set `sidecar: false` to retain the
+native method and its language-index fusion throughout.
 
 ## Cloud drives via rclone
 
