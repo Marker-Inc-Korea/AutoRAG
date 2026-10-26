@@ -1,8 +1,7 @@
 export type { ParsedMirrorEntry, ParsedMirrorIndex } from "./index-store.ts";
-export { emptyMirrorIndex, loadMirrorIndex, saveMirrorIndex } from "./index-store.ts";
+export { emptyMirrorIndex, loadMirrorIndex } from "./index-store.ts";
 export {
 	isParsedRefreshComplete,
-	parsedMirrorIndexPath,
 	parsedMirrorRoot,
 	parsedOutputPath,
 	refreshReadinessPath,

@@ -1,4 +1,14 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -73,7 +83,7 @@ describe("MinSync-owned incremental parsing", () => {
 				},
 			}),
 		).rejects.toBeDefined();
-		rmSync(join(root, ".autorag", "parsed", "index.json"));
+		expect(existsSync(join(root, ".autorag", "parsed", "index.json"))).toBe(false);
 		expect(readFileSync(output("a"), "utf8")).toBe("Alpha parsed-1\n");
 		expect(output("a")).toBe(priorOutput);
 		expect(await detectMirrorStaleness(options)).toContainEqual(expect.objectContaining({ source: "/docs/a.txt" }));
@@ -209,7 +219,7 @@ describe("MinSync-owned incremental parsing", () => {
 				},
 			}),
 		).rejects.toBe(reason);
-		rmSync(join(root, ".autorag", "parsed", "index.json"));
+		expect(existsSync(join(root, ".autorag", "parsed", "index.json"))).toBe(false);
 		renameSync(source, `${source}-offline`);
 		const offline = await syncParsedMirrors(options);
 		expect(offline.deleted).toBe(0);

@@ -1001,6 +1001,7 @@ export class AutoRAGAgent {
 			this.workspaceProjectRoot,
 			this.searchPaths,
 			this.configuredSearchPaths,
+			options.minSync?.binaryPath,
 		);
 		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
@@ -3506,6 +3507,7 @@ export class AutoRAGAgent {
 				this.workspaceProjectRoot,
 				this.searchPaths,
 				this.configuredSearchPaths,
+				this.minSyncBinaryPath,
 			);
 			const jikjiDiagnostics = (jikji ?? [])
 				.map((result) => jikjiPrepareDiagnostic(result))
@@ -3627,13 +3629,9 @@ export class AutoRAGAgent {
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const persistedProgress = readRefreshProgress(this.workspaceProjectRoot);
-		const staleDiagnostics = await detectMirrorStaleness({
-			...this.refreshLimits,
-			root: this.workspaceProjectRoot,
-			searchPaths: this.searchPaths,
-			parserOptions: this.parserOptions,
-			userExcludedSourcePaths: new Set(this.excludePaths),
-		});
+		const staleDiagnostics = this.minSyncMethod.isBinaryMissing()
+			? []
+			: (await this.scanMirrorStaleness()).diagnostics;
 		const diagnostics: SearchDocumentDiagnostic[] = [
 			...this.startupDiagnostics,
 			...this.refreshState.mirrorDiagnostics.map(toSearchDiagnostic),
@@ -3835,6 +3833,7 @@ export class AutoRAGAgent {
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
+			minSyncBinaryPath: this.minSyncBinaryPath,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
@@ -4519,6 +4518,7 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+		...(diagnostic.reason === undefined ? {} : { reason: diagnostic.reason }),
 	};
 }
 

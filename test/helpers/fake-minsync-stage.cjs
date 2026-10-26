@@ -2,13 +2,17 @@
 
 // Shared, test-only MinSync `stage` protocol simulator.
 //
-// It speaks the narrow host protocol of MinSync v0.5.0
+// It speaks the host protocol of MinSync's materialization stage
 // (src/incremental/protocol.rs) over stdin/stdout and reproduces the resume
 // planner (src/incremental/plan.rs), the durable journal (journal.rs), the
 // committed snapshot (snapshot.rs) and the PID lock (state.rs) on top of the
-// plain filesystem. Nothing here talks to a real `minsync`, the network, or a
-// vector store: a test writes the output files itself and this process only
-// validates and records them.
+// plain filesystem — including the durable-outcome extensions the host relies
+// on: deliberate `skip`, deferred failures with their retry fingerprint, and
+// the read-only `inspect` and `plan` ops. It also answers `capabilities`,
+// which is how a host checks for those extensions before it mutates anything.
+// Nothing here talks to a real `minsync`, the network, or a vector store: a
+// test writes the output files itself and this process only validates and
+// records them.
 //
 // The generated `minsync` stand-ins (`test/helpers/fake-minsync.ts` and
 // `test/setup/fake-minsync-on-path.ts`) route `stage` invocations here and
@@ -21,11 +25,20 @@
 //                  the file text is the owning PID, so a dead holder's lock
 //                  is stale and taken over.
 //   txn.json       run marker while a run is open.
-//   progress.jsonl header line + one record per committed/failed/deleted item.
-//   snapshot.json  the committed state, rewritten once by `finish`.
+//   progress.jsonl header line + one record per committed/failed/skipped/
+//                  deleted item; `plan` and `inspect` read it without
+//                  touching it.
+//   snapshot.json  the committed state, rewritten once by `finish`; it also
+//                  holds the failures (deferred ones with the fingerprint and
+//                  retry fingerprint they were deferred under) and the
+//                  deliberate skips.
+//
+// `inspect` and `plan` never take the lock and never write anything, so they
+// work with or without an open session and alongside a live run.
 //
 // Exit codes match MinSync: 0 after `finish`, 3 when another run holds the
-// lock, 1 when input ends mid-run (the run is left resumable).
+// lock, 1 when input ends mid-run (the run is left resumable), and 0 when
+// input ends with no run open at all.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -36,8 +49,21 @@ const JOURNAL_FILE = "progress.jsonl";
 const SNAPSHOT_FILE = "snapshot.json";
 const TXN_FILE = "txn.json";
 const LOCK_FILE = "lock";
-const RUN_FORMAT_VERSION = 2;
-const SNAPSHOT_FORMAT = 1;
+const RUN_FORMAT_VERSION = 3;
+const SNAPSHOT_FORMAT = 2;
+// The extended protocol this simulator speaks, as the `capabilities` op
+// reports it: the same feature names, in the same order, as the real build.
+// A host that needs these must refuse a binary that reports less.
+const CAPABILITY_PROTOCOL = 2;
+const CAPABILITIES = [
+	"retry_fingerprint",
+	"retry_failed",
+	"deferred_failure",
+	"discard_output",
+	"deliberate_skip",
+	"plan",
+	"inspect",
+];
 const MAX_ERROR_CHARS = 2000;
 const MAX_KEY_BYTES = 4096;
 
@@ -78,6 +104,22 @@ function sha256(data) {
 function mtimeNs(stat) {
 	if (typeof stat.mtimeNs === "bigint") return stat.mtimeNs;
 	return BigInt(Math.round(stat.mtimeMs * 1e6));
+}
+
+/**
+ * The stored modification time, as a JSON integer like the core's `u128`. A
+ * legacy or hand-written state may already hold the decimal string form; both
+ * read the same way, and only `inspect` hands the value out as text.
+ */
+function readMtimeNs(value) {
+	if (value === undefined || value === null) return 0;
+	if (typeof value === "string") return Number(value);
+	return value;
+}
+
+/** RFC3339 for a recorded nanosecond timestamp, for `inspect`'s `updated_at`. */
+function rfc3339(ns) {
+	return new Date(Number(ns) / 1e6).toISOString();
 }
 
 function atomicWrite(filePath, content) {
@@ -123,6 +165,7 @@ function emptySnapshot(stage, sourceId) {
 		updated_at: nowIso(),
 		items: {},
 		failed: {},
+		skipped: {},
 	};
 }
 
@@ -149,6 +192,18 @@ function loadSnapshot(stateDir) {
 			"corrupt_state",
 			`${snapshotPath} is unusable (format ${snapshot.format} is newer than supported format ${SNAPSHOT_FORMAT})`,
 		);
+	}
+	if (snapshot === null || typeof snapshot !== "object") {
+		throw stageError("corrupt_state", `${snapshotPath} is unusable (it does not hold a stage snapshot)`);
+	}
+	// A state written before the durable-outcome extensions has neither map.
+	if (snapshot.items === undefined) snapshot.items = {};
+	if (snapshot.failed === undefined) snapshot.failed = {};
+	if (snapshot.skipped === undefined) snapshot.skipped = {};
+	for (const item of Object.values(snapshot.items)) {
+		if (item && typeof item === "object" && item.output && typeof item.output === "object") {
+			item.output.mtime_ns = readMtimeNs(item.output.mtime_ns);
+		}
 	}
 	return snapshot;
 }
@@ -182,6 +237,14 @@ function snapshotHash(snapshot) {
 		}
 		hasher.update("\n");
 	}
+	for (const key of Object.keys(snapshot.skipped).sort(byteCompare)) {
+		const omission = snapshot.skipped[key];
+		for (const part of ["skipped", key, omission.version, omission.fingerprint, omission.reason]) {
+			hasher.update(part);
+			hasher.update(Buffer.from([0]));
+		}
+		hasher.update("\n");
+	}
 	return `sha256:${hasher.digest("hex")}`;
 }
 
@@ -197,8 +260,18 @@ function recordToJson(record) {
 	out.outcome = record.outcome;
 	if (record.output !== null && record.output !== undefined) out.output = record.output;
 	if (record.error !== null && record.error !== undefined) out.error = record.error;
+	if (record.reason !== null && record.reason !== undefined) out.reason = record.reason;
+	// Only an explicit `defer`/`discard_output` is recorded; a plain failure
+	// keeps the shape it always had.
+	if (record.deferred === true) out.deferred = true;
+	if (record.discard_output === true) out.discard_output = true;
+	if (record.retry_fingerprint !== null && record.retry_fingerprint !== undefined) {
+		out.retry_fingerprint = record.retry_fingerprint;
+	}
 	return out;
 }
+
+const OUTCOMES = new Set(["committed", "deleted", "failed", "skipped"]);
 
 function parseRecord(line) {
 	const raw = JSON.parse(line);
@@ -207,8 +280,9 @@ function parseRecord(line) {
 	}
 	const version = raw.version === undefined ? null : raw.version;
 	const outcome = raw.outcome ?? (version !== null ? "committed" : "deleted");
-	if (outcome === "committed" && (version === null || version === undefined)) {
-		throw new Error(`committed record for ${JSON.stringify(raw.item)} has no version`);
+	if (!OUTCOMES.has(outcome)) throw new Error(`unknown outcome ${JSON.stringify(raw.outcome)}`);
+	if ((outcome === "committed" || outcome === "skipped") && (version === null || version === undefined)) {
+		throw new Error(`${outcome} record for ${JSON.stringify(raw.item)} has no version`);
 	}
 	return {
 		item: raw.item,
@@ -216,11 +290,15 @@ function parseRecord(line) {
 		outcome,
 		output: raw.output ?? null,
 		error: raw.error ?? null,
+		reason: raw.reason ?? null,
+		deferred: raw.deferred === true,
+		discard_output: raw.discard_output === true,
+		retry_fingerprint: raw.retry_fingerprint ?? null,
 	};
 }
 
 function applyRecord(ledger, record) {
-	if (record.outcome === "committed" || record.outcome === "deleted") {
+	if (record.outcome === "committed" || record.outcome === "deleted" || record.outcome === "skipped") {
 		ledger.failed.delete(record.item);
 		ledger.done.set(record.item, record);
 	} else {
@@ -237,6 +315,76 @@ function ledgerCommittedItems(ledger) {
 	const items = [];
 	for (const record of ledger.done.values()) if (record.outcome === "committed") items.push(record.item);
 	return items;
+}
+
+function ledgerSkippedItems(ledger) {
+	const items = [];
+	for (const record of ledger.done.values()) if (record.outcome === "skipped") items.push(record.item);
+	return items;
+}
+
+function emptyLedger(sourceId, stage) {
+	return newLedger({
+		format: RUN_FORMAT_VERSION,
+		source_id: sourceId,
+		stage,
+		run_token: "",
+		full: false,
+		baseline: "",
+		fingerprint: "",
+		created_at: "",
+	});
+}
+
+/**
+ * The deliberate omission MinSync holds for `key`: an interrupted run's ledger
+ * wins over the committed snapshot, as a completion does.
+ */
+function skipRecord(snapshot, ledger, key) {
+	const record = ledger.done.get(key);
+	if (record !== undefined) {
+		if (record.outcome !== "skipped") return null;
+		return {
+			version: record.version ?? "",
+			fingerprint: ledger.header.fingerprint,
+			reason: record.reason ?? "",
+			from_ledger: true,
+		};
+	}
+	const entry = snapshot.skipped[key];
+	if (!entry) return null;
+	return {
+		version: entry.version,
+		fingerprint: entry.fingerprint,
+		reason: entry.reason ?? "",
+		from_ledger: false,
+	};
+}
+
+/** The failure MinSync holds for `key`: the ledger's wins over the snapshot's. */
+function failureRecord(snapshot, ledger, key) {
+	const record = ledger.failed.get(key);
+	if (record !== undefined) {
+		return {
+			version: record.version ?? null,
+			error: record.error ?? "",
+			fingerprint: ledger.header.fingerprint,
+			deferred: record.deferred === true,
+			retry_fingerprint: record.retry_fingerprint ?? "",
+		};
+	}
+	// A completion or omission in this run's ledger supersedes the snapshot's
+	// failure of the same item.
+	if (ledger.done.has(key)) return null;
+	const entry = snapshot.failed[key];
+	if (!entry) return null;
+	return {
+		version: entry.version ?? null,
+		error: entry.error ?? "",
+		fingerprint: entry.fingerprint ?? "",
+		deferred: entry.deferred === true,
+		retry_fingerprint: entry.retry_fingerprint ?? "",
+	};
 }
 
 /**
@@ -261,6 +409,8 @@ function loadLedger(stateDir) {
 		return null;
 	}
 	if (header === null || typeof header !== "object") return null;
+	// A journal from a newer build is not trusted; its work is simply redone.
+	if (typeof header.format === "number" && (header.format < 1 || header.format > RUN_FORMAT_VERSION)) return null;
 	const ledger = newLedger(header);
 	let rest = text.slice(headerEnd + 1);
 	if (rest.length > 0 && !rest.endsWith("\n")) rest = rest.slice(0, rest.lastIndexOf("\n") + 1);
@@ -333,9 +483,30 @@ function failedBefore(snapshot, ledger, key, version) {
 	return Boolean(failure) && failure.version === version;
 }
 
+/**
+ * The deferred failure holding `key` at `version` back, if any. A deferral
+ * only holds under the exact settings it was recorded with: the same source
+ * version, the same processing fingerprint and the same retry fingerprint.
+ * `retry_failed` (or a full run) releases every deferral.
+ */
+function deferredFailure(snapshot, ledger, key, version, fingerprint, retryFingerprint) {
+	const failure = failureRecord(snapshot, ledger, key);
+	if (failure === null || !failure.deferred) return null;
+	if (failure.version !== version) return null;
+	if (failure.fingerprint !== fingerprint) return null;
+	if (failure.retry_fingerprint !== retryFingerprint) return null;
+	return failure;
+}
+
+/**
+ * One decision per item, in key order. A deferred failure is not retried: it
+ * becomes a `skip` that carries the failure it rests on, so the host can see
+ * why the item is not being processed.
+ */
 function plan(input) {
 	const decisions = new Map();
 	const present = new Set();
+	const retryFingerprint = input.retryFingerprint ?? "";
 	for (const item of input.items) {
 		present.add(item.key);
 		const done = completion(input.snapshot, input.ledger, item.key);
@@ -346,11 +517,29 @@ function plan(input) {
 			(!input.full || done.from_ledger) &&
 			done.output !== null &&
 			input.outputOk(done.output);
+		const omission = skipRecord(input.snapshot, input.ledger, item.key);
+		// An omission is only about the source version and the settings; unlike a
+		// committed output it does not care whether the run is a full one.
+		const omissionReusable =
+			omission !== null &&
+			omission.version === item.version &&
+			omission.fingerprint === input.fingerprint;
+		const held =
+			input.retryFailed || input.full
+				? null
+				: deferredFailure(input.snapshot, input.ledger, item.key, item.version, input.fingerprint, retryFingerprint);
 		let action;
 		let resumed = false;
+		let error = null;
 		if (reusable) {
 			action = "skip";
 			resumed = Boolean(done.from_ledger);
+		} else if (omissionReusable) {
+			action = "skip";
+			resumed = Boolean(omission.from_ledger);
+		} else if (held !== null) {
+			action = "skip";
+			error = held.error;
 		} else if (failedBefore(input.snapshot, input.ledger, item.key, item.version)) {
 			action = "retry";
 		} else {
@@ -359,33 +548,77 @@ function plan(input) {
 		decisions.set(item.key, {
 			key: item.key,
 			action,
-			version: action === "skip" ? null : item.version,
+			// A deferred skip names the version it is holding back; an ordinary
+			// skip has nothing to process.
+			version: action === "skip" && error === null ? null : item.version,
 			resumed,
+			deferred: error !== null,
+			error,
 		});
 	}
 	for (const key of input.unknown) {
 		if (!decisions.has(key)) {
-			decisions.set(key, { key, action: "preserve", version: null, resumed: false });
+			decisions.set(key, { key, action: "preserve", version: null, resumed: false, deferred: false, error: null });
 		}
 	}
-	const known = [...Object.keys(input.snapshot.items), ...ledgerCommittedItems(input.ledger)];
+	// Anything with a durable record that is neither present nor unobservable
+	// has had its source confirmed gone. That includes an item whose only
+	// record is a failure or an omission: the store has to drop what it holds
+	// for the key, even when it holds no output.
+	const known = new Set([
+		...Object.keys(input.snapshot.items),
+		...Object.keys(input.snapshot.failed),
+		...Object.keys(input.snapshot.skipped),
+		...ledgerCommittedItems(input.ledger),
+		...input.ledger.failed.keys(),
+		...ledgerSkippedItems(input.ledger),
+	]);
 	for (const key of known) {
-		if (present.has(key) || input.unknown.has(key)) continue;
-		if (completion(input.snapshot, input.ledger, key) === null) continue;
-		if (!decisions.has(key)) decisions.set(key, { key, action: "delete", version: null, resumed: false });
+		if (present.has(key) || input.unknown.has(key) || decisions.has(key)) continue;
+		decisions.set(key, { key, action: "delete", version: null, resumed: false, deferred: false, error: null });
 	}
 	return [...decisions.keys()].sort(byteCompare).map((key) => decisions.get(key));
+}
+
+/** What each decision means for the run's counters. */
+function tally(decisions) {
+	const counts = { process: 0, retry: 0, skip: 0, resumed: 0, delete: 0, preserve: 0 };
+	for (const decision of decisions) {
+		if (decision.action === "skip") {
+			counts.skip += 1;
+			if (decision.resumed) counts.resumed += 1;
+		} else if (decision.action === "preserve") {
+			counts.preserve += 1;
+		} else {
+			counts[decision.action] += 1;
+		}
+	}
+	return counts;
 }
 
 function decisionJson(decision) {
 	const value = { key: decision.key, action: decision.action };
 	if (decision.version !== null && decision.version !== undefined) value.version = decision.version;
+	if (decision.deferred) value.deferred = true;
+	if (decision.error !== null && decision.error !== undefined) value.error = decision.error;
 	return value;
+}
+
+/** `open` reports work, plus every deferred failure it is holding back. */
+function openDecisions(decisions) {
+	const reported = [];
+	for (const decision of decisions) {
+		if (decision.action === "preserve") continue;
+		if (decision.action === "skip" && !decision.deferred) continue;
+		reported.push(decisionJson(decision));
+	}
+	return reported;
 }
 
 // --- output verification (src/incremental/stage.rs) ------------------------
 
 function outputMatches(root, output, mode) {
+	if (root === null || root === undefined) return false;
 	if (typeof output !== "object" || output === null) return false;
 	try {
 		validateOutputPath(output.path);
@@ -401,7 +634,8 @@ function outputMatches(root, output, mode) {
 	}
 	if (stat.isSymbolicLink() || !stat.isFile()) return false;
 	if (stat.size !== output.size) return false;
-	if (mode === "fast" && output.mtime_ns && Number(mtimeNs(stat)) === Number(output.mtime_ns)) return true;
+	const recorded = readMtimeNs(output.mtime_ns);
+	if (mode === "fast" && recorded !== 0 && Number(mtimeNs(stat)) === recorded) return true;
 	try {
 		return sha256(fs.readFileSync(target)) === output.digest;
 	} catch {
@@ -451,10 +685,16 @@ function sleep(ms) {
 
 // --- request parsing -------------------------------------------------------
 
-const KNOWN_OPS = new Set(["open", "commit", "fail", "delete", "finish"]);
+const KNOWN_OPS = new Set(["capabilities", "open", "commit", "fail", "delete", "skip", "finish", "plan", "inspect"]);
 
 function requireString(value, field) {
 	if (typeof value !== "string") throw invalidRequest(`\`${field}\` must be a string`);
+	return value;
+}
+
+function requireBoolean(value, field, fallback) {
+	if (value === undefined) return fallback;
+	if (typeof value !== "boolean") throw invalidRequest(`\`${field}\` must be a boolean`);
 	return value;
 }
 
@@ -473,14 +713,26 @@ function parseOpen(raw) {
 		if (!Array.isArray(raw.unknown)) throw invalidRequest("`unknown` must be an array");
 		unknown = raw.unknown.map((key) => requireString(key, "unknown key"));
 	}
-	if (raw.full !== undefined && typeof raw.full !== "boolean") throw invalidRequest("`full` must be a boolean");
-	if (raw.wait !== undefined && typeof raw.wait !== "boolean") throw invalidRequest("`wait` must be a boolean");
+	let retryFingerprint = "";
+	if (raw.retry_fingerprint !== undefined) retryFingerprint = requireString(raw.retry_fingerprint, "retry_fingerprint");
 	let verify = "fast";
 	if (raw.verify !== undefined) {
 		if (raw.verify !== "fast" && raw.verify !== "digest") throw invalidRequest("`verify` must be `fast` or `digest`");
 		verify = raw.verify;
 	}
-	return { stage, sourceId, fingerprint, outputRoot, items, unknown, full: raw.full === true, wait: raw.wait === true, verify };
+	return {
+		stage,
+		sourceId,
+		fingerprint,
+		outputRoot,
+		items,
+		unknown,
+		full: requireBoolean(raw.full, "full", false),
+		wait: requireBoolean(raw.wait, "wait", false),
+		retryFingerprint,
+		retryFailed: requireBoolean(raw.retry_failed, "retry_failed", false),
+		verify,
+	};
 }
 
 function parseCommit(raw) {
@@ -508,11 +760,40 @@ function parseFail(raw) {
 	if (raw.error !== undefined) error = requireString(raw.error, "error");
 	let fingerprint = null;
 	if (raw.fingerprint !== undefined) fingerprint = requireString(raw.fingerprint, "fingerprint");
-	return { key, version, error, fingerprint };
+	return {
+		key,
+		version,
+		error,
+		fingerprint,
+		defer: requireBoolean(raw.defer, "defer", false),
+		discardOutput: requireBoolean(raw.discard_output, "discard_output", false),
+	};
+}
+
+function parseSkip(raw) {
+	return {
+		key: requireString(raw.key, "key"),
+		version: requireString(raw.version, "version"),
+		reason: requireString(raw.reason, "reason"),
+	};
 }
 
 function parseDelete(raw) {
 	return { key: requireString(raw.key, "key") };
+}
+
+function parseInspect(raw) {
+	let verify = "fast";
+	if (raw.verify !== undefined) {
+		if (raw.verify !== "fast" && raw.verify !== "digest") throw invalidRequest("`verify` must be `fast` or `digest`");
+		verify = raw.verify;
+	}
+	return {
+		stage: requireString(raw.stage, "stage"),
+		sourceId: requireString(raw.source_id, "source_id"),
+		outputRoot: requireString(raw.output_root, "output_root"),
+		verify,
+	};
 }
 
 // --- the session -----------------------------------------------------------
@@ -686,24 +967,14 @@ async function openRun(state, open, respond) {
 		items: open.items,
 		unknown: validated.unknown,
 		fingerprint: open.fingerprint,
+		retryFingerprint: open.retryFingerprint,
+		retryFailed: open.retryFailed,
 		full: open.full,
 		snapshot,
 		ledger,
 		outputOk: (output) => outputMatches(state.realOutputRoot, output, open.verify),
 	});
-	const counts = { process: 0, retry: 0, skip: 0, resumed: 0, delete: 0, preserve: 0 };
-	const decisions = [];
-	for (const decision of all) {
-		if (decision.action === "skip") {
-			counts.skip += 1;
-			counts.resumed += decision.resumed ? 1 : 0;
-		} else if (decision.action === "preserve") {
-			counts.preserve += 1;
-		} else {
-			counts[decision.action] += 1;
-			decisions.push(decisionJson(decision));
-		}
-	}
+	const counts = tally(all);
 
 	const owners = new Map();
 	const known = [...Object.keys(snapshot.items), ...ledgerCommittedItems(ledger)];
@@ -713,7 +984,14 @@ async function openRun(state, open, respond) {
 	}
 	state.owners = owners;
 
-	respond({ ok: true, op: "open", run_token: header.run_token, resumed: Boolean(resumed), counts, decisions });
+	respond({
+		ok: true,
+		op: "open",
+		run_token: header.run_token,
+		resumed: Boolean(resumed),
+		counts,
+		decisions: openDecisions(all),
+	});
 	return null;
 }
 
@@ -743,8 +1021,45 @@ function commit(state, request, respond) {
 	respond({ ok: true, op: "commit", key: request.key, output: { path: output.path, size: output.size, digest: output.digest } });
 }
 
+/**
+ * Unlink one recorded output, refusing a path that leaves the output root.
+ * Returns whether a file was removed.
+ */
+function removeOutput(state, outputPath) {
+	validateOutputPath(outputPath);
+	const target = path.join(state.realOutputRoot, outputPath);
+	let parentReal;
+	try {
+		parentReal = fs.realpathSync(path.dirname(target));
+	} catch (error) {
+		if (error.code !== "ENOENT") throw error;
+	}
+	if (parentReal !== undefined && parentReal !== state.realOutputRoot && !parentReal.startsWith(state.realOutputRoot + path.sep)) {
+		throw stageError("invalid_output_path", `output ${JSON.stringify(outputPath)} resolves outside the output root`);
+	}
+	try {
+		fs.unlinkSync(target);
+		return true;
+	} catch (error) {
+		if (error.code === "ENOENT") return false;
+		throw error;
+	}
+}
+
+/** The recorded output `key` holds right now, if any. */
+function recordedOutput(state, key) {
+	const done = completion(state.snapshot, state.ledger, key);
+	return done && done.output ? done.output.path : null;
+}
+
 function fail(state, request, respond) {
 	checkItem(state, request.key, request.version, request.fingerprint);
+	let discarded = null;
+	if (request.discardOutput) {
+		// MinSync removes the last good output itself, so no later run can reuse it.
+		discarded = recordedOutput(state, request.key);
+		if (discarded !== null) removeOutput(state, discarded);
+	}
 	const record = {
 		item: request.key,
 		version: request.version,
@@ -752,9 +1067,40 @@ function fail(state, request, respond) {
 		output: null,
 		error: request.error.slice(0, MAX_ERROR_CHARS),
 	};
+	if (request.defer) {
+		record.deferred = true;
+		if (state.spec.retryFingerprint) record.retry_fingerprint = state.spec.retryFingerprint;
+	}
+	if (request.discardOutput) record.discard_output = true;
 	fs.appendFileSync(path.join(state.stateDir, JOURNAL_FILE), `${JSON.stringify(recordToJson(record))}\n`);
 	applyRecord(state.ledger, record);
+	if (discarded !== null) {
+		state.owners.delete(discarded);
+		delete state.snapshot.items[request.key];
+	}
 	respond({ ok: true, op: "fail", key: request.key });
+}
+
+/** A deliberate omission: no output, no retry, and it is not a failure. */
+function skipItem(state, request, respond) {
+	checkItem(state, request.key, request.version, null);
+	const previous = recordedOutput(state, request.key);
+	if (previous !== null) removeOutput(state, previous);
+	const record = {
+		item: request.key,
+		version: request.version,
+		outcome: "skipped",
+		output: null,
+		error: null,
+		reason: request.reason.slice(0, MAX_ERROR_CHARS),
+	};
+	fs.appendFileSync(path.join(state.stateDir, JOURNAL_FILE), `${JSON.stringify(recordToJson(record))}\n`);
+	applyRecord(state.ledger, record);
+	if (previous !== null) state.owners.delete(previous);
+	// The item's completion is cleared: the omission replaces it.
+	delete state.snapshot.items[request.key];
+	delete state.snapshot.failed[request.key];
+	respond({ ok: true, op: "skip", key: request.key });
 }
 
 function deleteItem(state, request, respond) {
@@ -771,26 +1117,7 @@ function deleteItem(state, request, respond) {
 		return;
 	}
 	const outputPath = done.output ? done.output.path : null;
-	let removed = false;
-	if (outputPath !== null) {
-		validateOutputPath(outputPath);
-		const target = path.join(state.realOutputRoot, outputPath);
-		let parentReal;
-		try {
-			parentReal = fs.realpathSync(path.dirname(target));
-		} catch (error) {
-			if (error.code !== "ENOENT") throw error;
-		}
-		if (parentReal !== undefined && parentReal !== state.realOutputRoot && !parentReal.startsWith(state.realOutputRoot + path.sep)) {
-			throw stageError("invalid_output_path", `output ${JSON.stringify(outputPath)} resolves outside the output root`);
-		}
-		try {
-			fs.unlinkSync(target);
-			removed = true;
-		} catch (error) {
-			if (error.code !== "ENOENT") throw error;
-		}
-	}
+	const removed = outputPath === null ? false : removeOutput(state, outputPath);
 	const record = { item: request.key, version: null, outcome: "deleted", output: null, error: null };
 	fs.appendFileSync(path.join(state.stateDir, JOURNAL_FILE), `${JSON.stringify(recordToJson(record))}\n`);
 	applyRecord(state.ledger, record);
@@ -798,11 +1125,123 @@ function deleteItem(state, request, respond) {
 	respond({ ok: true, op: "delete", key: request.key, output_removed: removed });
 }
 
+/** An output root that is already there; `inspect` and `plan` never create one. */
+function existingOutputRoot(outputRoot) {
+	try {
+		return fs.realpathSync(outputRoot);
+	} catch (error) {
+		if (error.code === "ENOENT") return null;
+		throw error;
+	}
+}
+
+/** The snapshot and the interrupted run's ledger, read without touching either. */
+function readState(stateDir, stage, sourceId) {
+	const snapshot = loadSnapshot(stateDir) ?? emptySnapshot(stage, sourceId);
+	if (snapshot.source_id !== sourceId || snapshot.stage !== stage) {
+		throw stageError(
+			"source_mismatch",
+			`${stateDir} holds stage ${JSON.stringify(snapshot.stage)} of source ${JSON.stringify(snapshot.source_id)}, not stage ${JSON.stringify(stage)} of source ${JSON.stringify(sourceId)}`,
+		);
+	}
+	const loaded = loadLedger(stateDir);
+	// Only a journal describing this very state is its own durable work; any
+	// other baseline belongs to a different run and is never trusted.
+	const related =
+		loaded &&
+		loaded.header.source_id === snapshot.source_id &&
+		loaded.header.stage === snapshot.stage &&
+		loaded.header.baseline === snapshotHash(snapshot)
+			? loaded
+			: null;
+	return { snapshot, ledger: related ?? emptyLedger(sourceId, stage) };
+}
+
+/**
+ * Preview a run without opening one: the same planner and failure policy as
+ * `open`, every decision reported, and nothing written.
+ */
+function planRun(stateDir, open, respond) {
+	validateSpec(open);
+	const validated = validateItems(open.items, open.unknown);
+	const { snapshot, ledger } = readState(stateDir, open.stage, open.sourceId);
+	const root = existingOutputRoot(open.outputRoot);
+	const all = plan({
+		items: open.items,
+		unknown: validated.unknown,
+		fingerprint: open.fingerprint,
+		retryFingerprint: open.retryFingerprint,
+		retryFailed: open.retryFailed,
+		full: open.full,
+		snapshot,
+		ledger,
+		outputOk: (output) => outputMatches(root, output, open.verify),
+	});
+	respond({ ok: true, op: "plan", counts: tally(all), decisions: all.map(decisionJson) });
+}
+
+/**
+ * Reconstruct the durable state and verify every recorded output: the
+ * committed items that still verify, the failures (deferred or not) and the
+ * deliberate omissions. Takes no lock and writes nothing.
+ */
+function inspectState(stateDir, request, respond) {
+	const { snapshot, ledger } = readState(stateDir, request.stage, request.sourceId);
+	const root = existingOutputRoot(request.outputRoot);
+	const items = [];
+	const known = [...new Set([...Object.keys(snapshot.items), ...ledgerCommittedItems(ledger)])].sort(byteCompare);
+	for (const key of known) {
+		const done = completion(snapshot, ledger, key);
+		if (done === null || done.output === null) continue;
+		if (!outputMatches(root, done.output, request.verify)) continue;
+		const output = done.output;
+		items.push({
+			key,
+			version: done.version,
+			fingerprint: done.fingerprint,
+			output: {
+				path: output.path,
+				size: output.size,
+				digest: output.digest,
+				// The wire form is decimal text: nanoseconds do not fit a JS number.
+				mtime_ns: String(readMtimeNs(output.mtime_ns)),
+			},
+			updated_at: rfc3339(readMtimeNs(output.mtime_ns)),
+		});
+	}
+	const failed = [];
+	const failures = [...new Set([...Object.keys(snapshot.failed), ...ledger.failed.keys()])].sort(byteCompare);
+	for (const key of failures) {
+		const failure = failureRecord(snapshot, ledger, key);
+		if (failure === null) continue;
+		failed.push({ key, version: failure.version, error: failure.error, deferred: failure.deferred });
+	}
+	const skipped = [];
+	const omissions = [
+		...new Set([
+			...Object.keys(snapshot.skipped),
+			...ledgerSkippedItems(ledger),
+			// A ledger record for the key may also show the omission is gone.
+			...ledger.done.keys(),
+		]),
+	].sort(byteCompare);
+	for (const key of omissions) {
+		const omission = skipRecord(snapshot, ledger, key);
+		if (omission === null) continue;
+		skipped.push({ key, version: omission.version, reason: omission.reason, fingerprint: omission.fingerprint });
+	}
+	respond({ ok: true, op: "inspect", items, failed, skipped });
+}
+
 function finish(state, respond) {
 	const pending = plan({
 		items: [...state.items].map(([key, version]) => ({ key, version })),
 		unknown: state.unknown,
 		fingerprint: state.spec.fingerprint,
+		retryFingerprint: state.spec.retryFingerprint,
+		// A release applies to the deferrals this run opened with, not to the
+		// ones it just recorded: the next run faces those with no release.
+		retryFailed: false,
 		full: state.spec.full,
 		snapshot: state.snapshot,
 		ledger: state.ledger,
@@ -821,17 +1260,39 @@ function finish(state, respond) {
 				next.items[record.item] = { version: record.version, fingerprint, output: record.output };
 			}
 			delete next.failed[record.item];
+			delete next.skipped[record.item];
 		} else if (record.outcome === "deleted") {
 			deleted += 1;
 			delete next.items[record.item];
 			delete next.failed[record.item];
+			delete next.skipped[record.item];
+		} else if (record.outcome === "skipped") {
+			next.skipped[record.item] = {
+				version: record.version,
+				fingerprint,
+				reason: record.reason ?? "",
+			};
+			// The omission replaced the item's output and any earlier failure.
+			delete next.items[record.item];
+			delete next.failed[record.item];
 		} else {
 			failed += 1;
-			next.failed[record.item] = { version: record.version ?? null, error: record.error ?? "" };
+			const failure = { version: record.version ?? null, error: record.error ?? "" };
+			if (record.deferred === true) {
+				failure.deferred = true;
+				failure.fingerprint = fingerprint;
+				if (record.retry_fingerprint) failure.retry_fingerprint = record.retry_fingerprint;
+			}
+			next.failed[record.item] = failure;
+			// A discarded output must not survive in the snapshot either.
+			if (record.discard_output === true) delete next.items[record.item];
 		}
 	}
 	for (const key of Object.keys(next.failed)) {
 		if (!state.items.has(key) && !state.unknown.has(key)) delete next.failed[key];
+	}
+	for (const key of Object.keys(next.skipped)) {
+		if (!state.items.has(key) && !state.unknown.has(key)) delete next.skipped[key];
 	}
 	next.updated_at = nowIso();
 	atomicWrite(path.join(state.stateDir, SNAPSHOT_FILE), JSON.stringify(next));
@@ -932,12 +1393,58 @@ function runStage(options = {}) {
 			return;
 		}
 
+		// The capability handshake: no state, no lock, no open run.
+		if (op === "capabilities") {
+			respond({
+				ok: true,
+				op: "capabilities",
+				protocol: CAPABILITY_PROTOCOL,
+				features: CAPABILITIES,
+				journal_format: RUN_FORMAT_VERSION,
+				snapshot_format: SNAPSHOT_FORMAT,
+			});
+			return;
+		}
+
+		// `plan` and `inspect` are read-only: no lock, no session, no writes.
+		if (op === "plan") {
+			let open;
+			try {
+				open = parseOpen(request);
+			} catch (error) {
+				respond(refusal("plan", error));
+				return;
+			}
+			try {
+				planRun(state.stateDir, open, respond);
+			} catch (error) {
+				respond(refusal("plan", error));
+			}
+			return;
+		}
+		if (op === "inspect") {
+			let inspect;
+			try {
+				inspect = parseInspect(request);
+			} catch (error) {
+				respond(refusal("inspect", error));
+				return;
+			}
+			try {
+				inspectState(state.stateDir, inspect, respond);
+			} catch (error) {
+				respond(refusal("inspect", error));
+			}
+			return;
+		}
+
 		// Parse the payload before anything else, like serde: a malformed
 		// `commit` is `invalid_request` even before `open`.
 		let parsed = null;
 		try {
 			if (op === "commit") parsed = parseCommit(request);
 			else if (op === "fail") parsed = parseFail(request);
+			else if (op === "skip") parsed = parseSkip(request);
 			else if (op === "delete") parsed = parseDelete(request);
 		} catch (error) {
 			respond(refusal(op, error));
@@ -967,6 +1474,7 @@ function runStage(options = {}) {
 		try {
 			if (op === "commit") commit(state, parsed, respond);
 			else if (op === "fail") fail(state, parsed, respond);
+			else if (op === "skip") skipItem(state, parsed, respond);
 			else deleteItem(state, parsed, respond);
 		} catch (error) {
 			respond(refusal(op, error));

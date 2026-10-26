@@ -5,10 +5,14 @@ import { get } from "node:https";
 import { basename, delimiter, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { spawnProcess } from "./process.ts";
+import { MinSyncStageSession } from "./stage.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 export const MINSYNC_VERSION = "0.5.0";
+// Protocol 2 is not in the published 0.5.0 crate; pin the reviewed source, never a moving branch.
+const MINSYNC_SOURCE = "https://github.com/NomaDamas/MinSync.git";
+const MINSYNC_REVISION = "a305cddc2b1e5e9b12a700c1302b069f94f2a1e9";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
@@ -43,13 +47,19 @@ export interface EnsureMinSyncBinaryOptions {
 
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
-	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
+	if (existsSync(binaryPath)) {
+		await verifyInstalledBinary(binaryPath, options.root);
+		return { binaryPath, version: "cached" };
+	}
 	mkdirSync(dirname(binaryPath), { recursive: true });
 	const cargoInstaller =
 		options.cargoInstaller ?? ((destination) => installMinSyncFromCargoIfAvailable(options, destination));
 	try {
 		const fromCargo = await cargoInstaller(binaryPath);
-		if (fromCargo !== undefined) return fromCargo;
+		if (fromCargo !== undefined) {
+			await verifyInstalledBinary(fromCargo.binaryPath, options.root, true);
+			return fromCargo;
+		}
 	} catch (error) {
 		if (!(error instanceof MinSyncReleaseError)) throw error;
 	}
@@ -69,7 +79,18 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	const assetInstaller = options.assetInstaller ?? installReleaseAsset;
 	await assetInstaller(asset, binaryPath);
 	await chmod(binaryPath, 0o755);
+	await verifyInstalledBinary(binaryPath, options.root, true);
 	return { binaryPath, version: release.tagName };
+}
+
+async function verifyInstalledBinary(binaryPath: string, root: string, newlyInstalled = false): Promise<void> {
+	const session = new MinSyncStageSession(binaryPath, join(root, ".autorag", "parsed", "stage"), root);
+	try {
+		await session.verifyProtocol().finally(() => session.close());
+	} catch (error) {
+		if (newlyInstalled) rmSync(binaryPath, { force: true });
+		throw error;
+	}
 }
 
 function isIsolatedTestRuntime(): boolean {
@@ -102,12 +123,14 @@ async function installMinSyncFromCargo(
 	mkdirSync(cargoRoot, { recursive: true });
 	const result = await spawnProcess(
 		cargo,
-		["install", "minsync", "--version", MINSYNC_VERSION, "--locked", "--root", cargoRoot],
+		["install", "minsync", "--git", MINSYNC_SOURCE, "--rev", MINSYNC_REVISION, "--locked", "--root", cargoRoot],
 		options.root,
 		{ timeoutMs: MINSYNC_CARGO_INSTALL_TIMEOUT_MS },
 	);
 	if (!result.ok) {
-		throw new MinSyncReleaseError(result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`);
+		throw new MinSyncReleaseError(
+			result.stderr || `Could not install MinSync from ${MINSYNC_SOURCE}@${MINSYNC_REVISION}`,
+		);
 	}
 	const installedBinary = join(cargoRoot, "bin", executableName(options.platform ?? process.platform));
 	if (!existsSync(installedBinary)) {

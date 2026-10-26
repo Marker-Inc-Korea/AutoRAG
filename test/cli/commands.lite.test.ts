@@ -1,8 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli/index.ts";
+import { loadMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
@@ -270,7 +271,7 @@ if (args[0] === "stage") {
 			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
 			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
 			expect(envelope).toMatchObject({ ok: true, stale: false });
-			const index = JSON.parse(readFileSync(join(root, ".autorag", "parsed", "index.json"), "utf8"));
+			const index = loadMirrorIndex(root);
 			expect(index.entries["/docs/.jikji_agent_map.md"]).toBeUndefined();
 		} finally {
 			rmSync(root, { recursive: true, force: true });

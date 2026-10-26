@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import type { BigIntStats } from "node:fs";
-import { type Dir, existsSync, rmSync } from "node:fs";
+import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -19,19 +18,17 @@ import { KORDOC_IMAGE_EXTENSIONS } from "../parser/kordoc.ts";
 import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
-import type { ParseOutput, Parser } from "../parser/types.ts";
+import type { ParseOutput } from "../parser/types.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
 import {
 	loadMirrorIndex,
+	mirrorIndexFromStage,
 	mirrorStageKey,
-	type ParsedMirrorEntry,
 	type ParsedMirrorIndex,
-	type ParsedMirrorSkipEntry,
 	type ParsedMirrorSkipReason,
-	saveMirrorIndex,
 } from "./index-store.ts";
-import { parsedMirrorIndexPath, parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
+import { parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
 
 /** Refuse to fully load/parse sources larger than this. Keeps Node heap stable on home folders. */
 export const DEFAULT_MAX_SOURCE_BYTES = 50 * 1024 * 1024;
@@ -98,8 +95,8 @@ export interface ParsedMirrorSyncOptions {
 	 */
 	readonly retrySkipped?: boolean;
 	/**
-	 * Stops the sync between files and kills an in-flight parse worker. The sync rejects with the signal's
-	 * reason after checkpointing the mirror, so finished files are not re-parsed next time.
+	 * Stops between files and kills an in-flight parse worker. Rejects with the signal's
+	 * reason; MinSync's durable journal retains completed items for the next run.
 	 */
 	readonly signal?: AbortSignal;
 	/** Called before each file and once more with `processed === total` when the parse phase ends. */
@@ -244,32 +241,6 @@ async function withTransientRetry<T>(operation: () => T | Promise<T>, retries: n
 
 const STANDALONE_OCR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(KORDOC_IMAGE_EXTENSIONS);
 
-type RetryableSkipReason = "parser-failed" | "source-unreadable";
-
-const RETRYABLE_SKIP_MESSAGES: Readonly<Record<RetryableSkipReason, string>> = {
-	"parser-failed": PARSER_FAILURE_MESSAGE,
-	"source-unreadable":
-		"The source could not be read (permission denied); it is skipped until it changes or is retried.",
-};
-
-/**
- * Whether a recorded skip still stands for this source: same mtime, size, parser name and parser
- * version. Only retryable reasons qualify; the others are re-derived cheaply from config and stat
- * every run. A record without a parser stamp predates this policy and is retried once, which then
- * stamps it.
- */
-function isSkipHonored(
-	skip: ParsedMirrorSkipEntry,
-	entry: CurrentEntry,
-	parser: Parser,
-	retryPass: boolean,
-): skip is ParsedMirrorSkipEntry & { readonly reason: RetryableSkipReason } {
-	if (retryPass) return false;
-	if (skip.reason !== "parser-failed" && skip.reason !== "source-unreadable") return false;
-	if (skip.sourceMtimeNs !== entry.mtimeNs || skip.sourceSizeBytes !== entry.sizeBytes) return false;
-	return skip.parserName === parser.name && skip.parserVersion === parser.version;
-}
-
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	if (options.parserOptions !== undefined) validateIsolationOptions(options.parserOptions);
 	if (options.signal?.aborted) throw abortReason(options.signal);
@@ -339,6 +310,61 @@ function statIdentity(info: BigIntStats): string {
 	return [info.size, info.mtimeNs, info.ctimeNs, info.ino, info.dev].join(":");
 }
 
+type SourceOmission = { reason: ParsedMirrorSkipReason; diagnostic?: Omit<ParsedMirrorDiagnostic, "source"> };
+
+function sourcePlan(
+	current: readonly CurrentEntry[],
+	registry: ParserRegistry,
+	options: ParsedMirrorSyncOptions,
+): {
+	versions: Map<string, string>;
+	omitted: Map<string, SourceOmission>;
+} {
+	const versions = new Map<string, string>();
+	const omitted = new Map<string, SourceOmission>();
+	for (const entry of current) {
+		const parser = registry.getForVirtualPath(entry.virtualPath);
+		if (isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths))
+			omitted.set(entry.virtualPath, { reason: "user-excluded" });
+		else if (options.excludeSourcePaths?.has(entry.sourcePath))
+			omitted.set(entry.virtualPath, {
+				reason: "duplicate-excluded",
+				diagnostic: {
+					code: "duplicate-excluded",
+					severity: "info",
+					message: "An older exact duplicate was excluded from indexing; the newest copy remains indexed.",
+				},
+			});
+		else if (!parser || entry.sizeBytes > (options.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES))
+			omitted.set(entry.virtualPath, {
+				reason: "parser-skipped",
+				...(parser
+					? {
+							diagnostic: {
+								code: "parser-skipped",
+								severity: "warning",
+								message: "Source exceeds the configured max parse size and was skipped during indexing.",
+							},
+						}
+					: {}),
+			});
+		versions.set(
+			entry.virtualPath,
+			JSON.stringify({
+				virtualPath: entry.virtualPath,
+				sourcePath: entry.sourcePath,
+				parserName: parser?.name ?? "unsupported",
+				parserVersion: parser?.version,
+				sourceMtimeNs: entry.mtimeNs,
+				sourceSizeBytes: entry.sizeBytes,
+				sourceVersion: entry.sourceVersion,
+				...(omitted.has(entry.virtualPath) ? { omission: omitted.get(entry.virtualPath)!.reason } : {}),
+			}),
+		);
+	}
+	return { versions, omitted };
+}
+
 async function syncWithRegistry(
 	options: ParsedMirrorSyncOptions,
 	registry: ParserRegistry,
@@ -346,9 +372,8 @@ async function syncWithRegistry(
 ): Promise<ParsedMirrorSyncResult> {
 	const listing = await listCurrentFiles(options.searchPaths, supportedExtensionSet(registry), walkLimits(options));
 	const current = listing.entries;
-	const previous = loadMirrorIndex(options.root);
-	const nextEntries: Record<string, ParsedMirrorEntry> = { ...previous.entries };
-	const nextSkipped: Record<string, ParsedMirrorSkipEntry> = { ...previous.skipped };
+	const binaryPath = await resolveMinSyncBinary({ root: options.root, binaryPath: options.minSyncBinaryPath });
+	const previous = loadMirrorIndex(options.root, { minSyncBinaryPath: binaryPath });
 	const diagnostics: ParsedMirrorDiagnostic[] = [...listing.diagnostics];
 	const preservedPrefixes = [...listing.unreliablePrefixes];
 	for (const unavailable of listing.unavailableRoots) {
@@ -367,63 +392,7 @@ async function syncWithRegistry(
 	const transientBackoffMs = options.transientRetryBackoffMs ?? DEFAULT_TRANSIENT_BACKOFF_MS;
 	const fingerprint = parseFingerprint(options);
 	const failureFingerprint = retryFingerprint(options, fingerprint);
-	const retryPass = options.force === true || options.retrySkipped === true;
-	const maxSourceBytes = options.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES;
-	const versions = new Map<string, string>();
-	const omitted = new Map<
-		string,
-		{ reason: ParsedMirrorSkipReason; parser?: Parser; diagnostic?: Omit<ParsedMirrorDiagnostic, "source"> }
-	>();
-	for (const entry of current) {
-		const parser = registry.getForVirtualPath(entry.virtualPath);
-		if (isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths))
-			omitted.set(entry.virtualPath, { reason: "user-excluded" });
-		else if (options.excludeSourcePaths?.has(entry.sourcePath))
-			omitted.set(entry.virtualPath, {
-				reason: "duplicate-excluded",
-				diagnostic: {
-					code: "duplicate-excluded",
-					severity: "info",
-					message: "An older exact duplicate was excluded from indexing; the newest copy remains indexed.",
-				},
-			});
-		else if (!parser) omitted.set(entry.virtualPath, { reason: "parser-skipped" });
-		else if (entry.sizeBytes > maxSourceBytes)
-			omitted.set(entry.virtualPath, {
-				reason: "parser-skipped",
-				diagnostic: {
-					code: "parser-skipped",
-					severity: "warning",
-					message: "Source exceeds the configured max parse size and was skipped during indexing.",
-				},
-			});
-		else {
-			const skip = previous.skipped?.[entry.virtualPath];
-			if (
-				skip !== undefined &&
-				skip.parserFingerprint === failureFingerprint &&
-				isSkipHonored(skip, entry, parser, retryPass)
-			) {
-				omitted.set(entry.virtualPath, {
-					reason: skip.reason,
-					parser,
-					diagnostic: { code: skip.reason, severity: "warning", message: RETRYABLE_SKIP_MESSAGES[skip.reason] },
-				});
-			} else
-				versions.set(
-					entry.virtualPath,
-					JSON.stringify({
-						virtualPath: entry.virtualPath,
-						sourcePath: entry.sourcePath,
-						parserName: parser.name,
-						parserVersion: parser.version,
-						sourceMtimeNs: entry.mtimeNs,
-						sourceSizeBytes: entry.sizeBytes,
-						sourceVersion: entry.sourceVersion,
-					}),
-				);
-		}
-	}
+	const { versions, omitted } = sourcePlan(current, registry, options);
 	const currentPaths = new Set(current.map((entry) => entry.virtualPath));
 	const pathsByKey = new Map(
 		[...currentPaths, ...Object.keys(previous.entries), ...Object.keys(previous.skipped ?? {})].map((path) => [
@@ -460,7 +429,6 @@ async function syncWithRegistry(
 		)
 			unknown.add(mirrorStageKey(path));
 	}
-	const binaryPath = await resolveMinSyncBinary({ root: options.root, binaryPath: options.minSyncBinaryPath });
 	const session = new MinSyncStageSession(
 		binaryPath,
 		join(parsedMirrorRoot(options.root), "stage"),
@@ -470,49 +438,41 @@ async function syncWithRegistry(
 	let written = 0;
 	let deleted = 0;
 	let skipped = 0;
-	let opened = false;
-	const recordSkip = (entry: CurrentEntry, reason: ParsedMirrorSkipReason, parser?: Parser): void => {
-		nextSkipped[entry.virtualPath] = {
-			virtualPath: entry.virtualPath,
-			sourcePath: entry.sourcePath,
-			reason,
-			sourceMtimeNs: entry.mtimeNs,
-			sourceSizeBytes: entry.sizeBytes,
-			updatedAt: new Date().toISOString(),
-			...(parser === undefined
-				? {}
-				: { parserName: parser.name, parserVersion: parser.version, parserFingerprint: failureFingerprint }),
-		};
-	};
 	const skipFile = async (
 		entry: CurrentEntry,
 		diagnostic: Omit<ParsedMirrorDiagnostic, "source">,
 		reason?: ParsedMirrorSkipReason,
-		parser?: Parser,
 	): Promise<void> => {
-		deleted += removePrevious(options.root, previous, entry.virtualPath);
-		delete nextEntries[entry.virtualPath];
-		delete nextSkipped[entry.virtualPath];
+		if (previous.entries[entry.virtualPath]) deleted += 1;
 		skipped += 1;
-		if (reason !== undefined) recordSkip(entry, reason, parser);
 		diagnostics.push({ ...diagnostic, source: entry.virtualPath });
-		await session.fail(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, diagnostic.code);
+		if (reason === "parser-skipped")
+			await session.skip(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, reason);
+		else
+			await session.fail(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, diagnostic.code, {
+				defer: reason === "parser-failed" || reason === "source-unreadable",
+				discard_output: true,
+			});
 	};
 	try {
 		const plan = await session.open({
 			stage: "parse",
 			source_id: "autorag-parsed-mirror",
 			fingerprint,
+			retry_fingerprint: failureFingerprint,
+			retry_failed: options.retrySkipped === true,
 			output_root: join(parsedMirrorRoot(options.root), "files"),
 			items: [...versions].map(([path, version]) => ({ key: mirrorStageKey(path), version })),
 			unknown: [...unknown],
 			full: options.force === true,
 		});
-		opened = true;
 		const pending = new Set(
 			plan.decisions
 				.filter((decision) => decision.action === "process" || decision.action === "retry")
 				.map((decision) => decision.key),
+		);
+		const deferred = new Map(
+			plan.decisions.filter((decision) => decision.deferred === true).map((decision) => [decision.key, decision]),
 		);
 		for (const decision of plan.decisions) {
 			if (decision.action !== "delete") continue;
@@ -520,8 +480,6 @@ async function syncWithRegistry(
 			await session.delete(decision.key);
 			if (path === undefined) continue;
 			if (previous.entries[path]) deleted += 1;
-			delete nextEntries[path];
-			delete nextSkipped[path];
 			if (!currentPaths.has(path))
 				diagnostics.push({
 					code: "deleted-mirror",
@@ -530,15 +488,6 @@ async function syncWithRegistry(
 					source: path,
 				});
 		}
-		// Old metadata has no stage ownership. Eligible outputs get one verified
-		// baseline parse; confirmed stale outputs can be removed immediately.
-		for (const path of staleCandidates) {
-			if (massDelete || !nextEntries[path]) continue;
-			deleted += removePrevious(options.root, previous, path);
-			delete nextEntries[path];
-		}
-		for (const path of Object.keys(nextSkipped))
-			if (!currentPaths.has(path) && !unknown.has(mirrorStageKey(path))) delete nextSkipped[path];
 		for (const [position, entry] of current.entries()) {
 			options.onProgress?.({
 				processed: position,
@@ -551,11 +500,27 @@ async function syncWithRegistry(
 			if (options.signal?.aborted) throw abortReason(options.signal);
 			const omission = omitted.get(entry.virtualPath);
 			if (omission !== undefined) {
-				if (nextEntries[entry.virtualPath]) deleted += removePrevious(options.root, previous, entry.virtualPath);
-				delete nextEntries[entry.virtualPath];
+				if (pending.has(mirrorStageKey(entry.virtualPath))) {
+					if (previous.entries[entry.virtualPath]) deleted += 1;
+					await session.skip(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, omission.reason);
+				}
 				skipped += 1;
-				recordSkip(entry, omission.reason, omission.parser);
 				if (omission.diagnostic) diagnostics.push({ ...omission.diagnostic, source: entry.virtualPath });
+				continue;
+			}
+			const deferredFailure = deferred.get(mirrorStageKey(entry.virtualPath));
+			if (deferredFailure !== undefined) {
+				skipped += 1;
+				const code = deferredFailure.error === "source-unreadable" ? "source-unreadable" : "parser-failed";
+				diagnostics.push({
+					code,
+					severity: "warning",
+					source: entry.virtualPath,
+					message:
+						code === "parser-failed"
+							? PARSER_FAILURE_MESSAGE
+							: "The source could not be read; retry is deferred until the source or settings change, or an explicit retry is requested.",
+				});
 				continue;
 			}
 			const parser = registry.getForVirtualPath(entry.virtualPath)!;
@@ -566,12 +531,7 @@ async function syncWithRegistry(
 					bytes = await withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs);
 				} catch (error) {
 					const failure = sourceReadFailure(error);
-					await skipFile(
-						entry,
-						failure,
-						failure.code === "source-unreadable" ? "source-unreadable" : undefined,
-						parser,
-					);
+					await skipFile(entry, failure, failure.code === "source-unreadable" ? "source-unreadable" : undefined);
 					continue;
 				}
 				const tooSmallImage = standaloneImageTooSmallMessage(entry.virtualPath, bytes);
@@ -604,7 +564,6 @@ async function syncWithRegistry(
 										: PARSER_FAILURE_MESSAGE,
 							},
 							"parser-failed",
-							parser,
 						);
 					else
 						await skipFile(entry, {
@@ -665,26 +624,7 @@ async function syncWithRegistry(
 					diagnostics.push({ ...diagnostic, source: entry.virtualPath });
 				written += 1;
 			}
-			const previousEntry = previous.entries[entry.virtualPath];
-			nextEntries[entry.virtualPath] = {
-				virtualPath: entry.virtualPath,
-				sourcePath: entry.sourcePath,
-				outputPath,
-				parserName: parser.name,
-				parserVersion: parser.version,
-				sourceVersion: entry.sourceVersion,
-				parserFingerprint: fingerprint,
-				sourceMtimeNs: entry.mtimeNs,
-				sourceSizeBytes: entry.sizeBytes,
-				updatedAt: pending.has(mirrorStageKey(entry.virtualPath))
-					? new Date().toISOString()
-					: (previousEntry?.updatedAt ?? new Date().toISOString()),
-			};
-			delete nextSkipped[entry.virtualPath];
 		}
-		// Publish the metadata view under the stage lock. If it fails, the durable
-		// MinSync journal still owns every completion and remains resumable.
-		saveMirrorIndex(options.root, { version: 1, entries: nextEntries, skipped: nextSkipped });
 		await session.finish();
 		options.onProgress?.({ processed: current.length, total: current.length, written, deleted, skipped });
 		return {
@@ -692,97 +632,99 @@ async function syncWithRegistry(
 			written,
 			deleted,
 			skipped,
-			indexPath: parsedMirrorIndexPath(options.root),
+			indexPath: join(parsedMirrorRoot(options.root), "stage"),
 			diagnostics,
 		};
 	} catch (error) {
-		if (opened) {
-			try {
-				saveMirrorIndex(options.root, { version: 1, entries: nextEntries, skipped: nextSkipped });
-			} catch {
-				/* Keep the primary failure; MinSync's journal owns completed work. */
-			}
-		}
 		throw options.signal?.aborted ? abortReason(options.signal) : error;
 	} finally {
 		await session.close();
 	}
 }
 
-/**
- * Cheap, parse-free staleness check: compares source stat identity and parser
- * revision/options against the mirror metadata view. A source is
- * current when the last refresh either indexed it or deliberately skipped it at
- * this exact version, so a skipped duplicate, oversize, or unparseable file is not
- * reported as a new source. Returns a `stale-index` diagnostic (opaque virtual
- * path) for every supported source that is new or changed since the last
- * successful refresh. Safe to call outside the query hot path (e.g. from
- * getRefreshStatus).
- */
+/** Ask MinSync's read-only plan which current source revisions still need work. */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
-	const supportedExtensions = supportedExtensionSet(registry);
-	const current = (await listCurrentFiles(options.searchPaths, supportedExtensions, walkLimits(options))).entries;
-	const previous = loadMirrorIndex(options.root);
-	const diagnostics: ParsedMirrorDiagnostic[] = [];
-	const fingerprint = parseFingerprint(options);
-	for (const entry of current) {
-		if (
-			options.excludeSourcePaths?.has(entry.sourcePath) ||
-			isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths)
-		)
-			continue;
-		const parser = registry.getForVirtualPath(entry.virtualPath);
-		if (!parser) continue;
-		const prev = previous.entries[entry.virtualPath];
-		const parserChanged =
-			prev !== undefined &&
-			((prev.parserVersion !== undefined && prev.parserVersion !== parser.version) ||
-				(prev.parserFingerprint !== undefined && prev.parserFingerprint !== fingerprint));
-		if (
-			prev !== undefined &&
-			prev.sourceMtimeNs === entry.mtimeNs &&
-			prev.sourceSizeBytes === entry.sizeBytes &&
-			(prev.sourceVersion === undefined || prev.sourceVersion === entry.sourceVersion) &&
-			!parserChanged &&
-			existsSync(prev.outputPath)
-		)
-			continue;
-		const prevSkip = previous.skipped?.[entry.virtualPath];
-		// A "user-excluded" skip only suppresses staleness while the path stays excluded;
-		// reaching here means it was re-included, so the mirror must be rebuilt and the
-		// source counts as newly added (no mirror entry exists for it). A "source-unreadable"
-		// skip only paces refresh retries: the source was never indexed, so it stays reported.
-		const honoredSkip =
-			prevSkip?.reason === "user-excluded" || prevSkip?.reason === "source-unreadable" ? undefined : prevSkip;
-		if (
-			honoredSkip !== undefined &&
-			honoredSkip.sourceMtimeNs === entry.mtimeNs &&
-			honoredSkip.sourceSizeBytes === entry.sizeBytes
-		)
-			continue;
-		const known = prev ?? honoredSkip;
-		const reason =
-			known === undefined
-				? "source-added"
-				: parserChanged
-					? "parser-changed"
-					: known.sourceMtimeNs !== entry.mtimeNs && known.sourceSizeBytes !== entry.sizeBytes
-						? "mtime-and-size-changed"
-						: known.sourceMtimeNs !== entry.mtimeNs
-							? "mtime-changed"
-							: known.sourceSizeBytes !== entry.sizeBytes
-								? "size-changed"
-								: "source-or-mirror-changed";
-		diagnostics.push({
-			code: "stale-index",
-			severity: "warning",
-			message: `Source ${entry.virtualPath} is ${reason.replaceAll("-", " ")} since the last refresh; indexes may be stale.`,
-			source: entry.virtualPath,
-			reason,
+	const current = (await listCurrentFiles(options.searchPaths, supportedExtensionSet(registry), walkLimits(options)))
+		.entries;
+	if (current.length === 0) return [];
+	const binaryPath = await resolveMinSyncBinary({
+		root: options.root,
+		binaryPath: options.minSyncBinaryPath,
+		install: false,
+	});
+	const session = new MinSyncStageSession(
+		binaryPath,
+		join(parsedMirrorRoot(options.root), "stage"),
+		options.root,
+		options.signal,
+	);
+	try {
+		const previous = mirrorIndexFromStage(
+			options.root,
+			await session.inspect({
+				stage: "parse",
+				source_id: "autorag-parsed-mirror",
+				output_root: join(parsedMirrorRoot(options.root), "files"),
+			}),
+		);
+		const { versions, omitted } = sourcePlan(current, registry, options);
+		const fingerprint = parseFingerprint(options);
+		const plan = await session.plan({
+			stage: "parse",
+			source_id: "autorag-parsed-mirror",
+			fingerprint,
+			retry_fingerprint: retryFingerprint(options, fingerprint),
+			output_root: join(parsedMirrorRoot(options.root), "files"),
+			items: [...versions].map(([path, version]) => ({ key: mirrorStageKey(path), version })),
 		});
+		const work = new Set(
+			plan.decisions
+				.filter(
+					(decision) =>
+						decision.action === "process" ||
+						decision.action === "retry" ||
+						(decision.deferred && decision.error === "source-unreadable"),
+				)
+				.map((decision) => decision.key),
+		);
+		const diagnostics: ParsedMirrorDiagnostic[] = [];
+		for (const entry of current) {
+			if (omitted.has(entry.virtualPath) || !work.has(mirrorStageKey(entry.virtualPath))) continue;
+			const prev = previous.entries[entry.virtualPath];
+			const skip = previous.skipped?.[entry.virtualPath];
+			const known =
+				prev ?? (skip?.reason === "user-excluded" || skip?.reason === "source-unreadable" ? undefined : skip);
+			const parser = registry.getForVirtualPath(entry.virtualPath)!;
+			const parserChanged =
+				prev !== undefined &&
+				(prev.parserName !== parser.name ||
+					prev.parserVersion !== parser.version ||
+					prev.parserFingerprint !== fingerprint);
+			const reason =
+				known === undefined
+					? "source-added"
+					: parserChanged
+						? "parser-changed"
+						: known.sourceMtimeNs !== entry.mtimeNs && known.sourceSizeBytes !== entry.sizeBytes
+							? "mtime-and-size-changed"
+							: known.sourceMtimeNs !== entry.mtimeNs
+								? "mtime-changed"
+								: known.sourceSizeBytes !== entry.sizeBytes
+									? "size-changed"
+									: "source-or-mirror-changed";
+			diagnostics.push({
+				code: "stale-index",
+				severity: "warning",
+				source: entry.virtualPath,
+				reason,
+				message: `Source ${entry.virtualPath} is ${reason.replaceAll("-", " ")} since the last refresh; indexes may be stale.`,
+			});
+		}
+		return diagnostics;
+	} finally {
+		await session.close();
 	}
-	return diagnostics;
 }
 
 function standaloneImageTooSmallMessage(virtualPath: string, bytes: Uint8Array): string | undefined {
@@ -1030,15 +972,4 @@ async function collectFiles(state: WalkState, directory: string, depth: number):
 		listing.unreliablePrefixes.push(sourceIdentifier(sourceRoot, directory));
 		warnDirectoryUnreadable(state, directory, code);
 	}
-}
-
-function removePrevious(root: string, index: ParsedMirrorIndex, virtualPath: string): number {
-	const previous = index.entries[virtualPath];
-	if (!previous) return 0;
-	removeFile(parsedOutputPath(root, previous.virtualPath));
-	return 1;
-}
-
-function removeFile(path: string): void {
-	if (existsSync(path)) rmSync(path, { force: true });
 }

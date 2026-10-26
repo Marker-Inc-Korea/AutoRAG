@@ -17,11 +17,20 @@ is found on `PATH` or in the workspace cache. If the binary is missing or its
 auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`,
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
-and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync --version 0.5.0 --locked` when auto-install
-cannot run. AutoRAG's Cargo installer pins MinSync 0.5.0. This version adds the
-shared materialization-stage protocol (`minsync stage`) for durable external
-processing, alongside the existing vector, BM25, and hybrid index commands.
+and `minSync.enabled: false` are rejected as config errors. The Cargo installer
+pins the protocol-2 source revision from
+[MinSync #125](https://github.com/NomaDamas/MinSync/pull/125), not the published
+0.5.0 crate, which lacks the required operations. Install that same revision
+manually when upgrading an existing binary on `PATH`:
+
+```bash
+cargo install minsync --git https://github.com/NomaDamas/MinSync.git \
+  --rev a305cddc2b1e5e9b12a700c1302b069f94f2a1e9 --locked --force
+```
+
+Existing executables are not silently replaced. New installations, including
+GitHub release fallbacks, must pass the read-only protocol check before they
+are accepted; an incompatible newly downloaded binary is removed from cache.
 
 A normal setup is:
 
@@ -384,10 +393,12 @@ daemon or the in-process engine.
 
 ## Durable incremental parsing
 
-Parsed mirrors require **MinSync 0.5.0 or newer**, including a refresh that selects
-only `parsed`. Upgrade an older binary on `PATH` with
-`cargo install minsync --version 0.5.0 --locked`; an existing executable is not
-silently replaced by AutoRAG. Parsing itself uses no embedding model or endpoint.
+Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
+including a refresh that selects only `parsed`. The published 0.5.0 binary has
+the original durable stage, but not `capabilities`, `plan`, `inspect`, deliberate
+skips or deferred-failure policy. AutoRAG probes capabilities before opening a
+run and refuses an older build before mutating stage state. Parsing itself uses
+no embedding model or endpoint.
 
 AutoRAG inventories supported sources and supplies their identities and parser
 configuration to one `minsync stage` session. MinSync owns the stage lock,
@@ -417,13 +428,17 @@ Markdown file exists and MinSync has measured and verified it.
 - An interruption leaves committed items in MinSync's journal. The next matching
   refresh resumes them, including an interrupted forced refresh. There is no
   AutoRAG-specific periodic full-index checkpoint.
-- `.autorag/parsed/index.json` remains a downstream metadata view, published once
-  per completed or gracefully interrupted run. A read-only projection of MinSync
-  state reconstructs committed source mappings after a hard host crash; it does
-  not decide whether work is reusable.
-- Deliberate skips and parser-failure retry pacing remain AutoRAG policy. Failed
-  work is never recorded as a successful MinSync completion. Unobservable roots
-  and mass-deletion candidates are explicitly preserved rather than deleted.
+- AutoRAG no longer writes `.autorag/parsed/index.json` or reads MinSync's
+  private snapshot/journal formats. Downstream source mappings come from the
+  engine's verified `inspect` response, including committed work left by a hard
+  host crash. `plan` supplies read-only freshness decisions without a stage lock.
+- AutoRAG supplies source revisions, parser settings, omission reasons and retry
+  policy identities. MinSync stores omissions and deferred failures, decides
+  whether they are reusable, and releases failed work when its source, parser
+  settings or retry policy changes, or an explicit retry is requested. Healthy
+  outputs are unaffected by a retry-policy change. Failed work is never a
+  successful completion. Unobservable roots and mass-deletion candidates are
+  explicitly preserved rather than deleted.
 - Existing workspaces without a parse-stage baseline are parsed once to establish
   verified completions. Subsequent refreshes use the stage baseline; the old
   checkpoint-based resume path is not retained.
@@ -461,9 +476,9 @@ refresh continues:
 { "refresh": { "transientRetries": 3 } }
 ```
 
-Unlike permission-denied skips, these transient skips are not persisted, so the next refresh
-tries the file again. Mirror writes go through a temp file that is removed on
-any failure, so a failed write never leaves a `*.tmp` orphan.
+Unlike permission-denied failures, these failures are recorded without a retry
+deferral, so MinSync schedules them again on the next refresh. Mirror writes go
+through a temp file removed on failure, so a failed write leaves no `*.tmp` orphan.
 
 A write failure that makes the workspace itself unusable (`ENOSPC`, `EDQUOT`,
 `EACCES`, `EPERM`, `EROFS`) is not a per-file problem and aborts the refresh with
