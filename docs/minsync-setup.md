@@ -17,16 +17,12 @@ is found on `PATH` or in the workspace cache. If the binary is missing or its
 auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`,
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
-and `minSync.enabled: false` are rejected as config errors. The Cargo installer
-pins the protocol-2 source revision from
-[MinSync #125](https://github.com/NomaDamas/MinSync/pull/125), not the published
-0.5.0 crate, which lacks the required operations. Install that same revision
-manually when upgrading an existing binary on `PATH`:
-
-```bash
-cargo install minsync --git https://github.com/NomaDamas/MinSync.git \
-  --rev 1e9bb7eeff53a35cca86309c1086950ea0ad2c5f --locked --force
-```
+and `minSync.enabled: false` are rejected as config errors. Install the binary
+yourself with `cargo install minsync --version 0.5.1 --locked` when
+auto-install cannot run. MinSync 0.5.1 on Apple Silicon and Linux needs rustc
+1.96 or newer, because its dependency candle-core requires NEON f16 support;
+with an older toolchain the cargo install fails and AutoRAG falls back to the
+GitHub release binary. AutoRAG's installer pins MinSync 0.5.1 from crates.io.
 
 Existing executables are not silently replaced. New installations, including
 GitHub release fallbacks, must pass the read-only protocol check before they
@@ -394,11 +390,12 @@ daemon or the in-process engine.
 ## Durable incremental parsing
 
 Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
-including a refresh that selects only `parsed`. The published 0.5.0 binary has
-the original durable stage, but not `capabilities`, `plan`, `inspect`, deliberate
-skips or deferred-failure policy. AutoRAG probes capabilities before opening a
-run and refuses an older build before mutating stage state. Parsing itself uses
-no embedding model or endpoint.
+including a refresh that selects only `parsed`. MinSync 0.5.1 — the version
+AutoRAG installs — ships it; published binaries up to 0.5.0 have the original
+durable stage, but not `capabilities`, `plan`, `inspect`, deliberate skips or
+deferred-failure policy. AutoRAG probes capabilities before opening a run and
+refuses an older build before mutating stage state. Parsing itself uses no
+embedding model or endpoint.
 
 `inspect` also exposes all held source identities, independently of output
 verification. AutoRAG uses that inventory to preserve unknown/offline sources,

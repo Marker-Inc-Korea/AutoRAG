@@ -10,10 +10,7 @@ import { MinSyncStageSession } from "./stage.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.5.0";
-// Protocol 2 is not in the published 0.5.0 crate; pin the reviewed source, never a moving branch.
-const MINSYNC_SOURCE = "https://github.com/NomaDamas/MinSync.git";
-const MINSYNC_REVISION = "1e9bb7eeff53a35cca86309c1086950ea0ad2c5f";
+export const MINSYNC_VERSION = "0.5.1";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
@@ -124,13 +121,13 @@ async function installMinSyncFromCargo(
 	mkdirSync(cargoRoot, { recursive: true });
 	const result = await spawnProcess(
 		cargo,
-		["install", "minsync", "--git", MINSYNC_SOURCE, "--rev", MINSYNC_REVISION, "--locked", "--root", cargoRoot],
+		["install", "minsync", "--version", MINSYNC_VERSION, "--locked", "--root", cargoRoot],
 		options.root,
 		{ timeoutMs: MINSYNC_CARGO_INSTALL_TIMEOUT_MS },
 	);
 	if (!result.ok) {
 		throw new MinSyncReleaseError(
-			result.stderr || `Could not install MinSync from ${MINSYNC_SOURCE}@${MINSYNC_REVISION}`,
+			result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`,
 		);
 	}
 	const installedBinary = join(cargoRoot, "bin", executableName(options.platform ?? process.platform));
