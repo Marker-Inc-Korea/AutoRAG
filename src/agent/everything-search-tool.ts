@@ -1,6 +1,13 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { EverythingSearchRequest, EverythingSearchResult } from "../everything/index.ts";
+import {
+	collectNameCandidates,
+	mergeNameHits,
+	renderNameHitLine,
+	renderNameSearchProblems,
+	searchNameCandidates,
+} from "./name-candidates.ts";
 
 export const EVERYTHING_SEARCH_TOOL_NAME = "everything_search";
 
@@ -24,6 +31,12 @@ const everythingSearchSchema = Type.Object({
 		description:
 			'Everything search syntax over file and folder names: space = AND, | = OR, ! = NOT, "quoted phrase", wildcards (*.pdf), ext:pdf;docx, dm:thisweek, size:>10mb, parent:<folder>, path fragments like \\reports\\ when matchPath is true.',
 	}),
+	alternatives: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"Other names to try in the same call, such as a translation, an abbreviation, or another spelling. Every name is searched at once with the same options and the hits are merged, each marked with the names that found it. Prefer this over repeated calls when the exact name is unknown.",
+		}),
+	),
 	regex: Type.Optional(Type.Boolean({ description: "Treat query as a regular expression." })),
 	matchCase: Type.Optional(Type.Boolean()),
 	matchPath: Type.Optional(Type.Boolean({ description: "Match against the full path instead of the name." })),
@@ -65,42 +78,55 @@ export function createEverythingSearchTool(
 			"Instantly find files and folders by name, extension, path, size, or modified date across the configured search folders using voidtools Everything (Windows). Returns absolute paths; read file contents with bash.",
 		parameters: everythingSearchSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<EverythingSearchDetails>> {
-			const query = params.query.trim();
-			if (query.length === 0) {
+			const { alternatives, ...options } = params;
+			const { candidates, dropped } = collectNameCandidates(params.query, alternatives, {
+				matchCase: params.matchCase,
+			});
+			if (candidates.length === 0) {
 				return {
 					content: [{ type: "text", text: "Everything query was empty; nothing searched." }],
 					details: { method: EVERYTHING_SEARCH_TOOL_NAME, resultCount: 0, sources: [], results: [] },
 				};
 			}
-			const request: EverythingSearchRequest = {
-				...params,
-				query,
-				maxResults: Math.min(params.maxResults ?? DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP),
-			};
-			const result = await provider.searchEverything(request);
-			if (!result.ok) {
+			const maxResults = Math.min(params.maxResults ?? DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP);
+			const searchOne = (candidate: string): Promise<EverythingSearchResult> =>
+				provider.searchEverything({ ...options, query: candidate, maxResults });
+			const single = candidates.length === 1 && dropped === 0;
+			const outcomes = await searchNameCandidates(candidates, searchOne);
+			const failures = renderNameSearchProblems(outcomes, dropped);
+			const first = outcomes[0]?.result;
+			if (single && first !== undefined && !first.ok) {
 				return {
-					content: [{ type: "text", text: `Everything ${result.reason}: ${result.message}` }],
+					content: [{ type: "text", text: `Everything ${first.reason}: ${first.message}` }],
 					details: { method: EVERYTHING_SEARCH_TOOL_NAME, resultCount: 0, sources: [], results: [] },
 				};
 			}
-			const lines = result.results.map((entry, index) => {
-				const parts = [`[${index + 1}] ${entry.type} ${entry.path}`];
-				if (entry.size !== undefined) parts.push(`size=${entry.size}`);
-				if (entry.dateModified !== undefined) parts.push(`modified=${entry.dateModified}`);
-				return parts.join(" ");
-			});
+			if (!outcomes.some((outcome) => outcome.result.ok)) {
+				return {
+					content: [{ type: "text", text: `Everything failed for every name:\n${failures.join("\n")}` }],
+					details: { method: EVERYTHING_SEARCH_TOOL_NAME, resultCount: 0, sources: [], results: [] },
+				};
+			}
+			const merged = mergeNameHits(outcomes, maxResults);
+			const lines = merged.map((hit, index) =>
+				renderNameHitLine(index, hit.entry, single ? undefined : hit.candidates),
+			);
+			const limitReached = outcomes.some(
+				(outcome) => outcome.result.ok && outcome.result.results.length === maxResults,
+			);
+			const names = single ? "" : ` (${candidates.length} names searched)`;
+			const problems = failures.map((line) => `\n${line}`).join("");
 			const text =
 				lines.length === 0
-					? `Everything found no files or folders matching: ${query}`
-					: `Everything found ${lines.length} item(s)${lines.length === request.maxResults ? " (limit reached; narrow the query or page with offset)" : ""}:\n${lines.join("\n")}`;
+					? `Everything found no files or folders matching: ${candidates.join(" | ")}${problems}`
+					: `Everything found ${lines.length} item(s)${names}${limitReached ? " (limit reached; narrow the query or page with offset)" : ""}:\n${lines.join("\n")}${problems}`;
 			return {
 				content: [{ type: "text", text }],
 				details: {
 					method: EVERYTHING_SEARCH_TOOL_NAME,
-					resultCount: result.results.length,
-					sources: result.results.map((entry) => entry.path),
-					results: result.results.map((entry, index) => ({ source: entry.path, excerpt: lines[index]! })),
+					resultCount: merged.length,
+					sources: merged.map((hit) => hit.entry.path),
+					results: merged.map((hit, index) => ({ source: hit.entry.path, excerpt: lines[index]! })),
 				},
 			};
 		},

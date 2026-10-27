@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSyn
 import { basename, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
+import { SharedExclusiveQueue } from "../filesystem/shared-exclusive-queue.ts";
 import { walkFileSearch } from "./walk.ts";
 
 /**
@@ -275,8 +276,8 @@ export class FSearchClient {
 	private readonly stateDir: string;
 	private readonly dbPath: string;
 	private readonly pidPath: string;
-	private binary: { readonly ok: true; readonly path: string } | FSearchFailure | undefined;
-	private operation: Promise<unknown> = Promise.resolve();
+	private binary: Promise<{ readonly ok: true; readonly path: string } | FSearchFailure> | undefined;
+	private readonly queue = new SharedExclusiveQueue();
 
 	constructor(options: FSearchClientOptions) {
 		this.options = options;
@@ -301,7 +302,7 @@ export class FSearchClient {
 	 * Without fsearch-cli or a database, it walks the configured folders.
 	 */
 	search(request: FSearchSearchRequest): Promise<FSearchSearchResult> {
-		return this.serialize(async () => {
+		return this.queue.shared(async () => {
 			const unsupported = this.unsupportedFailure();
 			if (unsupported !== undefined) return unsupported;
 			const binary = await this.resolveBinary();
@@ -375,7 +376,7 @@ export class FSearchClient {
 
 	/** (Re)build the database over the configured folders and keep the watch daemon live. */
 	index(): Promise<FSearchIndexResult> {
-		return this.serialize(async () => {
+		return this.queue.exclusive(async () => {
 			const unsupported = this.unsupportedFailure();
 			if (unsupported !== undefined) return unsupported;
 			const binary = await this.resolveBinary();
@@ -386,7 +387,7 @@ export class FSearchClient {
 
 	/** Terminate this workspace's watch daemon when it is running. No-op otherwise. */
 	stop(): Promise<void> {
-		return this.serialize(async () => {
+		return this.queue.exclusive(async () => {
 			const pid = this.readWatchPid();
 			if (pid !== undefined && this.isAlive(pid)) this.kill(pid);
 			rmSync(this.pidPath, { force: true });
@@ -503,25 +504,22 @@ export class FSearchClient {
 				};
 	}
 
-	private async resolveBinary(): Promise<{ readonly ok: true; readonly path: string } | FSearchFailure> {
-		if (this.binary !== undefined) return this.binary;
-		const path = this.options.binaryPath ?? "fsearch-cli";
-		const probe = await this.run(path, ["--version"], this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-		this.binary =
-			probe.code === 0
-				? { ok: true, path }
-				: {
-						ok: false,
-						reason: "binary-missing",
-						message: `${path} --version exit ${probe.code}: ${(probe.stderr || probe.stdout).trim()}`,
-					};
+	/** The probe is shared: searches run concurrently, and the first few must not each spawn `--version`. */
+	private resolveBinary(): Promise<{ readonly ok: true; readonly path: string } | FSearchFailure> {
+		this.binary ??= this.probeBinary();
 		return this.binary;
 	}
 
-	private serialize<T>(task: () => Promise<T>): Promise<T> {
-		const next = this.operation.then(task, task);
-		this.operation = next.catch(() => undefined);
-		return next;
+	private async probeBinary(): Promise<{ readonly ok: true; readonly path: string } | FSearchFailure> {
+		const path = this.options.binaryPath ?? "fsearch-cli";
+		const probe = await this.run(path, ["--version"], this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+		return probe.code === 0
+			? { ok: true, path }
+			: {
+					ok: false,
+					reason: "binary-missing",
+					message: `${path} --version exit ${probe.code}: ${(probe.stderr || probe.stdout).trim()}`,
+				};
 	}
 
 	private failure(
