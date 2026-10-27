@@ -18,10 +18,10 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync` when auto-install cannot run. MinSync
-0.4.12 on Apple Silicon and Linux needs rustc 1.96 or newer, because its
-dependency `candle-core` requires NEON f16 support; AutoRAG's installer pins
-MinSync 0.4.12.
+yourself with `cargo install minsync --version 0.5.0 --locked` when auto-install
+cannot run. AutoRAG's Cargo installer pins MinSync 0.5.0. This version adds the
+shared materialization-stage protocol (`minsync stage`) for durable external
+processing, alongside the existing vector, BM25, and hybrid index commands.
 
 A normal setup is:
 

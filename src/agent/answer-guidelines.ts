@@ -52,7 +52,7 @@ export const ANSWER_UNCERTAINTY_RULE =
  * phase, delta included.
  */
 export const ANSWER_RELEVANCE_RULE =
-	'**Answer only what was asked**: every sentence must answer the user\'s question. Never list retrieved items, topics, documents, or figures that do not answer it, never describe how or where you searched, and never explain why something was left out or how it differs from what was asked (no "I also found X, but it is not what you asked", no near-miss lists, no "nothing about Y, only Z", no inventory of the sources that lacked it). Unrelated or merely adjacent material is omitted entirely unless the user asked for related items or alternatives.';
+	'**Answer only what was asked**: every sentence must answer the user\'s question. Never list retrieved items, topics, documents, or figures that do not answer it, never describe how or where you searched, never discuss the draft, source verification, or the answer-writing process, and never explain why something was left out or how it differs from what was asked (no "I also found X, but it is not what you asked", no near-miss lists, no "nothing about Y, only Z", no inventory of the sources that lacked it). Unrelated or merely adjacent material is omitted entirely unless the user asked for related items or alternatives.';
 
 /**
  * Fast phase, no supporting evidence: park the question in one line. The

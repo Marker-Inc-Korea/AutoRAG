@@ -181,6 +181,29 @@ describe("parent-agent skill docs", () => {
 		expect(pkg.files).toContain("skills");
 	});
 
+	it("keeps the librarian's own skills out of the parent-agent folder but shipped", () => {
+		// `skills/` is what parent agents copy; a skill that is only the librarian's
+		// own turn rules belongs in `internal-skills/`, which the package still ships.
+		const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+			files: string[];
+		};
+		const internal = readdirSync(join(repoRoot, "internal-skills"), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+		expect(internal.length).toBeGreaterThan(0);
+		for (const name of internal) {
+			expect(skillFolders()).not.toContain(name);
+			const fields = parseFrontmatter(
+				readFileSync(join(repoRoot, "internal-skills", name, "SKILL.md"), "utf8").replace(/\r\n?/g, "\n"),
+			);
+			expect(fields, `internal-skills/${name}: missing frontmatter`).toBeDefined();
+			expect(fields?.name).toBe(name);
+			expect((fields?.description ?? "").length, `internal-skills/${name}: description length`).toBeGreaterThan(0);
+		}
+		expect(pkg.files).toContain("internal-skills");
+	});
+
 	it("documents the lite refresh method values and force flags", () => {
 		const setup = readSkill("autorag-lite-setup");
 		for (const method of ["parsed", "minsync", "datasources", "jikji", "all"]) {

@@ -18,7 +18,8 @@ import type { CrawlerSidecar, SidecarHit } from "./index.ts";
 export type SidecarMode = "bm25" | "hybrid";
 
 export interface SidecarMethodOptions {
-	readonly sidecar: CrawlerSidecar;
+	/** Resolve lazily when the native CLI owns the archive location. */
+	readonly sidecar: CrawlerSidecar | ((signal?: AbortSignal) => Promise<CrawlerSidecar>);
 	readonly descriptor: CrawlerDescriptor;
 	readonly mode: SidecarMode;
 	readonly datasourceId: string;
@@ -71,7 +72,12 @@ export class SidecarRetrievalMethod implements RetrievalMethod {
 		const trimmed = query.trim();
 		if (trimmed.length === 0) return [];
 		const topK = options.topK ?? DEFAULT_TOP_K;
-		const { sidecar, mode } = this.options;
+		if (topK <= 0) return [];
+		options.signal?.throwIfAborted();
+		const { mode } = this.options;
+		const sidecar =
+			typeof this.options.sidecar === "function" ? await this.options.sidecar(options.signal) : this.options.sidecar;
+		options.signal?.throwIfAborted();
 		const hits = mode === "bm25" ? sidecar.searchLexical(trimmed, topK) : await sidecar.searchHybrid(trimmed, topK);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
@@ -112,7 +118,10 @@ export class SidecarRetrievalMethod implements RetrievalMethod {
  * answers next and the crawler's CLI search last, so the datasource still searches when the embedder or
  * the sidecar index is down. A leader that answers with no hits is final.
  */
-export function sidecarFirstMethod(options: Omit<SidecarMethodOptions, "mode">, cli: RetrievalMethod): RetrievalMethod {
+export function sidecarFirstMethod(
+	options: Omit<SidecarMethodOptions, "mode" | "sidecar"> & { readonly sidecar: CrawlerSidecar },
+	cli: RetrievalMethod,
+): RetrievalMethod {
 	const bm25 = new SidecarRetrievalMethod({ ...options, mode: "bm25" });
 	if (!options.sidecar.semanticEnabled) return new FallbackRetrievalMethod(bm25, [cli]);
 	return new FallbackRetrievalMethod(new SidecarRetrievalMethod({ ...options, mode: "hybrid" }), [bm25, cli]);

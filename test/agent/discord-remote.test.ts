@@ -84,9 +84,9 @@ function recordingUi(notices: string[]): ExtensionUIContext {
 
 async function discordAgent(
 	answers: string[],
-	options: { discordRemote: boolean; route?: "direct" | "local"; followUp?: number } = { discordRemote: true },
+	options: { discordRemote: boolean; route?: "extra" | "local"; followUp?: number } = { discordRemote: true },
 ) {
-	const route = options.route ?? "direct";
+	const route = options.route ?? "extra";
 	const registration = registerFauxProvider({
 		api: `faux-discord-${randomUUID()}`,
 		models: [{ id: "discord-model" }],
@@ -113,7 +113,7 @@ async function discordAgent(
 			backend: new MockBackend({
 				[QUERY_ROUTE_QUESTION_ID]: {
 					answer: route,
-					distribution: { local: 0.1, web: 0.1, direct: 0.1, [route]: 0.8 },
+					distribution: { local: 0.1, organize: 0.1, extra: 0.1, [route]: 0.8 },
 					confidence: 0.8,
 				},
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },

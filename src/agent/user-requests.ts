@@ -25,8 +25,8 @@ type SaveEntry = (request: UserRequest) => void;
 
 /**
  * What the user has said in this conversation, in order, exactly as typed: the first question, every
- * follow-up, every steer. AutoRAG's own phase prompts (fast answer, verification, direct answer, steer
- * continuation) never enter it, because it is fed where the user's words arrive, not from the transcript.
+ * follow-up, every steer. AutoRAG's own phase prompts (fast answer, verification, the extra/organize/config
+ * turn, steer continuation) never enter it, because it is fed where the user's words arrive, not from the transcript.
  *
  * It is not truncated here. Whoever consumes it fits it to its own limit.
  */

@@ -65,6 +65,8 @@ export type SearchDocumentDiagnosticCode =
 	| "follow-up-check-fallback"
 	| "datasources-selected"
 	| "datasource-selection-fallback"
+	| "web-datasource-id-taken"
+	| "web-search-failed"
 	| "citation-without-result"
 	| "line-reference-unverified"
 	| "citation-irrelevant"
@@ -74,6 +76,7 @@ export type SearchDocumentDiagnosticCode =
 	| "memory-search-fallback"
 	| "self-config-unavailable"
 	| "self-config-rolled-back"
+	| "organize-skill-unavailable"
 	| "embedding-unavailable";
 
 export interface SearchDocumentDiagnostic {
