@@ -126,9 +126,7 @@ async function installMinSyncFromCargo(
 		{ timeoutMs: MINSYNC_CARGO_INSTALL_TIMEOUT_MS },
 	);
 	if (!result.ok) {
-		throw new MinSyncReleaseError(
-			result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`,
-		);
+		throw new MinSyncReleaseError(result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`);
 	}
 	const installedBinary = join(cargoRoot, "bin", executableName(options.platform ?? process.platform));
 	if (!existsSync(installedBinary)) {
