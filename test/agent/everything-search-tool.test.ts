@@ -61,6 +61,40 @@ describe("everything_search tool", () => {
 		expect(result.details).toMatchObject({ resultCount: 0, sources: [] });
 	});
 
+	it("searches every alternative name at once and merges the hits, labelling who found each", async () => {
+		const requests: EverythingSearchRequest[] = [];
+		const tool = createEverythingSearchTool({
+			async searchEverything(request) {
+				requests.push(request);
+				if (request.query === "invoice") {
+					return {
+						ok: true,
+						results: [{ path: "C:\\d\\invoice.pdf", type: "file", size: undefined, dateModified: undefined }],
+					};
+				}
+				return {
+					ok: true,
+					results: [
+						{ path: "C:\\d\\invoice.pdf", type: "file", size: undefined, dateModified: undefined },
+						{ path: "C:\\d\\receipt.pdf", type: "file", size: undefined, dateModified: undefined },
+					],
+				};
+			},
+		});
+		const result = await tool.execute("call-multi", {
+			query: "invoice",
+			alternatives: ["receipt"],
+			matchPath: true,
+		});
+		expect(requests.map((request) => request.query).sort()).toEqual(["invoice", "receipt"]);
+		expect(requests.every((request) => request.matchPath === true)).toBe(true);
+		expect(result.details).toMatchObject({ resultCount: 2, sources: ["C:\\d\\invoice.pdf", "C:\\d\\receipt.pdf"] });
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain("2 names searched");
+		expect(text).toContain("C:\\d\\invoice.pdf (found by: invoice, receipt)");
+		expect(text).toContain("C:\\d\\receipt.pdf (found by: receipt)");
+	});
+
 	it("rejects an empty query without calling Everything", async () => {
 		let called = false;
 		const tool = createEverythingSearchTool({
@@ -278,4 +312,13 @@ describe("AutoRAGAgent Everything wiring", () => {
 		);
 		expect(agent.refreshComponentStatus().everything).toBe("degraded");
 	});
+});
+
+describe("system prompt name alternatives", () => {
+	it.each([EVERYTHING_SEARCH_TOOL_NAME, "fsearch_search"])(
+		"tells the model %s takes parallel alternatives",
+		(tool) => {
+			expect(buildSystemPrompt({ toolNames: ["bash", tool] })).toContain("`alternatives`");
+		},
+	);
 });

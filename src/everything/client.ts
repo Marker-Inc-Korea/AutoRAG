@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
+import { SharedExclusiveQueue } from "../filesystem/shared-exclusive-queue.ts";
 import {
 	type EnsureEverythingBinariesResult,
 	type EverythingBinaryResolutionMode,
@@ -259,7 +260,7 @@ export class EverythingClient {
 	private readonly stateDir: string;
 	private readonly isExcludedPath: (path: string) => boolean;
 	private binaries: EnsureEverythingBinariesResult | undefined;
-	private operation: Promise<unknown> = Promise.resolve();
+	private readonly queue = new SharedExclusiveQueue();
 
 	constructor(options: EverythingClientOptions) {
 		this.options = options;
@@ -282,7 +283,7 @@ export class EverythingClient {
 	 * `not-installed` with a refresh hint instead.
 	 */
 	search(request: EverythingSearchRequest): Promise<EverythingSearchResult> {
-		return this.serialize(async () => {
+		return this.queue.shared(async () => {
 			const binaries = await this.resolveBinaries("cached");
 			if (!binaries.ok) return binaries;
 			const ping = await this.ping(binaries.esPath);
@@ -363,7 +364,7 @@ export class EverythingClient {
 	 * loads it, and wait until the database finished indexing.
 	 */
 	index(): Promise<EverythingIndexResult> {
-		return this.serialize(async () => {
+		return this.queue.exclusive(async () => {
 			const es = await this.ensureRunning(true);
 			if (!es.ok) return es;
 			const timeoutMs = this.options.indexTimeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS;
@@ -383,7 +384,7 @@ export class EverythingClient {
 
 	/** Exit this workspace's Everything instance if it is running. Never installs binaries. */
 	stop(): Promise<void> {
-		return this.serialize(async () => {
+		return this.queue.exclusive(async () => {
 			const binaries = await this.resolveBinaries("cached");
 			if (!binaries.ok) return;
 			await this.run(
@@ -392,12 +393,6 @@ export class EverythingClient {
 				this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 			);
 		});
-	}
-
-	private serialize<T>(task: () => Promise<T>): Promise<T> {
-		const next = this.operation.then(task, task);
-		this.operation = next.catch(() => undefined);
-		return next;
 	}
 
 	/**
