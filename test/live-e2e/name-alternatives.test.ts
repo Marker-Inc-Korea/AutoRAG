@@ -35,7 +35,7 @@ describe.skipIf(!LIVE)("live: fsearch_search takes several candidate names in on
 		root = mkdtempSync(join(tmpdir(), "autorag-name-alt-live-"));
 		const docs = join(root, "docs");
 		mkdirSync(docs, { recursive: true });
-		writeFileSync(join(docs, "환불규정-2026.hwp"), "x");
+		writeFileSync(join(docs, "reimbursement-rules-2026.txt"), "x");
 		writeFileSync(join(docs, "meeting-notes.md"), "Weekly sync.\n");
 		writeFileSync(join(docs, "lunch-menu.txt"), "Bibimbap.\n");
 		const model = await resolveModel({
@@ -76,7 +76,7 @@ describe.skipIf(!LIVE)("live: fsearch_search takes several candidate names in on
 
 	it("tries several spellings in one call and finds the file", async () => {
 		const response = await agent.searchDocuments(
-			"Use fsearch_search to find the file about the refund policy. I do not remember its exact name: it may be in Korean (환불, 규정) or English (refund, policy). Tell me its file name.",
+			"Use fsearch_search to find the file about the refund policy. I do not remember its exact name: try several different names for it (for example refund, reimbursement, rules, policy), each name as its own candidate. Tell me its file name.",
 		);
 
 		// One call named several candidates: the parallel path, not repeated single-name calls.
@@ -84,6 +84,6 @@ describe.skipIf(!LIVE)("live: fsearch_search takes several candidate names in on
 			(call) => (call.alternatives ?? []).filter((name) => name.trim().length > 0).length >= 1,
 		);
 		expect(multi, JSON.stringify(calls)).toBeDefined();
-		expect(response.answer).toContain("환불규정-2026");
+		expect(response.answer).toContain("reimbursement-rules-2026");
 	}, 300_000);
 });

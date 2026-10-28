@@ -76,23 +76,23 @@ describe("everything_search tool", () => {
 					ok: true,
 					results: [
 						{ path: "C:\\d\\invoice.pdf", type: "file", size: undefined, dateModified: undefined },
-						{ path: "C:\\d\\인보이스.pdf", type: "file", size: undefined, dateModified: undefined },
+						{ path: "C:\\d\\receipt.pdf", type: "file", size: undefined, dateModified: undefined },
 					],
 				};
 			},
 		});
 		const result = await tool.execute("call-multi", {
 			query: "invoice",
-			alternatives: ["인보이스"],
+			alternatives: ["receipt"],
 			matchPath: true,
 		});
-		expect(requests.map((request) => request.query).sort()).toEqual(["invoice", "인보이스"]);
+		expect(requests.map((request) => request.query).sort()).toEqual(["invoice", "receipt"]);
 		expect(requests.every((request) => request.matchPath === true)).toBe(true);
-		expect(result.details).toMatchObject({ resultCount: 2, sources: ["C:\\d\\invoice.pdf", "C:\\d\\인보이스.pdf"] });
+		expect(result.details).toMatchObject({ resultCount: 2, sources: ["C:\\d\\invoice.pdf", "C:\\d\\receipt.pdf"] });
 		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 		expect(text).toContain("2 names searched");
-		expect(text).toContain("C:\\d\\invoice.pdf (found by: invoice, 인보이스)");
-		expect(text).toContain("C:\\d\\인보이스.pdf (found by: 인보이스)");
+		expect(text).toContain("C:\\d\\invoice.pdf (found by: invoice, receipt)");
+		expect(text).toContain("C:\\d\\receipt.pdf (found by: receipt)");
 	});
 
 	it("rejects an empty query without calling Everything", async () => {

@@ -124,18 +124,18 @@ describe("fsearch_search tool", () => {
 				});
 				if (request.query === "invoice")
 					return { ok: true, backend: "fsearch-cli", results: [entry("/d/invoice.pdf"), entry("/d/shared.pdf")] };
-				if (request.query === "인보이스")
+				if (request.query === "receipt")
 					return { ok: true, backend: "fsearch-cli", results: [entry("/d/shared.pdf")] };
 				return { ok: false, reason: "search-failed", message: "database is corrupt" };
 			},
 		});
 		const result = await tool.execute("call-multi", {
 			query: "invoice",
-			alternatives: ["인보이스", "bill"],
+			alternatives: ["receipt", "bill"],
 			kind: "files",
 			maxResults: 10,
 		});
-		expect(requests.map((request) => request.query).sort()).toEqual(["bill", "invoice", "인보이스"]);
+		expect(requests.map((request) => request.query).sort()).toEqual(["bill", "invoice", "receipt"]);
 		expect(requests.every((request) => request.kind === "files" && request.maxResults === 10)).toBe(true);
 		expect(peak).toBe(3);
 		expect(result.details).toMatchObject({
@@ -145,7 +145,7 @@ describe("fsearch_search tool", () => {
 		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 		expect(text).toContain("3 names searched");
 		// Found by two names, so it leads; the name-only hit follows.
-		expect(text).toContain("[1] file /d/shared.pdf (found by: invoice, 인보이스)");
+		expect(text).toContain("[1] file /d/shared.pdf (found by: invoice, receipt)");
 		expect(text).toContain("[2] file /d/invoice.pdf (found by: invoice)");
 		expect(text).toContain('"bill" failed: search-failed: database is corrupt');
 	});

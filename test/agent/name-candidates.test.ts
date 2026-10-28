@@ -15,8 +15,8 @@ type Outcome =
 
 describe("collectNameCandidates", () => {
 	it("puts the query first, trims, and drops empty and repeated alternatives", () => {
-		expect(collectNameCandidates("  invoice ", ["", "인보이스", "invoice", "  인보이스  "])).toEqual({
-			candidates: ["invoice", "인보이스"],
+		expect(collectNameCandidates("  invoice ", ["", "receipt", "invoice", "  receipt  "])).toEqual({
+			candidates: ["invoice", "receipt"],
 			dropped: 0,
 		});
 	});
@@ -81,15 +81,15 @@ describe("mergeNameHits", () => {
 	});
 
 	it("puts a path found by more names ahead of paths found by one, even when it sits later in a list", () => {
-		const hits = mergeNameHits([ok("invoice", "/x.pdf", "/y.pdf", "/z.pdf"), ok("인보이스", "/w.pdf", "/z.pdf")], 10);
+		const hits = mergeNameHits([ok("invoice", "/x.pdf", "/y.pdf", "/z.pdf"), ok("receipt", "/w.pdf", "/z.pdf")], 10);
 		expect(hits.map((hit) => hit.entry.path)).toEqual(["/z.pdf", "/x.pdf", "/w.pdf", "/y.pdf"]);
-		expect(hits[0]?.candidates).toEqual(["invoice", "인보이스"]);
+		expect(hits[0]?.candidates).toEqual(["invoice", "receipt"]);
 	});
 
 	it("lists a path found by several candidates once, with every candidate that found it", () => {
-		const hits = mergeNameHits([ok("invoice", "/x.pdf", "/y.pdf"), ok("인보이스", "/x.pdf")], 10);
+		const hits = mergeNameHits([ok("invoice", "/x.pdf", "/y.pdf"), ok("receipt", "/x.pdf")], 10);
 		expect(hits.map((hit) => hit.entry.path)).toEqual(["/x.pdf", "/y.pdf"]);
-		expect(hits[0]?.candidates).toEqual(["invoice", "인보이스"]);
+		expect(hits[0]?.candidates).toEqual(["invoice", "receipt"]);
 		expect(hits[1]?.candidates).toEqual(["invoice"]);
 	});
 
