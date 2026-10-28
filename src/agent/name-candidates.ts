@@ -93,8 +93,12 @@ export interface MergedNameHit<Entry extends { readonly path: string }> {
 }
 
 /**
- * One list of hits: ranked round-robin across candidates (every candidate's
- * best hit comes before any candidate's second), each path once, cut at `limit`.
+ * One list of hits, each path once. The name indexes (Everything, FSearch) match
+ * names exactly and return their hits in a sort order, not by relevance, so no
+ * hit is "better" than another within one candidate. What does carry signal is
+ * how many of the searched names found a path: those come first. Within the
+ * same count, the candidates' lists are interleaved position by position, so the
+ * cut at `limit` is shared among the candidates instead of one filling it.
  */
 export function mergeNameHits<Entry extends { readonly path: string }>(
 	outcomes: readonly {
@@ -109,21 +113,23 @@ export function mergeNameHits<Entry extends { readonly path: string }>(
 	const order = new Map(outcomes.map((outcome, index) => [outcome.candidate, index]));
 	const byPath = new Map<string, { entry: Entry; candidates: string[] }>();
 	const longest = Math.max(0, ...lists.map((list) => list.entries.length));
-	for (let rank = 0; rank < longest; rank++) {
+	for (let position = 0; position < longest; position++) {
 		for (const list of lists) {
-			const entry = list.entries[rank];
+			const entry = list.entries[position];
 			if (entry === undefined) continue;
 			const existing = byPath.get(entry.path);
 			if (existing === undefined) byPath.set(entry.path, { entry, candidates: [list.candidate] });
 			else if (!existing.candidates.includes(list.candidate)) existing.candidates.push(list.candidate);
 		}
 	}
-	// A later rank can find a path an earlier one already listed: it joins that hit's labels above, so the
-	// labels are complete before the cut. They read in candidate order, not discovery order.
-	return [...byPath.values()].slice(0, limit).map((hit) => ({
-		entry: hit.entry,
-		candidates: [...hit.candidates].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
-	}));
+	// Map insertion order is the interleaved order; the sort is stable, so it only lifts multi-name matches.
+	return [...byPath.values()]
+		.sort((a, b) => b.candidates.length - a.candidates.length)
+		.slice(0, limit)
+		.map((hit) => ({
+			entry: hit.entry,
+			candidates: [...hit.candidates].sort((x, y) => (order.get(x) ?? 0) - (order.get(y) ?? 0)),
+		}));
 }
 
 /** One hit as a numbered line; `foundBy` is shown only when several names were searched. */

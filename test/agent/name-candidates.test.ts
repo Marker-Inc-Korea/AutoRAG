@@ -73,9 +73,17 @@ describe("mergeNameHits", () => {
 		result: { ok: true as const, results: paths.map((path) => ({ path })) },
 	});
 
-	it("interleaves by rank so one candidate cannot crowd out the others", () => {
+	it("interleaves the candidates' lists position by position so one candidate cannot fill the cut", () => {
 		const hits = mergeNameHits([ok("a", "/a1", "/a2", "/a3"), ok("b", "/b1", "/b2")], 10);
 		expect(hits.map((hit) => hit.entry.path)).toEqual(["/a1", "/b1", "/a2", "/b2", "/a3"]);
+		const cut = mergeNameHits([ok("a", "/a1", "/a2", "/a3", "/a4"), ok("b", "/b1", "/b2", "/b3", "/b4")], 4);
+		expect(cut.map((hit) => hit.entry.path)).toEqual(["/a1", "/b1", "/a2", "/b2"]);
+	});
+
+	it("puts a path found by more names ahead of paths found by one, even when it sits later in a list", () => {
+		const hits = mergeNameHits([ok("invoice", "/x.pdf", "/y.pdf", "/z.pdf"), ok("인보이스", "/w.pdf", "/z.pdf")], 10);
+		expect(hits.map((hit) => hit.entry.path)).toEqual(["/z.pdf", "/x.pdf", "/w.pdf", "/y.pdf"]);
+		expect(hits[0]?.candidates).toEqual(["invoice", "인보이스"]);
 	});
 
 	it("lists a path found by several candidates once, with every candidate that found it", () => {

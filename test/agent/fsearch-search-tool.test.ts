@@ -140,12 +140,13 @@ describe("fsearch_search tool", () => {
 		expect(peak).toBe(3);
 		expect(result.details).toMatchObject({
 			resultCount: 2,
-			sources: ["/d/invoice.pdf", "/d/shared.pdf"],
+			sources: ["/d/shared.pdf", "/d/invoice.pdf"],
 		});
 		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 		expect(text).toContain("3 names searched");
-		expect(text).toContain("[1] file /d/invoice.pdf (found by: invoice)");
-		expect(text).toContain("[2] file /d/shared.pdf (found by: invoice, 인보이스)");
+		// Found by two names, so it leads; the name-only hit follows.
+		expect(text).toContain("[1] file /d/shared.pdf (found by: invoice, 인보이스)");
+		expect(text).toContain("[2] file /d/invoice.pdf (found by: invoice)");
 		expect(text).toContain('"bill" failed: search-failed: database is corrupt');
 	});
 
