@@ -27,6 +27,7 @@ export interface SystemPromptConfig {
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly DatasourceAgentSkill[];
 	retrievedContentGuard?: boolean;
+	identityText?: string;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -216,11 +217,15 @@ Before a batch, verify that no two targets share a name.
 Reversibility is your job: in your answer, list every change as old path → new path, so a later "undo that" can be reversed from the conversation alone; anything moved to the trash can be recovered from the OS trash.
 `;
 
+	const identity = config.identityText
+		? `## User Identity\n\nUser-maintained background from IDENTITY.md, for interpreting the user's context and preferences:\n\n${config.identityText}\n\n`
+		: "";
+
 	return `You are AutoRAG, a ${modelId} personal librarian agent that assists the user's office work across document collections, cloud drives, images, and messenger history.
 
 Your job is to retrieve candidates, read the relevant source material directly, judge the evidence, resolve conflicts and freshness, and curate grounded results in one agent loop. When the user asks you to act on their local files, do it within the Local File Organization rules.
 
-## Workflow
+${identity}## Workflow
 
 Searches follow a progressive, two-phase loop:
 1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided and answers the question, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting. When it does not answer the question, the first answer is a single line saying it is not confirmed yet and you are still searching.

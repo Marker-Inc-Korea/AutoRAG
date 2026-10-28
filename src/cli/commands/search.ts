@@ -191,7 +191,6 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		return 2;
 	}
 
-	let agent: Pick<AutoRAGAgent, "searchDocumentsStream">;
 	let thinking: AutoRAGAgentOptions["thinking"] | undefined;
 	try {
 		thinking = buildThinkingFlags(ctx.flags);
@@ -199,11 +198,12 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 2;
 	}
+	let agentOptions: AutoRAGAgentOptions;
 	if (deps.agentFactory && deps.modelResolver === undefined) {
-		agent = deps.agentFactory({
+		agentOptions = {
 			...buildAgentOptions(config),
 			...(thinking !== undefined ? { thinking } : {}),
-		});
+		};
 	} else {
 		let resolvedModel: ResolvedAgentModel;
 		let decompositionModel: DecompositionModel | undefined;
@@ -215,7 +215,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
 			return 2;
 		}
-		const agentOptions: AutoRAGAgentOptions = {
+		agentOptions = {
 			...buildAgentOptions(config),
 			model: resolvedModel.model,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
@@ -223,12 +223,12 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 			...(decompositionModel !== undefined ? { queryDecomposition: decompositionModel } : {}),
 			...(thinking !== undefined ? { thinking } : {}),
 		};
-		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);
 	}
 
 	const options = buildSearchOptions(ctx.flags);
 	const release = deps.releaseEmbedders ?? releaseEmbedders;
 	try {
+		const agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);
 		for await (const event of agent.searchDocumentsStream(query, options)) {
 			switch (event.type) {
 				case "progress":

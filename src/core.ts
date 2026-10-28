@@ -49,7 +49,7 @@ export class AutoRAGLite {
 	constructor(config: CliConfig) {
 		this.config = config;
 		const agentOptions: Omit<AutoRAGAgentOptions, "model"> = buildAgentOptions(config);
-		this.agent = new AutoRAGAgent(agentOptions);
+		this.agent = new AutoRAGAgent({ ...agentOptions, loadIdentity: false });
 		this.retrievalEngine = this.agent.getRetrievalEngine();
 		this.memory = new RetrievalMemory({ storagePath: config.memoryPath });
 		this.memory.load();

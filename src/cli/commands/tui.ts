@@ -53,6 +53,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 		...(bridged ? { defaultPermissionMode: "full" as const } : {}),
 	});
 	const options: AutoRAGAgentOptions = { ...buildAgentOptions(config) };
+	// A bridged session can serve other people, so it must not load the local user's identity.
+	if (bridged) options.loadIdentity = false;
 	// Pi reports its own version/changelog; this notice is AutoRAG's own npm
 	// release check, injected into the same interactive session.
 	options.updateNotice = async () =>
