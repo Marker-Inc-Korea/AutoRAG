@@ -20,10 +20,12 @@ import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import {
+	DiscordAttachmentStore,
 	DiscrawlClient,
 	type DiscrawlEmbeddingRuntime,
 	type DiscrawlOptions,
 	DiscrawlSkill,
+	discordAttachmentsRoot,
 } from "./discrawl/index.ts";
 import { resolveDiscrawlSidecarOptions } from "./discrawl/sidecar.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
@@ -142,6 +144,66 @@ function histerConnectorOptions(connector: Record<string, unknown> | undefined):
 	};
 }
 
+type DiscordConnector = DiscrawlOptions & { readonly embedLimit?: number; readonly downloadAttachments?: boolean };
+
+function discordClient(
+	connector: DiscordConnector,
+	workspaceRoot: string | undefined,
+	embedding: DatasourceEmbeddingOptions,
+): DiscrawlClient {
+	const { downloadAttachments: _download, embedLimit: _limit, ...clientConnector } = connector;
+	return new DiscrawlClient({
+		...clientConnector,
+		...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
+		...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),
+	});
+}
+
+function discordAttachmentStore(
+	registrationName: string,
+	config: DatasourceSkillConfig,
+	client: DiscrawlClient,
+	guildId: string | undefined,
+): DiscordAttachmentStore {
+	return new DiscordAttachmentStore({
+		client,
+		root: discordAttachmentsRoot(registrationName),
+		...(guildId === undefined ? {} : { guildId }),
+		...(config.channels?.ids === undefined ? {} : { channelIds: config.channels.ids }),
+		...(config.channels?.names === undefined ? {} : { channelNames: config.channels.names }),
+	});
+}
+
+export interface DiscordAttachmentConnection {
+	readonly name: string;
+	/** Whether refreshes download automatically (`connector.downloadAttachments !== false`, default on). */
+	readonly autoDownload: boolean;
+	readonly store: DiscordAttachmentStore;
+}
+
+/**
+ * Every enabled Discord connection's attachments folder, built exactly as a refresh builds it, so
+ * `autorag attachments` and the refresh always agree on where files live.
+ */
+export function discordAttachmentConnections(
+	config: DatasourcesConfig | undefined,
+	workspaceRoot?: string,
+): readonly DiscordAttachmentConnection[] {
+	const out: DiscordAttachmentConnection[] = [];
+	for (const [name, raw] of Object.entries(config ?? {})) {
+		if (raw === false) continue;
+		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
+		if (entry.enabled === false || (entry.type ?? name) !== "discord") continue;
+		const connector = (entry.connector ?? {}) as DiscordConnector;
+		out.push({
+			name,
+			autoDownload: connector.downloadAttachments !== false,
+			store: discordAttachmentStore(name, entry, discordClient(connector, workspaceRoot, {}), connector.guildId),
+		});
+	}
+	return out;
+}
+
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 	telegram: (config, workspaceRoot, registrationName, embedding) =>
 		new TelecrawlSkill(
@@ -177,17 +239,14 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			),
 		),
 	discord: (config, workspaceRoot, registrationName, embedding) => {
-		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
+		const connector = (config.connector ?? {}) as DiscordConnector;
 		const sidecar = resolveDiscrawlSidecarOptions({
 			connector: config.connector,
 			workspaceRoot,
 			registrationName,
 			instanceId: config.instanceId ?? "default",
 		});
-		const clientOptions: DiscrawlOptions = {
-			...connector,
-			...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
-		};
+		const client = discordClient(connector, workspaceRoot, embedding);
 		return new DiscrawlSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -196,13 +255,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
 			...(sidecar === undefined ? {} : { sidecar }),
-			client: new DiscrawlClient({
-				...clientOptions,
-				...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),
-			}),
+			client,
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
+			...(connector.downloadAttachments === false
+				? {}
+				: { attachments: discordAttachmentStore(registrationName, config, client, connector.guildId) }),
 		});
 	},
 	clawgallery: (config, workspaceRoot, registrationName) => {

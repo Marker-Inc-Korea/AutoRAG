@@ -63,6 +63,7 @@ const VALUE_FLAGS = new Set([
 	"permission-mode",
 	"whatsapp-group",
 	"event",
+	"connection",
 ]);
 
 const COMMANDS = [
@@ -82,6 +83,7 @@ const COMMANDS = [
 	"models",
 	"update-check",
 	"automate",
+	"attachments",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -118,6 +120,8 @@ Commands:
                        (--top-k N  --scope SCOPE  --json  --debug)
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
+  attachments [status|download]
+                       Show or fill the Discord attachments folder (--connection NAME)
   tui                  Open an interactive Pi-powered librarian terminal UI
                        (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
   models list          List chat models from the pi runtime (--provider ID --available)
@@ -270,6 +274,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		}
 		case "automate": {
 			return runAutomate(ctx);
+		}
+		case "attachments": {
+			const { runAttachments } = await import("./commands/attachments.ts");
+			return runAttachments(ctx);
 		}
 	}
 }
