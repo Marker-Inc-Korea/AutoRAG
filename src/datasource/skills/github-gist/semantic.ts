@@ -132,11 +132,22 @@ export class GistSemanticIndex {
 		return { ok: true, embedded: pending.length };
 	}
 
-	/** Cosine-ranked chunk ids for a query vector. Never throws. */
-	searchByVector(queryVector: readonly number[], topK: number): readonly { chunkId: string; score: number }[] {
+	/**
+	 * Cosine-ranked chunk ids for a query vector. When a current chunk snapshot
+	 * is supplied, exclude missing or changed chunks before ranking and limiting.
+	 */
+	searchByVector(
+		queryVector: readonly number[],
+		topK: number,
+		currentChunks?: ReadonlyMap<string, StoredChunk>,
+	): readonly { chunkId: string; score: number }[] {
 		this.ensureLoaded();
 		const scored: { chunkId: string; score: number }[] = [];
 		for (const [chunkId, entry] of Object.entries(this.entries)) {
+			if (currentChunks !== undefined) {
+				const chunk = currentChunks.get(chunkId);
+				if (chunk === undefined || entry.hash !== contentHash(chunk)) continue;
+			}
 			const score = cosine(queryVector, entry.vector);
 			if (score > 0) scored.push({ chunkId, score });
 		}
@@ -221,9 +232,9 @@ export class GitHubGistSemanticMethod implements RetrievalMethod {
 			return [];
 		}
 		if (queryVector === undefined) return [];
-		const hits = this.options.index.searchByVector(queryVector, Math.max(topK * 3, topK));
-		if (hits.length === 0) return [];
 		const byChunkId = new Map(this.options.store.chunks().map((chunk) => [chunk.chunkId, chunk]));
+		const hits = this.options.index.searchByVector(queryVector, Math.max(topK * 3, topK), byChunkId);
+		if (hits.length === 0) return [];
 		const { skillName, instanceId } = this.options;
 		const mapped: RetrievalResult[] = [];
 		for (const { chunkId, score } of hits) {
