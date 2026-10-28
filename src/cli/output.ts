@@ -77,6 +77,9 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		if (result.minsync.stagingExcludedCount !== undefined) {
 			minsyncObj.stagingExcludedCount = result.minsync.stagingExcludedCount;
 		}
+		if (result.minsync.filesSkippedCount !== undefined) {
+			minsyncObj.filesSkippedCount = result.minsync.filesSkippedCount;
+		}
 		envelope.minsync = minsyncObj;
 	}
 	if (result.datasources && result.datasources.length > 0) {
@@ -103,6 +106,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	);
 	if (result.minsync !== undefined) {
 		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
+		if (result.minsync.filesSkippedCount !== undefined) parts.push(`skipped=${result.minsync.filesSkippedCount}`);
 		if (result.minsync.reason !== undefined) {
 			parts.push(`reason=${result.minsync.reason}`);
 		}
@@ -162,8 +166,9 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 		}
 		if (status.progress.minsync?.synced !== undefined) {
 			const total = status.progress.minsync.total;
+			const filesSkipped = status.progress.minsync.filesSkipped;
 			lines.push(
-				`    minsync: synced=${status.progress.minsync.synced}${total === undefined ? "" : ` total=${total}`}`,
+				`    minsync: synced=${status.progress.minsync.synced}${total === undefined ? "" : ` total=${total}`}${filesSkipped === undefined ? "" : ` filesSkipped=${filesSkipped}`}`,
 			);
 		}
 	}

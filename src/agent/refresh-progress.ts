@@ -29,7 +29,7 @@ export interface PersistedRefreshProgress {
 	readonly finishedAt?: string;
 	readonly sourceFiles?: { readonly total: number };
 	readonly parsedCounts?: RefreshProgressCounts;
-	readonly minsync?: { readonly synced?: number; readonly total?: number };
+	readonly minsync?: { readonly synced?: number; readonly total?: number; readonly filesSkipped?: number };
 	readonly error?: string;
 }
 
@@ -132,7 +132,11 @@ function isMinsync(value: unknown): boolean {
 			(value.synced === undefined ||
 				(typeof value.synced === "number" && Number.isInteger(value.synced) && value.synced >= 0)) &&
 			(value.total === undefined ||
-				(typeof value.total === "number" && Number.isInteger(value.total) && value.total >= 0)))
+				(typeof value.total === "number" && Number.isInteger(value.total) && value.total >= 0)) &&
+			(value.filesSkipped === undefined ||
+				(typeof value.filesSkipped === "number" &&
+					Number.isInteger(value.filesSkipped) &&
+					value.filesSkipped >= 0)))
 	);
 }
 
