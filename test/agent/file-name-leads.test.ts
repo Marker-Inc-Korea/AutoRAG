@@ -9,11 +9,11 @@ const hit = (path: string, ...candidates: string[]) => ({
 describe("formatFileNameLeads", () => {
 	it("lists the files with the names that found them, and says they are unverified leads to open first", () => {
 		const text = formatFileNameLeads({
-			names: ["invoice", "인보이스"],
-			hits: [hit("/docs/invoice-2026-03.pdf", "invoice", "인보이스"), hit("/docs/bill.txt", "invoice")],
+			names: ["invoice", "receipt"],
+			hits: [hit("/docs/invoice-2026-03.pdf", "invoice", "receipt"), hit("/docs/bill.txt", "invoice")],
 			total: 2,
 		});
-		expect(text).toContain("/docs/invoice-2026-03.pdf (found by: invoice, 인보이스)");
+		expect(text).toContain("/docs/invoice-2026-03.pdf (found by: invoice, receipt)");
 		expect(text).toContain("/docs/bill.txt (found by: invoice)");
 		expect(text).toMatch(/names only|not their contents/iu);
 		expect(text).toMatch(/open .* first|read .* first/iu);
@@ -54,8 +54,8 @@ describe("formatFileNameLeads", () => {
 	});
 
 	it("says nothing was found when no name matched, instead of leaving the section out", () => {
-		const text = formatFileNameLeads({ names: ["invoice", "인보이스"], hits: [], total: 0 });
-		expect(text).toContain("invoice, 인보이스");
+		const text = formatFileNameLeads({ names: ["invoice", "receipt"], hits: [], total: 0 });
+		expect(text).toContain("invoice, receipt");
 		expect(text).toMatch(/no file|nothing/iu);
 	});
 });

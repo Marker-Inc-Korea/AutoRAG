@@ -51,7 +51,7 @@ describe.skipIf(!LIVE)("live: file-name leads reach the verification phase, neve
 		docs = join(root, "docs");
 		mkdirSync(join(docs, "billing"), { recursive: true });
 		writeFileSync(join(docs, "billing", "invoice-2026-03.txt"), "March 2026 invoice. Total 1,200,000 KRW.\n");
-		writeFileSync(join(docs, "billing", "인보이스-2026-02.txt"), "February 2026 invoice. Total 900,000 KRW.\n");
+		writeFileSync(join(docs, "billing", "receipt-2026-02.txt"), "February 2026 invoice. Total 900,000 KRW.\n");
 		writeFileSync(join(docs, "lunch-menu.txt"), "Monday bibimbap. Tuesday kimchi stew.\n");
 		writeFileSync(join(docs, "lease-notes.md"), "Lease notes. The security deposit is 4,800,000 KRW.\n");
 		const model = await resolveModel({
@@ -96,7 +96,7 @@ describe.skipIf(!LIVE)("live: file-name leads reach the verification phase, neve
 
 	it("hands verification the files and their directory when a document cannot be found by content", async () => {
 		const response = await agent.searchDocuments(
-			"Which file is my March 2026 invoice? I only remember it was named something like invoice or 인보이스.",
+			"Which file is my March 2026 invoice? I only remember it was named something like invoice or receipt.",
 		);
 
 		const fast = prompts.find((entry) => entry.kind === "fast")?.text ?? "";

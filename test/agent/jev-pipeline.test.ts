@@ -852,15 +852,12 @@ describe("Jev query pipeline before the fast answer", () => {
 		} satisfies Partial<AutoRAGAgentOptions>;
 
 		it("keeps file names out of the fast answer, then hands the verification phase the leads", async () => {
-			for (const name of ["invoice-2026.pdf", "인보이스-2026.pdf", "lunch-menu.txt"]) {
+			for (const name of ["invoice-2026.pdf", "receipt-2026.pdf", "lunch-menu.txt"]) {
 				writeFileSync(join(docs, name), "x");
 			}
 			const proposalPrompts: string[] = [];
 			const proposalModel = fauxModel(
-				capture(
-					fauxAssistantMessage('{"names": ["invoice", "인보이스"]}', { stopReason: "stop" }),
-					proposalPrompts,
-				),
+				capture(fauxAssistantMessage('{"names": ["invoice", "receipt"]}', { stopReason: "stop" }), proposalPrompts),
 			);
 			const prompts: string[] = [];
 			const model = fauxModel(
@@ -876,17 +873,17 @@ describe("Jev query pipeline before the fast answer", () => {
 			});
 			injectMinSync(agent, recordingMinSync().method);
 
-			const response = await agent.searchDocuments("3월 인보이스 pdf 찾아줘");
+			const response = await agent.searchDocuments("find the March invoice pdf");
 
 			const [fastPrompt = "", verifyPrompt = ""] = prompts;
 			// The fast answer never sees file names, and the name model was not asked before it.
 			expect(fastPrompt).not.toContain("invoice-2026.pdf");
 			expect(fastPrompt).not.toMatch(/file-name|File-name/u);
 			expect(proposalPrompts).toHaveLength(1);
-			expect(proposalPrompts[0]).toContain("3월 인보이스 pdf 찾아줘");
+			expect(proposalPrompts[0]).toContain("find the March invoice pdf");
 			// Verification gets the files and their directory as leads.
 			expect(verifyPrompt).toContain(join(docs, "invoice-2026.pdf"));
-			expect(verifyPrompt).toContain(join(docs, "인보이스-2026.pdf"));
+			expect(verifyPrompt).toContain(join(docs, "receipt-2026.pdf"));
 			expect(verifyPrompt).toContain("(found by: invoice)");
 			expect(verifyPrompt).toContain(`${docs} (2 files)`);
 			expect(verifyPrompt).not.toContain("lunch-menu.txt");

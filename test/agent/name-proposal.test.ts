@@ -7,22 +7,21 @@ describe("file-name proposal", () => {
 		const prompts: string[] = [];
 		const names = await proposeFileNames(async (prompt) => {
 			prompts.push(prompt);
-			return '{"names": ["invoice", "인보이스", "bill"]}';
-		}, "3월 인보이스 pdf 찾아줘");
-		expect(names).toEqual(["invoice", "인보이스", "bill"]);
-		expect(prompts).toEqual([buildNameProposalPrompt("3월 인보이스 pdf 찾아줘")]);
-		expect(prompts[0]).toContain("3월 인보이스 pdf 찾아줘");
+			return '{"names": ["invoice", "receipt", "bill"]}';
+		}, "find the March receipt pdf");
+		expect(names).toEqual(["invoice", "receipt", "bill"]);
+		expect(prompts).toEqual([buildNameProposalPrompt("find the March receipt pdf")]);
+		expect(prompts[0]).toContain("find the March receipt pdf");
 		expect(prompts[0]).toMatch(/at most 8/u);
 		expect(prompts[0]).toMatch(/no (search )?operators|plain/iu);
 	});
 
 	it("parses fenced JSON, a bare array, and one name per line", async () => {
-		await expect(proposeFileNames(async () => '```json\n{"names": ["lease", "임대차"]}\n```', "q")).resolves.toEqual([
-			"lease",
-			"임대차",
-		]);
-		await expect(proposeFileNames(async () => '["lease", "임대차"]', "q")).resolves.toEqual(["lease", "임대차"]);
-		await expect(proposeFileNames(async () => "1. lease\n- 임대차", "q")).resolves.toEqual(["lease", "임대차"]);
+		await expect(proposeFileNames(async () => '```json\n{"names": ["lease", "tenancy"]}\n```', "q")).resolves.toEqual(
+			["lease", "tenancy"],
+		);
+		await expect(proposeFileNames(async () => '["lease", "tenancy"]', "q")).resolves.toEqual(["lease", "tenancy"]);
+		await expect(proposeFileNames(async () => "1. lease\n- tenancy", "q")).resolves.toEqual(["lease", "tenancy"]);
 	});
 
 	it("drops blanks and repeats and caps at the candidate limit", async () => {

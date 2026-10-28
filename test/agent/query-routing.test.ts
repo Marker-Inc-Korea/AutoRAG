@@ -773,7 +773,7 @@ describe("the public web as one more candidate in the datasource gate", () => {
 });
 
 describe("needsFileSearch (Jev check once verification is needed)", () => {
-	const fastAnswer = "The 3월 invoice has not been found yet.";
+	const fastAnswer = "The March invoice has not been found yet.";
 
 	function recording(answer: number) {
 		const seen: { state: unknown; questions: readonly { id: string; type: string; question: string }[] }[] = [];
@@ -792,7 +792,7 @@ describe("needsFileSearch (Jev check once verification is needed)", () => {
 
 	it("asks one noul whether a file-name search could help, naming what the search can and cannot do", async () => {
 		const { backend, seen } = recording(0.9);
-		const decision = await needsFileSearch(judgeWith(backend), "3월 인보이스 pdf 어디 있어?", fastAnswer);
+		const decision = await needsFileSearch(judgeWith(backend), "where is the March invoice pdf?", fastAnswer);
 
 		expect(seen).toHaveLength(1);
 		expect(seen[0]?.questions.map((question) => [question.id, question.type])).toEqual([
@@ -801,7 +801,7 @@ describe("needsFileSearch (Jev check once verification is needed)", () => {
 		// The judgment is "could this help", so the question is not "is the user locating a file".
 		expect(seen[0]?.questions[0]?.question).toMatch(/could .*(search|help)/iu);
 		const state = String(seen[0]?.state);
-		expect(state).toContain("3월 인보이스 pdf 어디 있어?");
+		expect(state).toContain("where is the March invoice pdf?");
 		expect(state).toContain(fastAnswer);
 		// What the tool does: names, extensions, folders, paths to open. What it does not: contents, chats, mail, web.
 		expect(state).toMatch(/names, extensions, and folders/iu);
