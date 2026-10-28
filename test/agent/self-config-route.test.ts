@@ -17,6 +17,7 @@ import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts
 import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
+	FILE_SEARCH_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
@@ -104,6 +105,8 @@ function jevRouting(route: QueryRoute | "config"): MockBackend {
 		[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.9 },
 		[DECOMPOSE_QUESTION_ID]: { answer: 0.9 },
 		[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+		// The verification phase also asks whether a file-name search helps; these runs must not run one.
+		[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 	});
 }
 

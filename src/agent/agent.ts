@@ -149,6 +149,7 @@ import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
+import { formatFileNameLeads } from "./file-name-leads.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import { intentOfMessage } from "./intent-tracing.ts";
 import {
@@ -166,6 +167,14 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import {
+	collectNameCandidates,
+	mergeNameHits,
+	type NameSearchResult,
+	renderNameSearchProblems,
+	searchNameCandidates,
+} from "./name-candidates.ts";
+import { proposeFileNames } from "./name-proposal.ts";
 import { loadPackagedSkill, ORGANIZE_SKILL_NAME, type PackagedAgentSkill, SETUP_SKILL_NAME } from "./packaged-skill.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
@@ -182,6 +191,7 @@ import { createModelDecompositionCompleter, type DecompositionModel, decomposeQu
 import {
 	type DatasourceCandidate,
 	FALLBACK_QUERY_ROUTE,
+	needsFileSearch,
 	needsFollowUp,
 	type PastSearchHint,
 	type QueryRoute,
@@ -258,6 +268,11 @@ const SEARCH_TOOLS = [
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+
+/** Matches asked of the name index per name when building verification leads. */
+const LEAD_SEARCH_MAX_RESULTS = 100;
+/** Merged leads kept before the formatter lists the first few and counts the rest. */
+const LEAD_MERGE_LIMIT = 1000;
 
 /** Similar past questions shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
 const SIMILAR_PAST_SEARCH_LIMIT = 5;
@@ -2353,6 +2368,14 @@ export class AutoRAGAgent {
 					}
 					publishPreliminary(preliminary);
 				}
+				// Verification is going to run: give it leads from the name index when Jev wants them.
+				const fileNameLeads = await this.prepareFileNameLeads(
+					trimmedQuery,
+					fastText ?? "",
+					resolved,
+					planAbort.signal,
+				);
+				if (planAbort.signal.aborted || stopped()) return;
 				setThinking(this.finalThinkingLevel);
 				// Only a preliminary consumer actually received may turn the final answer into a delta.
 				const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
@@ -2367,6 +2390,7 @@ export class AutoRAGAgent {
 							fastText,
 							fastAnswerDelivered,
 							this.interactive.steers,
+							fileNameLeads,
 						),
 					),
 				);
@@ -2705,6 +2729,111 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Names the file the question describes may have, for the name index: the
+	 * user's own words, a translation, an abbreviation. A failed or empty
+	 * proposal searches the question itself, so a chosen search never looks for nothing.
+	 */
+	private async proposeNameCandidates(
+		query: string,
+		target: DecompositionModel,
+		signal: AbortSignal,
+	): Promise<readonly string[]> {
+		try {
+			const names = await this.searchProgress.step(
+				"name-proposal",
+				"Guessing file names",
+				() => proposeFileNames(createModelDecompositionCompleter(target, signal), query),
+				(list) => `${list.length} ${list.length === 1 ? "name" : "names"}`,
+			);
+			return names.length > 0 ? names : [query];
+		} catch (error) {
+			this.routingDiagnostics.push({
+				code: "name-proposal-failed",
+				severity: "warning",
+				message: `Guessing file names failed; searching file names with the original question. ${error instanceof Error ? error.message : String(error)}`,
+				source: "name-search",
+			});
+			return [query];
+		}
+	}
+
+	/** The small-model calls (question splitting, file-name guessing) use the configured model, else the session's. */
+	private decompositionTarget(resolved: {
+		readonly model: Model<Api>;
+		readonly apiKey?: string;
+		readonly providerApiKeys?: Readonly<Record<string, string>>;
+	}): DecompositionModel {
+		const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
+		return this.queryDecompositionModel ?? { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
+	}
+
+	/**
+	 * File-name leads for the verification phase. Only runs once verification is
+	 * needed: Jev decides whether files located by name would help, a small model
+	 * lists the names the file may carry, every name is searched in the name index
+	 * at once, and the files and their directories come back as one block of
+	 * context. The block is not evidence (no ledger entry, nothing citable) and a
+	 * failure here never stops verification. Returns undefined when nothing was
+	 * asked or Jev declined.
+	 */
+	private async prepareFileNameLeads(
+		query: string,
+		fastAnswer: string,
+		resolved: Parameters<AutoRAGAgent["decompositionTarget"]>[0],
+		signal: AbortSignal,
+	): Promise<string | undefined> {
+		const judge = this.jevJudge;
+		if (judge === undefined) return undefined;
+		const useEverything = this.everythingClient !== undefined;
+		if (!useEverything && this.fsearchClient === undefined) return undefined;
+		const decision = await this.searchProgress.step(
+			"file-search-check",
+			"Checking whether file names would help",
+			() => needsFileSearch(judge, query, fastAnswer),
+			(checked) => (checked.search ? "yes" : "no"),
+		);
+		if (decision.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "file-search-check-fallback",
+				severity: "warning",
+				message: `Jev file-search check was unavailable; no file-name search ran before verification. ${decision.fallbackReason}`,
+				source: "jev",
+			});
+			return undefined;
+		}
+		if (!decision.search) return undefined;
+		this.routingDiagnostics.push({
+			code: "file-search-selected",
+			severity: "info",
+			message: `Jev chose a file-name search to give the verification phase leads (P(file search)=${decision.probability?.toFixed(2) ?? "?"}).`,
+			source: "jev",
+		});
+		const proposed = await this.proposeNameCandidates(query, this.decompositionTarget(resolved), signal);
+		const { candidates: searched, dropped } = collectNameCandidates(proposed[0] ?? query, proposed.slice(1));
+		const maxResults = LEAD_SEARCH_MAX_RESULTS;
+		const outcomes = await this.searchProgress.step(
+			"file-names",
+			"Searching file names",
+			() =>
+				searchNameCandidates(
+					searched,
+					(candidate): Promise<NameSearchResult> =>
+						useEverything
+							? this.searchEverything({ query: candidate, maxResults })
+							: this.searchFsearch({ query: candidate, maxResults }),
+				),
+			(found) => `${found.length} ${found.length === 1 ? "name" : "names"}`,
+		);
+		const hits = mergeNameHits(outcomes, LEAD_MERGE_LIMIT);
+		return formatFileNameLeads({
+			names: searched,
+			hits,
+			total: hits.length,
+			failures: renderNameSearchProblems(outcomes, dropped),
+		});
+	}
+
+	/**
 	 * Jev check run after the fast answer: does the answer need correction,
 	 * clarification, or further research? "No" ends the run with the fast
 	 * answer as the final answer. Without Jev, or when the check fails, the run
@@ -2828,12 +2957,7 @@ export class AutoRAGAgent {
 				: Promise.resolve({ datasources: [], web: false });
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route === "local") {
-			const target = this.queryDecompositionModel ?? {
-				model: resolved.model,
-				...((resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider]) !== undefined
-					? { apiKey: resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider] }
-					: {}),
-			};
+			const target = this.decompositionTarget(resolved);
 			try {
 				queries = await this.searchProgress.step(
 					"decompose",
@@ -3520,6 +3644,7 @@ export class AutoRAGAgent {
 		fastAnswer: string | undefined,
 		fastAnswerDelivered: boolean,
 		steers: readonly string[] = [],
+		fileNameLeads?: string,
 	): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
@@ -3553,6 +3678,7 @@ export class AutoRAGAgent {
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
 			formatSteerContext(steers) +
+			(fileNameLeads !== undefined ? `${fileNameLeads}\n\n` : "") +
 			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +

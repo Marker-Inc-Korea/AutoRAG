@@ -19,6 +19,7 @@ import {
 import {
 	DECOMPOSE_QUESTION_ID,
 	datasourceQuestionId,
+	FILE_SEARCH_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
@@ -61,6 +62,8 @@ function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
 			},
 			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 			[FOLLOW_UP_QUESTION_ID]: { answer: followUp },
+			// The verification phase also asks whether a file-name search helps; these runs must not run one.
+			[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 		}),
 	);
 }
@@ -714,6 +717,8 @@ describe("AutoRAG pi coding-agent host", () => {
 			},
 			[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 			[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+			// The verification phase also asks whether a file-name search helps; these runs must not run one.
+			[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 			[datasourceQuestionId("kakao")]: { answer: 0.9 },
 			// The gate also asks about the public web; this run must not search it.
 			[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },
@@ -1411,6 +1416,8 @@ describe("AutoRAG pi coding-agent host", () => {
 				},
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 				[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
+				// The verification phase also asks whether a file-name search helps; these runs must not run one.
+				[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 				[datasourceQuestionId("kakao")]: { answer: 0.9 },
 				// The gate also asks about the public web; these runs must not search it.
 				[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: 0 },

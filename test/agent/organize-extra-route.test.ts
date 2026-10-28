@@ -18,6 +18,7 @@ import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.t
 import { packagedSkillLocation } from "../../src/agent/packaged-skill.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
+	FILE_SEARCH_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
@@ -143,6 +144,8 @@ function jevRouting(route: QueryRoute, decomposeProbability = 0.9): MockBackend 
 		[QUERY_ROUTE_QUESTION_ID]: { answer: route, distribution, confidence: 0.9 },
 		[DECOMPOSE_QUESTION_ID]: { answer: decomposeProbability },
 		[FOLLOW_UP_QUESTION_ID]: { answer: 0.9 },
+		// The verification phase also asks whether a file-name search helps; these runs must not run one.
+		[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 	});
 }
 

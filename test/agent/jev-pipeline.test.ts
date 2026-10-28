@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.t
 import {
 	DECOMPOSE_QUESTION_ID,
 	datasourceQuestionId,
+	FILE_SEARCH_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 	type QueryRoute,
@@ -92,6 +93,7 @@ function jevRouting(
 	followUpProbability = 0.9,
 	datasourceProbabilities: Readonly<Record<string, number>> = {},
 	webProbability = 0,
+	fileSearchProbability = 0,
 ): JevBackend {
 	const distribution = { local: 0.1, organize: 0.1, extra: 0.1, [route]: 0.8 };
 	return citationsRelevant(
@@ -103,6 +105,7 @@ function jevRouting(
 			// every test pins that answer too: unpinned, the mock synthesizes one and
 			// a run would start a real web search.
 			[datasourceQuestionId(WEB_DATASOURCE_ID)]: { answer: webProbability },
+			[FILE_SEARCH_QUESTION_ID]: { answer: fileSearchProbability },
 			...Object.fromEntries(
 				Object.entries(datasourceProbabilities).map(([datasourceId, answer]) => [
 					datasourceQuestionId(datasourceId),
@@ -839,6 +842,166 @@ describe("Jev query pipeline before the fast answer", () => {
 		// The cited web evidence becomes a result whose source is the URL.
 		expect(response.results.map((result) => result.source)).toContain(url);
 		expect(response.answer).toContain("[1]");
+	});
+
+	describe("file-name leads for the verification phase", () => {
+		/** FSearch with no fsearch-cli: the slow walk answers over `docs`, deterministic on every host. */
+		const NAME_INDEX = {
+			everything: false,
+			fsearch: { platform: "darwin", binaryPath: "/nonexistent/fsearch-cli" },
+		} satisfies Partial<AutoRAGAgentOptions>;
+
+		it("keeps file names out of the fast answer, then hands the verification phase the leads", async () => {
+			for (const name of ["invoice-2026.pdf", "인보이스-2026.pdf", "lunch-menu.txt"]) {
+				writeFileSync(join(docs, name), "x");
+			}
+			const proposalPrompts: string[] = [];
+			const proposalModel = fauxModel(
+				capture(
+					fauxAssistantMessage('{"names": ["invoice", "인보이스"]}', { stopReason: "stop" }),
+					proposalPrompts,
+				),
+			);
+			const prompts: string[] = [];
+			const model = fauxModel(
+				capture(fastAnswer("The invoice is not confirmed yet."), prompts),
+				capture(finalAnswer("Verified."), prompts),
+			);
+			const agent = agentWith({
+				model,
+				...NAME_INDEX,
+				queryDecomposition: { model: proposalModel },
+				// Follow-up needed (0.9); file search wanted (0.9).
+				jev: { backend: jevRouting("local", 0.1, 0.9, {}, 0, 0.9) },
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("3월 인보이스 pdf 찾아줘");
+
+			const [fastPrompt = "", verifyPrompt = ""] = prompts;
+			// The fast answer never sees file names, and the name model was not asked before it.
+			expect(fastPrompt).not.toContain("invoice-2026.pdf");
+			expect(fastPrompt).not.toMatch(/file-name|File-name/u);
+			expect(proposalPrompts).toHaveLength(1);
+			expect(proposalPrompts[0]).toContain("3월 인보이스 pdf 찾아줘");
+			// Verification gets the files and their directory as leads.
+			expect(verifyPrompt).toContain(join(docs, "invoice-2026.pdf"));
+			expect(verifyPrompt).toContain(join(docs, "인보이스-2026.pdf"));
+			expect(verifyPrompt).toContain("(found by: invoice)");
+			expect(verifyPrompt).toContain(`${docs} (2 files)`);
+			expect(verifyPrompt).not.toContain("lunch-menu.txt");
+			// The leads are not evidence: nothing cites or registers them.
+			expect(response.results).toEqual([]);
+			expect(
+				response.diagnostics?.some(
+					(diagnostic) => diagnostic.code === "file-search-selected" && diagnostic.message.includes("=0.90"),
+				),
+			).toBe(true);
+		});
+
+		it("asks nothing and adds no leads when the fast answer is final", async () => {
+			writeFileSync(join(docs, "invoice-2026.pdf"), "x");
+			const proposalPrompts: string[] = [];
+			const proposalModel = fauxModel(
+				capture(fauxAssistantMessage('{"names": ["invoice"]}', { stopReason: "stop" }), proposalPrompts),
+			);
+			const model = fauxModel(fastAnswer("The invoice is /docs/invoice-2026.pdf."));
+			const agent = agentWith({
+				model,
+				...NAME_INDEX,
+				queryDecomposition: { model: proposalModel },
+				// Follow-up not needed (0.1): the run ends before the file-search check.
+				jev: { backend: jevRouting("local", 0.1, 0.1, {}, 0, 0.9) },
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("where is the invoice?");
+
+			expect(proposalPrompts).toEqual([]);
+			expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "file-search-selected")).toBe(false);
+		});
+
+		it("adds no leads when Jev does not want a file search", async () => {
+			writeFileSync(join(docs, "invoice-2026.pdf"), "x");
+			const proposalPrompts: string[] = [];
+			const proposalModel = fauxModel(
+				capture(fauxAssistantMessage('{"names": ["invoice"]}', { stopReason: "stop" }), proposalPrompts),
+			);
+			const prompts: string[] = [];
+			const model = fauxModel(capture(fastAnswer("Not sure."), prompts), capture(finalAnswer("Verified."), prompts));
+			const agent = agentWith({
+				model,
+				...NAME_INDEX,
+				queryDecomposition: { model: proposalModel },
+				jev: { backend: jevRouting("local", 0.1, 0.9, {}, 0, 0.1) },
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("what does the lease say about the deposit?");
+
+			expect(proposalPrompts).toEqual([]);
+			expect(prompts[1]).not.toContain("invoice-2026.pdf");
+			expect(prompts[1]).not.toMatch(/File-name leads/u);
+		});
+
+		it("searches the question itself when the name proposal comes back empty", async () => {
+			writeFileSync(join(docs, "invoice-2026.pdf"), "x");
+			const proposalModel = fauxModel(fauxAssistantMessage("   ", { stopReason: "stop" }));
+			const prompts: string[] = [];
+			const model = fauxModel(capture(fastAnswer("Not sure."), prompts), capture(finalAnswer("Verified."), prompts));
+			const agent = agentWith({
+				model,
+				...NAME_INDEX,
+				queryDecomposition: { model: proposalModel },
+				jev: { backend: jevRouting("local", 0.1, 0.9, {}, 0, 0.9) },
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("invoice");
+
+			expect(prompts[1]).toContain(join(docs, "invoice-2026.pdf"));
+		});
+
+		it("is not asked on a host with no name index", async () => {
+			const prompts: string[] = [];
+			const model = fauxModel(capture(fastAnswer("Not sure."), prompts), capture(finalAnswer("Verified."), prompts));
+			const agent = agentWith({
+				model,
+				everything: false,
+				fsearch: false,
+				jev: { backend: jevRouting("local", 0.1, 0.9, {}, 0, 0.9) },
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("invoice");
+
+			expect(prompts[1]).not.toMatch(/File-name leads/u);
+			expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "file-search-selected")).toBe(false);
+		});
+
+		it("still verifies, without leads, when the file search fails", async () => {
+			const proposalModel = fauxModel(fauxAssistantMessage('{"names": ["invoice"]}', { stopReason: "stop" }));
+			const prompts: string[] = [];
+			const model = fauxModel(capture(fastAnswer("Not sure."), prompts), capture(finalAnswer("Verified."), prompts));
+			const agent = agentWith({
+				model,
+				everything: false,
+				fsearch: { platform: "darwin", binaryPath: "/nonexistent/fsearch-cli" },
+				queryDecomposition: { model: proposalModel },
+				jev: { backend: jevRouting("local", 0.1, 0.9, {}, 0, 0.9) },
+			});
+			// An index that throws: the verification phase must still run.
+			(agent as unknown as { searchFsearch: () => Promise<never> }).searchFsearch = async () => {
+				throw new Error("socket closed");
+			};
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("invoice");
+
+			expect(response.answer).toBe("Verified.");
+			expect(prompts[1]).toMatch(/File-name leads/u);
+			expect(prompts[1]).toContain("socket closed");
+		});
 	});
 
 	it("searches no web when Jev does not select the web candidate, and still lists it as skipped", async () => {

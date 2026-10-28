@@ -31,6 +31,12 @@ export const DECOMPOSE_QUESTION_ID = "decompose";
 /** Jev question id of the post-fast-answer "needs follow-up?" check. */
 export const FOLLOW_UP_QUESTION_ID = "follow_up";
 
+/** Jev question id of the "search file names for leads?" check run once verification is needed. */
+export const FILE_SEARCH_QUESTION_ID = "file_search";
+
+/** A `noul` probability at or above this searches the name index for the verification phase. */
+export const FILE_SEARCH_PROBABILITY_THRESHOLD = 0.5;
+
 /** Route used whenever Jev gives no usable branch: today's local search. */
 export const FALLBACK_QUERY_ROUTE: QueryRoute = "local";
 
@@ -127,6 +133,57 @@ export async function needsFollowUp(judge: JevJudge, query: string, answer: stri
 		return { followUp: true, fallbackReason: verdict?.hint ?? "Jev returned no usable follow-up verdict." };
 	}
 	return { followUp: verdict.answer >= FOLLOW_UP_PROBABILITY_THRESHOLD, probability: verdict.answer };
+}
+
+/**
+ * Wording calibrated against live Jev (OpenRouter `typesafe/jev-1.13`) on 9 cases,
+ * 4 find-the-file and 5 content or fact questions, English and Korean. Asking
+ * whether file names "would help" scored a content question 0.61, because "the
+ * first answer says a document was not found" fits every unanswered question.
+ * Asking whether the user wants a particular file located by what it is called
+ * separated them cleanly: find-the-file >= 0.97, everything else <= 0.05.
+ */
+const FILE_SEARCH_QUESTION = check(
+	"Is the user asking to locate a particular file or folder by what it is called (its name, extension, or where it is saved), rather than asking what is written in documents?",
+	{
+		true: "The user wants a specific file or folder located: they describe it by its name, type, date, or folder, and may not remember the exact name.",
+		false: "The user asks for information, facts, people, events, or what a document says; finding the answer does not require locating a file by its name.",
+	},
+);
+
+export interface FileSearchDecision {
+	/** True when the name index is searched and its files are handed to the verification phase. */
+	readonly search: boolean;
+	/** Jev's P(file search helps), when it answered. */
+	readonly probability?: number;
+	/** Why no file search ran instead of following Jev; absent when Jev decided. */
+	readonly fallbackReason?: string;
+}
+
+/**
+ * Ask Jev, once the first answer needs follow-up, whether files located by
+ * name would help the verification phase. The state says what a name index
+ * holds: only the names of files and folders, never what is written inside.
+ * Never throws: with no usable verdict no file search runs, because the
+ * verification phase still has every retrieval and file tool of its own.
+ */
+export async function needsFileSearch(judge: JevJudge, query: string, answer: string): Promise<FileSearchDecision> {
+	let verdicts: readonly Verdict[];
+	try {
+		verdicts = (
+			await judge(
+				`A name index holds only the names of files and folders under the user's search folders (never what is written inside them) and finds them instantly.\n\nUser question: ${query}\n\nFirst answer:\n${answer}`,
+				[{ ...FILE_SEARCH_QUESTION, id: FILE_SEARCH_QUESTION_ID }],
+			)
+		).verdicts;
+	} catch (error) {
+		return { search: false, fallbackReason: error instanceof Error ? error.message : String(error) };
+	}
+	const verdict = verdicts.find((entry) => entry.id === FILE_SEARCH_QUESTION_ID);
+	if (typeof verdict?.answer !== "number") {
+		return { search: false, fallbackReason: verdict?.hint ?? "Jev returned no usable file-search verdict." };
+	}
+	return { search: verdict.answer >= FILE_SEARCH_PROBABILITY_THRESHOLD, probability: verdict.answer };
 }
 
 const BASE_ROUTE_OPTIONS: Record<Exclude<QueryRoute, "config">, string> = {

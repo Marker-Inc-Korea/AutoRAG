@@ -5,8 +5,10 @@ import {
 	type DatasourceCandidate,
 	DECOMPOSE_QUESTION_ID,
 	datasourceQuestionId,
+	FILE_SEARCH_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
 	NON_LOCAL_ROUTE_PROBABILITY_THRESHOLD,
+	needsFileSearch,
 	needsFollowUp,
 	QUERY_ROUTE_QUESTION_ID,
 	routeQuery,
@@ -767,5 +769,66 @@ describe("the public web as one more candidate in the datasource gate", () => {
 		]);
 
 		expect(String(seen[0]?.state)).not.toContain("Node.js Releases");
+	});
+});
+
+describe("needsFileSearch (Jev check once verification is needed)", () => {
+	const fastAnswer = "The 3월 invoice has not been found yet.";
+
+	function recording(answer: number) {
+		const seen: { state: unknown; questions: readonly { id: string; type: string; question: string }[] }[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				seen.push({
+					state: request.state,
+					questions: request.questions.map(({ id, type, question }) => ({ id, type, question })),
+				});
+				return { answers: request.questions.map(() => ({ answer })) };
+			},
+		};
+		return { backend, seen };
+	}
+
+	it("asks one noul about locating files by name, with the question and the first answer in the state", async () => {
+		const { backend, seen } = recording(0.9);
+		const decision = await needsFileSearch(judgeWith(backend), "3월 인보이스 pdf 어디 있어?", fastAnswer);
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.questions.map((question) => [question.id, question.type])).toEqual([
+			[FILE_SEARCH_QUESTION_ID, "noul"],
+		]);
+		const state = String(seen[0]?.state);
+		expect(state).toContain("3월 인보이스 pdf 어디 있어?");
+		expect(state).toContain(fastAnswer);
+		expect(state).toMatch(/names of files and folders/iu);
+		expect(decision).toEqual({ search: true, probability: 0.9 });
+	});
+
+	it("searches at one half or above and skips below it", async () => {
+		await expect(needsFileSearch(judgeWith(recording(0.5).backend), "q", fastAnswer)).resolves.toMatchObject({
+			search: true,
+		});
+		await expect(needsFileSearch(judgeWith(recording(0.49).backend), "q", fastAnswer)).resolves.toMatchObject({
+			search: false,
+			probability: 0.49,
+		});
+	});
+
+	it("skips the search and says why when no Jev credential resolves", async () => {
+		const decision = await needsFileSearch(createJevJudge({ backend: "typesafe", env: {} }), "q", fastAnswer);
+		expect(decision.search).toBe(false);
+		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
+	});
+
+	it("skips the search and says why when the backend fails", async () => {
+		const failing: JevBackend = {
+			name: "failing",
+			async judge() {
+				throw new Error("connection refused");
+			},
+		};
+		const decision = await needsFileSearch(judgeWith(failing), "q", fastAnswer);
+		expect(decision).toMatchObject({ search: false, fallbackReason: expect.stringContaining("connection refused") });
 	});
 });

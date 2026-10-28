@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import {
 	DECOMPOSE_QUESTION_ID,
+	FILE_SEARCH_QUESTION_ID,
 	FOLLOW_UP_QUESTION_ID,
 	QUERY_ROUTE_QUESTION_ID,
 } from "../../src/agent/query-routing.ts";
@@ -75,6 +76,8 @@ async function tui(responses: FauxResponseStep[]) {
 				},
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 				[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
+				// The verification phase also asks whether a file-name search helps; these runs must not run one.
+				[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 			}),
 		},
 	});
@@ -280,6 +283,8 @@ describe("external MCP servers in headless AutoRAG searches", () => {
 					},
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
 					[FOLLOW_UP_QUESTION_ID]: { answer: 0.1 },
+					// The verification phase also asks whether a file-name search helps; these runs must not run one.
+					[FILE_SEARCH_QUESTION_ID]: { answer: 0 },
 				}),
 			},
 		});

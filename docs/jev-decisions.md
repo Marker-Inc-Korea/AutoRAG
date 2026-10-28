@@ -403,6 +403,42 @@ queries as a `query-routed` diagnostic, and the datasource check's picks as
 two-phase (fast answer, then verification unless Jev ends the run); there is
 no single-phase mode.
 
+### File-name leads for the verification phase
+
+File names never reach the fast answer: the name indexes (Everything on Windows,
+FSearch on macOS/Linux) match names exactly and return hits in a sort order, not
+by relevance, so there is nothing to rank or rerank, and a bare path is not a
+chunk. They are used only once the follow-up check says verification will run,
+and only on a host that has a name index.
+
+At that point Jev answers one more `noul` (`file_search`) about the question and
+the first answer: is the user asking to locate a particular file or folder by
+what it is called, rather than asking what is written in documents? Calibrated
+on live Jev: find-the-file questions scored 0.97 or more, content and fact
+questions 0.05 or less. (Asking whether names "would help" scored a content
+question 0.61, so the wording does not mention the first answer's gaps.)
+At 0.5 or above, a `file-search-selected` diagnostic records the probability and
+the run goes on:
+
+1. The small model that splits questions (`queryDecomposition.model`, default the
+   session model) lists up to 8 plain name fragments the file may carry (the
+   user's words, a translation, an abbreviation, a likely extension). An empty or
+   failed proposal (`name-proposal-failed`) searches the question itself.
+2. Every name is searched in the index at once. The merged list holds each path
+   once, labelled with the names that found it; paths found by more names come
+   first, and the names' lists are interleaved so no single name fills the cut.
+3. The verification prompt gets a `File-name leads` block: the matched files
+   (first 30, with a count of the rest), the directories that hold them (most
+   matches first), and the instruction to open the most plausible files first
+   and list those directories before searching anywhere broader. A name whose
+   search failed is listed in the block, so a gap is not read as "no such file".
+
+The block is context, not evidence. Nothing in it is registered in the evidence
+ledger or can be cited; the agent has to open a file to cite it. If the check or
+the search fails (`file-search-check-fallback`), verification runs without leads.
+The same parallel search is available to the model as the `alternatives`
+argument of `fsearch_search` and `everything_search`.
+
 ## Citation relevance check
 
 The model sometimes cites a chunk that has nothing to do with the sentence it
