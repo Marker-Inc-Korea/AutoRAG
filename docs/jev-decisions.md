@@ -411,14 +411,24 @@ by relevance, so there is nothing to rank or rerank, and a bare path is not a
 chunk. They are used only once the follow-up check says verification will run,
 and only on a host that has a name index.
 
-At that point Jev answers one more `noul` (`file_search`) about the question and
-the first answer: is the user asking to locate a particular file or folder by
-what it is called, rather than asking what is written in documents? Calibrated
-on live Jev: find-the-file questions scored 0.97 or more, content and fact
-questions 0.05 or less. (Asking whether names "would help" scored a content
-question 0.61, so the wording does not mention the first answer's gaps.)
-At 0.5 or above, a `file-search-selected` diagnostic records the probability and
-the run goes on:
+At that point Jev answers one more `noul` (`file_search`): could searching the
+names of files and folders help the assistant find what the user asked for? The
+state tells Jev what the tool is, not what the user wants: it matches only names,
+extensions, and folders and gives the assistant paths to open and directories to
+look in; it never reads what is written inside a file and does not search chats,
+mail, calendars, or the web. It then carries the question and the first answer.
+
+So "which file is my March invoice?" scores high, and so does "what does my lease
+contract say about the deposit?", because finding the contract by name is how the
+assistant reaches the answer. A question whose answer lives in a Slack thread, a
+friend's message, an email, or on the public web scores low. Calibrated on live
+Jev over 22 labelled cases (English and Korean, 3 runs each): the lowest "help"
+case scored 0.85 and the highest "no help" case 0.09. An earlier wording asked
+whether the user was locating a file "rather than asking what a document says";
+it labelled the lease question a no, and was dropped. Adding the datasources
+already searched, whether the web was, or how many sources the first answer cites
+moved no case, so the state stays short. At 0.5 or above, a `file-search-selected`
+diagnostic records the probability and the run goes on:
 
 1. The small model that splits questions (`queryDecomposition.model`, default the
    session model) lists up to 8 plain name fragments the file may carry (the

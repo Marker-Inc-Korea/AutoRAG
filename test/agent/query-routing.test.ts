@@ -790,7 +790,7 @@ describe("needsFileSearch (Jev check once verification is needed)", () => {
 		return { backend, seen };
 	}
 
-	it("asks one noul about locating files by name, with the question and the first answer in the state", async () => {
+	it("asks one noul whether a file-name search could help, naming what the search can and cannot do", async () => {
 		const { backend, seen } = recording(0.9);
 		const decision = await needsFileSearch(judgeWith(backend), "3월 인보이스 pdf 어디 있어?", fastAnswer);
 
@@ -798,11 +798,26 @@ describe("needsFileSearch (Jev check once verification is needed)", () => {
 		expect(seen[0]?.questions.map((question) => [question.id, question.type])).toEqual([
 			[FILE_SEARCH_QUESTION_ID, "noul"],
 		]);
+		// The judgment is "could this help", so the question is not "is the user locating a file".
+		expect(seen[0]?.questions[0]?.question).toMatch(/could .*(search|help)/iu);
 		const state = String(seen[0]?.state);
 		expect(state).toContain("3월 인보이스 pdf 어디 있어?");
 		expect(state).toContain(fastAnswer);
-		expect(state).toMatch(/names of files and folders/iu);
+		// What the tool does: names, extensions, folders, paths to open. What it does not: contents, chats, mail, web.
+		expect(state).toMatch(/names, extensions, and folders/iu);
+		expect(state).toMatch(/never reads what is written inside/iu);
+		expect(state).toMatch(/does not search chats, mail, calendars, or the web/iu);
 		expect(decision).toEqual({ search: true, probability: 0.9 });
+	});
+
+	it("counts a question about what a named document says as one the search can help with", async () => {
+		const { backend, seen } = recording(0.9);
+		await needsFileSearch(judgeWith(backend), "What does my lease contract say about the deposit?", fastAnswer);
+		const labels = JSON.stringify(seen[0]?.questions[0]);
+		expect(labels).toBeDefined();
+		const state = String(seen[0]?.state);
+		// The state must not tell Jev the search is only for locating files.
+		expect(state).not.toMatch(/only (for|to) (locat|find)/iu);
 	});
 
 	it("searches at one half or above and skips below it", async () => {

@@ -118,9 +118,21 @@ describe.skipIf(!LIVE)("live: file-name leads reach the verification phase, neve
 		expect(response.answer).toContain("invoice-2026-03");
 	}, 300_000);
 
-	it("adds no leads for a question about what a document says", async () => {
+	it("also hands leads for a question about what a named document says, since finding it by name leads to the answer", async () => {
 		prompts.length = 0;
 		const response = await agent.searchDocuments("What does my lease note say the security deposit is?");
+
+		expect(diagnostic(response, "file-search-selected")).toBeDefined();
+		const verify = prompts.find((entry) => entry.kind === "verify")?.text ?? "";
+		expect(verify).toContain("File-name leads");
+		expect(verify).toContain(join(docs, "lease-notes.md"));
+		const fast = prompts.find((entry) => entry.kind === "fast")?.text ?? "";
+		expect(fast).not.toContain("lease-notes.md");
+	}, 300_000);
+
+	it("adds no leads when the answer would live in a chat, mail, or the web", async () => {
+		prompts.length = 0;
+		const response = await agent.searchDocuments("What is the latest stable Node.js LTS version right now?");
 
 		expect(diagnostic(response, "file-search-selected")).toBeUndefined();
 		expect(step(agent, "name-proposal")).toBeUndefined();

@@ -136,18 +136,34 @@ export async function needsFollowUp(judge: JevJudge, query: string, answer: stri
 }
 
 /**
- * Wording calibrated against live Jev (OpenRouter `typesafe/jev-1.13`) on 9 cases,
- * 4 find-the-file and 5 content or fact questions, English and Korean. Asking
- * whether file names "would help" scored a content question 0.61, because "the
- * first answer says a document was not found" fits every unanswered question.
- * Asking whether the user wants a particular file located by what it is called
- * separated them cleanly: find-the-file >= 0.97, everything else <= 0.05.
+ * What a file-name search is, told to Jev in the state: the tool's reach, not the
+ * user's intent. It matches names, extensions, and folders and hands the assistant
+ * paths to open and directories to look in; it never reads a file and never touches
+ * the other places an answer can live. With that, "could it help?" is answerable:
+ * a question about what a lease contract says can be helped (find the contract by
+ * name, then read it); one about a Slack thread or a friend's message cannot.
+ */
+const FILE_SEARCH_TOOL_DESCRIPTION =
+	"A file-name search is one more tool it can use: it matches only the names, extensions, and folders of the user's files and folders, finds them instantly, and gives the assistant paths to open and directories to look in. It never reads what is written inside a file, and it does not search chats, mail, calendars, or the web.";
+
+/**
+ * Asked as "could a file-name search help", not "is the user locating a file":
+ * the earlier wording (is the user asking to locate a file by its name, rather
+ * than what a document says) labelled "what does my lease contract say about the
+ * deposit?" as a no, though finding the contract by name is exactly how the
+ * assistant reaches the answer. Calibrated on live Jev (OpenRouter
+ * `typesafe/jev-1.13`), 22 labelled cases, English and Korean, 3 runs each:
+ * locating a file, folder, or photo, and questions about what a named document
+ * says, scored 0.77-0.97; chat, mail, public-fact, and general questions scored
+ * 0.03-0.19, with no overlap. Adding the datasources already searched, whether the
+ * web was, or how many sources the first answer cites did not move any case, so the
+ * state stays short: the tool, the question, and the first answer.
  */
 const FILE_SEARCH_QUESTION = check(
-	"Is the user asking to locate a particular file or folder by what it is called (its name, extension, or where it is saved), rather than asking what is written in documents?",
+	"Could searching the names of files and folders help the assistant find what the user asked for?",
 	{
-		true: "The user wants a specific file or folder located: they describe it by its name, type, date, or folder, and may not remember the exact name.",
-		false: "The user asks for information, facts, people, events, or what a document says; finding the answer does not require locating a file by its name.",
+		true: "The user refers to a file, document, or folder by what it is, what it is called, or where it is saved (a contract, a spreadsheet, a receipt, a photo, a folder), and the assistant could find it by name and then open it, whether the user wants it located or wants to know what it says.",
+		false: "No file or folder is involved: the answer would come from a conversation, an email, a calendar, a person, the public web, or general knowledge.",
 	},
 );
 
@@ -161,9 +177,9 @@ export interface FileSearchDecision {
 }
 
 /**
- * Ask Jev, once the first answer needs follow-up, whether files located by
- * name would help the verification phase. The state says what a name index
- * holds: only the names of files and folders, never what is written inside.
+ * Ask Jev, once the first answer needs follow-up, whether a file-name search
+ * could help the verification phase find what the user asked for. The state is
+ * what the tool can and cannot do, the question, and the first answer.
  * Never throws: with no usable verdict no file search runs, because the
  * verification phase still has every retrieval and file tool of its own.
  */
@@ -172,7 +188,7 @@ export async function needsFileSearch(judge: JevJudge, query: string, answer: st
 	try {
 		verdicts = (
 			await judge(
-				`A name index holds only the names of files and folders under the user's search folders (never what is written inside them) and finds them instantly.\n\nUser question: ${query}\n\nFirst answer:\n${answer}`,
+				`An assistant is answering the user's question. ${FILE_SEARCH_TOOL_DESCRIPTION}\n\nUser question: ${query}\n\nFirst answer:\n${answer}`,
 				[{ ...FILE_SEARCH_QUESTION, id: FILE_SEARCH_QUESTION_ID }],
 			)
 		).verdicts;
