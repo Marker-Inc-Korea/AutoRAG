@@ -196,7 +196,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"A saved file that was deleted, renamed, or edited no longer counts as downloaded:",
 		"edited files are kept as yours, and the original is saved again beside them",
 		"while Discord's 24-hour signed link is still valid. Nothing is overwritten or deleted.",
-		"Refreshes download automatically when connector.downloadAttachments is true.",
+		"Refreshes download automatically unless connector.downloadAttachments is false.",
 		"",
 		"Flags:",
 		"  --connection <name>  Only this Discord datasource",

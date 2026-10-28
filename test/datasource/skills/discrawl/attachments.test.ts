@@ -9,6 +9,7 @@ import {
 	discordAttachmentsRoot,
 } from "../../../../src/datasource/skills/discrawl/attachments.ts";
 import { DiscrawlClient } from "../../../../src/datasource/skills/discrawl/client.ts";
+import { buildDatasourceSkills, discordAttachmentConnections } from "../../../../src/datasource/skills/factory.ts";
 
 /**
  * A stand-in for the real `discrawl` binary: it keeps attachment rows in a JSON file, prints them for
@@ -27,8 +28,17 @@ const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
 const configIndex = args.indexOf("--config");
 const config = configIndex === -1 ? "" : fs.readFileSync(args[configIndex + 1], "utf8");
 const cacheDir = (config.match(/^cache_dir = (.*)$/m) || [])[1];
-const rest = args.filter((arg, index) => !(arg === "--config" || index === configIndex + 1) && arg !== "--json");
-if (rest[0] === "status") {
+const rest = args.filter((arg, index) => !(arg === "--config" || (configIndex !== -1 && index === configIndex + 1)) && arg !== "--json");
+if (rest[0] === "doctor") {
+	save();
+	process.stdout.write("config=ok\\ndatabase=ok\\nfts=ok\\nembeddings=ok\\n");
+} else if (rest[0] === "wiretap") {
+	save();
+	process.stdout.write(JSON.stringify({ messages: 1 }));
+} else if (rest[0] === "embed") {
+	save();
+	process.stdout.write("processed=1\\nsucceeded=1\\nfailed=0\\nremaining_backlog=0\\n");
+} else if (rest[0] === "status") {
 	save();
 	process.stdout.write(JSON.stringify({ database_path: "/fake/discrawl.db", counts: [{ id: "messages", value: 1 }] }));
 } else if (rest[0] === "attachments" && rest[1] === "fetch") {
@@ -273,5 +283,52 @@ describe("discordAttachmentsRoot", () => {
 		expect(discordAttachmentsRoot("discord", { HOME: "/home/alice" })).toBe(
 			join("/home/alice", ".autorag", "attachments", "discord", "discord"),
 		);
+	});
+});
+
+describe("Discord datasource factory attachment defaults", () => {
+	let previousHome: string | undefined;
+
+	beforeEach(() => {
+		previousHome = process.env.AUTORAG_HOME;
+		process.env.AUTORAG_HOME = join(dir, "autorag-home");
+	});
+
+	afterEach(() => {
+		if (previousHome === undefined) delete process.env.AUTORAG_HOME;
+		else process.env.AUTORAG_HOME = previousHome;
+	});
+
+	it("downloads attachments on refresh by default without setting downloadAttachments", async () => {
+		writeState([row("a1", "spec.pdf")], { a1: "pdf-bytes" });
+		const datasources = {
+			nomadamas: { type: "discord", connector: { binaryPath, env: { DISCRAWL_FAKE_STATE: statePath } } },
+		};
+
+		expect(discordAttachmentConnections(datasources)[0]?.autoDownload).toBe(true);
+		const { skills } = buildDatasourceSkills(datasources, join(dir, "ws"));
+		const indexed = await skills[0]?.index();
+
+		expect(indexed?.ok).toBe(true);
+		expect(fetchCalls()).toHaveLength(1);
+		const saved = join(dir, "autorag-home", "attachments", "discord", "nomadamas", "Team", "general", "spec.pdf");
+		expect(readFileSync(saved, "utf8")).toBe("pdf-bytes");
+	});
+
+	it("skips attachment downloads on refresh when downloadAttachments is false", async () => {
+		writeState([row("a1", "spec.pdf")], { a1: "pdf-bytes" });
+		const datasources = {
+			nomadamas: {
+				type: "discord",
+				connector: { binaryPath, downloadAttachments: false, env: { DISCRAWL_FAKE_STATE: statePath } },
+			},
+		};
+
+		expect(discordAttachmentConnections(datasources)[0]?.autoDownload).toBe(false);
+		const { skills } = buildDatasourceSkills(datasources, join(dir, "ws"));
+		const indexed = await skills[0]?.index();
+
+		expect(indexed?.ok).toBe(true);
+		expect(fetchCalls()).toHaveLength(0);
 	});
 });

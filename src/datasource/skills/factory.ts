@@ -176,7 +176,7 @@ function discordAttachmentStore(
 
 export interface DiscordAttachmentConnection {
 	readonly name: string;
-	/** Whether refreshes download automatically (`connector.downloadAttachments: true`). */
+	/** Whether refreshes download automatically (`connector.downloadAttachments !== false`, default on). */
 	readonly autoDownload: boolean;
 	readonly store: DiscordAttachmentStore;
 }
@@ -197,7 +197,7 @@ export function discordAttachmentConnections(
 		const connector = (entry.connector ?? {}) as DiscordConnector;
 		out.push({
 			name,
-			autoDownload: connector.downloadAttachments === true,
+			autoDownload: connector.downloadAttachments !== false,
 			store: discordAttachmentStore(name, entry, discordClient(connector, workspaceRoot, {}), connector.guildId),
 		});
 	}
@@ -259,9 +259,9 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
-			...(connector.downloadAttachments === true
-				? { attachments: discordAttachmentStore(registrationName, config, client, connector.guildId) }
-				: {}),
+			...(connector.downloadAttachments === false
+				? {}
+				: { attachments: discordAttachmentStore(registrationName, config, client, connector.guildId) }),
 		});
 	},
 	clawgallery: (config, workspaceRoot, registrationName) => {

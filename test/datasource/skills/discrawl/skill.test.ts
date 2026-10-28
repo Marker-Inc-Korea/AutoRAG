@@ -316,6 +316,7 @@ describe("DiscrawlSkill index", () => {
 		const diagnostic = result.diagnostics.find((d) => d.message.startsWith("attachments:"));
 		expect(diagnostic).toMatchObject({ severity: "warning" });
 		expect(diagnostic?.message).toContain("fetched=2 failed=1");
+		expect(diagnostic?.message).not.toContain("/attachments");
 	});
 
 	it("keeps the index ok when the attachment download throws", async () => {

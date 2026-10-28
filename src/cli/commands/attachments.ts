@@ -9,7 +9,7 @@ import type { CommandContext } from "./types.ts";
  *
  * `status` re-checks every saved file (a deleted, renamed, or edited file is no longer counted as downloaded)
  * and rewrites `download-status.json`. `download` additionally saves every attachment whose signed link still
- * works, whether or not `connector.downloadAttachments` is on.
+ * works, even when `connector.downloadAttachments` is `false`.
  *
  * Exit codes: 0 on success, 2 on config/usage error, 1 when a connection could not be checked.
  */
@@ -84,7 +84,7 @@ function renderConnection(
 	const { summary, run } = result;
 	const lines = [
 		header,
-		`  auto-download on refresh: ${connection.autoDownload ? "on" : "off (connector.downloadAttachments)"}`,
+		`  auto-download on refresh: ${connection.autoDownload ? "on" : "off (connector.downloadAttachments: false)"}`,
 		`  ${summary.downloaded}/${summary.total} downloaded, ${summary.notDownloaded} not downloaded, ` +
 			`${summary.changed} changed, ${summary.missing} missing, ${summary.failed} failed, ${summary.skipped} skipped`,
 		`  downloadable now: ${summary.downloadable}; link expired: ${summary.expired}`,

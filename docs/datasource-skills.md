@@ -708,11 +708,12 @@ searching.
 ## Discord attachments
 
 Discord signs every attachment link for 24 hours. After that the file can no longer be downloaded, so
-anything not saved inside that window is lost. With `connector.downloadAttachments: true`, each refresh of
-a Discord connection saves attachments right after the `discrawl wiretap` import:
+anything not saved inside that window is lost. Each refresh of a Discord connection saves attachments by
+default right after the `discrawl wiretap` import; set `connector.downloadAttachments: false` to disable
+automatic downloads on refresh:
 
 ```json
-{ "datasources": { "discord": { "connector": { "downloadAttachments": true } } } }
+{ "datasources": { "discord": { "connector": { "downloadAttachments": false } } } }
 ```
 
 Files go to `~/.autorag/attachments/discord/<connection>/<server>/<channel>/<original name>` on every OS
@@ -736,7 +737,7 @@ talks to Discord and uses no Discord token.
 overwritten, so the original lands beside it as `name (2).ext`. Nothing in the folder is deleted.
 
 `autorag attachments` (alias for `status`) re-checks the folder and rewrites the status file;
-`autorag attachments download` saves everything still downloadable, whether or not the option is on.
+`autorag attachments download` saves everything still downloadable, even when `downloadAttachments` is `false`.
 Both take `--connection <name>`. A refresh reports the counts as a `datasource-index-partial` diagnostic;
 a failed or expired download never fails the index. Attachments are saved only, not indexed for search.
 

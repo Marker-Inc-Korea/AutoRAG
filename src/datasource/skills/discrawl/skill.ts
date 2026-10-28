@@ -57,7 +57,7 @@ export interface DiscrawlSkillOptions {
 	readonly sidecar?: DiscrawlSidecarOptions;
 	/**
 	 * Saves attachments right after each successful import, while Discord's 24-hour signed links still work.
-	 * Absent means attachments are never downloaded (`connector.downloadAttachments` is off).
+	 * Built by default (`connector.downloadAttachments: false` disables it); absent means attachments are not downloaded.
 	 */
 	readonly attachments?: DiscordAttachmentSyncer;
 }
@@ -375,8 +375,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 			severity: run.failed > 0 ? "warning" : "info",
 			message:
 				`attachments: fetched=${run.fetched} failed=${run.failed} skipped=${run.skipped} bytes=${run.bytes}; ` +
-				`folder holds ${summary.downloaded}/${summary.total} intact, ${summary.expired} expired before download ` +
-				`(status: ${result.statusPath})`,
+				`folder holds ${summary.downloaded}/${summary.total} intact, ${summary.expired} expired before download`,
 		};
 	}
 
