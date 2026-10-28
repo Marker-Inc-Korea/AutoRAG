@@ -458,12 +458,16 @@ try {
 terminates the MinSync, Jikji and datasource child processes (and their descendants). The
 refresh then rejects with the signal's reason and is recorded as `failed`; files already
 mirrored are kept and not re-parsed on the next run. `onProgress` reports `parsed`
-(`processed`/`total` are files, `currentVirtualPath` is the file about to be processed) and
-`datasources` (`processed`/`total` are datasource skills). During the parse phase
-`.autorag/refresh-progress.json` also carries the running `sourceFiles.total` and
-`parsedCounts`, refreshed every 25 files rather than per file. The marker is replaced with a
-retried rename (an in-place overwrite if a reader keeps the destination held, as on Windows).
-Without these options a refresh behaves as before.
+(`processed`/`total` are source files, `currentVirtualPath` is the file about to be processed),
+`minsync` (`processed`/`total` are files processed by MinSync), and `datasources`
+(`processed`/`total` are datasource skills). `.autorag/refresh-progress.json` carries the running
+`sourceFiles.total` and `parsedCounts` during parsing (refreshed every 25 files rather than per
+file), and `minsync: { synced, total }` on every MinSync batch or heartbeat. Each progress write
+also advances `updatedAt`; between events a stale timestamp means "phase still running", not
+"stuck". Use the marker's pid through `getRefreshStatus().progress.ownerAlive` (or
+`isRefreshOwnerAlive`) for liveness. The marker is replaced with a retried rename (an in-place
+overwrite if a reader keeps the destination held, as on Windows). Without these options a refresh
+behaves as before.
 
 ---
 

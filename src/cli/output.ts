@@ -161,7 +161,10 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 			lines.push(`    sourceFiles: total=${status.progress.sourceFiles.total}`);
 		}
 		if (status.progress.minsync?.synced !== undefined) {
-			lines.push(`    minsync: synced=${status.progress.minsync.synced}`);
+			const total = status.progress.minsync.total;
+			lines.push(
+				`    minsync: synced=${status.progress.minsync.synced}${total === undefined ? "" : ` total=${total}`}`,
+			);
 		}
 	}
 	const comps = status.components;
