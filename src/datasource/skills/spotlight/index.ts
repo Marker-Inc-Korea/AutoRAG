@@ -3,6 +3,8 @@ export {
 	type ProcessRunner,
 	type ProcessRunResult,
 	SpotlightConnector,
+	type SpotlightConnectorFailure,
 	type SpotlightConnectorOptions,
+	type SpotlightConnectorResult,
 } from "./connector.ts";
-export { SPOTLIGHT_SKILL_DEFINITION, SpotlightSkill, type SpotlightSkillOptions } from "./skill.ts";
+export { SpotlightSkill, type SpotlightSkillOptions } from "./skill.ts";

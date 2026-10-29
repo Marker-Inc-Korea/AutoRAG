@@ -145,7 +145,9 @@ export {
 } from "./skills/slack/index.ts";
 export {
 	SpotlightConnector,
+	type SpotlightConnectorFailure,
 	type SpotlightConnectorOptions,
+	type SpotlightConnectorResult,
 	SpotlightSkill,
 	type SpotlightSkillOptions,
 } from "./skills/spotlight/index.ts";

@@ -3,9 +3,10 @@
  *
  * Runs the full agent path on a real Mac: fixture documents are written to a
  * temp directory, we wait for Spotlight to actually index them (polling
- * `mdfind` as the readiness signal), then index + search through
- * AutoRAGAgent and the datasource tool. Also asserts the platform gate
- * reports `unavailable` off-darwin and that sources stay path-opaque.
+ * `mdfind` as the readiness signal), then probes + searches through
+ * AutoRAGAgent and the datasource tool. A second search follows a fixture
+ * edit without another refresh, proving retrieval is live rather than a
+ * snapshot. Also asserts the platform gate and path-opaque sources.
  *
  * Prerequisites: macOS with Spotlight indexing enabled (`mdutil -s /`).
  * Full Disk Access is only needed when configured queries hit protected
@@ -39,7 +40,7 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "autorag-spotlight-live-"));
 // non-hidden directory under $HOME. The workspace stays in tmp.
 const docsDir = join(homedir(), `autorag-spotlight-qa-${Date.now()}`);
 const fixtureName = `meeting-notes-${token}.txt`;
-const spotlightQuery = `kMDItemFSName == "${fixtureName}"cd`;
+const spotlightQuery = "kMDItemContentTypeTree == 'public.text'";
 mkdirSync(docsDir, { recursive: true });
 writeFileSync(join(docsDir, fixtureName), `Quarterly planning notes mentioning ${token} budgets.`);
 writeFileSync(join(docsDir, "readme.txt"), "placeholder");
@@ -50,13 +51,13 @@ writeFileSync(join(docsDir, "readme.txt"), "placeholder");
  * fixture lives in a non-hidden directory under $HOME: macOS excludes
  * tmpdirs and dot-directories from Spotlight indexing.
  */
-async function importAndConfirm(deadlineMs: number): Promise<boolean> {
+async function importAndConfirm(deadlineMs: number, query = spotlightQuery): Promise<boolean> {
 	await execFileAsync("mdimport", [docsDir]);
 	// mdimport returns before the index commits; poll mdfind (the real state
 	// signal) until the fixture appears or the deadline passes.
 	const started = Date.now();
 	while (Date.now() - started < deadlineMs) {
-		const { stdout } = await execFileAsync("mdfind", ["-onlyin", docsDir, spotlightQuery]);
+		const { stdout } = await execFileAsync("mdfind", ["-onlyin", docsDir, query]);
 		if (stdout.split("\n").includes(join(docsDir, fixtureName))) return true;
 	}
 	return false;
@@ -65,7 +66,7 @@ async function importAndConfirm(deadlineMs: number): Promise<boolean> {
 try {
 	check("platform is macOS", process.platform === "darwin", process.platform);
 
-	const gated = await new SpotlightConnector({ queries: [token], platform: "linux" }).fetch();
+	const gated = await new SpotlightConnector({ queries: [token], platform: "linux" }).probe();
 	check("non-macOS platform reports unavailable", !gated.ok && gated.reason === "unavailable");
 
 	// Generous deadline: mds_stores stalls under system load; content
@@ -91,24 +92,43 @@ try {
 	const refresh = await agent.refresh(true, { methods: ["datasources"] });
 	const spotlight = (refresh.datasources ?? []).find((result) => result.skill === "spotlight");
 	check(
-		"live index: spotlight",
-		spotlight?.ok === true && spotlight.chunkCount > 0,
+		"refresh probes Spotlight without creating a snapshot",
+		spotlight?.ok === true && spotlight.chunkCount === 0,
 		spotlight?.ok ? `${spotlight.chunkCount} chunk(s)` : `${spotlight?.code}: ${spotlight?.message}`,
 	);
 
 	const agentTools = (agent as unknown as { tools: readonly AgentTool[] }).tools;
 	const spotlightTool = agentTools.find((entry) => entry.name === singleDatasourceToolName("spotlight"));
-	const hits = await spotlightTool?.execute("live-spotlight", { query: token, topK: 5, scope: "/spotlight/**" });
+	const hits = await spotlightTool?.execute("live-spotlight", {
+		query: `${token} "budgets"`,
+		topK: 5,
+		scope: "/spotlight/**",
+	});
 	check(
 		"live search: spotlight returns scoped opaque hits",
 		(hits?.details.sources.length ?? 0) > 0 &&
 		(hits?.details.sources ?? []).every(
-			(source: string) => source.startsWith("/spotlight/") && !source.includes(tmpRoot),
+			(source: string) =>
+				/^\/spotlight\/[^/]+\/chunks\/[a-f0-9]{16}$/u.test(source) && !source.includes(docsDir),
 		),
 		hits?.details.sources[0],
 	);
 	const body = (hits?.content ?? []).map((block) => (block.type === "text" ? block.text : "")).join("\n");
 	check("live search: hit content contains the fixture token", body.includes(token));
+
+	const updatedToken = `${token}updated`;
+	writeFileSync(join(docsDir, fixtureName), `Updated planning notes mentioning ${updatedToken} budgets.`);
+	const updateIndexed = await importAndConfirm(300_000, `(${spotlightQuery}) AND (${updatedToken})`);
+	check("spotlight indexed the edited fixture", updateIndexed);
+	const updatedHits = await spotlightTool?.execute("live-spotlight-update", {
+		query: updatedToken,
+		topK: 5,
+		scope: "/spotlight/**",
+	});
+	const updatedBody = (updatedHits?.content ?? [])
+		.map((block) => (block.type === "text" ? block.text : ""))
+		.join("\n");
+	check("live search sees edited content without another refresh", updatedBody.includes(updatedToken));
 
 	const manifest = skills[0]?.skillManifest();
 	check(
