@@ -761,6 +761,7 @@ AutoRAG Agent is an open-source project built by the community. We welcome contr
 
 - **Contributing:** Feel free to open an issue or pull request. Start with [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, the `make ci` check we ask for, the `Signed-off-by` trailer every commit needs, and when to run the live end-to-end lanes. [MAINTAINERS](MAINTAINERS) lists who reviews which area. AI tools are allowed; unverified dumps are not — see [AI_POLICY.md](AI_POLICY.md).
 - **Discussions:** For questions, usage help, ideas, and open-ended design talk, please use [GitHub Discussions](https://github.com/Marker-Inc-Korea/AutoRAG/discussions) instead of opening an issue. Keep issues for confirmed bugs and concrete, actionable work.
+- **Enterprise & Technical Support:** For enterprise adoption or technical inquiries, please email [jeffrey@markr.ai](mailto:jeffrey@markr.ai).
 - **Security:** Private vulnerability reports and the response SLA live in [SECURITY.md](SECURITY.md).
 - **GitHub Contributors:** [View all contributors](https://github.com/Marker-Inc-Korea/AutoRAG/graphs/contributors) on GitHub.
 
