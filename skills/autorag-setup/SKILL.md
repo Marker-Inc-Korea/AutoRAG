@@ -382,13 +382,13 @@ setup. Configure datasources directly in trusted config, wizard-style:
    report the skipped list to the user, with what is missing for each.
 4. Set up a skipped datasource only when the user explicitly asks for it:
    install or authenticate the backing CLI first, then configure it.
-5. E-mail datasources (`mail-export`, `mailcrawl`) matter to most
-   users — always probe them and report their status, even when they end up
+5. E-mail (`mailcrawl`) matters to most
+   users — always probe it and report its status, even when it ends up
    skipped.
 
 Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
-`clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`, `mail-export`,
+`clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`,
 `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, and `hister`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
@@ -411,17 +411,17 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration.
 
-Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.2.2` or newer)
-and configured through its own Himalaya account. AutoRAG runs its local `sync`
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.3.0` or newer)
+and configured through its own Himalaya account (or `source: "files"` with `paths` for `.eml`/`.mbox` archives on disk without Himalaya). AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
-fails with `text array must be non-empty`. 0.2.2 embeds through the same
+fails with `text array must be non-empty`. 0.3.0 embeds through the same
 backend as the rest of AutoRAG (a remote `minSync.embedder`, else the
 `minsync serve` daemon) instead of its own in-process model, and keeps vectors
 in LanceDB. Switching from the old native model rebuilds the semantic index on
 the next `index`. kakao needs `lazykatok` 0.3.3 or newer for the same reason.
-Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
-datasource is removed.
+Use mailcrawl for Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval. The former Gmail REST and `mail-export`
+datasources are removed.
 
 ### Browser history (Hister) and the shared embedding model
 

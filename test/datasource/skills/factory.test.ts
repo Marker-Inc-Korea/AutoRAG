@@ -34,6 +34,21 @@ describe("datasource skill factory", () => {
 		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
 	});
 
+	it("treats retired datasources.mail-export config as unknown because mailcrawl --source files owns static mailboxes", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			"mail-export": { connector: { paths: ["/tmp/export.mbox"] } },
+			"old-backup": { type: "mail-export", connector: { paths: ["/tmp/eml"] } },
+			archive: {
+				type: "mailcrawl",
+				connector: { source: "files", paths: ["/tmp/export.mbox"] },
+			},
+		});
+
+		expect(unknown).toEqual(["mail-export", "old-backup"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["archive"]);
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("mail-export");
+	});
+
 	it("builds a github-gist skill from a typed alias entry", () => {
 		const { skills, unknown } = buildDatasourceSkills(
 			{

@@ -33,7 +33,6 @@ import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/
 import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
-import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
@@ -371,12 +370,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: {
 				...(config.connector as RcloneConnectorOptions),
 			},
-		}),
-	"mail-export": (config, workspaceRoot, registrationName) =>
-		new MailExportSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
 	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({

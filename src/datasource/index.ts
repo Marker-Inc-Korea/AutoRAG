@@ -104,12 +104,6 @@ export {
 	LazykatokSkill,
 } from "./skills/lazykatok/index.ts";
 export {
-	MailExportConnector,
-	type MailExportConnectorOptions,
-	MailExportSkill,
-	type MailExportSkillOptions,
-} from "./skills/mail-export/index.ts";
-export {
 	MAILCRAWL_MODES,
 	MailcrawlClient,
 	type MailcrawlFailure,

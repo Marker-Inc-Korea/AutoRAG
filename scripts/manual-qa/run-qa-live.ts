@@ -5,7 +5,7 @@
  *
  * Skills requiring tenant credentials (Slack, Discord, Notion, Drive)
  * are covered by run-qa.ts against protocol-accurate mocks, and the
- * filesystem skills (obsidian, mail-export) run on real files there too.
+ * filesystem skills (obsidian) run on real files there too.
  *
  * Run: bun scripts/manual-qa/run-qa-live.ts
  */

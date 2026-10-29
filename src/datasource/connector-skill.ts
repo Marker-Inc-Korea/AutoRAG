@@ -1,7 +1,6 @@
 /**
  * Shared {@link DatasourceSkill} implementation for connector-backed
- * datasources (Slack, Discord, Notion, GitHub, Google Drive,
- * local mail exports, RSS/news).
+ * datasources (GitHub, cloud drives, RSS/news, Spotlight).
  *
  * Composition: a trusted {@link DatasourceConnector} fetches documents, a
  * {@link DatasourceChunkStore} persists and lexically indexes them, and this
