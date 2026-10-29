@@ -13,7 +13,7 @@ import type { CommandContext } from "./types.ts";
 export async function runStatus(ctx: CommandContext): Promise<number> {
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
+		const agent = new AutoRAGAgent({ ...buildAgentOptions(config), loadIdentity: false });
 		const status = await agent.getRefreshStatus();
 		ctx.stdout(renderStatus(status, { json: ctx.json, debug: ctx.debug }));
 		return 0;

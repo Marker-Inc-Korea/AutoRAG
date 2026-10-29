@@ -20,7 +20,7 @@ function parsePositiveInt(value: string | boolean | undefined, fallback: number)
 export async function runWatch(ctx: CommandContext): Promise<number> {
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
+		const agent = new AutoRAGAgent({ ...buildAgentOptions(config), loadIdentity: false });
 		const force = ctx.flags.force === true;
 		const once = ctx.flags.once === true;
 

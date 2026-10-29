@@ -50,6 +50,7 @@ export async function createRetrievalToolkit(
 	const { selfConfig: _selfConfig, ...agentOptions } = buildAgentOptions(config);
 	const agent = new AutoRAGAgent({
 		...agentOptions,
+		loadIdentity: false,
 		memoryPath: join(scratch, "memory.json"),
 		memoryEmbedder: false,
 		webSearch: false,
