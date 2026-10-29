@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.13.1",
+  "version": "2.13.2",
   "description": "Personal librarian agent for office work on the Pi framework, with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
