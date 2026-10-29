@@ -490,9 +490,13 @@ MinSync 0.4.11 and newer skip a file they cannot read, chunk, or embed instead o
 aborting the sync, and exit 6 with `partial: true` and a `files_failed` list. AutoRAG
 treats that as a completed sync (`minsync.ok: true`) and reports each skipped
 file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
-inside the MinSync workspace. MinSync keeps the file's previous chunks and
-retries it on the next sync. Only an exit 6 without a `partial` report is a
-`minsync-sync-failed`.
+inside the MinSync workspace. `AutoRAGRefreshResult.minsync.filesSkippedCount`
+and the CLI JSON envelope expose the count, while the completed
+`refresh-progress.json` records it as `minsync.filesSkipped`; human refresh and
+status output show `skipped=N` and `filesSkipped=N` respectively. MinSync keeps
+the file's previous chunks and retries it on the next sync. A later successful
+retry omits the skipped count again. Only an exit 6 without a `partial` report
+is a `minsync-sync-failed`.
 
 ## Migration and failure behavior
 

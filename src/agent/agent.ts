@@ -491,6 +491,8 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly reason?: string;
 	/** Count of parsed documents excluded from the MinSync index by file name. */
 	readonly stagingExcludedCount?: number;
+	/** Count of files MinSync skipped in a partial sync; per-file details remain in diagnostics. */
+	readonly filesSkippedCount?: number;
 	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
@@ -546,7 +548,7 @@ export interface AutoRAGRefreshStatus {
 		readonly phase: RefreshProgressPhase;
 		readonly sourceFiles?: { readonly total: number };
 		readonly parsedCounts?: RefreshProgressCounts;
-		readonly minsync?: { readonly synced?: number; readonly total?: number };
+		readonly minsync?: { readonly synced?: number; readonly total?: number; readonly filesSkipped?: number };
 		readonly ownerAlive?: boolean;
 	};
 	/** Path-free failure summary of the last refresh, if it failed. */
@@ -3727,7 +3729,13 @@ export class AutoRAGAgent {
 			if (minsync !== undefined) {
 				progress = updateRefreshProgress(progress, {
 					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
-					minsync: { ...progress.minsync, synced: minsync.synced },
+					minsync: {
+						...progress.minsync,
+						synced: minsync.synced,
+						...(minsync.filesFailed !== undefined && minsync.filesFailed.length > 0
+							? { filesSkipped: minsync.filesFailed.length }
+							: {}),
+					},
 				});
 				writeRefreshProgress(this.workspaceProjectRoot, progress);
 			}
@@ -3817,6 +3825,9 @@ export class AutoRAGAgent {
 						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
 							? { stagingExcludedCount: minsync.stagingExcluded.length }
+							: {}),
+						...(minsync.filesFailed !== undefined && minsync.filesFailed.length > 0
+							? { filesSkippedCount: minsync.filesFailed.length }
 							: {}),
 					}
 				: undefined;

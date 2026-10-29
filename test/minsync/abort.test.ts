@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { readRefreshProgress } from "../../src/agent/refresh-progress.ts";
 import { MinSyncClient, MinSyncVectorMethod, minSyncConfigPath } from "../../src/minsync/index.ts";
 import { spawnProcess } from "../../src/minsync/process.ts";
 
@@ -391,7 +392,8 @@ process.exit(6);
 
 		const result = await agent.refresh(false, { methods: ["minsync"] });
 
-		expect(result.minsync).toMatchObject({ ok: true });
+		expect(result.minsync).toMatchObject({ ok: true, filesSkippedCount: 1 });
+		expect(readRefreshProgress(root)?.minsync).toMatchObject({ synced: 1, filesSkipped: 1 });
 		const skipped = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-file-skipped");
 		expect(skipped).toEqual([expect.objectContaining({ severity: "warning", source: "files/docs/a.txt.md" })]);
 		expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("minsync-sync-failed");
