@@ -134,6 +134,53 @@ describe("AutoRAGRefreshOptions.onProgress", () => {
 		]);
 	});
 
+	it("reports MinSync batch progress and persists the advancing counters", async () => {
+		const binary = join(root, "progress-minsync.mjs");
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "init") {
+  mkdirSync(".minsync", { recursive: true });
+  writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
+  process.exit(0);
+}
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+console.log(JSON.stringify({ event: "start", total_files: 2 }));
+console.log(JSON.stringify({ event: "batch", processed: 1, total: 2 }));
+console.log(JSON.stringify({ event: "done", processed: 2, total: 2 }));
+writeFileSync(".minsync/cursor.json", "{}");
+console.log(JSON.stringify({ files_processed: 2 }));
+`,
+		);
+		chmodSync(binary, 0o755);
+		const agent = makeAgent({
+			minSync: { binaryPath: binary, workspacePath: join(root, ".autorag", "minsync"), autoInstall: false },
+		});
+		const events: AutoRAGRefreshProgress[] = [];
+		const persisted: { synced?: number; total?: number }[] = [];
+
+		await agent.refresh(true, {
+			methods: ["minsync"],
+			onProgress: (progress) => {
+				events.push({ ...progress });
+				if (progress.phase === "minsync") persisted.push({ ...readRefreshProgress(root)?.minsync });
+			},
+		});
+
+		expect(events.filter((event) => event.phase === "minsync")).toEqual([
+			{ phase: "minsync", processed: 0, total: 2 },
+			{ phase: "minsync", processed: 1, total: 2 },
+			{ phase: "minsync", processed: 2, total: 2 },
+		]);
+		expect(persisted).toEqual([
+			{ synced: 0, total: 2 },
+			{ synced: 1, total: 2 },
+			{ synced: 2, total: 2 },
+		]);
+	});
+
 	it("reports one datasources event per source with processed/total sources", async () => {
 		const agent = makeAgent({
 			datasourceSkills: [

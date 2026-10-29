@@ -241,6 +241,42 @@ process.exit(1);
 		expect(result).toMatchObject({ ok: false, reason: "sync-failed", diagnostic: { code: "sync-failed" } });
 	});
 
+	it("streams JSONL batch progress while preserving the final sync result", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+writeFileSync(".minsync/cursor.json", "{}");
+if (args.includes("--progress")) {
+  console.log(JSON.stringify({ event: "start", total_files: 2 }));
+  console.log(JSON.stringify({ event: "batch", processed: 1, total: 2 }));
+  console.log(JSON.stringify({ event: "heartbeat", processed: 1, total: 2 }));
+  console.log(JSON.stringify({ event: "done", processed: 2, total: 2 }));
+}
+console.log(JSON.stringify({ files_processed: 2 }));
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+		const events: { processed: number; total: number }[] = [];
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync(
+			false,
+			undefined,
+			(progress) => events.push(progress),
+		);
+
+		expect(events).toEqual([
+			{ processed: 0, total: 2 },
+			{ processed: 1, total: 2 },
+			{ processed: 1, total: 2 },
+			{ processed: 2, total: 2 },
+		]);
+		expect(result).toMatchObject({ ok: true, synced: 2 });
+	});
+
 	it("treats MinSync's partial exit (6) as a completed sync and names the skipped files", async () => {
 		mkdirSync(join(workspace, ".minsync"), { recursive: true });
 		writeFileSync(

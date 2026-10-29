@@ -306,7 +306,7 @@ describe("MinSyncVectorMethod", () => {
 		);
 		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["check", "--format", "json"], cwd: minSyncCwd() }));
 		expect(loggedCalls()).toContainEqual(
-			JSON.stringify({ args: ["sync", "--full", "--format", "json"], cwd: minSyncCwd() }),
+			JSON.stringify({ args: ["sync", "--full", "--format", "json", "--progress", "jsonl"], cwd: minSyncCwd() }),
 		);
 	});
 
@@ -1488,7 +1488,7 @@ max_chunk_size = 4096
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[] })
 			.find((call) => call.args[0] === "sync");
-		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 	});
 
 	it("restores the previous config when a forced full sync fails", async () => {
@@ -1768,7 +1768,7 @@ describe("MinSync embedder selection", () => {
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line))
 			.find((call) => call.args[0] === "sync");
-		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
 	});
 });
@@ -1831,11 +1831,11 @@ describe("Qwen3 query instruction in MinSync config", () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		// Index built before the instruction existed: empty query prefix.
 		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, queryPrefix: "" }).sync();
-		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 		// Same documents, new default query prefix: incremental, not --full.
 		const result = await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }).sync();
 		expect(result.ok).toBe(true);
-		expect(syncCalls().at(-1).args).toEqual(["sync", "--format", "json"]);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--format", "json", "--progress", "jsonl"]);
 		expect(readIdentity().queryPrefix).toBe(QWEN3_QUERY_PREFIX);
 		expect(result.diagnostic).toBeUndefined();
 	});
@@ -1844,7 +1844,7 @@ describe("Qwen3 query instruction in MinSync config", () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "" }).sync();
 		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "passage: " }).sync();
-		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 	});
 });
 

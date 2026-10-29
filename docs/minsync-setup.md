@@ -470,6 +470,20 @@ host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
 retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
 of a generic `minsync-sync-failed`.
 
+## Indexing progress and liveness
+
+AutoRAG runs `minsync sync --progress jsonl`. Each MinSync `start`, `batch`,
+`heartbeat`, and `done` event updates `.autorag/refresh-progress.json` with
+`minsync: { synced, total }`, advances `updatedAt`, and emits the same counts to
+`AutoRAGAgent.refresh(..., { onProgress })` as a `minsync` event. MinSync's
+heartbeat interval defaults to five seconds.
+
+A stale `updatedAt` between events means that the phase is still running; it is
+not proof of a hang. Use the owner pid through
+`AutoRAGAgent.getRefreshStatus().progress.ownerAlive` (or
+`isRefreshOwnerAlive`) for liveness, and use advancing progress to distinguish
+active work from a stalled batch.
+
 ## Skipped files (partial sync)
 
 MinSync 0.4.11 and newer skip a file they cannot read, chunk, or embed instead of

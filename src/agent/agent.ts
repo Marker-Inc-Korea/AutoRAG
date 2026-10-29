@@ -70,6 +70,7 @@ import {
 	type MinSyncEmbedderConfig,
 	type MinSyncFileFailure,
 	MinSyncHybridMethod,
+	type MinSyncSyncProgress,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
@@ -450,10 +451,10 @@ export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "ev
 /**
  * Progress of a refresh phase that can count its work. `parsed` counts source files
  * (`currentVirtualPath` is the opaque virtual path of the file about to be processed);
- * `datasources` counts configured datasource skills. Other phases do not report counts.
+ * `minsync` counts files processed by MinSync; `datasources` counts configured datasource skills.
  */
 export interface AutoRAGRefreshProgress {
-	readonly phase: "parsed" | "datasources";
+	readonly phase: "parsed" | "minsync" | "datasources";
 	/** Items finished so far. Advances by one per item and ends equal to `total`. */
 	readonly processed: number;
 	readonly total: number;
@@ -474,7 +475,7 @@ export interface AutoRAGRefreshOptions {
 	 * reason and records the run as failed; mirror entries written before the abort are kept.
 	 */
 	readonly signal?: AbortSignal;
-	/** Called while the parse and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
+	/** Called while the parse, MinSync and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
 	readonly onProgress?: (progress: AutoRAGRefreshProgress) => void;
 	/**
 	 * Per-root `jikji prepare` controls: a hard `timeoutMs` wall per root and a
@@ -545,7 +546,7 @@ export interface AutoRAGRefreshStatus {
 		readonly phase: RefreshProgressPhase;
 		readonly sourceFiles?: { readonly total: number };
 		readonly parsedCounts?: RefreshProgressCounts;
-		readonly minsync?: { readonly synced?: number };
+		readonly minsync?: { readonly synced?: number; readonly total?: number };
 		readonly ownerAlive?: boolean;
 	};
 	/** Path-free failure summary of the last refresh, if it failed. */
@@ -3709,12 +3710,24 @@ export class AutoRAGAgent {
 				},
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsync = wants("minsync") ? await this.syncMinSync(force, signal) : undefined;
+			const minsync = wants("minsync")
+				? await this.syncMinSync(force, signal, (minsyncProgress: MinSyncSyncProgress) => {
+						progress = updateRefreshProgress(progress, {
+							minsync: { synced: minsyncProgress.processed, total: minsyncProgress.total },
+						});
+						writeRefreshProgress(this.workspaceProjectRoot, progress);
+						emitProgress({
+							phase: "minsync",
+							processed: minsyncProgress.processed,
+							total: minsyncProgress.total,
+						});
+					})
+				: undefined;
 			signal?.throwIfAborted();
 			if (minsync !== undefined) {
 				progress = updateRefreshProgress(progress, {
 					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
-					minsync: { synced: minsync.synced },
+					minsync: { ...progress.minsync, synced: minsync.synced },
 				});
 				writeRefreshProgress(this.workspaceProjectRoot, progress);
 			}
@@ -4123,8 +4136,12 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncMinSync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		const result = await this.minSyncMethod.sync(force, signal);
+	async syncMinSync(
+		force = false,
+		signal?: AbortSignal,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
+		const result = await this.minSyncMethod.sync(force, signal, onProgress);
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
