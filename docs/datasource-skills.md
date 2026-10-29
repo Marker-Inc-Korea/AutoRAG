@@ -34,18 +34,25 @@ search are delegated to `clawgallery search --json`; AutoRAG never reads
 
 ### Spotlight
 
-`spotlight` is a macOS-only connector skill. It drives the built-in `mdfind`
-CLI (no extra install). Indexing re-runs configured Spotlight queries and
-hydrates file text; result metadata carries the real absolute path. Grant Full
-Disk Access to the host app when searching Mail, Messages, Safari, or other
-protected locations. Unavailable on non-macOS hosts.
+`spotlight` is a macOS-only live-search skill. It drives the built-in `mdfind`
+CLI (no extra install). macOS owns and refreshes the Spotlight index; AutoRAG
+does not create a snapshot. Each configured query is a trusted Spotlight
+filter AND-ed with the user's search text, and only the requested hits are
+hydrated. Datasource refresh only checks platform, configuration, and index
+readiness without running `mdfind`. Result metadata carries the real absolute
+path. Grant Full Disk Access to the host app when searching Mail, Messages,
+Safari, or other protected locations. Unavailable on non-macOS hosts.
 
 ```json
 {
   "datasources": {
     "mac-files": {
       "type": "spotlight",
-      "instanceId": "local"
+      "instanceId": "local",
+      "connector": {
+        "queries": ["kMDItemContentTypeTree == 'public.text'"],
+        "onlyIn": "/Users/me/Documents"
+      }
     }
   }
 }

@@ -17,7 +17,7 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "obsidian", binary: "minsync", command: "scripts/manual-qa/run-qa-obsidian-live.ts", identityPattern: /\/obsidian\/[^/\s]+\/[^\s]+\.md/u },
 	{ name: "rclone", binary: "rclone" },
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
-	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\bspotlight:[^\s]+/u },
+	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\/spotlight\/[^/\s]+\/chunks\/[a-f0-9]{16}/u },
 	{ name: "hister", binary: "hister", command: "scripts/manual-qa/run-qa-hister-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
 ]);
 
@@ -44,13 +44,19 @@ const NATIVE_STORE_PROBES = Object.freeze({
 });
 
 function spotlightIndexingHealthy() {
-	const dir = join(homedir(), `.autorag-spotlight-probe-${process.pid}`);
+	// Spotlight skips dot-directories, and mdimport returns before the index commits.
+	const dir = join(homedir(), `autorag-spotlight-probe-${process.pid}`);
 	try {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, "probe.txt"), "autorag-spotlight-probe-token");
-		spawnSync("mdimport", ["-i", dir], { stdio: "ignore", timeout: 10000 });
-		const found = spawnSync("mdfind", ["-onlyin", dir, "-name", "probe.txt"], { encoding: "utf8", timeout: 10000 });
-		return found.status === 0 && (found.stdout ?? "").includes("probe.txt");
+		spawnSync("mdimport", [dir], { stdio: "ignore", timeout: 10000 });
+		const deadline = Date.now() + 300000;
+		while (Date.now() < deadline) {
+			const found = spawnSync("mdfind", ["-onlyin", dir, "-name", "probe.txt"], { encoding: "utf8", timeout: 10000 });
+			if (found.status === 0 && (found.stdout ?? "").includes("probe.txt")) return true;
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+		}
+		return false;
 	} catch {
 		return false;
 	} finally {
@@ -85,6 +91,7 @@ export function validateNativeIdentity(source, laneName) {
 	// Canonical lazykatok source: /kakao/<instance>/chunks/<chunk>. Opaque slash
 	// hierarchy, not an OS path. Retired kakao:<chat>/<sender>/<chunk> is invalid.
 	if (laneName === "lazykatok") return /^\/kakao\/[^/]+\/chunks\/[^/]+$/u.test(source);
+	if (laneName === "spotlight") return /^\/spotlight\/[^/]+\/chunks\/[^/]+$/u.test(source);
 	return !source.startsWith("/") && /^[a-z][a-z0-9-]*:.+/u.test(source);
 }
 

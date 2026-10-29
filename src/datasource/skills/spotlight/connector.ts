@@ -1,28 +1,16 @@
-/**
- * macOS Spotlight connector (issue #1350).
- *
- * Runs the built-in `mdfind` CLI for trusted, server-configured Spotlight
- * queries and hydrates text content for chunking. No external installs —
- * Spotlight ships with macOS. **macOS only**: on any other platform the
- * connector reports `unavailable` before spawning anything.
- *
- * Full Disk Access: Spotlight returns hits for protected locations (Mail,
- * Messages, Safari data, parts of ~/Library) but reading those files fails
- * with EPERM/EACCES unless the process running AutoRAG (the terminal app or
- * host binary) has Full Disk Access under System Settings -> Privacy &
- * Security. When every content read is denied this maps to the `permission`
- * failure reason with opaque FDA guidance; partial denials surface as
- * count-only warnings. Full absolute paths are exposed in document metadata
- * (`path`) so results stay traceable back to the file on disk — privacy is
- * the operator's responsibility (run AutoRAG with a local LLM if paths must
- * not leave the machine).
- */
-
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile as fsReadFile, stat } from "node:fs/promises";
 import { basename, extname } from "node:path";
-import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
+import type { ConnectorDocument, ConnectorFetchFail, ConnectorFetchOk } from "../../connector.ts";
+
+export interface SpotlightConnectorFailure extends ConnectorFetchFail {
+	readonly stderr?: string;
+	readonly stdout?: string;
+	readonly code?: number | null;
+}
+
+export type SpotlightConnectorResult = ConnectorFetchOk | SpotlightConnectorFailure;
 
 export interface ProcessRunResult {
 	readonly ok: boolean;
@@ -39,13 +27,13 @@ export type ProcessRunner = (command: string, args: readonly string[], timeoutMs
 export type FileReader = (path: string) => Promise<string>;
 
 export interface SpotlightConnectorOptions {
-	/** Trusted Spotlight query strings passed to `mdfind`. Required. */
+	/** Trusted Spotlight filters AND-ed with each user query. Required. */
 	readonly queries?: readonly string[];
 	/** Trusted directory restricting every query (`mdfind -onlyin`). */
 	readonly onlyIn?: string;
 	/** Hits kept per query after dedupe. Default 100. */
 	readonly maxResultsPerQuery?: number;
-	/** Total documents hydrated per fetch. Default 300. */
+	/** Maximum documents hydrated by one live search. Default 300. */
 	readonly maxDocuments?: number;
 	/** Characters kept per document body. Default 100000. */
 	readonly maxContentChars?: number;
@@ -71,7 +59,8 @@ const MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 const FDA_GUIDANCE =
 	"grant Full Disk Access to the terminal or app running AutoRAG (System Settings -> Privacy & Security -> Full Disk Access), then restart it";
 
-export class SpotlightConnector implements DatasourceConnector {
+/** Executes live Spotlight queries. macOS owns indexing; no local snapshot is collected. */
+export class SpotlightConnector {
 	private readonly options: SpotlightConnectorOptions;
 	private readonly run: ProcessRunner;
 	private readonly readFile: FileReader;
@@ -84,34 +73,39 @@ export class SpotlightConnector implements DatasourceConnector {
 		this.platform = options.platform ?? process.platform;
 	}
 
-	async fetch(): Promise<ConnectorFetchResult> {
-		if (this.platform !== "darwin") {
-			return { ok: false, reason: "unavailable", message: "spotlight datasource is supported on macOS only" };
-		}
+	/** Refresh-time health check only: never runs `mdfind` or hydrates files. */
+	async probe(): Promise<SpotlightConnectorResult> {
 		const queries = (this.options.queries ?? []).map((query) => query.trim()).filter((query) => query.length > 0);
-		if (queries.length === 0) {
-			return { ok: false, reason: "not-configured", message: "no spotlight queries configured" };
-		}
+		const failure = await this.readinessFailure(queries);
+		return failure ?? { ok: true, documents: [] };
+	}
+
+	/** Search the current macOS Spotlight index and hydrate only the requested hits. */
+	async search(
+		query: string,
+		limit = DEFAULT_MAX_DOCUMENTS,
+		acceptDocument?: (docId: string) => boolean,
+	): Promise<SpotlightConnectorResult> {
+		const trimmed = query.trim();
+		if (trimmed.length === 0 || limit <= 0) return { ok: true, documents: [] };
+		const queries = (this.options.queries ?? []).map((query) => query.trim()).filter((query) => query.length > 0);
+		const failure = await this.readinessFailure(queries);
+		if (failure !== undefined) return failure;
+
 		const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-
-		// Indexing gate: `mdutil -s /` reports whether Spotlight indexing is on.
-		const status = await this.run("mdutil", ["-s", "/"], timeoutMs);
-		if (status.ok && /indexing disabled/iu.test(status.stdout)) {
-			return {
-				ok: false,
-				reason: "unavailable",
-				message: "Spotlight indexing is disabled; enable it with `sudo mdutil -i on /`",
-			};
-		}
-
-		// Collect hit paths for every configured query (deduped, capped).
 		const maxPerQuery = this.options.maxResultsPerQuery ?? DEFAULT_MAX_RESULTS_PER_QUERY;
-		const maxDocuments = this.options.maxDocuments ?? DEFAULT_MAX_DOCUMENTS;
+		const maxDocuments = Math.min(this.options.maxDocuments ?? DEFAULT_MAX_DOCUMENTS, limit);
 		const seen = new Set<string>();
 		const paths: string[] = [];
+		const textQuery = trimmed
+			.split(/\s+/u)
+			.map((term) => `"${term.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`)
+			.join(" AND ");
 		let mdfindMissing = false;
 		let failedQueries = 0;
-		for (const query of queries) {
+		const failures: ProcessRunResult[] = [];
+		for (const filter of queries) {
+			const query = `(${filter}) AND (${textQuery})`;
 			const args = this.options.onlyIn !== undefined ? ["-onlyin", this.options.onlyIn, query] : [query];
 			const result = await this.run("mdfind", args, timeoutMs);
 			if (!result.ok) {
@@ -120,6 +114,7 @@ export class SpotlightConnector implements DatasourceConnector {
 					break;
 				}
 				failedQueries += 1;
+				failures.push(result);
 				continue;
 			}
 			let kept = 0;
@@ -136,17 +131,25 @@ export class SpotlightConnector implements DatasourceConnector {
 			return { ok: false, reason: "unavailable", message: "mdfind binary not found; Spotlight requires macOS" };
 		}
 		if (failedQueries === queries.length) {
-			return { ok: false, reason: "unavailable", message: "every configured mdfind query failed" };
+			return {
+				ok: false,
+				reason: "unavailable",
+				message: "every configured mdfind query failed",
+				stderr: failures[0]?.stderr,
+				stdout: failures[0]?.stdout,
+				code: failures[0]?.code,
+			};
 		}
 
-		// Hydrate content. Directories, oversized, and unreadable files skip.
-		const maxBytes = this.options.maxBytesPerFile ?? DEFAULT_MAX_BYTES_PER_FILE;
-		const maxContentChars = this.options.maxContentChars ?? MAX_CONTENT_CHARS;
 		const documents: ConnectorDocument[] = [];
 		let permissionDenied = 0;
 		let readFailures = 0;
+		const maxBytes = this.options.maxBytesPerFile ?? DEFAULT_MAX_BYTES_PER_FILE;
+		const maxContentChars = this.options.maxContentChars ?? MAX_CONTENT_CHARS;
 		for (const path of paths) {
 			if (documents.length >= maxDocuments) break;
+			const docId = createHash("sha256").update(path).digest("hex").slice(0, 16);
+			if (acceptDocument !== undefined && !acceptDocument(docId)) continue;
 			try {
 				const info = await stat(path);
 				if (!info.isFile() || info.size > maxBytes) continue;
@@ -154,7 +157,7 @@ export class SpotlightConnector implements DatasourceConnector {
 				const content = text.trim().slice(0, maxContentChars);
 				if (content.length === 0) continue;
 				documents.push({
-					docId: createHash("sha256").update(path).digest("hex").slice(0, 16),
+					docId,
 					hierarchy: ["files"],
 					title: basename(path),
 					content,
@@ -175,6 +178,16 @@ export class SpotlightConnector implements DatasourceConnector {
 				message: `macOS denied access to all Spotlight hits; ${FDA_GUIDANCE}`,
 			};
 		}
+		if (documents.length === 0 && failedQueries > 0) {
+			return {
+				ok: false,
+				reason: "unavailable",
+				message: "some mdfind queries failed and no readable hits remained",
+				stderr: failures[0]?.stderr,
+				stdout: failures[0]?.stdout,
+				code: failures[0]?.code,
+			};
+		}
 		const warnings: string[] = [];
 		if (failedQueries > 0) warnings.push(`${failedQueries} mdfind quer(y/ies) failed`);
 		if (permissionDenied > 0) {
@@ -184,6 +197,25 @@ export class SpotlightConnector implements DatasourceConnector {
 		}
 		if (readFailures > 0) warnings.push(`${readFailures} Spotlight hit(s) failed to read`);
 		return { ok: true, documents, ...(warnings.length > 0 ? { warnings } : {}) };
+	}
+
+	private async readinessFailure(queries: readonly string[]): Promise<ConnectorFetchFail | undefined> {
+		if (this.platform !== "darwin") {
+			return { ok: false, reason: "unavailable", message: "spotlight datasource is supported on macOS only" };
+		}
+		if (queries.length === 0) {
+			return { ok: false, reason: "not-configured", message: "no spotlight queries configured" };
+		}
+		const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+		const status = await this.run("mdutil", ["-s", "/"], timeoutMs);
+		if (status.ok && /indexing disabled/iu.test(status.stdout)) {
+			return {
+				ok: false,
+				reason: "unavailable",
+				message: "Spotlight indexing is disabled; enable it with `sudo mdutil -i on /`",
+			};
+		}
+		return undefined;
 	}
 }
 

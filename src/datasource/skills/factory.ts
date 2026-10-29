@@ -393,9 +393,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as RssConnectorOptions,
 		}),
-	spotlight: (config, workspaceRoot, registrationName) =>
+	spotlight: (config, _workspaceRoot, registrationName) =>
 		new SpotlightSkill({
-			...common(config, workspaceRoot),
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			skillName: registrationName,
 			connectorOptions: config.connector as SpotlightConnectorOptions,
 		}),

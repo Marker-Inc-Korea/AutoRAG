@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,7 +42,7 @@ describe("SpotlightConnector", () => {
 	it("is unavailable on non-macOS platforms", async () => {
 		const { run, calls } = runner({});
 		const connector = new SpotlightConnector({ queries: ["alpha"], platform: "linux", run });
-		const result = await connector.fetch();
+		const result = await connector.probe();
 		expect(result).toMatchObject({ ok: false, reason: "unavailable" });
 		if (!result.ok) expect(result.message).toContain("macOS");
 		expect(calls).toHaveLength(0);
@@ -49,11 +50,11 @@ describe("SpotlightConnector", () => {
 
 	it("is not-configured without queries", async () => {
 		const { run } = runner({});
-		expect(await new SpotlightConnector({ platform: "darwin", run }).fetch()).toMatchObject({
+		expect(await new SpotlightConnector({ platform: "darwin", run }).probe()).toMatchObject({
 			ok: false,
 			reason: "not-configured",
 		});
-		expect(await new SpotlightConnector({ queries: [], platform: "darwin", run }).fetch()).toMatchObject({
+		expect(await new SpotlightConnector({ queries: [], platform: "darwin", run }).probe()).toMatchObject({
 			ok: false,
 			reason: "not-configured",
 		});
@@ -66,7 +67,7 @@ describe("SpotlightConnector", () => {
 					? { ok: true, stdout: "/:\n\tIndexing disabled.\n", stderr: "", code: 0 }
 					: { ok: true, stdout: "", stderr: "", code: 0 },
 			);
-		const result = await new SpotlightConnector({ queries: ["alpha"], platform: "darwin", run }).fetch();
+		const result = await new SpotlightConnector({ queries: ["alpha"], platform: "darwin", run }).probe();
 		expect(result).toMatchObject({ ok: false, reason: "unavailable" });
 		if (!result.ok) expect(result.message).toContain("mdutil -i on");
 	});
@@ -78,7 +79,7 @@ describe("SpotlightConnector", () => {
 					? { ok: true, stdout: "Indexing enabled.", stderr: "", code: 0 }
 					: { ok: false, stdout: "", stderr: "spawn mdfind ENOENT", code: null, error: "ENOENT" },
 			);
-		const result = await new SpotlightConnector({ queries: ["alpha"], platform: "darwin", run }).fetch();
+		const result = await new SpotlightConnector({ queries: ["alpha"], platform: "darwin", run }).search("alpha");
 		expect(result).toMatchObject({ ok: false, reason: "unavailable" });
 	});
 
@@ -100,10 +101,10 @@ describe("SpotlightConnector", () => {
 				code: 0,
 			},
 		});
-		const connector = new SpotlightConnector({ queries: ["budget"], platform: "darwin", run });
-		const result = await connector.fetch();
+		const connector = new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run });
+		const result = await connector.search("budget");
 		expect(result.ok).toBe(true);
-		expect(calls.find((c) => c.command === "mdfind")?.args).toEqual(["budget"]);
+		expect(calls.find((c) => c.command === "mdfind")?.args).toEqual(['(public.text) AND ("budget")']);
 		if (result.ok) {
 			expect(result.documents).toHaveLength(2);
 			for (const document of result.documents) {
@@ -118,8 +119,8 @@ describe("SpotlightConnector", () => {
 
 	it("passes -onlyin when a trusted directory is configured", async () => {
 		const { run, calls } = runner({});
-		await new SpotlightConnector({ queries: ["alpha"], onlyIn: root, platform: "darwin", run }).fetch();
-		expect(calls.find((c) => c.command === "mdfind")?.args).toEqual(["-onlyin", root, "alpha"]);
+		await new SpotlightConnector({ queries: ["alpha"], onlyIn: root, platform: "darwin", run }).search("alpha");
+		expect(calls.find((c) => c.command === "mdfind")?.args).toEqual(["-onlyin", root, '(alpha) AND ("alpha")']);
 	});
 
 	it("caps results per query and total documents", async () => {
@@ -136,7 +137,7 @@ describe("SpotlightConnector", () => {
 			maxDocuments: 3,
 			platform: "darwin",
 			run,
-		}).fetch();
+		}).search("body");
 		expect(result.ok).toBe(true);
 		if (result.ok) expect(result.documents).toHaveLength(3);
 	});
@@ -155,7 +156,7 @@ describe("SpotlightConnector", () => {
 				return Promise.reject(error);
 			},
 		});
-		const result = await connector.fetch();
+		const result = await connector.search("secret");
 		expect(result).toMatchObject({ ok: false, reason: "permission" });
 		if (!result.ok) {
 			expect(result.message).toContain("Full Disk Access");
@@ -177,7 +178,7 @@ describe("SpotlightConnector", () => {
 				path.endsWith("denied.txt")
 					? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" }))
 					: Promise.resolve("fine"),
-		}).fetch();
+		}).search("x");
 		expect(result.ok).toBe(true);
 		if (result.ok) {
 			expect(result.documents).toHaveLength(1);
@@ -205,5 +206,122 @@ describe("SpotlightSkill", () => {
 		const indexResult = await skill.index();
 		expect(indexResult.ok).toBe(false);
 		if (!indexResult.ok) expect(indexResult.code).toBe("datasource-unavailable");
+	});
+
+	it("probes Spotlight during refresh without running mdfind or building a snapshot", async () => {
+		const { run, calls } = runner({});
+		const skill = new SpotlightSkill({
+			connector: new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run }),
+		});
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: true, chunkCount: 0 });
+		expect(calls.map((call) => call.command)).toEqual(["mdutil"]);
+		expect(skill.polling().mode).toBe("none");
+	});
+
+	it("searches mdfind on demand with the configured filter and user query", async () => {
+		const file = join(root, "budget.txt");
+		writeFileSync(file, "quarterly budget notes");
+		const { run, calls } = runner({ mdfind: { ok: true, stdout: `${file}\n`, stderr: "", code: 0 } });
+		const skill = new SpotlightSkill({
+			connector: new SpotlightConnector({
+				queries: ["kMDItemContentTypeTree == 'public.text'"],
+				onlyIn: root,
+				platform: "darwin",
+				run,
+			}),
+		});
+		const method = skill.retrievalMethods()[0];
+		expect(method).toBeDefined();
+
+		const hits = await method!.retrieve("budget", { topK: 5, scope: "/spotlight/**" });
+
+		expect(calls.filter((call) => call.command === "mdfind")).toEqual([
+			{
+				command: "mdfind",
+				args: ["-onlyin", root, "(kMDItemContentTypeTree == 'public.text') AND (\"budget\")"],
+			},
+		]);
+		expect(hits).toHaveLength(1);
+		expect(hits[0]).toMatchObject({ content: "quarterly budget notes" });
+		expect(hits[0]?.source).toMatch(/^\/spotlight\/default\/chunks\/[a-f0-9]{16}$/u);
+		expect(hits[0]?.metadata).toMatchObject({ path: file, datasourceId: "spotlight", instanceId: "default" });
+	});
+
+	it("does not reuse a snapshot between searches", async () => {
+		const file = join(root, "fresh.txt");
+		writeFileSync(file, "before");
+		const { run, calls } = runner({ mdfind: { ok: true, stdout: `${file}\n`, stderr: "", code: 0 } });
+		const method = new SpotlightSkill({
+			connector: new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run }),
+		}).retrievalMethods()[0]!;
+
+		expect((await method.retrieve("before", { topK: 1 }))[0]?.content).toBe("before");
+		writeFileSync(file, "after");
+		expect((await method.retrieve("after", { topK: 1 }))[0]?.content).toBe("after");
+		expect(calls.filter((call) => call.command === "mdfind")).toHaveLength(2);
+	});
+
+	it("quotes user text instead of evaluating it as Spotlight syntax", async () => {
+		const { run, calls } = runner({});
+		await new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run }).search('step 1) "budget"');
+		expect(calls.find((call) => call.command === "mdfind")?.args).toEqual([
+			'(public.text) AND ("step" AND "1)" AND "\\"budget\\"")',
+		]);
+	});
+
+	it("skips Spotlight processes when the requested scope belongs to another datasource", async () => {
+		const { run, calls } = runner({});
+		const method = new SpotlightSkill({
+			connector: new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run }),
+		}).retrievalMethods()[0]!;
+
+		expect(await method.retrieve("budget", { scope: "/kakao/default/**" })).toEqual([]);
+		expect(calls).toHaveLength(0);
+	});
+
+	it("applies chunk scope before enforcing the hydration limit", async () => {
+		const first = join(root, "first.txt");
+		const second = join(root, "second.txt");
+		writeFileSync(first, "first");
+		writeFileSync(second, "second");
+		const secondId = createHash("sha256").update(second).digest("hex").slice(0, 16);
+		const { run } = runner({ mdfind: { ok: true, stdout: `${first}\n${second}\n`, stderr: "", code: 0 } });
+		const method = new SpotlightSkill({
+			connector: new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run }),
+		}).retrievalMethods()[0]!;
+
+		const hits = await method.retrieve("text", { topK: 1, scope: `/spotlight/default/chunks/${secondId}` });
+
+		expect(hits).toHaveLength(1);
+		expect(hits[0]).toMatchObject({ content: "second", source: `/spotlight/default/chunks/${secondId}` });
+	});
+
+	it("preserves mdfind stderr and exit codes in retrieval errors", async () => {
+		const { run } = runner({ mdfind: { ok: false, stdout: "", stderr: "bad spotlight query", code: 1 } });
+		const method = new SpotlightSkill({
+			connector: new SpotlightConnector({ queries: ["public.text"], platform: "darwin", run }),
+		}).retrievalMethods()[0]!;
+
+		await expect(method.retrieve("budget", {})).rejects.toThrow(
+			/bad spotlight query.*exit code 1|exit code 1.*bad spotlight query/u,
+		);
+	});
+
+	it("contains probe failures and reports unavailable as a warning", async () => {
+		const skill = new SpotlightSkill({
+			connector: new SpotlightConnector({
+				queries: ["public.text"],
+				platform: "darwin",
+				run: () => Promise.reject(new Error("mdutil failed")),
+			}),
+		});
+
+		const result = await skill.index();
+
+		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
+		expect(result.diagnostics[0]).toMatchObject({ severity: "warning", message: "mdutil failed" });
 	});
 });
