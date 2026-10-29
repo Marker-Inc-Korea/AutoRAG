@@ -285,6 +285,16 @@ export interface AutoRAGRefreshLimits {
 	readonly maxDepth?: number;
 	/** Retries for a transient per-file I/O error (EMFILE/EBUSY/EIO/ETIMEDOUT) before the file is skipped. Default 3. */
 	readonly transientRetries?: number;
+	/**
+	 * Most iCloud/File Provider placeholders (files whose data is not on disk) one refresh may download.
+	 * Reading a placeholder downloads it, so this bounds disk and network use per refresh; the rest wait
+	 * for the next one. Default 200.
+	 */
+	readonly cloudMaxFiles?: number;
+	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default 536870912 (512 MiB). */
+	readonly cloudMaxBytes?: number;
+	/** Release an iCloud file again once it is parsed and indexed. Default true. */
+	readonly cloudEvictAfterParse?: boolean;
 }
 
 /**
@@ -370,7 +380,15 @@ function positiveLimit(value: number | undefined, fallback: number, path: string
 
 function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRAGRefreshLimits {
 	if (limits === undefined) return {};
-	const { maxDeleteRatio, maxScannedEntries, maxDepth, transientRetries } = limits;
+	const {
+		maxDeleteRatio,
+		maxScannedEntries,
+		maxDepth,
+		transientRetries,
+		cloudMaxFiles,
+		cloudMaxBytes,
+		cloudEvictAfterParse,
+	} = limits;
 	if (
 		maxDeleteRatio !== undefined &&
 		!(Number.isFinite(maxDeleteRatio) && maxDeleteRatio >= 0 && maxDeleteRatio <= 1)
@@ -384,11 +402,19 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	if (transientRetries !== undefined && (!Number.isInteger(transientRetries) || transientRetries < 0)) {
 		throw new Error("refresh.transientRetries must be a non-negative integer");
 	}
+	if (cloudMaxFiles !== undefined) positiveLimit(cloudMaxFiles, 0, "refresh.cloudMaxFiles");
+	if (cloudMaxBytes !== undefined) positiveLimit(cloudMaxBytes, 0, "refresh.cloudMaxBytes");
+	if (cloudEvictAfterParse !== undefined && typeof cloudEvictAfterParse !== "boolean") {
+		throw new Error("refresh.cloudEvictAfterParse must be a boolean");
+	}
 	return {
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
 		...(transientRetries !== undefined ? { transientRetries } : {}),
+		...(cloudMaxFiles !== undefined ? { cloudMaxFiles } : {}),
+		...(cloudMaxBytes !== undefined ? { cloudMaxBytes } : {}),
+		...(cloudEvictAfterParse !== undefined ? { cloudEvictAfterParse } : {}),
 	};
 }
 
