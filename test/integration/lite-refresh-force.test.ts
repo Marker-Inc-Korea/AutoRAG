@@ -69,6 +69,9 @@ describe("model-free full refresh", () => {
 			.trim()
 			.split("\n")
 			.filter((command) => command.startsWith("sync"));
-		expect(syncCommands).toEqual(["sync --full --format json", "sync --full --format json"]);
+		expect(syncCommands).toEqual([
+			"sync --full --format json --progress jsonl",
+			"sync --full --format json --progress jsonl",
+		]);
 	});
 });

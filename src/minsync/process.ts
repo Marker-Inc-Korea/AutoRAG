@@ -24,7 +24,12 @@ export function spawnProcess(
 	command: string,
 	args: readonly string[],
 	cwd: string,
-	options: { readonly timeoutMs?: number; readonly signal?: AbortSignal; readonly env?: NodeJS.ProcessEnv } = {},
+	options: {
+		readonly timeoutMs?: number;
+		readonly signal?: AbortSignal;
+		readonly env?: NodeJS.ProcessEnv;
+		readonly onStdoutLine?: (line: string) => void;
+	} = {},
 ): Promise<ProcessResult> {
 	// Executor form: the ES2022 lib this package targets has no Promise.withResolvers.
 	return new Promise((resolve, reject) => {
@@ -47,12 +52,21 @@ export function spawnProcess(
 		trackLiveChild(child);
 		let stdout = "";
 		let stderr = "";
+		let stdoutLine = "";
 		let timedOut = false;
 		let escalation: ReturnType<typeof setTimeout> | undefined;
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
 			stdout += chunk;
+			if (options.onStdoutLine === undefined) return;
+			stdoutLine += chunk;
+			let newline = stdoutLine.indexOf("\n");
+			while (newline >= 0) {
+				options.onStdoutLine(stdoutLine.slice(0, newline).replace(/\r$/, ""));
+				stdoutLine = stdoutLine.slice(newline + 1);
+				newline = stdoutLine.indexOf("\n");
+			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr += chunk;
@@ -82,6 +96,7 @@ export function spawnProcess(
 			else resolve({ ok: false, stdout, stderr: error.message, code: null });
 		});
 		child.on("close", (code) => {
+			if (stdoutLine.length > 0) options.onStdoutLine?.(stdoutLine.replace(/\r$/, ""));
 			settle();
 			if (signal?.aborted) {
 				reject(abortReason(signal));

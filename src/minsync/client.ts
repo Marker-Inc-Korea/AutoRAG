@@ -17,7 +17,13 @@ import { kiwiAvailable } from "./kiwi.ts";
 import { MINSYNC_LEXICAL_LANGUAGE, type MinSyncLexicalLanguage } from "./lexical-language.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
-import type { MinSyncEmbedderConfig, MinSyncFileFailure, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type {
+	MinSyncEmbedderConfig,
+	MinSyncFileFailure,
+	MinSyncQueryHit,
+	MinSyncSyncProgress,
+	MinSyncSyncResult,
+} from "./types.ts";
 
 export interface MinSyncClientOptions {
 	readonly binaryPath: string;
@@ -122,7 +128,11 @@ export class MinSyncClient {
 		return JSON.stringify(previousDocuments) !== JSON.stringify(currentDocuments);
 	}
 
-	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
+	async sync(
+		force = false,
+		signal?: AbortSignal,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		const effective = this.effectiveEmbedder();
 		try {
@@ -201,6 +211,7 @@ export class MinSyncClient {
 				signal,
 				effective,
 				restoreConfig,
+				onProgress,
 			);
 			return result.ok && lexical.fallback !== undefined ? { ...result, lexicalFallback: lexical.fallback } : result;
 		} catch (error) {
@@ -246,6 +257,7 @@ export class MinSyncClient {
 		signal: AbortSignal | undefined,
 		effective: { config: MinSyncEmbedderConfig; identity?: MinSyncEmbeddingIdentity },
 		restoreConfig: () => void,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
 	): Promise<MinSyncSyncResult> {
 		const spawnOptions = signal === undefined ? {} : { signal };
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
@@ -289,8 +301,25 @@ export class MinSyncClient {
 		const identityChanged = effective.identity !== undefined && this.identityMismatch(effective.identity);
 		const fullReindex = forceFull || identityChanged;
 		const syncArgs =
-			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await this.spawn(syncArgs, spawnOptions);
+			existsSync(cursorPath) && !fullReindex
+				? ["sync", "--format", "json", "--progress", "jsonl"]
+				: ["sync", "--full", "--format", "json", "--progress", "jsonl"];
+		const result = await this.spawn(syncArgs, {
+			...spawnOptions,
+			...(onProgress === undefined
+				? {}
+				: {
+						onStdoutLine: (line: string) => {
+							const update = readSyncProgress(line);
+							if (update === undefined) return;
+							try {
+								onProgress(update);
+							} catch {
+								// Progress is observational; a host callback must not interrupt the sync.
+							}
+						},
+					}),
+		});
 		if (!result.ok && result.code === MINSYNC_LOCK_HELD_EXIT_CODE) {
 			restoreConfig();
 			return this.lockHeldResult(result.stderr);
@@ -349,7 +378,11 @@ export class MinSyncClient {
 
 	private async spawn(
 		args: readonly string[],
-		options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
+		options: {
+			readonly timeoutMs?: number;
+			readonly signal?: AbortSignal;
+			readonly onStdoutLine?: (line: string) => void;
+		} = {},
 	): Promise<ProcessResult> {
 		return spawnProcess(this.binaryPath, args, this.workspacePath, { ...options, env: this.childEnv() });
 	}
@@ -377,7 +410,7 @@ function readConfigSnapshot(configPath: string): string | undefined {
 }
 
 function readPartialSync(stdout: string): { readonly filesFailed: readonly MinSyncFileFailure[] } | undefined {
-	const parsed = parseJson(stdout);
+	const parsed = parseSyncOutput(stdout);
 	if (!isRecord(parsed) || parsed.partial !== true) return undefined;
 	const failures = Array.isArray(parsed.files_failed) ? parsed.files_failed : [];
 	return {
@@ -390,13 +423,41 @@ function readPartialSync(stdout: string): { readonly filesFailed: readonly MinSy
 }
 
 function readSyncedCount(stdout: string): number {
-	const parsed = parseJson(stdout);
+	const parsed = parseSyncOutput(stdout);
 	if (!isRecord(parsed)) return 0;
 	for (const key of ["files_processed", "synced"]) {
 		const count = parsed[key];
 		if (typeof count === "number" && Number.isFinite(count)) return count;
 	}
 	return 0;
+}
+
+function readSyncProgress(line: string): MinSyncSyncProgress | undefined {
+	const event = parseJson(line);
+	if (!isRecord(event) || !["start", "batch", "heartbeat", "done"].includes(String(event.event))) return undefined;
+	const total = event.total ?? event.total_files;
+	const processed = event.event === "start" ? (event.resumed ?? 0) : event.processed;
+	if (
+		typeof processed !== "number" ||
+		!Number.isInteger(processed) ||
+		processed < 0 ||
+		typeof total !== "number" ||
+		!Number.isInteger(total) ||
+		total < processed
+	)
+		return undefined;
+	return { processed, total };
+}
+
+function parseSyncOutput(stdout: string): unknown {
+	const direct = parseJson(stdout);
+	if (direct !== undefined) return direct;
+	const lines = stdout.trim().split("\n");
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		const parsed = parseJson(lines[index]);
+		if (parsed !== undefined) return parsed;
+	}
+	return undefined;
 }
 
 function readCheckFailure(stdout: string): string | undefined {

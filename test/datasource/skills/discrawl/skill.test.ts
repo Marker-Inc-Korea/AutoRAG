@@ -3,6 +3,7 @@ import { AliasedDatasourceSkill } from "../../../../src/datasource/aliased-skill
 import { DescribedDatasourceSkill } from "../../../../src/datasource/described-skill.ts";
 import { indexWithRetry } from "../../../../src/datasource/retry.ts";
 import { discordDescriptor } from "../../../../src/datasource/sidecar/descriptors.ts";
+import type { DiscordAttachmentSyncer } from "../../../../src/datasource/skills/discrawl/attachments.ts";
 import { DiscrawlSkill, type DiscrawlSkillClient } from "../../../../src/datasource/skills/discrawl/skill.ts";
 import type {
 	DiscrawlDoctorResult,
@@ -281,6 +282,68 @@ describe("DiscrawlSkill index", () => {
 		const result = await new DiscrawlSkill({ client: asClient(stub) }).index();
 		expect(result.ok).toBe(true);
 		expect(result.diagnostics.some((d) => d.message.includes("discrawl embed failed"))).toBe(true);
+	});
+
+	it("downloads attachments after a successful import and reports the counts", async () => {
+		const calls: boolean[] = [];
+		const attachments: DiscordAttachmentSyncer = {
+			root: "/attachments",
+			sync: async (options) => {
+				calls.push(options.download);
+				return {
+					ok: true,
+					root: "/attachments",
+					statusPath: "/attachments/download-status.json",
+					summary: {
+						total: 3,
+						downloaded: 2,
+						notDownloaded: 0,
+						changed: 0,
+						missing: 0,
+						failed: 1,
+						skipped: 0,
+						downloadable: 1,
+						expired: 0,
+					},
+					run: { attempted: 3, fetched: 2, failed: 1, skipped: 0, bytes: 42 },
+					records: [],
+				};
+			},
+		};
+		const result = await new DiscrawlSkill({ client: asClient(new StubClient()), attachments }).index();
+		expect(calls).toEqual([true]);
+		expect(result.ok).toBe(true);
+		const diagnostic = result.diagnostics.find((d) => d.message.startsWith("attachments:"));
+		expect(diagnostic).toMatchObject({ severity: "warning" });
+		expect(diagnostic?.message).toContain("fetched=2 failed=1");
+		expect(diagnostic?.message).not.toContain("/attachments");
+	});
+
+	it("keeps the index ok when the attachment download throws", async () => {
+		const attachments: DiscordAttachmentSyncer = {
+			root: "/attachments",
+			sync: async () => {
+				throw new Error("disk full");
+			},
+		};
+		const result = await new DiscrawlSkill({ client: asClient(new StubClient()), attachments }).index();
+		expect(result).toMatchObject({ ok: true, chunkCount: 5 });
+		expect(result.diagnostics.some((d) => d.message === "attachment download failed: disk full")).toBe(true);
+	});
+
+	it("does not download attachments when the import failed", async () => {
+		const stub = new StubClient();
+		stub.syncResult = { ok: false, reason: "nonzero-exit", stdout: "", stderr: "", code: 1 };
+		let called = false;
+		const attachments: DiscordAttachmentSyncer = {
+			root: "/attachments",
+			sync: async () => {
+				called = true;
+				throw new Error("unreachable");
+			},
+		};
+		expect((await new DiscrawlSkill({ client: asClient(stub), attachments }).index()).ok).toBe(false);
+		expect(called).toBe(false);
 	});
 });
 

@@ -32,7 +32,7 @@ export interface PersistedRefreshProgress {
 	readonly finishedAt?: string;
 	readonly sourceFiles?: { readonly total: number };
 	readonly parsedCounts?: RefreshProgressCounts;
-	readonly minsync?: { readonly synced?: number };
+	readonly minsync?: { readonly synced?: number; readonly total?: number };
 	readonly error?: string;
 }
 
@@ -129,7 +129,14 @@ function isParsedCounts(value: unknown): boolean {
 }
 
 function isMinsync(value: unknown): boolean {
-	return value === undefined || (isRecord(value) && (value.synced === undefined || typeof value.synced === "number"));
+	return (
+		value === undefined ||
+		(isRecord(value) &&
+			(value.synced === undefined ||
+				(typeof value.synced === "number" && Number.isInteger(value.synced) && value.synced >= 0)) &&
+			(value.total === undefined ||
+				(typeof value.total === "number" && Number.isInteger(value.total) && value.total >= 0)))
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

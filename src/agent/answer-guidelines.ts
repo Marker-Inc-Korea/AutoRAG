@@ -39,7 +39,7 @@ export const ANSWER_EMPHASIS_RULE =
 
 /** Answer language follows the question, not the sources. */
 export const ANSWER_LANGUAGE_RULE =
-	"**Answer language**: write the answer in the language of the user's question (a Korean question gets a Korean answer) even when the sources are in another language; if the user asks for a specific language, use that one. Keep proper nouns, identifiers, code, and terms quoted from sources in their original form.";
+	"**Answer language**: write the answer in the language of the user's question (an English question gets an English answer), even when the retrieved sources, file names, or tool outputs are in another language. Never switch to the language of the sources; translate or paraphrase their content into the question's language. If the user asks for a specific language, use that one. Keep proper nouns, identifiers, code, and terms quoted from sources in their original form.";
 
 /** Uncertainty goes last so it never buries the conclusion. */
 export const ANSWER_UNCERTAINTY_RULE =
@@ -52,7 +52,7 @@ export const ANSWER_UNCERTAINTY_RULE =
  * phase, delta included.
  */
 export const ANSWER_RELEVANCE_RULE =
-	'**Answer only what was asked**: every sentence must answer the user\'s question. Never list retrieved items, topics, documents, or figures that do not answer it, never describe how or where you searched, and never explain why something was left out or how it differs from what was asked (no "I also found X, but it is not what you asked", no near-miss lists, no "nothing about Y, only Z", no inventory of the sources that lacked it). Unrelated or merely adjacent material is omitted entirely unless the user asked for related items or alternatives.';
+	'**Answer only what was asked**: every sentence must answer the user\'s question. Never list retrieved items, topics, documents, or figures that do not answer it, never describe how or where you searched, never discuss the draft, source verification, or the answer-writing process, and never explain why something was left out or how it differs from what was asked (no "I also found X, but it is not what you asked", no near-miss lists, no "nothing about Y, only Z", no inventory of the sources that lacked it). Unrelated or merely adjacent material is omitted entirely unless the user asked for related items or alternatives.';
 
 /**
  * Fast phase, no supporting evidence: park the question in one line. The
@@ -75,7 +75,7 @@ export const ANSWER_UNCONFIRMED_FINAL_RULE =
  * conversation), so the caller only ever sees numbered citations backed by recorded evidence.
  */
 export const ANSWER_CITATION_RULE =
-	'**Citations**: cite supporting evidence inline with the evidence id shown next to each retrieved result, in square brackets (e.g. [e3], or [e3][e7] for two). Copy ids exactly; never invent one. For a local file you opened yourself with `bash`, cite `[file:<absolute path>]`. Cite the evidence that backs a sentence at the end of that sentence. Do not cite numbers, paths, or anything else. A retrieved result may carry a measured location note such as `(lines 7-8, section "제5조(회원의 의무)")` next to its id: when you state a line number, line range, or article/section of a passage, copy it from that note, and when no note is printed give none. Never count or infer line numbers yourself, and never state how many items (paragraphs, articles, results) there are unless you counted them in the quoted text.';
+	'**Citations**: cite supporting evidence inline with the evidence id shown next to each retrieved result, in square brackets (e.g. [e3], or [e3][e7] for two). Copy ids exactly; never invent one. For a local file you opened yourself with `bash`, cite `[file:<absolute path>]`. Cite the evidence that backs a sentence at the end of that sentence. Do not cite numbers, paths, or anything else. A retrieved result may carry a measured location note such as `(lines 7-8, section "Article 5 (Member Obligations)")` next to its id: when you state a line number, line range, or article/section of a passage, copy it from that note, and when no note is printed give none. Never count or infer line numbers yourself, and never state how many items (paragraphs, articles, results) there are unless you counted them in the quoted text.';
 
 /**
  * Deliverable/artifact rule (issue #1832). The 5-bullet cap and direct-answer

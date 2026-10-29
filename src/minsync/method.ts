@@ -15,7 +15,7 @@ import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
-import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
@@ -82,11 +82,19 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
-	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal));
+	async sync(
+		force = false,
+		signal?: AbortSignal,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
+		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal, onProgress));
 	}
 
-	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
+	private async syncUnlocked(
+		force: boolean,
+		signal: AbortSignal | undefined,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
 		if (signal?.aborted) throw abortReason(signal);
 		const binaryPath = await this.resolveBinary();
 		const staging = syncMinSyncWorkspace(this.root, {
@@ -101,7 +109,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
 		});
-		return withExcluded(await client.sync(force, signal));
+		return withExcluded(await client.sync(force, signal, onProgress));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */

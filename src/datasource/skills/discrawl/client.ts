@@ -3,7 +3,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/terminate-tree.ts";
+import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
 import type {
+	DiscrawlAttachmentFetchResult,
+	DiscrawlAttachmentFetchStats,
+	DiscrawlAttachmentListResult,
+	DiscrawlAttachmentRow,
 	DiscrawlDoctorInfo,
 	DiscrawlDoctorResult,
 	DiscrawlEmbeddingConfigResult,
@@ -42,6 +47,8 @@ const USER_TOKEN_KEYS: ReadonlySet<string> = new Set([
 	"discord_account_token",
 ]);
 
+/** `discrawl --json attachments --all` prints about 1 KB per row; a large archive outgrows the 1 MiB default. */
+const ATTACHMENT_LIST_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
 const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
 const SAFE_DISCRAWL_ENV_PREFIX = "DISCRAWL_";
 
@@ -199,6 +206,44 @@ export class DiscrawlClient {
 		return hits === undefined ? toFailure(result, "invalid-shape") : searchOk(hits, result);
 	}
 
+	/**
+	 * Lists every archived attachment with discrawl's fetch bookkeeping. `configPath` is the
+	 * attachments-only config that points discrawl's `cache_dir` at AutoRAG's attachments folder; it
+	 * replaces the operator/managed config for this call only.
+	 */
+	async listAttachments(
+		configPath: string,
+		guildId?: string,
+		signal?: AbortSignal,
+	): Promise<DiscrawlAttachmentListResult> {
+		const args = ["attachments", "--all", ...(guildId === undefined ? [] : ["--guild", guildId])];
+		const result = await this.runWithConfig(configPath, args, signal, {
+			maxBufferBytes: Math.max(this.options.maxBufferBytes ?? 0, ATTACHMENT_LIST_MAX_BUFFER_BYTES),
+		});
+		if (!result.ok) return toFailure(result);
+		const rows = normalizeAttachmentRows(result.stdout);
+		return rows === undefined ? toFailure(result, "invalid-shape") : ok(rows, result);
+	}
+
+	/** Downloads the attachments of one message into the config's `cache_dir` while their signed links live. */
+	async fetchAttachments(
+		configPath: string,
+		messageId: string,
+		signal?: AbortSignal,
+	): Promise<DiscrawlAttachmentFetchResult> {
+		const result = await this.runWithConfig(
+			configPath,
+			["attachments", "fetch", "--missing", "--message", messageId],
+			signal,
+			{ timeoutMs: this.options.attachmentTimeoutMs ?? DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS },
+		);
+		if (!result.ok) return toFailure(result);
+		const parsed = parseJsonObject(result.stdout);
+		if (parsed === undefined) return toFailure(result, "invalid-json");
+		const stats = normalizeFetchStats(parsed);
+		return stats === undefined ? toFailure(result, "invalid-shape") : ok(stats, result);
+	}
+
 	private runJson(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
 		return this.run(["--json", ...args], signal);
 	}
@@ -214,6 +259,25 @@ export class DiscrawlClient {
 			options: this.options,
 			args: [...commonArgs(this.options, configured.configured), ...args],
 			env,
+			signal,
+		});
+	}
+
+	/** Runs with an explicit `--config` and no embedding runtime: attachment commands never embed. */
+	private async runWithConfig(
+		configPath: string,
+		args: readonly string[],
+		signal: AbortSignal | undefined,
+		overrides: Pick<DiscrawlOptions, "timeoutMs" | "maxBufferBytes">,
+	): Promise<ProcessResult> {
+		const violatingKey = findUserTokenKey({ ...process.env, ...(this.options.env ?? {}) });
+		if (violatingKey !== undefined) {
+			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
+		}
+		return spawnDiscrawl({
+			options: { ...this.options, ...overrides },
+			args: ["--config", configPath, "--json", ...args],
+			env: controlledEnv(this.options.env),
 			signal,
 		});
 	}
@@ -528,6 +592,69 @@ function normalizeEmbed(raw: Record<string, string>): DiscrawlEmbedInfo | undefi
 		...(raw.model !== undefined ? { model: raw.model } : {}),
 		...(raw.provider !== undefined ? { provider: raw.provider } : {}),
 		metadata: { ...raw },
+	};
+}
+
+/** `discrawl --json attachments` prints an array of rows (`null` when nothing matched). */
+function normalizeAttachmentRows(stdout: string): readonly DiscrawlAttachmentRow[] | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stdout.trim() || "null");
+	} catch {
+		return undefined;
+	}
+	if (parsed === null) return [];
+	if (!Array.isArray(parsed)) return undefined;
+	const rows: DiscrawlAttachmentRow[] = [];
+	for (const entry of parsed) {
+		const record = asRecord(entry);
+		const attachmentId = asString(record?.attachment_id);
+		const messageId = asString(record?.message_id);
+		if (record === undefined || attachmentId === undefined || messageId === undefined) return undefined;
+		const text = (key: string): string | undefined => {
+			const value = asString(record[key]);
+			return value === undefined || value.length === 0 ? undefined : value;
+		};
+		const optional = (key: string, target: keyof DiscrawlAttachmentRow): Record<string, string> => {
+			const value = text(key);
+			return value === undefined ? {} : { [target]: value };
+		};
+		const contentSize = asNumber(record.content_size);
+		rows.push({
+			attachmentId,
+			messageId,
+			guildId: asString(record.guild_id) ?? "",
+			channelId: asString(record.channel_id) ?? "",
+			filename: asString(record.filename) ?? "",
+			size: asNumber(record.size) ?? 0,
+			...optional("guild_name", "guildName"),
+			...optional("channel_name", "channelName"),
+			...optional("author_name", "authorName"),
+			...optional("content_type", "contentType"),
+			...optional("url", "url"),
+			...optional("proxy_url", "proxyUrl"),
+			...optional("media_path", "mediaPath"),
+			...optional("content_sha256", "contentSha256"),
+			...optional("fetch_status", "fetchStatus"),
+			...optional("fetch_error", "fetchError"),
+			...optional("fetched_at", "fetchedAt"),
+			...optional("created_at", "createdAt"),
+			...(contentSize === undefined ? {} : { contentSize }),
+		});
+	}
+	return rows;
+}
+
+function normalizeFetchStats(raw: Record<string, unknown>): DiscrawlAttachmentFetchStats | undefined {
+	const attachments = asNumber(raw.attachments);
+	if (attachments === undefined) return undefined;
+	return {
+		attachments,
+		fetched: asNumber(raw.fetched) ?? 0,
+		reused: asNumber(raw.reused) ?? 0,
+		skipped: asNumber(raw.skipped) ?? 0,
+		failed: asNumber(raw.failed) ?? 0,
+		bytes: asNumber(raw.bytes) ?? 0,
 	};
 }
 
