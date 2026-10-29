@@ -346,6 +346,15 @@ interface SearchDatasourceChoice {
 	readonly web: boolean;
 }
 
+/**
+ * The datasource check's verdict and the diagnostics that explain it. The check starts before the route is known, so
+ * it records nothing itself: the run adds the diagnostics only when it takes the local plan.
+ */
+interface SearchDatasourcePlan {
+	readonly choice: SearchDatasourceChoice;
+	readonly diagnostics: readonly SearchDocumentDiagnostic[];
+}
+
 /** One prefetched web search: its candidate hits, or the reason it contributed none. */
 interface PrefetchedWebSearch {
 	readonly results: readonly RetrievalResult[];
@@ -2771,12 +2780,31 @@ export class AutoRAGAgent {
 	}> {
 		const judge = this.jevJudge;
 		if (judge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
-		const decision = await this.searchProgress.step(
+		const routing = this.searchProgress.step(
 			"route",
 			"Routing the question",
 			() => routeQuery(judge, query, { selfConfig: this.selfConfig !== undefined }),
 			(routed) => routed.route,
 		);
+		// The datasource check needs only the question, so it starts with the route check instead of after it. It is
+		// speculative: its progress step and diagnostics are kept only when the run takes the local plan. Its outcome is
+		// captured here so a failure that lands before it is read cannot surface as an unhandled rejection.
+		const selectionOutcome = this.searchProgress
+			.step(
+				"datasource-select",
+				"Choosing datasources to search",
+				() => this.selectSearchDatasources(query),
+				({ choice }) => {
+					const ids = [...choice.datasources, ...(choice.web ? [WEB_DATASOURCE_ID] : [])];
+					return ids.length === 0 ? "none" : ids.join(", ");
+				},
+			)
+			.then(
+				(plan): { readonly plan: SearchDatasourcePlan } => ({ plan }),
+				(error: unknown): { readonly error: unknown } => ({ error }),
+			);
+		const decision = await routing;
+		const discardSelection = (): void => this.searchProgress.discardStep("datasource-select");
 		if (decision.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "query-route-fallback",
@@ -2788,6 +2816,7 @@ export class AutoRAGAgent {
 			// the question is still answerable: run the full local plan. Only an
 			// unavailable backend or an unusable verdict keeps the bare fallback.
 			if (decision.floorApplied !== true) {
+				discardSelection();
 				return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
 			}
 		}
@@ -2820,18 +2849,7 @@ export class AutoRAGAgent {
 				route = FALLBACK_QUERY_ROUTE;
 			}
 		}
-		const selectionPromise: Promise<SearchDatasourceChoice> =
-			route === "local"
-				? this.searchProgress.step(
-						"datasource-select",
-						"Choosing datasources to search",
-						() => this.selectSearchDatasources(query),
-						(chosen) => {
-							const ids = [...chosen.datasources, ...(chosen.web ? [WEB_DATASOURCE_ID] : [])];
-							return ids.length === 0 ? "none" : ids.join(", ");
-						},
-					)
-				: Promise.resolve({ datasources: [], web: false });
+		if (route !== "local") discardSelection();
 		let queries: readonly string[] = [query];
 		if (decision.decompose && route === "local") {
 			const target = this.queryDecompositionModel ?? {
@@ -2856,7 +2874,13 @@ export class AutoRAGAgent {
 				});
 			}
 		}
-		const selection = await selectionPromise;
+		let selection: SearchDatasourceChoice = { datasources: [], web: false };
+		if (route === "local") {
+			const outcome = await selectionOutcome;
+			if ("error" in outcome) throw outcome.error;
+			this.routingDiagnostics.push(...outcome.plan.diagnostics);
+			selection = outcome.plan.choice;
+		}
 		const probability = decision.routeProbability === undefined ? "" : ` (p=${decision.routeProbability.toFixed(2)})`;
 		this.routingDiagnostics.push({
 			code: "query-routed",
@@ -2888,10 +2912,13 @@ export class AutoRAGAgent {
 	 * are enabled, with where similar past questions were answered (from
 	 * retrieval memory) in the state. Returns the datasource ids and whether the
 	 * web is to be searched with every query before the rerank; a failed check
-	 * searches neither.
+	 * searches neither. It runs while the route check is still in flight, so it
+	 * returns its diagnostics instead of recording them (see
+	 * {@link SearchDatasourcePlan}).
 	 */
-	private async selectSearchDatasources(query: string): Promise<SearchDatasourceChoice> {
-		if (this.jevJudge === undefined) return { datasources: [], web: false };
+	private async selectSearchDatasources(query: string): Promise<SearchDatasourcePlan> {
+		const none: SearchDatasourceChoice = { datasources: [], web: false };
+		if (this.jevJudge === undefined) return { choice: none, diagnostics: [] };
 		const searchable = new Set(
 			this.methodRegistry
 				.list()
@@ -2907,7 +2934,7 @@ export class AutoRAGAgent {
 		// Web tools off means the web is not a candidate at all: no question, no
 		// web-attributed past hints, no web search.
 		const webEnabled = this.webSearchOptions !== undefined;
-		if (candidates.length === 0 && !webEnabled) return { datasources: [], web: false };
+		if (candidates.length === 0 && !webEnabled) return { choice: none, diagnostics: [] };
 		const whereFound = this.evidenceAttribution(catalog);
 		// A past result is shown only when its evidence is attributed to
 		// something this run searches (a configured datasource, a configured
@@ -2929,6 +2956,7 @@ export class AutoRAGAgent {
 			pastSearches.push({ query: past.question, results: results.slice(0, SIMILAR_PAST_RESULT_LIMIT) });
 			if (pastSearches.length === SIMILAR_PAST_SEARCH_LIMIT) break;
 		}
+		const diagnostics: SearchDocumentDiagnostic[] = [];
 		const selection = await selectDatasources(
 			this.jevJudge,
 			query,
@@ -2937,19 +2965,19 @@ export class AutoRAGAgent {
 			webEnabled ? { web: true } : {},
 		);
 		if (selection.fallbackReason !== undefined) {
-			this.routingDiagnostics.push({
+			diagnostics.push({
 				code: "datasource-selection-fallback",
 				severity: "warning",
 				message: `Jev datasource check was unavailable; ${webEnabled ? "no datasource and no web search ran" : "no datasource was searched"} before the fast answer. ${selection.fallbackReason}`,
 				source: "jev",
 			});
-			return { datasources: [], web: false };
+			return { choice: none, diagnostics };
 		}
 		// A configured datasource under the reserved id keeps it: the web
 		// candidate was withheld, so the reserved id names that datasource.
 		const webOffered = webEnabled && selection.webIdTaken !== true;
 		if (selection.webIdTaken === true) {
-			this.routingDiagnostics.push({
+			diagnostics.push({
 				code: "web-datasource-id-taken",
 				severity: "warning",
 				message: `The public web was not offered to Jev: a configured datasource already uses the reserved id "${WEB_DATASOURCE_ID}", so that question id would name two candidates. The configured datasource was judged as usual.`,
@@ -2962,14 +2990,17 @@ export class AutoRAGAgent {
 				: ids.map((id) => `${id} (p=${selection.probabilities[id]?.toFixed(2) ?? "?"})`).join(", ");
 		const judged = [...candidates.map((entry) => entry.datasourceId), ...(webOffered ? [WEB_DATASOURCE_ID] : [])];
 		const skipped = judged.filter((id) => !selection.selected.includes(id));
-		this.routingDiagnostics.push({
+		diagnostics.push({
 			code: "datasources-selected",
 			severity: "info",
 			message: `Jev selected datasources to search before the fast answer: ${describe(selection.selected)}; skipped: ${describe(skipped)}.`,
 			source: "jev",
 		});
 		const datasources = webOffered ? selection.selected.filter((id) => id !== WEB_DATASOURCE_ID) : selection.selected;
-		return { datasources, web: webOffered && selection.selected.includes(WEB_DATASOURCE_ID) };
+		return {
+			choice: { datasources, web: webOffered && selection.selected.includes(WEB_DATASOURCE_ID) },
+			diagnostics,
+		};
 	}
 
 	/**

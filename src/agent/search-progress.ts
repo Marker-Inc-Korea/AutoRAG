@@ -119,6 +119,18 @@ export class SearchProgressTracker {
 	}
 
 	/**
+	 * Removes a step that turned out not to belong to this search: speculative work whose branch was not taken.
+	 * A job still running under that id settles into nothing, so the step does not come back.
+	 */
+	discardStep(id: string): void {
+		if (!this.active) return;
+		const index = this.steps.findIndex((entry) => entry.id === id);
+		if (index < 0) return;
+		this.steps.splice(index, 1);
+		this.emit();
+	}
+
+	/**
 	 * Runs `work` as step `id`: running while it is in flight, done with
 	 * `detail(value)` when it resolves, failed with the error's own message when
 	 * it rejects (the rejection still propagates).

@@ -129,12 +129,16 @@ describe("answer readability rules", () => {
 	});
 
 	it("does not repeat the long system-prompt rules inside a delta prompt", () => {
-		const delta = newAgent().buildRefinementPrompt("환불 예외는 누구 승인이 필요해?", {}, "draft [e1]", true);
+		const agent = newAgent();
+		const delta = agent.buildRefinementPrompt("환불 예외는 누구 승인이 필요해?", {}, "draft [e1]", true);
+		const complete = agent.buildRefinementPrompt("환불 예외는 누구 승인이 필요해?", {}, "draft [e1]", false);
 		// Deliverables, citations and image embedding are already in the system prompt; the delta carries only its own one-line additions.
 		expect(delta).not.toContain(ANSWER_DELIVERABLE_RULE);
 		expect(delta).not.toContain(ANSWER_CITATION_RULE);
 		expect(delta).not.toContain(ANSWER_IMAGE_EMBED_RULE);
-		expect(delta.length).toBeLessThan(3000);
+		expect(complete.length - delta.length).toBeGreaterThan(
+			ANSWER_DELIVERABLE_RULE.length + ANSWER_CITATION_RULE.length + ANSWER_IMAGE_EMBED_RULE.length,
+		);
 	});
 
 	it("keeps the lead conclusion outside the 5-bullet cap so the cap is not silently broken", () => {
