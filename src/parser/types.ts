@@ -22,8 +22,8 @@ export abstract class Parser {
 	abstract readonly name: string;
 	abstract readonly extensions: readonly string[];
 	/**
-	 * Stamp recorded next to a per-file skip. Refresh retries a source a parser failed on exactly
-	 * once when this changes, so bump it whenever parse behavior changes (including the engine behind it).
+	 * Processing revision used by the durable parse stage and per-file failure skips.
+	 * Bump whenever parse behavior changes, including an engine dependency upgrade.
 	 */
 	readonly version: string = "1";
 

@@ -1,6 +1,8 @@
 import { realpathSync } from "node:fs";
 import { dirname, posix, resolve, win32 } from "node:path";
 import { planSourceRoots } from "../filesystem/source-paths.ts";
+import { MinSyncRequiredError } from "../minsync/errors.ts";
+import { MinSyncStageError } from "../minsync/stage.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
 
 export interface RetrievalScopeBinding {
@@ -81,9 +83,10 @@ export function buildRetrievalScopeBindings(
 	workspaceRoot: string,
 	searchPaths: readonly string[],
 	configuredSearchPaths: readonly string[] = searchPaths,
+	minSyncBinaryPath?: string,
 ): readonly RetrievalScopeBinding[] {
 	const currentRoots = planSourceRoots(searchPaths);
-	const persistedRoots = persistedScopeRoots(workspaceRoot);
+	const persistedRoots = persistedScopeRoots(workspaceRoot, minSyncBinaryPath);
 	const configuredAliases = configuredPathAliases(configuredSearchPaths);
 	const singlePersisted = persistedRoots.size === 1 ? [...persistedRoots.entries()][0] : undefined;
 
@@ -166,9 +169,24 @@ function configuredPathAliases(paths: readonly string[]): readonly { configured:
 	});
 }
 
-function persistedScopeRoots(workspaceRoot: string): ReadonlyMap<string, readonly string[]> {
+function persistedScopeRoots(
+	workspaceRoot: string,
+	minSyncBinaryPath?: string,
+): ReadonlyMap<string, readonly string[]> {
 	const roots = new Map<string, Set<string>>();
-	for (const entry of Object.values(loadMirrorIndex(workspaceRoot).entries)) {
+	let index: ReturnType<typeof loadMirrorIndex>;
+	try {
+		index = loadMirrorIndex(workspaceRoot, { minSyncBinaryPath });
+	} catch (error) {
+		// Scope aliases are optional at startup; execution/status still reports the engine failure.
+		if (
+			error instanceof MinSyncRequiredError ||
+			(error instanceof MinSyncStageError && error.code === "unsupported_protocol")
+		)
+			return new Map();
+		throw error;
+	}
+	for (const entry of Object.values(index.entries)) {
 		const normalized = normalizeVirtualPath(entry.virtualPath);
 		const segments = normalized.slice(1).split("/");
 		const virtualPrefix = segments[0] ? `/${segments[0]}` : "/";

@@ -10,6 +10,7 @@ import {
 	type DatasourceIndexResult,
 	type DatasourceSkill,
 } from "../../src/index.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -56,27 +57,34 @@ async function waitFor(condition: () => boolean, label: string): Promise<void> {
 	throw new Error(`timed out waiting for ${label}`);
 }
 
-/** A MinSync stand-in whose `sync` records its pid and then hangs until killed. */
+/**
+ * A MinSync stand-in whose `sync` records its pid and then hangs until killed.
+ * `stage` is delegated to the shared simulator, so the parsed mirror that runs
+ * before the sync completes normally instead of failing the refresh.
+ */
 function writeHangingMinSync(binaryPath: string, pidPath: string): void {
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({
+    stateDir: args[args.indexOf("--state-dir") + 1],
+  });
+} else if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
-}
-if (args[0] === "sync") {
+} else if (args[0] === "sync") {
   writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
   setInterval(() => {}, 1000);
 } else {
@@ -140,18 +148,26 @@ describe("AutoRAGRefreshOptions.onProgress", () => {
 			binary,
 			`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  const eqArg = args.find((a) => a.startsWith("--state-dir="));
+  const flagAt = args.indexOf("--state-dir");
+  const stateDir = eqArg ? eqArg.slice("--state-dir=".length) : flagAt >= 0 ? args[flagAt + 1] : args[1];
+  require(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir });
+} else if (args[0] === "init") {
   mkdirSync(".minsync", { recursive: true });
   writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
   process.exit(0);
+} else if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+else {
+  console.log(JSON.stringify({ event: "start", total_files: 2 }));
+  console.log(JSON.stringify({ event: "batch", processed: 1, total: 2 }));
+  console.log(JSON.stringify({ event: "done", processed: 2, total: 2 }));
+  writeFileSync(".minsync/cursor.json", "{}");
+  console.log(JSON.stringify({ files_processed: 2 }));
 }
-if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
-console.log(JSON.stringify({ event: "start", total_files: 2 }));
-console.log(JSON.stringify({ event: "batch", processed: 1, total: 2 }));
-console.log(JSON.stringify({ event: "done", processed: 2, total: 2 }));
-writeFileSync(".minsync/cursor.json", "{}");
-console.log(JSON.stringify({ files_processed: 2 }));
 `,
 		);
 		chmodSync(binary, 0o755);

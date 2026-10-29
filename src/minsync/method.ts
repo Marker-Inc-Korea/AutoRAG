@@ -96,10 +96,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		onProgress?: (progress: MinSyncSyncProgress) => void,
 	): Promise<MinSyncSyncResult> {
 		if (signal?.aborted) throw abortReason(signal);
-		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const binaryPath = await this.resolveBinary();
+		const staging = syncMinSyncWorkspace(this.root, {
+			workspacePath: this.workspacePath,
+			minSyncBinaryPath: binaryPath,
+		});
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
-		const binaryPath = await this.resolveBinary();
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
@@ -131,9 +134,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? this.defaultTopK;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
-		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
-		// Queries never install: they use an existing binary or fail loudly.
 		const binaryPath = await this.resolveBinary({ install: false });
+		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
+		// Queries never install: they use an existing binary or fail loudly.
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
@@ -194,7 +197,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	 * Queries pass `install: false` so a user's turn never waits on `cargo install`; only `sync` (refresh)
 	 * may install. See {@link resolveMinSyncBinary}.
 	 */
-	protected resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
+	resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
 		return resolveMinSyncBinary({
 			root: this.root,
 			binaryPath: this.binaryPath,

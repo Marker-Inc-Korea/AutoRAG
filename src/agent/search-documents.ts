@@ -28,6 +28,7 @@ export type SearchDocumentDiagnosticCode =
 	| "parser-skipped"
 	| "parser-failed"
 	| "parser-crashed"
+	| "source-changed"
 	| "source-vanished"
 	| "source-unreadable"
 	| "source-read-failed"
@@ -85,6 +86,8 @@ export interface SearchDocumentDiagnostic {
 	readonly message: string;
 	/** Component label (e.g. "sanitizer", "minsync") or opaque virtual path — never a real filesystem path. */
 	readonly source?: string;
+	/** Structured cause for a component diagnostic, such as a changed source revision. */
+	readonly reason?: string;
 }
 
 export interface SearchDocumentEvidence {

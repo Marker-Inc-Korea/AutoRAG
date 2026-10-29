@@ -75,11 +75,11 @@ import {
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
+import { MinSyncStageError } from "../minsync/stage.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	isPathExcluded,
-	MIRROR_CHECKPOINT_EVERY,
 	MirrorWorkspaceError,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncOptions,
@@ -193,6 +193,7 @@ import {
 import {
 	isRefreshOwnerAlive,
 	type PersistedRefreshProgress,
+	REFRESH_PROGRESS_EVERY,
 	type RefreshProgressCounts,
 	type RefreshProgressPhase,
 	readRefreshProgress,
@@ -1037,6 +1038,7 @@ export class AutoRAGAgent {
 			this.workspaceProjectRoot,
 			this.searchPaths,
 			this.configuredSearchPaths,
+			options.minSync?.binaryPath,
 		);
 		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
@@ -3675,10 +3677,9 @@ export class AutoRAGAgent {
 									skipped: parsedProgress.skipped,
 								},
 							});
-							// One marker rewrite per mirror checkpoint (plus the first and last file), not per file: on Windows
-							// every rewrite is a rename that can collide with another reader of the same marker.
+							// Coalesce display-marker writes; per-file durable recovery belongs to MinSync.
 							if (
-								parsedProgress.processed % MIRROR_CHECKPOINT_EVERY === 0 ||
+								parsedProgress.processed % REFRESH_PROGRESS_EVERY === 0 ||
 								parsedProgress.processed >= parsedProgress.total
 							) {
 								writeRefreshProgress(this.workspaceProjectRoot, progress);
@@ -3783,6 +3784,7 @@ export class AutoRAGAgent {
 				this.workspaceProjectRoot,
 				this.searchPaths,
 				this.configuredSearchPaths,
+				this.minSyncBinaryPath,
 			);
 			const jikjiDiagnostics = (jikji ?? [])
 				.map((result) => jikjiPrepareDiagnostic(result))
@@ -3907,17 +3909,30 @@ export class AutoRAGAgent {
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const persistedProgress = readRefreshProgress(this.workspaceProjectRoot);
-		const staleDiagnostics = await detectMirrorStaleness({
-			...this.refreshLimits,
-			root: this.workspaceProjectRoot,
-			searchPaths: this.searchPaths,
-			parserOptions: this.parserOptions,
-			userExcludedSourcePaths: new Set(this.excludePaths),
-		});
+		let engineUnavailable = this.minSyncMethod.isBinaryMissing();
+		let staleDiagnostics: readonly ParsedMirrorDiagnostic[] = [];
+		let protocolDiagnostic: SearchDocumentDiagnostic | undefined;
+		if (!engineUnavailable) {
+			try {
+				staleDiagnostics = (await this.scanMirrorStaleness()).diagnostics;
+			} catch (error) {
+				if (!(error instanceof MinSyncStageError) || error.code !== "unsupported_protocol") throw error;
+				engineUnavailable = true;
+				protocolDiagnostic = {
+					code: "minsync-sync-failed",
+					severity: "error",
+					source: "minsync",
+					reason: error.code,
+					message:
+						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/minsync-setup.md.",
+				};
+			}
+		}
 		const diagnostics: SearchDocumentDiagnostic[] = [
 			...this.startupDiagnostics,
 			...this.refreshState.mirrorDiagnostics.map(toSearchDiagnostic),
 			...staleDiagnostics.map(toSearchDiagnostic),
+			...(protocolDiagnostic === undefined ? [] : [protocolDiagnostic]),
 			...(await this.embeddingDiagnostics()),
 			...this.refreshState.jikjiDiagnostics.map((d) => ({
 				code: d.code,
@@ -3994,9 +4009,12 @@ export class AutoRAGAgent {
 							minsync: effectiveProgress.minsync,
 							ownerAlive,
 						},
-			stale: !parsedMirrorReady || staleDiagnostics.length > 0,
+			stale: engineUnavailable || !parsedMirrorReady || staleDiagnostics.length > 0,
 			diagnostics,
-			components: this.refreshComponentStatus(),
+			components: {
+				...this.refreshComponentStatus(),
+				...(protocolDiagnostic === undefined ? {} : { minsync: "unavailable" }),
+			},
 			lastError:
 				this.refreshState.lastError ??
 				(persistedProgress?.state === "failed" ? persistedProgress.error : undefined),
@@ -4011,7 +4029,7 @@ export class AutoRAGAgent {
 	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
 		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string; fsearch?: string } =
 			{};
-		status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
+		status.minsync = this.minSyncMethod.isBinaryMissing()
 			? "unavailable"
 			: this.refreshState.minsync?.ok === false
 				? "degraded"
@@ -4095,6 +4113,7 @@ export class AutoRAGAgent {
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
+			minSyncBinaryPath: await this.minSyncMethod.resolveBinary(),
 			force,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
@@ -4114,6 +4133,7 @@ export class AutoRAGAgent {
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
+			minSyncBinaryPath: this.minSyncBinaryPath,
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
@@ -4803,6 +4823,7 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		severity: diagnostic.severity,
 		message: diagnostic.message,
 		source: diagnostic.source,
+		...(diagnostic.reason === undefined ? {} : { reason: diagnostic.reason }),
 	};
 }
 

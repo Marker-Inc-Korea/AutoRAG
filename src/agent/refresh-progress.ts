@@ -2,6 +2,9 @@ import { readFileSync, rmSync } from "node:fs";
 import { writeFileAtomic } from "../mirror/atomic-write.ts";
 import { refreshProgressPath } from "../mirror/paths.ts";
 
+/** Persist display progress every 25 files; this is not the engine's recovery checkpoint. */
+export const REFRESH_PROGRESS_EVERY = 25;
+
 export type RefreshProgressPhase =
 	| "parsed"
 	| "minsync"
