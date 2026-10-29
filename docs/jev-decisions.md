@@ -219,7 +219,7 @@ What happens next:
 | `organize` | Skips retrieval, decomposition, the fast answer, and verification. One tool-capable turn with every tool the session has: no route changes the active tool set, so the turn prompt names the tools the task uses (`bash`, the file tools, `convert_files`/`list_file_conversions`, the duplicate scan, and file-name discovery) and the retrieval, datasource, and web tools it must not call. The prompt also carries the packaged `organize` skill as a `<skill name="organize" location="autorag-skill://organize">` invocation, which holds the rules: plan first, no overwrites, no permanent deletion (trash only), a listing check afterwards, and a final report of every change as old path → new path. If the skill cannot be loaded the run falls back to `local` with an `organize-skill-unavailable` diagnostic. No results; the run is not recorded in retrieval memory. |
 | `extra` | Skips retrieval, decomposition, the fast answer, and verification. One turn with **every** tool the session has and no tool ban: the prompt has the model answer from its own knowledge when that is reliable, look facts up with the retrieval/datasource tools or `web_search`/`web_fetch` when they are not, and otherwise do the work. The final message is either the answer (the same language and citation rules the other answer prompts use) or a short report of what was done. Cited retrieved evidence becomes results and feeds retrieval memory exactly like a local run (`recordStructuredResultsSession` without `isolateMemory`, plus the evidence judgment); an answer or report that cites nothing stays out of memory. |
 | `config` | Skips retrieval, decomposition, the fast answer, and verification. The turn prompt carries the packaged `autorag-setup` skill as a `<skill name="autorag-setup" location="autorag-skill://autorag-setup">` invocation, the active config path, and the pi agent dir, names `bash`/`read`/`edit`/`write` as the tools to use, and keeps retrieval, datasource, and web search out of the turn. The model edits the config, verifies with `autorag health`/`models list`, and reports old → new as its final message (no results, and the run is not recorded in retrieval memory). If the skill cannot be loaded the run falls back to `local` with a `self-config-unavailable` diagnostic. |
-| `local`  | Decompose (if needed) and datasource check (configured datasources **and** the public web), in parallel → Jikji + MinSync + every selected datasource + one web search per query (when the web was selected), per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
+| `local`  | Datasource check (configured datasources **and** the public web) starts together with the route check and runs alongside decomposition → Jikji + MinSync + every selected datasource + one web search per query (when the web was selected), per query, in parallel → merged pool → rerank against the original question (when `rerank` is configured) → fast answer → follow-up check → verification (only if needed). |
 
 ### One tool set for every route
 
@@ -273,6 +273,16 @@ including `web (p=…)` — with their probabilities. If the check fails (missin
 credential, unreachable
 backend), neither a datasource nor the web is searched before the fast answer
 (`datasource-selection-fallback`), which is the behavior without Jev.
+
+The check needs only the question, so it is sent **while the route check is
+still in flight**; the two calls overlap and the run waits for the slower one
+instead of their sum. It is speculative: when the route is not `local`
+(`organize`, `extra`, `config`), or the routing verdict is unusable
+(`query-route-fallback` without the confidence floor), its verdict is
+discarded — it is not searched, its `datasource-select` progress step is
+removed, and it records neither `datasources-selected` nor
+`datasource-selection-fallback`, so a run that never used it never reports it.
+On those routes the extra call is the only cost: a few hundred tokens of state.
 
 Datasource ids come from the config's `datasources` keys, which are only
 required to be non-empty, so an operator can name one `web`. When that happens

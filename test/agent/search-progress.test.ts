@@ -111,6 +111,32 @@ describe("SearchProgressTracker", () => {
 		expect(tracker.snapshot().steps[0]).toMatchObject({ status: "done", detail: "1 hit, 1 failed: boom" });
 	});
 
+	it("drops a step that turned out not to belong to this search, and a late settle does not bring it back", async () => {
+		const tracker = new SearchProgressTracker(clock().now);
+		tracker.begin("q");
+		let release: (value: string) => void = () => {};
+		const work = tracker.step(
+			"datasource-select",
+			"Choosing datasources",
+			() =>
+				new Promise<string>((resolve) => {
+					release = resolve;
+				}),
+		);
+		tracker.beginStep("route", "Routing");
+		expect(tracker.snapshot().steps.map((step) => step.id)).toEqual(["datasource-select", "route"]);
+
+		tracker.discardStep("datasource-select");
+		expect(tracker.snapshot().steps.map((step) => step.id)).toEqual(["route"]);
+
+		release("none");
+		await work;
+		expect(tracker.snapshot().steps.map((step) => step.id)).toEqual(["route"]);
+
+		tracker.discardStep("never-started");
+		expect(tracker.snapshot().steps).toHaveLength(1);
+	});
+
 	it("notifies subscribers on every change and stops after unsubscribe", () => {
 		const tracker = new SearchProgressTracker(clock().now);
 		const seen: SearchProgressSnapshot[] = [];

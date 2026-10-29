@@ -14,7 +14,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { type JevBackend, MockBackend } from "jev-use";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { CITATION_QUESTION_ID_PREFIX } from "../../src/agent/citation-relevance.ts";
 import { EVIDENCE_QUESTION_ID_PREFIX } from "../../src/agent/evidence-judgment.ts";
@@ -27,6 +27,7 @@ import {
 	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
+import type { SearchProgressTracker } from "../../src/agent/search-progress.ts";
 import type { WebSearchToolOptions } from "../../src/agent/web-search-tool.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
@@ -771,6 +772,155 @@ describe("Jev query pipeline before the fast answer", () => {
 					diagnostic.message.includes("datasource check exploded"),
 			),
 		).toBe(true);
+	});
+
+	describe("route and datasource checks run concurrently", () => {
+		/**
+		 * Wraps `inner` and records when the route check and the datasource check start and end. The route verdict
+		 * is held until the datasource check has started (or `holdMs` passes), so it can only finish after it when
+		 * both calls are in flight at once; a sequential pipeline makes it wait the full `holdMs` and then finish first.
+		 */
+		function timeline(inner: JevBackend, holdMs = 400): { backend: JevBackend; events: string[] } {
+			const events: string[] = [];
+			let datasourceStarted: () => void = () => {};
+			const datasourceSeen = new Promise<void>((resolve) => {
+				datasourceStarted = resolve;
+			});
+			const backend: JevBackend = {
+				name: inner.name,
+				async judge(request) {
+					if (request.questions.some((question) => question.id === QUERY_ROUTE_QUESTION_ID)) {
+						events.push("route:start");
+						await Promise.race([datasourceSeen, new Promise((resolve) => setTimeout(resolve, holdMs))]);
+						const verdict = await inner.judge(request);
+						events.push("route:end");
+						return verdict;
+					}
+					if (request.questions.some((question) => question.id.startsWith("datasource:"))) {
+						events.push("datasource:start");
+						datasourceStarted();
+						const verdict = await inner.judge(request);
+						events.push("datasource:end");
+						return verdict;
+					}
+					return inner.judge(request);
+				},
+			};
+			return { backend, events };
+		}
+
+		function progressStepIds(agent: AutoRAGAgent): string[] {
+			const { searchProgress } = agent as unknown as { searchProgress: SearchProgressTracker };
+			return searchProgress.snapshot().steps.map((step) => step.id);
+		}
+
+		it("starts the datasource check while the route check is still in flight and still searches what it selects", async () => {
+			const calls = timeline(jevRouting("local", 0.1, 0.9, { slack: 0.9 }));
+			const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
+			const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+			const agent = agentWith({ model, jev: { backend: calls.backend }, datasourceSkills: [slack.skill] });
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("when is the release?");
+
+			expect(calls.events).toContain("datasource:start");
+			expect(calls.events.indexOf("datasource:start")).toBeLessThan(calls.events.indexOf("route:end"));
+			expect(slack.queries).toEqual(["when is the release?"]);
+		});
+
+		it("leaves no trace of the datasource check on a run that leaves the local route", async () => {
+			const model = fauxModel(fastAnswer("Paris is the capital of France."));
+			const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+			const agent = agentWith({
+				model,
+				jev: { backend: jevRouting("extra", 0.1, 0.9, { slack: 0.9 }) },
+				datasourceSkills: [slack.skill],
+			});
+			const minSync = recordingMinSync();
+			injectMinSync(agent, minSync.method);
+
+			const response = await agent.searchDocuments("What is the capital of France?");
+
+			expect(slack.queries).toEqual([]);
+			expect(minSync.queries).toEqual([]);
+			expect(response.answer).toBe("Paris is the capital of France.");
+			const codes = response.diagnostics?.map((diagnostic) => diagnostic.code) ?? [];
+			expect(codes).toContain("query-routed");
+			expect(codes).not.toContain("datasources-selected");
+			expect(codes).not.toContain("datasource-selection-fallback");
+			expect(progressStepIds(agent)).not.toContain("datasource-select");
+		});
+
+		it("does not report a failed datasource check on a run that never used it", async () => {
+			const inner = jevRouting("extra", 0.1, 0.9, { slack: 0.9 });
+			const failing: JevBackend = {
+				name: "datasource-check-exploding",
+				async judge(request) {
+					if (request.questions.some((question) => question.id.startsWith("datasource:"))) {
+						throw new Error("datasource check exploded");
+					}
+					return inner.judge(request);
+				},
+			};
+			const model = fauxModel(fastAnswer("Paris is the capital of France."));
+			const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+			const agent = agentWith({ model, jev: { backend: failing }, datasourceSkills: [slack.skill] });
+			injectMinSync(agent, recordingMinSync().method);
+
+			const response = await agent.searchDocuments("What is the capital of France?");
+
+			expect(response.answer).toBe("Paris is the capital of France.");
+			expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "datasource-selection-fallback")).toBe(
+				false,
+			);
+		});
+
+		it("does not fail a run that leaves the local route when the datasource check itself crashes", async () => {
+			const model = fauxModel(fastAnswer("Paris is the capital of France."));
+			const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+			const agent = agentWith({
+				model,
+				jev: { backend: jevRouting("extra", 0.1, 0.9, { slack: 0.9 }) },
+				datasourceSkills: [slack.skill],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+			vi.spyOn(
+				agent as unknown as { selectSearchDatasources: () => Promise<unknown> },
+				"selectSearchDatasources",
+			).mockRejectedValue(new Error("datasource check crashed"));
+
+			const response = await agent.searchDocuments("What is the capital of France?");
+
+			expect(response.answer).toBe("Paris is the capital of France.");
+			expect(progressStepIds(agent)).not.toContain("datasource-select");
+		});
+
+		it("discards the datasource verdict when the routing verdict is unusable", async () => {
+			const inner = jevRouting("local", 0.1, 0.9, { slack: 0.9 });
+			const unusableRoute: JevBackend = {
+				name: "unusable-route",
+				async judge(request) {
+					if (request.questions.some((question) => question.id === QUERY_ROUTE_QUESTION_ID)) {
+						return { answers: [{ answer: "web", distribution: { web: 0.9, direct: 0.1 } }, { answer: 0.1 }] };
+					}
+					return inner.judge(request);
+				},
+			};
+			const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
+			const slack = recordingDatasource("slack", "Company Slack: engineering and release channels");
+			const agent = agentWith({ model, jev: { backend: unusableRoute }, datasourceSkills: [slack.skill] });
+			const minSync = recordingMinSync();
+			injectMinSync(agent, minSync.method);
+
+			const response = await agent.searchDocuments("when is the release?");
+
+			// An unusable verdict keeps the bare single-query local search: the datasource Jev picked meanwhile is not searched.
+			expect(minSync.queries).toEqual(["when is the release?"]);
+			expect(slack.queries).toEqual([]);
+			const codes = response.diagnostics?.map((diagnostic) => diagnostic.code) ?? [];
+			expect(codes).toContain("query-route-fallback");
+			expect(codes).not.toContain("datasources-selected");
+		});
 	});
 
 	it("defaults the decomposition model to the session model", async () => {
