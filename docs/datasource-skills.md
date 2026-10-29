@@ -119,7 +119,7 @@ The zero-configuration boundary is narrow:
   only that one variable through to discrawl's environment). It checks discrawl
   metadata before asking the native CLI to rebuild. An explicit `configPath` is
   authoritative and is never rewritten.
-- **mailcrawl** (`@nomadamas/mailcrawl@0.2.2` or newer) and **kakao**
+- **mailcrawl** (`@nomadamas/mailcrawl@0.3.0` or newer) and **kakao**
   (`lazykatok` 0.3.3 or newer) embed for themselves, so AutoRAG points them at
   the same backend through the environment variables each CLI documents, for
   `index` and for semantic and hybrid search only (BM25 never embeds).
@@ -192,7 +192,7 @@ reads. Measured first-run costs on a real archive:
 | Connector | First-run workload | Measured |
 |---|---|---|
 | `mailcrawl` | Gmail INBOX full sync (~2,300 messages) + native index | ~12 min |
-| `mailcrawl` | No-op `sync` of a 1,000-message INBOX (mailcrawl re-reads every message, NomaDamas/mailcrawl#48) | 16 to 27 min |
+| `mailcrawl` | Incremental `sync` of an unchanged 1,000-message INBOX (envelope fingerprint check in 0.3.0; first post-upgrade sync reads once) | seconds |
 | `kakao` (lazykatok) | Semantic index over a ~50k-message archive (9,373 units) | ~11 min |
 
 A step killed by its timeout does not commit its cursor, so the next refresh
@@ -236,8 +236,8 @@ separately (#1587, #1586).
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.2` or newer
-(Node.js 24+) and configure Himalaya separately; AutoRAG never opens
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.3.0` or newer
+(Node.js 24+) and configure Himalaya separately (or set `"source": "files"` and `"paths": [...]` to index static `.eml`/`.mbox` exports without Himalaya); AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
 native archive. Set `connector.dataDir` only when the operator explicitly
@@ -282,8 +282,8 @@ Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
 Retrieval is hybrid-first: one `mailcrawl search --mode hybrid` per query, and BM25 only when hybrid cannot run
 (for example when no semantic index exists). Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
-datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
-path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
+datasource command taxonomy. Mailcrawl is the sole Gmail, IMAP, Maildir, and
+static `.mbox`/`.eml` (`--source files`) email path; the former `mail-export` connector is retired.
 
 ## Universal connection aliases
 

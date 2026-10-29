@@ -82,7 +82,11 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		candidates.push(candidate);
 	}
 
-	const evidenceRaw = parsed.evidence_pack;
+	const handoffAction = parsed.handoff_action;
+	if (typeof handoffAction !== "string" || !HANDOFF_VALUES.has(handoffAction)) return undefined;
+
+	const evidenceRaw =
+		parsed.evidence_pack === undefined && handoffAction === "jikji_retry" ? [] : parsed.evidence_pack;
 	if (!Array.isArray(evidenceRaw)) return undefined;
 	const evidencePack: JikjiEvidence[] = [];
 	for (const entry of evidenceRaw) {
@@ -93,10 +97,6 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		if (nextRead === undefined) return undefined;
 		evidencePack.push({ path, nextRead });
 	}
-
-	const handoffAction = parsed.handoff_action;
-	if (typeof handoffAction !== "string" || !HANDOFF_VALUES.has(handoffAction)) return undefined;
-
 	const policyRaw = parsed.tool_call_policy;
 	if (!isRecord(policyRaw)) return undefined;
 	if (typeof policyRaw.stop_after_find !== "boolean") return undefined;
@@ -108,7 +108,11 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		allowedFollowups: policyRaw.allowed_followups,
 	};
 
-	if (typeof parsed.agent_should_not_rerank !== "boolean") return undefined;
+	const agentShouldNotRerank =
+		parsed.agent_should_not_rerank === undefined && handoffAction === "jikji_retry"
+			? false
+			: parsed.agent_should_not_rerank;
+	if (typeof agentShouldNotRerank !== "boolean") return undefined;
 
 	return {
 		answerPaths,
@@ -117,7 +121,7 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		evidencePack,
 		handoffAction: handoffAction as JikjiHandoffAction,
 		toolCallPolicy,
-		agentShouldNotRerank: parsed.agent_should_not_rerank,
+		agentShouldNotRerank,
 	};
 }
 

@@ -58,6 +58,8 @@ export interface HisterServiceDeps {
 		readonly semanticEnabled?: boolean;
 		readonly reason?: string;
 	}>;
+	/** Reload a running Hister server's config (`hister reload`, v0.21.0+). Preferred over restarting the service. */
+	readonly reload?: (baseUrl: string) => Promise<{ readonly ok: boolean; readonly reason?: string }>;
 	/** Restart the Hister service. Omitted means the operator must do it. */
 	readonly restart?: () => Promise<{ readonly ok: boolean; readonly reason?: string }>;
 	/** `hister reindex` against the running server. Omitted means the operator must do it. */
@@ -171,6 +173,8 @@ export function systemHisterDeps(env: NodeJS.ProcessEnv, hister: string | undefi
 		...(hister === undefined
 			? {}
 			: {
+					reload: (baseUrl: string) =>
+						commandRun(hister, ["--server-url", baseUrl, "--client-timeout", "30", "reload"], 35_000),
 					restart: () => commandRun("brew", ["services", "restart", "hister"], 60_000),
 					reindex: (baseUrl: string) =>
 						commandRun(hister, ["--server-url", baseUrl, "--client-timeout", "0", "reindex"], 3_600_000),
@@ -319,19 +323,29 @@ async function syncEmbedding(args: {
 	let restartRequired = true;
 	let reindexNeeded = needsReindex;
 	let reason: string | undefined;
-	if (args.deps.restart !== undefined) {
+	let reloadedInPlace = false;
+	if (args.health.reachable && args.deps.reload !== undefined) {
+		const reloaded = await args.deps.reload(args.entry.baseUrl);
+		if (reloaded.ok) {
+			restartRequired = false;
+			reloadedInPlace = true;
+		} else if (args.deps.restart === undefined) {
+			reason = `Hister's config was updated but reload failed: ${reloaded.reason ?? "unknown error"}`;
+		}
+	}
+	if (restartRequired && args.deps.restart !== undefined) {
 		const restarted = await args.deps.restart();
 		if (restarted.ok) restartRequired = false;
 		else reason = `Hister's config was updated but the restart failed: ${restarted.reason ?? "unknown error"}`;
 	}
 	if (!restartRequired && needsReindex && args.deps.reindex !== undefined) {
-		const up = await waitForServer(args.entry.baseUrl, args.deps);
+		const up = reloadedInPlace ? { ok: true as const } : await waitForServer(args.entry.baseUrl, args.deps);
 		if (!up.ok) {
 			reason = `Hister was restarted but did not answer at ${args.entry.baseUrl} within ${up.waitedMs}ms: ${up.reason}`;
 		} else {
 			const reindexed = await args.deps.reindex(args.entry.baseUrl);
 			if (reindexed.ok) reindexNeeded = false;
-			else reason = `Hister was restarted but reindexing failed: ${reindexed.reason ?? "unknown error"}`;
+			else reason = `Hister config was applied but reindexing failed: ${reindexed.reason ?? "unknown error"}`;
 		}
 	}
 	return {

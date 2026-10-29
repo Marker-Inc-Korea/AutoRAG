@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
@@ -53,10 +53,10 @@ export class JikjiClient {
 	private readonly options: JikjiOptions;
 	private resolvedCommand: string | undefined;
 	private installCommandInFlight: Promise<string> | undefined;
-	// Every jikji process writes one central SQLite file with no busy timeout,
-	// so concurrent writers fail with "database is locked". Writers are
-	// serialized per kind: prepares queue behind each other, finds queue behind
-	// each other, and a query never waits behind a minutes-long refresh.
+	// Upstream jikji writes one central SQLite file (WAL + 30 s busy_timeout in
+	// 0.1.1+, though long prepares can still hold the writer lock past 30 s).
+	// Calls are serialized per kind: prepares queue behind each other, finds
+	// queue behind each other, and a query never waits behind a minutes-long refresh.
 	private readonly prepareQueue = new SerialQueue();
 	private readonly findQueue = new SerialQueue();
 
@@ -120,16 +120,18 @@ export class JikjiClient {
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
+		const canonicalRoot = canonicalJikjiRoot(root);
 		const clientOptions: JikjiOptions =
 			options.parseTimeout === undefined ? this.options : { ...this.options, parseTimeout: options.parseTimeout };
 		const result = await this.prepareQueue.run(
 			async () =>
 				this.spawn({
 					command: await this.resolveCommand(),
-					args: buildPrepareArgs(clientOptions, root),
+					args: buildPrepareArgs(clientOptions, canonicalRoot),
 					signal: options.signal,
 					// Sized when the root's turn starts, so queue wait never eats the budget.
-					timeoutMs: options.timeoutMs ?? (await this.prepareTimeoutMs(root, clientOptions, options.signal)),
+					timeoutMs:
+						options.timeoutMs ?? (await this.prepareTimeoutMs(canonicalRoot, clientOptions, options.signal)),
 				}),
 			{ signal: options.signal, value: ABORTED_BEFORE_START },
 		);
@@ -151,11 +153,12 @@ export class JikjiClient {
 	}
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
+		const canonicalRoot = canonicalJikjiRoot(root);
 		const result = await this.findQueue.run(
 			async () =>
 				this.spawn({
 					command: await this.resolveCommand({ install: false }),
-					args: buildFindArgs(root, query, options),
+					args: buildFindArgs(canonicalRoot, query, options),
 					signal: options.signal,
 				}),
 			{ signal: options.signal, value: ABORTED_BEFORE_START },
@@ -368,4 +371,17 @@ function appendBounded(state: BufferState, chunk: string, maxBytes: number): Buf
 	if (nextBytes <= maxBytes) return { text: state.text + chunk, bytes: nextBytes, capped: false };
 	const remainingBytes = Math.max(maxBytes - state.bytes, 0);
 	return { text: state.text + chunk.slice(0, remainingBytes), bytes: maxBytes, capped: true };
+}
+
+/**
+ * Jikji canonicalizes roots in `prepare` when recording them in SQLite, while
+ * `find` queries by exact path string. Canonicalize existing paths so symlinked
+ * roots (for example macOS `/var/folders/...`) match across both commands.
+ */
+function canonicalJikjiRoot(root: string): string {
+	try {
+		return realpathSync(root);
+	} catch {
+		return root;
+	}
 }

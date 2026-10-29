@@ -5,8 +5,7 @@ supplies explicitly configured paths and bounded process execution; it does not
 materialize or force an AutoRAG-managed archive/config for datasource CLIs.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
-(GitHub Issues/PRs), #1311 (local mail
-export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
+(GitHub Issues/PRs), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
 Issue #1416 adds external-crawler process coverage for WhatsApp through
 wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
@@ -38,7 +37,7 @@ synthetic store inside the container or accept `SKIP`.
 
 | Harness | Target systems | Command |
 |---|---|---|
-| `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
+| `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs + real filesystem fixture (Obsidian vault) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
 | `scripts/manual-qa/run-qa-obsidian-live.ts` | Real local vault fixture through MinSync BM25 + semantic + folder scope + incremental re-index | `bun scripts/manual-qa/run-qa-obsidian-live.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-lazykatok-live.ts` | Real KakaoTalk archive through the external `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval); Apple Silicon macOS with Full Disk Access | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` |
@@ -47,7 +46,7 @@ synthetic store inside the container or accept `SKIP`.
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
-| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.2.2` fixture sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.3.0` fixture and `--source files` (`.eml`/`.mbox`) sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `test/datasource/embedding-env.test.ts` | Real child-process boundary for mailcrawl and lazykatok on the shared embedder: provider/URL/model/dimension env, remote key hand-over and egress opt-in, index-only daemon start, BM25 untouched, no native fallback when no endpoint exists, TEI refused for lazykatok | `bunx vitest run test/datasource/embedding-env.test.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
 | `scripts/manual-qa/run-qa-github-gist-live.ts` | Real GitHub REST API with the gh CLI token: incremental gist index, no-op re-index, lexical search, and semantic search through the shared MinSync embedder (#1588) | `bun scripts/manual-qa/run-qa-github-gist-live.ts` |
@@ -63,7 +62,7 @@ reproduce each API's envelope shapes and native auth failures (`invalid_auth`,
 HTTP 401/403/429). Google Drive is tested through the provider-neutral
 `cloud-drive` skill and the external `rclone` CLI; configure and authenticate
 the remote with `rclone config`, then run `bun scripts/manual-qa/run-qa-rclone.ts`.
-Email search uses mailcrawl (local CLI) or mail-export (`.eml`/`.mbox` files).
+Email search uses mailcrawl (Himalaya accounts or `--source files` `.eml`/`.mbox` archives).
 
 WhatsApp uses the external wacrawl CLI instead of an HTTP mock. The deterministic
 test executable exercises the actual spawn/stdout/stderr contract without
@@ -118,7 +117,7 @@ mapping. Configure credentials in notcrawl itself, then set
       (`/<skill>/<instance>/chunks/<id>`); no `#` fragments, no real filesystem
       paths. There is no datasource fan-out tool: every configured connection is
       reachable through its own generated tool.
-- [x] `scope` narrows results for scope-capable datasources (e.g. `/mail-export/**` excludes Slack hits) and can
+- [x] `scope` narrows results for scope-capable datasources (e.g. `/github/**` excludes Slack hits) and can
       never widen visibility.
 
 ### Security

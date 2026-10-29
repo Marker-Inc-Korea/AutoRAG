@@ -26,14 +26,13 @@ describe("datasource skill manifests and dedicated search tools", () => {
 			rss: true,
 			spotlight: true,
 			"cloud-drive": true,
-			"mail-export": true,
 			lark: true,
 		}),
 	);
 
 	it("builds every requested built-in skill", () => {
 		expect(unknown).toEqual([]);
-		expect(skills.length).toBe(15);
+		expect(skills.length).toBe(14);
 	});
 
 	it("every manifest names its dedicated tool and references no removed tool", () => {

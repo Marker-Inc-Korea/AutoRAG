@@ -23,7 +23,7 @@ const report: HealthReportV1 = {
 	indexHealth: { separate: true, command: "autorag status", included: false },
 };
 
-describe("renderRefresh", () => {
+describe("renderRefresh exclusions and Everything", () => {
 	it("carries the MinSync staging-exclusion count in the JSON envelope", () => {
 		// A file name with no canonical source-id form is excluded from the
 		// MinSync index; the count must be visible where the reporter looks.

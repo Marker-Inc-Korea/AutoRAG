@@ -695,4 +695,25 @@ describe("JikjiClient.find", () => {
 		expect(result).toMatchObject({ ok: false, reason: "aborted" });
 		expect(loggedCalls()).toHaveLength(1);
 	});
+
+	it("canonicalizes a symlinked root before prepare and find so Jikji's SQLite root lookup matches", async () => {
+		const realCorpus = join(root, "real-corpus");
+		const symlinkCorpus = join(root, "link-corpus");
+		mkdirSync(realCorpus, { recursive: true });
+		const { realpathSync, symlinkSync } = await import("node:fs");
+		symlinkSync(realCorpus, symlinkCorpus, "dir");
+		const canonical = realpathSync(realCorpus);
+		writeFakeJikji(
+			`if (args[0] === "prepare") { console.log(JSON.stringify({ prepared: true })); } else { console.log(JSON.stringify({ answer_paths: [], paths: [], candidates: [], evidence_pack: [], handoff_action: "direct_use", tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] }, agent_should_not_rerank: false })); }`,
+		);
+		const client = clientWithPath();
+
+		await client.prepare(symlinkCorpus);
+		const found = await client.find(symlinkCorpus, "query");
+
+		expect(found.ok).toBe(true);
+		const recorded = loggedCalls();
+		expect(recorded[0]?.args[1]).toBe(canonical);
+		expect(recorded[1]?.args[1]).toBe(canonical);
+	});
 });

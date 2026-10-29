@@ -270,6 +270,35 @@ describe("setup: Hister shares the global embedding model", () => {
 		expect(report.hister?.embedding).toMatchObject({ applied: true, restartRequired: false, reindexRequired: false });
 	});
 
+	it("prefers live `hister reload` on Hister 0.21+ without restarting the service, falling back to restart only if reload fails", async () => {
+		const f = fixture();
+		const order: string[] = [];
+		const report = await runSetup({
+			configPath: f.configPath,
+			workspacePath: f.root,
+			syncHister: true,
+			deps: deps(f, {
+				hister: {
+					...deps(f).hister,
+					reload: async (url: string) => {
+						order.push(`reload:${url}`);
+						return { ok: true };
+					},
+					restart: async () => {
+						order.push("restart");
+						return { ok: true };
+					},
+					reindex: async () => {
+						order.push("reindex");
+						return { ok: true };
+					},
+				},
+			}),
+		});
+		expect(order).toEqual(["reload:http://127.0.0.1:4433", "reindex"]);
+		expect(report.hister?.embedding).toMatchObject({ applied: true, restartRequired: false, reindexRequired: false });
+	});
+
 	it("does not reindex for a query-prefix-only change, which Hister does not fingerprint", async () => {
 		const f = fixture({
 			hister: HISTER_YAML.replace("enable: false", "enable: true")

@@ -1,7 +1,6 @@
 /**
- * Connector contract shared by the built-in datasource skills (Slack, Discord,
- * Notion, GitHub, Google Drive, local mail exports,
- * RSS/news).
+ * Connector contract shared by the built-in datasource skills (GitHub,
+ * cloud drives, RSS/news, Spotlight).
  *
  * A *connector* is the trusted, server-configured bridge to one external
  * system. It fetches documents for indexing and NEVER throws — every failure

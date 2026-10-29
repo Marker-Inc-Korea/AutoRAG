@@ -1,8 +1,8 @@
 /**
- * Live mailcrawl 0.2.0 QA (#1496 / #1499, refreshed for the 0.2.0 contract).
+ * Live mailcrawl 0.3.0 QA (#1496 / #1499 / mailcrawl#41, refreshed for the 0.3.0 contract).
  *
  * Prerequisites:
- *   npm install -g @nomadamas/mailcrawl@0.2.2
+ *   npm install -g @nomadamas/mailcrawl@0.3.0
  *   Node.js 24+
  *
  * Fixture sync needs no Himalaya account or credentials. Since 0.2.0 the
@@ -135,6 +135,65 @@ try {
 		throw new Error(`skill source mapping failed: ${retrieved?.[0]?.source ?? "none"}`);
 	}
 
+	// mailcrawl 0.3.0 `--source files`: static .eml + .mbox mailboxes (retires the former mail-export connector).
+	const filesDataDir = join(root, "files-data");
+	const exportDir = join(root, "exports");
+	mkdirSync(filesDataDir, { recursive: true });
+	mkdirSync(exportDir, { recursive: true });
+	writeFileSync(
+		join(exportDir, "budget.eml"),
+		[
+			"Message-ID: <budget-2026@example.com>",
+			"From: cfo@example.com",
+			"To: leads@example.com",
+			"Subject: FY27 budget freeze",
+			"Date: Mon, 03 Aug 2026 10:00:00 +0000",
+			"",
+			"Discretionary travel is paused until FY27 operating budgets are approved.",
+		].join("\r\n"),
+	);
+	const mboxPath = join(exportDir, "archive.mbox");
+	writeFileSync(
+		mboxPath,
+		[
+			"From alice@example.com Mon Aug 04 10:00:00 2026",
+			"Message-ID: <mbox-1@example.com>",
+			"From: alice@example.com",
+			"To: ops@example.com",
+			"Subject: Vendor renewal window",
+			"Date: Mon, 04 Aug 2026 10:00:00 +0000",
+			"",
+			"Submit vendor renewal paperwork thirty days before contract expiry.",
+			"",
+		].join("\n"),
+	);
+	const filesClient = new MailcrawlClient({
+		binaryPath,
+		dataDir: filesDataDir,
+		source: "files",
+		paths: [exportDir, mboxPath],
+		account: "takeout",
+		timeoutMs,
+		indexTimeoutMs: timeoutMs,
+	});
+	const filesSkill = new MailcrawlSkill({
+		client: filesClient,
+		instanceId: "takeout",
+		account: "takeout",
+	});
+	const filesIndexed = await filesSkill.index();
+	if (!filesIndexed.ok) throw new Error(`files-source skill index failed: ${filesIndexed.error ?? "unknown"}`);
+	const filesRetrieved = await filesSkill
+		.retrievalMethods()[0]
+		?.retrieve("discretionary travel paused operating budgets", { topK: 5, scope: "/mailcrawl/takeout/**" });
+	if (filesRetrieved?.[0]?.source === undefined || !filesRetrieved[0].source.startsWith("/mailcrawl/takeout/chunks/")) {
+		throw new Error(`files-source retrieval failed: ${JSON.stringify(filesRetrieved)}`);
+	}
+	const filesNoopSync = await filesClient.sync();
+	if (!filesNoopSync.ok || filesNoopSync.data.filesRead !== 0) {
+		throw new Error(`expected 0 files re-read on unchanged --source files sync: ${JSON.stringify(filesNoopSync)}`);
+	}
+
 	console.log("MAILCRAWL_LIVE_QA_PASS");
 	console.log(
 		JSON.stringify({
@@ -149,6 +208,8 @@ try {
 			semanticHits: semantic.hits.length,
 			hybridHits: hybrid.hits.length,
 			source: retrieved[0].source,
+			filesSource: filesRetrieved[0].source,
+			filesNoopSync: filesNoopSync.data,
 		}),
 	);
 } finally {
