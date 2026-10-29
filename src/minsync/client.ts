@@ -40,6 +40,10 @@ const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** `minsync sync` exits 3 with "another sync is in progress" while another run holds `.minsync/lock`. */
 const MINSYNC_LOCK_HELD_EXIT_CODE = 3;
 
+/** `minsync check` exits 4 when the vector store preflight fails, and 5 when the embedder preflight fails. */
+const MINSYNC_VECTORSTORE_UNHEALTHY_EXIT_CODE = 4;
+const MINSYNC_EMBEDDER_UNHEALTHY_EXIT_CODE = 5;
+
 /** `minsync sync` exits 6 when it completed but skipped files it could not read, chunk, or embed (`partial: true`). */
 const MINSYNC_PARTIAL_SYNC_EXIT_CODE = 6;
 
@@ -267,33 +271,23 @@ export class MinSyncClient {
 			restoreConfig();
 			return this.lockHeldResult(check.stderr);
 		}
-		if (!check.ok) {
+		const checkFailure = readCheckFailure(check.stdout, check.code);
+		if (checkFailure || !check.ok) {
 			restoreConfig();
+			const reason = checkFailure ?? "check-failed";
+			const isEmbedder =
+				check.code === MINSYNC_EMBEDDER_UNHEALTHY_EXIT_CODE || (checkFailure?.includes("embedder") ?? false);
+			const stderrMessage = check.stderr ? check.stderr.trim() : undefined;
 			return {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason: "check-failed",
-				diagnostic: {
-					code: "sync-failed",
-					message: check.stderr ? check.stderr.trim() : "MinSync check failed.",
-					retryable: true,
-				},
-			};
-		}
-		const checkFailure = readCheckFailure(check.stdout);
-		if (checkFailure) {
-			restoreConfig();
-			return {
-				ok: false,
-				synced: 0,
-				workspacePath: this.workspacePath,
-				reason: checkFailure,
+				reason,
 				diagnostic: {
 					// Only an embedder preflight failure is an embedder problem; a vector store or generic
 					// preflight failure is not.
-					code: checkFailure.includes("embedder") ? "embedder-unavailable" : "sync-failed",
-					message: checkFailure,
+					code: isEmbedder ? "embedder-unavailable" : "sync-failed",
+					message: stderrMessage || checkFailure || "MinSync check failed.",
 					retryable: true,
 				},
 			};
@@ -460,12 +454,17 @@ function parseSyncOutput(stdout: string): unknown {
 	return undefined;
 }
 
-function readCheckFailure(stdout: string): string | undefined {
+function readCheckFailure(stdout: string, exitCode: number | null): string | undefined {
 	const parsed = parseJson(stdout);
-	if (!isRecord(parsed)) return "check-failed: invalid response";
-	if (parsed.embedder_ok !== true) return "check-failed: embedder unavailable";
-	if (parsed.vectorstore_ok !== true) return "check-failed: vector store unavailable";
-	if (parsed.all_passed === false) return "check-failed: preflight unhealthy";
+	if (isRecord(parsed)) {
+		if (parsed.embedder_ok !== true) return "check-failed: embedder unavailable";
+		if (parsed.vectorstore_ok !== true) return "check-failed: vector store unavailable";
+		if (parsed.all_passed === false) return "check-failed: preflight unhealthy";
+		return undefined;
+	}
+	if (exitCode === MINSYNC_EMBEDDER_UNHEALTHY_EXIT_CODE) return "check-failed: embedder unavailable";
+	if (exitCode === MINSYNC_VECTORSTORE_UNHEALTHY_EXIT_CODE) return "check-failed: vector store unavailable";
+	if (exitCode === 0) return "check-failed: invalid response";
 	return undefined;
 }
 

@@ -15,18 +15,18 @@ ARG TARGETARCH
 # instead of reporting a whitespace fallback. curl is installed only for this step.
 RUN set -eu; \
 	case "${TARGETARCH:-amd64}" in \
-		amd64) kiwi_arch=x86_64; kiwi_sha=a1d34a6340215a6c325bb0d2c445e5245323a1ec4ec362ed3cab36dbe11309eb ;; \
-		arm64) kiwi_arch=aarch64; kiwi_sha=80731c5c29049dbf039787092bed50cd600a599db9b070f8c0d7b5cf2276b739 ;; \
+		amd64) kiwi_arch=x86_64; kiwi_sha=534f3b507784ea0f2c26884a13c22f2bfa573f86b6c20b9856feb9050a88f47a ;; \
+		arm64) kiwi_arch=aarch64; kiwi_sha=ff15838604039130d24e2803ed87c2edc36665f9ff24be8a23b257c2860bc25b ;; \
 		*) echo "no pinned Kiwi build for ${TARGETARCH}" >&2; exit 1 ;; \
 	esac; \
-	base=https://github.com/bab2min/Kiwi/releases/download/v0.22.2; \
+	base=https://github.com/bab2min/Kiwi/releases/download/v0.24.1; \
 	apt-get update; \
 	apt-get install --no-install-recommends --yes curl; \
 	mkdir -p /opt/kiwi /tmp/kiwi; \
-	curl -fsSL -o /tmp/kiwi/lib.tgz "$base/kiwi_lnx_${kiwi_arch}_v0.22.2.tgz"; \
-	curl -fsSL -o /tmp/kiwi/model.tgz "$base/kiwi_model_v0.22.2_base.tgz"; \
+	curl -fsSL -o /tmp/kiwi/lib.tgz "$base/kiwi_lnx_${kiwi_arch}_v0.24.1.tgz"; \
+	curl -fsSL -o /tmp/kiwi/model.tgz "$base/kiwi_model_v0.24.1_base.tgz"; \
 	echo "${kiwi_sha}  /tmp/kiwi/lib.tgz" | sha256sum -c -; \
-	echo "aa11a6e5b06c7db43e9b07148620f5fb7838a30172dacb40f75202333110f2d1  /tmp/kiwi/model.tgz" | sha256sum -c -; \
+	echo "50d163e1af817444ef21f7ec5ea07ef69fb347282d57a6b49260f2039d4dc346  /tmp/kiwi/model.tgz" | sha256sum -c -; \
 	tar -xzf /tmp/kiwi/lib.tgz -C /opt/kiwi lib; \
 	tar -xzf /tmp/kiwi/model.tgz -C /opt/kiwi models; \
 	apt-get purge --yes --auto-remove curl; \
@@ -39,8 +39,8 @@ ENV KIWI_LIBRARY_PATH=/opt/kiwi/lib/libkiwi.so \
 # PATH; nothing in the run installs it. The release ships a Linux build for x86_64 only, so this image is amd64
 # (the default QA_PLATFORM) and any other architecture fails here instead of at run time. Keep the version in step
 # with MINSYNC_VERSION in src/minsync/installer.ts; the sha256 is the release asset digest.
-ARG MINSYNC_VERSION=0.4.12
-ARG MINSYNC_SHA256=56f910fdd3311723b523c5f41e88981438dd3dc91100ad15983159e386bdb999
+ARG MINSYNC_VERSION=0.5.1
+ARG MINSYNC_SHA256=94eb138b937474df32bcba64c4622e8f90e361c7bb49b50ae9a2354c95c8ffd0
 RUN set -eu; \
 	if [ "${TARGETARCH:-amd64}" != "amd64" ]; then \
 		echo "MinSync ${MINSYNC_VERSION} publishes no Linux ${TARGETARCH} build; build this image with QA_PLATFORM=linux/amd64" >&2; \

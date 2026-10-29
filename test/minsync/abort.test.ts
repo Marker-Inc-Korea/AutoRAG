@@ -231,6 +231,56 @@ describe("MinSyncClient.sync cancellation", () => {
 		expect(result).toMatchObject({ ok: false, reason: "lock-held", diagnostic: { code: "minsync-lock-held" } });
 	});
 
+	it("maps MinSync 0.5+ check exit 5 (unhealthy embedder) to embedder-unavailable instead of sync-failed", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false, all_passed: false }));
+  console.error("Error: embedder connection refused");
+  process.exit(5);
+}
+process.exit(1);
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "check-failed: embedder unavailable",
+			diagnostic: { code: "embedder-unavailable", retryable: true },
+		});
+	});
+
+	it("maps MinSync 0.5+ check exit 4 (unhealthy vector store) to check-failed: vector store unavailable", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: false, embedder_ok: true, all_passed: false }));
+  console.error("Error: vector store corrupt");
+  process.exit(4);
+}
+process.exit(1);
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "check-failed: vector store unavailable",
+			diagnostic: { code: "sync-failed", retryable: true },
+		});
+	});
+
 	it("keeps a generic sync failure as sync-failed", async () => {
 		writeFileSync(
 			binary,

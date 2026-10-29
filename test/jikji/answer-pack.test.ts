@@ -120,6 +120,45 @@ describe("parseJikjiAnswerPack", () => {
 		}
 	});
 
+	it("accepts Jikji 0.1.1 jikji_retry envelope where evidence_pack and agent_should_not_rerank are omitted", () => {
+		const retryEnvelope = JSON.stringify({
+			answer_paths: [],
+			answerability: "needs_one_jikji_retry",
+			candidates: [],
+			command: "jikji find",
+			error: null,
+			handoff_action: "jikji_retry",
+			index_status: "missing",
+			max_jikji_retries: 1,
+			max_raw_fallback_commands: 0,
+			mode: "find",
+			paths: [],
+			query: "vendor contract renewal",
+			raw_fallback_allowed: false,
+			root: "/tmp/docs",
+			tool_call_policy: {
+				allowed_followups: ["exactly_one_jikji_retry"],
+				forbidden_tools: ["grep", "rg", "glob", "find", "fd", "ls", "tree", "cat"],
+				reason: "jikji_retry_required_before_raw_fallback",
+				stop_after_find: false,
+			},
+		});
+		const pack = parseJikjiAnswerPack(retryEnvelope);
+		expect(pack).toEqual({
+			answerPaths: [],
+			paths: [],
+			candidates: [],
+			evidencePack: [],
+			handoffAction: "jikji_retry",
+			toolCallPolicy: {
+				stopAfterFind: false,
+				forbiddenTools: ["grep", "rg", "glob", "find", "fd", "ls", "tree", "cat"],
+				allowedFollowups: ["exactly_one_jikji_retry"],
+			},
+			agentShouldNotRerank: false,
+		});
+	});
+
 	it("accepts all next_read enum values on candidates", () => {
 		for (const nextRead of ["cache", "wiki", "original", "none"] as const) {
 			const pack = parseJikjiAnswerPack(

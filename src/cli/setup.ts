@@ -180,7 +180,6 @@ function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platf
 			"telegram",
 			"whatsapp",
 			"mailcrawl",
-			"mail-export",
 			"notion",
 			"github",
 			"cloud-drive",
@@ -333,12 +332,12 @@ export async function runSetup(options: {
 		const histerEntries = findHisterEntries(raw);
 		let histerReports: readonly HisterSetupReport[] = [];
 		if (histerEntries.length > 0) {
-			const system = systemHisterDeps(env, executable("hister"));
+			const histerDeps = options.deps?.hister ?? systemHisterDeps(env, executable("hister"));
 			const histerResult = await setupHister({
 				entries: histerEntries,
 				embedder,
 				executable,
-				deps: { ...system, ...options.deps?.hister },
+				deps: histerDeps,
 				sync: options.syncHister === true,
 				assertLockOwned: () => lock.assertOwned(),
 			});
