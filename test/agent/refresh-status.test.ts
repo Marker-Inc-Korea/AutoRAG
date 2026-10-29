@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeRefreshProgress } from "../../src/agent/refresh-progress.ts";
 import { AutoRAGAgent } from "../../src/index.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -170,12 +171,45 @@ describe("getRefreshStatus", () => {
 		const agent = makeAgent({
 			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },
 		});
-		// Refreshing the other indexes still works; only the MinSync step needs the binary.
-		await agent.refresh(true, { methods: ["parsed"] });
-		const status = await agent.getRefreshStatus();
+		// MinSync is required: even a parsed-only refresh runs the stage protocol, so a
+		// missing binary fails the run instead of leaving the mirrors to go it alone.
+		await expect(agent.refresh(true, { methods: ["parsed"] })).rejects.toThrow(/MinSync is required/);
 
+		const status = await agent.getRefreshStatus();
 		expect(status.components.minsync).toBe("unavailable");
 		expect(JSON.stringify(status)).not.toContain(root);
+	});
+
+	it("reports a missing engine after an earlier refresh without failing during construction", async () => {
+		await makeAgent().refresh(false, { methods: ["parsed"] });
+		const agent = makeAgent({ minSync: { binaryPath: join(root, "missing-minsync") } });
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("unavailable");
+		expect(status.stale).toBe(true);
+		await expect(agent.refresh(false, { methods: ["parsed"] })).rejects.toThrow(/MinSync is required/);
+	});
+
+	it("reports unsupported stage protocol after an earlier refresh instead of failing during construction", async () => {
+		await makeAgent().refresh(false, { methods: ["parsed"] });
+		const oldBinary = join(root, "old-minsync.mjs");
+		writeFileSync(
+			oldBinary,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+createInterface({ input: process.stdin }).on("line", () => console.log(JSON.stringify({ ok: false, op: "unknown", error: { code: "invalid_request", message: "unsupported" } })));
+`,
+		);
+		chmodSync(oldBinary, 0o755);
+		const agent = makeAgent({ minSync: { binaryPath: oldBinary } });
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("unavailable");
+		expect(status.stale).toBe(true);
+		expect(status.diagnostics).toContainEqual(
+			expect.objectContaining({ source: "minsync", reason: "unsupported_protocol" }),
+		);
+		await expect(agent.refresh(false, { methods: ["parsed"] })).rejects.toMatchObject({
+			code: "unsupported_protocol",
+		});
 	});
 
 	it("surfaces unknown-datasource-skill startup diagnostics on status", async () => {
@@ -245,21 +279,26 @@ describe("getRefreshStatus", () => {
 			fakeBinary,
 			`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
-if (args[0] === "init") {
+if (args[0] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({
+    stateDir: args[args.indexOf("--state-dir") + 1],
+  });
+} else if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, '[embedder]\\nid = "fixture"\\n');
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false }));
   process.exit(0);
+} else {
+  process.exit(2);
 }
-process.exit(2);
 `,
 		);
 		chmodSync(fakeBinary, 0o755);

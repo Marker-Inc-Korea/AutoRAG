@@ -1,6 +1,15 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
+import { type ResolvedFileeBinary, type ResolveFileeBinaryOptions, resolveFileeBinary } from "../convert/index.ts";
+import { datasourceSkillSupported } from "../datasource/skills/factory.ts";
+import {
+	findHisterEntries,
+	type HisterServiceDeps,
+	type HisterSetupReport,
+	setupHister,
+	systemHisterDeps,
+} from "../datasource/skills/hister/setup.ts";
 import {
 	createEmbedderFromConfig,
 	type EmbeddingBackend,
@@ -27,12 +36,26 @@ export interface SetupEmbeddingReport {
 	/** Why no embedding backend is available. */
 	readonly reason?: string;
 }
+export type SetupFileeState = "installed" | "cached" | "path" | "configured" | "skipped" | "failed";
+/** The Filee command line behind `convert_files`; setup installs it unless the operator opted out. */
+export interface SetupFileeReport {
+	readonly state: SetupFileeState;
+	readonly path?: string;
+	readonly reason?: string;
+}
+
 export interface SetupReport {
 	readonly ok: boolean;
 	readonly mode: "semantic" | "bm25";
 	readonly embedding: SetupEmbeddingReport;
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
+	/** One entry per configured `hister` datasource; absent when none is configured. */
+	readonly hister?: HisterSetupReport;
+	/** Every configured `hister` datasource, when there is more than one. */
+	readonly histers?: readonly HisterSetupReport[];
+	/** Present on every run; `skipped` when `filee.enabled` or `filee.autoInstall` is false. */
+	readonly filee?: SetupFileeReport;
 	readonly changed: boolean;
 }
 
@@ -42,7 +65,15 @@ export interface SetupDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly pathExists?: (path: string) => boolean;
 	readonly executable?: (name: string) => string | undefined;
+	/** Host platform; defaults to `process.platform`. Decides which platform-bound datasources setup offers. */
+	readonly platform?: NodeJS.Platform;
 	readonly acquireLock?: (path: string) => FileLockHandle;
+	/** Hister's config path, health, restart and reindex; defaults to the real programs. */
+	readonly hister?: HisterServiceDeps;
+	/** Finds or installs filee-cli; defaults to the pinned release download. */
+	readonly filee?: (
+		options: Pick<ResolveFileeBinaryOptions, "executable" | "autoInstall">,
+	) => Promise<ResolvedFileeBinary>;
 }
 
 const LOCK_TIMEOUT_MS = 10_000;
@@ -59,6 +90,7 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	notion: "notcrawl",
 	mailcrawl: "mailcrawl",
 	"cloud-drive": "rclone",
+	hister: "hister",
 };
 /**
  * Connectors AutoRAG authenticates itself. Every other built-in datasource is
@@ -135,19 +167,19 @@ function discrawlStoreCandidates(workspace: string, env: NodeJS.ProcessEnv): rea
 		join(workspace, ".autorag", "datasources", "discrawl", "discrawl.db"),
 	];
 }
-function datasourceNames(config: Record<string, unknown>): string[] {
+function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platform): string[] {
 	const configured = Object.keys((config.datasources ?? {}) as Record<string, unknown>);
 	return [
 		...new Set([
 			...configured,
 			"discord",
-			"kakao",
+			// Platform-bound datasources (kakao: macOS only) are offered only where their backend exists.
+			...(datasourceSkillSupported("kakao", platform) ? ["kakao"] : []),
 			"lark",
 			"slack",
 			"telegram",
 			"whatsapp",
 			"mailcrawl",
-			"mail-export",
 			"notion",
 			"github",
 			"cloud-drive",
@@ -161,6 +193,8 @@ function datasourceNames(config: Record<string, unknown>): string[] {
 export async function runSetup(options: {
 	configPath: string;
 	workspacePath: string;
+	/** Write Hister's `semantic_search` to the shared embedding model (and restart/reindex it). Off by default. */
+	syncHister?: boolean;
 	deps?: SetupDeps;
 }): Promise<SetupReport> {
 	const env = options.deps?.env ?? process.env;
@@ -209,7 +243,8 @@ export async function runSetup(options: {
 		const source = (raw.datasources ?? {}) as Record<string, unknown>;
 		const exists = options.deps?.pathExists ?? existsSync;
 		const executable = options.deps?.executable ?? ((name: string) => executableInPath(name, env));
-		for (const name of datasourceNames(raw)) {
+		const platform = options.deps?.platform ?? process.platform;
+		for (const name of datasourceNames(raw, platform)) {
 			const value = source[name];
 			if (value === false) {
 				datasources.push({ name, state: "skipped", reason: "disabled by operator" });
@@ -217,6 +252,10 @@ export async function runSetup(options: {
 			}
 			const entry = value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 			const type = typeof entry?.type === "string" ? entry.type : name;
+			if (!datasourceSkillSupported(type, platform)) {
+				datasources.push({ name, state: "skipped", reason: `not supported on ${platform}` });
+				continue;
+			}
 			const binary = BUILTIN_BINARIES[type];
 			if (
 				binary &&
@@ -290,17 +329,55 @@ export async function runSetup(options: {
 			writeConfigObject(options.configPath, next);
 			changed = true;
 		}
+		const histerEntries = findHisterEntries(raw);
+		let histerReports: readonly HisterSetupReport[] = [];
+		if (histerEntries.length > 0) {
+			const histerDeps = options.deps?.hister ?? systemHisterDeps(env, executable("hister"));
+			const histerResult = await setupHister({
+				entries: histerEntries,
+				embedder,
+				executable,
+				deps: histerDeps,
+				sync: options.syncHister === true,
+				assertLockOwned: () => lock.assertOwned(),
+			});
+			histerReports = histerResult.reports;
+			changed ||= histerResult.changed;
+		}
+		const fileeReport = await setupFilee(
+			raw.filee,
+			options.deps?.filee ?? ((o) => resolveFileeBinary({ ...o, env })),
+		);
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
 			embedding,
 			datasources,
+			filee: fileeReport,
 			...(semantic ? {} : { remediation: REMEDIATION }),
+			...(histerReports[0] === undefined ? {} : { hister: histerReports[0] }),
+			...(histerReports.length > 1 ? { histers: histerReports } : {}),
 			changed,
 		};
 	} finally {
 		lock.release();
 		// A caller-supplied embedder belongs to the caller; one built here is released with the process.
 		if (options.deps?.embedder === undefined) await embedder?.close();
+	}
+}
+
+/** Install filee-cli unless disabled; a failed install is reported, never fatal, because conversion is optional. */
+async function setupFilee(rawFilee: unknown, resolve: NonNullable<SetupDeps["filee"]>): Promise<SetupFileeReport> {
+	const filee = rawFilee !== null && typeof rawFilee === "object" ? (rawFilee as Record<string, unknown>) : {};
+	if (filee.enabled === false) return { state: "skipped", reason: "disabled by operator (filee.enabled)" };
+	if (filee.autoInstall === false) return { state: "skipped", reason: "filee.autoInstall is false" };
+	try {
+		const resolved = await resolve({
+			executable: typeof filee.binaryPath === "string" ? filee.binaryPath : undefined,
+			autoInstall: undefined,
+		});
+		return { state: resolved.source, path: resolved.path };
+	} catch (error) {
+		return { state: "failed", reason: safeReason(error) };
 	}
 }

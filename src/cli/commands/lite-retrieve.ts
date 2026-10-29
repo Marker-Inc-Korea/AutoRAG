@@ -1,9 +1,6 @@
 import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
 import { createAutoRAGLite } from "../../core.ts";
-import { normalizeLanguages } from "../../language.ts";
-import { detectMirrorStaleness } from "../../mirror/index.ts";
 import { isParsedRefreshComplete } from "../../mirror/paths.ts";
-import { resolveParserOptions } from "../../parser/index.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -303,10 +300,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		return 2;
 	}
 
-	// Check index readiness by examining persisted index artifacts on the
-	// filesystem. This is the only reliable cross-process check: the parsed
-	// mirror index file is created by `lite refresh` / `autorag refresh` and
-	// persists across CLI process boundaries.
+	// Readiness is a persisted refresh marker shared by separate CLI processes.
 	const workspacePath = lite.config.workspacePath;
 	const parsedReady = isParsedRefreshComplete(workspacePath);
 	if (!parsedReady) {
@@ -339,16 +333,17 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		}
 	}
 
-	const staleDiagnostics = await detectMirrorStaleness({
-		root: workspacePath,
-		searchPaths: lite.config.searchPaths,
-		parserOptions: resolveParserOptions(
-			lite.config.parserOptions,
-			normalizeLanguages(lite.config.languages),
-			workspacePath,
-		),
-		userExcludedSourcePaths: new Set(lite.config.excludePaths ?? []),
-	});
+	const refreshStatus = await lite.getRefreshStatus();
+	const protocolFailure = refreshStatus.diagnostics.find((diagnostic) => diagnostic.reason === "unsupported_protocol");
+	if (protocolFailure !== undefined) {
+		ctx.stderr(renderError(new Error(protocolFailure.message), { json: ctx.json, debug: ctx.debug }));
+		return 1;
+	}
+	const staleDiagnostics = refreshStatus.diagnostics.flatMap((diagnostic) =>
+		diagnostic.code === "stale-index" && diagnostic.source !== undefined
+			? [{ source: diagnostic.source, reason: diagnostic.reason }]
+			: [],
+	);
 	if (staleDiagnostics.length > 0 && ctx.flags.strict === true) {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,
@@ -402,7 +397,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const envelope: LiteRetrieveEnvelope = {
 		ok: true,
 		query,
-		stale: staleEnvelopeDiagnostics.length > 0,
+		stale: refreshStatus.stale,
 		results,
 		unsearched: retrievalResult.unsearched.map(unsearchedProjection),
 		diagnostics,

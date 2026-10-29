@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildSelfConfigPrompt, loadSetupSkill } from "../../src/agent/self-config.ts";
+import { type PackagedAgentSkill, packagedSkillLocation, SETUP_SKILL_NAME } from "../../src/agent/packaged-skill.ts";
+import { buildSelfConfigPrompt } from "../../src/agent/self-config.ts";
+import { formatSkillInvocation } from "../../src/agent/skill-invocation.ts";
 
 let root: string;
 
@@ -14,45 +16,60 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-describe("loadSetupSkill", () => {
-	it("returns the shipped autorag-setup skill body without its front matter", () => {
-		const skill = loadSetupSkill();
-		expect(skill.startsWith("# AutoRAG setup")).toBe(true);
-		expect(skill).toContain("## Configure one search model");
-		expect(skill).not.toMatch(/^---/u);
-		expect(skill).not.toContain("license: Apache-2.0");
-	});
-
-	it("reads an explicit skill path and keeps a body that has no front matter intact", () => {
-		const path = join(root, "SKILL.md");
-		writeFileSync(path, "# Plain skill\n\nbody\n");
-		expect(loadSetupSkill(path)).toBe("# Plain skill\n\nbody\n");
-	});
-
-	it("strips the front matter and the blank line after it from a CRLF checkout, as on Windows", () => {
-		const path = join(root, "SKILL.md");
-		writeFileSync(path, "---\r\nname: autorag-setup\r\n---\r\n\r\n# AutoRAG setup\r\n\r\nbody\r\n");
-		expect(loadSetupSkill(path).startsWith("# AutoRAG setup")).toBe(true);
-	});
-
-	it("throws a descriptive error for a missing skill file", () => {
-		mkdirSync(join(root, "empty"));
-		expect(() => loadSetupSkill(join(root, "empty", "SKILL.md"))).toThrow(/SKILL\.md/u);
-	});
-});
+/** A loaded skill as the config branch passes it in, with the packaged skill's name and location. */
+function setupSkill(content: string): PackagedAgentSkill {
+	return { name: SETUP_SKILL_NAME, location: packagedSkillLocation(SETUP_SKILL_NAME), content };
+}
 
 describe("buildSelfConfigPrompt", () => {
 	it("carries the full skill, the active config path, the pi agent dir, and the user's request", () => {
+		const skill = setupSkill("# Skill body\n\nstep one\n");
 		const prompt = buildSelfConfigPrompt({
 			query: "add an anthropic provider",
 			configPath: "/tmp/qa/config.json",
 			agentDir: "/tmp/qa/pi-agent",
-			skill: "# Skill body\n\nstep one\n",
+			skill,
 		});
+		expect(prompt).toContain(formatSkillInvocation(skill));
+		expect(prompt).toContain('<skill name="autorag-setup" location="autorag-skill://autorag-setup">');
 		expect(prompt).toContain("# Skill body\n\nstep one\n");
 		expect(prompt).toContain("/tmp/qa/config.json");
 		expect(prompt).toContain("/tmp/qa/pi-agent");
 		expect(prompt).toContain("add an anthropic provider");
+	});
+
+	it("names the tools the task uses and keeps retrieval, datasource, and web search out of it", () => {
+		const prompt = buildSelfConfigPrompt({
+			query: "x",
+			configPath: "/tmp/qa/config.json",
+			agentDir: "/tmp/qa/pi-agent",
+			skill: setupSkill("# Skill\n"),
+		});
+		for (const tool of ["bash", "read", "edit", "write"]) expect(prompt).toContain(tool);
+		expect(prompt).toMatch(/do NOT call the retrieval, datasource, or web search tools/u);
+	});
+
+	it("sends automation requests to manage_automations instead of editing config.json or rules by hand", () => {
+		const prompt = buildSelfConfigPrompt({
+			query: "x",
+			configPath: "/tmp/qa/config.json",
+			agentDir: "/tmp/qa/pi-agent",
+			skill: setupSkill("# Skill\n"),
+			automations: true,
+		});
+		expect(prompt).toContain("manage_automations");
+		expect(prompt).toMatch(/file-triggered automation/iu);
+		expect(prompt).toMatch(/never by hand-editing the rules file/iu);
+	});
+
+	it("leaves automations out of scope when the host did not register manage_automations", () => {
+		const prompt = buildSelfConfigPrompt({
+			query: "x",
+			configPath: "/tmp/qa/config.json",
+			agentDir: "/tmp/qa/pi-agent",
+			skill: setupSkill("# Skill\n"),
+		});
+		expect(prompt).not.toMatch(/file-triggered automation requests/iu);
 	});
 });
 
@@ -61,7 +78,7 @@ describe("buildSelfConfigPrompt guidance learned from manual QA", () => {
 		query: "x",
 		configPath: "/tmp/qa/config.json",
 		agentDir: "/tmp/qa/pi-agent",
-		skill: "# Skill\n",
+		skill: setupSkill("# Skill\n"),
 	});
 
 	it("sends custom providers to the config model object, not a hand-written models.json", () => {
@@ -85,7 +102,7 @@ describe("buildSelfConfigPrompt model-switch discipline", () => {
 		query: "x",
 		configPath: "/tmp/qa/config.json",
 		agentDir: "/tmp/qa/pi-agent",
-		skill: "# Skill\n",
+		skill: setupSkill("# Skill\n"),
 	});
 
 	it("forbids guessing a model id and requires the exact id from the catalog", () => {

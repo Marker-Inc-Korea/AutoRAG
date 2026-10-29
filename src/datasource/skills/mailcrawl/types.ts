@@ -16,13 +16,27 @@ export interface MailcrawlOptions {
 	readonly backend?: string;
 	readonly source?: string;
 	readonly fixture?: string;
+	/** `source: "files"` (mailcrawl 0.3.0+): `.eml` files, `.mbox`/`.mbx` archives, Apple Mail bundles, or directories. */
+	readonly paths?: readonly string[];
 	readonly himalayaConfig?: string;
+	/** Envelopes fetched per IMAP window (`--page-size`). */
+	readonly pageSize?: number;
+	/** Simultaneous message reads during Himalaya sync (`--concurrency`, mailcrawl 0.3.0+). */
+	readonly concurrency?: number;
+	/** Per-message read deadline in milliseconds (`--read-timeout`, mailcrawl 0.3.0+). */
+	readonly readTimeoutMs?: number;
+	/** Categories re-included over mailcrawl's default exclusions (`--include-category`, mailcrawl 0.3.0+). */
+	readonly includeCategories?: readonly string[];
+	/** Categories excluded from sync (`--exclude-category`, mailcrawl 0.3.0+). */
+	readonly excludeCategories?: readonly string[];
+	/** Force vector store rebuild on `index` (`--rebuild`, mailcrawl 0.3.0+). */
+	readonly rebuildIndex?: boolean;
 	/**
 	 * Applies to every operation. `sync`/`index` additionally honor
 	 * `indexTimeoutMs`, because a 0.2.0 native index run is not interactive.
 	 */
 	readonly timeoutMs?: number;
-	/** Non-interactive budget for `sync`/`index`; defaults to 30 minutes. */
+	/** Non-interactive budget for `sync`/`index`; defaults to one hour. */
 	readonly indexTimeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
@@ -62,7 +76,11 @@ export interface MailcrawlSyncInfo {
 	readonly deleted?: number;
 	readonly unchanged?: number;
 	readonly chunksAdded?: number;
+	readonly excluded?: number;
+	readonly files?: number;
+	readonly filesRead?: number;
 	readonly archiveRevision?: string;
+	readonly account?: string;
 	readonly messages: number;
 }
 

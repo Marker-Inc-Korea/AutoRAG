@@ -79,6 +79,13 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
+export {
+	HISTER_SKILL_TYPE,
+	HisterClient,
+	type HisterClientOptions,
+	HisterSkill,
+	type HisterSkillOptions,
+} from "./skills/hister/index.ts";
 export { LarkClient, type LarkClientOptions, LarkSkill, type LarkSkillOptions } from "./skills/lark/index.ts";
 export type {
 	LazykatokFailureReason,
@@ -93,15 +100,9 @@ export type {
 export {
 	LazykatokBm25Method,
 	LazykatokClient,
-	LazykatokSemanticMethod,
+	LazykatokHybridMethod,
 	LazykatokSkill,
 } from "./skills/lazykatok/index.ts";
-export {
-	MailExportConnector,
-	type MailExportConnectorOptions,
-	MailExportSkill,
-	type MailExportSkillOptions,
-} from "./skills/mail-export/index.ts";
 export {
 	MAILCRAWL_MODES,
 	MailcrawlClient,

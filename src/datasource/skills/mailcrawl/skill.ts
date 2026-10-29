@@ -1,3 +1,4 @@
+import { FallbackRetrievalMethod } from "../../../retrieval/fallback.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
@@ -113,12 +114,11 @@ export class MailcrawlSkill implements DatasourceSkill {
 			return this.fail("datasource-unavailable", "mailcrawl sync failed unexpectedly");
 		}
 	}
+	/** Hybrid search first; BM25 only when mailcrawl cannot run hybrid (for example, no usable semantic index). */
 	retrievalMethods(): readonly RetrievalMethod[] {
-		return [
-			new MailcrawlMethod(this.client, "bm25", this.instanceId, this.tags, this.account, this.mailbox),
-			new MailcrawlMethod(this.client, "semantic", this.instanceId, this.tags, this.account, this.mailbox),
-			new MailcrawlMethod(this.client, "hybrid", this.instanceId, this.tags, this.account, this.mailbox),
-		];
+		const hybrid = new MailcrawlMethod(this.client, "hybrid", this.instanceId, this.tags, this.account, this.mailbox);
+		const bm25 = new MailcrawlMethod(this.client, "bm25", this.instanceId, this.tags, this.account, this.mailbox);
+		return [new FallbackRetrievalMethod(hybrid, [bm25])];
 	}
 	describeSources(): readonly SourceDescription[] {
 		return this.instances.map((instanceId) => ({

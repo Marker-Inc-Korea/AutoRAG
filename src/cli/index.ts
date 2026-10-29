@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { releaseEmbedders } from "../embedding/index.ts";
 import { commandUsage } from "./command-help.ts";
+import { runAutomate } from "./commands/automate.ts";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 import { readPackageVersion } from "./version.ts";
@@ -26,6 +27,7 @@ const BOOLEAN_FLAGS = new Set([
 	"whatsapp",
 	"telegram",
 	"discord",
+	"sync-hister",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -58,7 +60,10 @@ const VALUE_FLAGS = new Set([
 	"provider",
 	"fast-thinking",
 	"final-thinking",
+	"permission-mode",
 	"whatsapp-group",
+	"event",
+	"connection",
 ]);
 
 const COMMANDS = [
@@ -77,6 +82,8 @@ const COMMANDS = [
 	"lite",
 	"models",
 	"update-check",
+	"automate",
+	"attachments",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -113,10 +120,13 @@ Commands:
                        (--top-k N  --scope SCOPE  --json  --debug)
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
+  attachments [status|download]
+                       Show or fill the Discord attachments folder (--connection NAME)
   tui                  Open an interactive Pi-powered librarian terminal UI
                        (--whatsapp [--whatsapp-group JID]: also take questions from WhatsApp)
   models list          List chat models from the pi runtime (--provider ID --available)
   update-check         Compare the running autorag against the published npm version
+  automate <subcmd>    File-triggered automations (daemon|install|uninstall|status|run)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -132,6 +142,7 @@ Global flags:
   --languages <csv>    OCR/parser languages (also AUTORAG_LANGUAGES)
   --model-provider <name>  Override the model provider
   --model-id <id>          Override the model
+  --permission-mode <m>    Approval gate for file changes by the agent: auto (default; full for search and bridged tui), ask, full
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
@@ -176,8 +187,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 		if (value === undefined || (eq === -1 && value.startsWith("--"))) {
 			return { error: `Flag --${key} requires a value` };
 		}
-		if (key === "exclude") {
-			if (value.trim().length === 0) return { error: "Flag --exclude requires a non-empty path" };
+		if (key === "exclude" || key === "event") {
+			if (value.trim().length === 0) return { error: `Flag --${key} requires a non-empty value` };
 			repeatedFlags[key] ??= [];
 			repeatedFlags[key].push(value);
 		}
@@ -260,6 +271,13 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "update-check": {
 			const { runUpdateCheck } = await import("./commands/update-check.ts");
 			return runUpdateCheck(ctx);
+		}
+		case "automate": {
+			return runAutomate(ctx);
+		}
+		case "attachments": {
+			const { runAttachments } = await import("./commands/attachments.ts");
+			return runAttachments(ctx);
 		}
 	}
 }

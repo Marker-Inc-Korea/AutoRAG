@@ -184,7 +184,8 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 
 	let config: CliConfig;
 	try {
-		config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
+		// Nobody is there to approve a gated call, so the default is no gate; --permission-mode still wins.
+		config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd, defaultPermissionMode: "full" });
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 2;

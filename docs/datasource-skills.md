@@ -126,7 +126,7 @@ The zero-configuration boundary is narrow:
   only that one variable through to discrawl's environment). It checks discrawl
   metadata before asking the native CLI to rebuild. An explicit `configPath` is
   authoritative and is never rewritten.
-- **mailcrawl** (`@nomadamas/mailcrawl@0.2.2` or newer) and **kakao**
+- **mailcrawl** (`@nomadamas/mailcrawl@0.3.0` or newer) and **kakao**
   (`lazykatok` 0.3.3 or newer) embed for themselves, so AutoRAG points them at
   the same backend through the environment variables each CLI documents, for
   `index` and for semantic and hybrid search only (BM25 never embeds).
@@ -192,13 +192,14 @@ answer, never from how an individual search call turned out.
 ## Connector sync/index timeouts
 
 Connector `sync`/`index` steps are not interactive, so AutoRAG gives them a
-30-minute budget (`connector.indexTimeoutMs`) instead of the 60-second
+one-hour budget (`connector.indexTimeoutMs`) instead of the 60-second
 interactive default (`connector.timeoutMs`) used by `search`, `doctor`, and chunk
 reads. Measured first-run costs on a real archive:
 
 | Connector | First-run workload | Measured |
 |---|---|---|
 | `mailcrawl` | Gmail INBOX full sync (~2,300 messages) + native index | ~12 min |
+| `mailcrawl` | Incremental `sync` of an unchanged 1,000-message INBOX (envelope fingerprint check in 0.3.0; first post-upgrade sync reads once) | seconds |
 | `kakao` (lazykatok) | Semantic index over a ~50k-message archive (9,373 units) | ~11 min |
 
 A step killed by its timeout does not commit its cursor, so the next refresh
@@ -216,7 +217,7 @@ progress. Raise the budget per connection:
 }
 ```
 
-`indexTimeoutMs` takes precedence, then `timeoutMs`, then the 30-minute default.
+`indexTimeoutMs` takes precedence, then `timeoutMs`, then the one-hour default.
 A `sync`/`index` diagnostic ending in `timeout` carries a hint naming
 `connector.indexTimeoutMs` and the restart behaviour.
 
@@ -242,8 +243,8 @@ separately (#1587, #1586).
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.2` or newer
-(Node.js 24+) and configure Himalaya separately; AutoRAG never opens
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.3.0` or newer
+(Node.js 24+) and configure Himalaya separately (or set `"source": "files"` and `"paths": [...]` to index static `.eml`/`.mbox` exports without Himalaya); AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
 native archive. Set `connector.dataDir` only when the operator explicitly
@@ -260,7 +261,7 @@ overrides are replaced for `index` and semantic search.
 - The default embedder is the in-process native `Qwen/Qwen3-Embedding-0.6B`
   (1024 dimensions, the same model and dimension as AutoRAG's shared embedder),
   so a cold cache downloads ONNX weights on the first `index`. AutoRAG gives
-  `sync`/`index` a 30-minute budget (`connector.indexTimeoutMs`) while search
+  `sync`/`index` a one-hour budget (`connector.indexTimeoutMs`) while search
   keeps its 60-second interactive budget.
 - `index` reports `{ embedded, reused, archiveRevision, rebuilt, embedder }`
   instead of the 0.1.x generation report.
@@ -285,11 +286,11 @@ overrides are replaced for `index` and semantic search.
 ```
 
 Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
-Retrieval exposes independent BM25, semantic, and hybrid methods and maps
-results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
+Retrieval is hybrid-first: one `mailcrawl search --mode hybrid` per query, and BM25 only when hybrid cannot run
+(for example when no semantic index exists). Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
-datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
-path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
+datasource command taxonomy. Mailcrawl is the sole Gmail, IMAP, Maildir, and
+static `.mbox`/`.eml` (`--source files`) email path; the former `mail-export` connector is retired.
 
 ## Universal connection aliases
 
@@ -442,7 +443,7 @@ matching rows — an unscoped search looks exactly like an empty archive, with n
 diagnostic. `syncSource` is likewise required: `slacrawl sync` without
 `--source` fails and surfaces as `datasource-index-failed`. `timeoutMs` bounds
 the FTS search; the first `sync` (a wiretap import of the whole cache) uses
-`indexTimeoutMs`, default 30 minutes, so it is not cut off at 60 seconds.
+`indexTimeoutMs`, default one hour, so it is not cut off at 60 seconds.
 
 Initialize and refresh the local mirror with:
 
@@ -471,15 +472,15 @@ No configuration is needed:
 { "datasources": { "slack-work": { "type": "slack", "connector": { "workspace": "T0123456789" } } } }
 ```
 
-Tune or opt out per datasource with `connector.sidecar`:
+For these three crawlers, tune or opt out per datasource with `connector.sidecar`:
 
 | `connector.sidecar` | Meaning |
 |---|---|
-| absent / `true` / `{}` | BM25 + semantic + hybrid (default) |
-| `false` or `{ "enabled": false }` | CLI-backed FTS only, as before |
-| `semantic: false` | BM25 only; no embedding calls, and no `<name>-semantic` / `<name>-hybrid` methods |
+| absent / `true` / `{}` | One hybrid method per connection; BM25 then the CLI search only if it throws (default) |
+| `false` or `{ "enabled": false }` | CLI-backed FTS only, as before (kakao: hybrid, then BM25) |
+| `semantic: false` | BM25 only; no embedding calls, and no `<name>-hybrid` method (the CLI search is the fallback) |
 | `crawlerDbPath` | archive to read. Otherwise: `connector.databasePath`; for `slack`, the `db_path` in the slacrawl config that `connector.configPath` names (relative paths resolve against that file); otherwise the crawler default (`~/.slacrawl/slacrawl.db`, `~/.telecrawl/telecrawl.db`, `~/.wacrawl/wacrawl.db`) |
-| `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (2048) |
+| `batchSize`, `maxEmbedPerSync` | embedding request size (256) and the most messages one refresh embeds (16,384) |
 
 How it works and what it never does:
 
@@ -491,11 +492,12 @@ How it works and what it never does:
 - It is created lazily: building a skill creates no file, directory, or handle. Nothing is written until the
   crawler archive exists and a search or refresh actually runs. Without an AutoRAG workspace there is nowhere to
   keep it, so the datasource behaves as before.
-- Methods added next to the CLI-backed `<name>-fts`: `<name>-sidecar-bm25`, `<name>-semantic`, `<name>-hybrid`
-  (reciprocal rank fusion, k=60). Natural-language queries are OR-ed term by term; FTS operators in user text are
-  quoted away. A message found by both the CLI and the sidecar carries the same id (`event_id` for telegram and
-  whatsapp), so it is merged, not repeated. The semantic and hybrid methods of one search share one query
-  embedding and one vector scan.
+- One method per connection, `<name>-hybrid` (reciprocal rank fusion, k=60): it runs the sidecar's hybrid search
+  and never also runs the CLI or the sidecar's BM25 and semantic components. Only if the hybrid search throws does
+  the sidecar's BM25 answer (`<name>-sidecar-bm25`, with `fallbackFrom` in each hit's metadata), and only if that
+  throws the CLI-backed `<name>-fts`. A search that finds nothing is an answer and starts no fallback. Natural-language
+  queries are OR-ed term by term; FTS operators in user text are quoted away. A message found by the CLI and by the
+  sidecar carries the same id (`event_id` for telegram and whatsapp), so a fallback keeps stable evidence ids.
 - `channels.ids` / `channels.names` are applied in the sidecar's SQL: excluded chats are never searched,
   embedded, or stored as vectors, and vectors of a chat removed from the allowlist are pruned on the next refresh.
 - `autorag refresh --method datasources` runs the CLI sync first, then embeds new or edited messages with the
@@ -504,7 +506,7 @@ How it works and what it never does:
 - Embedding is **bounded per refresh** so the first sync of a large archive does not hold the whole refresh. While
   a backlog remains the datasource reports an info diagnostic (`datasource-index-partial`: `semantic index
   catching up`), and hybrid search uses BM25 for the messages not yet embedded. Measured on 16,591 WhatsApp
-  messages: about 224 messages/s, 2048 per refresh, so 9 refreshes to catch up.
+  messages: about 224 messages/s; at 16,384 per refresh that archive catches up in two refreshes (about 73 s each).
 - Each message's embedding input is its first 8192 characters (BM25 still indexes all of it). A message the
   embedder rejects on its own is skipped with a warning and retried only after it is edited, so it cannot stall
   the backlog behind it.
@@ -521,8 +523,53 @@ How it works and what it never does:
   operator configures one). Vectors of private chats are derived data: treat the
   sidecar file with the same care as the archive itself.
 
-Not covered: `notion` (notcrawl) keeps its page/comment FTS; `discord` already has semantic and hybrid through
-discrawl.
+`notion` (notcrawl) keeps its page/comment FTS. Without the Discord BM25 sidecar below, `discord` is hybrid-first
+through discrawl (FTS only when embeddings are unavailable).
+
+### Discord BM25 ranking
+
+When an AutoRAG workspace is available, `discord` ranks lexical matches in discrawl's existing FTS5 index
+by BM25 relevance. An older, relevant message can therefore outrank newer mentions before the result limit.
+Queries use the same term-by-term OR matching as the other sidecars. Native FTS-only hits supplement the
+lexical candidate list after BM25 hits; duplicate evidence contributes only once. Hybrid retrieval combines
+this one lexical ranking with native semantic results using reciprocal rank fusion (RRF).
+
+With the sidecar enabled, the skill registers one method matching `connector.defaultMode`:
+`discord-hybrid` by default, `discord-fts` for lexical ranking, or `discord-semantic` for native semantic-only
+search. This prevents the outer result merger from treating overlapping native FTS, native hybrid, and BM25
+results as independent votes. Datasource-scoped searches use the configured method. Explicit method-name
+selection must use that registered name. With the sidecar disabled, the skill registers the single native
+method for `connector.defaultMode`.
+
+To keep only the native method, set `connector.sidecar` to `false` (or `{ "enabled": false }`):
+
+```json
+{ "datasources": { "discord-local": { "type": "discord", "connector": { "sidecar": false } } } }
+```
+
+The archive path comes from the read-only `discrawl --json status` command, using the connector's config and
+the crawler's platform-specific defaults. An explicit `connector.sidecar.crawlerDbPath` or
+`connector.databasePath` takes precedence for the sidecar only; the native CLI still uses its own config.
+The sidecar reads the archive through SQLite's read-only attachment;
+it does not change discrawl's native embeddings, invoke an additional embedder, or build another vector index.
+Native embedding configuration and refresh behavior remain the same. `connector.sidecar.semantic` does not
+enable a separate vector index; `connector.defaultMode` selects the retrieval mode.
+
+Discord message IDs remain strings and match the IDs returned by the native methods, so retrieval can merge
+duplicate hits. Soft-deleted and empty normalized messages are excluded from BM25, and `channels.ids` /
+`channels.names` filter its results in SQL. Native candidates are checked against the configured guild and
+channel allowlists before combination. Without a workspace, the native method remains available. If BM25 or
+semantic retrieval fails, healthy candidates can still answer; returned hit metadata retains the original
+partial-failure reasons. If a backend fails and no candidates remain, retrieval surfaces the failure instead
+of reporting a successful empty search.
+
+BM25 ranks the base `message_fts` index and, when discrawl's `search.lexical.languages` has built them, the
+tokenizer-specific `message_fts_ko`, `message_fts_ja`, `message_fts_zh`, and `message_fts_ar` indexes as well.
+The sidecar discovers those tables from the archive's `sqlite_master` and fuses each present table's BM25
+ranking with the base ranking using reciprocal rank fusion, so an inflected Korean, Japanese, Chinese, or
+Arabic message that the base tokenizer splits differently is still ranked lexically instead of only arriving as
+a supplemental native candidate. Tables that are not configured are ignored. Set `sidecar: false` to retain the
+native method and its language-index fusion throughout.
 
 ## Cloud drives via rclone
 
@@ -665,6 +712,42 @@ all-channel. The agent skill manifest states whether it is all-channel or
 allowlisted, so the orchestrator can select the correct datasource before
 searching.
 
+## Discord attachments
+
+Discord signs every attachment link for 24 hours. After that the file can no longer be downloaded, so
+anything not saved inside that window is lost. Each refresh of a Discord connection saves attachments by
+default right after the `discrawl wiretap` import; set `connector.downloadAttachments: false` to disable
+automatic downloads on refresh:
+
+```json
+{ "datasources": { "discord": { "connector": { "downloadAttachments": false } } } }
+```
+
+Files go to `~/.autorag/attachments/discord/<connection>/<server>/<channel>/<original name>` on every OS
+(under `$AUTORAG_HOME` when that is set). discrawl still does the downloading; AutoRAG gives it a private
+config inside the folder (`.discrawl/`) so its cache is there, then moves each file into place. AutoRAG never
+talks to Discord and uses no Discord token.
+
+`download-status.json` at the top of the folder lists every attachment with its state:
+
+| State | Meaning |
+|---|---|
+| `downloaded` | The saved file still has the exact bytes Discord served (checked by SHA-256). |
+| `not-downloaded` | Not saved yet. |
+| `missing` | The saved file was deleted, moved, or renamed. |
+| `changed` | The saved file was edited. It stays as your file. |
+| `failed` | The last attempt failed; `error` says why (for example `HTTP 404`). |
+| `skipped` | discrawl refused it (for example `too_large`, over 100 MB) and it is not retried. |
+
+`downloadable` is true while the file is not saved intact and the link (`linkExpiresAt`) still works.
+`missing` and `changed` files are downloaded again while their link works; an edited file is never
+overwritten, so the original lands beside it as `name (2).ext`. Nothing in the folder is deleted.
+
+`autorag attachments` (alias for `status`) re-checks the folder and rewrites the status file;
+`autorag attachments download` saves everything still downloadable, even when `downloadAttachments` is `false`.
+Both take `--connection <name>`. A refresh reports the counts as a `datasource-index-partial` diagnostic;
+a failed or expired download never fails the index. Attachments are saved only, not indexed for search.
+
 ## KakaoTalk via lazykatok
 
 KakaoTalk support is implemented through the external [`lazykatok`](https://github.com/changeroa/lazykatok) CLI.
@@ -676,6 +759,10 @@ Rules:
 - `sync` names the live adapter explicitly (`--source macos` on macOS). A bare `sync --json`
   falls back to the CLI's config file, whose default adapter is `fixture` and fails without a
   JSONL path; set `connector.source` to use another adapter.
+- `kakao` is macOS-only. On Linux and Windows it is not built: a `kakao` entry in `datasources` is
+  reported as unknown by the agent, `autorag setup` lists it as `skipped` ("not supported on <platform>"),
+  and setup never offers it unprompted. The default store
+  (`~/Library/Application Support/katok`) is therefore only ever used on macOS.
 - Remote embedding egress configuration is rejected before spawning `lazykatok`.
 - `connector.indexTimeoutMs` (default 30 min) bounds `sync`/`index`;
   `connector.timeoutMs` (default 60 s) bounds interactive reads
@@ -728,6 +815,119 @@ scopes `search:message` and `search:docs:read`, and confirm with
 `/lark/<instance>/messages/<message_id>` and
 `/lark/<instance>/docs/<token>`. Server ranking is not BM25 or vector, and
 coverage of older messages is not guaranteed.
+
+## Browser history via Hister
+
+`hister` searches the web pages your browser visited, through a running
+[Hister](https://github.com/asciimoo/hister) server. Hister is a **separate
+program under AGPL-3.0-or-later**: AutoRAG ships none of its code, does not
+modify it, and only sends search requests to its public HTTP API (`GET /search`,
+`GET /api/config`). Hister owns the index, the browser extension, incremental
+capture, and (optionally) the embeddings. AutoRAG never copies the corpus, and
+the datasource manifest names Hister, its license, and its source to the agent.
+See [`licenses/hister-AGPL-3.0-notice.txt`](../licenses/hister-AGPL-3.0-notice.txt).
+
+**Web pages only.** Every query is sent with `type:web`, and any document Hister
+returns with another type is dropped. Hister can also index local directories and
+file snapshots; leave `indexer.directories` empty (the default) and never run
+`hister import file`. If such documents exist anyway, `index()` reports how many
+are excluded.
+
+```bash
+brew install hister                      # or a release binary, Docker, Nix
+hister listen                            # http://127.0.0.1:4433, keep it running
+# install the Hister browser extension in Chrome/Chromium (Chrome Web Store: "Hister")
+hister import browser history            # optional: backfill existing history
+hister search 'domain:example.com'       # must print rows before wiring it up
+```
+
+```json
+{
+  "datasources": {
+    "browser": {
+      "type": "hister",
+      "connector": {
+        "baseUrl": "http://127.0.0.1:4433",
+        "tokenEnv": "HISTER_TOKEN",
+        "semantic": false
+      }
+    }
+  }
+}
+```
+
+`baseUrl` defaults to `http://127.0.0.1:4433`. `tokenEnv` names an environment
+variable holding Hister's `app.access_token`; the token is never written to the
+config, and a non-loopback `http://` URL is refused when a token is configured.
+`semantic: true` also registers Hister's semantic search and requires
+`semantic_search.enable` plus an embedding endpoint in the **Hister** config
+(the page text is sent to that endpoint, so use a loopback one for privacy); with
+it disabled on the server, the semantic method fails loudly instead of returning
+nothing. Plain words in a query are alternatives, sent as one `(a|b|c)` group (Hister's only
+OR; the word `OR` is searched literally); Hister syntax (`"phrases"`, `domain:`, `title:`,
+`-term`, `added:<7d`, `sort:date`) passes through as written.
+
+Incremental indexing is Hister's: each page is indexed when the extension sends
+it, so `autorag refresh` only probes the server (reachability, authentication,
+page count). Sources are `/<id>/<instance>/pages/<domain>/<hash of the URL>`; the
+URL itself is in the hit content and `metadata.url`, so use `web_fetch` to read a
+page as it is now. A scope of `/<id>/<instance>/pages/<domain>/**` is pushed down
+to Hister as `domain:<domain>`.
+
+### Running it day to day
+
+Hister must be running for the extension to capture pages and for AutoRAG to
+search; AutoRAG never starts or stops it (the same rule as the MinSync daemon).
+On macOS, `brew services start hister` makes it a login item and
+`brew services stop hister` removes it. A page visited while Hister is down is
+not sent again later, so backfill the gap with
+`hister import browser history --start-date YYYY-MM-DD`. The web UI that the same
+server also serves is not used by AutoRAG.
+
+### One embedding model for AutoRAG and Hister
+
+Hister keeps its own vector store and embeds with whatever its `config.yml`
+`semantic_search` block says. If that is a different model from AutoRAG's, nothing
+fails: the vectors simply stop lining up and results get worse. So the two must share
+the model, and `autorag setup` does that:
+
+```bash
+autorag setup                # reports `hister.embedding.differs`, the keys that disagree; writes nothing
+autorag setup --sync-hister  # writes them, restarts Hister, waits for it, re-embeds pages when needed
+hister doctor                # `server.index.embeddings` must be ok
+```
+
+The source of truth is the resolved shared embedder (`minsync serve`, model
+`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, with Qwen3's query instruction), so
+Hister embeds queries exactly as AutoRAG does. `--sync-hister` edits only
+`enable`, `embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix` and
+`document_prefix` in Hister's own config (a `config.yml.bak.<time>` stays next to
+it); the rest of the file is untouched. It restarts the service with
+`brew services restart hister`, waits until the server answers, and runs
+`hister reindex` only when a changed key makes stored vectors stale (the query prefix
+alone does not). It is idempotent. The report says `restartRequired` or
+`reindexRequired` when it could not do those steps itself. The daemon's port is chosen
+when it starts, so run `--sync-hister` again after restarting it.
+
+It refuses, and says why, for a remote shared backend (browsing text would leave the
+machine and Hister's config would have to hold the key) and for MinSync's in-process
+engine (Hister cannot reach it): start `minsync serve --idle-timeout 0` first. Pages
+indexed before semantic search was enabled need the reindex; a page whose chunks exceed
+the model's context is kept for keyword search and skipped for vectors, which Hister logs.
+
+### Backfilling existing history safely
+
+`hister import browser history` does not copy page text out of the browser: it
+reads the History database for URLs and then downloads each URL again **without
+your logged-in cookies**. A login-gated URL is therefore saved as its login page,
+and tokens in a URL are sent to that site again. Before importing, put a skip list
+in Hister's `rules.json` (one regular expression per entry, matched against the
+full URL, and also applied to what the extension captures from now on). Cover at
+least login and SSO hosts, mail, documents, drive, social and console
+domains, private hosts and explicit ports, URLs whose query carries a token, key,
+code or session, and `/login`, `/account`, `/settings`, `/admin` style paths.
+This is a deny list: a new, unlisted login page is still captured. Use an `allow`
+list instead if you want the reverse. Check the result with `hister list-urls`.
 
 ## GitHub Gists
 

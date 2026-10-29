@@ -16,11 +16,28 @@ export interface RetrievalMethodDescriptor {
 	tags?: readonly string[];
 }
 
+/**
+ * A fallback chain answered with a fallback because its primary method failed. `reason` is the primary's
+ * error verbatim, so the degraded surface can be reported like any other skipped method.
+ */
+export interface RetrievalFallbackEvent {
+	/** Name of the primary method that failed. */
+	method: string;
+	/** Name of the fallback that answered instead. */
+	fallback: string;
+	reason: string;
+}
+
 export interface RetrievalOptions {
 	topK?: number;
 	scope?: string;
 	filters?: Record<string, unknown>;
 	signal?: AbortSignal;
+	/**
+	 * Owned by the retrieval pipeline, not by callers: invoked when a method answered through a fallback.
+	 * Methods that wrap another method must not forward it.
+	 */
+	onFallback?: (event: RetrievalFallbackEvent) => void;
 }
 
 export interface RetrievalMethod {

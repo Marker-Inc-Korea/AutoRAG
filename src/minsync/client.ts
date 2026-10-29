@@ -17,7 +17,13 @@ import { kiwiAvailable } from "./kiwi.ts";
 import { MINSYNC_LEXICAL_LANGUAGE, type MinSyncLexicalLanguage } from "./lexical-language.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
-import type { MinSyncEmbedderConfig, MinSyncFileFailure, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type {
+	MinSyncEmbedderConfig,
+	MinSyncFileFailure,
+	MinSyncQueryHit,
+	MinSyncSyncProgress,
+	MinSyncSyncResult,
+} from "./types.ts";
 
 export interface MinSyncClientOptions {
 	readonly binaryPath: string;
@@ -33,6 +39,10 @@ const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** `minsync sync` exits 3 with "another sync is in progress" while another run holds `.minsync/lock`. */
 const MINSYNC_LOCK_HELD_EXIT_CODE = 3;
+
+/** `minsync check` exits 4 when the vector store preflight fails, and 5 when the embedder preflight fails. */
+const MINSYNC_VECTORSTORE_UNHEALTHY_EXIT_CODE = 4;
+const MINSYNC_EMBEDDER_UNHEALTHY_EXIT_CODE = 5;
 
 /** `minsync sync` exits 6 when it completed but skipped files it could not read, chunk, or embed (`partial: true`). */
 const MINSYNC_PARTIAL_SYNC_EXIT_CODE = 6;
@@ -122,7 +132,11 @@ export class MinSyncClient {
 		return JSON.stringify(previousDocuments) !== JSON.stringify(currentDocuments);
 	}
 
-	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
+	async sync(
+		force = false,
+		signal?: AbortSignal,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
 		const effective = this.effectiveEmbedder();
 		try {
@@ -201,6 +215,7 @@ export class MinSyncClient {
 				signal,
 				effective,
 				restoreConfig,
+				onProgress,
 			);
 			return result.ok && lexical.fallback !== undefined ? { ...result, lexicalFallback: lexical.fallback } : result;
 		} catch (error) {
@@ -246,6 +261,7 @@ export class MinSyncClient {
 		signal: AbortSignal | undefined,
 		effective: { config: MinSyncEmbedderConfig; identity?: MinSyncEmbeddingIdentity },
 		restoreConfig: () => void,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
 	): Promise<MinSyncSyncResult> {
 		const spawnOptions = signal === undefined ? {} : { signal };
 		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
@@ -255,33 +271,23 @@ export class MinSyncClient {
 			restoreConfig();
 			return this.lockHeldResult(check.stderr);
 		}
-		if (!check.ok) {
+		const checkFailure = readCheckFailure(check.stdout, check.code);
+		if (checkFailure || !check.ok) {
 			restoreConfig();
+			const reason = checkFailure ?? "check-failed";
+			const isEmbedder =
+				check.code === MINSYNC_EMBEDDER_UNHEALTHY_EXIT_CODE || (checkFailure?.includes("embedder") ?? false);
+			const stderrMessage = check.stderr ? check.stderr.trim() : undefined;
 			return {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason: "check-failed",
-				diagnostic: {
-					code: "sync-failed",
-					message: check.stderr ? check.stderr.trim() : "MinSync check failed.",
-					retryable: true,
-				},
-			};
-		}
-		const checkFailure = readCheckFailure(check.stdout);
-		if (checkFailure) {
-			restoreConfig();
-			return {
-				ok: false,
-				synced: 0,
-				workspacePath: this.workspacePath,
-				reason: checkFailure,
+				reason,
 				diagnostic: {
 					// Only an embedder preflight failure is an embedder problem; a vector store or generic
 					// preflight failure is not.
-					code: checkFailure.includes("embedder") ? "embedder-unavailable" : "sync-failed",
-					message: checkFailure,
+					code: isEmbedder ? "embedder-unavailable" : "sync-failed",
+					message: stderrMessage || checkFailure || "MinSync check failed.",
 					retryable: true,
 				},
 			};
@@ -289,8 +295,25 @@ export class MinSyncClient {
 		const identityChanged = effective.identity !== undefined && this.identityMismatch(effective.identity);
 		const fullReindex = forceFull || identityChanged;
 		const syncArgs =
-			existsSync(cursorPath) && !fullReindex ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await this.spawn(syncArgs, spawnOptions);
+			existsSync(cursorPath) && !fullReindex
+				? ["sync", "--format", "json", "--progress", "jsonl"]
+				: ["sync", "--full", "--format", "json", "--progress", "jsonl"];
+		const result = await this.spawn(syncArgs, {
+			...spawnOptions,
+			...(onProgress === undefined
+				? {}
+				: {
+						onStdoutLine: (line: string) => {
+							const update = readSyncProgress(line);
+							if (update === undefined) return;
+							try {
+								onProgress(update);
+							} catch {
+								// Progress is observational; a host callback must not interrupt the sync.
+							}
+						},
+					}),
+		});
 		if (!result.ok && result.code === MINSYNC_LOCK_HELD_EXIT_CODE) {
 			restoreConfig();
 			return this.lockHeldResult(result.stderr);
@@ -349,7 +372,11 @@ export class MinSyncClient {
 
 	private async spawn(
 		args: readonly string[],
-		options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
+		options: {
+			readonly timeoutMs?: number;
+			readonly signal?: AbortSignal;
+			readonly onStdoutLine?: (line: string) => void;
+		} = {},
 	): Promise<ProcessResult> {
 		return spawnProcess(this.binaryPath, args, this.workspacePath, { ...options, env: this.childEnv() });
 	}
@@ -377,7 +404,7 @@ function readConfigSnapshot(configPath: string): string | undefined {
 }
 
 function readPartialSync(stdout: string): { readonly filesFailed: readonly MinSyncFileFailure[] } | undefined {
-	const parsed = parseJson(stdout);
+	const parsed = parseSyncOutput(stdout);
 	if (!isRecord(parsed) || parsed.partial !== true) return undefined;
 	const failures = Array.isArray(parsed.files_failed) ? parsed.files_failed : [];
 	return {
@@ -390,7 +417,7 @@ function readPartialSync(stdout: string): { readonly filesFailed: readonly MinSy
 }
 
 function readSyncedCount(stdout: string): number {
-	const parsed = parseJson(stdout);
+	const parsed = parseSyncOutput(stdout);
 	if (!isRecord(parsed)) return 0;
 	for (const key of ["files_processed", "synced"]) {
 		const count = parsed[key];
@@ -399,12 +426,45 @@ function readSyncedCount(stdout: string): number {
 	return 0;
 }
 
-function readCheckFailure(stdout: string): string | undefined {
+function readSyncProgress(line: string): MinSyncSyncProgress | undefined {
+	const event = parseJson(line);
+	if (!isRecord(event) || !["start", "batch", "heartbeat", "done"].includes(String(event.event))) return undefined;
+	const total = event.total ?? event.total_files;
+	const processed = event.event === "start" ? (event.resumed ?? 0) : event.processed;
+	if (
+		typeof processed !== "number" ||
+		!Number.isInteger(processed) ||
+		processed < 0 ||
+		typeof total !== "number" ||
+		!Number.isInteger(total) ||
+		total < processed
+	)
+		return undefined;
+	return { processed, total };
+}
+
+function parseSyncOutput(stdout: string): unknown {
+	const direct = parseJson(stdout);
+	if (direct !== undefined) return direct;
+	const lines = stdout.trim().split("\n");
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		const parsed = parseJson(lines[index]);
+		if (parsed !== undefined) return parsed;
+	}
+	return undefined;
+}
+
+function readCheckFailure(stdout: string, exitCode: number | null): string | undefined {
 	const parsed = parseJson(stdout);
-	if (!isRecord(parsed)) return "check-failed: invalid response";
-	if (parsed.embedder_ok !== true) return "check-failed: embedder unavailable";
-	if (parsed.vectorstore_ok !== true) return "check-failed: vector store unavailable";
-	if (parsed.all_passed === false) return "check-failed: preflight unhealthy";
+	if (isRecord(parsed)) {
+		if (parsed.embedder_ok !== true) return "check-failed: embedder unavailable";
+		if (parsed.vectorstore_ok !== true) return "check-failed: vector store unavailable";
+		if (parsed.all_passed === false) return "check-failed: preflight unhealthy";
+		return undefined;
+	}
+	if (exitCode === MINSYNC_EMBEDDER_UNHEALTHY_EXIT_CODE) return "check-failed: embedder unavailable";
+	if (exitCode === MINSYNC_VECTORSTORE_UNHEALTHY_EXIT_CODE) return "check-failed: vector store unavailable";
+	if (exitCode === 0) return "check-failed: invalid response";
 	return undefined;
 }
 

@@ -1,5 +1,7 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSourcePath } from "../../scope.ts";
+import { CRAWLER_DESCRIPTORS } from "../../sidecar/descriptors.ts";
+import { SidecarRetrievalMethod } from "../../sidecar/methods.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
@@ -12,12 +14,15 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
+import type { DiscordAttachmentSyncer, DiscordAttachmentSyncResult } from "./attachments.ts";
 import {
 	DiscrawlFtsMethod,
 	DiscrawlHybridMethod,
 	type DiscrawlSearchClient,
 	DiscrawlSemanticMethod,
 } from "./methods.ts";
+import { DiscrawlRankedMethod, type DiscrawlRankedMethodOptions } from "./ranked-method.ts";
+import { DiscrawlSidecar, type DiscrawlSidecarOptions, type DiscrawlStatusClient } from "./sidecar.ts";
 import type {
 	DiscrawlDoctorResult,
 	DiscrawlEmbedResult,
@@ -27,7 +32,7 @@ import type {
 } from "./types.ts";
 import { DEFAULT_DISCRAWL_EMBEDDING_MODEL, DEFAULT_DISCRAWL_MODE, ENGLISH_ONLY_EMBEDDING_MODELS } from "./types.ts";
 
-export interface DiscrawlSkillClient extends DiscrawlSearchClient {
+export interface DiscrawlSkillClient extends DiscrawlSearchClient, DiscrawlStatusClient {
 	doctor(signal?: AbortSignal): Promise<DiscrawlDoctorResult>;
 	sync(signal?: AbortSignal): Promise<DiscrawlSyncResult>;
 	embed(limit?: number, rebuild?: boolean, signal?: AbortSignal): Promise<DiscrawlEmbedResult>;
@@ -48,6 +53,13 @@ export interface DiscrawlSkillOptions {
 	readonly embedLimit?: number;
 	readonly channelIds?: readonly string[];
 	readonly channelNames?: readonly string[];
+	/** Optional lexical-only sidecar. Its archive path is discovered through native status when omitted. */
+	readonly sidecar?: DiscrawlSidecarOptions;
+	/**
+	 * Saves attachments right after each successful import, while Discord's 24-hour signed links still work.
+	 * Built by default (`connector.downloadAttachments: false` disables it); absent means attachments are not downloaded.
+	 */
+	readonly attachments?: DiscordAttachmentSyncer;
 }
 
 const DISCORD_DATASOURCE_ID = "discord";
@@ -60,7 +72,7 @@ const DEFAULT_DISCORD_TAGS = ["discord", "chat", "pii"] as const;
  * Discord datasource skill backed by the external `discrawl` CLI.
  *
  * Mirrors the lazykatok model: the CLI owns the archive, the FTS5 index, and the
- * vector index; AutoRAG only spawns it and maps results. AutoRAG never calls
+ * vector index; an optional read-only sidecar adds BM25 lexical ranking. AutoRAG never calls
  * the Discord API itself and never reads the Discord Desktop cache directly.
  *
  * `index()` runs the CLI's two-phase pipeline — `sync` (incremental, cursor
@@ -76,6 +88,9 @@ export class DiscrawlSkill implements DatasourceSkill {
 	private readonly embeddingModel: string;
 	private readonly defaultMode: DiscrawlSearchMode;
 	private readonly embedLimit: number | undefined;
+	private readonly sidecar: DiscrawlSidecar | undefined;
+	private readonly retrievalScope: Pick<DiscrawlRankedMethodOptions, "workspaceId" | "channelIds" | "channelNames">;
+	private readonly attachments: DiscordAttachmentSyncer | undefined;
 	private lastIndexedAt: number | undefined;
 
 	constructor(options: DiscrawlSkillOptions) {
@@ -88,7 +103,25 @@ export class DiscrawlSkill implements DatasourceSkill {
 		this.embeddingModel = options.embeddingModel ?? DEFAULT_DISCRAWL_EMBEDDING_MODEL;
 		this.defaultMode = options.defaultMode ?? DEFAULT_DISCRAWL_MODE;
 		this.embedLimit = options.embedLimit;
+		this.attachments = options.attachments;
 		this.lastIndexedAt = options.lastIndexedAt;
+		this.retrievalScope = {
+			workspaceId: options.sidecar?.workspaceId,
+			channelIds: options.channelIds ?? options.sidecar?.channelIds,
+			channelNames: options.channelNames ?? options.sidecar?.channelNames,
+		};
+		this.sidecar =
+			options.sidecar === undefined
+				? undefined
+				: new DiscrawlSidecar(
+						{
+							...options.sidecar,
+							descriptor: CRAWLER_DESCRIPTORS.discord,
+							channelIds: options.channelIds ?? options.sidecar.channelIds,
+							channelNames: options.channelNames ?? options.sidecar.channelNames,
+						},
+						this.client,
+					);
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -97,7 +130,16 @@ export class DiscrawlSkill implements DatasourceSkill {
 			id: DISCORD_DATASOURCE_ID,
 			type: DISCORD_SKILL_TYPE,
 			description: "Discord datasource via the external discrawl CLI",
-			capabilities: ["chat", "external-cli", "polling", "fts5", "semantic", "hybrid", "incremental"],
+			capabilities: [
+				"chat",
+				"external-cli",
+				"polling",
+				"fts5",
+				"semantic",
+				"hybrid",
+				"incremental",
+				...(this.sidecar === undefined ? [] : ["bm25"]),
+			],
 			tags: this.tags,
 			status: "active",
 			requiresExternalCli: true,
@@ -153,6 +195,9 @@ export class DiscrawlSkill implements DatasourceSkill {
 			return this.fail("datasource-index-failed", "discrawl sync failed unexpectedly", diagnostics);
 		}
 		if (!sync.ok) return this.fail(failureCode(sync, "datasource-index-failed"), describe(sync), diagnostics);
+		if (this.attachments !== undefined) {
+			diagnostics.push(await this.downloadAttachments(this.attachments, options?.signal));
+		}
 
 		if (doctor.data.embeddingsOk) {
 			const embed = await this.runEmbed(rebuildEmbeddings, options?.signal);
@@ -187,14 +232,44 @@ export class DiscrawlSkill implements DatasourceSkill {
 		};
 	}
 
+	/**
+	 * One method per query. Hybrid is the default and already degrades to FTS inside the single
+	 * `discrawl search` call when embeddings are unavailable, so FTS and semantic are not registered
+	 * beside it; an operator who pins `defaultMode` to `fts` or `semantic` gets exactly that mode.
+	 */
 	retrievalMethods(): readonly RetrievalMethod[] {
 		const options = { client: this.client, instanceId: this.instanceId, tags: this.tags };
 		const hybrid = new DiscrawlHybridMethod(options);
 		const fts = new DiscrawlFtsMethod(options);
 		const semantic = new DiscrawlSemanticMethod(options);
-		if (this.defaultMode === "fts") return [fts, semantic, hybrid];
-		if (this.defaultMode === "semantic") return [semantic, fts, hybrid];
-		return [hybrid, fts, semantic];
+		const sidecar = this.sidecar;
+		if (sidecar === undefined) {
+			if (this.defaultMode === "fts") return [fts];
+			if (this.defaultMode === "semantic") return [semantic];
+			return [hybrid];
+		}
+		return [
+			new DiscrawlRankedMethod({
+				mode: this.defaultMode,
+				lexical: new SidecarRetrievalMethod({
+					sidecar: (signal) => sidecar.get(signal),
+					descriptor: CRAWLER_DESCRIPTORS.discord,
+					mode: "bm25",
+					datasourceId: DISCORD_DATASOURCE_ID,
+					skillType: DISCORD_SKILL_TYPE,
+					instanceId: this.instanceId,
+					tags: this.tags,
+				}),
+				nativeFts: fts,
+				semantic,
+				...this.retrievalScope,
+			}),
+		];
+	}
+
+	/** Release the optional sidecar without changing the native archive. */
+	close(): void {
+		this.sidecar?.close();
 	}
 
 	describeSources(): readonly SourceDescription[] {
@@ -244,7 +319,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"Never pass datasource virtual paths (`/discord/...`) to bash; they are not OS paths.",
 				"",
 				"## Time-based questions (today, latest, recent)",
-				"The search tool ranks by relevance, not time, so a question such as “what came in today” or “the latest messages” has no keyword to match. List messages by time with `discrawl messages` instead (it needs at least one filter):",
+				"Search needs matching query terms. For a question such as “what came in today” or “the latest messages”, list messages by time with `discrawl messages` (it needs at least one filter):",
 				"- `discrawl --json messages --since <RFC3339> --limit 200` — messages at or after a timestamp; for “today” use local midnight with its UTC offset (e.g. `2026-10-09T00:00:00+09:00`)",
 				"- `discrawl --json messages --hours 24 --limit 200` (or `--days N`) — a rolling window",
 				"- `discrawl --json messages --since 1970-01-01T00:00:00Z --last 20` — the newest 20 archived messages, including archives older than a year",
@@ -252,11 +327,55 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"An empty window prints `null`. Run the same command without `--json` to see the newest archived timestamp, and tell the user when the archive simply has nothing that recent: it only holds what discrawl has synced or imported (wiretap captures only what Discord Desktop has cached).",
 				"",
 				"## Retrieval quality",
+				...(this.sidecar === undefined
+					? []
+					: [
+							`With the sidecar enabled, the configured \`defaultMode\` selects one retrieval method: \`discord-${this.defaultMode}\`. Lexical search ranks BM25 matches first and adds distinct native FTS candidates afterward. Hybrid search fuses that lexical ranking with native semantic results once, so repeated native lexical matches cannot overturn BM25 order by receiving extra votes. No additional embedding index is built.`,
+							"BM25 ranks the base `message_fts` index and any tokenizer-specific language indexes discrawl built (`message_fts_ko`, `message_fts_ja`, `message_fts_zh`, `message_fts_ar`), fusing their rankings, so inflected Korean, Japanese, Chinese, or Arabic messages are ranked lexically. Native FTS supplies supplemental candidates from the same language indexes for recall. Partial backend failures are recorded in result metadata; an unavailable semantic backend leaves the lexical ranking intact.",
+							"Set `connector.sidecar` to `false` to restore the separate native `discord-hybrid`, `discord-fts`, and `discord-semantic` methods, or use the native CLI directly to select another mode.",
+						]),
 				"Hybrid retrieval is the default. The underlying FTS index merges words across line breaks into a single token, so lexical-only search can miss terms that appear immediately after a newline; semantic recall covers that gap. Prefer natural-language queries over single exact keywords.",
 				"",
 				"## Output rules",
 				`Source identifiers such as \`/${DISCORD_DATASOURCE_ID}/<instance>/chunks/<message-id>\` are stable Discord message ids and are traceable. Result metadata carries guild, channel, author, and timestamp; you may cite them when they help the user locate the message. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.`,
 			].join("\n"),
+		};
+	}
+
+	/** Best effort: a failed or expired download never fails the index, and messages stay searchable. */
+	private async downloadAttachments(
+		attachments: DiscordAttachmentSyncer,
+		signal?: AbortSignal,
+	): Promise<DatasourceDiagnostic> {
+		const base = { instanceId: this.instanceId, source: DISCORD_DATASOURCE_ID };
+		let result: DiscordAttachmentSyncResult;
+		try {
+			result = await attachments.sync({ download: true, ...(signal === undefined ? {} : { signal }) });
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			return {
+				...base,
+				code: "datasource-index-partial",
+				severity: "warning",
+				message: `attachment download failed: ${reason}`,
+			};
+		}
+		if (!result.ok) {
+			return {
+				...base,
+				code: "datasource-index-partial",
+				severity: result.reason === "busy" ? "info" : "warning",
+				message: `attachment download skipped: ${result.message}`,
+			};
+		}
+		const { run, summary } = result;
+		return {
+			...base,
+			code: "datasource-index-partial",
+			severity: run.failed > 0 ? "warning" : "info",
+			message:
+				`attachments: fetched=${run.fetched} failed=${run.failed} skipped=${run.skipped} bytes=${run.bytes}; ` +
+				`folder holds ${summary.downloaded}/${summary.total} intact, ${summary.expired} expired before download`,
 		};
 	}
 

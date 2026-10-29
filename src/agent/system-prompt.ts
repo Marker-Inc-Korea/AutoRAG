@@ -1,9 +1,18 @@
+import { renderConversionGuide } from "../convert/matrix.ts";
 import {
+	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
 	ANSWER_DELIVERABLE_DELTA_RULE,
 	ANSWER_DELIVERABLE_RULE,
+	ANSWER_EMPHASIS_RULE,
 	ANSWER_IMAGE_DELTA_RULE,
 	ANSWER_IMAGE_EMBED_RULE,
+	ANSWER_LANGUAGE_RULE,
+	ANSWER_LEAD_RULE,
+	ANSWER_RELEVANCE_RULE,
+	ANSWER_UNCERTAINTY_RULE,
+	ANSWER_UNCONFIRMED_FAST_RULE,
+	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
@@ -59,6 +68,21 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(
 			config,
+			"convert_files",
+			"convert local files to another format offline (Filee), on any path, with optional overwrite",
+		),
+		toolLine(
+			config,
+			"list_file_conversions",
+			"list the formats the converter knows or what one source format can become",
+		),
+		toolLine(
+			config,
+			"manage_automations",
+			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
+		),
+		toolLine(
+			config,
 			"web_search",
 			"search the public internet for current information beyond the local corpus and knowledge cutoff",
 		),
@@ -67,6 +91,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			config,
 			"jev",
 			"ask the Jev judgment model for calibrated probabilities — classification, triage, comparison, ranking",
+		),
+		toolLine(
+			config,
+			"ask_user",
+			"search and explore first, with the tools above, and use this only when something still cannot be verified or the choice is the user's alone. Whenever you must ask the user anything, ask through this tool instead of in plain text, and do not use it for anything a search could settle; never guess",
 		),
 		toolLine(config, "check_memory", "inspect evidence earlier searches found for similar questions"),
 		...config.toolNames
@@ -93,9 +122,13 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"semantic_search_local_docs",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
+						"convert_files",
+						"list_file_conversions",
+						"manage_automations",
 						"web_search",
 						"web_fetch",
 						"jev",
+						"ask_user",
 						"check_memory",
 					].includes(name) && !name.startsWith("search_datasource_"),
 			)
@@ -125,6 +158,16 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 \`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files. When the user asks you to remove duplicates, carry it out with \`bash\` by moving them to the OS trash (see File Organization); the scan itself stays read-only.
 `
 		: "";
+	const fileConversion = toolAvailable(config, "convert_files")
+		? `## File Conversion
+
+\`convert_files\` converts local files offline with Filee and works on any path the user names. Check \`list_file_conversions\` first when you are unsure a source can become the target. Outputs land next to the source with a number added when the name is taken, so nothing is replaced; pass \`overwrite: true\` only when the user asks to replace the existing file, and \`outputDir\` to keep results elsewhere. Each converted file is reported with dupey's verdict on whether it is a duplicate-family member of its source: exact means the same canonical text, near means the same document in another format, different or unsupported means dupey will not group them. A converted copy never replaces the source; never delete the source unless the user asked.
+
+This is the conversion map. Use it to plan any conversion immediately, including a two-step chain when no direct route exists, instead of probing with trial calls.
+
+${renderConversionGuide()}
+`
+		: "";
 	const webResearch =
 		toolAvailable(config, "web_search") || toolAvailable(config, "web_fetch")
 			? `## Web Research
@@ -148,6 +191,17 @@ This host runs macOS or Linux with fsearch-cli (FSearch): an Everything-style in
 Query syntax: space = AND, \`OR\` = OR (the pipe \`|\` is NOT the OR operator here, unlike Everything), \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`), \`ext:pdf;docx;hwp\`, \`size:>10mb\`, \`path:<fragment>\`, \`case:\`, \`regex:\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or size:. When fsearch-cli is not installed the tool still answers through a slow bounded filesystem walk (substring/regex name matching only) and says so in its output — prefer narrow queries there, and never replace the tool with your own recursive \`find\`.
 `
 		: "";
+	const automations = toolAvailable(config, "manage_automations")
+		? `## File Automations
+
+When the user asks for something to happen whenever files change — "when a PDF lands in Downloads, summarize it", "keep the index fresh when my notes change", "convert new HWP files to PDF" — set it up with \`manage_automations\` instead of describing manual steps. A rule watches folders and runs one command, without a shell, when files there are created, updated, or deleted; the changed files arrive on the command's stdin as JSON \`[{type, path}]\`. \`run\` is the full argv: keep every argument the command needs (output files, options) in it. \`appendFiles\` adds the changed paths after those arguments, so leave it off when the command reads stdin or takes its own arguments positionally.
+
+- Commands: \`["autorag", "refresh"]\` keeps the index fresh, \`["autorag", "search", "<instruction>"]\` with \`appendFiles\` hands each batch to AutoRAG itself, \`["node", "/abs/script.ts"]\` runs a TypeScript or JavaScript script, and any other program works by absolute path or PATH name. Write a helper script with \`write\` first when the work needs more than one command. Use \`["sh", "-c", "…"]\` only when shell syntax is required.
+- Narrow each rule with \`include\` globs (\`**/*.pdf\`) and \`events\`. Temporary downloads, \`.git\`, and \`node_modules\` are ignored automatically. Never let a rule write its output inside a folder it watches unless \`exclude\` covers that output; a rule that keeps re-triggering itself is disabled after 20 runs in a minute.
+- After \`save\`, test the rule with the \`run\` action and sample \`events\` before relying on it, then check \`list\`. Test events only describe a change: they need no real file, so never create or modify files to test a rule. Rules only fire while the daemon runs: if \`list\` shows it is not installed, call \`install_service\`, which registers a login service (launchd, systemd --user, or Task Scheduler) that restarts on failure and picks up rule changes automatically.
+- Report what you set up: the rule id, watched folders, trigger, and command. Use \`delete\` to remove a rule and \`uninstall_service\` only when the user wants every automation stopped.
+`
+		: "";
 
 	const fileOrganization = `## Local File Organization
 
@@ -169,7 +223,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 ## Workflow
 
 Searches follow a progressive, two-phase loop:
-1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting.
+1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided and answers the question, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting. When it does not answer the question, the first answer is a single line saying it is not confirmed yet and you are still searching.
 2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
 3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed, and in local sessions to organize files when the user asks (see File Organization); rely on Jikji and retrieval rather than blind directory browsing.
 4. **JUDGE & RESOLVE** — Evaluate relevance, sufficiency, conflicts, and temporal context. When search results or evidence contain conflicting information, treat the freshest (most recent) information as authoritative and correct.
@@ -196,12 +250,14 @@ ${noSearchTools}
 ${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization.` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization."}
 - When search results or evidence contain conflicting information, treat the freshest and most recent information as authoritative and correct.
 - Cross-check important claims against the original source and cite the evidence ids of the results you rely on.
-- When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
+- Every tool takes a short \`i\` argument: one line, specific to this question, saying what the call checks. It is shown to the user as live progress, so do not write separate progress notes before tool calls.
 - Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
 - Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available.
 
 ${fileOrganization}
 ${duplicateManagement}
+${fileConversion}
+${automations}
 ${webResearch}
 ## External Datasource Skills
 
@@ -220,24 +276,30 @@ ${fsearch}
 Your answer is your final reply, written as plain text, never as a tool call. Cite evidence inline with the ids the retrieval tools print next to each result:
 - Put the id in square brackets at the end of the sentence it supports, e.g. \`The cap is 28% [e3].\` Use \`[e3][e7]\` or \`[e3, e7]\` for several. Copy ids exactly as printed; never invent one.
 - For a local file you opened yourself with \`bash\`, cite \`[file:<absolute path>]\`.
-- The harness resolves every id to its recorded source, number the citations \`[1]\`, \`[2]\`, … in order of first appearance, and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
+- The harness resolves every id to its recorded source, numbers the citations \`[1]\`, \`[2]\`, … (a source keeps the number it was first shown with for the whole conversation; a new source gets the next unused number), and attaches the sources for you. Never type a source path, a chunk, or a citation number yourself.
 - Evidence ids belong to the whole conversation: cite any id a retrieval tool printed in this conversation, including in earlier turns. An id no tool ever printed is dropped.
 
 ## Answer Guidelines
 
 - **Complete vs. delta answer**: When no first answer reached the caller, give the complete core answer. When a first answer was already delivered, return only the delta against it — corrections and newly verified findings — and never repeat its unchanged content; if nothing changed, confirm the first answer in one short line.
 - **Bullet-point core answer**: Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation or context is necessary, append it after the bullet points.
+- ${ANSWER_LEAD_RULE}
+- ${ANSWER_BULLET_RULE}
+- ${ANSWER_EMPHASIS_RULE}
+- ${ANSWER_LANGUAGE_RULE}
+- ${ANSWER_UNCERTAINTY_RULE}
 - **Direct answer only**: Unless the user explicitly requests otherwise, the caller only needs the direct answer to their question. Never include specific file paths, datasource descriptions, or retrieval mechanics/principles in the answer (source paths are attached to each citation from the evidence ids you cite). Do not quote raw chunk text.
 - ${ANSWER_DELIVERABLE_RULE} ${ANSWER_DELIVERABLE_DELTA_RULE}
 - ${ANSWER_CITATION_RULE}
 - ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_IMAGE_DELTA_RULE}
 - **No per-source negative reports**: Never report individual negative findings per source (e.g. "no information found in Slack" or "checked Drive but found nothing"). Simply omit unproductive sources from the answer and focus on what was found or provide a concise overall conclusion.
 - **Conflict resolution (recency preference)**: When conflicting information exists among search results or evidence, treat the freshest and most recent information as the correct source of truth. Resolve discrepancies in favor of newer dates or timestamps.
-- **Honest and concise uncertainty**: When information is incomplete or uncertain, acknowledge it briefly without lengthy explanations of why it is uncertain. State that it is difficult to answer fully with the currently available information and searching continues. If any relevant clues or partial leads exist (even if not the exact answer), mention those clues concisely.
+- **Relevance**: ${ANSWER_RELEVANCE_RULE}
+- **Not-found handling**: In the fast answer: ${ANSWER_UNCONFIRMED_FAST_RULE} In any answer that can end the run: ${ANSWER_UNCONFIRMED_FINAL_RULE}
 
 ## Constraints${retrievedContentGuard}
 - **Prefer recent truth**: resolve conflicts between sources in favor of the freshest, most recent information.
-- **No fabrication**: report a negative result when evidence is absent.
+- **No fabrication**: never state what the evidence does not support; when evidence is absent, say so in one short line instead of describing what else was found.
 - **Curate, don't dump**: return useful knowledge units, not raw search output.
 - **Address intent**: answer the caller's actual need.
 - **Preserve traceability**: cite evidence by the ids retrieval tools show, so source paths and excerpts are attached for you.

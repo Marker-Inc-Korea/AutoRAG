@@ -228,6 +228,59 @@ describe("setup orchestration", () => {
 		expect(report.datasources.find((entry) => entry.name === "obsidian")?.state).toBe("configured");
 	});
 
+	describe("macOS-only kakao (#1998)", () => {
+		async function setupOn(platform: NodeJS.Platform, datasources: Record<string, unknown>) {
+			const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+			roots.push(root);
+			const configPath = join(root, "config.json");
+			writeFileSync(
+				configPath,
+				JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root, datasources }),
+			);
+			const report = await runSetup({
+				configPath,
+				workspacePath: root,
+				deps: {
+					platform,
+					env: { PATH: "/bin", HOME: root },
+					executable: () => undefined,
+					pathExists: () => true,
+					acquireLock: fakeLock,
+					embedder: fakeEmbedder({}),
+				},
+			});
+			return report.datasources;
+		}
+
+		const names = async (platform: NodeJS.Platform, datasources: Record<string, unknown> = {}) =>
+			(await setupOn(platform, datasources)).map((entry) => entry.name);
+
+		it("does not offer kakao on linux or windows when nothing configures it", async () => {
+			expect(await names("linux")).not.toContain("kakao");
+			expect(await names("win32")).not.toContain("kakao");
+		});
+
+		it("still offers it on darwin, and every other built-in stays offered everywhere", async () => {
+			const darwin = await names("darwin");
+			expect(darwin).toContain("kakao");
+			expect(await names("linux")).toEqual(darwin.filter((name) => name !== "kakao"));
+		});
+
+		it("reports a configured kakao connection as unsupported instead of probing it", async () => {
+			const report = await setupOn("linux", {
+				kakao: { connector: { binaryPath: "/opt/lazykatok" } },
+				"family-kakao": { type: "kakao" },
+			});
+			for (const name of ["kakao", "family-kakao"]) {
+				expect(report.find((entry) => entry.name === name)).toEqual({
+					name,
+					state: "skipped",
+					reason: "not supported on linux",
+				});
+			}
+		});
+	});
+
 	it("reports that no embedding backend is alive, with the way out, instead of discarding it", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
 		roots.push(root);
@@ -364,5 +417,83 @@ describe("discord native store probe", () => {
 	it("ignores a relative XDG_DATA_HOME", async () => {
 		const candidates = await discordCandidates({ HOME: "/h", XDG_DATA_HOME: "relative-xdg" });
 		expect(candidates).not.toContain(join("relative-xdg", "discrawl", "discrawl.db"));
+	});
+
+	it("installs filee-cli alongside the agent, and says where it came from", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const asked: unknown[] = [];
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({ backend: "daemon" }),
+				filee: async (options) => {
+					asked.push(options);
+					return { path: join(root, "tools", "filee-cli", "filee-cli"), source: "installed" };
+				},
+			},
+		});
+		expect(asked).toEqual([{ executable: undefined, autoInstall: undefined }]);
+		expect(report.filee).toEqual({ state: "installed", path: join(root, "tools", "filee-cli", "filee-cli") });
+		expect(report.ok).toBe(true);
+	});
+
+	it("reports a failed filee-cli install without failing the rest of setup", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({ backend: "daemon" }),
+				filee: async () => {
+					throw new Error("network down at /Users/alice/x");
+				},
+			},
+		});
+		expect(report.mode).toBe("semantic");
+		expect(report.filee?.state).toBe("failed");
+		expect(report.filee?.reason).toContain("network down");
+		expect(JSON.stringify(report)).not.toContain("/Users/alice");
+	});
+
+	it("leaves filee-cli alone when the operator turned conversion or auto-install off", async () => {
+		for (const filee of [{ enabled: false }, { autoInstall: false }]) {
+			const root = mkdtempSync(join(tmpdir(), "autorag-setup-"));
+			roots.push(root);
+			const configPath = join(root, "config.json");
+			writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root, filee }));
+			let called = false;
+			const report = await runSetup({
+				configPath,
+				workspacePath: root,
+				deps: {
+					env: { PATH: "/bin", HOME: root },
+					executable: () => undefined,
+					pathExists: () => true,
+					acquireLock: fakeLock,
+					embedder: fakeEmbedder({ backend: "daemon" }),
+					filee: async () => {
+						called = true;
+						return { path: "x", source: "installed" };
+					},
+				},
+			});
+			expect(called).toBe(false);
+			expect(report.filee?.state).toBe("skipped");
+		}
 	});
 });

@@ -6,12 +6,12 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { normalizeVirtualPath } from "../filesystem/source-paths.ts";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
 
@@ -45,11 +45,11 @@ interface MinSyncStagingState {
 
 export function syncMinSyncWorkspace(
 	root: string,
-	options: { readonly workspacePath?: string } = {},
+	options: { readonly workspacePath?: string; readonly minSyncBinaryPath?: string } = {},
 ): MinSyncWorkspaceSyncResult {
 	const workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(root);
 	const filesRoot = join(workspacePath, "files");
-	const index = loadMirrorIndex(root);
+	const index = loadMirrorIndex(root, options);
 	const candidates = Object.values(index.entries).sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
 	const excluded = candidates
 		.filter((entry) => normalizeVirtualPath(entry.virtualPath) !== entry.virtualPath || !existsSync(entry.outputPath))
@@ -114,7 +114,7 @@ function saveStagingState(workspacePath: string, state: MinSyncStagingState): vo
 	const path = stagingStatePath(workspacePath);
 	const temporaryPath = `${path}.${randomUUID()}.tmp`;
 	writeFileSync(temporaryPath, `${JSON.stringify(state, null, 2)}\n`);
-	renameSync(temporaryPath, path);
+	renameWithRetry(temporaryPath, path);
 }
 
 function isMinSyncStagingState(value: unknown): value is MinSyncStagingState {
@@ -158,7 +158,7 @@ function copyFileAtomically(source: string, destination: string): void {
 	const temporaryPath = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
 	try {
 		copyFileSync(source, temporaryPath);
-		renameSync(temporaryPath, destination);
+		renameWithRetry(temporaryPath, destination);
 	} finally {
 		rmSync(temporaryPath, { force: true });
 	}
@@ -183,8 +183,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-export function buildMinSyncPathMap(root: string, workspacePath: string): ReadonlyMap<string, MinSyncWorkspaceEntry> {
-	const index = loadMirrorIndex(root);
+export function buildMinSyncPathMap(
+	root: string,
+	workspacePath: string,
+	minSyncBinaryPath?: string,
+): ReadonlyMap<string, MinSyncWorkspaceEntry> {
+	const index = loadMirrorIndex(root, { minSyncBinaryPath });
 	const byPath = new Map<string, MinSyncWorkspaceEntry>();
 	for (const entry of Object.values(index.entries)) {
 		const minSyncPath = minSyncDocumentPath(workspacePath, entry.virtualPath);

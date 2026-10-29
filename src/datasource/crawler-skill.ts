@@ -9,7 +9,7 @@ import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSync
 import { datasourceCliError } from "./errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
 import { CrawlerSidecar, type CrawlerSidecarOptions, type SidecarSyncResult } from "./sidecar/index.ts";
-import { SidecarRetrievalMethod } from "./sidecar/methods.ts";
+import { sidecarFirstMethod } from "./sidecar/methods.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
@@ -193,27 +193,23 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		this.sidecar?.close();
 	}
 
+	/** One method: the sidecar's hybrid search (or BM25 without an embedder), with the CLI as the last fallback. */
 	retrievalMethods(): readonly RetrievalMethod[] {
 		const cli = this.cliMethod();
 		const { sidecar } = this;
 		if (sidecar === undefined) return [cli];
-		const shared = {
-			sidecar,
-			descriptor: sidecar.descriptor,
-			datasourceId: this.definition.datasourceId,
-			skillType: this.definition.skillType,
-			instanceId: this.instanceId,
-			tags: this.tags,
-		};
-		const bm25 = new SidecarRetrievalMethod({ ...shared, mode: "bm25" });
-		// Without an embedder, semantic is always empty and hybrid equals BM25; registering them would only
-		// add a duplicate-method corroboration bonus to the same hits.
-		if (!sidecar.semanticEnabled) return [cli, bm25];
 		return [
-			cli,
-			bm25,
-			new SidecarRetrievalMethod({ ...shared, mode: "semantic" }),
-			new SidecarRetrievalMethod({ ...shared, mode: "hybrid" }),
+			sidecarFirstMethod(
+				{
+					sidecar,
+					descriptor: sidecar.descriptor,
+					datasourceId: this.definition.datasourceId,
+					skillType: this.definition.skillType,
+					instanceId: this.instanceId,
+					tags: this.tags,
+				},
+				cli,
+			),
 		];
 	}
 

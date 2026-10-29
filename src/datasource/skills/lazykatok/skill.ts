@@ -1,9 +1,10 @@
+import { FallbackRetrievalMethod } from "../../../retrieval/fallback.ts";
 import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { connectorSyncTimeoutHint } from "../../connector-timeouts.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import { CrawlerSidecar, type CrawlerSidecarOptions, type SidecarSyncResult } from "../../sidecar/index.ts";
-import { SidecarRetrievalMethod } from "../../sidecar/methods.ts";
+import { sidecarFirstMethod } from "../../sidecar/methods.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
@@ -16,7 +17,7 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
-import { LazykatokBm25Method, type LazykatokSearchClient, LazykatokSemanticMethod } from "./methods.ts";
+import { LazykatokBm25Method, LazykatokHybridMethod, type LazykatokSearchClient } from "./methods.ts";
 import type { LazykatokDoctorResult, LazykatokIndexResult, LazykatokSyncResult } from "./types.ts";
 export interface LazykatokSkillClient extends LazykatokSearchClient {
 	doctor(signal?: AbortSignal): Promise<LazykatokDoctorResult>;
@@ -152,30 +153,25 @@ export class LazykatokSkill implements DatasourceSkill {
 		this.sidecar?.close();
 	}
 
+	/** One method: sidecar hybrid when a sidecar is configured, else the CLI's hybrid; BM25 is the fallback either way. */
 	retrievalMethods(): readonly RetrievalMethod[] {
-		const cliBm25 = new LazykatokBm25Method({ client: this.client, instanceId: this.instanceId, tags: this.tags });
+		const methodOptions = { client: this.client, instanceId: this.instanceId, tags: this.tags };
+		const cliBm25 = new LazykatokBm25Method(methodOptions);
 		const { sidecar } = this;
-		if (sidecar === undefined) {
-			return [
-				cliBm25,
-				new LazykatokSemanticMethod({ client: this.client, instanceId: this.instanceId, tags: this.tags }),
-			];
-		}
-		const shared = {
-			sidecar,
-			descriptor: sidecar.descriptor,
-			datasourceId: KAKAO_DATASOURCE_ID,
-			skillType: KAKAO_SKILL_TYPE,
-			instanceId: this.instanceId,
-			tags: this.tags,
-		};
-		const bm25 = new SidecarRetrievalMethod({ ...shared, mode: "bm25" });
-		if (!sidecar.semanticEnabled) return [cliBm25, bm25];
+		if (sidecar === undefined)
+			return [new FallbackRetrievalMethod(new LazykatokHybridMethod(methodOptions), [cliBm25])];
 		return [
-			cliBm25,
-			bm25,
-			new SidecarRetrievalMethod({ ...shared, mode: "semantic" }),
-			new SidecarRetrievalMethod({ ...shared, mode: "hybrid" }),
+			sidecarFirstMethod(
+				{
+					sidecar,
+					descriptor: sidecar.descriptor,
+					datasourceId: KAKAO_DATASOURCE_ID,
+					skillType: KAKAO_SKILL_TYPE,
+					instanceId: this.instanceId,
+					tags: this.tags,
+				},
+				cliBm25,
+			),
 		];
 	}
 

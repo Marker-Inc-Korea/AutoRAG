@@ -76,8 +76,8 @@ export interface CrawlerSidecarOptions {
 
 /** Messages embedded per request and per write transaction; bounds memory and keeps a failed sync resumable. */
 const DEFAULT_BATCH_SIZE = 256;
-/** About 9 s on the local gateway at the measured ~224 msg/s; 16.6k messages catch up in 9 refreshes. */
-const DEFAULT_MAX_EMBED_PER_SYNC = 2048;
+/** About 73 s at the ~224 msg/s measured on the local gateway; 31k messages catch up in two refreshes. */
+const DEFAULT_MAX_EMBED_PER_SYNC = 16_384;
 /**
  * Characters of one message sent to the embedder. The gateway rejects a request over 262,144 characters
  * (HTTP 413) and the embedder sends 32 inputs per request, so 8192 keeps any full request under the cap.
@@ -124,6 +124,8 @@ export class CrawlerSidecar {
 	private opened: DatabaseSync | undefined;
 	/** Identity of the attached crawler file; a crawler that replaces or deletes its archive forces a re-attach. */
 	private attached: { readonly dev: number; readonly ino: number } | undefined;
+	/** Base FTS table plus any language-specific tables present in the attached archive. */
+	private ftsTables: readonly { readonly table: string; readonly joinOn: string }[];
 	/**
 	 * The last query's embedding and ranking. The semantic and hybrid methods of one search ask for the same
 	 * query, so they share one embedding call and one vector scan. Short-lived, and dropped on any write.
@@ -134,6 +136,7 @@ export class CrawlerSidecar {
 		this.options = options;
 		const { descriptor } = options;
 		this.descriptor = descriptor;
+		this.ftsTables = [{ table: descriptor.fts.table, joinOn: descriptor.fts.joinOn }];
 		const metadataColumns = descriptor.metadata.map((column, index) => `${column.sql} as m${index}`);
 		this.select = [
 			`${descriptor.keyExpression} as k`,
@@ -184,29 +187,31 @@ export class CrawlerSidecar {
 		try {
 			const { dev, ino } = statSync(this.options.crawlerDbPath);
 			file = { dev, ino };
-		} catch {
+		} catch (error) {
 			this.detachCrawler();
-			return false;
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+			throw error;
 		}
 		if (this.attached !== undefined) {
 			if (this.attached.dev === file.dev && this.attached.ino === file.ino) return true;
 			this.detachCrawler();
 		}
 		const crawlerUri = `${pathToFileURL(this.options.crawlerDbPath).href}?mode=ro`.replaceAll("'", "''");
-		try {
-			this.db.exec(`attach database '${crawlerUri}' as crawler`);
-		} catch {
-			return false;
-		}
+		// A present but unreadable archive is a retrieval failure, not an empty index.
+		this.db.exec(`attach database '${crawlerUri}' as crawler`);
 		const { descriptor } = this.options;
 		try {
 			this.db
 				.prepare(`select ${this.select} from ${descriptor.fromClause} where ${this.where} limit 0`)
 				.all(...this.whereParams());
 			this.db.prepare(`select 1 from ${descriptor.fts.table} limit 0`).all();
-		} catch {
+			this.ftsTables = [
+				{ table: descriptor.fts.table, joinOn: descriptor.fts.joinOn },
+				...this.presentExtraTables(descriptor.fts.extraTables ?? []),
+			];
+		} catch (error) {
 			this.db.exec("detach database crawler");
-			return false;
+			throw error;
 		}
 		this.attached = file;
 		this.lastSemantic = undefined;
@@ -252,15 +257,54 @@ export class CrawlerSidecar {
 		const match = toMatchQuery(query);
 		if (match === undefined || topK <= 0 || !this.attachCrawler()) return [];
 		const { descriptor } = this.options;
+		const tables = this.ftsTables;
+		const byKey = new Map<string, { readonly row: Row; readonly bm25: number }>();
+		const rankings: string[][] = [];
+		for (const { table, joinOn } of tables) {
+			const rows = this.db
+				.prepare(
+					`select ${this.select}, bm25(${table}) as rank
+					from ${descriptor.fromClause} join ${table} on ${joinOn}
+					where ${table} match ? and ${this.where}
+					order by rank limit ?`,
+				)
+				.all(match, ...this.whereParams(), topK) as Row[];
+			const keys: string[] = [];
+			for (const row of rows) {
+				const key = String(row.k);
+				keys.push(key);
+				// A message in several tables is one piece of evidence; keep its first-seen row.
+				if (!byKey.has(key)) byKey.set(key, { row, bm25: Number(row.rank) });
+			}
+			rankings.push(keys);
+		}
+		// One table keeps the raw BM25 score; several tables fuse per-table ranks because bm25()
+		// statistics are not comparable across tokenizers.
+		if (rankings.length === 1) {
+			return rankings[0]!.map((key) => {
+				const entry = byKey.get(key)!;
+				return this.toHit(this.toRow(entry.row), -entry.bm25);
+			});
+		}
+		return reciprocalRankFusion(rankings)
+			.slice(0, topK)
+			.map(({ key, score }) => this.toHit(this.toRow(byKey.get(key)!.row), score));
+	}
+
+	/** Descriptor-declared FTS tables that the attached archive actually defines. */
+	private presentExtraTables(
+		extraTables: readonly { readonly table: string; readonly joinOn: string }[],
+	): { readonly table: string; readonly joinOn: string }[] {
+		if (extraTables.length === 0) return [];
 		const rows = this.db
 			.prepare(
-				`select ${this.select}, bm25(${descriptor.fts.table}) as rank
-				from ${descriptor.fromClause} join ${descriptor.fts.table} on ${descriptor.fts.joinOn}
-				where ${descriptor.fts.table} match ? and ${this.where}
-				order by rank limit ?`,
+				`select name from crawler.sqlite_master where type = 'table' and name in (${extraTables
+					.map(() => "?")
+					.join(", ")})`,
 			)
-			.all(match, ...this.whereParams(), topK) as Row[];
-		return rows.map((row) => this.toHit(this.toRow(row), -Number(row.rank)));
+			.all(...extraTables.map((entry) => entry.table)) as Row[];
+		const found = new Set(rows.map((row) => String(row.name)));
+		return extraTables.filter((entry) => found.has(entry.table));
 	}
 
 	/** Cosine search over embedded messages. Empty when there is no embedder or the query embedding fails. */

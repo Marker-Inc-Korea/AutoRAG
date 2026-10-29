@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
@@ -11,6 +11,12 @@ import {
 	type LocalAutoRAGModel,
 	loadLocalAutoRAGModel,
 } from "../agent/local-model.ts";
+import {
+	DEFAULT_PERMISSION_MODE,
+	PERMISSION_MODES,
+	type PermissionMode,
+	parsePermissionMode,
+} from "../agent/permission-gate.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import {
@@ -29,6 +35,7 @@ import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import { renameWithRetry } from "../mirror/atomic-write.ts";
 import {
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
@@ -220,6 +227,11 @@ export interface CliConfig {
 	 * agent's own model decompose.
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
+	/**
+	 * Approval gate for file changes by the agent: `auto` (default for the TUI: Jev first, user as fallback; `full` for `search` and a bridged TUI), `ask`
+	 * (the user approves every file-capable call, Jev unused), or `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
+	 */
+	permissionMode?: PermissionMode;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -229,6 +241,16 @@ export interface CliConfig {
 		timeoutMs?: number;
 	};
 	excludeExactDuplicates?: boolean;
+	/** Filee command line behind the `convert_files` tool. `enabled: false` removes the conversion tools. */
+	filee?: {
+		enabled?: boolean;
+		binaryPath?: string;
+		/** Download the pinned filee-cli into `<AUTORAG_HOME>/tools` when none is found. Default true. */
+		autoInstall?: boolean;
+		timeoutMs?: number;
+		/** Folder for Filee's own settings and engines (`FILEE_DATA_DIR`); default is Filee's per-user folder. */
+		dataDir?: string;
+	};
 	/** Absolute or workspace-relative files/directories omitted from local indexing. */
 	excludePaths?: string[];
 	/** Hard caps on retrieval, baseline prefetch, and model-facing candidate lists. */
@@ -244,6 +266,11 @@ export interface ResolveConfigInput {
 	env?: NodeJS.ProcessEnv;
 	cwd?: string;
 	readOnly?: boolean;
+	/**
+	 * Mode when no flag, environment variable, or config file sets one. Commands that run with nobody to approve
+	 * (`search`) or through a remote bridge pass `full`; the interactive TUI leaves it to the default (`auto`).
+	 */
+	defaultPermissionMode?: PermissionMode;
 }
 
 export interface ResolvedConfigPath {
@@ -336,7 +363,7 @@ function replaceFileAtomically(
 	try {
 		writeFileSync(temporaryPath, contents, { encoding: "utf8", flag: "wx", flush: true, mode: 0o600 });
 		assertCommitAllowed?.();
-		renameSync(temporaryPath, path);
+		renameWithRetry(temporaryPath, path);
 	} finally {
 		removeFileIfPresent(temporaryPath);
 	}
@@ -958,6 +985,12 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
 	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	config.permissionMode = resolvePermissionMode(
+		flags,
+		env,
+		file.permissionMode,
+		input.defaultPermissionMode ?? DEFAULT_PERMISSION_MODE,
+	);
 	if (file.queryDecomposition !== undefined) {
 		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
 	}
@@ -967,6 +1000,12 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 			throw new ConfigError("Config field 'dupey' must be an object");
 		}
 		config.dupey = file.dupey as CliConfig["dupey"];
+	}
+	if (file.filee !== undefined) {
+		if (typeof file.filee !== "object" || file.filee === null || Array.isArray(file.filee)) {
+			throw new ConfigError("Config field 'filee' must be an object");
+		}
+		config.filee = file.filee as CliConfig["filee"];
 	}
 	if (file.excludeExactDuplicates !== undefined && typeof file.excludeExactDuplicates !== "boolean") {
 		throw new ConfigError("Config field 'excludeExactDuplicates' must be a boolean");
@@ -989,6 +1028,36 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
  */
 export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 	return resolveConfig({ ...input, readOnly: true });
+}
+
+/**
+ * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then the
+ * command's own default (`auto` unless the command says otherwise). An unknown value is an error from any
+ * source, never a silent fallback to a weaker gate.
+ */
+function resolvePermissionMode(
+	flags: Record<string, string | boolean | undefined>,
+	env: NodeJS.ProcessEnv,
+	fileValue: unknown,
+	fallback: PermissionMode,
+): PermissionMode {
+	const valid = PERMISSION_MODES.join(", ");
+	const flag = flagString(flags, "permission-mode");
+	if (flag !== undefined) {
+		const mode = parsePermissionMode(flag);
+		if (mode === undefined) throw new ConfigError(`--permission-mode must be one of: ${valid}`);
+		return mode;
+	}
+	const fromEnv = envString(env, "AUTORAG_PERMISSION_MODE");
+	if (fromEnv !== undefined) {
+		const mode = parsePermissionMode(fromEnv);
+		if (mode === undefined) throw new ConfigError(`AUTORAG_PERMISSION_MODE must be one of: ${valid}`);
+		return mode;
+	}
+	if (fileValue === undefined) return fallback;
+	const mode = parsePermissionMode(fileValue);
+	if (mode === undefined) throw new ConfigError(`Config field 'permissionMode' must be one of: ${valid}`);
+	return mode;
 }
 
 const JEV_CONFIG_FIELDS: Record<string, true> = {
@@ -1273,6 +1342,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	opts.jev = buildJevAgentOption(config.jev, agentDir);
+	opts.permissionMode = config.permissionMode;
 	// The Jev `config` branch edits the very file this process resolved; it only
 	// takes effect when Jev is on, so the option is always safe to pass.
 	if (config.configPath !== undefined) {
@@ -1301,6 +1371,16 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		opts.dupey = {
 			...(config.dupey?.binaryPath ? { executable: config.dupey.binaryPath } : {}),
 			...(config.dupey?.timeoutMs ? { timeoutMs: config.dupey.timeoutMs } : {}),
+		};
+	}
+	if (config.filee?.enabled === false) {
+		opts.filee = false;
+	} else {
+		opts.filee = {
+			...(config.filee?.binaryPath ? { executable: config.filee.binaryPath } : {}),
+			...(config.filee?.autoInstall === false ? { autoInstall: false } : {}),
+			...(config.filee?.timeoutMs ? { timeoutMs: config.filee.timeoutMs } : {}),
+			...(config.filee?.dataDir ? { dataDir: config.filee.dataDir } : {}),
 		};
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;

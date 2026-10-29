@@ -20,16 +20,19 @@ import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import {
+	DiscordAttachmentStore,
 	DiscrawlClient,
 	type DiscrawlEmbeddingRuntime,
 	type DiscrawlOptions,
 	DiscrawlSkill,
+	discordAttachmentsRoot,
 } from "./discrawl/index.ts";
+import { resolveDiscrawlSidecarOptions } from "./discrawl/sidecar.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
+import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
-import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
@@ -124,6 +127,82 @@ function chatCrawlerArgs(
 	};
 }
 
+function histerConnectorOptions(connector: Record<string, unknown> | undefined): {
+	readonly baseUrl?: string;
+	readonly tokenEnv?: string;
+	readonly timeoutMs?: number;
+	readonly semantic?: boolean;
+} {
+	if (connector === undefined) return {};
+	const { baseUrl, tokenEnv, timeoutMs, semantic } = connector;
+	return {
+		...(typeof baseUrl === "string" ? { baseUrl } : {}),
+		...(typeof tokenEnv === "string" ? { tokenEnv } : {}),
+		...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+		...(typeof semantic === "boolean" ? { semantic } : {}),
+	};
+}
+
+type DiscordConnector = DiscrawlOptions & { readonly embedLimit?: number; readonly downloadAttachments?: boolean };
+
+function discordClient(
+	connector: DiscordConnector,
+	workspaceRoot: string | undefined,
+	embedding: DatasourceEmbeddingOptions,
+): DiscrawlClient {
+	const { downloadAttachments: _download, embedLimit: _limit, ...clientConnector } = connector;
+	return new DiscrawlClient({
+		...clientConnector,
+		...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
+		...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),
+	});
+}
+
+function discordAttachmentStore(
+	registrationName: string,
+	config: DatasourceSkillConfig,
+	client: DiscrawlClient,
+	guildId: string | undefined,
+): DiscordAttachmentStore {
+	return new DiscordAttachmentStore({
+		client,
+		root: discordAttachmentsRoot(registrationName),
+		...(guildId === undefined ? {} : { guildId }),
+		...(config.channels?.ids === undefined ? {} : { channelIds: config.channels.ids }),
+		...(config.channels?.names === undefined ? {} : { channelNames: config.channels.names }),
+	});
+}
+
+export interface DiscordAttachmentConnection {
+	readonly name: string;
+	/** Whether refreshes download automatically (`connector.downloadAttachments !== false`, default on). */
+	readonly autoDownload: boolean;
+	readonly store: DiscordAttachmentStore;
+}
+
+/**
+ * Every enabled Discord connection's attachments folder, built exactly as a refresh builds it, so
+ * `autorag attachments` and the refresh always agree on where files live.
+ */
+export function discordAttachmentConnections(
+	config: DatasourcesConfig | undefined,
+	workspaceRoot?: string,
+): readonly DiscordAttachmentConnection[] {
+	const out: DiscordAttachmentConnection[] = [];
+	for (const [name, raw] of Object.entries(config ?? {})) {
+		if (raw === false) continue;
+		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
+		if (entry.enabled === false || (entry.type ?? name) !== "discord") continue;
+		const connector = (entry.connector ?? {}) as DiscordConnector;
+		out.push({
+			name,
+			autoDownload: connector.downloadAttachments !== false,
+			store: discordAttachmentStore(name, entry, discordClient(connector, workspaceRoot, {}), connector.guildId),
+		});
+	}
+	return out;
+}
+
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 	telegram: (config, workspaceRoot, registrationName, embedding) =>
 		new TelecrawlSkill(
@@ -159,11 +238,14 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			),
 		),
 	discord: (config, workspaceRoot, registrationName, embedding) => {
-		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
-		const clientOptions: DiscrawlOptions = {
-			...connector,
-			...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
-		};
+		const connector = (config.connector ?? {}) as DiscordConnector;
+		const sidecar = resolveDiscrawlSidecarOptions({
+			connector: config.connector,
+			workspaceRoot,
+			registrationName,
+			instanceId: config.instanceId ?? "default",
+		});
+		const client = discordClient(connector, workspaceRoot, embedding);
 		return new DiscrawlSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -171,13 +253,14 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
-			client: new DiscrawlClient({
-				...clientOptions,
-				...(embedding.discrawl === undefined ? {} : { embeddingRuntime: embedding.discrawl }),
-			}),
+			...(sidecar === undefined ? {} : { sidecar }),
+			client,
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
+			...(connector.downloadAttachments === false
+				? {}
+				: { attachments: discordAttachmentStore(registrationName, config, client, connector.guildId) }),
 		});
 	},
 	clawgallery: (config, workspaceRoot, registrationName) => {
@@ -216,6 +299,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			...(config.channels?.ids !== undefined ? { chatIds: config.channels.ids } : {}),
 			...larkConnectorOptions(config.connector),
+		}),
+	hister: (config, _workspaceRoot, registrationName) =>
+		new HisterSkill({
+			datasourceId: registrationName,
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			...histerConnectorOptions(config.connector),
 		}),
 	kakao: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as LazykatokOptions;
@@ -281,12 +371,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				...(config.connector as RcloneConnectorOptions),
 			},
 		}),
-	"mail-export": (config, workspaceRoot, registrationName) =>
-		new MailExportSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: config.connector as MailExportConnectorOptions,
-		}),
 	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
@@ -318,8 +402,21 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		}),
 };
 
-/** Skill names this factory can build. */
-export const BUILTIN_DATASOURCE_SKILL_NAMES: readonly string[] = Object.keys(BUILDERS);
+/** Skills whose backend runs on one platform only; elsewhere they are neither offered nor built. */
+const PLATFORM_ONLY_SKILLS: Readonly<Record<string, NodeJS.Platform>> = { kakao: "darwin" };
+
+/** Whether the skill's backend exists on `platform`. Names with no platform restriction are always supported. */
+export function datasourceSkillSupported(name: string, platform: NodeJS.Platform = process.platform): boolean {
+	return (PLATFORM_ONLY_SKILLS[name] ?? platform) === platform;
+}
+
+/** Skill names this factory can build on `platform`. */
+export function builtinDatasourceSkillNames(platform: NodeJS.Platform = process.platform): readonly string[] {
+	return Object.keys(BUILDERS).filter((name) => datasourceSkillSupported(name, platform));
+}
+
+/** Skill names this factory can build on the running platform. */
+export const BUILTIN_DATASOURCE_SKILL_NAMES: readonly string[] = builtinDatasourceSkillNames();
 
 function larkConnectorOptions(connector: Record<string, unknown> | undefined): {
 	readonly binaryPath?: string;
@@ -365,7 +462,10 @@ export function buildDatasourceSkills(
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
 		const templateName = entry.type ?? name;
-		const builder = Object.hasOwn(BUILDERS, templateName) ? BUILDERS[templateName] : undefined;
+		const builder =
+			Object.hasOwn(BUILDERS, templateName) && datasourceSkillSupported(templateName)
+				? BUILDERS[templateName]
+				: undefined;
 		if (builder === undefined) {
 			unknown.push(name);
 			continue;

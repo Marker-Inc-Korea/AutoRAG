@@ -6,7 +6,7 @@ These bind every agent and human working in this checkout. Force is CI, CODEOWNE
 
 ### Allowed
 
-Edits inside `src/`, `test/`, `scripts/`, `skills/`, and `docs/` that stay within the task.
+Edits inside `src/`, `test/`, `scripts/`, `skills/`, `internal-skills/`, and `docs/` that stay within the task.
 
 ### Forbidden
 
@@ -49,11 +49,7 @@ Finished means the PR has been opened, or the review has been completed and no f
 
 1. Commit and push **tracked** changes only (`git add -u`, then commit, then push). This is a standing request to commit at finish — do not wait for a per-session "please commit."
 2. Do not add untracked files. `git add .` and `git add -A` are forbidden at this step. Untracked files stay untracked. If the finished work introduced new files that must ship, add those paths explicitly by name — never a recursive add of the working tree.
-3. If there is nothing tracked to commit, skip commit/push and still return to `main`.
-4. `git checkout main`.
-5. Sync local `main` with `origin/main` (`git pull --ff-only origin main`).
-
-Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
+3. If there is nothing tracked to commit, skip commit/push.
 
 ### DCO sign-off (binding)
 
@@ -181,7 +177,7 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- MinSync 0.4.11 or newer on `PATH`. The runner starts a `minsync serve` daemon
+- MinSync 0.4.12 or newer on `PATH`. The runner starts a `minsync serve` daemon
   for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
   model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
   the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
@@ -392,6 +388,15 @@ write new files, edit or replace existing files, and move files to the OS trash
   that" works from the conversation alone.
 - **Only when asked.** Retrieval, answering, and curation never modify files on
   their own.
+- **The organize turn's rules are a packaged skill.** When Jev routes a request
+  to `organize`, the turn loads `internal-skills/organize/SKILL.md` as a
+  `<skill name="organize" location="autorag-skill://organize">` invocation
+  (plan first, never overwrite, trash instead of deleting, confirm with a
+  listing, report every change as old path → new path) and its prompt names the
+  tools to use while keeping retrieval, datasource, and web search out of the
+  turn. No route changes the session's active tool set, so the prompt and the
+  skill are what scope the work. If the skill cannot be loaded, the run falls
+  back to `local` with an `organize-skill-unavailable` diagnostic.
 - **Indexing is separate.** `refresh`, `watch`, `lite`, `setup`, and `doctor`
   never modify source documents; they write only under the workspace
   `.autorag/` directory, Jikji's central store, and `~/.autorag`. Agents that
@@ -520,7 +525,7 @@ Datasource skills are retrieval-method factories plus indexing hooks for externa
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
 ## Directory Access
 
@@ -594,13 +599,14 @@ configured for the run is never shown. See
 | `src/agent/bash-tool.ts` | Direct filesystem discovery and document-reading tool |
 | `src/agent/jev-extension.ts` | Shared Jev judge (`createJevJudge`) and the optional `jev` pi extension tool |
 | `src/agent/mcp-client.ts` | Connects the user's external MCP servers (`<piAgentDir>/mcp.json` only; project `.pi/mcp.json` is ignored) through pi's MCP, codemode, and tool-search extensions, carries pi's `mcp_servers` prompt section into AutoRAG's forced system prompt, and names the tools the session allow-list must keep |
-| `src/agent/query-routing.ts` | Jev query router: direct (intrinsic knowledge) / local branch, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
+| `src/agent/query-routing.ts` | Jev query router: local / organize (file and folder actions) / extra (a knowledge answer or any other action, one turn with every tool) / config branches, the 0.75 non-local confidence floor, the decomposition check, the per-datasource search check, and the post-fast-answer follow-up check |
 | `src/agent/query-decomposition.ts` | LLM question decomposition into at most five search queries |
 | `src/agent/results.ts` | Result types (`AutoRAGResultsDetails`) and `reportSchema` (explicit `mapping`) used by `autorag report` and the MCP report tool |
 | `src/agent/answer-citations.ts` | `deriveResultsFromAnswer`: resolves the model's inline `[eN]` / `[file:<path>]` citations against the evidence ledger and derives the numbered results, mapping, and `citation-without-result` diagnostics from the plain answer |
 | `src/agent/evidence-ledger.ts` | `EvidenceLedger`: every retrieval tool registers what it returned and prints an `[eN]` id; `lookup` resolves a cited id back to the recorded source, method, and chunk without throwing. Ids only count up and are never reissued, so a stale id can never alias new evidence. A bound TUI conversation keeps one ledger for its whole life; a programmatic run with no transcript starts from an empty one. `takeUnsaved` / `restore` let the hosting session persist and rebuild it |
 | `src/agent/evidence-persistence.ts` | pi extension that appends new ledger entries to the session file as `autorag.evidence` entries and rebuilds the ledger from the branch in view on `session_start` (resume, `/new`, fork) and `session_tree`, so an id the model saw keeps resolving across turns, tool calls, resumes, and restarts |
 | `src/agent/search-progress.ts` | `SearchProgressTracker` (what the running search is doing: routing, decomposition, each retrieval source's hits/failures/time, ranking, model phases), `renderSearchProgress` (pure widget lines), and `createSearchProgressExtension`, the pi extension that shows it as the `autorag-search-progress` widget from submit until the answer is final. Reports outside a begun search are ignored, so the library path pays nothing |
+| `src/agent/intent-tracing.ts` | Intent tracing (ported from oh-my-pi): declares a required `i` argument on every tool in each model request, strips it before the tool runs, and shows the newest one as pi's working message; `searchDocumentsStream` reports the same text as `progress` |
 | `src/agent/jikji-find-tool.ts` | `jikji_find` local-discovery tool |
 | `src/agent/everything-search-tool.ts` | `everything_search` Windows file-name search tool |
 | `src/everything/` | Bundled Everything extraction/verification (`bundle.ts`) and the per-workspace instance + ES client (`client.ts`) |
@@ -636,5 +642,12 @@ configured for the run is never shown. See
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mailcrawl, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
+| `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
+| `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |
+| `src/profiles/retrieval-tools.ts` | Optional `search_all_documents` / `search_datasource_<id>` tools for a profile, backed by an agent whose memory file is a throwaway |
+| `src/profiles/automation-profiles.ts` | Code-defined profiles an automation rule may name (`file-triage` read-only, `file-organizer` writes); a rule carries an id, never a prompt or tool list |
+| `src/profiles/loop-guard.ts` | The mandatory system-prompt section appended to every automation agent run: names the rule's folders, file types and events and forbids triggering the rule again |
+| `src/automation/run-agent.ts` | Runs an agent rule: profile + loop guard, changed files as the user message, final reply logged like a command's stdout |
+| `src/automation/dispatch.ts` | `runRule`: the one entry for command and agent rules; at most one agent run in flight across rules |

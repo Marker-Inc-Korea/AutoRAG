@@ -65,12 +65,12 @@ async function tui(responses: FauxResponseStep[]) {
 		jikji: false,
 		piAgentDir: agentDir,
 		piSessionDir: join(root, "sessions"),
-		// The direct route sends the question straight to the model: no retrieval backend is involved.
+		// The extra route sends the question straight to the model: no retrieval backend is involved.
 		jev: {
 			backend: new MockBackend({
 				[QUERY_ROUTE_QUESTION_ID]: {
-					answer: "direct",
-					distribution: { local: 0.1, web: 0.1, direct: 0.8 },
+					answer: "extra",
+					distribution: { local: 0.1, organize: 0.1, extra: 0.8 },
 					confidence: 0.8,
 				},
 				[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },
@@ -274,8 +274,8 @@ describe("external MCP servers in headless AutoRAG searches", () => {
 			jev: {
 				backend: new MockBackend({
 					[QUERY_ROUTE_QUESTION_ID]: {
-						answer: "direct",
-						distribution: { local: 0.1, web: 0.1, direct: 0.8 },
+						answer: "extra",
+						distribution: { local: 0.1, organize: 0.1, extra: 0.8 },
 						confidence: 0.8,
 					},
 					[DECOMPOSE_QUESTION_ID]: { answer: 0.1 },

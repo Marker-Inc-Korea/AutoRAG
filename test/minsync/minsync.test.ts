@@ -23,6 +23,7 @@ import {
 	ensureMinSyncBinary,
 	MINSYNC_VERSION,
 	MinSyncClient,
+	MinSyncHybridMethod,
 	MinSyncQueryError,
 	MinSyncReleaseError,
 	MinSyncRequiredError,
@@ -31,8 +32,10 @@ import {
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
-import { saveMirrorIndex } from "../../src/mirror/index.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
+import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
+import { seedMinSyncStage } from "../helpers/seed-minsync-stage.ts";
 
 let root: string;
 let source: string;
@@ -41,7 +44,7 @@ let minsyncBinary: string;
 let minsyncWorkspace: string;
 let logPath: string;
 
-beforeEach(() => {
+beforeEach(async () => {
 	root = mkdtempSync(join(tmpdir(), "autorag-minsync-test-"));
 	source = join(root, "docs");
 	const parsedRoot = join(root, ".autorag", "parsed", "files", "docs");
@@ -54,7 +57,7 @@ beforeEach(() => {
 	mkdirSync(minsyncWorkspace, { recursive: true });
 	writeFileSync(join(source, "policy.txt"), "raw policy source\n");
 	writeFileSync(parsedOutput, "Parsed renewal policy with cancellation terms.\n");
-	saveMirrorIndex(root, {
+	await seedMinSyncStage(root, {
 		version: 1,
 		entries: {
 			"/docs/policy.txt": {
@@ -92,6 +95,7 @@ function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 
 		`#!/usr/bin/env node
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 
 const args = process.argv.slice(2);
 const config = join(process.cwd(), ".minsync", "config.toml");
@@ -99,6 +103,7 @@ const cursor = join(process.cwd(), ".minsync", "cursor.json");
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
 appendFileSync(${JSON.stringify(`${logPath}.env`)}, JSON.stringify({ command: args[0], openaiKey: process.env.OPENAI_API_KEY ?? null }) + "\\n");
 
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   const languageIndex = args.indexOf("--language");
@@ -129,6 +134,7 @@ if (args[0] === "query") {
 
 console.error("unexpected fake minsync command: " + args.join(" "));
 process.exit(2);
+}
 `,
 	);
 	chmodSync(minsyncBinary, 0o755);
@@ -225,6 +231,10 @@ process.exit(2);
 			minsyncBinary,
 			`#!/usr/bin/env node
 import { writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+if (process.argv[2] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir: process.argv[process.argv.indexOf("--state-dir") + 1] });
+} else
 if (process.argv[2] === "query") {
   writeFileSync(${JSON.stringify(startedMarker)}, "");
   setInterval(() => {}, 1 << 30);
@@ -304,7 +314,7 @@ describe("MinSyncVectorMethod", () => {
 		);
 		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["check", "--format", "json"], cwd: minSyncCwd() }));
 		expect(loggedCalls()).toContainEqual(
-			JSON.stringify({ args: ["sync", "--full", "--format", "json"], cwd: minSyncCwd() }),
+			JSON.stringify({ args: ["sync", "--full", "--format", "json", "--progress", "jsonl"], cwd: minSyncCwd() }),
 		);
 	});
 
@@ -313,7 +323,7 @@ describe("MinSyncVectorMethod", () => {
 		const guideOutput = join(root, ".autorag", "parsed", "files", "docs", "guide.txt.md");
 		writeFileSync(join(source, "guide.txt"), "raw guide source\n");
 		writeFileSync(guideOutput, "Parsed guide that does not change.\n");
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/guide.txt": {
@@ -350,7 +360,7 @@ describe("MinSyncVectorMethod", () => {
 
 		// When
 		writeFileSync(parsedOutput, "Parsed renewal policy with updated cancellation terms.\n");
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/guide.txt": {
@@ -386,7 +396,7 @@ describe("MinSyncVectorMethod", () => {
 		const archiveOutput = join(root, ".autorag", "parsed", "files", "docs", "archive.txt.md");
 		writeFileSync(join(source, "archive.txt"), "raw archive source\n");
 		writeFileSync(archiveOutput, "Parsed archive to remove.\n");
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/archive.txt": {
@@ -423,7 +433,7 @@ describe("MinSyncVectorMethod", () => {
 		const noticeOutput = join(root, ".autorag", "parsed", "files", "docs", "notice.txt.md");
 		writeFileSync(join(source, "notice.txt"), "raw notice source\n");
 		writeFileSync(noticeOutput, "Parsed new notice.\n");
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/notice.txt": {
@@ -471,7 +481,7 @@ describe("MinSyncVectorMethod", () => {
 			writeFileSync(join(source, "what ? query.txt"), "raw query-marked source\n");
 			writeFileSync(queryOutput, "Parsed query-marked note about payouts.\n");
 		}
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/policy.txt": {
@@ -617,7 +627,7 @@ describe("MinSyncVectorMethod", () => {
 
 		// Then
 		expect(existsSync(orphanPath)).toBe(false);
-		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation and refund terms");
+		expect(readFileSync(stagedPolicy, "utf8")).toBe(readFileSync(parsedOutput, "utf8"));
 	});
 
 	it("rebuilds a symlinked staging root without touching its target", async () => {
@@ -670,6 +680,52 @@ describe("MinSyncVectorMethod", () => {
 		expect(lstatSync(stagedPolicy).isSymbolicLink()).toBe(false);
 		expect(lstatSync(stagedPolicy).isFile()).toBe(true);
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
+	});
+
+	it("stamps the line range and enclosing article of a chunk found in the parsed mirror (#1692)", async () => {
+		// Given
+		writeFileSync(
+			parsedOutput,
+			[
+				"# 이용약관",
+				"",
+				"제5조(회원의 의무)",
+				"① 회원은 관계 법령을 준수하여야 한다.",
+				"② 회원은 타인의 계정을 도용하여서는 아니 된다.",
+				"",
+			].join("\n"),
+		);
+		await seedMinSyncStage(root, {
+			version: 1,
+			entries: {
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 2,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-02T00:00:00.000Z",
+				},
+			},
+		});
+		writeFakeMinSync(
+			JSON.stringify({
+				results: [
+					{ path: parsedOutput, score: 0.9, text: "② 회원은 타인의 계정을 도용하여서는 아니 된다." },
+					{ path: parsedOutput, score: 0.8, text: "text the mirror does not contain" },
+				],
+			}),
+		);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+		// When
+		const results = await method.retrieve("계정 도용", { topK: 2 });
+
+		// Then
+		expect(results[0]?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 5, section: "제5조(회원의 의무)" });
+		expect(results[1]?.metadata).not.toHaveProperty("lineNumber");
+		expect(results[1]?.metadata).not.toHaveProperty("section");
 	});
 
 	it("returns vector results with the canonical virtual source", async () => {
@@ -747,6 +803,10 @@ describe("MinSyncVectorMethod", () => {
 			`#!/usr/bin/env node
 import { closeSync, mkdirSync, openSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+if (process.argv[2] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir: process.argv[process.argv.indexOf("--state-dir") + 1] });
+} else {
 
 const lock = join(process.cwd(), ".minsync", "lock");
 mkdirSync(dirname(lock), { recursive: true });
@@ -765,6 +825,7 @@ await new Promise((resolve) => setTimeout(resolve, 120));
 unlinkSync(lock);
 console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "Parsed renewal policy with cancellation terms." }] }));
 process.exit(0);
+}
 `,
 		);
 		chmodSync(minsyncBinary, 0o755);
@@ -783,6 +844,35 @@ process.exit(0);
 
 		expect(semantic).toHaveLength(1);
 		expect(hybridResults).toHaveLength(1);
+	});
+
+	it("answers a failed hybrid query from BM25 and tells the pipeline the semantic half was down", async () => {
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { createRequire } from "node:module";
+const args = process.argv.slice(2);
+if (args[0] === "stage") {
+  createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir: args[args.indexOf("--state-dir") + 1] });
+} else {
+if (args[args.indexOf("--mode") + 1] === "hybrid") {
+  console.error("embedder unreachable at http://127.0.0.1:9");
+  process.exit(2);
+}
+console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "BM25 answer." }] }));
+}
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const hybrid = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const events: RetrievalFallbackEvent[] = [];
+
+		const results = await hybrid.retrieve("renewal", { topK: 2, onFallback: (event) => events.push(event) });
+
+		expect(results.map((result) => result.content)).toEqual(["BM25 answer."]);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ method: "hybrid", fallback: "bm25" });
+		expect(events[0]?.reason).toContain("embedder unreachable at http://127.0.0.1:9");
 	});
 
 	it("fails fast instead of waiting behind a refresh sync", async () => {
@@ -939,7 +1029,8 @@ process.exit(0);
 			cargoInstaller: async (destination) => {
 				order.push("cargo");
 				mkdirSync(join(root, ".autorag", "bin"), { recursive: true });
-				writeFileSync(destination, "#!/usr/bin/env cargo-minsync\n");
+				writeFakeMinSync(JSON.stringify({ results: [] }));
+				copyFileSync(minsyncBinary, destination);
 				chmodSync(destination, 0o755);
 				return { binaryPath: destination, version: MINSYNC_VERSION };
 			},
@@ -956,7 +1047,6 @@ process.exit(0);
 
 		expect(order).toEqual(["cargo"]);
 		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: MINSYNC_VERSION });
-		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-minsync");
 	});
 
 	it("does not compile minsync from cargo during NODE_ENV=test without an injected locator", async () => {
@@ -983,7 +1073,8 @@ process.exit(0);
 			},
 			assetInstaller: async (_asset, destination) => {
 				order.push("github-asset");
-				writeFileSync(destination, "#!/usr/bin/env node\n");
+				writeFakeMinSync(JSON.stringify({ results: [] }));
+				copyFileSync(minsyncBinary, destination);
 				chmodSync(destination, 0o755);
 			},
 		});
@@ -1017,7 +1108,8 @@ process.exit(0);
 			},
 			assetInstaller: async (_asset, destination) => {
 				order.push("github-asset");
-				writeFileSync(destination, "#!/usr/bin/env node\n");
+				writeFakeMinSync(JSON.stringify({ results: [] }));
+				copyFileSync(minsyncBinary, destination);
 				chmodSync(destination, 0o755);
 			},
 		});
@@ -1049,14 +1141,14 @@ process.exit(0);
 			releaseProvider: async () => release,
 			assetInstaller: async (asset, destination) => {
 				expect(asset.name).toBe("minsync-v0.2.1-aarch64-apple-darwin.tar.gz");
-				writeFileSync(destination, "#!/usr/bin/env node\n");
+				writeFakeMinSync(JSON.stringify({ results: [] }));
+				copyFileSync(minsyncBinary, destination);
 				chmodSync(destination, 0o755);
 			},
 		});
 
 		// Then
 		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
-		expect(readFileSync(installedBinary, "utf8")).toContain("node");
 	});
 
 	it("falls back to the GitHub release asset when cargo install throws", async () => {
@@ -1081,12 +1173,46 @@ process.exit(0);
 			},
 			releaseProvider: async () => release,
 			assetInstaller: async (_asset, destination) => {
-				writeFileSync(destination, "#!/usr/bin/env node\n");
+				writeFakeMinSync(JSON.stringify({ results: [] }));
+				copyFileSync(minsyncBinary, destination);
 				chmodSync(destination, 0o755);
 			},
 		});
 
 		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
+	});
+
+	it("rejects an incompatible downloaded binary without leaving it cached or opening a stage", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		rmSync(join(root, ".autorag", "parsed", "stage"), { recursive: true, force: true });
+		await expect(
+			ensureMinSyncBinary({
+				root,
+				platform: "darwin",
+				arch: "arm64",
+				cargoInstaller: async () => undefined,
+				releaseProvider: async () => ({
+					tagName: "v0.5.0",
+					assets: [
+						{
+							name: "minsync-v0.5.0-aarch64-apple-darwin.tar.gz",
+							downloadUrl: "https://example.test/minsync.tgz",
+							sha256: "a".repeat(64),
+						},
+					],
+				}),
+				assetInstaller: async (_asset, destination) => {
+					writeFileSync(
+						destination,
+						`#!/usr/bin/env node
+process.stdin.once("data", () => console.log(JSON.stringify({ ok: false, op: "unknown", error: { code: "invalid_request", message: "unknown capabilities" } })));
+`,
+					);
+				},
+			}),
+		).rejects.toMatchObject({ code: "unsupported_protocol" });
+		expect(existsSync(installedBinary)).toBe(false);
+		expect(existsSync(join(root, ".autorag", "parsed", "stage"))).toBe(false);
 	});
 
 	it("rejects release assets without a usable sha256 digest", async () => {
@@ -1430,7 +1556,7 @@ max_chunk_size = 4096
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[] })
 			.find((call) => call.args[0] === "sync");
-		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 	});
 
 	it("restores the previous config when a forced full sync fails", async () => {
@@ -1445,11 +1571,15 @@ max_chunk_size = 4096
 import { appendFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
+if (args[0] === "stage") {
+  (await import("node:module")).createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir: args[args.indexOf("--state-dir") + 1] });
+} else {
 const cursor = join(process.cwd(), ".minsync", "cursor.json");
 const entry = { args, ...(args[0] === "sync" ? { cursorExists: existsSync(cursor) } : {}) };
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(entry) + "\\n");
 if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
 if (args[0] === "sync") process.exit(1);
+}
 `,
 		);
 		chmodSync(minsyncBinary, 0o755);
@@ -1710,7 +1840,7 @@ describe("MinSync embedder selection", () => {
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line))
 			.find((call) => call.args[0] === "sync");
-		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCall.args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
 	});
 });
@@ -1773,11 +1903,11 @@ describe("Qwen3 query instruction in MinSync config", () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		// Index built before the instruction existed: empty query prefix.
 		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, queryPrefix: "" }).sync();
-		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 		// Same documents, new default query prefix: incremental, not --full.
 		const result = await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024 }).sync();
 		expect(result.ok).toBe(true);
-		expect(syncCalls().at(-1).args).toEqual(["sync", "--format", "json"]);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--format", "json", "--progress", "jsonl"]);
 		expect(readIdentity().queryPrefix).toBe(QWEN3_QUERY_PREFIX);
 		expect(result.diagnostic).toBeUndefined();
 	});
@@ -1786,7 +1916,7 @@ describe("Qwen3 query instruction in MinSync config", () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "" }).sync();
 		await client({ id: "native:Qwen/Qwen3-Embedding-0.6B", dimension: 1024, passagePrefix: "passage: " }).sync();
-		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json"]);
+		expect(syncCalls().at(-1).args).toEqual(["sync", "--full", "--format", "json", "--progress", "jsonl"]);
 	});
 });
 
@@ -1982,9 +2112,13 @@ describe("MinSync lexical (BM25) tokenizer", () => {
 			`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
+if (args[0] === "stage") {
+  (await import("node:module")).createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir: args[args.indexOf("--state-dir") + 1] });
+} else {
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
 if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
 if (args[0] === "sync") process.exit(1);
+}
 `,
 		);
 		chmodSync(minsyncBinary, 0o755);

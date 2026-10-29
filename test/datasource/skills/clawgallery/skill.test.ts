@@ -3,6 +3,7 @@ import { formatDatasourceSkillInvocation } from "../../../../src/agent/datasourc
 import { ClawGallerySkill, type ClawGallerySkillClient } from "../../../../src/datasource/skills/clawgallery/skill.ts";
 import type {
 	ClawGalleryIndexResult,
+	ClawGallerySearchMode,
 	ClawGallerySearchResult,
 	ClawGalleryVdrResult,
 } from "../../../../src/datasource/skills/clawgallery/types.ts";
@@ -14,7 +15,7 @@ class StubClient implements ClawGallerySkillClient {
 	async syncVisual(): Promise<ClawGalleryVdrResult> {
 		return { ok: true, data: { processed: 2, skipped: 5, failed: 0 }, stdout: "", stderr: "", code: 0 };
 	}
-	async search(): Promise<ClawGallerySearchResult> {
+	async search(_mode: ClawGallerySearchMode): Promise<ClawGallerySearchResult> {
 		return {
 			ok: true,
 			hits: [{ imageId: "img-1", content: "Login error", score: 0.8 }],
@@ -27,15 +28,53 @@ class StubClient implements ClawGallerySkillClient {
 }
 
 describe("ClawGallerySkill", () => {
-	it("indexes incrementally and exposes all retrieval modes", async () => {
+	it("indexes incrementally and registers a single hybrid method by default", async () => {
 		const skill = new ClawGallerySkill({ client: new StubClient(), instanceId: "personal" });
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 2 });
-		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
-			"clawgallery-hybrid",
-			"clawgallery-keyword",
-			"clawgallery-lexical",
-			"clawgallery-embedding",
-		]);
+		expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual(["clawgallery-hybrid"]);
+	});
+
+	it("runs an explicitly configured mode alone", () => {
+		for (const defaultMode of ["keyword", "lexical", "embedding"] as const) {
+			const skill = new ClawGallerySkill({ client: new StubClient(), instanceId: "personal", defaultMode });
+			expect(skill.retrievalMethods().map((method) => method.describe().name)).toEqual([
+				`clawgallery-${defaultMode}`,
+			]);
+		}
+	});
+
+	it("searches hybrid once and falls back to keyword only when hybrid fails", async () => {
+		const modes: string[] = [];
+		const client = new StubClient();
+		const ok = await client.search("keyword");
+		client.search = async (mode) => {
+			modes.push(mode);
+			if (mode === "hybrid")
+				return { ok: false, reason: "nonzero-exit", stdout: "", stderr: "no vdr index", code: 1 };
+			return ok;
+		};
+		const skill = new ClawGallerySkill({ client, instanceId: "personal" });
+
+		const [hybrid] = skill.retrievalMethods();
+		const results = await hybrid?.retrieve("login", { topK: 5 });
+
+		expect(modes).toEqual(["hybrid", "keyword"]);
+		expect(results?.[0]?.metadata).toMatchObject({ fallbackFrom: "clawgallery-hybrid" });
+	});
+
+	it("does not search keyword when hybrid succeeds", async () => {
+		const modes: string[] = [];
+		const client = new StubClient();
+		const ok = await client.search("keyword");
+		client.search = async (mode) => {
+			modes.push(mode);
+			return ok;
+		};
+		const skill = new ClawGallerySkill({ client, instanceId: "personal" });
+
+		await Promise.all(skill.retrievalMethods().map((method) => method.retrieve("login", { topK: 5 })));
+
+		expect(modes).toEqual(["hybrid"]);
 	});
 
 	it("maps hits to isolated screenshot scopes", async () => {

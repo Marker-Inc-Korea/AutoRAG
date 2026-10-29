@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { DatasourceSkillManifest } from "../datasource/types.ts";
+import { formatSkillInvocation } from "./skill-invocation.ts";
 
 export const LOAD_DATASOURCE_SKILL_TOOL_NAME = "load_datasource_skill";
 
@@ -83,12 +84,12 @@ export function buildDatasourceSkillsPrompt(skills: readonly DatasourceAgentSkil
 }
 
 /**
- * Format the full instructions for a loaded datasource skill, matching pi's
- * `<skill …>` invocation shape but with a path-opaque location (no real
+ * Format the full instructions for a loaded datasource skill in the shared
+ * `<skill …>` invocation shape, with a path-opaque location (no real
  * filesystem reference, so no "references are relative to …" line).
  */
 export function formatDatasourceSkillInvocation(skill: DatasourceAgentSkill): string {
-	return `<skill name="${skill.name}" location="${skill.filePath}">\n${skill.content}\n</skill>`;
+	return formatSkillInvocation({ name: skill.name, location: skill.filePath, content: skill.content });
 }
 
 export interface LoadDatasourceSkillDetails {

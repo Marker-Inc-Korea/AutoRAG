@@ -1,7 +1,9 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
 import { abortReason } from "../process/abort-reason.ts";
+import { type ChunkLocation, locateChunk } from "../retrieval/chunk-location.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
+import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -13,7 +15,7 @@ import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
-import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
@@ -80,23 +82,34 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
-	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal));
+	async sync(
+		force = false,
+		signal?: AbortSignal,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
+		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal, onProgress));
 	}
 
-	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
+	private async syncUnlocked(
+		force: boolean,
+		signal: AbortSignal | undefined,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
 		if (signal?.aborted) throw abortReason(signal);
-		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const binaryPath = await this.resolveBinary();
+		const staging = syncMinSyncWorkspace(this.root, {
+			workspacePath: this.workspacePath,
+			minSyncBinaryPath: binaryPath,
+		});
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
-		const binaryPath = await this.resolveBinary();
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
 		});
-		return withExcluded(await client.sync(force, signal));
+		return withExcluded(await client.sync(force, signal, onProgress));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
@@ -121,9 +134,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? this.defaultTopK;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
-		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
-		// Queries never install: they use an existing binary or fail loudly.
 		const binaryPath = await this.resolveBinary({ install: false });
+		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
+		// Queries never install: they use an existing binary or fail loudly.
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
@@ -136,8 +149,16 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		} catch (error) {
 			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
 			hits = await client.query(query, queryK, "bm25", options.signal);
+			// Hybrid is the only MinSync method searched, so a semantic half that is down (embedder
+			// unreachable, stale index) would vanish from the result unless the pipeline is told.
+			options.onFallback?.({
+				method: this.describe().name,
+				fallback: "bm25",
+				reason: describeRetrievalError(error),
+			});
 		}
 		const results: RetrievalResult[] = [];
+		const mirrorTexts = new Map<string, string | undefined>();
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
@@ -147,6 +168,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// merger would treat them as the same evidence.
 			const chunkDiscriminator = hit.docId ?? basename(hit.path);
 			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
+			const location = locateChunkInMirror(mirrorTexts, entry, hit.text);
 			results.push({
 				id: chunkId,
 				content: hit.text,
@@ -157,6 +179,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 					virtualPath: entry.virtualPath,
 					minsyncChunkId: chunkId,
 					minsyncPath: hit.path,
+					...(location !== undefined
+						? {
+								lineNumber: location.lineStart,
+								lineEnd: location.lineEnd,
+								...(location.section !== undefined ? { section: location.section } : {}),
+							}
+						: {}),
 				},
 			});
 			if (results.length >= topK) break;
@@ -168,7 +197,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	 * Queries pass `install: false` so a user's turn never waits on `cargo install`; only `sync` (refresh)
 	 * may install. See {@link resolveMinSyncBinary}.
 	 */
-	protected resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
+	resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
 		return resolveMinSyncBinary({
 			root: this.root,
 			binaryPath: this.binaryPath,
@@ -193,4 +222,33 @@ export class MinSyncHybridMethod extends MinSyncVectorMethod {
 			capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
 		};
 	}
+}
+
+/** Parsed mirrors bigger than this are not searched for a chunk's line range. */
+const MAX_MIRROR_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Where `chunk` sits in the parsed markdown MinSync indexed for `entry`. The
+ * staged copy is what MinSync chunked; the parsed mirror is the same text and is
+ * the fallback before the first sync. Undefined when the document cannot be read
+ * or the chunk is not found in exactly one place, so a line is never guessed.
+ */
+function locateChunkInMirror(
+	cache: Map<string, string | undefined>,
+	entry: { readonly minSyncPath: string; readonly parsedOutputPath: string },
+	chunk: string,
+): ChunkLocation | undefined {
+	let text: string | undefined;
+	const path = existsSync(entry.minSyncPath) ? entry.minSyncPath : entry.parsedOutputPath;
+	if (cache.has(path)) {
+		text = cache.get(path);
+	} else {
+		try {
+			text = statSync(path).size <= MAX_MIRROR_BYTES ? readFileSync(path, "utf8") : undefined;
+		} catch {
+			text = undefined;
+		}
+		cache.set(path, text);
+	}
+	return text === undefined ? undefined : locateChunk(text, chunk);
 }

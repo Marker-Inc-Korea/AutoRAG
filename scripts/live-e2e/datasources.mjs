@@ -18,6 +18,7 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "rclone", binary: "rclone" },
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
 	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\/spotlight\/[^/\s]+\/chunks\/[a-f0-9]{16}/u },
+	{ name: "hister", binary: "hister", command: "scripts/manual-qa/run-qa-hister-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
 ]);
 
 // Native-store presence probes: a lane runs for real when its CLI's own
@@ -49,7 +50,7 @@ function spotlightIndexingHealthy() {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, "probe.txt"), "autorag-spotlight-probe-token");
 		spawnSync("mdimport", [dir], { stdio: "ignore", timeout: 10000 });
-		const deadline = Date.now() + 60000;
+		const deadline = Date.now() + 300000;
 		while (Date.now() < deadline) {
 			const found = spawnSync("mdfind", ["-onlyin", dir, "-name", "probe.txt"], { encoding: "utf8", timeout: 10000 });
 			if (found.status === 0 && (found.stdout ?? "").includes("probe.txt")) return true;

@@ -18,10 +18,15 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync` when auto-install cannot run. MinSync
-0.4.11 on Apple Silicon and Linux needs rustc 1.96 or newer, because its
-dependency `candle-core` requires NEON f16 support; AutoRAG's installer pins
-MinSync 0.4.11.
+yourself with `cargo install minsync --version 0.5.1 --locked` when
+auto-install cannot run. MinSync 0.5.1 on Apple Silicon and Linux needs rustc
+1.96 or newer, because its dependency candle-core requires NEON f16 support;
+with an older toolchain the cargo install fails and AutoRAG falls back to the
+GitHub release binary. AutoRAG's installer pins MinSync 0.5.1 from crates.io.
+
+Existing executables are not silently replaced. New installations, including
+GitHub release fallbacks, must pass the read-only protocol check before they
+are accepted; an incompatible newly downloaded binary is removed from cache.
 
 A normal setup is:
 
@@ -54,7 +59,7 @@ this order:
    `apiKeyEnv` (the name of an environment variable holding the bearer token,
    never the token), `dimension`, `batchSize`, and `timeoutMs`.
 2. **`minsync serve` daemon.** Otherwise a running daemon is preferred. It is
-   loopback only and requires MinSync 0.4.11 or newer. It serves TEI
+   loopback only and requires MinSync 0.4.12 or newer. It serves TEI
    `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`. Running
    instances are discovered through `~/.cache/minsync/serve/<instance>/`
    (`host`, `port`, `pid`, `lock`). **AutoRAG never starts or stops it for you**
@@ -85,6 +90,14 @@ and a document is embedded raw. AutoRAG applies this on every semantic path:
   stored text. The shared embedder prepends the prefix itself; neither the
   daemon nor a remote server is asked to.
 - mailcrawl receives the prefix through `MAILCRAWL_QUERY_PREFIX`.
+- Hister (the browser-history datasource) keeps its own vector store, so it is
+  pointed at the shared daemon through its own `config.yml` `semantic_search`
+  block (`embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix`,
+  `document_prefix`). `autorag setup --sync-hister` writes those keys from the
+  resolved shared endpoint, byte for byte, so the query instruction above reaches
+  Hister too. The daemon's port is chosen when it starts, so re-run
+  `autorag setup --sync-hister` after restarting it. See
+  [Browser history via Hister](datasource-skills.md#browser-history-via-hister).
 - Similar-past-question lookup compares a question with questions, so both
   sides are embedded the same way, without the instruction.
 
@@ -98,7 +111,7 @@ and a remote endpoint or another model gets no default prefix.
 Semantic search over everything except the MinSync datasource needs an
 embedding backend that is alive: a remote endpoint, a running `minsync serve`,
 or the optional in-process addon. Without one, memory, the chat-sidecar
-semantic search, gist, discrawl, mailcrawl, and lazykatok fall back to keyword
+semantic search, gist, discrawl, mailcrawl, lazykatok, and Hister fall back to keyword
 search or report `embedding-unavailable`; the MinSync datasource keeps working
 because `minsync` embeds in-process by itself. AutoRAG leaves the daemon's
 lifecycle to you, so a remote endpoint is the way to avoid managing one:
@@ -374,16 +387,79 @@ legacy configuration, not the AutoRAG default. An explicit external
 `minSync.embedder` endpoint remains authoritative and is not overwritten by the
 daemon or the in-process engine.
 
+## Durable incremental parsing
+
+Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
+including a refresh that selects only `parsed`. MinSync 0.5.1 — the version
+AutoRAG installs — ships it; published binaries up to 0.5.0 have the original
+durable stage, but not `capabilities`, `plan`, `inspect`, deliberate skips or
+deferred-failure policy. AutoRAG probes capabilities before opening a run and
+refuses an older build before mutating stage state. Parsing itself uses no
+embedding model or endpoint.
+
+`inspect` also exposes all held source identities, independently of output
+verification. AutoRAG uses that inventory to preserve unknown/offline sources,
+including damaged outputs and ordinary failures; only verified `items` become
+searchable mirrors. Status remains available when a previously used binary is
+missing or incompatible and reports the component unavailable and corpus stale.
+
+AutoRAG inventories supported sources and supplies their identities and parser
+configuration to one `minsync stage` session. MinSync owns the stage lock,
+verified completions, deletion decisions, interrupted-run journal, and snapshot
+under `.autorag/parsed/stage/`. AutoRAG owns parsing and atomic Markdown writes
+under `.autorag/parsed/files/`. Completion is recorded only after the final
+Markdown file exists and MinSync has measured and verified it.
+
+- Unchanged, verified mirrors are not read or parsed again. Their document-level
+  timestamps stay stable, so warm refreshes do not copy the entire corpus into
+  the retrieval workspace again. The durable source revision uses nanosecond
+  mtime and size; chmod, xattr, inode and device changes alone do not reparse it.
+  A stronger stat identity is checked before committing within a run. As with
+  other stat-based scans, a content edit preserving both source mtime and size
+  between runs is not detected.
+- Parser name/version and output-affecting options invalidate completed work.
+  Execution deadlines, worker heap limits and OCR cache location only invalidate
+  recorded failure skips, not healthy outputs. Language and OCR enablement changes
+  still invalidate output. Stage keys are fixed-length SHA-256 IDs, independent
+  of the length or encoding of the virtual source path.
+- A source changed during parsing is not committed. Its last good mirror stays
+  available, remains reported as stale, and is retried on the next refresh,
+  including when the interrupted run's metadata must be recovered from MinSync.
+- Missing or damaged mirrors are rebuilt. MinSync's fast verification hashes an
+  output when its modification time changes; it does not detect deliberate edits
+  that preserve both size and modification time.
+- An interruption leaves committed items in MinSync's journal. The next matching
+  refresh resumes them, including an interrupted forced refresh. There is no
+  AutoRAG-specific periodic full-index checkpoint.
+- AutoRAG no longer writes `.autorag/parsed/index.json` or reads MinSync's
+  private snapshot/journal formats. Downstream source mappings come from the
+  engine's verified `inspect` response, including committed work left by a hard
+  host crash. `plan` supplies read-only freshness decisions without a stage lock.
+- AutoRAG supplies source revisions, parser settings, omission reasons and retry
+  policy identities. MinSync stores omissions and deferred failures, decides
+  whether they are reusable, and releases failed work when its source, parser
+  settings or retry policy changes, or an explicit retry is requested. Healthy
+  outputs are unaffected by a retry-policy change. Failed work is never a
+  successful completion. Unobservable roots and mass-deletion candidates are
+  explicitly preserved rather than deleted.
+- Existing workspaces without a parse-stage baseline are parsed once to establish
+  verified completions. Subsequent refreshes use the stage baseline; the old
+  checkpoint-based resume path is not retained.
+
+The inventory and stage plan still hold the source listing in memory. This
+cutover eliminates repeated whole-index writes during parsing; it does not make
+the inventory or MinSync's stage-open request a streaming API.
+
 ## Refresh diagnostics
 
-Parsed refresh reads each scanned file before MinSync indexes its mirror. A
-source deleted or replaced after the scan (`ENOENT`, `ENOTDIR`, or `EISDIR`)
+Parsed refresh reads only sources that need processing before MinSync indexes their mirrors.
+A source deleted or replaced after the scan (`ENOENT`, `ENOTDIR`, or `EISDIR`)
 records a `source-vanished` informational diagnostic. A source that cannot be
 read (`EACCES` or `EPERM`) records a `source-unreadable` warning. The
 diagnostic `source` is the virtual path, and the message is the underlying
 filesystem error. Refresh removes any previous mirror for that path and
-continues with the remaining files. These transient reads are not stored as
-skip records, so a later refresh tries the source again once it can be read.
+continues with the remaining files. Permission failures are paced using a skip
+record until the source/parser changes or `--retry-skipped` is requested.
 Any other read error, a parser that throws something other than `ParseError`, and
 a failed mirror write are also isolated to the one file. Each is skipped and the
 refresh continues:
@@ -391,6 +467,7 @@ refresh continues:
 | Code | Severity | Cause |
 | --- | --- | --- |
 | `source-read-failed` | warning | Read error not listed above (`EMFILE`, `EIO`, `EBUSY`, `ETIMEDOUT`, …); `reason` carries the errno code. |
+| `source-changed` | warning | The source identity changed during parsing; no completion is committed and the next refresh retries it. |
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
 
@@ -402,9 +479,9 @@ refresh continues:
 { "refresh": { "transientRetries": 3 } }
 ```
 
-Like `source-unreadable`, these skips are not persisted, so the next refresh
-tries the file again. Mirror writes go through a temp file that is removed on
-any failure, so a failed write never leaves a `*.tmp` orphan.
+Unlike permission-denied failures, these failures are recorded without a retry
+deferral, so MinSync schedules them again on the next refresh. Mirror writes go
+through a temp file removed on failure, so a failed write leaves no `*.tmp` orphan.
 
 A write failure that makes the workspace itself unusable (`ENOSPC`, `EDQUOT`,
 `EACCES`, `EPERM`, `EROFS`) is not a per-file problem and aborts the refresh with
@@ -462,15 +539,33 @@ host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
 retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
 of a generic `minsync-sync-failed`.
 
+## Indexing progress and liveness
+
+AutoRAG runs `minsync sync --progress jsonl`. Each MinSync `start`, `batch`,
+`heartbeat`, and `done` event updates `.autorag/refresh-progress.json` with
+`minsync: { synced, total }`, advances `updatedAt`, and emits the same counts to
+`AutoRAGAgent.refresh(..., { onProgress })` as a `minsync` event. MinSync's
+heartbeat interval defaults to five seconds.
+
+A stale `updatedAt` between events means that the phase is still running; it is
+not proof of a hang. Use the owner pid through
+`AutoRAGAgent.getRefreshStatus().progress.ownerAlive` (or
+`isRefreshOwnerAlive`) for liveness, and use advancing progress to distinguish
+active work from a stalled batch.
+
 ## Skipped files (partial sync)
 
-MinSync 0.4.11 skips a file it cannot read, chunk, or embed instead of aborting
-the sync, and exits 6 with `partial: true` and a `files_failed` list. AutoRAG
+MinSync 0.4.11 and newer skip a file they cannot read, chunk, or embed instead of
+aborting the sync, and exit 6 with `partial: true` and a `files_failed` list. AutoRAG
 treats that as a completed sync (`minsync.ok: true`) and reports each skipped
 file as a `minsync-file-skipped` warning diagnostic whose `source` is the path
-inside the MinSync workspace. MinSync keeps the file's previous chunks and
-retries it on the next sync. Only an exit 6 without a `partial` report is a
-`minsync-sync-failed`.
+inside the MinSync workspace. `AutoRAGRefreshResult.minsync.filesSkippedCount`
+and the CLI JSON envelope expose the count, while the completed
+`refresh-progress.json` records it as `minsync.filesSkipped`; human refresh and
+status output show `skipped=N` and `filesSkipped=N` respectively. MinSync keeps
+the file's previous chunks and retries it on the next sync. A later successful
+retry omits the skipped count again. Only an exit 6 without a `partial` report
+is a `minsync-sync-failed`.
 
 ## Migration and failure behavior
 

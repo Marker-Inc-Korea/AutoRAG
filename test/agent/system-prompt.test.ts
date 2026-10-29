@@ -24,13 +24,10 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("End with the final answer as a plain reply");
 		expect(text).toContain("[e3]");
 		expect(text).toContain("generic, stable question");
-		expect(text).toContain("baseline retrieval is already running in parallel");
 		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");
-		expect(text).toContain("Never repeat a generic status message");
-		expect(text).toContain("generic, stable question");
-		expect(text).toContain("baseline retrieval is already running in parallel");
-		expect(text).toContain("Avoid spinning repeated near-identical queries against the same datasource");
-		expect(text).toContain("Never repeat a generic status message");
+		// Progress comes from each tool call's `i` intent, not from notes the model writes between calls.
+		expect(text).toContain("`i` argument");
+		expect(text).not.toMatch(/progress update/i);
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
 
@@ -99,7 +96,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("Answer Guidelines");
 		expect(text).toContain("5 bullet points");
 		expect(text).toContain("No per-source negative reports");
-		expect(text).toContain("Honest and concise uncertainty");
+		expect(text).toContain("Not-found handling");
 		expect(text).not.toContain("Read before curating");
 	});
 
@@ -152,5 +149,16 @@ describe("buildSystemPrompt single-agent contract", () => {
 		const text = prompt();
 		expect(text).toContain("primary and preferred tool for exploring local files, folders, and documents");
 		expect(text).toContain("actively use `jikji_find` rather than running exploratory `bash` commands");
+	});
+
+	it("teaches file-triggered automations only when manage_automations is registered", () => {
+		const without = prompt();
+		expect(without).not.toContain("## File Automations");
+
+		const text = prompt(["bash", "search_all_documents", "manage_automations"]);
+		expect(text).toContain("## File Automations");
+		expect(text).toContain("`manage_automations`");
+		expect(text).toContain("install_service");
+		expect(text).not.toContain("- **manage_automations**: caller-provided tool");
 	});
 });
