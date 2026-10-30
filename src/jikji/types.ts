@@ -89,7 +89,9 @@ export type JikjiFailureReason =
 	| "stdout-too-large"
 	| "timeout"
 	| "bad-answer-pack"
-	| "bad-retry-step";
+	| "bad-retry-step"
+	/** The resolved `jikji` is older than {@link JIKJI_MIN_VERSION}; it was probed, never run for real. */
+	| "unsupported-version";
 
 export type JikjiPrepareResult =
 	| {
@@ -104,6 +106,8 @@ export type JikjiPrepareResult =
 			readonly stdout: string;
 			readonly stderr: string;
 			readonly code: number | null;
+			/** Set with `reason: "unsupported-version"`: the version `jikji --version` reported. */
+			readonly detectedVersion?: string;
 	  };
 
 // ---------------------------------------------------------------------------
@@ -191,4 +195,6 @@ export type JikjiFindResult =
 			readonly stdout: string;
 			readonly stderr: string;
 			readonly code: number | null;
+			/** Set with `reason: "unsupported-version"`: the version `jikji --version` reported. */
+			readonly detectedVersion?: string;
 	  };

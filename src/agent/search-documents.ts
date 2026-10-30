@@ -49,6 +49,7 @@ export type SearchDocumentDiagnosticCode =
 	| "jikji-prepare-failed"
 	| "jikji-find-failed"
 	| "jikji-discover-failed"
+	| "jikji-unsupported-version"
 	| "everything-index-failed"
 	| "fsearch-index-failed"
 	| "fsearch-binary-missing"

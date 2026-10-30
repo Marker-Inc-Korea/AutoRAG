@@ -162,8 +162,9 @@ workspace still answers, but without MinSync/Jikji evidence.
 
 Refresh (never a query) auto-installs the binaries: MinSync installs a verified
 GitHub release into `<workspace>/.autorag/bin` (`minSync.autoInstall` defaults
-to true), and Jikji installs `jikji-cli` through cargo (`jikji.autoInstall`
-defaults to true; requires the Rust toolchain). Set `"autoInstall": false` only
+to true), and Jikji installs the pinned `jikji-cli` 0.2.1 through cargo (`jikji.autoInstall`
+defaults to true; requires the Rust toolchain). A `jikji` older than 0.2.0 on PATH
+or in the cache is skipped and replaced by that build on refresh. Set `"autoInstall": false` only
 when managing the binary yourself. Refresh is incremental: MinSync syncs only
 changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Jikji
 roots prepare one at a time (they share one central SQLite file that rejects
@@ -178,8 +179,11 @@ with the `JIKJI_DATA_DIR` environment variable). The only file `refresh` adds
 inside an approved document root is the `.jikji_agent_map.md` guide. Tell the
 user that before the first `refresh`, and never delete or edit Jikji's central
 store by hand; removing it only forces a full Jikji re-prepare on the next
-refresh. Older Jikji versions wrote a `<root>/.jikji` directory instead; such a
-leftover is now unused and safe for the user to delete.
+refresh. Jikji 0.1.x wrote a `<root>/.jikji` directory instead; such a
+leftover is now unused and safe for the user to delete. Jikji 0.2.0 and newer
+refuse to index a root nested inside, or containing, an already indexed root
+(`prepare root overlaps existing indexed root`), which is why overlapping search
+roots are collapsed to the outermost one before Jikji runs.
 
 Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
 `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
