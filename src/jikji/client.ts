@@ -15,11 +15,14 @@ import type {
 	JikjiPrepareOptions,
 	JikjiPrepareResult,
 } from "./types.ts";
+import { isSupportedJikjiVersion, JIKJI_INSTALL_VERSION, JIKJI_MIN_VERSION, parseJikjiVersion } from "./version.ts";
 
 const DEFAULT_BINARY = "jikji";
 const DEFAULT_TIMEOUT_MS = 60_000;
 /** `jikji prepare --parse-timeout` default (seconds): the per-file limit jikji enforces itself. */
 const DEFAULT_PARSE_TIMEOUT_SECONDS = 5;
+/** `jikji --version` answers instantly; a binary that does not within this is treated as unprobeable. */
+const VERSION_PROBE_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 
 /** Result of a call whose signal aborted while it was still queued: nothing was spawned. */
@@ -31,7 +34,13 @@ type ProcessResult = {
 	readonly stdout: string;
 	readonly stderr: string;
 	readonly code: number | null;
+	readonly detectedVersion?: string;
 };
+
+/** A binary the client resolved: where it is and whether its `--version` clears the floor. */
+type Resolved =
+	| { readonly ok: true; readonly command: string }
+	| { readonly ok: false; readonly detectedVersion: string; readonly message: string };
 
 type BufferState = {
 	readonly text: string;
@@ -51,10 +60,10 @@ type SpawnJikjiRequest = {
 
 export class JikjiClient {
 	private readonly options: JikjiOptions;
-	private resolvedCommand: string | undefined;
-	private installCommandInFlight: Promise<string> | undefined;
+	private resolved: Resolved | undefined;
+	private installInFlight: Promise<Resolved> | undefined;
 	// Upstream jikji writes one central SQLite file (WAL + 30 s busy_timeout in
-	// 0.1.1+, though long prepares can still hold the writer lock past 30 s).
+	// 0.2.0+, though long prepares can still hold the writer lock past 30 s).
 	// Calls are serialized per kind: prepares queue behind each other, finds
 	// queue behind each other, and a query never waits behind a minutes-long refresh.
 	private readonly prepareQueue = new SerialQueue();
@@ -65,58 +74,86 @@ export class JikjiClient {
 	}
 
 	/**
-	 * Resolve the jikji command following the priority chain:
-	 * 1. explicit binaryPath
-	 * 2. PATH lookup for `jikji`
-	 * 3. cached `<root>/.autorag/bin/jikji`
-	 * 4. autoInstall (default true) via `cargo install jikji-cli` into the cache
-	 *    — only for `prepare` (refresh); `find` passes `install: false` so a
-	 *    query never waits on an install
-	 * 5. bare `jikji` (spawn-error degrade preserves the previous behavior)
-	 * A found binary is cached per client. The bare fallback is cached only after
-	 * an install attempt, so a query-time miss does not block a later refresh
-	 * from installing.
+	 * Resolve the jikji command, refusing any binary below {@link JIKJI_MIN_VERSION}:
+	 * 1. explicit binaryPath: used as given, never probed (the operator chose it).
+	 * 2. PATH lookup for `jikji`, then cached `<root>/.autorag/bin/jikji`. The first one
+	 *    whose `--version` clears the floor wins. A binary whose `--version` output is
+	 *    not recognised is used as-is, so a custom build is never locked out.
+	 * 3. Every candidate was below the floor (or none exists): `prepare` installs the
+	 *    pinned {@link JIKJI_INSTALL_VERSION} into the cache with `cargo install --force`.
+	 *    `find` (`install: false`) never installs; it reports the stale version instead.
+	 * 4. Nothing resolvable and no root or autoInstall off: bare `jikji` (spawn-error
+	 *    degrade preserves the previous behavior).
+	 * A usable result is cached per client. A query-time miss is not cached, so a later
+	 * refresh can still install.
 	 */
-	private async resolveCommand(options: { readonly install?: boolean } = {}): Promise<string> {
+	private async resolveCommand(options: { readonly install?: boolean } = {}): Promise<Resolved> {
 		if (this.options.binaryPath !== undefined && this.options.binaryPath !== DEFAULT_BINARY) {
-			return commandFor(this.options.binaryPath);
+			return { ok: true, command: commandFor(this.options.binaryPath) };
 		}
-		if (this.resolvedCommand !== undefined) return this.resolvedCommand;
+		if (this.resolved !== undefined) return this.resolved;
 		const env = controlledEnv(this.options.env);
+		const candidates: string[] = [];
 		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, env);
-		if (pathCommand !== undefined) {
-			this.resolvedCommand = pathCommand;
-			return this.resolvedCommand;
-		}
-		if (this.options.root !== undefined) {
-			const root = this.options.root;
+		if (pathCommand !== undefined) candidates.push(pathCommand);
+		const root = this.options.root;
+		if (root !== undefined) {
 			const cached = cachedJikjiBinaryPath(root);
-			if (existsSync(cached)) {
-				this.resolvedCommand = cached;
-				return this.resolvedCommand;
-			}
-			// A query (`find`) passes install:false: never trigger or await an
-			// install, and leave `resolvedCommand` unset so a later refresh can.
-			if (options.install === false) return DEFAULT_BINARY;
-			if (this.options.autoInstall !== false) {
-				// Share one cargo install across concurrent prepares — one client
-				// serves multiple roots — instead of racing N compiles.
-				if (this.installCommandInFlight !== undefined) return this.installCommandInFlight;
-				const install = ensureJikjiBinary({ root, env })
-					.then((installed) => {
-						const command = installed.ok ? installed.binaryPath : DEFAULT_BINARY;
-						this.resolvedCommand = command;
-						return command;
-					})
-					.finally(() => {
-						this.installCommandInFlight = undefined;
-					});
-				this.installCommandInFlight = install;
-				return install;
-			}
+			if (existsSync(cached) && cached !== pathCommand) candidates.push(cached);
 		}
-		this.resolvedCommand = DEFAULT_BINARY;
-		return this.resolvedCommand;
+		let stale: Extract<Resolved, { ok: false }> | undefined;
+		for (const candidate of candidates) {
+			const verdict = await this.probe(candidate, env);
+			if (verdict.ok) {
+				this.resolved = verdict;
+				return verdict;
+			}
+			stale ??= verdict;
+		}
+		if (root !== undefined && options.install !== false && this.options.autoInstall !== false) {
+			// Share one cargo install across concurrent prepares — one client
+			// serves multiple roots — instead of racing N compiles.
+			if (this.installInFlight !== undefined) return this.installInFlight;
+			const forced = candidates.includes(cachedJikjiBinaryPath(root));
+			const install = ensureJikjiBinary({ root, env, version: JIKJI_INSTALL_VERSION, force: forced })
+				.then((installed): Resolved => {
+					if (installed.ok) return { ok: true, command: installed.binaryPath };
+					return stale === undefined
+						? { ok: true, command: DEFAULT_BINARY }
+						: { ...stale, message: `${stale.message} ${installed.message}` };
+				})
+				.then((resolved) => {
+					if (resolved.ok || stale !== undefined) this.resolved = resolved.ok ? resolved : undefined;
+					return resolved;
+				})
+				.finally(() => {
+					this.installInFlight = undefined;
+				});
+			this.installInFlight = install;
+			return install;
+		}
+		if (stale !== undefined) return stale;
+		// A query (`find`) with nothing resolvable: leave `resolved` unset so a later refresh can install.
+		if (root !== undefined && options.install === false) return { ok: true, command: DEFAULT_BINARY };
+		this.resolved = { ok: true, command: DEFAULT_BINARY };
+		return this.resolved;
+	}
+
+	/** Run `<candidate> --version` and decide whether it clears the floor. */
+	private async probe(candidate: string, env: NodeJS.ProcessEnv): Promise<Resolved> {
+		const probed = await spawnJikji({
+			command: candidate,
+			args: ["--version"],
+			options: { env, timeoutMs: VERSION_PROBE_TIMEOUT_MS, maxBufferBytes: 4_096 },
+			timeoutMs: VERSION_PROBE_TIMEOUT_MS,
+		});
+		const version = probed.ok ? parseJikjiVersion(probed.stdout) : undefined;
+		if (version === undefined || isSupportedJikjiVersion(version)) return { ok: true, command: candidate };
+		return {
+			ok: false,
+			detectedVersion: version,
+			message: `jikji ${version} at ${candidate} is older than the ${JIKJI_MIN_VERSION} AutoRAG requires.`,
+		};
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
@@ -124,15 +161,18 @@ export class JikjiClient {
 		const clientOptions: JikjiOptions =
 			options.parseTimeout === undefined ? this.options : { ...this.options, parseTimeout: options.parseTimeout };
 		const result = await this.prepareQueue.run(
-			async () =>
-				this.spawn({
-					command: await this.resolveCommand(),
+			async () => {
+				const resolved = await this.resolveCommand();
+				if (!resolved.ok) return unsupportedVersion(resolved);
+				return this.spawn({
+					command: resolved.command,
 					args: buildPrepareArgs(clientOptions, canonicalRoot),
 					signal: options.signal,
 					// Sized when the root's turn starts, so queue wait never eats the budget.
 					timeoutMs:
 						options.timeoutMs ?? (await this.prepareTimeoutMs(canonicalRoot, clientOptions, options.signal)),
-				}),
+				});
+			},
 			{ signal: options.signal, value: ABORTED_BEFORE_START },
 		);
 		if (!result.ok) {
@@ -142,6 +182,7 @@ export class JikjiClient {
 				stdout: result.stdout,
 				stderr: result.stderr,
 				code: result.code,
+				...(result.detectedVersion === undefined ? {} : { detectedVersion: result.detectedVersion }),
 			};
 		}
 		return {
@@ -155,12 +196,15 @@ export class JikjiClient {
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
 		const canonicalRoot = canonicalJikjiRoot(root);
 		const result = await this.findQueue.run(
-			async () =>
-				this.spawn({
-					command: await this.resolveCommand({ install: false }),
-					args: buildFindArgs(canonicalRoot, query, options),
+			async () => {
+				const resolved = await this.resolveCommand({ install: false });
+				if (!resolved.ok) return unsupportedVersion(resolved);
+				return this.spawn({
+					command: resolved.command,
+					args: buildFindArgs(canonicalRoot, query, options, this.options),
 					signal: options.signal,
-				}),
+				});
+			},
 			{ signal: options.signal, value: ABORTED_BEFORE_START },
 		);
 		if (!result.ok) {
@@ -170,6 +214,7 @@ export class JikjiClient {
 				stdout: result.stdout,
 				stderr: result.stderr,
 				code: result.code,
+				...(result.detectedVersion === undefined ? {} : { detectedVersion: result.detectedVersion }),
 			};
 		}
 		const answerPack = parseJikjiAnswerPack(result.stdout);
@@ -333,14 +378,17 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 	return args;
 }
 
-function buildFindArgs(root: string, query: string, options: JikjiFindOptions): readonly string[] {
+function buildFindArgs(root: string, query: string, options: JikjiFindOptions, scope: JikjiOptions): readonly string[] {
 	// `jikji find` otherwise spawns a detached `jikji prepare <root>` when the
 	// index is changed or stale. That would index during a query and, because
 	// the detached child omits `--no-agent-rules`, rewrite AGENTS.md /
 	// CLAUDE.md / .cursorrules in the user's source root.
 	// Not covered: upstream's synchronous reindex when a query returns no paths
-	// has no CLI opt-out (jikji 0.1.1 and main). Observed: it does not rewrite
-	// AGENTS.md / CLAUDE.md / .cursorrules.
+	// has no CLI opt-out (0.2.x). Observed with 0.2.1: it does not rewrite
+	// AGENTS.md / CLAUDE.md / .cursorrules, but it runs `prepare` with jikji's
+	// built-in scope. The scope below is therefore forwarded so that reindex
+	// indexes exactly what `refresh` did, not what `exclude` / `includeHidden` /
+	// `includeSensitive` were set to keep out.
 	const args = ["find", root, query, "--json", "--no-background-refresh"];
 	if (options.topK !== undefined) args.push("--top-k", String(options.topK));
 	if (options.first === true) args.push("--first");
@@ -349,7 +397,25 @@ function buildFindArgs(root: string, query: string, options: JikjiFindOptions): 
 	if (options.staleAfterSeconds !== undefined) {
 		args.push("--stale-after-seconds", String(options.staleAfterSeconds));
 	}
+	if (scope.includeHidden === true) args.push("--include-hidden");
+	if (scope.includeSensitive === true) args.push("--include-sensitive");
+	if (scope.maxFiles !== undefined && scope.maxFiles > 0) args.push("--max-files", String(scope.maxFiles));
+	for (const pattern of scope.exclude ?? []) args.push("--exclude", pattern);
+	if (scope.maxHashBytes !== undefined) args.push("--max-hash-bytes", String(scope.maxHashBytes));
+	if (scope.parseTimeout !== undefined) args.push("--parse-timeout", String(scope.parseTimeout));
 	return args;
+}
+
+/** A resolved binary below the floor: nothing was spawned, and the message says which binary and why. */
+function unsupportedVersion(resolved: Extract<Resolved, { ok: false }>): ProcessResult {
+	return {
+		ok: false,
+		reason: "unsupported-version",
+		stdout: "",
+		stderr: resolved.message,
+		code: null,
+		detectedVersion: resolved.detectedVersion,
+	};
 }
 
 function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {

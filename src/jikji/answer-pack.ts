@@ -81,12 +81,14 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		};
 		candidates.push(candidate);
 	}
-
 	const handoffAction = parsed.handoff_action;
 	if (typeof handoffAction !== "string" || !HANDOFF_VALUES.has(handoffAction)) return undefined;
 
-	const evidenceRaw =
-		parsed.evidence_pack === undefined && handoffAction === "jikji_retry" ? [] : parsed.evidence_pack;
+	// The recovery envelopes (`jikji_retry`, and `raw_fallback_after_retry` after a verified retry)
+	// are emitted by `emit_find_recovery` with `evidence_pack` and `agent_should_not_rerank` absent.
+	// Only a real answer (`direct_use`) must carry them.
+	const isRecovery = handoffAction === "jikji_retry" || handoffAction === "raw_fallback_after_retry";
+	const evidenceRaw = parsed.evidence_pack === undefined && isRecovery ? [] : parsed.evidence_pack;
 	if (!Array.isArray(evidenceRaw)) return undefined;
 	const evidencePack: JikjiEvidence[] = [];
 	for (const entry of evidenceRaw) {
@@ -109,9 +111,7 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 	};
 
 	const agentShouldNotRerank =
-		parsed.agent_should_not_rerank === undefined && handoffAction === "jikji_retry"
-			? false
-			: parsed.agent_should_not_rerank;
+		parsed.agent_should_not_rerank === undefined && isRecovery ? false : parsed.agent_should_not_rerank;
 	if (typeof agentShouldNotRerank !== "boolean") return undefined;
 
 	return {

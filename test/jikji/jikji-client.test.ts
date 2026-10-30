@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JikjiOptions } from "../../src/jikji/index.ts";
 import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
+import { JIKJI_INSTALL_VERSION } from "../../src/jikji/version.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
@@ -37,6 +38,9 @@ function writeFakeJikji(body: string, exitCode = 0): void {
 import { appendFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
+// A real jikji answers --version. The client probes it once when it resolves the binary from PATH,
+// so the stand-in answers it without logging, keeping argsOfFirstCall() the real command.
+if (args[0] === "--version") { console.log(${JSON.stringify(`jikji ${JIKJI_INSTALL_VERSION}`)}); process.exit(0); }
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
 ${body}
 process.exit(${exitCode});
@@ -614,6 +618,60 @@ describe("JikjiClient.find", () => {
 			"--stale-after-seconds",
 			"30",
 		]);
+	});
+
+	// `jikji find` reindexes synchronously when a query returns no paths (0.2.x; no CLI opt-out). That
+	// reindex runs `prepare` with jikji's built-in defaults, so it indexes what `exclude`, `includeHidden`
+	// and `includeSensitive` were set to keep out. Observed with real 0.2.1: after `prepare --exclude secret`,
+	// `find "<text only in secret/>"` returned secret/payroll.txt. Forwarding the scope fixes it.
+	it("forwards the prepare scope to find so an empty-result reindex cannot widen the index", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = new JikjiClient({
+			env: pathEnv(),
+			includeHidden: true,
+			includeSensitive: true,
+			maxFiles: 7,
+			exclude: ["secret/**", "*.tmp"],
+			maxHashBytes: 2048,
+			parseTimeout: 9,
+		});
+
+		await client.find(corpusRoot, "q");
+
+		expect(argsOfFirstCall()).toEqual([
+			"find",
+			corpusRoot,
+			"q",
+			"--json",
+			"--no-background-refresh",
+			"--include-hidden",
+			"--include-sensitive",
+			"--max-files",
+			"7",
+			"--exclude",
+			"secret/**",
+			"--exclude",
+			"*.tmp",
+			"--max-hash-bytes",
+			"2048",
+			"--parse-timeout",
+			"9",
+		]);
+	});
+
+	it("does not forward scope flags that are unset, false or zero", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = new JikjiClient({
+			env: pathEnv(),
+			includeHidden: false,
+			includeSensitive: false,
+			maxFiles: 0,
+			exclude: [],
+		});
+
+		await client.find(corpusRoot, "q");
+
+		expect(argsOfFirstCall()).toEqual(["find", corpusRoot, "q", "--json", "--no-background-refresh"]);
 	});
 
 	it("parses a valid answer-pack into ok:true with right answerPaths", async () => {

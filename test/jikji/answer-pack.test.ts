@@ -159,6 +159,59 @@ describe("parseJikjiAnswerPack", () => {
 		});
 	});
 
+	// Real jikji 0.2.1 `find --after-jikji-retry --retry-proof <proof>` against an unprepared root. The
+	// recovery envelope omits evidence_pack and agent_should_not_rerank for BOTH retry actions, but the
+	// parser only tolerated the omission for `jikji_retry`, so the second step of the recovery sequence
+	// (the only way to reach `raw_fallback_after_retry`) was rejected as an unparseable answer pack.
+	it("accepts the raw_fallback_after_retry recovery envelope where evidence_pack and agent_should_not_rerank are omitted", () => {
+		const recoveryEnvelope = JSON.stringify({
+			answer_paths: [],
+			answerability: "needs_raw_fallback_after_retry",
+			candidates: [],
+			command: "jikji find",
+			error: null,
+			handoff_action: "raw_fallback_after_retry",
+			index_status: "missing",
+			max_jikji_retries: 0,
+			max_raw_fallback_commands: 2,
+			mode: "find",
+			next_commands: [],
+			paths: [],
+			query: "vendor contract renewal",
+			raw_fallback_allowed: true,
+			retry_proof: "",
+			root: "/tmp/docs",
+			tool_call_policy: {
+				allowed_followups: ["bounded_raw_fallback"],
+				forbidden_tools: [],
+				reason: "exactly_one_jikji_retry_failed",
+				stop_after_find: false,
+			},
+		});
+		const pack = parseJikjiAnswerPack(recoveryEnvelope);
+		expect(pack).toEqual({
+			answerPaths: [],
+			paths: [],
+			candidates: [],
+			evidencePack: [],
+			handoffAction: "raw_fallback_after_retry",
+			toolCallPolicy: {
+				stopAfterFind: false,
+				forbiddenTools: [],
+				allowedFollowups: ["bounded_raw_fallback"],
+			},
+			agentShouldNotRerank: false,
+		});
+	});
+
+	it("still rejects a direct_use pack that omits evidence_pack or agent_should_not_rerank", () => {
+		const base = JSON.parse(validAnswerPack()) as Record<string, unknown>;
+		const { evidence_pack: _evidence, ...withoutEvidence } = base;
+		const { agent_should_not_rerank: _rerank, ...withoutRerank } = base;
+		expect(parseJikjiAnswerPack(JSON.stringify(withoutEvidence))).toBeUndefined();
+		expect(parseJikjiAnswerPack(JSON.stringify(withoutRerank))).toBeUndefined();
+	});
+
 	it("accepts all next_read enum values on candidates", () => {
 		for (const nextRead of ["cache", "wiki", "original", "none"] as const) {
 			const pack = parseJikjiAnswerPack(
