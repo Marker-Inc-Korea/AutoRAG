@@ -189,7 +189,7 @@ Three principles drive every design decision in AutoRAG Agent:
 
 1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
-2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding backend](docs/minsync-setup.md#embedding-backends) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (the hosted Dazzi Models reranker when signed in, else OpenRouter `voyageai/rerank-3-lite`) is an opt-in extra.
+2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding backend](docs/minsync-setup.md#embedding-backends) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) is an opt-in extra: it runs only when you name one in `rerank.model`, and otherwise the first answer is built from each source's own top 10.
 
 3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (BM25, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
 
@@ -734,9 +734,9 @@ the whole librarian loop runs on the hosted account:
 
 `jev.backend: "dazzi"` posts Jev's native dialect to `<root>/v1/jev`
 (default model `jev-1.13`); `rerank.provider: "dazzi"` reranks against
-`<root>/v1/rerank` (default model `qwen/qwen3-reranker-8b`). Both use the stored
-`/login` credential, and an explicit `rerank.baseUrl` or `rerank.model` still overrides
-the defaults.
+`<root>/v1/rerank`. Both use the stored `/login` credential. Reranking is opt-in and
+has no default model: it runs only when `rerank.model` names one, and an explicit
+`rerank.baseUrl` overrides the endpoint.
 
 ---
 

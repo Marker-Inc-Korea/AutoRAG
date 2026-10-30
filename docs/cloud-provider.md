@@ -11,7 +11,7 @@ The server exposes an OpenAI Responses API surface under `<root>/v1`:
 |---|---|
 | Streaming, tools, usage | Pi's built-in `openai-responses` API (`api: "openai-responses"`, `baseUrl: "<root>/v1"`). No custom stream code. |
 | Login | OAuth2 authorization code + PKCE (S256) against `<root>/desktop/authorize?client=agent`, with a loopback redirect on `127.0.0.1`. Token exchange at `POST <root>/api/desktop/token`. This is the **only** way to authenticate. |
-| Model catalog | The **chat** catalog is discovered live from `GET <root>/v1/models` — no chat model id is hardcoded. The Jev id (`jev-1.13`) and the default reranker are the ids the server lists under `GET <root>/v1/models?operation=jev\|rerank`; Jev and rerankers are not chat LLMs (the 2026+ model rule covers chat LLMs only). |
+| Model catalog | The **chat** catalog is discovered live from `GET <root>/v1/models` — no chat model id is hardcoded. The Jev id (`jev-1.13`) and the rerank models are the ids the server lists under `GET <root>/v1/models?operation=jev\|rerank`; AutoRAG does not pick a rerank model for you, so set `rerank.model` to one of them. Jev and rerankers are not chat LLMs (the 2026+ model rule covers chat LLMs only). |
 
 ## Sign in
 
@@ -145,7 +145,7 @@ picks a default. OpenRouter stays the fallback when you are signed out.
 | Chat model (no `model` in config, none in Pi settings) | `dazzi/z-ai/glm-5.3-flash`, else the catalog's first model | CLI: Pi default, then the local Codex runtime. `autorag tui`: Pi's own picker, no local fallback |
 | Jev (`jev.backend` unset) | `dazzi` | `openrouter` |
 | Question decomposition (`queryDecomposition.model` unset) | `dazzi/openai/gpt-6-luna` | `openrouter/qwen/qwen3.7-flash` |
-| Rerank block `autorag init` writes | `dazzi` / `qwen/qwen3-reranker-8b` | `openrouter` / `voyageai/rerank-3-lite` |
+| Rerank block `autorag init` writes | none (reranking is opt-in) | none (reranking is opt-in) |
 
 Explicit config always wins. An existing `config.json` keeps the blocks it already
 has; `autorag init` writes the signed-in or signed-out set once, when it creates
@@ -174,10 +174,10 @@ other credential:
 | Capability | Endpoint | Default model | Credential |
 |---|---|---|---|
 | Jev (`jev.backend: "dazzi"`) | `POST <root>/v1/jev` (Jev's native dialect) | `jev-1.13` | stored `/login` |
-| Rerank (`rerank.provider: "dazzi"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | `qwen/qwen3-reranker-8b` | stored `/login` |
+| Rerank (`rerank.provider: "dazzi"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | none: reranking runs only when `rerank.model` names one | stored `/login` |
 
 Both read `AUTORAG_BASE_URL` for the server root. An explicit `rerank.baseUrl` or
-`rerank.model` (and `jev.model`) overrides the defaults. `rerank.apiKeyEnv` is
+`jev.model` overrides the defaults. `rerank.apiKeyEnv` is
 rejected for `dazzi` rather than ignored. Without a stored login the backend
 reports a named, non-silent "needs a sign-in" error instead of silently degrading.
 
