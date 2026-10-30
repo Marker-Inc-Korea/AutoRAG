@@ -305,12 +305,13 @@ resolution.
 | Field | Default | Controls |
 |---|---|---|
 | `mergedEvidenceCeiling` | 500 | `search_all_documents` / model-free merge ceiling when the model omits `topK` |
-| `singleDatasourceTopK` | 50 | `search_datasource_*` merge default when the model omits `topK` |
+| `singleDatasourceTopK` | 20 | `search_datasource_*` merge default when the model omits `topK` |
 | `minSyncTopK` | 50 | MinSync semantic default `topK` |
 | `minSyncScopedQueryTopK` | 100 | MinSync fetch cap applied when a scope narrows the query |
 | `toolDescriptionInstanceScopes` | 8 | Instance scopes listed in one datasource tool description |
-| `prefetch.jikjiTopK` | 30 | Jikji find candidate count |
-| `prefetch.minSyncTopK` | 100 | MinSync retrieve candidate count |
+| `prefetch.jikjiTopK` | 10 (30 with a rerank model) | Jikji find candidate count |
+| `prefetch.minSyncTopK` | 10 (100 with a rerank model) | MinSync retrieve candidate count |
+| `prefetch.datasourceTopK` | 10 (20 with a rerank model) | Hits requested from each selected datasource |
 | `prefetch.jikjiPathLimit` | 100 | Max Jikji answer paths rendered into the baseline |
 | `prefetch.sectionLimit` | 100 | Max results rendered per baseline section |
 
@@ -326,7 +327,14 @@ resolution.
 The baseline renders each prefetched result's full chunk content (not a
 per-result excerpt) so the model can see where the hit came from. Bound baseline
 size with `prefetch.sectionLimit` / `prefetch.minSyncTopK` /
-`prefetch.jikjiPathLimit`, not with a per-result content truncation.
+`prefetch.datasourceTopK` / `prefetch.jikjiPathLimit`, not with a per-result
+content truncation.
+
+The `prefetch.*TopK` defaults depend on reranking. Reranking is opt-in and runs
+only when `rerank.model` names a model; then the pool is wide (Jikji 30, MinSync
+100, each datasource 20) and the reranker picks the best. Without it (the
+default) each source contributes its own top 10 to the first answer. An explicit
+value always wins.
 
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,

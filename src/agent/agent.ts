@@ -304,12 +304,17 @@ export interface AutoRAGRetrievalLimits {
 	readonly minSyncScopedQueryTopK?: number;
 	/** Instance scopes listed in one datasource tool description. Default 8. */
 	readonly toolDescriptionInstanceScopes?: number;
-	/** Baseline evidence prefetched for the fast answer. */
+	/**
+	 * Baseline evidence prefetched for the fast answer. Each field's default depends on reranking: with a named rerank
+	 * model the pool is wide (the reranker picks the best); without one every source contributes its own top 10.
+	 */
 	readonly prefetch?: {
-		/** Jikji find candidate count. Default 30. */
+		/** Jikji find candidate count. Default 30 with a reranker, else 10. */
 		readonly jikjiTopK?: number;
-		/** MinSync retrieve candidate count. Default 100. */
+		/** MinSync retrieve candidate count. Default 100 with a reranker, else 10. */
 		readonly minSyncTopK?: number;
+		/** Hits requested from each selected datasource. Default `singleDatasourceTopK` (20) with a reranker, else 10. */
+		readonly datasourceTopK?: number;
 		/** Max Jikji answer paths rendered into the baseline. Default 100. */
 		readonly jikjiPathLimit?: number;
 		/** Max results rendered per baseline section. Default 100. */
@@ -324,7 +329,18 @@ const DEFAULT_RETRIEVAL_LIMITS = {
 	minSyncTopK: 50,
 	minSyncScopedQueryTopK: 100,
 	toolDescriptionInstanceScopes: 8,
-	prefetch: { jikjiTopK: 30, minSyncTopK: 100, jikjiPathLimit: 100, sectionLimit: 100 },
+	jikjiPathLimit: 100,
+	sectionLimit: 100,
+} as const;
+
+/**
+ * Per-source fetch counts for the fast-answer baseline. A reranker picks the best of a wide pool; without one the pool
+ * is the answer, so each source (Jikji, MinSync, every selected datasource) contributes its own top 10 and the prompt
+ * stays small. An operator can still widen either side through `limits.prefetch`.
+ */
+const PREFETCH_TOP_K = {
+	reranked: { jikjiTopK: 30, minSyncTopK: 100, datasourceTopK: DEFAULT_RETRIEVAL_LIMITS.singleDatasourceTopK },
+	unranked: { jikjiTopK: 10, minSyncTopK: 10, datasourceTopK: 10 },
 } as const;
 
 type ResolvedRetrievalLimits = {
@@ -336,6 +352,7 @@ type ResolvedRetrievalLimits = {
 	readonly prefetch: {
 		readonly jikjiTopK: number;
 		readonly minSyncTopK: number;
+		readonly datasourceTopK: number;
 		readonly jikjiPathLimit: number;
 		readonly sectionLimit: number;
 	};
@@ -392,8 +409,12 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	};
 }
 
-function resolveRetrievalLimits(limits: AutoRAGRetrievalLimits | undefined): ResolvedRetrievalLimits {
+function resolveRetrievalLimits(
+	limits: AutoRAGRetrievalLimits | undefined,
+	reranking: boolean,
+): ResolvedRetrievalLimits {
 	const prefetch = limits?.prefetch;
+	const perSource = reranking ? PREFETCH_TOP_K.reranked : PREFETCH_TOP_K.unranked;
 	return {
 		mergedEvidenceCeiling: positiveLimit(
 			limits?.mergedEvidenceCeiling,
@@ -417,24 +438,22 @@ function resolveRetrievalLimits(limits: AutoRAGRetrievalLimits | undefined): Res
 			"limits.toolDescriptionInstanceScopes",
 		),
 		prefetch: {
-			jikjiTopK: positiveLimit(
-				prefetch?.jikjiTopK,
-				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiTopK,
-				"limits.prefetch.jikjiTopK",
-			),
-			minSyncTopK: positiveLimit(
-				prefetch?.minSyncTopK,
-				DEFAULT_RETRIEVAL_LIMITS.prefetch.minSyncTopK,
-				"limits.prefetch.minSyncTopK",
+			jikjiTopK: positiveLimit(prefetch?.jikjiTopK, perSource.jikjiTopK, "limits.prefetch.jikjiTopK"),
+			minSyncTopK: positiveLimit(prefetch?.minSyncTopK, perSource.minSyncTopK, "limits.prefetch.minSyncTopK"),
+			datasourceTopK: positiveLimit(
+				prefetch?.datasourceTopK,
+				// A wide pool follows the operator's single-datasource cap; the unranked top 10 does not.
+				reranking ? (limits?.singleDatasourceTopK ?? perSource.datasourceTopK) : perSource.datasourceTopK,
+				"limits.prefetch.datasourceTopK",
 			),
 			jikjiPathLimit: positiveLimit(
 				prefetch?.jikjiPathLimit,
-				DEFAULT_RETRIEVAL_LIMITS.prefetch.jikjiPathLimit,
+				DEFAULT_RETRIEVAL_LIMITS.jikjiPathLimit,
 				"limits.prefetch.jikjiPathLimit",
 			),
 			sectionLimit: positiveLimit(
 				prefetch?.sectionLimit,
-				DEFAULT_RETRIEVAL_LIMITS.prefetch.sectionLimit,
+				DEFAULT_RETRIEVAL_LIMITS.sectionLimit,
 				"limits.prefetch.sectionLimit",
 			),
 		},
@@ -644,10 +663,10 @@ export interface AutoRAGAgentOptions {
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
 	/**
-	 * Post-merge reranking. When set (and not `false`), merged retrieval evidence
-	 * is reordered by a dedicated rerank model — OpenRouter by default. A
-	 * configured-but-unavailable reranker is reported as a diagnostic and the
-	 * merged order is preserved. `false` disables reranking.
+	 * Post-merge reranking, opt-in: it runs only when a rerank `model` is named. A block without a model is treated as
+	 * off and reported once as a `rerank-disabled` diagnostic; absent or `false` is off. With reranking off the fast
+	 * answer's baseline keeps each source's own top 10 (see {@link AutoRAGRetrievalLimits.prefetch}). A configured
+	 * but unavailable reranker is reported as a diagnostic and the merged order is preserved.
 	 */
 	rerank?: RerankAgentOptions | false;
 	autoRefresh?: AutoRefreshOptions;
@@ -780,7 +799,7 @@ export interface AutoRAGAgentOptions {
 export interface RerankAgentOptions {
 	/** Provider id. @default "openrouter" */
 	provider?: string;
-	/** Wire model id. @default "voyageai/rerank-3-lite" */
+	/** Wire model id. Required: reranking runs only when a model is named; there is no default. */
 	model?: string;
 	/** API key. Prefer `apiKeyEnv`; this is a programmatic seam. Not used by the `dazzi` provider. */
 	apiKey?: string;
@@ -1027,7 +1046,26 @@ export class AutoRAGAgent {
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
 			normalizeVirtualPath(`/${skill.describe().name}`),
 		);
-		this.startupDiagnostics = options.startupDiagnostics ?? [];
+		// Reranking is opt-in: it runs only when a rerank model is named. A block without one is a leftover of the
+		// old default, so it is treated as off and reported once instead of silently changing behavior.
+		const rerankBlock = options.rerank === false ? undefined : options.rerank;
+		const rerankNamesModel = rerankBlock?.model !== undefined && rerankBlock.model.trim() !== "";
+		const rerankOptions: RerankAgentOptions | false =
+			rerankBlock !== undefined && rerankNamesModel ? rerankBlock : false;
+		this.startupDiagnostics = [
+			...(options.startupDiagnostics ?? []),
+			...(rerankBlock !== undefined && !rerankNamesModel
+				? [
+						{
+							code: "rerank-disabled" as const,
+							severity: "warning" as const,
+							message:
+								"Reranking is off: the `rerank` block names no model. Set `rerank.model` (for example the model your provider lists for reranking) to turn it on; without it every source contributes its own top 10 to the first answer.",
+							source: "rerank",
+						},
+					]
+				: []),
+		];
 		this.datasourceAgentSkills = this.buildDatasourceAgentSkills();
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.languages = options.languages ?? DEFAULT_LANGUAGES;
@@ -1046,17 +1084,12 @@ export class AutoRAGAgent {
 		this.fileeOptions = options.filee ?? {};
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
-		this.limits = resolveRetrievalLimits(options.limits);
+		this.limits = resolveRetrievalLimits(options.limits, rerankOptions !== false);
 		this.refreshLimits = validateRefreshLimits(options.refresh);
 		this.reranker = createReranker(
-			options.rerank === false || options.rerank === undefined
-				? false
-				: { ...options.rerank, agentDir: options.piAgentDir },
+			rerankOptions === false ? false : { ...rerankOptions, agentDir: options.piAgentDir },
 		);
-		this.rerankTopN =
-			options.rerank === false || options.rerank === undefined
-				? undefined
-				: (options.rerank.topN ?? DEFAULT_RERANK_TOP_N);
+		this.rerankTopN = rerankOptions === false ? undefined : (rerankOptions.topN ?? DEFAULT_RERANK_TOP_N);
 
 		// MinSync is required: there is no option to turn it off and no degraded mode.
 		if ((options.minSync as unknown) === false) {
@@ -3060,7 +3093,7 @@ export class AutoRAGAgent {
 									`datasource:${datasourceId}`,
 									`Datasource ${datasourceId}`,
 									this.searchSingleDatasourceDocuments(datasourceId, searchQuery, {
-										topK: this.limits.singleDatasourceTopK,
+										topK: this.limits.prefetch.datasourceTopK,
 										scope: options.scope,
 										signal,
 									}),

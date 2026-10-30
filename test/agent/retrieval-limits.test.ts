@@ -28,6 +28,7 @@ type AgentInternals = {
 		query: string,
 		searchQueries: readonly string[],
 		options: RetrievalOptions,
+		datasources?: readonly string[],
 	) => Promise<string>;
 };
 
@@ -41,11 +42,11 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function rows(count: number): RetrievalResult[] {
+function rows(count: number, origin = "doc"): RetrievalResult[] {
 	return Array.from({ length: count }, (_, index) => ({
-		id: `row-${index}`,
-		source: `/docs/doc-${index}.md`,
-		content: `candidate ${index}`,
+		id: `${origin}-row-${index}`,
+		source: `/docs/${origin}-${index}.md`,
+		content: `${origin === "doc" ? "candidate" : `${origin} candidate`} ${index}`,
 		score: 1 - index / 10,
 		metadata: {},
 	}));
@@ -85,7 +86,7 @@ function fakeMethod(name: string, count: number, datasourceId?: string): Retriev
 			capabilities: [],
 			...(datasourceId === undefined ? {} : { datasourceId, tags: ["t"] }),
 		}),
-		retrieve: async () => rows(count),
+		retrieve: async () => rows(count, datasourceId ?? "doc"),
 	};
 }
 
@@ -155,15 +156,121 @@ describe("AutoRAGAgent retrieval limits", () => {
 		expect(seenTopK).toEqual([7]);
 	});
 
-	it("keeps the shipped defaults when no limits are configured", async () => {
-		const internals = agentWith();
-		const seenTopK: number[] = [];
-		injectMinSync(internals, 5, seenTopK);
+	describe("without a reranker the fast-answer baseline asks every source for its own top 10", () => {
+		it("asks Jikji, MinSync, and a datasource for 10 hits each", async () => {
+			const internals = agentWith(undefined, { datasourceSkills: [fakeSkill("ds1", 30, 1)] });
+			const seenMinSyncTopK: number[] = [];
+			const seenJikjiTopK: number[] = [];
+			injectMinSync(internals, 30, seenMinSyncTopK);
+			internals.jikjiClient = {};
+			internals.findJikji = async (_query, opts) => {
+				seenJikjiTopK.push(opts?.topK ?? 0);
+				return { answerPack: { answerPaths: ["/p/1"] } };
+			};
 
-		const context = await internals.prefetchInitialRetrievalContext("candidates", ["candidates"], {});
+			const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {}, ["ds1"]);
 
-		expect((context.match(/^\[e\d+\]/gmu) ?? []).length).toBe(5);
-		expect(seenTopK).toEqual([100]);
+			expect(seenMinSyncTopK).toEqual([10]);
+			expect(seenJikjiTopK).toEqual([10]);
+			const datasourceSection = context.split(/\n\n(?=\S)/u).find((part) => part.startsWith("Datasource initial"));
+			expect((datasourceSection?.match(/^\[e\d+\]/gmu) ?? []).length).toBe(10);
+		});
+
+		it("asks again for 10 per source for every decomposed query", async () => {
+			const internals = agentWith();
+			const seenTopK: number[] = [];
+			injectMinSync(internals, 3, seenTopK);
+
+			await internals.prefetchInitialRetrievalContext("query", ["query one", "query two"], {});
+
+			expect(seenTopK).toEqual([10, 10]);
+		});
+
+		it("lets explicit prefetch limits override the top-10 defaults", async () => {
+			const internals = agentWith(
+				{ prefetch: { minSyncTopK: 40, datasourceTopK: 15 } },
+				{ datasourceSkills: [fakeSkill("ds1", 30, 1)] },
+			);
+			const seenTopK: number[] = [];
+			injectMinSync(internals, 3, seenTopK);
+
+			const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {}, ["ds1"]);
+
+			expect(seenTopK).toEqual([40]);
+			const datasourceSection = context.split(/\n\n(?=\S)/u).find((part) => part.startsWith("Datasource initial"));
+			expect((datasourceSection?.match(/^\[e\d+\]/gmu) ?? []).length).toBe(15);
+		});
+
+		it("leaves what the model gets from its own search tools alone", async () => {
+			const internals = agentWith(undefined, { datasourceSkills: [fakeSkill("ds1", 30, 1)] });
+			const vector = internals.minSyncMethod as { readonly defaultTopK: number };
+
+			expect(vector.defaultTopK).toBe(50);
+			const { results } = await internals.searchSingleDatasourceDocuments("ds1", "query");
+			expect(results).toHaveLength(20);
+		});
+	});
+
+	describe("reranking runs only on an explicitly named model", () => {
+		it("keeps the wide candidate pool when a reranker model is named", async () => {
+			const internals = agentWith(undefined, {
+				rerank: { provider: "openrouter", model: "named-model", apiKey: "k", baseUrl: "http://127.0.0.1:9/" },
+			});
+			const seenTopK: number[] = [];
+			injectMinSync(internals, 3, seenTopK);
+
+			await internals.prefetchInitialRetrievalContext("query", ["query"], {});
+
+			expect(seenTopK).toEqual([100]);
+		});
+
+		it("treats a rerank block without a model as off, and falls back to the top-10 baseline", async () => {
+			const internals = agentWith(undefined, { rerank: { provider: "openrouter", apiKey: "k" } });
+			const seenTopK: number[] = [];
+			injectMinSync(internals, 3, seenTopK);
+
+			const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
+
+			expect(seenTopK).toEqual([10]);
+			expect(context).not.toContain("Reranked initial candidates");
+		});
+
+		it("says so once in the response when a rerank block has no model", async () => {
+			const agent = new AutoRAGAgent({
+				searchPaths: [root],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				minSync: { autoInstall: false },
+				jikji: false,
+				rerank: { provider: "dazzi" },
+			});
+
+			const response = await agent.searchDocuments("  ");
+
+			const notices = (response.diagnostics ?? []).filter((diagnostic) => diagnostic.code === "rerank-disabled");
+			expect(notices).toHaveLength(1);
+			expect(notices[0]).toMatchObject({ severity: "warning", source: "rerank" });
+			expect(notices[0]?.message).toMatch(/rerank\.model/u);
+		});
+
+		it("stays silent when reranking is absent, switched off, or has a model", async () => {
+			for (const rerank of [undefined, false, { provider: "dazzi", model: "named-model" }] as const) {
+				const agent = new AutoRAGAgent({
+					searchPaths: [root],
+					workspacePath: root,
+					memoryPath: join(root, "memory.json"),
+					minSync: { autoInstall: false },
+					jikji: false,
+					...(rerank === undefined ? {} : { rerank }),
+				});
+
+				const response = await agent.searchDocuments("  ");
+
+				expect((response.diagnostics ?? []).filter((diagnostic) => diagnostic.code === "rerank-disabled")).toEqual(
+					[],
+				);
+			}
+		});
 	});
 
 	it("reranks the pre-fast-answer baseline pool when a reranker is configured", async () => {
