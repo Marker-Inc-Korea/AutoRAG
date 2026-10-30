@@ -860,6 +860,7 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	cloudMaxFiles: true,
 	cloudMaxBytes: true,
 	cloudEvictAfterParse: true,
+	cloudEvictRetries: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -899,6 +900,13 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	if (cloudEvictAfterParse !== undefined && typeof cloudEvictAfterParse !== "boolean") {
 		throw new ConfigError("refresh.cloudEvictAfterParse must be a boolean");
 	}
+	const cloudEvictRetries = record.cloudEvictRetries;
+	if (
+		cloudEvictRetries !== undefined &&
+		(typeof cloudEvictRetries !== "number" || !Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)
+	) {
+		throw new ConfigError("refresh.cloudEvictRetries must be a non-negative integer");
+	}
 	return {
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
@@ -907,6 +915,7 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 		...(cloudMaxFiles !== undefined ? { cloudMaxFiles } : {}),
 		...(cloudMaxBytes !== undefined ? { cloudMaxBytes } : {}),
 		...(cloudEvictAfterParse !== undefined ? { cloudEvictAfterParse } : {}),
+		...(cloudEvictRetries !== undefined ? { cloudEvictRetries } : {}),
 	};
 }
 

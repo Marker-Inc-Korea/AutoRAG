@@ -132,6 +132,12 @@ export interface ParsedMirrorSyncOptions {
 	readonly cloudMaxBytes?: number;
 	/** Release an iCloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
+	/** Retries after a failed release (`brctl evict`), with doubling waits; `0` tries once. Default 3. */
+	readonly cloudEvictRetries?: number;
+	/** First wait before retrying a failed release, doubled each retry. Default 500 ms. */
+	readonly cloudEvictBackoffMs?: number;
+	/** Wait used between release retries. Tests inject a recorder so they never really sleep. */
+	readonly cloudSleep?: (ms: number) => Promise<void>;
 }
 
 /** Parse-phase progress. Every scanned file counts as processed, whether parsed, unchanged, skipped or excluded. */
@@ -425,6 +431,9 @@ async function syncWithRegistry(
 		maxFiles: options.cloudMaxFiles,
 		maxBytes: options.cloudMaxBytes,
 		evictAfterParse: options.cloudEvictAfterParse,
+		evictRetries: options.cloudEvictRetries,
+		evictBackoffMs: options.cloudEvictBackoffMs,
+		sleep: options.cloudSleep,
 	});
 	const fingerprint = parseFingerprint(options);
 	const failureFingerprint = retryFingerprint(options, fingerprint);

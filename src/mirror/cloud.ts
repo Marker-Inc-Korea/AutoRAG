@@ -1,3 +1,4 @@
+import { setTimeout as sleepFor } from "node:timers/promises";
 import { type CloudFileProbe, type CloudProvider, defaultCloudProbe } from "../filesystem/cloud-placeholder.ts";
 
 /** Placeholders one refresh may download before the rest wait for the next refresh. */
@@ -6,12 +7,30 @@ export const DEFAULT_CLOUD_MAX_FILES = 200;
 /** Placeholder bytes one refresh may download. The first file is always allowed so a large one cannot starve. */
 export const DEFAULT_CLOUD_MAX_BYTES = 512 * 1024 * 1024;
 
+/**
+ * Retries after the first failed `brctl evict`. A just-hydrated file is often briefly "in use" by the provider
+ * (measured: `Resource busy ... currently in use by an application`, then success a moment later), so a short
+ * doubling wait usually clears it.
+ */
+export const DEFAULT_CLOUD_EVICT_RETRIES = 3;
+
+/** First wait before retrying an evict; doubles each retry (500, 1000, 2000 ms by default). */
+export const DEFAULT_CLOUD_EVICT_BACKOFF_MS = 500;
+
 export interface CloudGateOptions {
 	readonly probe?: CloudFileProbe;
 	readonly maxFiles?: number;
 	readonly maxBytes?: number;
 	readonly evictAfterParse?: boolean;
+	/** Retries after the first failed evict; `0` tries once. Default {@link DEFAULT_CLOUD_EVICT_RETRIES}. */
+	readonly evictRetries?: number;
+	/** First retry wait in ms, doubled each retry. Default {@link DEFAULT_CLOUD_EVICT_BACKOFF_MS}. */
+	readonly evictBackoffMs?: number;
+	/** Wait implementation; tests inject one that records instead of sleeping. */
+	readonly sleep?: (ms: number) => Promise<void>;
 }
+
+export type CloudReleaseResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /**
  * What a refresh does with one file that needs parsing:
@@ -36,6 +55,9 @@ export class CloudGate {
 	private readonly probe: CloudFileProbe | undefined;
 	private readonly maxFiles: number;
 	private readonly maxBytes: number;
+	private readonly evictRetries: number;
+	private readonly evictBackoffMs: number;
+	private readonly sleep: (ms: number) => Promise<void>;
 	private readonly providerByDirectory = new Map<string, Promise<CloudProvider | undefined>>();
 	private placeholders: ReadonlySet<string> = new Set();
 	private downloadedFiles = 0;
@@ -48,6 +70,9 @@ export class CloudGate {
 		this.maxFiles = options.maxFiles ?? DEFAULT_CLOUD_MAX_FILES;
 		this.maxBytes = options.maxBytes ?? DEFAULT_CLOUD_MAX_BYTES;
 		this.evictAfterParse = options.evictAfterParse !== false;
+		this.evictRetries = Math.max(0, options.evictRetries ?? DEFAULT_CLOUD_EVICT_RETRIES);
+		this.evictBackoffMs = options.evictBackoffMs ?? DEFAULT_CLOUD_EVICT_BACKOFF_MS;
+		this.sleep = options.sleep ?? (async (ms) => void (await sleepFor(ms)));
 	}
 
 	/** Look up, in one batch, which of the files about to be read are placeholders. */
@@ -73,10 +98,25 @@ export class CloudGate {
 		return { kind: "download" };
 	}
 
-	/** Release the local copy of a file this refresh downloaded. */
-	async release(path: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> {
-		if (this.probe === undefined) return { ok: true };
-		return this.probe.evict(path);
+	/**
+	 * Release the local copy of a file this refresh downloaded. A failed attempt is retried with doubling waits;
+	 * once the retries are spent the last error is returned and the file is left on disk. Giving up is final for
+	 * this refresh: the file stays indexed, and an unchanged file is not processed again, so nothing retries it later.
+	 */
+	async release(path: string): Promise<CloudReleaseResult> {
+		const probe = this.probe;
+		if (probe === undefined) return { ok: true };
+		let result = await probe.evict(path);
+		for (let retry = 0; !result.ok && retry < this.evictRetries; retry += 1) {
+			if (this.evictBackoffMs > 0) await this.sleep(this.evictBackoffMs * 2 ** retry);
+			result = await probe.evict(path);
+		}
+		if (result.ok) return result;
+		const attempts = this.evictRetries + 1;
+		return {
+			ok: false,
+			message: `${result.message} (gave up after ${attempts} attempt${attempts === 1 ? "" : "s"})`,
+		};
 	}
 
 	/** Providers are resolved once per directory: a File Provider domain covers the whole subtree. */

@@ -56,7 +56,7 @@ describe("refresh config normalization", () => {
 	});
 
 	it("accepts the cloud download budget and eviction switch and maps them onto the agent option", () => {
-		const cloud = { cloudMaxFiles: 50, cloudMaxBytes: 1048576, cloudEvictAfterParse: false };
+		const cloud = { cloudMaxFiles: 50, cloudMaxBytes: 1048576, cloudEvictAfterParse: false, cloudEvictRetries: 5 };
 		const config = resolveFrom({ refresh: cloud });
 
 		expect(config.refresh).toEqual(cloud);
@@ -68,6 +68,12 @@ describe("refresh config normalization", () => {
 		expect(() => resolveFrom({ refresh: { cloudMaxFiles: 1.5 } })).toThrow(ConfigError);
 		expect(() => resolveFrom({ refresh: { cloudMaxBytes: -1 } })).toThrow(ConfigError);
 		expect(() => resolveFrom({ refresh: { cloudEvictAfterParse: "no" } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudEvictRetries: -1 } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudEvictRetries: 1.5 } })).toThrow(ConfigError);
+	});
+
+	it("accepts cloudEvictRetries of 0, which tries the release once", () => {
+		expect(resolveFrom({ refresh: { cloudEvictRetries: 0 } }).refresh).toEqual({ cloudEvictRetries: 0 });
 	});
 
 	it("accepts the ratio boundaries 0 and 1", () => {

@@ -295,6 +295,12 @@ export interface AutoRAGRefreshLimits {
 	readonly cloudMaxBytes?: number;
 	/** Release an iCloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
+	/**
+	 * Retries after a failed release of a downloaded iCloud file (`brctl evict` often fails once with "in use"
+	 * right after a download), waiting 500 ms then 1 s then 2 s. After the last retry the file is left on disk
+	 * and `cloud-evict-failed` is reported. `0` tries once. Default 3.
+	 */
+	readonly cloudEvictRetries?: number;
 }
 
 /**
@@ -388,6 +394,7 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 		cloudMaxFiles,
 		cloudMaxBytes,
 		cloudEvictAfterParse,
+		cloudEvictRetries,
 	} = limits;
 	if (
 		maxDeleteRatio !== undefined &&
@@ -407,6 +414,9 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	if (cloudEvictAfterParse !== undefined && typeof cloudEvictAfterParse !== "boolean") {
 		throw new Error("refresh.cloudEvictAfterParse must be a boolean");
 	}
+	if (cloudEvictRetries !== undefined && (!Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)) {
+		throw new Error("refresh.cloudEvictRetries must be a non-negative integer");
+	}
 	return {
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
@@ -415,6 +425,7 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 		...(cloudMaxFiles !== undefined ? { cloudMaxFiles } : {}),
 		...(cloudMaxBytes !== undefined ? { cloudMaxBytes } : {}),
 		...(cloudEvictAfterParse !== undefined ? { cloudEvictAfterParse } : {}),
+		...(cloudEvictRetries !== undefined ? { cloudEvictRetries } : {}),
 	};
 }
 

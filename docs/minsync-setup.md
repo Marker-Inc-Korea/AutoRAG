@@ -472,7 +472,7 @@ refresh continues:
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
 | `cloud-placeholder-skipped` | info | A Google Drive, OneDrive, or other File Provider placeholder was not read; `reason` carries the provider. |
 | `cloud-download-deferred` | info | An iCloud placeholder is over this refresh's download budget and waits for the next refresh. |
-| `cloud-evict-failed` | warning | The file was indexed but releasing its local copy failed; the message is the `brctl` error. |
+| `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the last `brctl` error and the attempt count. |
 
 `EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
 (50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
@@ -540,16 +540,20 @@ before reading and treats the three cases differently:
 
 Files already on disk are read as before and never evicted. Downloads per refresh
 are bounded; the rest wait for the next refresh (`cloud-download-deferred`, one
-diagnostic per deferred file). A failed `brctl evict` leaves the document indexed
-and records `cloud-evict-failed` with the command's own error text.
+diagnostic per deferred file). A failed `brctl evict` is retried with doubling
+waits (500 ms, 1 s, 2 s; `Resource busy ... currently in use by an application` is
+common right after a download and usually clears). When the retries are spent the
+file is left on disk, the document stays indexed, and one `cloud-evict-failed`
+records the command's own error text and the attempt count. Giving up is final:
+an unchanged file is not processed again, so it stays on disk until its content changes.
 
 ```json
-{ "refresh": { "cloudMaxFiles": 200, "cloudMaxBytes": 536870912, "cloudEvictAfterParse": true } }
+{ "refresh": { "cloudMaxFiles": 200, "cloudMaxBytes": 536870912, "cloudEvictAfterParse": true, "cloudEvictRetries": 3 } }
 ```
 
 `cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
 refresh downloads; the first file is always allowed, so one large file cannot starve.
-`cloudEvictAfterParse: false` keeps downloaded iCloud files on disk. Other platforms
+`cloudEvictAfterParse: false` keeps downloaded iCloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. Other platforms
 read every file as before; Windows Cloud Files placeholders are not handled yet.
 
 Two other readers open file contents themselves and download a released iCloud file

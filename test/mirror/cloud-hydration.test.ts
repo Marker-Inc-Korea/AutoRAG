@@ -23,6 +23,7 @@ let root: string;
 let source: string;
 
 beforeEach(() => {
+	waits = [];
 	root = mkdtempSync(join(tmpdir(), "autorag-cloud-hydration-"));
 	source = join(root, "docs");
 	mkdirSync(source, { recursive: true });
@@ -38,6 +39,8 @@ class FakeCloud implements CloudFileProbe {
 	readonly providers = new Map<string, CloudProvider>();
 	readonly evicted: string[] = [];
 	evictResult: CloudEvictResult = { ok: true };
+	/** Results handed out one per evict call before falling back to `evictResult`. */
+	evictScript: CloudEvictResult[] = [];
 
 	markDataless(path: string, provider: CloudProvider): void {
 		this.dataless.add(path);
@@ -51,7 +54,7 @@ class FakeCloud implements CloudFileProbe {
 	}
 	async evict(path: string): Promise<CloudEvictResult> {
 		this.evicted.push(path);
-		return this.evictResult;
+		return this.evictScript.shift() ?? this.evictResult;
 	}
 }
 
@@ -96,6 +99,9 @@ function write(name: string, text = `${name}\n`): string {
 	return path;
 }
 
+/** Backoff waits the refresh asked for, in order. The tests never really sleep. */
+let waits: number[];
+
 function sync(cloud: FakeCloud, extra: Partial<ParsedMirrorSyncOptions> = {}): Promise<ParsedMirrorSyncResult> {
 	return syncParsedMirrors({
 		root,
@@ -103,6 +109,9 @@ function sync(cloud: FakeCloud, extra: Partial<ParsedMirrorSyncOptions> = {}): P
 		registry: createDefaultParserRegistry(),
 		transientRetryBackoffMs: 0,
 		cloudProbe: cloud,
+		cloudSleep: async (ms) => {
+			waits.push(ms);
+		},
 		...extra,
 	});
 }
@@ -146,18 +155,86 @@ describe("iCloud placeholders are indexed, then released", () => {
 		expect(cloud.evicted).toEqual([]);
 	});
 
-	it("reports a failed eviction without losing the indexed document", async () => {
+	it("gives up after the retries, keeps the document indexed, and reports the last error once", async () => {
 		const cloud = new FakeCloud();
 		cloud.markDataless(write("remote.txt"), "icloud");
-		cloud.evictResult = { ok: false, message: "brctl: not synced yet" };
+		cloud.evictScript = [
+			{ ok: false, message: "brctl: busy 1" },
+			{ ok: false, message: "brctl: busy 2" },
+			{ ok: false, message: "brctl: busy 3" },
+			{ ok: false, message: "brctl: busy 4" },
+		];
+
+		const result = await sync(cloud, { cloudEvictRetries: 3 });
+
+		expect(result.written).toBe(1);
+		expect(cloud.evicted).toHaveLength(4); // first attempt + 3 retries
+		const failures = result.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-evict-failed");
+		expect(failures).toHaveLength(1);
+		expect(failures[0]?.source).toBe("/docs/remote.txt");
+		expect(failures[0]?.message).toContain("brctl: busy 4");
+		expect(failures[0]?.message).toContain("4 attempts");
+		expect(loadMirrorIndex(root).entries["/docs/remote.txt"]).toBeDefined();
+	});
+
+	it("succeeds on a later attempt without a diagnostic", async () => {
+		const cloud = new FakeCloud();
+		cloud.markDataless(write("remote.txt"), "icloud");
+		cloud.evictScript = [{ ok: false, message: "busy" }, { ok: false, message: "busy" }, { ok: true }];
 
 		const result = await sync(cloud);
 
-		expect(result.written).toBe(1);
-		const failure = result.diagnostics.find((diagnostic) => diagnostic.code === "cloud-evict-failed");
-		expect(failure?.source).toBe("/docs/remote.txt");
-		expect(failure?.message).toContain("brctl: not synced yet");
-		expect(loadMirrorIndex(root).entries["/docs/remote.txt"]).toBeDefined();
+		expect(cloud.evicted).toHaveLength(3);
+		expect(codes(result)).not.toContain("cloud-evict-failed");
+	});
+
+	it("doubles the wait between attempts", async () => {
+		const cloud = new FakeCloud();
+		cloud.markDataless(write("remote.txt"), "icloud");
+		cloud.evictResult = { ok: false, message: "busy" };
+
+		await sync(cloud, { cloudEvictRetries: 4, cloudEvictBackoffMs: 100 });
+
+		expect(waits).toEqual([100, 200, 400, 800]);
+	});
+
+	it("does not wait or retry when the first attempt works", async () => {
+		const cloud = new FakeCloud();
+		cloud.markDataless(write("remote.txt"), "icloud");
+
+		await sync(cloud);
+
+		expect(cloud.evicted).toHaveLength(1);
+		expect(waits).toEqual([]);
+	});
+
+	it("tries once and reports when retries are set to 0", async () => {
+		const cloud = new FakeCloud();
+		cloud.markDataless(write("remote.txt"), "icloud");
+		cloud.evictResult = { ok: false, message: "busy" };
+
+		const result = await sync(cloud, { cloudEvictRetries: 0 });
+
+		expect(cloud.evicted).toHaveLength(1);
+		expect(waits).toEqual([]);
+		expect(codes(result)).toContain("cloud-evict-failed");
+	});
+
+	it("gives each file its own retries and keeps releasing the rest after one gives up", async () => {
+		const cloud = new FakeCloud();
+		for (const name of ["a.txt", "b.txt", "c.txt"]) cloud.markDataless(write(name), "icloud");
+		// a.txt exhausts its 2 retries (3 calls); b.txt and c.txt then succeed first time.
+		cloud.evictScript = [
+			{ ok: false, message: "busy" },
+			{ ok: false, message: "busy" },
+			{ ok: false, message: "busy" },
+		];
+
+		const result = await sync(cloud, { cloudEvictRetries: 2 });
+
+		expect(cloud.evicted.map((path) => path.split("/").pop())).toEqual(["a.txt", "a.txt", "a.txt", "b.txt", "c.txt"]);
+		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-evict-failed")).toHaveLength(1);
+		expect(result.written).toBe(3);
 	});
 
 	it("does not evict a file the user changed while it was being parsed", async () => {
