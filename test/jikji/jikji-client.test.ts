@@ -717,3 +717,112 @@ describe("JikjiClient.find", () => {
 		expect(recorded[1]?.args[1]).toBe(canonical);
 	});
 });
+
+describe("JikjiClient.discover", () => {
+	const PROOF = "ab9ebb1eb3f6e5460b4f1c23";
+	const RAW_FALLBACK_PACK = {
+		...ANSWER_PACK,
+		answer_paths: [],
+		paths: [],
+		candidates: [],
+		evidence_pack: [],
+		handoff_action: "raw_fallback_after_retry",
+		tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+		agent_should_not_rerank: false,
+		raw_fallback_allowed: true,
+		max_raw_fallback_commands: 2,
+		max_jikji_retries: 0,
+	};
+
+	function step(overrides: Partial<{ root: string; query: string; topK: number; proof: string }> = {}) {
+		return { root: corpusRoot, query: "rewritten query", topK: 20, proof: PROOF, ...overrides };
+	}
+
+	it("runs discover with the issued proof, never reindexing or refreshing in the background", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		await clientWithPath().discover(corpusRoot, step());
+
+		expect(argsOfFirstCall()).toEqual([
+			"discover",
+			corpusRoot,
+			"rewritten query",
+			"--json",
+			"--no-background-refresh",
+			"--no-auto-prepare",
+			"--top-k",
+			"20",
+			"--after-jikji-retry",
+			"--retry-proof",
+			PROOF,
+		]);
+	});
+
+	it("omits --top-k when the step names none", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		await clientWithPath().discover(corpusRoot, { root: corpusRoot, query: "q", proof: PROOF });
+
+		expect(argsOfFirstCall()).not.toContain("--top-k");
+	});
+
+	it("parses the discover envelope like a find result", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		const result = await clientWithPath().discover(corpusRoot, step());
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.answerPack.handoffAction).toBe("raw_fallback_after_retry");
+		expect(result.answerPack.rawFallbackAllowed).toBe(true);
+		expect(result.answerPack.maxRawFallbackCommands).toBe(2);
+	});
+
+	it("refuses a step issued for another root without spawning anything", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		const result = await clientWithPath().discover(corpusRoot, step({ root: join(root, "other-root") }));
+
+		expect(result).toMatchObject({ ok: false, reason: "bad-retry-step" });
+		expect(existsSync(logPath)).toBe(false);
+	});
+
+	it("keeps exit status, stderr and real paths verbatim when discover fails", async () => {
+		writeFakeJikji(`console.error("discover failed: cannot read /real/path/index.db");`, 3);
+
+		const result = await clientWithPath().discover(corpusRoot, step());
+
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "nonzero-exit",
+			code: 3,
+			stderr: "discover failed: cannot read /real/path/index.db\n",
+		});
+	});
+
+	it("reports an unparseable discover envelope", async () => {
+		writeFakeJikji(`console.log("not json");`);
+
+		const result = await clientWithPath().discover(corpusRoot, step());
+
+		expect(result).toMatchObject({ ok: false, reason: "bad-answer-pack" });
+	});
+
+	it("runs behind queued finds, not behind a refresh", async () => {
+		writeFakeJikji(
+			`await new Promise((r) => setTimeout(r, args[0] === "prepare" ? 400 : 0));
+console.log(args[0] === "prepare" ? JSON.stringify({ prepared: true }) : ${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`,
+		);
+		const client = clientWithPath();
+		const prepare = client.prepare(corpusRoot, { timeoutMs: 5_000 });
+		await waitForLogFile();
+		const started = Date.now();
+
+		const result = await client.discover(corpusRoot, step());
+		const elapsed = Date.now() - started;
+		await prepare;
+
+		expect(result.ok).toBe(true);
+		expect(elapsed).toBeLessThan(350);
+	});
+});
