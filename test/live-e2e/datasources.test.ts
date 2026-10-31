@@ -135,12 +135,6 @@ describe("live-e2e datasource matrix", () => {
 		expect(validateNativeIdentity("/kakao/default/chunk-001", "lazykatok")).toBe(false);
 	});
 
-	it("accepts only canonical Spotlight slash identities", () => {
-		expect(validateNativeIdentity("/spotlight/default/chunks/chunk-001", "spotlight")).toBe(true);
-		expect(validateNativeIdentity("spotlight:chunk-001", "spotlight")).toBe(false);
-		expect(validateNativeIdentity("/autorag/fake/chunks/1", "spotlight")).toBe(false);
-	});
-
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {
 		const diagnostic = sanitizeDiagnostic(
 			`failed ${["tok", "en"].join("")}=${["super", "secret"].join("-")} ${["pass", "word"].join("")}=${["hunter", "2"].join("")} at ${["/", "Users", "me", "private"].join("/")}`,

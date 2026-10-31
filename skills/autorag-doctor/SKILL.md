@@ -1,6 +1,6 @@
 ---
 name: autorag-doctor
-description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
+description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, mailcrawl, rclone), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
 license: Apache-2.0
 ---
 
@@ -73,7 +73,6 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 | Obsidian / notes | `autorag status` (AutoRAG-owned index) | `autorag refresh --method datasources`; if corrupt, delete `.autorag/datasources/obsidian/<instance>` first |
 | Mail | `mailcrawl doctor`, `mailcrawl status` | `mailcrawl sync && mailcrawl index` |
 | Cloud drive | `rclone listremotes` | `autorag refresh --method datasources` |
-| Spotlight (macOS) | `mdutil -s /` | indexed by the OS; no AutoRAG sync |
 | Lark / Feishu | `lark-cli auth status --format json` | no local sync; search is remote |
 
 Rules:

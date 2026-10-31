@@ -52,9 +52,9 @@ function makeFixture() {
 			// Pass the shim explicitly: `portableSpawnCommand` only rewrites a shebang
 			// script to its interpreter when it can see the file at that exact path.
 			dupey: { binaryPath: dupeyBinary },
-			// Spotlight needs no external install, so a configured skill yields a
-			// dynamic datasource tool without touching the network or a binary.
-			datasources: { spotlight: { enabled: true } },
+			// RSS needs no external install and fetches nothing until a feed is configured and polled, so a
+			// configured skill yields a dynamic datasource tool without touching the network or a binary.
+			datasources: { rss: { enabled: true } },
 		}),
 	);
 	return { root, docs, config, binDir };
@@ -243,7 +243,7 @@ describe("AutoRAG Lite MCP stdio", () => {
 			"autorag.datasources.list",
 			"autorag.datasources.get",
 			"autorag.duplicates",
-			"autorag.search_datasource_spotlight",
+			"autorag.search_datasource_rss",
 			"autorag.refresh",
 		]) {
 			expect(names).toContain(tool);
@@ -251,17 +251,17 @@ describe("AutoRAG Lite MCP stdio", () => {
 
 		const duplicatesTool = listed.tools.find((tool) => tool.name === "autorag.duplicates");
 		expect(duplicatesTool?.description).toContain("Dupey");
-		const dynamicTool = listed.tools.find((tool) => tool.name === "autorag.search_datasource_spotlight");
-		expect(dynamicTool?.description).toContain("Spotlight");
+		const dynamicTool = listed.tools.find((tool) => tool.name === "autorag.search_datasource_rss");
+		expect(dynamicTool?.description).toContain("RSS");
 
-		// Before refresh the dynamic tool must fail ready-gated without touching Spotlight.
+		// Before refresh the dynamic tool must fail ready-gated without fetching any feed.
 		const dynamicNotReady = await first.client.callTool({
-			name: "autorag.search_datasource_spotlight",
+			name: "autorag.search_datasource_rss",
 			arguments: { query: "refund" },
 		});
 		expect(dynamicNotReady.isError).toBe(true);
 		expect(hasFieldValue(dynamicNotReady.structuredContent, "errorCode", "index-not-ready")).toBe(true);
-		expect(hasFieldValue(dynamicNotReady.structuredContent, "datasourceId", "spotlight")).toBe(true);
+		expect(hasFieldValue(dynamicNotReady.structuredContent, "datasourceId", "rss")).toBe(true);
 
 		const duplicates = await first.client.callTool({ name: "autorag.duplicates", arguments: {} });
 		expect(duplicates.isError).not.toBe(true);

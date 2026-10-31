@@ -213,7 +213,7 @@ make e2e-live      E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"   # warm run, reusing state
   runner's health check confirming the local `Qwen/Qwen3-Embedding-0.6B` 1024-d
   embedder.
 - Cleanup is limited to runner-owned state: `rm -rf .autorag-e2e` from your own clone.
-  Leave lazykatok, discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores
+  Leave lazykatok, discrawl, crawler, qmd, rclone, and mailcrawl native stores
   untouched, and do not stage `.debug-journal.md`.
 - If a behavioural change invalidates previously recorded cold/warm evidence,
   regenerate it in the same pull request. Stale green evidence is not proof.

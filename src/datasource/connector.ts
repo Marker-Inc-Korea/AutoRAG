@@ -1,6 +1,6 @@
 /**
  * Connector contract shared by the built-in datasource skills (GitHub,
- * cloud drives, RSS/news, Spotlight).
+ * cloud drives, RSS/news).
  *
  * A *connector* is the trusted, server-configured bridge to one external
  * system. It fetches documents for indexing and NEVER throws — every failure

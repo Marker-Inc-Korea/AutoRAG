@@ -5,7 +5,7 @@ supplies explicitly configured paths and bounded process execution; it does not
 materialize or force an AutoRAG-managed archive/config for datasource CLIs.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
-(GitHub Issues/PRs), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
+(GitHub Issues/PRs), #1314 (Obsidian vault), and #1316 (RSS/news).
 Issue #1416 adds external-crawler process coverage for WhatsApp through
 wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
@@ -43,7 +43,6 @@ synthetic store inside the container or accept `SKIP`.
 | `scripts/manual-qa/run-qa-lazykatok-live.ts` | Real KakaoTalk archive through the external `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval); Apple Silicon macOS with Full Disk Access | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
-| `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; snapshot-free refresh plus edited-file visibility without another refresh; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.3.0` fixture and `--source files` (`.eml`/`.mbox`) sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
