@@ -1,3 +1,4 @@
+import iconv from "iconv-lite";
 import * as XLSX from "xlsx";
 
 /**
@@ -242,4 +243,50 @@ export function createLongWorkbook(rowCount: number): XLSX.WorkBook {
 	const workbook = XLSX.utils.book_new();
 	XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "주문");
 	return workbook;
+}
+
+/** 예산총괄 exported to CSV: shown values ("742,000", "32.1%") and a quoted in-cell line break. */
+export function createBudgetCsv(): string {
+	return XLSX.utils.sheet_to_csv(createBudgetSheet());
+}
+
+/** 출장 as CSV: two titled tables separated by an empty line. */
+export function createStackedCsv(): string {
+	return XLSX.utils.sheet_to_csv(createStackedWorkbook().Sheets.출장 as XLSX.WorkSheet);
+}
+
+/** 운영비: a CP949 CSV with a quoted line break, doubled quotes and a ragged last row. */
+export function createOperatingCostCsv(): Buffer {
+	const text = [
+		"2026년 운영비 집행계획 (단위: 원),,,",
+		",,,",
+		"비목,산출근거,편성액,비고",
+		'회의비,"월 2회\r\n× 12월","480,000",내부',
+		'인쇄비,보고서 50부,"250,000",',
+		'"여비 ""국내""",국내출장 6회,"1,320,000",',
+		"합계",
+	].join("\r\n");
+	return iconv.encode(`${text}\r\n`, "cp949");
+}
+
+/** 인원현황: a UTF-8 TSV with a byte-order mark. */
+export function createStaffTsv(): Buffer {
+	const text = "부서\t인원\t예산\n연구지원팀\t4\t1200000\n개발팀\t12\t5400000\n운영팀\t3\t800000\n";
+	return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]);
+}
+
+/** 부품: semicolon-separated values with decimal commas, with or without Excel's `sep=;` first line. */
+export function createSemicolonCsv(directive: boolean): string {
+	return `${directive ? "sep=;\r\n" : ""}품목;단가;수량\r\n볼트;1,5;100\r\n너트;0,8;200\r\n와셔;0,2;300\r\n`;
+}
+
+/** 코드표: values a CSV reader must keep verbatim (leading zeros, 20-digit codes, formula-like text, quotes). */
+export function createVerbatimCsv(): string {
+	return '코드,설명,수량\n00123,=1+2,10\n12345678901234567890,"쉼표, 포함",20\nA-01,"따옴표 ""인용""",30\n';
+}
+
+export function createLongCsv(rowCount: number): string {
+	const lines = ["주문번호,금액"];
+	for (let index = 0; index < rowCount; index++) lines.push(`ORD-${String(index).padStart(6, "0")},${1000 + index}`);
+	return `${lines.join("\n")}\n`;
 }

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
+import { CsvParser } from "./csv.ts";
 import { EmlParser } from "./eml.ts";
 import { KordocParser, type KordocParserOptions } from "./kordoc.ts";
 import { BUILTIN_OCR_LANGUAGES, createTesseractOcrProvider, type OcrOptions } from "./ocr-engines.ts";
@@ -14,7 +15,7 @@ export interface DefaultParserRegistryOptions {
 	/** Global document languages; selects the OCR engine when OCR is enabled. */
 	readonly languages?: readonly LanguageTag[];
 	/**
-	 * Hard per-file parse deadline in milliseconds (default 120000). kordoc, spreadsheet, pptx and eml parse in a worker
+	 * Hard per-file parse deadline in milliseconds (default 120000). kordoc, spreadsheet, csv, pptx and eml parse in a worker
 	 * thread during a refresh; a parse still running at the deadline has its worker terminated and the file
 	 * is skipped as `parser-failed`. A synchronous spin cannot be interrupted any other way.
 	 */
@@ -81,6 +82,7 @@ export function createDefaultParserRegistry(options: DefaultParserRegistryOption
 		new PlainTextParser(),
 		new KordocParser(kordocOptions),
 		new SpreadsheetParser(),
+		new CsvParser(),
 		new PptxParser(),
 		new EmlParser(),
 	]);
