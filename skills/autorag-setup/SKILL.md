@@ -330,11 +330,10 @@ size with `prefetch.sectionLimit` / `prefetch.minSyncTopK` /
 
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,
-`maxItemsPerFeed`, and `maxContentChars` (RSS); `maxDocuments`,
-`maxContentChars`, `maxResultsPerQuery`, and `maxBytesPerFile` (Spotlight);
+`maxItemsPerFeed`, and `maxContentChars` (RSS);
 `maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
 `bandwidthLimit`, and `dryRun` (cloud-drive/rclone). `maxContentChars` defaults
-to 20000 for RSS and 100000 for Spotlight and cloud-drive.
+to 20000 for RSS and 100000 for cloud-drive.
 
 ### Refresh safety limits
 
@@ -389,7 +388,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`,
-`mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, and `hister`. Config keys may be connection
+`mailcrawl`, `obsidian`, `rss`, `lark`, and `hister`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.

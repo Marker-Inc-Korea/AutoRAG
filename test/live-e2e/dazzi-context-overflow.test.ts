@@ -36,10 +36,10 @@ const REAL_AGENT_DIR = process.env.AUTORAG_DAZZI_AGENT_DIR ?? join(homedir(), ".
 const GARBAGE_CHARS = 2_200_000;
 const GARBAGE = "\ufffd\u0000%PDF-1.4\u0001\u0002\ufffd".repeat(Math.ceil(GARBAGE_CHARS / 18)).slice(0, GARBAGE_CHARS);
 
-const spotlightTool: AgentTool = {
-	name: "search_datasource_spotlight",
-	label: "Spotlight",
-	description: "Search Spotlight for files. Always call this once for any file question.",
+const bulkFileTool: AgentTool = {
+	name: "search_datasource_files",
+	label: "Files",
+	description: "Search files. Always call this once for any file question.",
 	parameters: Type.Object({ query: Type.Optional(Type.String()) }),
 	async execute() {
 		return { content: [{ type: "text", text: GARBAGE }], details: {} };
@@ -85,7 +85,7 @@ describe.skipIf(!LIVE)("Dazzi context overflow live e2e (real API)", () => {
 			apiKey: readDazziLoginToken(agentDir),
 			getSystemPrompt: () =>
 				"You are a file librarian. Use the search tool once, then answer in one short sentence.",
-			customTools: [spotlightTool],
+			customTools: [bulkFileTool],
 		});
 		try {
 			hosted.session.setThinkingLevel("low");

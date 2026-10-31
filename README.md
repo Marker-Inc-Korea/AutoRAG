@@ -667,7 +667,6 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **Cloud Drives** | `cloud-drive` | [`rclone`](https://rclone.org) CLI | Google Drive (Tier-1), OneDrive, Dropbox, etc. | Incremental Mirror + BM25 |
 | **Photos & Shots** | `clawgallery` | `clawgallery` CLI | Local screenshot and photo store | Hybrid OCR/Visual Search |
 | **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
-| **macOS Spotlight** | `spotlight` | Native `mdfind` CLI | macOS system metadata and content index | System Native |
 | **Browser History** | `hister` | [Hister](https://github.com/asciimoo/hister) server (AGPL-3.0-or-later, separate program, HTTP API) | Pages visited in Chrome/Chromium/Firefox, captured by Hister's own extension and indexed by Hister (web pages only; its local-file indexing is never used) | Lexical full-text; optional Semantic via Hister's own embedding endpoint |
 
 For configuration syntax and connector details, see [docs/datasource-skills.md](docs/datasource-skills.md). Non-interactive `sync`/`index` steps get a one-hour per-connector budget (`connector.indexTimeoutMs`) because first-run imports routinely take minutes; interactive search keeps its 60-second default.

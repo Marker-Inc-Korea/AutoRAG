@@ -38,7 +38,6 @@ import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill } from "./slack/index.ts";
-import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
 import { TelecrawlSkill } from "./telecrawl/index.ts";
 import { WacrawlSkill } from "./wacrawl/index.ts";
 
@@ -392,13 +391,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions: config.connector as RssConnectorOptions,
-		}),
-	spotlight: (config, _workspaceRoot, registrationName) =>
-		new SpotlightSkill({
-			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
-			...(config.tags !== undefined ? { tags: config.tags } : {}),
-			skillName: registrationName,
-			connectorOptions: config.connector as SpotlightConnectorOptions,
 		}),
 };
 

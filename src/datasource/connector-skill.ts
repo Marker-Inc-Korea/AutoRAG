@@ -1,6 +1,6 @@
 /**
  * Shared {@link DatasourceSkill} implementation for connector-backed
- * datasources (GitHub, cloud drives, RSS/news, Spotlight).
+ * datasources (GitHub, cloud drives, RSS/news).
  *
  * Composition: a trusted {@link DatasourceConnector} fetches documents, a
  * {@link DatasourceChunkStore} persists and lexically indexes them, and this
