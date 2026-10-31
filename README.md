@@ -314,13 +314,34 @@ falling back to `["ko", "en"]`. Supported tags: `ko`, `en`, `ja`, `zh-hans`,
 
 | Extension | Parser |
 |---|---|
-| `.hwp` `.hwpx` `.hml` `.hwpml` `.pdf` `.docx` `.xlsx` `.xls` | `kordoc` (nested tables, per-sheet workbooks, no Java) |
+| `.hwp` `.hwpx` `.hml` `.hwpml` `.pdf` `.docx` | `kordoc` (nested tables, no Java) |
+| `.xlsx` `.xlsm` `.xlsb` `.xls` `.ods` | built-in spreadsheet reader (SheetJS) |
 | `.pptx` | built-in PPTX reader |
 | `.eml` | built-in mail reader |
 | `.txt` `.text` `.md` `.markdown` | plain text (CP949/EUC-KR aware) |
 | `.png` `.jpg` `.jpeg` `.webp` | `kordoc` image OCR (only when `parserOptions.ocr.enabled` is `true`) |
 
 `.bmp` and `.tiff` are not parsed: kordoc rejects both as unsupported.
+
+The spreadsheet reader writes one line per row. Each line names the sheet, the
+cell range and the table title, and pairs every value with its column label, so
+a search hit always says what a number is:
+
+```text
+[예산총괄!A4:F4 · 2026년 연구개발비 편성표 (단위: 천원)] 구분: 직접비 | 비목: 인건비 | 편성액: 742,000 | 비율(%): 32.1%
+```
+
+Values are what the spreadsheet shows: cached formula results with their number
+formats (`742,000`, `32.1%`, dates). A format that scales the stored number keeps
+that number too (`742천원 (742000)`), and a formula saved without a result shows
+its formula (`=SUM(B2:B3)`). Titles above a table become its caption, merged
+group headers become `상반기 > 1월`, several tables on one sheet are kept apart,
+and a row longer than a search chunk is split into lines that repeat its first
+value. A first row counts as the header only with clear evidence (a merged group
+header, or at least three rows below it with a mostly numeric, date or formula
+column); otherwise rows are kept exactly as written, so a form's label/value
+cells are never relabelled. Sheets are read up to 100,000 rows each; a longer
+sheet is indexed partially with a `parser-warning` diagnostic.
 
 ### Making photos and scans searchable
 
@@ -348,7 +369,7 @@ explicit `parserOptions.kordoc.ocr` overrides the language-based choice.
 
 ### Bounding and cancelling a parse
 
-`kordoc` (PDF, HWP/HWPX, DOCX, XLSX/XLS, images), `.pptx` and `.eml` parse in a worker
+`kordoc` (PDF, HWP/HWPX, DOCX, images), the spreadsheet reader, `.pptx` and `.eml` parse in a worker
 thread during a refresh, so one corrupt or hostile file cannot hang or crash the run. A
 `Promise.race` deadline cannot stop a synchronous parse; terminating the worker can.
 

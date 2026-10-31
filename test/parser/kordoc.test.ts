@@ -3,11 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultParserRegistry } from "../../src/parser/defaults.ts";
 import { ParseError } from "../../src/parser/errors.ts";
 import { KordocParser } from "../../src/parser/kordoc.ts";
-import {
-	createDocxFixture,
-	createMultiSheetXlsxFixture,
-	createNestedTableHwpxFixture,
-} from "../fixtures/document-formats.ts";
+import { createDocxFixture, createNestedTableHwpxFixture } from "../fixtures/document-formats.ts";
 
 async function parseWith(virtualPath: string, bytes: Uint8Array) {
 	const registry = createDefaultParserRegistry();
@@ -28,8 +24,6 @@ describe("KordocParser routing", () => {
 			"/docs/a.hwpml",
 			"/docs/a.pdf",
 			"/docs/a.docx",
-			"/docs/a.xlsx",
-			"/docs/a.xls",
 		]) {
 			expect(registry.getForVirtualPath(path)?.name, path).toBe("kordoc");
 		}
@@ -74,17 +68,6 @@ describe("KordocParser structure fidelity", () => {
 		expect(parsed.markdown.indexOf("bodyBeforeMarker")).toBeLessThan(parsed.markdown.indexOf("outerCellMarker"));
 		expect(parsed.markdown.indexOf("innerB2Marker")).toBeLessThan(parsed.markdown.indexOf("bodyAfterMarker"));
 		expect(parsed.metadata).toMatchObject({ parser: "kordoc", format: "hwpx" });
-	});
-
-	it("keeps XLSX sheet boundaries and rows instead of flattening cell values", async () => {
-		const parsed = await parseWith("/docs/book.xlsx", createMultiSheetXlsxFixture());
-
-		expect(parsed.markdown).toContain("## RevenueSheet");
-		expect(parsed.markdown).toContain("## RiskSheet");
-		expect(parsed.markdown).toContain("| Quarter | Revenue | Owner |");
-		expect(parsed.markdown).toContain("| Q3 | 742000 | finance team |");
-		expect(parsed.markdown).toContain("| supply chain | open |");
-		expect(parsed.metadata).toMatchObject({ parser: "kordoc", format: "xlsx" });
 	});
 
 	it("parses DOCX text", async () => {
