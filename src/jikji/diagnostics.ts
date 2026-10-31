@@ -6,7 +6,11 @@ import type { JikjiFailureReason, JikjiFindResult, JikjiPrepareResult } from "./
  * path-free so they can be surfaced through public search/refresh diagnostics
  * without leaking filesystem or binary paths.
  */
-export type JikjiDiagnosticCode = "jikji-unavailable" | "jikji-prepare-failed" | "jikji-find-failed";
+export type JikjiDiagnosticCode =
+	| "jikji-unavailable"
+	| "jikji-prepare-failed"
+	| "jikji-find-failed"
+	| "jikji-unsupported-version";
 
 export interface JikjiDiagnostic {
 	readonly code: JikjiDiagnosticCode;
@@ -49,6 +53,7 @@ function describeReason(reason: JikjiFailureReason, action: "prepare" | "find" =
  */
 export function jikjiPrepareDiagnostic(result: JikjiPrepareResult): JikjiDiagnostic | undefined {
 	if (result.ok) return undefined;
+	if (result.reason === "unsupported-version") return unsupportedVersionDiagnostic(result.stderr);
 	const unavailable = UNAVAILABLE_REASONS.has(result.reason);
 	return {
 		code: unavailable ? "jikji-unavailable" : "jikji-prepare-failed",
@@ -62,14 +67,31 @@ export function jikjiPrepareDiagnostic(result: JikjiPrepareResult): JikjiDiagnos
  * Maps a {@link JikjiFindResult} to a path-opaque degraded-mode diagnostic.
  * Successful results map to `undefined`. The message never echoes the binary
  * path, stderr, or any filesystem path so it is safe for public diagnostics.
+ * The one exception is an unsupported version, see {@link unsupportedVersionDiagnostic}.
  */
 export function jikjiFindDiagnostic(result: JikjiFindResult): JikjiDiagnostic | undefined {
 	if (result.ok) return undefined;
+	if (result.reason === "unsupported-version") return unsupportedVersionDiagnostic(result.stderr);
 	const unavailable = UNAVAILABLE_REASONS.has(result.reason);
 	return {
 		code: unavailable ? "jikji-unavailable" : "jikji-find-failed",
 		severity: "warning",
 		message: `Jikji find is degraded: ${describeReason(result.reason, "find")}.`,
+		source: "jikji",
+	};
+}
+
+/**
+ * An unsupported version carries the client's own message verbatim: the detected version,
+ * the binary's real path and the required floor. That text is operator-actionable ("which
+ * jikji is stale, and where") and AGENTS.md "Error Transparency" forbids replacing it with
+ * a generic sentence or dropping it because it contains a path.
+ */
+function unsupportedVersionDiagnostic(message: string): JikjiDiagnostic {
+	return {
+		code: "jikji-unsupported-version",
+		severity: "warning",
+		message: `Jikji is degraded: ${message}`,
 		source: "jikji",
 	};
 }

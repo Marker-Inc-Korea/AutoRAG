@@ -4,10 +4,11 @@ import { delimiter, join } from "node:path";
 
 /**
  * Jikji CLI installer. Jikji ships as the `jikji-cli` crate on crates.io
- * (binary name `jikji`); there are no prebuilt GitHub release binaries, so
- * installation compiles from source through the user's Rust toolchain.
- * The binary is cached under `<root>/.autorag/bin` — the same directory the
- * MinSync installer uses.
+ * (binary name `jikji`). Since v0.2.0 it also publishes prebuilt GitHub release
+ * archives, but AutoRAG still installs by compiling the crate through the user's
+ * Rust toolchain so the pinned version (`JIKJI_INSTALL_VERSION`) is built from the
+ * published, checksummed source. The binary is cached under `<root>/.autorag/bin`
+ * — the same directory the MinSync installer uses.
  */
 
 export const JIKJI_CRATE_NAME = "jikji-cli";
@@ -47,8 +48,13 @@ export type JikjiInstallRunner = (args: readonly string[], timeoutMs: number) =>
 export interface EnsureJikjiBinaryOptions {
 	/** Workspace root; the binary is cached at `<root>/.autorag/bin/jikji`. */
 	readonly root: string;
-	/** crates.io version pin for `jikji-cli`. Defaults to latest. */
+	/** crates.io version pin for `jikji-cli`. Omit to install the latest release. */
 	readonly version?: string;
+	/**
+	 * Reinstall over an existing cached binary (`cargo install --force`). Without it a
+	 * cached binary is returned untouched, so a stale cached build would never be replaced.
+	 */
+	readonly force?: boolean;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly timeoutMs?: number;
 	/** Injectable process runner for tests. Defaults to spawning `cargo install`. */
@@ -92,7 +98,7 @@ function defaultRunner(cargo: string, env: NodeJS.ProcessEnv): JikjiInstallRunne
 export async function ensureJikjiBinary(options: EnsureJikjiBinaryOptions): Promise<EnsureJikjiBinaryResult> {
 	const env = options.env ?? process.env;
 	const cached = cachedJikjiBinaryPath(options.root);
-	if (existsSync(cached)) return { ok: true, binaryPath: cached, source: "cached" };
+	if (existsSync(cached) && options.force !== true) return { ok: true, binaryPath: cached, source: "cached" };
 
 	const cargoLocator = options.cargoLocator ?? ((e) => lookupExecutableInPath(cargoExecutableName(), e));
 	const cargo = cargoLocator(env);
@@ -107,6 +113,7 @@ export async function ensureJikjiBinary(options: EnsureJikjiBinaryOptions): Prom
 
 	const args = ["install", JIKJI_CRATE_NAME, "--locked", "--root", join(options.root, ".autorag")];
 	if (options.version !== undefined) args.push("--version", options.version);
+	if (options.force === true) args.push("--force");
 	const runner = options.runner ?? defaultRunner(cargo, env);
 	const result = await runner(args, options.timeoutMs ?? JIKJI_INSTALL_TIMEOUT_MS);
 	if (result.code === 0 && existsSync(cached)) {

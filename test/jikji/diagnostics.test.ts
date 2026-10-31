@@ -51,6 +51,23 @@ describe("jikjiPrepareDiagnostic", () => {
 		};
 		expect(jikjiPrepareDiagnostic(failed)?.code).toBe("jikji-prepare-failed");
 	});
+
+	it("maps an unsupported-version to its own code and keeps the detected version, path and floor verbatim", () => {
+		const message = "jikji 0.1.1 at /opt/jikji/bin/jikji is older than the 0.2.0 AutoRAG requires";
+		const failed: JikjiPrepareResult = {
+			ok: false,
+			reason: "unsupported-version",
+			stdout: "",
+			stderr: message,
+			code: null,
+			detectedVersion: "0.1.1",
+		};
+		const diag = jikjiPrepareDiagnostic(failed);
+		expect(diag?.code).toBe("jikji-unsupported-version");
+		expect(diag?.severity).toBe("warning");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toContain(message);
+	});
 	it("[red-team] never leaks a path for ANY failure reason even with path-laden stderr/stdout", () => {
 		const reasons = [
 			"aborted",
@@ -142,6 +159,21 @@ describe("jikjiFindDiagnostic", () => {
 			code: 2,
 		};
 		expect(jikjiFindDiagnostic(failed)?.code).toBe("jikji-find-failed");
+	});
+
+	it("maps an unsupported-version find to its own code and keeps the message verbatim", () => {
+		const message = "jikji 0.1.1 at /opt/jikji/bin/jikji is older than the 0.2.0 AutoRAG requires";
+		const failed: JikjiFindResult = {
+			ok: false,
+			reason: "unsupported-version",
+			stdout: "",
+			stderr: message,
+			code: null,
+			detectedVersion: "0.1.1",
+		};
+		const diag = jikjiFindDiagnostic(failed);
+		expect(diag?.code).toBe("jikji-unsupported-version");
+		expect(diag?.message).toContain(message);
 	});
 
 	it("maps a timeout to jikji-find-failed with a path-free message", () => {

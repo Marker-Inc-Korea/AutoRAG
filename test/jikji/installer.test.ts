@@ -107,6 +107,28 @@ describe("ensureJikjiBinary", () => {
 			expect(result.message).toContain("could not compile");
 		}
 	});
+
+	it("reinstalls over an existing cached binary when forced", async () => {
+		const calls: string[][] = [];
+		const cached = cachedJikjiBinaryPath(root);
+		mkdirSync(join(root, ".autorag", "bin"), { recursive: true });
+		writeFileSync(cached, "stale binary");
+		const result = await ensureJikjiBinary({
+			root,
+			force: true,
+			version: "0.2.1",
+			cargoLocator: () => "/usr/bin/cargo",
+			runner: async (args) => {
+				calls.push([...args]);
+				writeFileSync(cached, "fresh binary");
+				return { code: 0, stderr: "" };
+			},
+		});
+		expect(result).toEqual({ ok: true, binaryPath: cached, source: "installed" });
+		expect(calls).toEqual([
+			["install", "jikji-cli", "--locked", "--root", join(root, ".autorag"), "--version", "0.2.1", "--force"],
+		]);
+	});
 });
 
 describe("JikjiClient binary resolution", () => {
