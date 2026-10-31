@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackendError } from "jev-use";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE } from "../../src/cloud/credential.ts";
 import { DAZZI_DEFAULT_JEV_MODEL, DazziJevBackend } from "../../src/cloud/jev-backend.ts";
@@ -216,16 +216,13 @@ describe("createJevJudge with the dazzi backend", () => {
 		);
 	});
 
-	it("builds the hosted backend from JEV_BACKEND=dazzi when no backend option is given", async () => {
+	it("picks the hosted backend when signed in and no backend is named", async () => {
 		signIn("dz_test");
 		const server = await startFakeServer(() => ({
 			body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.8 } } },
 		}));
 		try {
-			const judge = createJevJudge({
-				agentDir,
-				env: { JEV_BACKEND: "dazzi", AUTORAG_BASE_URL: server.url },
-			});
+			const judge = createJevJudge({ agentDir, env: { AUTORAG_BASE_URL: server.url } });
 			const judgment = await judge({ task: "x" }, [{ type: "noul", question: "ok?" }]);
 			expect(judgment.backend).toBe("dazzi");
 			expect(judgment.verdicts[0]?.answer).toBe(0.8);
@@ -234,11 +231,25 @@ describe("createJevJudge with the dazzi backend", () => {
 		}
 	});
 
-	it("reports the sign-in error for JEV_BACKEND=dazzi when not signed in", async () => {
-		const judge = createJevJudge({ agentDir, env: { JEV_BACKEND: "dazzi" } });
-		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
-			/jev\.backend "dazzi" needs a sign-in/,
-		);
+	it("names the credentials to set when no backend is named, nobody is signed in, and no key is set", async () => {
+		for (const name of [
+			"OPENROUTER_API_KEY",
+			"OPENAI_API_KEY",
+			"TYPESAFE_API_KEY",
+			"AI_GATEWAY_API_KEY",
+			"CLOUDFLARE_API_KEY",
+			"OPENCODE_API_KEY",
+		]) {
+			vi.stubEnv(name, "");
+		}
+		try {
+			const judge = createJevJudge({ agentDir, env: {} });
+			await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
+				/No Jev credentials found: set OPENROUTER_API_KEY.*sign in to Dazzi Models/u,
+			);
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("judges a noul question through the hosted endpoint", async () => {

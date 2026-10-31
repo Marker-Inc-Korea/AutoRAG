@@ -22,7 +22,9 @@ import {
 	type RawAnswer,
 	type State,
 } from "jev-use";
-import { API_PATH, resolveBaseUrl } from "./config.ts";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { API_PATH, MODELS_PATH, normalizeBaseUrl, resolveBaseUrl } from "./config.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "./credential.ts";
 
 /** API path appended to the normalized server root. */
@@ -37,6 +39,40 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;
+
+/** One decision model the hosted plan serves at `POST <root>/v1/jev`. */
+export interface DazziDecisionModel {
+	readonly id: string;
+	readonly description?: string;
+}
+
+const decisionModelListSchema = Type.Object({
+	data: Type.Array(Type.Object({ id: Type.String({ minLength: 1 }), description: Type.Optional(Type.String()) })),
+});
+
+/**
+ * `GET <root>/v1/models?operation=jev`: the decision models the hosted plan serves, in its order. Throws on a
+ * network failure, a non-2xx answer, or a body that is not a model list.
+ */
+export async function listDazziDecisionModels(options: {
+	readonly baseUrl: string;
+	readonly apiKey: string;
+	readonly signal?: AbortSignal;
+	readonly fetchImpl?: typeof fetch;
+}): Promise<DazziDecisionModel[]> {
+	const response = await (options.fetchImpl ?? fetch)(
+		`${normalizeBaseUrl(options.baseUrl)}${MODELS_PATH}?operation=jev`,
+		{
+			headers: { authorization: `Bearer ${options.apiKey}`, accept: "application/json" },
+			...(options.signal !== undefined ? { signal: options.signal } : {}),
+		},
+	);
+	if (!response.ok) throw new Error(`Dazzi Models decision model listing failed: HTTP ${response.status}`);
+	const body: unknown = await response.json();
+	if (!Value.Check(decisionModelListSchema, body))
+		throw new Error("Dazzi Models returned an unexpected decision model list");
+	return body.data.map(({ id, description }) => (description === undefined ? { id } : { id, description }));
+}
 
 /** Options for {@link DazziJevBackend}. */
 export interface DazziJevBackendOptions {

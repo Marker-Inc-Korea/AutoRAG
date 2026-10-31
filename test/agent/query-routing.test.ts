@@ -1,5 +1,5 @@
 import { type JevBackend, MockBackend } from "jev-use";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import {
 	type DatasourceCandidate,
@@ -16,6 +16,17 @@ import {
 
 function judgeWith(backend: JevBackend) {
 	return createJevJudge({ backend });
+}
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
+
+/** The TypeSafe backend with no TypeSafe credential anywhere: pi reports the provider unconfigured. */
+function unconfiguredJudge() {
+	vi.stubEnv("TYPESAFE_API_KEY", "");
+	vi.stubEnv("TYPESAFE_AI_API_KEY", "");
+	return createJevJudge({ backend: "typesafe", env: {} });
 }
 
 /** The route question's options, as Jev receives them. */
@@ -238,9 +249,9 @@ describe("routeQuery (Jev branch + decomposition check)", () => {
 	});
 
 	it("falls back to local search when no Jev credential resolves", async () => {
-		const decision = await routeQuery(createJevJudge({ backend: "typesafe", env: {} }), "where is the signed lease?");
+		const decision = await routeQuery(unconfiguredJudge(), "where is the signed lease?");
 		expect(decision.route).toBe("local");
-		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
+		expect(decision.fallbackReason).toMatch(/not configured: typesafe/u);
 	});
 
 	it("describes the config branch so file automations and folder-watch rules belong to it", async () => {
@@ -463,9 +474,9 @@ describe("needsFollowUp (Jev check after the fast answer)", () => {
 	});
 
 	it("keeps verifying when no Jev credential resolves", async () => {
-		const decision = await needsFollowUp(createJevJudge({ backend: "typesafe", env: {} }), "q", fastAnswer);
+		const decision = await needsFollowUp(unconfiguredJudge(), "q", fastAnswer);
 		expect(decision.followUp).toBe(true);
-		expect(decision.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
+		expect(decision.fallbackReason).toMatch(/not configured: typesafe/u);
 	});
 });
 
@@ -621,13 +632,9 @@ describe("selectDatasources (Jev noul per registered datasource)", () => {
 	});
 
 	it("searches no datasource when no Jev credential resolves", async () => {
-		const selection = await selectDatasources(
-			createJevJudge({ backend: "typesafe", env: {} }),
-			"release date?",
-			datasources,
-		);
+		const selection = await selectDatasources(unconfiguredJudge(), "release date?", datasources);
 		expect(selection.selected).toEqual([]);
-		expect(selection.fallbackReason).toMatch(/TYPESAFE_API_KEY/u);
+		expect(selection.fallbackReason).toMatch(/not configured: typesafe/u);
 	});
 });
 

@@ -2,19 +2,21 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type FauxProviderRegistration, fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { BackendError, type JevBackend } from "jev-use";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import {
 	checkDecisionModel,
+	createDecisionModels,
 	DECISION_MODEL_PROBE_QUESTION_ID,
 	DECISION_MODEL_UNAVAILABLE_CODE,
 	DecisionModelUnavailableError,
 } from "../../src/agent/decision-model-check.ts";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import type { SearchProgressTracker } from "../../src/agent/search-progress.ts";
+import { SLLM_DECISION_TOOL_NAME } from "../../src/agent/sllm-decision.ts";
 import { BaselineDecisionBackend } from "../helpers/baseline-jev.ts";
 
 let root: string;
@@ -226,5 +228,104 @@ describe("first question of a session", () => {
 		expect(() => agentWith({ model: fauxModel([]), jev: false as unknown as undefined })).toThrow(
 			DecisionModelUnavailableError,
 		);
+	});
+});
+
+describe("createDecisionModels (Jev, then the sLLM fallback)", () => {
+	const denied = () => failing(new BackendError("openrouter", "HTTP 401: User not found", 401));
+
+	it("keeps Jev when it answers and never asks the fallback", async () => {
+		const fallback = counting();
+		const models = createDecisionModels({ backend: new BaselineDecisionBackend(), fallback });
+		const status = await models.check();
+		expect(status.backend).toBe("baseline");
+		expect(status.fallbackFrom).toBeUndefined();
+		await models.judge("x", [{ id: "q", type: "noul", question: "ok?" }]);
+		expect(fallback.probes).toBe(0);
+	});
+
+	it("moves the session to the fallback when Jev is unavailable, and says why", async () => {
+		const jev = denied();
+		const fallback = counting();
+		const models = createDecisionModels({ backend: jev, fallback });
+
+		const status = await models.check();
+
+		expect(status.backend).toBe("counting");
+		expect(status.fallbackFrom).toMatchObject({ reason: "unauthorized", backend: "failing" });
+		// Every later judgment of the session goes straight to the fallback.
+		const judgment = await models.judge("x", [{ id: "q", type: "noul", question: "ok?" }]);
+		expect(judgment.backend).toBe("counting");
+		expect(jev.calls).toBe(1);
+	});
+
+	it("goes back to Jev on the next check once Jev answers again", async () => {
+		let down = true;
+		const jev: JevBackend = {
+			name: "flaky",
+			async judge(request) {
+				if (down) throw new BackendError("flaky", "request timed out after 10000ms");
+				return new BaselineDecisionBackend().judge(request);
+			},
+		};
+		const models = createDecisionModels({ backend: jev, fallback: counting() });
+		expect((await models.check()).backend).toBe("counting");
+		down = false;
+		expect((await models.check()).backend).toBe("flaky");
+		expect((await models.judge("x", [{ id: "q", type: "noul", question: "ok?" }])).backend).toBe("flaky");
+	});
+
+	it("reports Jev's failure first and the fallback's after it when both are unavailable", async () => {
+		const models = createDecisionModels({
+			backend: denied(),
+			fallback: failing(new BackendError("sllm", "request timed out after 30000ms")),
+		});
+		const error = await unavailable(models.check());
+		expect(error.reason).toBe("unauthorized");
+		expect(error.attempts.map((attempt) => attempt.reason)).toEqual(["unauthorized", "unreachable"]);
+		expect(error.message).toMatch(/sLLM fallback .*unreachable/u);
+	});
+
+	it("without a fallback, reports Jev's own failure", async () => {
+		const error = await unavailable(createDecisionModels({ backend: denied() }).check());
+		expect(error.reason).toBe("unauthorized");
+		expect(error.attempts).toHaveLength(1);
+	});
+});
+
+describe("first question with the sLLM fallback", () => {
+	it("answers through the fallback and warns that Jev is unavailable", async () => {
+		const registration = registerFauxProvider({ api: `faux-sllm-${randomUUID()}`, models: [{ id: "small-1" }] });
+		registrations.push(registration);
+		// The small LLM answers the probe; later judgments of the run get nothing usable and fall back per call.
+		registration.setResponses(
+			Array.from(
+				{ length: 8 },
+				() => (context: { messages: readonly unknown[] }) =>
+					JSON.stringify(context.messages).includes(DECISION_MODEL_PROBE_QUESTION_ID)
+						? fauxAssistantMessage(
+								fauxToolCall(SLLM_DECISION_TOOL_NAME, {
+									answers: [{ id: DECISION_MODEL_PROBE_QUESTION_ID, probabilities: [1], confidence: 1 }],
+								}),
+								{ stopReason: "toolUse" },
+							)
+						: fauxAssistantMessage("no answers", { stopReason: "stop" }),
+			),
+		);
+		const agent = agentWith({
+			model: fauxModel([]),
+			jev: {
+				backend: failing(new BackendError("openrouter", "HTTP 402: Insufficient credits", 402)),
+				fallback: { model: registration.getModel() },
+			},
+		});
+
+		const response = await agent.searchDocuments("where is the signed lease?");
+
+		const warning = response.diagnostics?.find((diagnostic) => diagnostic.code === "decision-model-fallback");
+		expect(warning?.severity).toBe("warning");
+		expect(warning?.message).toMatch(/payment-required/u);
+		expect(warning?.message).toMatch(/sLLM fallback/u);
+		expect(warning?.message).toContain(`${registration.getModel().provider}/small-1`);
 	});
 });
