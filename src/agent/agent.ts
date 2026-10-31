@@ -38,7 +38,12 @@ import {
 	type FSearchSearchRequest,
 	type FSearchSearchResult,
 } from "../fsearch/index.ts";
-import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
+import {
+	jikjiDiscoverDiagnostic,
+	jikjiFindDiagnostic,
+	jikjiPrepareDiagnostic,
+	jikjiUnusableRetryDiagnostic,
+} from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
 	type JikjiCandidate,
@@ -4276,19 +4281,16 @@ export class AutoRAGAgent {
 		const diagnostics: JikjiDiagnostic[] = [];
 		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
 		const searchResults = await Promise.all(
-			this.jikjiRoots.map(async (sourcePath) => {
-				const result: JikjiFindResult = await this.jikjiClient!.find(sourcePath, query, findOpts);
-				return { sourcePath, result };
-			}),
+			this.jikjiRoots.map(async (sourcePath) => ({
+				sourcePath,
+				...(await this.findJikjiRoot(this.jikjiClient!, sourcePath, query, findOpts)),
+			})),
 		);
-		for (const { sourcePath, result } of searchResults) {
-			if (result.ok) {
-				okPacks.push({ pack: result.answerPack, root: sourcePath });
-			} else {
-				const diag = jikjiFindDiagnostic(result);
-				if (diag !== undefined) diagnostics.push(diag);
-			}
+		for (const { sourcePath, pack, diagnostic } of searchResults) {
+			if (pack !== undefined) okPacks.push({ pack, root: sourcePath });
+			if (diagnostic !== undefined) diagnostics.push(diagnostic);
 		}
+
 		if (okPacks.length === 0) {
 			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.jikjiRoots, perRoot: [] };
 		}
@@ -4306,6 +4308,40 @@ export class AutoRAGAgent {
 		const policy = this.mergePolicy(okPacks.map((entry) => entry.pack));
 		const merged = this.mergeAnswerPacks(okPacks, sourceRoots, policy);
 		return { answerPack: merged, policy, diagnostics, roots: this.jikjiRoots, perRoot };
+	}
+
+	/**
+	 * One root's find, followed by jikji's recovery step. When `find` answers
+	 * `jikji_retry`, run the `discover` command it named with the proof it
+	 * issued for this root and rewritten query (re-running `find` with the proof
+	 * does not advance jikji, only `discover` does). One step per find: whatever
+	 * discover answers is final for the root, so the protocol cannot loop. A
+	 * failed discover drops the root and reports the CLI failure verbatim.
+	 */
+	private async findJikjiRoot(
+		client: JikjiClient,
+		sourcePath: string,
+		query: string,
+		findOpts: JikjiFindOptions,
+	): Promise<{ readonly pack?: JikjiAnswerPack; readonly diagnostic?: JikjiDiagnostic }> {
+		const found: JikjiFindResult = await client.find(sourcePath, query, findOpts);
+		if (!found.ok) {
+			const diagnostic = jikjiFindDiagnostic(found);
+			return diagnostic === undefined ? {} : { diagnostic };
+		}
+		const pack = found.answerPack;
+		if (pack.handoffAction !== "jikji_retry") return { pack };
+		const commands = pack.nextCommands ?? [];
+		if (pack.retry === undefined || (pack.maxJikjiRetries ?? 1) < 1) {
+			// Nothing runnable: keep jikji's own answer; flag a command we refused to run.
+			return commands.length > 0 ? { pack, diagnostic: jikjiUnusableRetryDiagnostic(commands) } : { pack };
+		}
+		const discovered = await client.discover(sourcePath, pack.retry, {
+			...(findOpts.signal === undefined ? {} : { signal: findOpts.signal }),
+		});
+		if (discovered.ok) return { pack: discovered.answerPack };
+		const diagnostic = jikjiDiscoverDiagnostic(discovered);
+		return diagnostic === undefined ? {} : { diagnostic };
 	}
 
 	/**
@@ -4386,6 +4422,10 @@ export class AutoRAGAgent {
 				allowedFollowups: policy.allowedFollowups,
 			},
 			agentShouldNotRerank: policy.agentShouldNotRerank,
+			rawFallbackAllowed: policy.rawFallbackAllowed,
+			...(policy.maxRawFallbackCommands === undefined
+				? {}
+				: { maxRawFallbackCommands: policy.maxRawFallbackCommands }),
 		};
 	}
 
@@ -4396,7 +4436,8 @@ export class AutoRAGAgent {
 	 * - stopAfterFind: OR
 	 * - agentShouldNotRerank: OR
 	 * - handoffAction: MOST RESTRICTIVE (direct_use < jikji_retry < raw_fallback_after_retry)
-	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry
+	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry and every root's raw_fallback_allowed
+	 * - maxRawFallbackCommands: MIN over the roots that report one
 	 */
 	private mergePolicy(packs: readonly JikjiAnswerPack[]): MergedJikjiPolicy {
 		const HANDOFF_RANK: Record<JikjiHandoffAction, number> = {
@@ -4426,7 +4467,11 @@ export class AutoRAGAgent {
 				allowedFollowups = next;
 			}
 		}
-		const rawFallbackAllowed = handoff === "raw_fallback_after_retry";
+		const rawFallbackAllowed =
+			handoff === "raw_fallback_after_retry" && packs.every((pack) => pack.rawFallbackAllowed);
+		const rawCommandLimits = packs.flatMap((pack) =>
+			pack.maxRawFallbackCommands === undefined ? [] : [pack.maxRawFallbackCommands],
+		);
 		return {
 			handoffAction: handoff,
 			stopAfterFind,
@@ -4434,6 +4479,7 @@ export class AutoRAGAgent {
 			allowedFollowups: allowedFollowups ? [...allowedFollowups] : [],
 			agentShouldNotRerank,
 			rawFallbackAllowed,
+			...(rawCommandLimits.length === 0 ? {} : { maxRawFallbackCommands: Math.min(...rawCommandLimits) }),
 		};
 	}
 

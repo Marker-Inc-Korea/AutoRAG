@@ -156,6 +156,86 @@ describe("parseJikjiAnswerPack", () => {
 				allowedFollowups: ["exactly_one_jikji_retry"],
 			},
 			agentShouldNotRerank: false,
+			rawFallbackAllowed: false,
+			maxJikjiRetries: 1,
+			maxRawFallbackCommands: 0,
+			nextCommands: [],
+		});
+	});
+
+	describe("retry protocol fields (jikji 0.2.1)", () => {
+		const PROOF = "ab9ebb1eb3f6e5460b4f1c23";
+		const DISCOVER = `jikji discover '/tmp/docs' 'unrelatedterm zzzqqq' --top-k 20 --after-jikji-retry --retry-proof '${PROOF}' --json`;
+
+		function retryEnvelope(overrides: Record<string, unknown> = {}): string {
+			return validAnswerPack({
+				answer_paths: [],
+				paths: [],
+				candidates: [],
+				evidence_pack: [],
+				handoff_action: "jikji_retry",
+				agent_should_not_rerank: false,
+				tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+				max_jikji_retries: 1,
+				max_raw_fallback_commands: 0,
+				raw_fallback_allowed: false,
+				retry_proof: PROOF,
+				next_commands: [DISCOVER],
+				...overrides,
+			});
+		}
+
+		it("turns a jikji_retry envelope into a retry step bound to its proof, root and rewritten query", () => {
+			const pack = parseJikjiAnswerPack(retryEnvelope());
+			expect(pack?.retry).toEqual({ root: "/tmp/docs", query: "unrelatedterm zzzqqq", topK: 20, proof: PROOF });
+			expect(pack?.nextCommands).toEqual([DISCOVER]);
+			expect(pack?.maxJikjiRetries).toBe(1);
+			expect(pack?.rawFallbackAllowed).toBe(false);
+		});
+
+		it("reads raw_fallback_allowed and max_raw_fallback_commands from a raw_fallback_after_retry envelope", () => {
+			const pack = parseJikjiAnswerPack(
+				retryEnvelope({
+					handoff_action: "raw_fallback_after_retry",
+					raw_fallback_allowed: true,
+					max_raw_fallback_commands: 2,
+					max_jikji_retries: 0,
+					retry_proof: "",
+					next_commands: [],
+				}),
+			);
+			expect(pack?.handoffAction).toBe("raw_fallback_after_retry");
+			expect(pack?.rawFallbackAllowed).toBe(true);
+			expect(pack?.maxRawFallbackCommands).toBe(2);
+			expect(pack?.maxJikjiRetries).toBe(0);
+			expect(pack?.retry).toBeUndefined();
+		});
+
+		it("does not build a retry step from a command whose proof differs from retry_proof", () => {
+			const pack = parseJikjiAnswerPack(retryEnvelope({ retry_proof: "someone-elses-proof" }));
+			expect(pack?.retry).toBeUndefined();
+			expect(pack?.nextCommands).toEqual([DISCOVER]);
+		});
+
+		it("builds no retry step when the envelope is not jikji_retry, even if it lists a discover command", () => {
+			const pack = parseJikjiAnswerPack(retryEnvelope({ handoff_action: "direct_use" }));
+			expect(pack?.retry).toBeUndefined();
+		});
+
+		it("derives rawFallbackAllowed from the handoff when the envelope omits raw_fallback_allowed", () => {
+			const raw = parseJikjiAnswerPack(validAnswerPack({ handoff_action: "raw_fallback_after_retry" }));
+			const direct = parseJikjiAnswerPack(validAnswerPack());
+			expect(raw?.rawFallbackAllowed).toBe(true);
+			expect(direct?.rawFallbackAllowed).toBe(false);
+			expect(raw?.maxRawFallbackCommands).toBeUndefined();
+		});
+
+		it("rejects wrong-typed retry protocol fields", () => {
+			expect(parseJikjiAnswerPack(retryEnvelope({ raw_fallback_allowed: "no" }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ max_raw_fallback_commands: "2" }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ max_jikji_retries: -1 }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ next_commands: "jikji discover" }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ retry_proof: 7 }))).toBeUndefined();
 		});
 	});
 
