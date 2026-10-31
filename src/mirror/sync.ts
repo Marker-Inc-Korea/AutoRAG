@@ -122,8 +122,8 @@ export interface ParsedMirrorSyncOptions {
 	readonly transientRetryBackoffMs?: number;
 	/**
 	 * Cloud-aware handling of File Provider placeholders (files whose data is not on disk; reading one
-	 * downloads it). `undefined` means the platform default: macOS probes with `stat`/`brctl`, other
-	 * platforms read every file as before. Tests inject their own probe.
+	 * downloads it). `undefined` means the platform default: macOS probes with `stat` and releases through a
+	 * Foundation call, other platforms read every file as before. Tests inject their own probe.
 	 */
 	readonly cloudProbe?: CloudFileProbe;
 	/** Most placeholders one refresh may download. Default {@link DEFAULT_CLOUD_MAX_FILES}. */
@@ -132,7 +132,7 @@ export interface ParsedMirrorSyncOptions {
 	readonly cloudMaxBytes?: number;
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
-	/** Retries after a failed release (`brctl evict`), with doubling waits; `0` tries once. Default 3. */
+	/** Retries after a failed release (`evictUbiquitousItem`), with doubling waits; `0` tries once. Default 3. */
 	readonly cloudEvictRetries?: number;
 	/** First wait before retrying a failed release, doubled each retry. Default 500 ms. */
 	readonly cloudEvictBackoffMs?: number;
@@ -337,10 +337,10 @@ function statIdentity(info: BigIntStats): string {
 
 /**
  * Identity of a placeholder's content across the download that reading it causes. Measured on macOS 26 with
- * iCloud Drive: hydrating a file moves ctime every time, and the first hydrate of a file also shifts mtime
- * by tens of nanoseconds (size, inode and device stay put) because the provider rounds the timestamp to the
- * precision the cloud keeps. So ctime is left out and mtime is compared to the second; a real edit changes
- * size or the mtime second.
+ * iCloud Drive, Google Drive, and OneDrive: hydrating a file moves ctime every time, and the first hydrate of
+ * a file can also shift mtime by tens of nanoseconds (size, inode and device stay put) because the provider
+ * rounds the timestamp to the precision the cloud keeps. So ctime is left out and mtime is compared to the
+ * second; a real edit changes size or the mtime second.
  */
 function contentIdentity(info: BigIntStats): string {
 	return [info.size, info.mtimeNs / 1_000_000_000n, info.ino, info.dev].join(":");
@@ -576,7 +576,7 @@ async function syncWithRegistry(
 				diagnostics.push({
 					code: "cloud-placeholder-skipped",
 					severity: "info",
-					message: `The file is not downloaded and its provider cannot be released again, so it was not read; its last indexed copy was kept. Make it available offline to index it.`,
+					message: `The file is not downloaded and its provider has no verified release path, so it was not read; its last indexed copy was kept. Make it available offline to index it.`,
 					source: entry.virtualPath,
 					...(cloudDecision.provider === undefined ? {} : { reason: cloudDecision.provider }),
 				});

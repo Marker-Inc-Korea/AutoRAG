@@ -564,31 +564,24 @@ Measured on macOS 26 with iCloud Drive, a refresh with both switched off
 with either one on, they were downloaded again. The parsed mirror, MinSync, and fsearch
 passes never re-download. Making Jikji and dupey placeholder-aware is tracked separately.
 
-### OneDrive and other Cloud Files providers (Windows)
+### Cloud Files providers (Windows)
 
-A folder synced by a Cloud Files provider (OneDrive, and any other provider that
-registers a sync root under `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager`)
-lists every file, but a file you have not opened is a placeholder whose bytes live
-only in the cloud. A refresh reads `FileAttributes` for a batch of files in one
-PowerShell process and treats a file whose `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`
-(`0x400000`) bit is set as a placeholder. `FILE_ATTRIBUTE_OFFLINE` (`0x1000`) is
-*not* set on real placeholders, so it is not required.
+Windows Cloud Files placeholders are detected in one PowerShell process per attribute batch by
+`FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` (`0x400000`); `FILE_ATTRIBUTE_OFFLINE` is not required.
+The provider is identified from the registered sync root. A release opens the file with a Cloud Files
+oplock and calls `CfDehydratePlaceholder` synchronously. The platform enforces the operation without
+changing pin intent and refuses files that are not eligible for dehydration.
 
-For each placeholder the probe names its provider from the registered sync root
-that contains the path (falling back to the path itself):
+The Windows release path and `canRelease` policy are verified against AutoRAG's synthetic Cloud Files
+provider (`scripts/manual-qa/windows-cloud-files-provider.ps1`) on Windows 11. This is not a claim of
+live verification against OneDrive, Dropbox, or another commercial provider; enable a provider only
+after measuring it with that provider. The opt-in live lane requires both `AUTORAG_E2E_CLOUD_DIRS` and
+`AUTORAG_E2E_CLOUD_SYNTHETIC=1` on Windows.
 
-| Provider | What a refresh does with a placeholder |
-| --- | --- |
-| OneDrive | Downloads it within the budget below, parses and indexes it, then releases the local copy. The file stays in OneDrive and keeps its size and modification time, so an unchanged file is never downloaded again; a changed one is downloaded once and released again. |
-| Google Drive, Dropbox, other providers | Does not read it (`cloud-placeholder-skipped`, `reason` is the provider), until that provider's release path has been verified live. A previously indexed copy is kept. Make the file or folder always available in the provider's app to index it. |
-
-A release opens the file with a Cloud Files oplock (`CfOpenFileWithOplock`) and
-calls `CfDehydratePlaceholder` synchronously, so the refresh learns the outcome
-immediately. Dehydration is provider-agnostic and does not change the file's pin
-state; it refuses a file the provider has not finished uploading, which is
-reported as a per-file `cloud-evict-failed` and leaves the document indexed. The
-`cloudMaxFiles`, `cloudMaxBytes`, `cloudEvictAfterParse`, and `cloudEvictRetries`
-keys above apply unchanged; the deferred and retry behavior is the same as macOS.
+The `cloudMaxFiles`, `cloudMaxBytes`, `cloudEvictAfterParse`, and `cloudEvictRetries` keys above apply
+unchanged. A placeholder whose provider has no verified release path remains unread and reports
+`cloud-placeholder-skipped`; a failed or refused release reports `cloud-evict-failed` and keeps the
+document indexed.
 
 ## Cancelling a refresh
 

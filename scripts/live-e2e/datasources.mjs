@@ -19,6 +19,15 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
 	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\/spotlight\/[^/\s]+\/chunks\/[a-f0-9]{16}/u },
 	{ name: "hister", binary: "hister", command: "scripts/manual-qa/run-qa-hister-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
+	// Opt-in: the harness writes to the user's real cloud mounts, so it only runs when the operator names the
+	// parent folders to use (AUTORAG_E2E_CLOUD_DIRS, platform path-delimited). Its identity is an OS-absolute
+	// source under the throwaway `autorag-e2e-<hex>/` folder the harness creates inside each mount.
+	{
+		name: "cloud-mount",
+		binary: process.platform === "win32" ? "powershell.exe" : "osascript",
+		command: "scripts/manual-qa/run-qa-cloud-mount-live.ts",
+		identityPattern: /\/autorag-e2e-[0-9a-f]+\//u,
+	},
 ]);
 
 // Native-store presence probes: a lane runs for real when its CLI's own
@@ -41,8 +50,13 @@ const NATIVE_STORE_PROBES = Object.freeze({
 	// or broken) mdfind can still hit system-volume files, so a bare darwin
 	// check is not enough. Probe whether a fresh user file becomes searchable.
 	spotlight: () => process.platform === "darwin" && spotlightIndexingHealthy(),
+	// Opt-in and dangerous (writes to the user's real cloud): Windows additionally requires the synthetic
+	// Cloud Files provider because this QA host has no signed-in OneDrive account.
+	"cloud-mount": () => {
+		if ((process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length === 0) return false;
+		return process.platform !== "win32" || process.env.AUTORAG_E2E_CLOUD_SYNTHETIC === "1";
+	},
 });
-
 function spotlightIndexingHealthy() {
 	// Spotlight skips dot-directories, and mdimport returns before the index commits.
 	const dir = join(homedir(), `autorag-spotlight-probe-${process.pid}`);
@@ -154,8 +168,11 @@ async function runNativeLane(lane, root, which, configured, run) {
 	if (!configured(lane.name)) return { name: lane.name, status: "SKIP", reason: `${lane.name}-native-store-not-configured` };
 	if (lane.command === undefined) return { name: lane.name, status: "SKIP", reason: `${lane.binary}-live-harness-not-registered` };
 	const result = await run("bun", [resolve(REPO_ROOT, lane.command)], root);
+	// The identity is matched against the raw output: redacting it first would erase an OS-absolute source
+	// (a cloud-mount path under /Users), which is exactly the identity some lanes must verify. Only the
+	// sanitized copy is stored in evidence.
 	const output = sanitizeDiagnostic(result.stdout).slice(-2000);
-	if (result.ok && lane.identityPattern?.test(output)) return { name: lane.name, status: "PASS", reason: "native-store harness passed with verified native identity", evidence: { binary: lane.binary, nativeStorePreserved: true, output, nativeIdentity: true } };
+	if (result.ok && lane.identityPattern?.test(result.stdout)) return { name: lane.name, status: "PASS", reason: "native-store harness passed with verified native identity", evidence: { binary: lane.binary, nativeStorePreserved: true, output, nativeIdentity: true } };
 	if (result.ok) return { name: lane.name, status: "FAIL", reason: `${lane.name} native identity unverified`, evidence: { binary: lane.binary, nativeStorePreserved: true, output, nativeIdentity: false } };
 	return { name: lane.name, status: "FAIL", reason: sanitizeDiagnostic(result.stderr || result.stdout || `${lane.binary}-failed`), evidence: { binary: lane.binary, nativeStorePreserved: true } };
 }

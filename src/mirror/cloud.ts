@@ -8,9 +8,8 @@ export const DEFAULT_CLOUD_MAX_FILES = 200;
 export const DEFAULT_CLOUD_MAX_BYTES = 512 * 1024 * 1024;
 
 /**
- * Retries after the first failed `brctl evict`. A just-hydrated file is often briefly "in use" by the provider
- * (measured: `Resource busy ... currently in use by an application`, then success a moment later), so a short
- * doubling wait usually clears it.
+ * Retries after the first failed release. A just-hydrated file is often briefly held by the provider, so the
+ * release is refused once and succeeds on a retry; a short doubling wait usually clears it.
  */
 export const DEFAULT_CLOUD_EVICT_RETRIES = 3;
 
@@ -62,7 +61,7 @@ export class CloudGate {
 	private placeholders: ReadonlySet<string> = new Set();
 	private downloadedFiles = 0;
 	private downloadedBytes = 0;
-	/** Whether a downloaded iCloud file is released again after it is parsed. */
+	/** Whether a downloaded cloud file is released again after it is parsed. */
 	readonly evictAfterParse: boolean;
 
 	constructor(options: CloudGateOptions = {}) {

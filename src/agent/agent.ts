@@ -286,7 +286,7 @@ export interface AutoRAGRefreshLimits {
 	/** Retries for a transient per-file I/O error (EMFILE/EBUSY/EIO/ETIMEDOUT) before the file is skipped. Default 3. */
 	readonly transientRetries?: number;
 	/**
-	 * Most iCloud/File Provider placeholders (files whose data is not on disk) one refresh may download.
+	 * Most cloud-file placeholders (files whose data is not on disk) one refresh may download.
 	 * Reading a placeholder downloads it, so this bounds disk and network use per refresh; the rest wait
 	 * for the next one. Default 200.
 	 */
@@ -296,9 +296,9 @@ export interface AutoRAGRefreshLimits {
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
 	/**
-	 * Retries after a failed release of a downloaded iCloud file (`brctl evict` often fails once with "in use"
-	 * right after a download), waiting 500 ms then 1 s then 2 s. After the last retry the file is left on disk
-	 * and `cloud-evict-failed` is reported. `0` tries once. Default 3.
+	 * Retries after a failed release of a downloaded cloud file (`evictUbiquitousItem` can be refused while the
+	 * provider still holds the file), waiting 500 ms then 1 s then 2 s. After the last retry the file is left on
+	 * disk and `cloud-evict-failed` is reported. `0` tries once. Default 3.
 	 */
 	readonly cloudEvictRetries?: number;
 }

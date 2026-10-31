@@ -62,13 +62,14 @@ export function datalessFromWindowsAttributes(attributes: number): boolean {
 }
 
 /** Which cloud backs a path. Whether AutoRAG may release a provider's files again is up to {@link CloudFileProbe.canRelease}. */
-export type CloudProvider = "icloud" | "google-drive" | "onedrive" | "file-provider";
+export type CloudProvider = "icloud" | "google-drive" | "onedrive" | "dropbox" | "file-provider";
 
 export function cloudProviderFromPath(target: string): CloudProvider {
 	const lower = target.toLowerCase();
 	if (lower.includes("googledrive") || lower.includes("google drive") || lower.includes("drivefs"))
 		return "google-drive";
 	if (lower.includes("onedrive")) return "onedrive";
+	if (lower.includes("dropbox")) return "dropbox";
 	if (lower.includes("mobile documents") || lower.includes("clouddocs")) return "icloud";
 	return "file-provider";
 }
@@ -79,6 +80,7 @@ export function cloudProviderFromDomain(domain: string): CloudProvider {
 	if (lower.includes("clouddocs") || lower.includes("icloud")) return "icloud";
 	if (lower.includes("google")) return "google-drive";
 	if (lower.includes("onedrive")) return "onedrive";
+	if (lower.includes("dropbox")) return "dropbox";
 	return "file-provider";
 }
 
@@ -105,18 +107,134 @@ export interface CloudFileProbe {
 /** Paths per `stat` invocation: keeps argv well under the OS limit for long cloud paths. */
 const STAT_BATCH = 200;
 
+export interface CloudExecOptions {
+	readonly timeoutMs?: number;
+	readonly maxBuffer?: number;
+}
+
+/** Runs a helper process. Injected by tests so they never need a real File Provider mount. */
+export type CloudExec = (
+	file: string,
+	args: readonly string[],
+	options?: CloudExecOptions,
+) => Promise<{ readonly stdout: string; readonly stderr: string }>;
+
+const defaultCloudExec: CloudExec = (file, args, options) =>
+	execFileAsync(file, [...args], {
+		timeout: options?.timeoutMs ?? 30_000,
+		...(options?.maxBuffer === undefined ? {} : { maxBuffer: options.maxBuffer }),
+	});
+
+/**
+ * JXA escaped into `osascript -l JavaScript`. It calls `evictUbiquitousItemAtURLError` — the one public
+ * Foundation release call that works for every File Provider measured here (iCloud, Google Drive, OneDrive, Dropbox),
+ * with no helper binary and no entitlement.
+ *
+ * The failed eviction's NSError out-param must never be read: on a refusal, dereferencing it segfaults
+ * osascript (measured exit 139). The program passes a Ref and ignores it; a useful refusal reason comes from
+ * the file's resource keys instead, which are safe to read. The target path is the helper's last argument.
+ */
+const JXA_RELEASE_PROGRAM = `ObjC.import("Foundation");
+function run(argv) {
+	var url = $.NSURL.fileURLWithPath(argv[0]);
+	var errorRef = Ref();
+	var released = $.NSFileManager.defaultManager.evictUbiquitousItemAtURLError(url, errorRef);
+	if (released) return JSON.stringify({ ok: true });
+	function resourceValue(key) {
+		var ref = Ref();
+		if (!url.getResourceValueForKeyError(ref, key, null)) return null;
+		var value = ref[0];
+		return value === undefined || value === null ? null : ObjC.unwrap(value);
+	}
+	return JSON.stringify({
+		ok: false,
+		isUploaded: resourceValue($.NSURLUbiquitousItemIsUploadedKey),
+		isUploading: resourceValue($.NSURLUbiquitousItemIsUploadingKey),
+		downloadingStatus: resourceValue($.NSURLUbiquitousItemDownloadingStatusKey)
+	});
+}`;
+
+/** Providers measured to release through `evictUbiquitousItem` on macOS; the probe's release allow-list. */
+const RELEASABLE_DARWIN_PROVIDERS: Readonly<Partial<Record<CloudProvider, true>>> = {
+	icloud: true,
+	"google-drive": true,
+	onedrive: true,
+	dropbox: true,
+};
+
+interface ReleaseOutcome {
+	readonly ok: boolean;
+	readonly isUploaded?: unknown;
+	readonly isUploading?: unknown;
+	readonly downloadingStatus?: unknown;
+}
+
+function parseReleaseOutcome(stdout: string): ReleaseOutcome | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stdout.trim());
+	} catch {
+		return undefined;
+	}
+	if (typeof parsed !== "object" || parsed === null || !("ok" in parsed) || typeof parsed.ok !== "boolean") {
+		return undefined;
+	}
+	return {
+		ok: parsed.ok,
+		...("isUploaded" in parsed ? { isUploaded: parsed.isUploaded } : {}),
+		...("isUploading" in parsed ? { isUploading: parsed.isUploading } : {}),
+		...("downloadingStatus" in parsed ? { downloadingStatus: parsed.downloadingStatus } : {}),
+	};
+}
+
+function describeReleaseRefusal(outcome: ReleaseOutcome): string {
+	if (outcome.isUploading === true) return "The file is still uploading to the cloud, so it cannot be released yet.";
+	if (outcome.isUploaded === false)
+		return "The file has not finished uploading to the cloud, so it cannot be released yet.";
+	const status = typeof outcome.downloadingStatus === "string" ? outcome.downloadingStatus : "unknown";
+	return `The cloud provider declined to release the local copy (download status ${status}).`;
+}
+
+function describeReleaseHelperFailure(error: unknown): string {
+	// Node's execFile rejection carries signal/killed/code/stderr off-type; read only the fields formatted here.
+	const failure = error as { signal?: unknown; killed?: unknown; code?: unknown; stderr?: unknown };
+	const parts: string[] = [];
+	if (failure.killed === true || typeof failure.signal === "string") {
+		parts.push(`the helper was killed${typeof failure.signal === "string" ? ` by ${failure.signal}` : ""}`);
+	} else if (typeof failure.code === "number") {
+		parts.push(`the helper exited with code ${failure.code}`);
+	}
+	const stderr = typeof failure.stderr === "string" ? failure.stderr.trim() : "";
+	if (stderr !== "") parts.push(stderr);
+	if (parts.length === 0) parts.push(error instanceof Error ? error.message : String(error));
+	return `osascript could not release the local copy: ${parts.join("; ")}`;
+}
+
+export interface DarwinCloudProbeOptions {
+	/** Process runner for `stat` and the release helper. Injected by tests. */
+	readonly exec?: CloudExec;
+}
+
 /**
  * The macOS probe. `stat -f %f` reads `st_flags`, which Node's `fs.stat` does not expose; a placeholder is
- * the file whose `SF_DATALESS` bit is set. `brctl evict` is iCloud-only: for other providers it refuses
- * with "outside of any CloudDocs app library", so this probe never calls it for them.
+ * the file whose `SF_DATALESS` bit is set. Released with {@link DarwinCloudProbe.evict}: a Foundation
+ * `evictUbiquitousItem` call through `osascript -l JavaScript`, which drops the local copy of iCloud,
+ * Google Drive, OneDrive, and Dropbox placeholders alike (measured; `brctl evict` works only for iCloud, so
+ * not used).
  */
 export class DarwinCloudProbe implements CloudFileProbe {
+	private readonly exec: CloudExec;
+
+	constructor(options: DarwinCloudProbeOptions = {}) {
+		this.exec = options.exec ?? defaultCloudExec;
+	}
+
 	async datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>> {
 		const dataless = new Set<string>();
 		for (let start = 0; start < paths.length; start += STAT_BATCH) {
 			const batch = paths.slice(start, start + STAT_BATCH);
-			const { stdout } = await execFileAsync("/usr/bin/stat", ["-f", "%f", ...batch], {
-				timeout: 30_000,
+			const { stdout } = await this.exec("/usr/bin/stat", ["-f", "%f", ...batch], {
+				timeoutMs: 30_000,
 				maxBuffer: 4 * 1024 * 1024,
 			});
 			const flags = stdout.split("\n").filter(Boolean);
@@ -133,20 +251,29 @@ export class DarwinCloudProbe implements CloudFileProbe {
 	}
 
 	canRelease(provider: CloudProvider | undefined): boolean {
-		return provider === "icloud";
+		return provider !== undefined && RELEASABLE_DARWIN_PROVIDERS[provider] === true;
 	}
 
 	async evict(path: string): Promise<CloudEvictResult> {
+		let stdout: string;
 		try {
-			await execFileAsync("/usr/bin/brctl", ["evict", path], { timeout: 30_000 });
-			return { ok: true };
+			stdout = (
+				await this.exec("/usr/bin/osascript", ["-l", "JavaScript", "-e", JXA_RELEASE_PROGRAM, path], {
+					timeoutMs: 30_000,
+				})
+			).stdout;
 		} catch (error) {
-			const stderr = typeof error === "object" && error !== null && "stderr" in error ? error.stderr : undefined;
+			return { ok: false, message: describeReleaseHelperFailure(error) };
+		}
+		const outcome = parseReleaseOutcome(stdout);
+		if (outcome === undefined) {
+			const detail = stdout.trim();
 			return {
 				ok: false,
-				message: typeof stderr === "string" && stderr.trim() !== "" ? stderr.trim() : String(error),
+				message: `osascript returned no release result${detail === "" ? "" : `: ${detail}`}`,
 			};
 		}
+		return outcome.ok ? { ok: true } : { ok: false, message: describeReleaseRefusal(outcome) };
 	}
 }
 
@@ -345,8 +472,14 @@ export class WindowsCloudProbe implements CloudFileProbe {
 	}
 }
 
-/** Providers whose release path was verified live on Windows. Extend only after a measured run. */
-const WINDOWS_RELEASABLE: ReadonlySet<CloudProvider> = new Set<CloudProvider>(["onedrive"]);
+/** The release call is platform-enforced for Cloud Files roots; live verification uses the synthetic provider. */
+const WINDOWS_RELEASABLE: ReadonlySet<CloudProvider> = new Set<CloudProvider>([
+	"icloud",
+	"google-drive",
+	"onedrive",
+	"dropbox",
+	"file-provider",
+]);
 
 /** Longest registered sync root containing `path`, so a nested root wins over its parent. */
 function longestSyncRoot(roots: readonly WindowsSyncRoot[], target: string): WindowsSyncRoot | undefined {
