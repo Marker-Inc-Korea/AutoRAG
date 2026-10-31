@@ -160,6 +160,7 @@ function jikjiTool(paths: string[] | undefined, diagnostics: readonly JikjiDiagn
 							handoffAction: "direct_use",
 							toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
 							agentShouldNotRerank: false,
+							rawFallbackAllowed: false,
 						},
 			policy: undefined,
 			diagnostics,
@@ -350,6 +351,7 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 				handoffAction: "direct_use",
 				toolCallPolicy: { stopAfterFind: false, forbiddenTools: ["bash"], allowedFollowups: [] },
 				agentShouldNotRerank: true,
+				rawFallbackAllowed: false,
 			};
 			const healthy: JikjiFindResult = { ok: true, answerPack: pack, stdout: "", stderr: "", code: 0 };
 			const other: JikjiFindResult =

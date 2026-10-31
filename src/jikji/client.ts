@@ -14,6 +14,7 @@ import type {
 	JikjiOptions,
 	JikjiPrepareOptions,
 	JikjiPrepareResult,
+	JikjiRetryStep,
 } from "./types.ts";
 
 const DEFAULT_BINARY = "jikji";
@@ -163,32 +164,36 @@ export class JikjiClient {
 				}),
 			{ signal: options.signal, value: ABORTED_BEFORE_START },
 		);
-		if (!result.ok) {
-			return {
-				ok: false,
-				reason: result.reason ?? "nonzero-exit",
-				stdout: result.stdout,
-				stderr: result.stderr,
-				code: result.code,
-			};
+		return toFindResult(result);
+	}
+
+	/**
+	 * Run the follow-up step jikji named in a `jikji_retry` answer: `discover`
+	 * with the proof it issued, parsed like a `find` result. Queued with finds
+	 * (a query never waits behind a refresh) and, like `find`, never installs the
+	 * binary, refreshes in the background, or reindexes. A step whose root is not
+	 * the root being queried is refused before anything is spawned: jikji binds
+	 * each proof to one root, so it must not be applied to another.
+	 */
+	async discover(
+		root: string,
+		step: JikjiRetryStep,
+		options: { readonly signal?: AbortSignal } = {},
+	): Promise<JikjiFindResult> {
+		const canonicalRoot = canonicalJikjiRoot(root);
+		if (canonicalJikjiRoot(step.root) !== canonicalRoot) {
+			return { ok: false, reason: "bad-retry-step", stdout: "", stderr: "", code: null };
 		}
-		const answerPack = parseJikjiAnswerPack(result.stdout);
-		if (answerPack === undefined) {
-			return {
-				ok: false,
-				reason: "bad-answer-pack",
-				stdout: result.stdout,
-				stderr: result.stderr,
-				code: result.code ?? 0,
-			};
-		}
-		return {
-			ok: true,
-			answerPack,
-			stdout: result.stdout,
-			stderr: result.stderr,
-			code: result.code ?? 0,
-		};
+		const result = await this.findQueue.run(
+			async () =>
+				this.spawn({
+					command: await this.resolveCommand({ install: false }),
+					args: buildDiscoverArgs(canonicalRoot, step),
+					signal: options.signal,
+				}),
+			{ signal: options.signal, value: ABORTED_BEFORE_START },
+		);
+		return toFindResult(result);
 	}
 
 	/**
@@ -384,4 +389,36 @@ function canonicalJikjiRoot(root: string): string {
 	} catch {
 		return root;
 	}
+}
+
+function toFindResult(result: ProcessResult): JikjiFindResult {
+	if (!result.ok) {
+		return {
+			ok: false,
+			reason: result.reason ?? "nonzero-exit",
+			stdout: result.stdout,
+			stderr: result.stderr,
+			code: result.code,
+		};
+	}
+	const answerPack = parseJikjiAnswerPack(result.stdout);
+	if (answerPack === undefined) {
+		return {
+			ok: false,
+			reason: "bad-answer-pack",
+			stdout: result.stdout,
+			stderr: result.stderr,
+			code: result.code ?? 0,
+		};
+	}
+	return { ok: true, answerPack, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
+}
+
+function buildDiscoverArgs(root: string, step: JikjiRetryStep): readonly string[] {
+	// Same query-time guarantees as `find`: no detached refresh (which would
+	// rewrite AGENTS.md / CLAUDE.md / .cursorrules) and no reindex.
+	const args = ["discover", root, step.query, "--json", "--no-background-refresh", "--no-auto-prepare"];
+	if (step.topK !== undefined) args.push("--top-k", String(step.topK));
+	args.push("--after-jikji-retry", "--retry-proof", step.proof);
+	return args;
 }

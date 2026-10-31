@@ -4,7 +4,12 @@ export {
 } from "./answer-pack.ts";
 export { JikjiClient } from "./client.ts";
 export type { JikjiDiagnostic, JikjiDiagnosticCode } from "./diagnostics.ts";
-export { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "./diagnostics.ts";
+export {
+	jikjiDiscoverDiagnostic,
+	jikjiFindDiagnostic,
+	jikjiPrepareDiagnostic,
+	jikjiUnusableRetryDiagnostic,
+} from "./diagnostics.ts";
 export type {
 	EnsureJikjiBinaryOptions,
 	EnsureJikjiBinaryResult,
@@ -33,6 +38,7 @@ export type {
 	JikjiOptions,
 	JikjiPrepareOptions,
 	JikjiPrepareResult,
+	JikjiRetryStep,
 	JikjiToolCallPolicy,
 } from "./types.ts";
 export { DEFAULT_JIKJI_OPTIONS } from "./types.ts";
