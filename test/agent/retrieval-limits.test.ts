@@ -262,7 +262,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 		internals.jikjiClient = {};
 		internals.findJikji = async (_query, opts) => {
 			seenTopK.push(opts?.topK ?? 0);
-			return { answerPack: { answerPaths: ["/p/1", "/p/2", "/p/3", "/p/4"] } };
+			return { answerPack: { answerPaths: ["/p/1", "/p/2", "/p/3", "/p/4"], candidates: [] } };
 		};
 
 		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
@@ -276,7 +276,7 @@ describe("AutoRAGAgent retrieval limits", () => {
 	it("numbers the unranked Jikji and MinSync sections as one flat citation list", async () => {
 		const internals = agentWith({ prefetch: { jikjiPathLimit: 2, sectionLimit: 2 } });
 		internals.jikjiClient = {};
-		internals.findJikji = async () => ({ answerPack: { answerPaths: ["/p/1", "/p/2"] } });
+		internals.findJikji = async () => ({ answerPack: { answerPaths: ["/p/1", "/p/2"], candidates: [] } });
 		injectMinSync(internals, 2);
 
 		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});

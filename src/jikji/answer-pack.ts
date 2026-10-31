@@ -4,6 +4,7 @@ import type { SourceRoot } from "../filesystem/source-paths.ts";
 import type {
 	JikjiAnswerPack,
 	JikjiCandidate,
+	JikjiConfidence,
 	JikjiEvidence,
 	JikjiHandoffAction,
 	JikjiNextRead,
@@ -36,6 +37,68 @@ function parseNextRead(value: unknown): JikjiNextRead | undefined {
 		return value.kind as JikjiNextRead;
 	}
 	return undefined;
+}
+
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+	return typeof value === "number" ? value : undefined;
+}
+
+/** Evidence is shown on one line and compared as text; whitespace runs carry no meaning. */
+function evidenceText(value: unknown): string | undefined {
+	const raw = typeof value === "string" ? value : isStringArray(value) ? value.join(" | ") : undefined;
+	const text = raw?.replace(/\s+/gu, " ").trim();
+	return text === undefined || text.length === 0 ? undefined : text;
+}
+
+/**
+ * Optional response-level fields: a missing or wrong-typed one is dropped, never a reason to reject the
+ * pack, because confidence is advisory and upstream owns its exact shape.
+ */
+function parseConfidence(parsed: Record<string, unknown>): JikjiConfidence | undefined {
+	const level = optionalString(parsed.confidence);
+	const score = optionalNumber(parsed.confidence_score);
+	const answerability = optionalString(parsed.answerability);
+	const recommendedAction = optionalString(parsed.recommended_action);
+	const requiresLlmRerank = typeof parsed.requires_llm_rerank === "boolean" ? parsed.requires_llm_rerank : undefined;
+	const indexStatus = optionalString(parsed.index_status);
+	const confidence: JikjiConfidence = {
+		...(level !== undefined ? { level } : {}),
+		...(score !== undefined ? { score } : {}),
+		...(answerability !== undefined ? { answerability } : {}),
+		...(recommendedAction !== undefined ? { recommendedAction } : {}),
+		...(requiresLlmRerank !== undefined ? { requiresLlmRerank } : {}),
+		...(indexStatus !== undefined ? { indexStatus } : {}),
+	};
+	return Object.keys(confidence).length === 0 ? undefined : confidence;
+}
+
+const CONFIDENCE_RANK: Readonly<Record<string, number>> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * Combine the confidence of several roots' responses into one. Weakest wins: the root with the lowest level
+ * (then lowest score) supplies every field, and `requiresLlmRerank` is true when any root asked for it. A
+ * missing or unknown level counts as the weakest.
+ */
+export function mergeJikjiConfidence(entries: readonly (JikjiConfidence | undefined)[]): JikjiConfidence | undefined {
+	const present = entries.filter((entry): entry is JikjiConfidence => entry !== undefined);
+	const rank = (entry: JikjiConfidence): number => CONFIDENCE_RANK[entry.level ?? ""] ?? 0;
+	let weakest = present[0];
+	for (const entry of present) {
+		if (
+			weakest !== undefined &&
+			(rank(entry) < rank(weakest) ||
+				(rank(entry) === rank(weakest) && (entry.score ?? Infinity) < (weakest.score ?? Infinity)))
+		) {
+			weakest = entry;
+		}
+	}
+	if (weakest === undefined) return undefined;
+	const flags = present.map((entry) => entry.requiresLlmRerank).filter((flag): flag is boolean => flag !== undefined);
+	return flags.length === 0 ? weakest : { ...weakest, requiresLlmRerank: flags.some(Boolean) };
 }
 
 /**
@@ -73,11 +136,25 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		if (nextRead === undefined) return undefined;
 		if (entry.label !== undefined && typeof entry.label !== "string") return undefined;
 		const score = typeof entry.score === "number" ? entry.score : typeof entry.s === "number" ? entry.s : undefined;
+		const evidence = evidenceText(entry.ev ?? entry.evidence);
+		const why = isStringArray(entry.why) ? entry.why : undefined;
+		const matchedTerms = isStringArray(entry.matched_terms)
+			? entry.matched_terms
+			: isStringArray(entry.terms)
+				? entry.terms
+				: undefined;
+		const strategies = isStringArray(entry.strategies) ? entry.strategies : undefined;
+		const rank = optionalNumber(entry.rank);
 		const candidate: JikjiCandidate = {
 			path,
 			nextRead,
 			...(entry.label !== undefined ? { label: entry.label } : {}),
 			...(score !== undefined ? { score } : {}),
+			...(evidence !== undefined ? { evidence } : {}),
+			...(why !== undefined ? { why } : {}),
+			...(matchedTerms !== undefined ? { matchedTerms } : {}),
+			...(strategies !== undefined ? { strategies } : {}),
+			...(rank !== undefined ? { rank } : {}),
 		};
 		candidates.push(candidate);
 	}
@@ -89,6 +166,7 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		parsed.evidence_pack === undefined && handoffAction === "jikji_retry" ? [] : parsed.evidence_pack;
 	if (!Array.isArray(evidenceRaw)) return undefined;
 	const evidencePack: JikjiEvidence[] = [];
+	const packEvidence = new Map<string, string>();
 	for (const entry of evidenceRaw) {
 		if (!isRecord(entry)) return undefined;
 		const path = typeof entry.path === "string" ? entry.path : typeof entry.p === "string" ? entry.p : undefined;
@@ -96,6 +174,8 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		const nextRead = parseNextRead(entry.next_read);
 		if (nextRead === undefined) return undefined;
 		evidencePack.push({ path, nextRead });
+		const text = evidenceText(entry.evidence);
+		if (text !== undefined && !packEvidence.has(path)) packEvidence.set(path, text);
 	}
 	const policyRaw = parsed.tool_call_policy;
 	if (!isRecord(policyRaw)) return undefined;
@@ -114,14 +194,20 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 			: parsed.agent_should_not_rerank;
 	if (typeof agentShouldNotRerank !== "boolean") return undefined;
 
+	const confidence = parseConfidence(parsed);
 	return {
 		answerPaths,
 		paths,
-		candidates,
+		// A candidate without its own `ev` takes the evidence lines of the same path from `evidence_pack`.
+		candidates: candidates.map((candidate) => {
+			const fallback = candidate.evidence === undefined ? packEvidence.get(candidate.path) : undefined;
+			return fallback === undefined ? candidate : { ...candidate, evidence: fallback };
+		}),
 		evidencePack,
 		handoffAction: handoffAction as JikjiHandoffAction,
 		toolCallPolicy,
 		agentShouldNotRerank,
+		...(confidence !== undefined ? { confidence } : {}),
 	};
 }
 

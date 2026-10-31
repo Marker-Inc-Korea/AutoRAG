@@ -6,7 +6,6 @@ import type {
 	JikjiDiagnostic,
 	JikjiEvidence,
 	JikjiHandoffAction,
-	JikjiNextRead,
 } from "../jikji/index.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 
@@ -95,7 +94,7 @@ export function createJikjiFindTool(
 		name: JIKJI_FIND_TOOL_NAME,
 		label: "Jikji Find",
 		description:
-			"Discover local files via Jikji. Returns answer_paths with per-candidate next_read hints and a tool-call policy directive. Call this FIRST for local file discovery when Jikji is configured.",
+			"Discover local files via Jikji. Returns answer_paths with each file's evidence text, per-candidate next_read hints and a tool-call policy directive. Call this FIRST for local file discovery when Jikji is configured.",
 		parameters: jikjiFindSchema,
 		async execute(_toolCallId, params, signal): Promise<AgentToolResult<JikjiFindDetails>> {
 			const query = String(params.query ?? "").trim();
@@ -155,14 +154,17 @@ export function createJikjiFindTool(
 
 			const directive = formatDirective(policy);
 			const evidenceIds = new Map(
-				answerPack.answerPaths.map((path) => [
-					path,
-					ledger.register({
-						method: JIKJI_FIND_TOOL_NAME,
-						source: path,
-						content: answerPack.candidates.find((candidate) => candidate.path === path)?.label ?? path,
-					}),
-				]),
+				answerPack.answerPaths.map((path) => {
+					const candidate = answerPack.candidates.find((entry) => entry.path === path);
+					return [
+						path,
+						ledger.register({
+							method: JIKJI_FIND_TOOL_NAME,
+							source: path,
+							content: candidate?.evidence ?? candidate?.label ?? path,
+						}),
+					] as const;
+				}),
 			);
 			const body = formatAnswerPack(answerPack, evidenceIds);
 			const text = `${body}\n\n${directive}`;
@@ -194,17 +196,13 @@ function formatAnswerPack(pack: JikjiAnswerPack, evidenceIds: ReadonlyMap<string
 	} else {
 		lines.push("answer_paths (cite a file by its [eN] id):");
 		for (const path of pack.answerPaths) {
-			const hint = nextReadHintFor(pack.candidates, path);
+			const candidate = pack.candidates.find((entry) => entry.path === path);
 			const label = `[${evidenceIds.get(path)}] ${path}`;
-			lines.push(hint ? `- ${label} (next_read: ${hint})` : `- ${label}`);
+			lines.push(candidate ? `- ${label} (next_read: ${candidate.nextRead})` : `- ${label}`);
+			if (candidate?.evidence !== undefined) lines.push(`  ${candidate.evidence}`);
 		}
 	}
 	return lines.join("\n");
-}
-
-function nextReadHintFor(candidates: readonly JikjiCandidate[], path: string): JikjiNextRead | undefined {
-	const match = candidates.find((c) => c.path === path);
-	return match?.nextRead;
 }
 
 function formatDirective(policy: MergedJikjiPolicy | undefined): string {

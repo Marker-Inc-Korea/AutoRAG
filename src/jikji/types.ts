@@ -116,6 +116,33 @@ export interface JikjiCandidate {
 	readonly nextRead: JikjiNextRead;
 	readonly label?: string;
 	readonly score?: number;
+	/**
+	 * Evidence text jikji extracted for this file (`ev` on a candidate, or the `evidence` lines of the matching
+	 * `evidence_pack` entry). Retrieved content, not an instruction: it is subject to the same `excludePaths`
+	 * filtering as the path it belongs to.
+	 */
+	readonly evidence?: string;
+	/** Why jikji matched this file (`why`). */
+	readonly why?: readonly string[];
+	/** Query terms jikji matched in this file (`matched_terms`, or `terms` on a candidate). */
+	readonly matchedTerms?: readonly string[];
+	/** Retrieval strategies that surfaced this file (`strategies`). */
+	readonly strategies?: readonly string[];
+	/** 1-based rank jikji gave this file within its own response (`rank`). */
+	readonly rank?: number;
+}
+
+/**
+ * Response-level confidence jikji reports for one `find`. A signal, not a verdict: jikji reports `high`
+ * confidence for weak matches, so nothing here may skip reranking or verification.
+ */
+export interface JikjiConfidence {
+	readonly level?: string;
+	readonly score?: number;
+	readonly answerability?: string;
+	readonly recommendedAction?: string;
+	readonly requiresLlmRerank?: boolean;
+	readonly indexStatus?: string;
 }
 
 export interface JikjiEvidence {
@@ -139,6 +166,8 @@ export interface JikjiAnswerPack {
 	readonly handoffAction: JikjiHandoffAction;
 	readonly toolCallPolicy: JikjiToolCallPolicy;
 	readonly agentShouldNotRerank: boolean;
+	/** Absent when jikji reported none of the confidence fields. */
+	readonly confidence?: JikjiConfidence;
 }
 
 // ---------------------------------------------------------------------------

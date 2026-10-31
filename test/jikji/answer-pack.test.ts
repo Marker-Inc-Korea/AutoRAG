@@ -156,6 +156,7 @@ describe("parseJikjiAnswerPack", () => {
 				allowedFollowups: ["exactly_one_jikji_retry"],
 			},
 			agentShouldNotRerank: false,
+			confidence: { answerability: "needs_one_jikji_retry", indexStatus: "missing" },
 		});
 	});
 
@@ -391,5 +392,116 @@ describe("normalizeJikjiAnswerPath", () => {
 	it("returns undefined when the path does not exist on disk", () => {
 		const roots = [root(repoRoot)];
 		expect(normalizeJikjiAnswerPath("src/nonexistent.ts", roots)).toBeUndefined();
+	});
+});
+
+/** Trimmed from a real `jikji find --json` 0.2.1 run over a three-file Korean corpus. */
+function realJikjiPayload(overrides: Record<string, unknown> = {}): string {
+	return JSON.stringify({
+		answer_paths: ["pay.md"],
+		paths: ["pay.md"],
+		candidates: [
+			{
+				ev: "2026년 3분기 보험금 지급 기준 안내 | 지급 청구는 14일 이내 처리됩니다",
+				next_read: { kind: "original", path: "pay.md" },
+				p: "pay.md",
+				queries: ["보험금 지급 기준"],
+				rank: 1,
+				s: 5130.7564,
+				strategies: ["lexical", "lexical_anchors"],
+				terms: ["기준", "보험금", "지급"],
+				why: ["fielded-bm25", "strong-map-term"],
+			},
+		],
+		evidence_pack: [
+			{
+				evidence: ["2026년 3분기 보험금 지급 기준 안내", "지급 청구는 14일 이내 처리됩니다"],
+				matched_terms: ["기준", "보험금", "지급"],
+				next_read: { kind: "original", path: "pay.md" },
+				path: "pay.md",
+				why: ["fielded-bm25"],
+			},
+		],
+		handoff_action: "direct_use",
+		tool_call_policy: { stop_after_find: true, forbidden_tools: ["bash"], allowed_followups: [] },
+		agent_should_not_rerank: true,
+		confidence: "high",
+		confidence_score: 0.9,
+		answerability: "answerable_from_payload",
+		recommended_action: "verify_top_candidates",
+		requires_llm_rerank: false,
+		index_status: "ready",
+		...overrides,
+	});
+}
+
+describe("parseJikjiAnswerPack evidence and confidence", () => {
+	it("keeps per-candidate evidence text, reasons, terms, strategies, rank and score", () => {
+		const candidate = parseJikjiAnswerPack(realJikjiPayload())?.candidates[0];
+		expect(candidate).toEqual({
+			path: "pay.md",
+			nextRead: "original",
+			score: 5130.7564,
+			evidence: "2026년 3분기 보험금 지급 기준 안내 | 지급 청구는 14일 이내 처리됩니다",
+			why: ["fielded-bm25", "strong-map-term"],
+			matchedTerms: ["기준", "보험금", "지급"],
+			strategies: ["lexical", "lexical_anchors"],
+			rank: 1,
+		});
+	});
+
+	it("keeps the response-level confidence, answerability and rerank signals", () => {
+		expect(parseJikjiAnswerPack(realJikjiPayload())?.confidence).toEqual({
+			level: "high",
+			score: 0.9,
+			answerability: "answerable_from_payload",
+			recommendedAction: "verify_top_candidates",
+			requiresLlmRerank: false,
+			indexStatus: "ready",
+		});
+	});
+
+	it("takes candidate evidence from the evidence_pack lines when the candidate has no ev", () => {
+		const payload = JSON.parse(realJikjiPayload()) as { candidates: Record<string, unknown>[] };
+		delete payload.candidates[0]?.ev;
+		const candidate = parseJikjiAnswerPack(JSON.stringify(payload))?.candidates[0];
+		expect(candidate?.evidence).toBe("2026년 3분기 보험금 지급 기준 안내 | 지급 청구는 14일 이내 처리됩니다");
+	});
+
+	it("collapses whitespace in evidence so it renders on one line", () => {
+		const payload = JSON.parse(realJikjiPayload()) as { candidates: Record<string, unknown>[] };
+		payload.candidates[0] = { ...payload.candidates[0], ev: "  first\n\n  second\tthird " };
+		expect(parseJikjiAnswerPack(JSON.stringify(payload))?.candidates[0]?.evidence).toBe("first second third");
+	});
+
+	it("omits evidence and confidence when jikji sent none, without rejecting the pack", () => {
+		const pack = parseJikjiAnswerPack(validAnswerPack());
+		expect(pack?.candidates[0]?.evidence).toBeUndefined();
+		expect(pack?.candidates[0]).not.toHaveProperty("why");
+		expect(pack?.confidence).toBeUndefined();
+	});
+
+	it("drops wrong-typed optional evidence and confidence fields instead of rejecting the pack", () => {
+		const payload = JSON.parse(
+			realJikjiPayload({ confidence: 7, confidence_score: "0.9", requires_llm_rerank: "no" }),
+		) as {
+			candidates: Record<string, unknown>[];
+		};
+		payload.candidates[0] = { ...payload.candidates[0], ev: 42, why: "nope", rank: "1" };
+		const pack = parseJikjiAnswerPack(JSON.stringify(payload));
+		expect(pack).toBeDefined();
+		expect(pack?.candidates[0]).toEqual({
+			path: "pay.md",
+			nextRead: "original",
+			score: 5130.7564,
+			matchedTerms: ["기준", "보험금", "지급"],
+			strategies: ["lexical", "lexical_anchors"],
+			evidence: "2026년 3분기 보험금 지급 기준 안내 | 지급 청구는 14일 이내 처리됩니다",
+		});
+		expect(pack?.confidence).toEqual({
+			answerability: "answerable_from_payload",
+			recommendedAction: "verify_top_candidates",
+			indexStatus: "ready",
+		});
 	});
 });
