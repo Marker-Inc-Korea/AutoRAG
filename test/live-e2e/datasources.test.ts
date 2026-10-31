@@ -141,6 +141,45 @@ describe("live-e2e datasource matrix", () => {
 		expect(validateNativeIdentity("/autorag/fake/chunks/1", "spotlight")).toBe(false);
 	});
 
+	it("registers an opt-in cloud-mount lane whose harness exists", () => {
+		const lane = buildDatasourceMatrix().find((candidate) => candidate.name === "cloud-mount");
+		expect(lane).toMatchObject({ kind: "native" });
+		expect(existsSync(lane?.command ?? "")).toBe(true);
+	});
+
+	it("skips the cloud-mount lane unless AUTORAG_E2E_CLOUD_DIRS is set", async () => {
+		const previous = process.env.AUTORAG_E2E_CLOUD_DIRS;
+		delete process.env.AUTORAG_E2E_CLOUD_DIRS;
+		try {
+			const result = await runDatasourceMatrix({
+				root: fixtureRoot(),
+				selection: ["cloud-mount"],
+				which: () => true,
+			});
+			expect(result.lanes[0]).toMatchObject({
+				name: "cloud-mount",
+				status: "SKIP",
+				reason: "cloud-mount-native-store-not-configured",
+			});
+		} finally {
+			if (previous !== undefined) process.env.AUTORAG_E2E_CLOUD_DIRS = previous;
+		}
+	});
+
+	it("passes the cloud-mount lane on an absolute source under its fixture folder, storing it sanitized", async () => {
+		const source = "/Users/demo/Library/CloudStorage/GoogleDrive-demo/My Drive/autorag-e2e-ab12cd34/notes-a.txt";
+		const result = await runDatasourceMatrix({
+			root: fixtureRoot(),
+			selection: ["cloud-mount"],
+			which: () => true,
+			configured: () => true,
+			run: async () => ({ ok: true, stdout: `CLOUD_MOUNT_LIVE_QA source=${source}\n`, stderr: "", code: 0 }),
+		});
+		expect(result.lanes[0]).toMatchObject({ name: "cloud-mount", status: "PASS" });
+		// The OS-absolute identity is verified against the raw output but redacted from stored evidence.
+		expect(result.lanes[0]?.evidence?.output).not.toContain("/Users/demo");
+	});
+
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {
 		const diagnostic = sanitizeDiagnostic(
 			`failed ${["tok", "en"].join("")}=${["super", "secret"].join("-")} ${["pass", "word"].join("")}=${["hunter", "2"].join("")} at ${["/", "Users", "me", "private"].join("/")}`,
