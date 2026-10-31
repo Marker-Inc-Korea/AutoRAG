@@ -19,7 +19,7 @@
  * ~/.autorag is never read or written.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,6 +84,11 @@ describe.skipIf(!LIVE)("live: spreadsheets are searchable with their labels", ()
 			? ["--model-provider", "openrouter", "--model-id", MODEL_ID]
 			: [];
 		cli(["init", "--search-paths", join(root, "docs"), "--workspace", join(root, "ws"), ...modelArgs, "--force"]);
+		// On Windows the bundled Everything indexer starts from inside the workspace and outlives the CLI, which keeps
+		// the temp root from being deleted. File-name search is not what this test covers, so it is switched off.
+		const configPath = join(home, "config.json");
+		const config: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+		writeFileSync(configPath, JSON.stringify({ ...(config as object), everything: false }, null, 2));
 		const refresh = JSON.parse(
 			cli(["lite", "refresh", "--method", "parsed,minsync", "--json"], REFRESH_TIMEOUT_MS),
 		) as {
@@ -94,7 +99,8 @@ describe.skipIf(!LIVE)("live: spreadsheets are searchable with their labels", ()
 		expect(refresh.counts).toMatchObject({ written: 5, skipped: 0 });
 	}, REFRESH_TIMEOUT_MS + 300_000);
 
-	afterAll(() => rmSync(root, { recursive: true, force: true }));
+	// Windows can hold just-written files briefly (EPERM on the first try); retry before failing the cleanup.
+	afterAll(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }));
 
 	it.each([
 		[
