@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Model, SystemMessage } from "@earendil-works/pi-ai";
 import { calculateContextTokens, estimateTokens } from "@earendil-works/pi-coding-agent";
+import { contextOverflowCeiling, recordRequestEstimate } from "../cloud/context-overflow.ts";
 
 const CONTEXT_HEADROOM = 1.2;
 /**
@@ -68,6 +69,19 @@ export function guardAgentContextMessages(
 	useReportedUsage = true,
 	fixedOverheadTokens = 0,
 ): AgentMessage[] {
+	const guarded = guardWithinBudget(model, messages, useReportedUsage, fixedOverheadTokens);
+	if (model !== undefined && guarded.length > 0) {
+		recordRequestEstimate(model, estimateContextMessageTokens(guarded, false) + fixedOverheadTokens);
+	}
+	return guarded;
+}
+
+function guardWithinBudget(
+	model: Model<any> | undefined,
+	messages: AgentMessage[],
+	useReportedUsage = true,
+	fixedOverheadTokens = 0,
+): AgentMessage[] {
 	if (
 		model === undefined ||
 		!Number.isFinite(model.contextWindow) ||
@@ -83,7 +97,13 @@ export function guardAgentContextMessages(
 		MAX_OUTPUT_TOKENS,
 		Number.isFinite(model.maxTokens) ? Math.max(0, model.maxTokens) : 0,
 	);
-	const inputBudget = Math.max(0, usableContext - outputReserve);
+	// After an overflow the model's own estimate proved too low for this transcript, so the
+	// request is held to a fraction of the size that failed.
+	const overflowCeiling = contextOverflowCeiling(model);
+	const inputBudget = Math.min(
+		Math.max(0, usableContext - outputReserve),
+		overflowCeiling ?? Number.POSITIVE_INFINITY,
+	);
 	// The context event's messages exclude the system prompt and tool declarations, and
 	// provider-reported usage counts them while a plain estimate does not. Every
 	// post-edit estimate is a plain one, so the overhead comes off the budget.
