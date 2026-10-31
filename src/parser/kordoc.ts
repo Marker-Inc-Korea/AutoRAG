@@ -77,8 +77,11 @@ export interface KordocParserOptions {
 	readonly parse?: KordocParseFn;
 }
 
-/** Document extensions kordoc parses. `.pptx` and `.eml` stay on their own parsers. */
-export const KORDOC_EXTENSIONS = [".hwp", ".hwpx", ".hml", ".hwpml", ".pdf", ".docx", ".xlsx", ".xls"] as const;
+/**
+ * Document extensions kordoc parses. `.pptx` and `.eml` stay on their own parsers, and workbooks
+ * (`.xlsx`, `.xls`, …) go to the spreadsheet parser, which keeps every value next to its labels.
+ */
+export const KORDOC_EXTENSIONS = [".hwp", ".hwpx", ".hml", ".hwpml", ".pdf", ".docx"] as const;
 
 /**
  * Standalone image formats kordoc OCRs directly. `.bmp` and `.tiff` return
@@ -110,7 +113,7 @@ const defaultParse: KordocParseFn = async (bytes, options) => {
 };
 
 /**
- * Parses HWP/HWPX/HWPML, PDF, DOCX and XLSX/XLS through the kordoc library.
+ * Parses HWP/HWPX/HWPML, PDF and DOCX through the kordoc library.
  *
  * kordoc reports failures as a result object; AutoRAG's contract is a thrown
  * `ParseError`, so the code and message are forwarded verbatim (AGENTS.md error

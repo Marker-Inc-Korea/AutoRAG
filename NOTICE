@@ -78,6 +78,9 @@ License: Apache-2.0
 typebox@1.3.37
 License: MIT
 
+xlsx@0.20.3
+License: Apache-2.0
+
 Bundled Windows binaries (vendor/everything, extracted only on Windows):
 Everything 1.4.1.1032 portable (voidtools, David Carpenter)
 License: MIT (closed source); includes PCRE (BSD-3-Clause)

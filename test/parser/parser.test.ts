@@ -171,8 +171,8 @@ describe("ParserRegistry", () => {
 		await expect(
 			xlsParser?.parse({ virtualPath: "/docs/legacy.xls", bytes: createXlsFixture("Legacy XLS marker") }),
 		).resolves.toMatchObject({
-			markdown: expect.stringContaining("| Topic | Legacy XLS marker |"),
-			metadata: { parser: "kordoc", format: "xls" },
+			markdown: expect.stringContaining("[Summary!A1:B1] Topic | Legacy XLS marker"),
+			metadata: { parser: "spreadsheet", format: "xls" },
 		});
 	});
 
@@ -203,14 +203,14 @@ describe("ParserRegistry", () => {
 			bytes: createRichXlsFixture(),
 		});
 
-		// kordoc trims surrounding cell whitespace; the value itself stays intact.
-		expect(parsed?.markdown).toContain("| Whitespace | preserve me |");
-		expect(parsed?.markdown).toContain("left \\| right");
-		expect(parsed?.markdown).toContain("first line<br>second line");
-		expect(parsed?.markdown).toContain("C:\\docs\\file.xls");
+		// Cell text is trimmed, a literal "|" is escaped and a line break becomes " / ", so every row stays one line.
+		expect(parsed?.markdown).toContain("[Summary!A1:B1] Whitespace | preserve me");
+		expect(parsed?.markdown).toContain("[Summary!A2:B2] Pipes | left \\| right");
+		expect(parsed?.markdown).toContain("[Summary!A3:B3] Newlines | first line / second line");
+		expect(parsed?.markdown).toContain("[Summary!A4:B4] Backslash | C:\\docs\\file.xls");
 		expect(parsed?.markdown).toContain("## Details");
-		expect(parsed?.markdown).toContain("Unicode | 한글 marker");
-		expect(parsed?.markdown).toContain("Number | 42");
-		expect(parsed?.markdown).toContain("Boolean | TRUE");
+		expect(parsed?.markdown).toContain("[Details!A1:B1] Unicode | 한글 marker");
+		expect(parsed?.markdown).toContain("[Details!A2:B2] Number | 42");
+		expect(parsed?.markdown).toContain("[Details!A3:B3] Boolean | TRUE");
 	});
 });
