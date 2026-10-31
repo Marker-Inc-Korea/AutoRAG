@@ -1,4 +1,5 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
+import { DecisionModelUnavailableError } from "../agent/decision-model-check.ts";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchema } from "../memory/memory.ts";
 import { describeLocation } from "../retrieval/chunk-location.ts";
@@ -382,6 +383,13 @@ export function renderError(err: unknown, opts: RenderOptions): string {
 	const hint = opts.hint;
 	if (opts.json) {
 		const envelope: Record<string, unknown> = { ok: false, error: message };
+		// A decision model that cannot answer makes AutoRAG unusable; hosts branch on its stable code.
+		if (error instanceof DecisionModelUnavailableError) {
+			envelope.code = error.code;
+			envelope.reason = error.reason;
+			if (error.backend !== undefined) envelope.backend = error.backend;
+			if (error.model !== undefined) envelope.model = error.model;
+		}
 		if (hint) {
 			envelope.hint = {
 				command: hint.command,

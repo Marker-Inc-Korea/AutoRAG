@@ -19,6 +19,11 @@ export {
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
 export {
+	DECISION_MODEL_UNAVAILABLE_CODE,
+	type DecisionModelFailureReason,
+	DecisionModelUnavailableError,
+} from "./decision-model-check.ts";
+export {
 	createScanDuplicateDocumentsTool,
 	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 	type ScanDuplicateDocumentsDetails,

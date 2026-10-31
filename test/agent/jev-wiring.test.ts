@@ -68,25 +68,11 @@ describe("jev pi extension", () => {
 		}
 	});
 
-	it("advertises the jev tool in the agent system prompt only when enabled", () => {
-		const enabled = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			jev: { backend: "openrouter" },
-		});
-		expect(enabled.getSystemPrompt()).toContain("**jev**");
-
-		const disabled = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			jev: false,
-		});
-		expect(disabled.getSystemPrompt()).not.toContain("**jev**");
-
-		const off = new AutoRAGAgent({
+	it("always advertises the jev tool in the agent system prompt", () => {
+		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
-		expect(off.getSystemPrompt()).not.toContain("**jev**");
+		expect(agent.getSystemPrompt()).toContain("**jev**");
 	});
 });

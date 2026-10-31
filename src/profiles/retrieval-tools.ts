@@ -38,7 +38,8 @@ export function hasRetrievalTools(options: RetrievalToolOptions | undefined): bo
  * throwaway memory file with the memory embedder off, so nothing the profile
  * searches is read from or recorded into the user's real `memory.json`. Only
  * the search tools are handed out; the backing agent's other surfaces (web,
- * Everything, FSearch, Jev, duplicate scan) stay off.
+ * Everything, FSearch, duplicate scan) stay off. Its decision model is built
+ * lazily and never asked: the tools search without the two-phase pipeline.
  */
 export async function createRetrievalToolkit(
 	config: CliConfig,
@@ -56,7 +57,6 @@ export async function createRetrievalToolkit(
 		everything: false,
 		fsearch: false,
 		dupey: false,
-		jev: false,
 	});
 	try {
 		const catalog = agent.listDatasources();

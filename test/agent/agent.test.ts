@@ -8,6 +8,7 @@ import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string;
@@ -112,6 +113,7 @@ describe("AutoRAGAgent run duration", () => {
 				memoryPath: join(tmpDir, "memory.json"),
 				jikji: false,
 				minSync: { autoInstall: false },
+				jev: baselineJev(),
 			});
 			internals(agent).createSearchSession = () => session;
 
@@ -167,6 +169,7 @@ describe("AutoRAGAgent", () => {
 				toolCallBurstGuard,
 				jikji: false,
 				minSync: { autoInstall: false },
+				jev: baselineJev(),
 			});
 			internals(agent).createSearchSession = () => session;
 			return agent;

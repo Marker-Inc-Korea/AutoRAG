@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DecisionModelUnavailableError } from "../../src/agent/decision-model-check.ts";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { classifySearchHealthHint, runSearch } from "../../src/cli/commands/search.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
@@ -105,6 +106,54 @@ describe("runSearch", () => {
 		});
 		expect(code).toBe(1);
 		expect(releaseEmbedders).toHaveBeenCalledTimes(1);
+	});
+
+	it("exits 3 with the decision-model-unavailable code when the session's decision model cannot answer", async () => {
+		const { ctx, stderr } = context(["krill habitats"]);
+		const code = await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield* [];
+					throw new DecisionModelUnavailableError({
+						reason: "unauthorized",
+						detail: "[openrouter] HTTP 401: No auth credentials found",
+						backend: "openrouter",
+						model: "typesafe/jev-1.13",
+					});
+				},
+			}),
+			releaseEmbedders: async () => {},
+		});
+		expect(code).toBe(3);
+		const envelope = JSON.parse(stderr.join("\n"));
+		expect(envelope).toMatchObject({
+			ok: false,
+			code: "decision-model-unavailable",
+			reason: "unauthorized",
+			backend: "openrouter",
+			model: "typesafe/jev-1.13",
+		});
+		expect(envelope.error).toMatch(/cannot be used/u);
+		// `autorag health` does not check the decision model, so no hint sends the user there.
+		expect(envelope.hint).toBeUndefined();
+	});
+
+	it("prints the code and the warning in human output", async () => {
+		const { ctx, stderr } = context(["krill habitats"]);
+		ctx.json = false;
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield* [];
+					throw new DecisionModelUnavailableError({
+						reason: "missing-credential",
+						detail: "No Jev credentials found.",
+					});
+				},
+			}),
+			releaseEmbedders: async () => {},
+		});
+		expect(stderr.join("\n")).toMatch(/^error: \[decision-model-unavailable\] AutoRAG cannot be used/u);
 	});
 
 	it("reports usage for an empty query", async () => {

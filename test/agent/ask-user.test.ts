@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "../../src/agent/ask-user.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
 
@@ -100,7 +101,7 @@ async function tui(
 		jikji: false,
 		piAgentDir: agentDir,
 		piSessionDir: join(root, "sessions"),
-		jev: false,
+		jev: baselineJev(),
 		...options,
 	});
 	const hosted = await agent.createPiInteractiveRuntime();

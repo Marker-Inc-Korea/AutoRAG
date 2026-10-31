@@ -231,10 +231,11 @@ endpoint POSTs `{baseUrl}/embed`; `openai:` with no `baseUrl` means
 value. `dimension` and `batchSize` must be positive integers, and `dimension`
 must match the endpoint (the local default is 1024).
 
-### Jev routing and question decomposition (on by default)
+### Jev decision model (required) and question decomposition (on by default)
 
-Leave both enabled. They are the recommended setup: they make simple questions
-fast and multi-part questions thorough.
+Jev is required: AutoRAG cannot answer without it. Decomposition is on by
+default; leave it enabled. Together they make simple questions fast and
+multi-part questions thorough.
 
 - **Jev** (`jev`, default `{ "backend": "dazzi" }` when signed in to Dazzi
   Models, else `{ "backend": "openrouter" }`; model `jev-1.13` on Dazzi,
@@ -263,10 +264,13 @@ fast and multi-part questions thorough.
 
 Both need a credential for the chosen backend: a Dazzi Models `/login` (check with
 `autorag models list --provider dazzi --available`), or the user's
-`OPENROUTER_API_KEY` (`test -n "$OPENROUTER_API_KEY"`, never print it). Tell the
-user Jev routing is on. Without a credential, routing falls back to a single
-local search and the run always verifies, so searches still work. A
-`query-route-fallback` diagnostic (`autorag search --debug`) shows that state.
+`OPENROUTER_API_KEY` (`test -n "$OPENROUTER_API_KEY"`, never print it). The first
+question of every session checks that Jev answers; without a working credential
+the search stops with `[decision-model-unavailable]` (`autorag search` exits 3,
+and `--json` carries `code`, `reason`, `backend`, `model`). Read `reason`:
+`missing-credential` means set the key or sign in, `unauthorized` means replace
+the key, `model-not-found` means fix `jev.model`, `payment-required` means the
+backend account is out of credit, `unreachable` and `rate-limited` mean retry.
 
 ```json
 {
@@ -282,9 +286,9 @@ local search and the run always verifies, so searches still work. A
 - Decomposition model: any catalog `provider`/`id`, with the same fields as
   the top-level `model`.
 - `"queryDecomposition": false` decomposes with the search model itself.
-- `"jev": false` turns routing off entirely. Do this only when the user
-  explicitly opts out, for example because questions must never leave the
-  machine (Jev and decomposition send the question text to OpenRouter).
+- Jev cannot be turned off: `"jev": false` and `jev.enabled` are config errors.
+  When questions must never leave the machine, AutoRAG is not usable; say so
+  instead of editing the config (Jev sends the question text to its backend).
 
 When a user asks the running agent itself to change its settings (switch the
 default model, add a provider, check that a provider works), Jev's `config`

@@ -6,6 +6,7 @@ import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } fro
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
@@ -47,6 +48,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 		});
 
 		const response = await agent.searchDocuments("find the grounded answer");
@@ -84,6 +86,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 		});
 
 		await expect(agent.searchDocuments("authenticated search")).resolves.toMatchObject({
@@ -98,6 +101,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 		});
 
 		const first = agent.searchDocuments("first");
@@ -112,6 +116,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 		});
 
 		await expect(agent.searchDocuments("  ")).resolves.toMatchObject({ query: "", answer: "", results: [] });
@@ -124,6 +129,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 			startupDiagnostics: [
 				{
 					code: "unknown-datasource-skill",
@@ -168,6 +174,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 		});
 
 		const events = [];
@@ -200,6 +207,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
+			jev: baselineJev(),
 		});
 
 		const events = [];

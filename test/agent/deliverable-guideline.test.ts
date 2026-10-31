@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { reportSchema } from "../../src/agent/results.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 // Acceptance criteria for issue #1832:
 // 1. Keep the 5-bullet core answer and direct-answer guidelines by default
@@ -85,6 +86,7 @@ function agentOptions(model: AutoRAGAgentOptions["model"]): AutoRAGAgentOptions 
 		workspacePath: root,
 		minSync: { autoInstall: false },
 		jikji: false,
+		jev: baselineJev(),
 	};
 }
 

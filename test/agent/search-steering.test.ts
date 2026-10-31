@@ -23,6 +23,7 @@ import {
 import type { SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 // `searchDocuments()` / `searchDocumentsStream()` callers (the desktop app, embedding
 // apps) steer a running search through `AutoRAGAgent.steer()` and stop it with
@@ -177,6 +178,7 @@ function agentWith(options: Partial<AutoRAGAgentOptions> & Pick<AutoRAGAgentOpti
 		jikji: false,
 		memoryEmbedder: false,
 		persistPiSessions: false,
+		jev: baselineJev(),
 		...options,
 	});
 	// The private MinSync field is the established test seam (see jev-pipeline.test.ts):
