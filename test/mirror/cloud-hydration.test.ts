@@ -37,6 +37,8 @@ afterEach(() => {
 class FakeCloud implements CloudFileProbe {
 	readonly dataless = new Set<string>();
 	readonly providers = new Map<string, CloudProvider>();
+	/** Providers this probe claims it can release; the gate must not download any other provider's placeholder. */
+	readonly releasable = new Set<CloudProvider>(["icloud"]);
 	readonly evicted: string[] = [];
 	evictResult: CloudEvictResult = { ok: true };
 	/** Results handed out one per evict call before falling back to `evictResult`. */
@@ -51,6 +53,9 @@ class FakeCloud implements CloudFileProbe {
 	}
 	async providerOf(path: string): Promise<CloudProvider | undefined> {
 		return this.providers.get(path);
+	}
+	canRelease(provider: CloudProvider | undefined): boolean {
+		return provider !== undefined && this.releasable.has(provider);
 	}
 	async evict(path: string): Promise<CloudEvictResult> {
 		this.evicted.push(path);
@@ -354,7 +359,7 @@ describe("download budget", () => {
 	});
 });
 
-describe("providers that cannot be released", () => {
+describe("providers the probe cannot release", () => {
 	it("skips a Google Drive placeholder without reading it and keeps its previous mirror", async () => {
 		const cloud = new FakeCloud();
 		const path = write("drive.txt", "indexed while it was local\n");
@@ -382,5 +387,18 @@ describe("providers that cannot be released", () => {
 
 		expect(result.written).toBe(0);
 		expect(codes(result)).toContain("cloud-placeholder-skipped");
+	});
+
+	it("downloads, indexes and releases a placeholder of any provider the probe can release", async () => {
+		const cloud = new FakeCloud();
+		cloud.releasable.add("onedrive");
+		const path = write("onedrive.txt", "only in the cloud\n");
+		cloud.markDataless(path, "onedrive");
+
+		const result = await sync(cloud);
+
+		expect(result.written).toBe(1);
+		expect(codes(result)).not.toContain("cloud-placeholder-skipped");
+		expect(cloud.evicted).toEqual([path]);
 	});
 });

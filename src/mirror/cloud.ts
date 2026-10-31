@@ -35,9 +35,9 @@ export type CloudReleaseResult = { readonly ok: true } | { readonly ok: false; r
 /**
  * What a refresh does with one file that needs parsing:
  * - `local`: not a placeholder; read it as always.
- * - `download`: an iCloud placeholder inside the budget; read it, then release it again.
- * - `skip`: a placeholder AutoRAG cannot release again (Google Drive, OneDrive, ...); do not read it.
- * - `defer`: an iCloud placeholder over this refresh's budget; leave it for the next refresh.
+ * - `download`: a placeholder the probe can release, inside the budget; read it, then release it again.
+ * - `skip`: a placeholder whose provider the probe cannot release; do not read it.
+ * - `defer`: a releasable placeholder over this refresh's budget; leave it for the next refresh.
  */
 export type CloudDecision =
 	| { readonly kind: "local" }
@@ -89,7 +89,7 @@ export class CloudGate {
 	async decide(path: string, sizeBytes: number, directory: string): Promise<CloudDecision> {
 		if (this.probe === undefined || !this.placeholders.has(path)) return LOCAL;
 		const provider = await this.providerIn(directory, path);
-		if (provider !== "icloud") return { kind: "skip", provider };
+		if (!this.probe.canRelease(provider)) return { kind: "skip", provider };
 		const overFiles = this.downloadedFiles >= this.maxFiles;
 		const overBytes = this.downloadedFiles > 0 && this.downloadedBytes + sizeBytes > this.maxBytes;
 		if (overFiles || overBytes) return { kind: "defer" };

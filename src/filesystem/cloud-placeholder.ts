@@ -219,7 +219,7 @@ async function countDatalessMacFiles(root: string, timeoutMs = 15_000): Promise<
 	}
 }
 
-/** Which cloud backs a path. Only `icloud` can be released again by AutoRAG; the rest are read-only mounts. */
+/** Which cloud backs a path. Whether AutoRAG may release a provider's files again is up to {@link CloudFileProbe.canRelease}. */
 export type CloudProvider = "icloud" | "google-drive" | "onedrive" | "file-provider";
 
 export function cloudProviderFromPath(target: string): CloudProvider {
@@ -251,7 +251,12 @@ export interface CloudFileProbe {
 	datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>>;
 	/** Provider behind a placeholder, or `undefined` when the path is not under a File Provider domain. */
 	providerOf(path: string): Promise<CloudProvider | undefined>;
-	/** Release the local copy of an iCloud file; the file stays in the cloud and keeps its metadata. */
+	/**
+	 * Whether {@link CloudFileProbe.evict} is verified to release this provider's files on this platform. A refresh
+	 * downloads a placeholder only when this is true; any other placeholder is skipped unread.
+	 */
+	canRelease(provider: CloudProvider | undefined): boolean;
+	/** Release the local copy of a downloaded file; the file stays in the cloud and keeps its metadata. */
 	evict(path: string): Promise<CloudEvictResult>;
 }
 
@@ -283,6 +288,10 @@ export class DarwinCloudProbe implements CloudFileProbe {
 	async providerOf(path: string): Promise<CloudProvider | undefined> {
 		const domain = await readFileProviderDomainUpwards(path);
 		return domain === undefined ? undefined : cloudProviderFromDomain(domain);
+	}
+
+	canRelease(provider: CloudProvider | undefined): boolean {
+		return provider === "icloud";
 	}
 
 	async evict(path: string): Promise<CloudEvictResult> {
