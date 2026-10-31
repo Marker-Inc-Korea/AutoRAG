@@ -50,11 +50,13 @@ const NATIVE_STORE_PROBES = Object.freeze({
 	// or broken) mdfind can still hit system-volume files, so a bare darwin
 	// check is not enough. Probe whether a fresh user file becomes searchable.
 	spotlight: () => process.platform === "darwin" && spotlightIndexingHealthy(),
-	// Opt-in and dangerous (writes to the user's real cloud): only run when the operator names the parent
-	// folders. Without AUTORAG_E2E_CLOUD_DIRS the lane is SKIP.
-	"cloud-mount": () => (process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length > 0,
+	// Opt-in and dangerous (writes to the user's real cloud): Windows additionally requires the synthetic
+	// Cloud Files provider because this QA host has no signed-in OneDrive account.
+	"cloud-mount": () => {
+		if ((process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length === 0) return false;
+		return process.platform !== "win32" || process.env.AUTORAG_E2E_CLOUD_SYNTHETIC === "1";
+	},
 });
-
 function spotlightIndexingHealthy() {
 	// Spotlight skips dot-directories, and mdimport returns before the index commits.
 	const dir = join(homedir(), `autorag-spotlight-probe-${process.pid}`);

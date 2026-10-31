@@ -29,6 +29,9 @@ import {
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawn } from "node:child_process";
+import { WindowsCloudProbe } from "../../src/filesystem/cloud-placeholder.ts";
+import { fileURLToPath } from "node:url";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createEmbedderFromConfig, releaseEmbedders } from "../../src/embedding/index.ts";
 import { DarwinCloudProbe } from "../../src/filesystem/cloud-placeholder.ts";
@@ -152,15 +155,55 @@ async function runDarwin(dirs: readonly string[]): Promise<void> {
 	await releaseEmbedders();
 }
 
-/**
- * Windows Cloud Files branch (unpin a placeholder with `attrib +u`). Seam for the stacked
- * `feat/2043-windows-cloud-release` sibling, which implements and verifies it on a signed-in account.
- */
+/** Windows lane uses the opt-in synthetic Cloud Files provider when requested. */
 async function runWindows(dirs: readonly string[]): Promise<void> {
-	console.log(
-		`SKIP  windows cloud-mount branch is not implemented in this checkout; ${dirs.length} dir(s) configured`,
-	);
-	process.exitCode = 1;
+	if (process.env.AUTORAG_E2E_CLOUD_SYNTHETIC !== "1") {
+		check("AUTORAG_E2E_CLOUD_SYNTHETIC=1 is set for Windows Cloud Files QA", false);
+		return;
+	}
+	const providerScript = fileURLToPath(new URL("./windows-cloud-files-provider.ps1", import.meta.url));
+	const probe = new WindowsCloudProbe();
+	const embedder = createEmbedderFromConfig({});
+	const health = await embedder.health();
+	check("an embedding backend is alive", health.alive);
+	for (const dir of dirs) {
+		const fixtureDir = join(dir, `autorag-e2e-${Math.random().toString(16).slice(2, 10)}`);
+		const sourceDir = mkdtempSync(join(qaRoot, "synthetic-source-"));
+		const syncRoot = join(qaRoot, `synthetic-root-${Math.random().toString(16).slice(2, 10)}`);
+		const files = [join(fixtureDir, "notes-a.txt"), join(fixtureDir, "notes-b.txt")];
+		const workspace = mkdtempSync(join(qaRoot, "ws-"));
+		let child: ReturnType<typeof spawn> | undefined;
+		try {
+			mkdirSync(fixtureDir, { recursive: true });
+			writeFileSync(files[0]!, `Indexed cloud fixture alpha ${TOKEN}.\n`);
+			writeFileSync(files[1]!, `Indexed cloud fixture beta ${TOKEN}.\n`);
+			for (const file of files) writeFileSync(join(sourceDir, basename(file)), readFileSync(file));
+			child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", providerScript, "-SyncRoot", syncRoot, "-SourceRoot", sourceDir], { stdio: ["pipe", "ignore", "inherit"] });
+			await sleep(3000);
+			const syntheticFiles = files.map((file) => join(syncRoot, basename(file)));
+			check(`${dir}: synthetic placeholders created`, (await probe.datalessAmong(syntheticFiles)).size === files.length);
+			const agent = new AutoRAGAgent({ searchPaths: [syncRoot], workspacePath: workspace, minSync: { autoInstall: false }, everything: false, fsearch: false, jikji: false, excludeExactDuplicates: false });
+			const first = await agent.refresh(true, { methods: ["parsed", "minsync"] });
+			check(`${dir}: refresh indexed synthetic placeholders`, first.written === files.length, `written=${first.written}`);
+			const { results } = await agent.searchAllDocuments(TOKEN, { topK: 10 });
+			const hit = results.find((result) => typeof result.source === "string" && result.content.includes(TOKEN));
+			if (hit !== undefined) console.log(`CLOUD_MOUNT_LIVE_QA source=${hit.source}`);
+			check(`${dir}: search returned synthetic token`, hit !== undefined);
+			check(`${dir}: refresh released synthetic files`, (await probe.datalessAmong(syntheticFiles)).size === files.length);
+			const second = await agent.refresh(false, { methods: ["parsed", "minsync"] });
+			check(`${dir}: unchanged synthetic refresh wrote nothing`, second.written === 0, `written=${second.written}`);
+			await releaseEmbedders();
+		} catch (error) {
+			check(`${dir}: Windows synthetic harness completed`, false, error instanceof Error ? error.message : String(error));
+		} finally {
+			try { child?.stdin.write("stop\n"); child?.stdin.end(); } catch {}
+			try { child?.kill(); } catch {}
+			rmSync(fixtureDir, { recursive: true, force: true });
+			rmSync(sourceDir, { recursive: true, force: true });
+			rmSync(syncRoot, { recursive: true, force: true });
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	}
 }
 
 try {

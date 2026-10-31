@@ -470,9 +470,9 @@ refresh continues:
 | `source-changed` | warning | The source identity changed during parsing; no completion is committed and the next refresh retries it. |
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
-| `cloud-placeholder-skipped` | info | A File Provider placeholder whose provider has no verified release path was not read; `reason` carries the provider. |
+| `cloud-placeholder-skipped` | info | A Google Drive, OneDrive, or other File Provider placeholder was not read; `reason` carries the provider. |
 | `cloud-download-deferred` | info | A cloud placeholder is over this refresh's download budget and waits for the next refresh. |
-| `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the release helper's own error text and the attempt count. |
+| `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the last provider error (`brctl` on macOS, the Cloud Files API on Windows) and the attempt count. |
 
 `EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
 (50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
@@ -525,47 +525,27 @@ siblings from indexing.
 { "refresh": { "maxDeleteRatio": 0.3, "maxScannedEntries": 2000000, "maxDepth": 64 } }
 ```
 
-### Cloud folders (macOS)
+### iCloud Drive and other cloud folders (macOS)
 
 A folder synced by a File Provider app (iCloud Drive, Google Drive, OneDrive under
 `~/Library/CloudStorage` or `~/Library/Mobile Documents`) lists every file, but a
 file you have not opened is a placeholder: its data is only in the cloud, and
 reading it downloads it. A refresh looks at the file's `st_flags` (`SF_DATALESS`)
-before reading and treats the file according to whether AutoRAG can give the local
-copy back.
+before reading and treats the three cases differently:
 
-For **iCloud Drive, Google Drive, OneDrive, and Dropbox** — all measured on macOS 26 — a
-refresh downloads a placeholder within the budget below, parses and indexes it, then
-releases the local copy again with one Foundation call
-(`NSFileManager.evictUbiquitousItem`, run through `osascript -l JavaScript`; no helper
-binary, app, or entitlement is needed). The file stays in the cloud and keeps its size
-and modification time, so an unchanged file is never downloaded again; a changed one
-is downloaded once and released again. Files already on disk are read as before and
-never released.
+| Provider | What a refresh does with a placeholder |
+| --- | --- |
+| iCloud Drive | Downloads it within the budget below, parses and indexes it, then releases the local copy with `brctl evict`. The file stays in iCloud and keeps its size and modification time, so an unchanged file is never downloaded again; a changed one is downloaded once and released again. |
+| Google Drive, OneDrive, other File Providers | Does not read it (`cloud-placeholder-skipped`, `reason` is the provider), because AutoRAG has no way to release the copy again and would otherwise leave every document on disk. A previously indexed copy is kept. Make the file or folder available offline in the provider's app to index it. |
 
-Any **other File Provider** has no verified release path, so a placeholder is not read
-(`cloud-placeholder-skipped`, `reason` is the provider): AutoRAG cannot give the local
-copy back and would otherwise leave every document on disk. A previously indexed copy is
-kept. Make the file or folder available offline in the provider's app to index it.
-Windows Cloud Files placeholders are not handled yet.
-
-Downloads per refresh are bounded; the rest wait for the next refresh
-(`cloud-download-deferred`, one diagnostic per deferred file). A refused release is
-retried with doubling waits (500 ms, 1 s, 2 s); the provider briefly holding a
-just-downloaded file is the usual cause. A file still uploading to the cloud cannot be
-released yet — the refusal names that state. When the retries are spent the file is
-left on disk, the document stays indexed, and one `cloud-evict-failed` records the
-helper's own error text and the attempt count. Giving up is final: an unchanged file is
-not processed again, so it stays on disk until its content changes. A read that fails
-per file (a OneDrive placeholder has timed out) is a `source-read-failed` skip, never a
-failed refresh.
-
-A file written on this Mac is downloaded one extra time. Its first hydrate rounds the
-modification time to the precision the cloud keeps (measured on macOS 26: Google Drive
-`+101 ns`, OneDrive `+77 ns`, iCloud `+110 ns`, Dropbox `-24 ns`), so the next refresh sees the placeholder
-as changed and downloads it once more. After that first hydrate the value is stable and
-later refreshes skip the file. A file that already exists in the cloud has the cloud's
-rounded time from the start and is not re-downloaded.
+Files already on disk are read as before and never evicted. Downloads per refresh
+are bounded; the rest wait for the next refresh (`cloud-download-deferred`, one
+diagnostic per deferred file). A failed `brctl evict` is retried with doubling
+waits (500 ms, 1 s, 2 s; `Resource busy ... currently in use by an application` is
+common right after a download and usually clears). When the retries are spent the
+file is left on disk, the document stays indexed, and one `cloud-evict-failed`
+records the command's own error text and the attempt count. Giving up is final:
+an unchanged file is not processed again, so it stays on disk until its content changes.
 
 ```json
 { "refresh": { "cloudMaxFiles": 200, "cloudMaxBytes": 536870912, "cloudEvictAfterParse": true, "cloudEvictRetries": 3 } }
@@ -573,16 +553,35 @@ rounded time from the start and is not re-downloaded.
 
 `cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
 refresh downloads; the first file is always allowed, so one large file cannot starve.
-`cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. Other platforms
-read every file as before; Windows Cloud Files placeholders are not handled yet.
+`cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release.
+Linux hosts read every file as before; only macOS and Windows have a cloud probe.
 
-Two other readers open file contents themselves and download a released cloud file
+Two other readers open file contents themselves and download a released iCloud file
 again, so with their defaults the local copy comes back after the refresh: the Jikji
 `prepare` pass (`jikji`) and the exact-duplicate scan (`dupey`, `excludeExactDuplicates`).
 Measured on macOS 26 with iCloud Drive, a refresh with both switched off
 (`"jikji": false`, `"excludeExactDuplicates": false`) left every released file released;
 with either one on, they were downloaded again. The parsed mirror, MinSync, and fsearch
 passes never re-download. Making Jikji and dupey placeholder-aware is tracked separately.
+
+### Cloud Files providers (Windows)
+
+Windows Cloud Files placeholders are detected in one PowerShell process per attribute batch by
+`FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` (`0x400000`); `FILE_ATTRIBUTE_OFFLINE` is not required.
+The provider is identified from the registered sync root. A release opens the file with a Cloud Files
+oplock and calls `CfDehydratePlaceholder` synchronously. The platform enforces the operation without
+changing pin intent and refuses files that are not eligible for dehydration.
+
+The Windows release path and `canRelease` policy are verified against AutoRAG's synthetic Cloud Files
+provider (`scripts/manual-qa/windows-cloud-files-provider.ps1`) on Windows 11. This is not a claim of
+live verification against OneDrive, Dropbox, or another commercial provider; enable a provider only
+after measuring it with that provider. The opt-in live lane requires both `AUTORAG_E2E_CLOUD_DIRS` and
+`AUTORAG_E2E_CLOUD_SYNTHETIC=1` on Windows.
+
+The `cloudMaxFiles`, `cloudMaxBytes`, `cloudEvictAfterParse`, and `cloudEvictRetries` keys above apply
+unchanged. A placeholder whose provider has no verified release path remains unread and reports
+`cloud-placeholder-skipped`; a failed or refused release reports `cloud-evict-failed` and keeps the
+document indexed.
 
 ## Cancelling a refresh
 
