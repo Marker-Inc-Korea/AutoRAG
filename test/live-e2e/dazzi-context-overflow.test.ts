@@ -1,16 +1,17 @@
 /**
- * Live E2E: a real hosted Dazzi Models session recovers from a context overflow.
+ * Live E2E: a real hosted Dazzi Models session answers when a tool returns more tokens than the window holds.
  *
  * Gated on AUTORAG_DAZZI_OVERFLOW_LIVE=1 so the offline suite and CI (no stored
  * `/login` credential) never touch the network. Run explicitly after `/login`:
  *
  *   AUTORAG_DAZZI_OVERFLOW_LIVE=1 [AUTORAG_DAZZI_AGENT_DIR=~/.pi/agent] bunx vitest run test/live-e2e/dazzi-context-overflow.test.ts
  *
- * A tool returns ~2.2M characters of PDF-like binary garbage. autorag's chars/4
- * estimate reads that as ~550k tokens, so it is sent, and the upstream provider
- * rejects it (the 2026-10-31 incident: the server answers 400
- * `context_length_exceeded`). The session must compact, trim the
- * oversized result, retry, and answer on its own.
+ * A tool returns ~2.2M characters of PDF-like binary garbage. The upstream
+ * provider counts that as ~1.2M tokens (0.55 per character, over the 1,048,576
+ * window; the 2026-10-31 incident answered 400 `context_length_exceeded`), where
+ * a chars/4 guess reads ~550k. The context guard counts with a real tokenizer
+ * (~1.22M), so it trims the result before the request is sent: the server counts
+ * the request inside the window and the session answers on its own.
  *
  * The login is copied into a temp agent dir, so the real one is never written.
  */
@@ -67,7 +68,7 @@ describe.skipIf(!LIVE)("Dazzi context overflow live e2e (real API)", () => {
 		if (agentDir !== undefined) rmSync(agentDir, { recursive: true, force: true });
 	});
 
-	it("compacts, trims the oversized tool result and answers after the server's context_length_exceeded", async () => {
+	it("trims the oversized tool result before sending, so no request overflows, and answers", async () => {
 		const runtime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
@@ -89,24 +90,77 @@ describe.skipIf(!LIVE)("Dazzi context overflow live e2e (real API)", () => {
 		});
 		try {
 			hosted.session.setThinkingLevel("low");
-			const compactions: string[] = [];
-			hosted.session.subscribe((event) => {
-				if (event.type === "compaction_end") {
-					compactions.push(`${event.reason}:${event.willRetry}:${event.errorMessage ?? ""}`);
-				}
-			});
-
 			await hosted.session.prompt("Find my graduation PDF with the search tool.");
 			await hosted.session.agent.waitForIdle();
 
-			// The model may call the tool again after the first recovery; every overflow must still recover.
-			expect(compactions.length).toBeGreaterThan(0);
-			expect(new Set(compactions)).toEqual(new Set(["overflow:true:"]));
-			const last = [...hosted.session.messages].reverse().find(isAssistantMessage);
+			// The guard sizes the request from real token counts, so no request is rejected, and what it
+			// keeps is most of the budget rather than a token. The server's own count is the evidence.
+			const turns = hosted.session.messages.filter(isAssistantMessage);
+			expect(turns.filter((turn) => turn.stopReason === "error")).toEqual([]);
+			const largestRequest = Math.max(...turns.map((turn) => turn.usage.input));
+			expect(largestRequest).toBeGreaterThan(500_000);
+			expect(largestRequest).toBeLessThanOrEqual(model.contextWindow);
+			const last = turns.at(-1);
 			expect(last?.stopReason).toBe("stop");
 			expect(last?.content.some((block) => block.type === "text" && block.text.length > 0)).toBe(true);
 		} finally {
 			await hosted.dispose();
 		}
 	}, 600_000);
+
+	it("drops the lowest-ranked chunks of an oversized retrieval result and keeps the user's earlier message", async () => {
+		const runtime = await ModelRuntime.create({
+			authPath: join(agentDir, "auth.json"),
+			modelsPath: join(agentDir, "models.json"),
+			allowModelNetwork: false,
+		});
+		await registerDazziProvider(runtime);
+		const model = runtime.getModel("dazzi", DEFAULT_DAZZI_CHAT_MODEL_ID);
+		if (model === undefined)
+			throw new Error(`${DEFAULT_DAZZI_CHAT_MODEL_ID} is missing from the stored Dazzi catalog`);
+
+		// 40 ranked chunks of ~60k characters: about 1.3M tokens, over the 1,048,576-token window.
+		const rankedTool: AgentTool = {
+			name: "search_datasource_ranked",
+			label: "Ranked files",
+			description: "Search files. Always call this once for any file question.",
+			parameters: Type.Object({ query: Type.Optional(Type.String()) }),
+			async execute() {
+				const text = Array.from(
+					{ length: 40 },
+					(_unused, index) => `[${index + 1}] /docs/${index + 1}.pdf score=0.9\n${GARBAGE.slice(0, 60_000)}`,
+				).join("\n\n");
+				return { content: [{ type: "text", text }], details: {} };
+			},
+		};
+		const hosted = await createAutoRAGPiSession({
+			cwd: agentDir,
+			agentDir,
+			model,
+			apiKey: readDazziLoginToken(agentDir),
+			getSystemPrompt: () =>
+				"You are a file librarian. For a file question use the search tool once, then answer in one short sentence without repeating any code word.",
+			customTools: [rankedTool],
+		});
+		try {
+			hosted.session.setThinkingLevel("low");
+			await hosted.session.prompt("The code word is ZEBRA-7731. Find my graduation PDF with the search tool.");
+			await hosted.session.agent.waitForIdle();
+			await hosted.session.prompt(
+				"What was the code word in my first message? Answer with just the code word, no tools.",
+			);
+			await hosted.session.agent.waitForIdle();
+
+			const turns = hosted.session.messages.filter(isAssistantMessage);
+			expect(turns.filter((turn) => turn.stopReason === "error")).toEqual([]);
+			const largestRequest = Math.max(...turns.map((turn) => turn.usage.input));
+			expect(largestRequest).toBeGreaterThan(500_000);
+			expect(largestRequest).toBeLessThanOrEqual(model.contextWindow);
+			const last = turns.at(-1);
+			const answer = last?.content.map((block) => (block.type === "text" ? block.text : "")).join("") ?? "";
+			expect(answer).toContain("ZEBRA-7731");
+		} finally {
+			await hosted.dispose();
+		}
+	}, 900_000);
 });

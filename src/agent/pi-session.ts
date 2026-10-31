@@ -28,6 +28,7 @@ import { runtimeContextAddendum } from "./environment-prompt.ts";
 import { registerIntentTracing } from "./intent-tracing.ts";
 import { createAutoRAGMcpClient, mcpPromptAddendum } from "./mcp-client.ts";
 import { fitRequestLimits } from "./request-limits.ts";
+import { estimateTextTokens } from "./token-count.ts";
 import { createWelcomeHeader } from "./welcome-header.ts";
 export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
@@ -223,9 +224,8 @@ function guardContext(
 			.getAllTools()
 			.filter((tool) => activeTools.has(tool.name))
 			.map(({ name, description, parameters }) => ({ name, description, parameters }));
-		const fixedOverheadTokens = Math.ceil(
-			(ctx.getSystemPrompt().length + JSON.stringify(toolDeclarations).length) / 4,
-		);
+		const fixedOverheadTokens =
+			estimateTextTokens(ctx.getSystemPrompt()) + estimateTextTokens(JSON.stringify(toolDeclarations));
 		return {
 			messages: await createContextTokenGuardedTransform(
 				ctx.model,
