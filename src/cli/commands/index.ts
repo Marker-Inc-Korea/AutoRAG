@@ -99,7 +99,7 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	// rebuild: re-run a forced refresh with a model-free agent, scoped to methods.
 	let rebuilt: AutoRAGRefreshResult;
 	try {
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
+		const agent = new AutoRAGAgent({ ...buildAgentOptions(config), loadIdentity: false });
 		rebuilt = await agent.refresh(true, refreshMethods ? { methods: refreshMethods } : undefined);
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json }));
