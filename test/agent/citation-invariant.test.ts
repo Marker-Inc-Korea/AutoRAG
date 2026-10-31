@@ -14,6 +14,7 @@ import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts
 import { assertResultsMappingOneToOne } from "../../src/agent/citations.ts";
 import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../src/agent/search-documents.ts";
 import { createAutoRAGLite } from "../../src/core.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 // Issue #1788: every bracketed citation in `answer` must resolve to a
 // `results[].number` of the same response, in both the preliminary (fast) and
@@ -58,6 +59,7 @@ function agentOptions(model: Model<string>): AutoRAGAgentOptions {
 		workspacePath: root,
 		minSync: { autoInstall: false },
 		jikji: false,
+		jev: baselineJev(),
 	};
 }
 

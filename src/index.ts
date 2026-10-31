@@ -13,6 +13,9 @@ export {
 } from "./agent/agent.ts";
 export {
 	type AutoRAGResultsDetails,
+	DECISION_MODEL_UNAVAILABLE_CODE,
+	type DecisionModelFailureReason,
+	DecisionModelUnavailableError,
 	reportSchema,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,

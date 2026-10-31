@@ -69,7 +69,7 @@ async function session(script: Scripted) {
 		webSearch: false,
 		piAgentDir: agentDir,
 		piSessionDir: join(root, "sessions"),
-		jev: false,
+		jev: { backend: "openrouter" },
 	});
 	const hosted = await agent.createPiInteractiveRuntime();
 	const shown: { question: string; options: readonly string[] }[] = [];

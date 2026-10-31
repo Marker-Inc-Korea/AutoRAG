@@ -35,6 +35,7 @@ import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER, type SearchSource } from "../../src/web/search/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 import { citationsRelevant } from "../helpers/citations-relevant.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
@@ -364,6 +365,8 @@ function agentWith(options: Partial<AutoRAGAgentOptions> & Pick<AutoRAGAgentOpti
 		minSync: { autoInstall: false },
 		jikji: false,
 		memoryEmbedder: false,
+		// A hermetic decision backend: individual tests override it with their own scenario.
+		jev: baselineJev(),
 		...options,
 	});
 }
@@ -739,18 +742,15 @@ describe("Jev query pipeline before the fast answer", () => {
 	});
 
 	it("searches no datasource and records why when the datasource check fails", async () => {
+		// Answers the availability probe and every other question like a plain
+		// local run; only the datasource check itself fails.
 		const failing: JevBackend = {
 			name: "partial",
 			async judge(request) {
-				if (request.questions.some((question) => question.id === QUERY_ROUTE_QUESTION_ID)) {
-					return {
-						answers: [
-							{ answer: "local", distribution: { local: 0.9, organize: 0.05, extra: 0.05 } },
-							{ answer: 0.1 },
-						],
-					};
+				if (request.questions.some((question) => question.id.startsWith("datasource:"))) {
+					throw new Error("datasource check exploded");
 				}
-				throw new Error("datasource check exploded");
+				return jevRouting("local", 0.1).judge(request);
 			},
 		};
 		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
@@ -1128,11 +1128,15 @@ describe("Jev query pipeline before the fast answer", () => {
 		).toBe(false);
 	});
 
-	it("keeps today's single-query local search when Jev is unreachable", async () => {
+	it("keeps today's single-query local search when the routing verdict is unreachable", async () => {
+		// The session's availability probe passes; only the routing verdict itself cannot be fetched.
 		const down: JevBackend = {
 			name: "down",
-			async judge() {
-				throw new Error("connection refused");
+			async judge(request) {
+				if (request.questions.some((question) => question.id === QUERY_ROUTE_QUESTION_ID)) {
+					throw new Error("connection refused");
+				}
+				return jevRouting("local", 0.1).judge(request);
 			},
 		};
 		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
@@ -1240,18 +1244,6 @@ describe("Jev query pipeline before the fast answer", () => {
 		expect([...minSync.queries]).toEqual(["where is the signed lease?"]);
 		expect(slack.queries).toEqual([]);
 		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "query-route-fallback")).toBe(true);
-	});
-
-	it("does not route when Jev is disabled", async () => {
-		const model = fauxModel(fastAnswer("Fast."), finalAnswer("Verified."));
-		const agent = agentWith({ model });
-		const minSync = recordingMinSync();
-		injectMinSync(agent, minSync.method);
-
-		const response = await agent.searchDocuments("What is the capital of France?");
-
-		expect(minSync.queries).toEqual(["What is the capital of France?"]);
-		expect(response.diagnostics?.some((diagnostic) => diagnostic.code === "query-routed")).toBe(false);
 	});
 
 	it("ends after the fast answer when Jev says no correction, clarification, or further research is needed", async () => {
@@ -1407,28 +1399,6 @@ describe("Jev query pipeline before the fast answer", () => {
 			const fallback = response.diagnostics?.find((diagnostic) => diagnostic.code === "citation-relevance-fallback");
 			expect(fallback?.message).toContain("citation backend exploded");
 		});
-
-		it("never asks Jev about citations when Jev is disabled", async () => {
-			const model = fauxModel(
-				fauxAssistantMessage([fauxToolCall("search_datasource_slack", { query: "who approved the Q3 budget?" })], {
-					stopReason: "toolUse",
-				}),
-				twoEvidenceAnswer(),
-				twoEvidenceAnswer(),
-			);
-			const agent = agentWith({ model, datasourceSkills: [evidenceDatasource()] });
-			injectMinSync(agent, recordingMinSync().method);
-
-			const response = await agent.searchDocuments("who approved the Q3 budget?");
-
-			expect(response.results).toHaveLength(2);
-			expect(
-				response.diagnostics?.some(
-					(diagnostic) =>
-						diagnostic.code === "citation-irrelevant" || diagnostic.code === "citation-relevance-fallback",
-				),
-			).toBe(false);
-		});
 	});
 	describe("evidence judgment for retrieval memory", () => {
 		/** Records every evidence question Jev is asked, answering each from `byEvidence` (default 0.9). */
@@ -1520,30 +1490,6 @@ describe("Jev query pipeline before the fast answer", () => {
 
 			const fallback = response.diagnostics?.find((diagnostic) => diagnostic.code === "evidence-judgment-fallback");
 			expect(fallback?.message).toContain("evidence backend exploded");
-			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
-			stored.load();
-			expect(stored.getJudgedEvidence()).toEqual([]);
-		});
-
-		it("does not judge or store anything when Jev is disabled", async () => {
-			const model = fauxModel(
-				fauxAssistantMessage([fauxToolCall("search_datasource_slack", { query: "who approved the Q3 budget?" })], {
-					stopReason: "toolUse",
-				}),
-				twoEvidenceAnswer(),
-				twoEvidenceAnswer(),
-			);
-			const agent = agentWith({ model, datasourceSkills: [evidenceDatasource()] });
-			injectMinSync(agent, recordingMinSync().method);
-
-			const response = await agent.searchDocuments("who approved the Q3 budget?");
-
-			expect(
-				response.diagnostics?.some(
-					(diagnostic) =>
-						diagnostic.code === "evidence-judgment-fallback" && diagnostic.message.includes("Jev is disabled"),
-				),
-			).toBe(true);
 			const stored = new RetrievalMemory({ storagePath: join(root, "memory.json") });
 			stored.load();
 			expect(stored.getJudgedEvidence()).toEqual([]);

@@ -5,7 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
-import type { JevBackendName } from "../agent/jev-extension.ts";
+import type { JevBackendName, JevToolOptions } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -111,14 +111,14 @@ export interface WebSearchCliConfig {
 }
 
 /**
- * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
- * it explicitly. Secrets never appear here: `jev-use` reads the backend
- * credential from its own environment variable (`TYPESAFE_API_KEY`,
- * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted Dazzi Models
- * `dazzi` backend uses the credential stored by `/login`.
+ * Jev decision-model config. The decision model is required: an absent
+ * section or `{}` uses {@link defaultJevBackend}, and there is no opt-out.
+ * Secrets never appear here: `jev-use` reads the backend credential from its
+ * own environment variable (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or
+ * `AI_GATEWAY_API_KEY`), and the hosted Dazzi Models `dazzi` backend uses the
+ * credential stored by `/login`.
  */
 export interface JevCliConfig {
-	enabled?: boolean;
 	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `dazzi`); omit to let the first credential present win. */
 	backend?: JevBackendName;
 	/** Model id sent with every call, e.g. `jev-latest`. */
@@ -213,13 +213,13 @@ export interface CliConfig {
 		| false;
 	webSearch?: WebSearchCliConfig;
 	/**
-	 * Jev query routing (direct / local), the decomposition check, the
-	 * post-fast-answer follow-up check, and the `jev` tool. On by default with
-	 * the OpenRouter backend; `false` or `enabled: false` disables it. Secrets
-	 * never appear here: `jev-use` reads the backend key from its own
-	 * environment variable.
+	 * Jev, the required decision model: query routing, the decomposition
+	 * check, the post-fast-answer follow-up check, citation and evidence
+	 * judgment, the `auto` permission gate, and the `jev` tool. Absent or `{}`
+	 * uses the default backend. Secrets never appear here: `jev-use` reads the
+	 * backend key from its own environment variable.
 	 */
-	jev?: JevCliConfig | false;
+	jev?: JevCliConfig;
 	/**
 	 * Question decomposition for the Jev query pipeline. `model` names the LLM
 	 * that splits one question into at most five search queries; absent or `{}`
@@ -984,7 +984,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
-	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	if (file.jev !== undefined) config.jev = normalizeJevConfig(file.jev);
 	config.permissionMode = resolvePermissionMode(
 		flags,
 		env,
@@ -1061,7 +1061,6 @@ function resolvePermissionMode(
 }
 
 const JEV_CONFIG_FIELDS: Record<string, true> = {
-	enabled: true,
 	backend: true,
 	model: true,
 	confidenceThreshold: true,
@@ -1070,22 +1069,24 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 /** Jev backends AutoRAG can build: jev-use's own plus the hosted Dazzi Models plan. */
 const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "dazzi"];
 
+const JEV_REQUIRED_MESSAGE =
+	"AutoRAG requires its decision model (Jev) and cannot run without it; remove the setting, or point jev.backend at a backend you can reach";
+
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
+	if (raw === false) throw new ConfigError(`Config field 'jev' cannot be false: ${JEV_REQUIRED_MESSAGE}`);
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-		throw new ConfigError("Config field 'jev' must be an object or false");
+		throw new ConfigError("Config field 'jev' must be an object");
 	}
 	const record = raw as Record<string, unknown>;
+	if (record.enabled !== undefined)
+		throw new ConfigError(`jev.enabled is no longer supported: ${JEV_REQUIRED_MESSAGE}`);
 	for (const key of Object.keys(record)) {
 		if (JEV_CONFIG_FIELDS[key] !== true) {
 			throw new ConfigError(`jev.${key} is not a recognized field`);
 		}
 	}
 	const out: JevCliConfig = {};
-	if (record.enabled !== undefined) {
-		if (typeof record.enabled !== "boolean") throw new ConfigError("jev.enabled must be a boolean");
-		out.enabled = record.enabled;
-	}
 	if (record.backend !== undefined) {
 		const backend = record.backend;
 		if (typeof backend !== "string" || !JEV_BACKEND_NAMES.some((known) => known === backend)) {
@@ -1155,20 +1156,12 @@ export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecomposit
 }
 
 /**
- * Map the `jev` config section onto the agent option. Jev is on by default:
- * an absent section or `{}` enables it on {@link defaultJevBackend} (Dazzi
- * Models when signed in, else OpenRouter); `false` and `enabled: false` are the
- * opt-out.
+ * Map the `jev` config section onto the agent option. An absent section or
+ * `{}` uses {@link defaultJevBackend} (Dazzi Models when signed in, else
+ * OpenRouter).
  */
-function buildJevAgentOption(
-	raw: JevCliConfig | false | undefined,
-	agentDir: string | undefined,
-): AutoRAGAgentOptions["jev"] {
-	if (raw === false) return false;
-	const normalized = normalizeJevConfig(raw ?? {});
-	if (normalized.enabled === false) return false;
-	const { enabled: _omitJevEnabled, ...fields } = normalized;
-	return { backend: defaultJevBackend(agentDir), ...fields };
+function buildJevAgentOption(raw: JevCliConfig | undefined, agentDir: string | undefined): JevToolOptions {
+	return { backend: defaultJevBackend(agentDir), ...normalizeJevConfig(raw ?? {}) };
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1343,8 +1336,8 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	opts.jev = buildJevAgentOption(config.jev, agentDir);
 	opts.permissionMode = config.permissionMode;
-	// The Jev `config` branch edits the very file this process resolved; it only
-	// takes effect when Jev is on, so the option is always safe to pass.
+	// The Jev `config` branch edits the very file this process resolved, so the
+	// option is always safe to pass.
 	if (config.configPath !== undefined) {
 		opts.selfConfig = {
 			configPath: config.configPath,

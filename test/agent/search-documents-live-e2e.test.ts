@@ -25,6 +25,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
@@ -231,6 +232,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			},
 			jikji: { binaryPath },
 			datasourceSkills: [kakaoSkill(datasourceRows)],
+			jev: baselineJev(),
 		});
 
 		for (const name of [

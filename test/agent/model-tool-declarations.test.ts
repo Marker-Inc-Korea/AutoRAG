@@ -6,6 +6,7 @@ import { type FauxProviderRegistration, fauxAssistantMessage } from "@earendil-w
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string | undefined;
@@ -53,6 +54,7 @@ describe("AutoRAGAgent model requests", () => {
 			minSync: { autoInstall: false },
 			jikji: false,
 			webSearch: false,
+			jev: baselineJev(),
 		});
 		await agent.searchDocuments("where is the report?");
 

@@ -113,11 +113,21 @@ interface Verdict {
 	systemPrompt?: string;
 }
 
+/** Jev for a harness that names none: `ask`, `full`, and trusted paths never reach it, and any call fails. */
+function unreachedJev(): JevBackend {
+	return {
+		name: "unreached",
+		async judge() {
+			throw new Error("Jev was not expected to be asked");
+		},
+	};
+}
+
 function harness(options: HarnessOptions = {}) {
 	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> }>();
 	const controller = new PermissionController(options.mode ?? "auto");
-	const judge = options.jev === undefined ? undefined : createJevJudge({ backend: options.jev });
+	const judge = createJevJudge({ backend: options.jev ?? unreachedJev() });
 	const pi = {
 		on: (event: string, handler: Handler) => {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
@@ -157,7 +167,7 @@ function harness(options: HarnessOptions = {}) {
 	} as unknown as ExtensionContext;
 	createPermissionGate({
 		controller,
-		...(judge === undefined ? {} : { judge }),
+		judge,
 		...(options.requests === undefined ? {} : { requests: options.requests }),
 		...(options.maxStateChars === undefined ? {} : { maxStateChars: options.maxStateChars }),
 		...(options.trustedPaths === undefined ? {} : { trustedPaths: options.trustedPaths }),
@@ -301,7 +311,7 @@ describe("ask mode", () => {
 		expect(jev.requests).toHaveLength(0);
 	});
 
-	it("asks even when no Jev is configured, without saying anything about classification", async () => {
+	it("asks without saying anything about classification", async () => {
 		const h = harness({ mode: "ask", answers: [DENY] });
 		expect((await h.bash("ls"))?.block).toBe(true);
 		expect(h.dialogs[0]?.title).not.toMatch(/classify|Jev/i);
@@ -472,13 +482,6 @@ describe("when Jev cannot classify", () => {
 		expect(h.dialogs[0]?.title).toMatch(/network down/);
 	});
 
-	it("does the same when no Jev is configured at all", async () => {
-		const h = harness({ answers: [DENY] });
-		expect((await h.bash("ls"))?.block).toBe(true);
-		expect(h.dialogs[0]?.title).toMatch(/could not classify/i);
-		expect(h.dialogs[0]?.title).toMatch(/not configured/i);
-	});
-
 	it("blocks headless with a reason naming Jev and the mode flag", async () => {
 		const h = harness({ jev: failing("boom"), hasUI: false });
 		const result = await h.bash("ls");
@@ -607,12 +610,6 @@ describe("auto mode", () => {
 		expect((await rejected.bash(`rm ${original("a.txt")}`))?.block).toBe(true);
 		const approved = harness({ mode: "auto", hasUI: false, jev: jevSays({ delete: 0.97 }, { answer: "allow" }) });
 		expect(await approved.bash(`rm ${original("b.txt")}`)).toBeUndefined();
-	});
-
-	it("without a configured Jev it cannot classify, so it asks about every gated call", async () => {
-		const h = harness({ mode: "auto", answers: [DENY] });
-		expect((await h.bash("ls"))?.block).toBe(true);
-		expect(h.dialogs[0]?.title).toMatch(/could not classify/i);
 	});
 });
 
