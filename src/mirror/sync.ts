@@ -130,7 +130,7 @@ export interface ParsedMirrorSyncOptions {
 	readonly cloudMaxFiles?: number;
 	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default {@link DEFAULT_CLOUD_MAX_BYTES}. */
 	readonly cloudMaxBytes?: number;
-	/** Release an iCloud file again once it is parsed and indexed. Default true. */
+	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
 	/** Retries after a failed release (`brctl evict`), with doubling waits; `0` tries once. Default 3. */
 	readonly cloudEvictRetries?: number;

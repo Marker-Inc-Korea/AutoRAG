@@ -293,7 +293,7 @@ export interface AutoRAGRefreshLimits {
 	readonly cloudMaxFiles?: number;
 	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default 536870912 (512 MiB). */
 	readonly cloudMaxBytes?: number;
-	/** Release an iCloud file again once it is parsed and indexed. Default true. */
+	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
 	/**
 	 * Retries after a failed release of a downloaded iCloud file (`brctl evict` often fails once with "in use"

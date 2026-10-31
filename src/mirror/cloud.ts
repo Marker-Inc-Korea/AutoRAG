@@ -49,7 +49,7 @@ const LOCAL: CloudDecision = { kind: "local" };
 
 /**
  * One refresh's view of cloud placeholders. Reading a placeholder downloads it, so the refresh asks here
- * before every read; without a probe (non-macOS) every file is `local` and nothing changes.
+ * before every read; without a probe (a platform AutoRAG has no cloud handling for) every file is `local`.
  */
 export class CloudGate {
 	private readonly probe: CloudFileProbe | undefined;

@@ -471,8 +471,8 @@ refresh continues:
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
 | `cloud-placeholder-skipped` | info | A Google Drive, OneDrive, or other File Provider placeholder was not read; `reason` carries the provider. |
-| `cloud-download-deferred` | info | An iCloud placeholder is over this refresh's download budget and waits for the next refresh. |
-| `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the last `brctl` error and the attempt count. |
+| `cloud-download-deferred` | info | A cloud placeholder is over this refresh's download budget and waits for the next refresh. |
+| `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the last provider error (`brctl` on macOS, the Cloud Files API on Windows) and the attempt count. |
 
 `EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
 (50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
@@ -553,8 +553,8 @@ an unchanged file is not processed again, so it stays on disk until its content 
 
 `cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
 refresh downloads; the first file is always allowed, so one large file cannot starve.
-`cloudEvictAfterParse: false` keeps downloaded iCloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. Other platforms
-read every file as before; Windows Cloud Files placeholders are not handled yet.
+`cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release.
+Linux hosts read every file as before; only macOS and Windows have a cloud probe.
 
 Two other readers open file contents themselves and download a released iCloud file
 again, so with their defaults the local copy comes back after the refresh: the Jikji
@@ -563,6 +563,32 @@ Measured on macOS 26 with iCloud Drive, a refresh with both switched off
 (`"jikji": false`, `"excludeExactDuplicates": false`) left every released file released;
 with either one on, they were downloaded again. The parsed mirror, MinSync, and fsearch
 passes never re-download. Making Jikji and dupey placeholder-aware is tracked separately.
+
+### OneDrive and other Cloud Files providers (Windows)
+
+A folder synced by a Cloud Files provider (OneDrive, and any other provider that
+registers a sync root under `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager`)
+lists every file, but a file you have not opened is a placeholder whose bytes live
+only in the cloud. A refresh reads `FileAttributes` for a batch of files in one
+PowerShell process and treats a file whose `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`
+(`0x400000`) bit is set as a placeholder. `FILE_ATTRIBUTE_OFFLINE` (`0x1000`) is
+*not* set on real placeholders, so it is not required.
+
+For each placeholder the probe names its provider from the registered sync root
+that contains the path (falling back to the path itself):
+
+| Provider | What a refresh does with a placeholder |
+| --- | --- |
+| OneDrive | Downloads it within the budget below, parses and indexes it, then releases the local copy. The file stays in OneDrive and keeps its size and modification time, so an unchanged file is never downloaded again; a changed one is downloaded once and released again. |
+| Google Drive, Dropbox, other providers | Does not read it (`cloud-placeholder-skipped`, `reason` is the provider), until that provider's release path has been verified live. A previously indexed copy is kept. Make the file or folder always available in the provider's app to index it. |
+
+A release opens the file with a Cloud Files oplock (`CfOpenFileWithOplock`) and
+calls `CfDehydratePlaceholder` synchronously, so the refresh learns the outcome
+immediately. Dehydration is provider-agnostic and does not change the file's pin
+state; it refuses a file the provider has not finished uploading, which is
+reported as a per-file `cloud-evict-failed` and leaves the document indexed. The
+`cloudMaxFiles`, `cloudMaxBytes`, `cloudEvictAfterParse`, and `cloudEvictRetries`
+keys above apply unchanged; the deferred and retry behavior is the same as macOS.
 
 ## Cancelling a refresh
 
