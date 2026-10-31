@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	type CloudEvictResult,
@@ -237,7 +237,7 @@ describe("iCloud placeholders are indexed, then released", () => {
 
 		const result = await sync(cloud, { cloudEvictRetries: 2 });
 
-		expect(cloud.evicted.map((path) => path.split("/").pop())).toEqual(["a.txt", "a.txt", "a.txt", "b.txt", "c.txt"]);
+		expect(cloud.evicted.map((path) => basename(path))).toEqual(["a.txt", "a.txt", "a.txt", "b.txt", "c.txt"]);
 		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-evict-failed")).toHaveLength(1);
 		expect(result.written).toBe(3);
 	});
