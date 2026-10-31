@@ -429,13 +429,15 @@ function captionText(captions: readonly string[]): string {
 	return ` · ${joined.length > MAX_CAPTION_CHARS ? `${joined.slice(0, MAX_CAPTION_CHARS - 1)}…` : joined}`;
 }
 
-/** One line per value: line breaks become " / ", and a literal "|" is escaped so it never reads as a separator. */
+/**
+ * One line per value: line breaks become " / " and tabs a space. Everything else stays verbatim; the lines are
+ * not Markdown tables, so a literal "|" or "\" in a cell needs no escaping.
+ */
 function clean(text: string): string {
 	return text
 		.trim()
 		.replace(/\s*(?:\r\n|\r|\n)\s*/g, " / ")
-		.replace(/[\t\f\v]+/g, " ")
-		.replace(/\|/g, "\\|");
+		.replace(/[\t\f\v]+/g, " ");
 }
 
 function cellRange(left: number, right: number, row: number): string {

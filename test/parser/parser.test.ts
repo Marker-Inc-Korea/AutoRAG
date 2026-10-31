@@ -194,7 +194,7 @@ describe("ParserRegistry", () => {
 		await expect(xlsParser?.parse({ virtualPath: "/docs/corrupt.xls", bytes })).rejects.toBeInstanceOf(ParseError);
 	});
 
-	it("preserves legacy XLS cell boundaries and values in escaped Markdown", async () => {
+	it("preserves legacy XLS cell boundaries and values verbatim on one line per row", async () => {
 		const registry = createDefaultParserRegistry();
 		const xlsParser = registry.getForVirtualPath("/docs/rich.xls");
 
@@ -203,9 +203,9 @@ describe("ParserRegistry", () => {
 			bytes: createRichXlsFixture(),
 		});
 
-		// Cell text is trimmed, a literal "|" is escaped and a line break becomes " / ", so every row stays one line.
+		// Cell text is trimmed and a line break becomes " / ", so every row stays one line; "|" and "\" stay as written.
 		expect(parsed?.markdown).toContain("[Summary!A1:B1] Whitespace | preserve me");
-		expect(parsed?.markdown).toContain("[Summary!A2:B2] Pipes | left \\| right");
+		expect(parsed?.markdown).toContain("[Summary!A2:B2] Pipes | left | right");
 		expect(parsed?.markdown).toContain("[Summary!A3:B3] Newlines | first line / second line");
 		expect(parsed?.markdown).toContain("[Summary!A4:B4] Backslash | C:\\docs\\file.xls");
 		expect(parsed?.markdown).toContain("## Details");
