@@ -138,7 +138,12 @@ import {
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
-import { checkDecisionModel, type DecisionModelStatus, DecisionModelUnavailableError } from "./decision-model-check.ts";
+import {
+	createDecisionModels,
+	type DecisionModelStatus,
+	type DecisionModels,
+	DecisionModelUnavailableError,
+} from "./decision-model-check.ts";
 import { createDiscordRemoteExtension, DISCORD_REMOTE_TOOL_NAMES } from "./discord-remote.ts";
 import {
 	createScanDuplicateDocumentsTool,
@@ -153,13 +158,7 @@ import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import { intentOfMessage } from "./intent-tracing.ts";
-import {
-	createJevExtension,
-	createJevJudge,
-	JEV_TOOL_NAME,
-	type JevJudge,
-	type JevToolOptions,
-} from "./jev-extension.ts";
+import { createJevExtension, JEV_TOOL_NAME, type JevJudge, type JevToolOptions } from "./jev-extension.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -264,6 +263,12 @@ const MERGED_EVIDENCE_CEILING = 500;
 
 /** Session key of runs that own no TUI session: the agent instance is the session. */
 const UNBOUND_DECISION_SESSION = "unbound";
+
+/** `backend / model` of the decision model that answered a session check. */
+function describeDecisionModel(status: DecisionModelStatus): string {
+	return [status.backend, status.model].filter((part) => part !== undefined).join(" / ");
+}
+
 /** Similar past questions shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
 const SIMILAR_PAST_SEARCH_LIMIT = 5;
 /** Results listed per similar past question; the best-judged evidence carries its answer. */
@@ -962,6 +967,8 @@ export class AutoRAGAgent {
 	private readonly fileeOptions: FileeCliOptions | false;
 	/** pi extension registering the `jev` tool. */
 	private readonly jevExtension: ExtensionFactory;
+	/** Jev and its sLLM fallback: the session check picks which one {@link jevJudge} asks. */
+	private readonly decisionModels: DecisionModels;
 	/** Jev judge shared by the `jev` tool, the query router, the judgments, and the permission gate. */
 	private readonly jevJudge: JevJudge;
 	/**
@@ -1163,7 +1170,8 @@ export class AutoRAGAgent {
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
-		this.jevJudge = createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
+		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
+		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
 		this.selfConfig = options.selfConfig;
 		this.organizeSkillPath = options.organizeSkillPath;
@@ -2116,8 +2124,11 @@ export class AutoRAGAgent {
 				decisionModel = await this.searchProgress.step(
 					"decision-model",
 					"Checking the decision model",
-					() => checkDecisionModel(this.jevJudge),
-					(status) => [status.backend, status.model].filter((part) => part !== undefined).join(" / "),
+					() => this.decisionModels.check(),
+					(status) =>
+						status.fallbackFrom === undefined
+							? describeDecisionModel(status)
+							: `sLLM fallback ${describeDecisionModel(status)} (Jev: ${status.fallbackFrom.reason})`,
 				);
 			} catch (error) {
 				this.searchProgress.end();
@@ -2144,9 +2155,19 @@ export class AutoRAGAgent {
 			this.routingDiagnostics.push({
 				code: "decision-model-checked",
 				severity: "info",
-				message: `Decision model answered the session check: ${[decisionModel.backend, decisionModel.model].filter((part) => part !== undefined).join(" / ")}.`,
+				message: `Decision model answered the session check: ${describeDecisionModel(decisionModel)}.`,
 				source: "jev",
 			});
+			const jev = decisionModel.fallbackFrom;
+			if (jev !== undefined) {
+				const target = [jev.backend, jev.model].filter((part) => part !== undefined).join(" / ");
+				this.routingDiagnostics.push({
+					code: "decision-model-fallback",
+					severity: "warning",
+					message: `Jev${target === "" ? "" : ` (${target})`} is unavailable (${jev.reason}): ${jev.detail} This session decides with the sLLM fallback ${describeDecisionModel(decisionModel)}, whose probabilities are less calibrated than Jev's.`,
+					source: "jev",
+				});
+			}
 		}
 		this.lastQuery = trimmedQuery;
 		// A run that owns no TUI session is its own conversation. In the TUI the log is the session's and is fed

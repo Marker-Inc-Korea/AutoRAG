@@ -13,9 +13,10 @@ classify or rank something. The number comes back to the caller, and **the
 caller owns the threshold**: the model cannot grade its own work or drift
 between runs.
 
-`jev-use` owns backend auto-selection, request screening, and response
-validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
-on top, and uses the same client for the query pipeline described below. Jev
+`jev-use` owns request screening, response validation, and escalation; the
+transport to each provider comes from pi's model catalog (see Backends below).
+AutoRAG registers a thin pi extension tool (`createJevExtension`) on top, and
+uses the same client for the query pipeline described below. Jev
 is **required**: routing, the follow-up check, citation and evidence judgment,
 and the `auto` permission gate all ask it, so there is no mode that runs
 without it. It uses the hosted Dazzi Models backend when you are signed in
@@ -29,7 +30,9 @@ model before any model call: the first question of a TUI session (again after
 outside a TUI session (every `autorag search` process). A later question in the
 same session does not repeat it. When the probe gets a number back, the run
 goes on and records a `decision-model-checked` info diagnostic naming the
-backend and model that answered. When it does not, the run stops with
+backend and model that answered. When it does not, the configured
+[sLLM fallback](#sllm-fallback) is probed and, if it answers, serves the session
+with a `decision-model-fallback` warning. When neither answers, the run stops with
 `DecisionModelUnavailableError` and nothing else happens:
 
 - `code`: always `decision-model-unavailable`.
@@ -37,12 +40,14 @@ backend and model that answered. When it does not, the run stops with
   (HTTP 401/403), `payment-required` (402), `model-not-found` (404, or the
   backend says the model does not exist), `rate-limited` (429), `unreachable`
   (network failure, timeout, 5xx), or `invalid-response` (no usable verdict).
+- `attempts`: every model tried, Jev first and the fallback after it, each with
+  its own `reason` and error text.
 - The message starts with `[decision-model-unavailable]`, says AutoRAG cannot be
-  used, quotes the backend's own error, and says what to fix.
+  used, quotes each backend's own error, and says what to fix.
 
 `autorag search` prints that error and exits with status **3**; with `--json`
-the error envelope carries `code`, `reason`, and, when known, `backend` and
-`model`. The TUI shows the same message in the conversation; the next question
+the error envelope carries `code`, `reason`, `attempts`, and, when known,
+`backend` and `model`. The TUI shows the same message in the conversation; the next question
 checks again, so fixing the credential and asking again is enough. Library
 callers can catch `DecisionModelUnavailableError` (exported with
 `DECISION_MODEL_UNAVAILABLE_CODE`) and branch on `reason`.
@@ -75,36 +80,82 @@ empty `{}` keeps the defaults. There is no opt-out: `"jev": false` and
 `jev.enabled` are rejected with a config error. Jev sends the question text (and,
 for citation and evidence judgment, the cited excerpts) to the chosen backend.
 
-### Backends
+### Backends and decision models
 
-`jev-use` resolves the backend from the environment. Set `JEV_BACKEND` to force
-one, or leave it unset to let the first credential present win, in the order
-TypeSafe -> OpenRouter -> Vercel AI Gateway. `dazzi` is not resolved by
-`jev-use`: `backend: "dazzi"` (or `JEV_BACKEND=dazzi`, with `options.backend`
-unset) builds the hosted Dazzi Models backend in AutoRAG itself, using the
-credential stored by `/login` and the server root at `AUTORAG_BASE_URL`.
+Decision models come from pi's model catalog: pi-ai ships every provider's
+typed-question ("classifier") models next to its chat models, with the
+transport for each wire dialect, and pi's runtime adds the credentials stored
+in `auth.json` and the provider `baseUrl` overrides in `models.json`. `backend`
+names the provider and `model` the decision model within it. List them with
+`autorag models list --decision` (`--available` keeps the providers you have a
+credential for).
 
-| `backend`    | Credential                                          | Model id on the wire |
-| ------------ | --------------------------------------------------- | -------------------- |
-| `typesafe`   | `TYPESAFE_API_KEY`                                  | `jev-1.13.0`         |
-| `openrouter` | `OPENROUTER_API_KEY`                                | `typesafe/jev-1.13`  |
-| `vercel`     | `AI_GATEWAY_API_KEY`                                | `typesafe-ai/jev`    |
-| `dazzi`      | stored `/login` credential                          | `jev-1.13`           |
+| `backend`               | Credential                    | Default `model`          | Other decision models (examples)                                                                 |
+| ----------------------- | ----------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `openrouter`            | `OPENROUTER_API_KEY`          | `typesafe/jev-1.13`      | `typesafe/jev-1.14`, `openai/gpt-6-luna-decisions`, `liquid/d1`, `perplexity/pplx-decider-v1.2`, `upstage/solar-decide`, `nace-ai/drex-v2.0`, `cloudflare/clef` |
+| `openai`                | `OPENAI_API_KEY`              | `gpt-6-luna`             | OpenAI's Decisions API (`POST /v1/decisions`)                                                    |
+| `typesafe`              | `TYPESAFE_API_KEY`            | `jev-latest`             |                                                                                                  |
+| `vercel-ai-gateway`     | `AI_GATEWAY_API_KEY`          | `typesafe-ai/jev-1.13.0` | `openai/gpt-6-luna-decisions`, `liquid/d1`, `baseten/mammoth-1`, `convaiinnovations/laya`        |
+| `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | `typesafe/jev` | `@cf/cloudflare/clef`, `@cf/cloudflare/clef-flash`                                  |
+| `opencode`              | `OPENCODE_API_KEY`            | `jev-1.13`               | `jev-1.13-free`                                                                                  |
+| `dazzi`                 | stored `/login` credential    | `jev-1.13`               | the hosted plan's native endpoint `<root>/v1/jev` (`AUTORAG_BASE_URL`)                           |
 
-`JEV_MODEL` overrides the wire model id, and `JEV_BACKEND=mock` runs a keyless
-dry run (used by the offline tests).
+A credential stored in pi's `auth.json` works as well as the environment
+variable, and a provider `baseUrl` in pi's `models.json` (for example
+`{ "providers": { "openrouter": { "baseUrl": "https://proxy.example/api/v1" } } }`)
+moves its decision models to a proxy or gateway speaking the same dialect.
+OpenRouter stays on `typesafe/jev-1.13` by default: AutoRAG's routing
+floor and permission thresholds were calibrated on it. A model id the provider
+does not serve fails the session check as `model-not-found`, and the message
+lists the provider's decision models. A config written for `jev-use`'s old
+backend names still loads, except `"backend": "vercel"`, which is now
+`vercel-ai-gateway`. With `backend` unset (programmatic use only; the CLI always
+fills it in), AutoRAG takes Dazzi Models when signed in, else the first of
+`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`,
+`opencode` whose API key is set.
 
-The OpenRouter path is pinned to `typesafe/jev-1.13`: `jev-use` 0.8.0's own
-OpenRouter default (`typesafe/jev-latest`) is not a live OpenRouter model id and
-returns HTTP 400. Set `model` to override the pin.
+### sLLM fallback
+
+When the session check finds Jev unavailable, it probes the **sLLM fallback**, a
+small chat LLM answering the same typed questions through a tool call (with
+constrained JSON-schema sampling where the provider offers it). When the
+fallback answers, the session runs on it, and the run reports a
+`decision-model-fallback` warning naming Jev's failure and the fallback model.
+The progress step reads `sLLM fallback … (Jev: <reason>)`. A chat model's
+probabilities are its own estimate rather than a calibrated decision head, so
+routing and judgments on the fallback are less reliable. The next session checks
+Jev again first. When the fallback fails too, the error lists both failures in
+`attempts`.
+
+The fallback model defaults to the question-decomposition model (its configured
+`queryDecomposition.model`, else `dazzi/openai/gpt-6-luna` when signed in, else
+`openrouter/qwen/qwen3.7-flash`). Set `jev.fallback.model` to any catalog chat
+model, or set `jev.fallback: false` to fail outright when Jev is unavailable.
 
 ### Configuration fields
 
-| Field                 | Meaning                                                                 |
-| --------------------- | ----------------------------------------------------------------------- |
-| `backend`             | `dazzi` when signed in, else `openrouter` (default); or `typesafe`, `vercel`. |
-| `model`               | Wire model id sent with every call. Omit for the backend default.       |
-| `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
+| Field                 | Meaning                                                                  |
+| --------------------- | ------------------------------------------------------------------------ |
+| `backend`             | `dazzi` when signed in, else `openrouter` (default); or any provider above. |
+| `model`               | Decision model id within the backend. Omit for the backend default.      |
+| `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.      |
+| `fallback`            | `{ "model": { "provider": …, "id": … } }`, `{}` (the default), or `false`. |
+
+Example: GPT-6 Luna as the decision model, natively on OpenAI, falling back to a
+small Qwen model on OpenRouter:
+
+```json
+{
+  "jev": {
+    "backend": "openai",
+    "model": "gpt-6-luna",
+    "fallback": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
+  }
+}
+```
+
+The same model through OpenRouter is `{ "backend": "openrouter", "model":
+"openai/gpt-6-luna-decisions" }`.
 
 ## Using the tool
 

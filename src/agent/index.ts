@@ -19,7 +19,14 @@ export {
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
 export {
+	DECISION_PROVIDER_DEFAULT_MODELS,
+	type DecisionModelRuntime,
+	PiDecisionBackend,
+	type PiDecisionBackendOptions,
+} from "./decision-backends.ts";
+export {
 	DECISION_MODEL_UNAVAILABLE_CODE,
+	type DecisionModelFailure,
 	type DecisionModelFailureReason,
 	DecisionModelUnavailableError,
 } from "./decision-model-check.ts";
@@ -32,7 +39,6 @@ export {
 export {
 	createJevExtension,
 	JEV_TOOL_NAME,
-	type JevBackendName,
 	type JevToolOptions,
 } from "./jev-extension.ts";
 export {
@@ -81,4 +87,5 @@ export {
 	type SingleDatasourceToolSpec,
 	singleDatasourceToolName,
 } from "./search-single-datasource-tool.ts";
+export { SLLM_DECISION_TOOL_NAME, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";

@@ -60,6 +60,7 @@ export type SearchDocumentDiagnosticCode =
 	| "model-request-failed"
 	| "tool-call-burst"
 	| "decision-model-checked"
+	| "decision-model-fallback"
 	| "query-routed"
 	| "query-route-fallback"
 	| "query-decomposition-failed"

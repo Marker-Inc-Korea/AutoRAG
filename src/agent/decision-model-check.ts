@@ -1,11 +1,13 @@
 import { check, type Judgment, type Question } from "jev-use";
-import type { JevJudge } from "./jev-extension.ts";
+import { createJevJudge, type JevJudge, type JevJudgeOptions } from "./jev-extension.ts";
+import { SllmDecisionBackend } from "./sllm-decision.ts";
 
 /**
  * AutoRAG cannot answer without its decision model (Jev): routing, the follow-up check, citation and
  * evidence judgment, and the permission gate all ask it. The first question of every session therefore
- * puts one tiny probe to the decision model, and a model that cannot answer ends the run here with
- * {@link DecisionModelUnavailableError} instead of degrading into a pipeline that guesses.
+ * puts one tiny probe to the decision model. When Jev cannot answer, the configured small chat LLM
+ * (sLLM) is probed and serves the session in its place, reported as degraded; when neither answers,
+ * the run ends with {@link DecisionModelUnavailableError} instead of a pipeline that guesses.
  */
 
 /** Error code every surface reports when the session's decision model cannot be used. */
@@ -36,7 +38,7 @@ export type DecisionModelFailureReason =
 const REMEDIES: Readonly<Record<DecisionModelFailureReason, string>> = {
 	disabled: "Remove `jev: false`; the decision model cannot be turned off.",
 	"missing-credential":
-		"Set the backend's API key (OPENROUTER_API_KEY for openrouter, TYPESAFE_API_KEY for typesafe, AI_GATEWAY_API_KEY for vercel) or sign in to Dazzi Models with /login, then ask again.",
+		"Set the backend's API key (OPENROUTER_API_KEY for openrouter, OPENAI_API_KEY for openai, TYPESAFE_API_KEY for typesafe, AI_GATEWAY_API_KEY for vercel-ai-gateway) or sign in to Dazzi Models with /login, then ask again.",
 	unauthorized: "The backend rejected its credential; check or replace the API key, then ask again.",
 	"payment-required": "The backend account has no credit left; top it up or switch `jev.backend`, then ask again.",
 	"model-not-found": "The backend does not serve this model; set `jev.model` to a live decision model id.",
@@ -55,10 +57,16 @@ export interface DecisionModelFailure {
 	readonly model?: string;
 }
 
+/** `backend / model`, or empty when neither is known. */
+function describeTarget(failure: DecisionModelFailure): string {
+	return [failure.backend, failure.model].filter((part) => part !== undefined).join(" / ");
+}
+
 /**
  * The session's decision model cannot be used, so AutoRAG cannot answer. Carries a stable `code`
- * ({@link DECISION_MODEL_UNAVAILABLE_CODE}) and a `reason` a host can branch on; the message names
- * both, the backend's own error, and what to do about it.
+ * ({@link DECISION_MODEL_UNAVAILABLE_CODE}) and the decision model's `reason` a host can branch on;
+ * `attempts` lists every model tried, the decision model first and the sLLM fallback after it. The
+ * message names the code, each failure with the backend's own error, and what to do about it.
  */
 export class DecisionModelUnavailableError extends Error {
 	readonly code = DECISION_MODEL_UNAVAILABLE_CODE;
@@ -66,18 +74,24 @@ export class DecisionModelUnavailableError extends Error {
 	readonly detail: string;
 	readonly backend?: string;
 	readonly model?: string;
+	readonly attempts: readonly DecisionModelFailure[];
 
-	constructor(failure: DecisionModelFailure) {
-		const target = [failure.backend, failure.model].filter((part) => part !== undefined).join(" / ");
+	constructor(failure: DecisionModelFailure, fallback?: DecisionModelFailure) {
+		const target = describeTarget(failure);
+		const fallbackTarget = fallback === undefined ? "" : describeTarget(fallback);
 		super(
 			`[${DECISION_MODEL_UNAVAILABLE_CODE}] AutoRAG cannot be used: its decision model (Jev) is unavailable (${failure.reason}). ` +
-				`${target === "" ? "" : `${target}: `}${failure.detail} ${REMEDIES[failure.reason]}`,
+				`${target === "" ? "" : `${target}: `}${failure.detail} ${REMEDIES[failure.reason]}` +
+				(fallback === undefined
+					? ""
+					: ` The sLLM fallback${fallbackTarget === "" ? "" : ` (${fallbackTarget})`} is unavailable too (${fallback.reason}): ${fallback.detail}`),
 		);
 		this.name = "DecisionModelUnavailableError";
 		this.reason = failure.reason;
 		this.detail = failure.detail;
 		if (failure.backend !== undefined) this.backend = failure.backend;
 		if (failure.model !== undefined) this.model = failure.model;
+		this.attempts = fallback === undefined ? [failure] : [failure, fallback];
 	}
 }
 
@@ -110,6 +124,8 @@ const PROBE_QUESTION: Question = {
 export interface DecisionModelStatus {
 	readonly backend: string;
 	readonly model?: string;
+	/** Set when the sLLM fallback answered: why the decision model itself could not. */
+	readonly fallbackFrom?: DecisionModelFailure;
 }
 
 /**
@@ -136,4 +152,56 @@ export async function checkDecisionModel(judge: JevJudge): Promise<DecisionModel
 		detail: backendFailure ?? hint,
 		...served,
 	});
+}
+
+/** The session's decision model: the judge every caller asks, and the check that picks what it asks. */
+export interface DecisionModels {
+	/** Asks the model the latest {@link DecisionModels.check} selected: Jev, or the sLLM fallback when Jev could not answer. */
+	readonly judge: JevJudge;
+	/**
+	 * Probe Jev; when it is unavailable and a fallback is configured, probe the fallback. The first that
+	 * answers serves every later judgment until the next check. Throws {@link DecisionModelUnavailableError}
+	 * with every failure when none answers.
+	 */
+	check(): Promise<DecisionModelStatus>;
+}
+
+/** Jev from `options`, with `options.fallback` (a small chat LLM, or any backend) behind it. */
+export function createDecisionModels(options: JevJudgeOptions): DecisionModels {
+	const { fallback, ...primaryOptions } = options;
+	const primary = createJevJudge(primaryOptions);
+	const secondary =
+		fallback === undefined
+			? undefined
+			: createJevJudge({
+					backend: "judge" in fallback ? fallback : new SllmDecisionBackend(fallback),
+					...(options.confidenceThreshold !== undefined
+						? { confidenceThreshold: options.confidenceThreshold }
+						: {}),
+				});
+	let selected = primary;
+	return {
+		judge: (state, questions, callOptions) => selected(state, questions, callOptions),
+		async check() {
+			let primaryFailure: DecisionModelUnavailableError;
+			try {
+				const status = await checkDecisionModel(primary);
+				selected = primary;
+				return status;
+			} catch (error) {
+				if (!(error instanceof DecisionModelUnavailableError) || secondary === undefined) throw error;
+				primaryFailure = error;
+			}
+			const [failure] = primaryFailure.attempts;
+			if (failure === undefined) throw primaryFailure;
+			try {
+				const status = await checkDecisionModel(secondary);
+				selected = secondary;
+				return { ...status, fallbackFrom: failure };
+			} catch (error) {
+				if (!(error instanceof DecisionModelUnavailableError)) throw error;
+				throw new DecisionModelUnavailableError(failure, error.attempts[0]);
+			}
+		},
+	};
 }

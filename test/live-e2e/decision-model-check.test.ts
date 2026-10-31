@@ -17,8 +17,9 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { DECISION_PROVIDER_DEFAULT_MODELS } from "../../src/agent/decision-backends.ts";
 import { checkDecisionModel, DecisionModelUnavailableError } from "../../src/agent/decision-model-check.ts";
-import { createJevJudge, OPENROUTER_DEFAULT_MODEL } from "../../src/agent/jev-extension.ts";
+import { createJevJudge } from "../../src/agent/jev-extension.ts";
 
 const KEY = process.env.OPENROUTER_API_KEY ?? "";
 const LIVE = process.env.AUTORAG_DECISION_CHECK_LIVE === "1" && KEY.length > 0;
@@ -50,7 +51,7 @@ describe.skipIf(!LIVE)("decision-model check over OpenRouter", () => {
 			createJevJudge({ backend: "openrouter", env: { OPENROUTER_API_KEY: KEY } }),
 		);
 		expect(status.backend).toBe("openrouter");
-		expect(status.model).toContain(OPENROUTER_DEFAULT_MODEL);
+		expect(status.model).toContain(DECISION_PROVIDER_DEFAULT_MODELS.openrouter);
 	}, 60_000);
 
 	it("fails as unauthorized with a key OpenRouter rejects", async () => {

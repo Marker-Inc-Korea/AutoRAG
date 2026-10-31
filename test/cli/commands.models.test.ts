@@ -96,4 +96,32 @@ describe("models commands", () => {
 			rmSync(agentDir, { recursive: true, force: true });
 		}
 	});
+
+	it("lists decision models with --decision, GPT-6 Luna and the hosted Jev among them", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "autorag-models-decision-"));
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		try {
+			const { ctx, stdout } = context(["list"], { decision: true, json: true });
+			expect(await runModels(ctx)).toBe(0);
+			const parsed = JSON.parse(stdout[0]) as { type: string; models: { provider: string; id: string }[] };
+			expect(parsed.type).toBe("decision");
+			const ids = parsed.models.map((model) => `${model.provider}/${model.id}`);
+			expect(ids).toEqual(
+				expect.arrayContaining([
+					"openai/gpt-6-luna",
+					"openrouter/openai/gpt-6-luna-decisions",
+					"openrouter/typesafe/jev-1.13",
+					"vercel-ai-gateway/liquid/d1",
+					"dazzi/jev-1.13",
+				]),
+			);
+			// No chat model is a decision model.
+			expect(ids).not.toContain("openrouter/qwen/qwen3.7-flash");
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
 });

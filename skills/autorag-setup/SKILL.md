@@ -281,8 +281,16 @@ backend account is out of credit, `unreachable` and `rate-limited` mean retry.
 
 `autorag init` writes these defaults into new configs. To change them:
 
-- Jev backend: `"backend": "typesafe"` (`TYPESAFE_API_KEY`) or `"vercel"`
-  (`AI_GATEWAY_API_KEY`).
+- Jev backend and model: any provider with decision models, e.g.
+  `{ "backend": "openai", "model": "gpt-6-luna" }` (`OPENAI_API_KEY`),
+  `{ "backend": "openrouter", "model": "openai/gpt-6-luna-decisions" }`,
+  `"typesafe"` (`TYPESAFE_API_KEY`), `"vercel-ai-gateway"` (`AI_GATEWAY_API_KEY`),
+  `"cloudflare-workers-ai"`, or `"opencode"`. List the choices with
+  `autorag models list --decision --available`; never invent a model id.
+- sLLM fallback: when Jev is unavailable, the session runs on a small chat model
+  (default: the decomposition model) and warns `decision-model-fallback`. Set
+  `"jev": { "fallback": { "model": { "provider": …, "id": … } } }`, or
+  `"fallback": false` to fail instead.
 - Decomposition model: any catalog `provider`/`id`, with the same fields as
   the top-level `model`.
 - `"queryDecomposition": false` decomposes with the search model itself.

@@ -129,6 +129,11 @@ async function orchestrate(): Promise<number> {
 	const resultPath = join(root, "result.json");
 	// Pi's TUI picks its model from the agent dir's settings; pin the fake one.
 	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "qamodel", defaultModel: "qa-model" }));
+	// Jev on OpenRouter, moved to the fake model port: pi's models.json base URL reaches built-in decision models too.
+	writeFileSync(
+		join(agentDir, "models.json"),
+		JSON.stringify({ providers: { openrouter: { baseUrl: `http://127.0.0.1:${modelPort}/api/v1` } } }),
+	);
 	// Never inherit real credentials: pass only what a shell needs, so no real provider can be reached.
 	const env = {
 		PATH: process.env.PATH,
@@ -139,9 +144,8 @@ async function orchestrate(): Promise<number> {
 		PI_CODING_AGENT_DIR: agentDir,
 		AUTORAG_NO_UPDATE_CHECK: "1",
 		QAMODEL_API_KEY: "qa-key",
-		// The fake model port also answers Jev's decisions endpoint; no real provider can be reached.
+		// Jev answers from the fake model port (see models.json above); no real provider can be reached.
 		OPENROUTER_API_KEY: "qa-key",
-		OPENROUTER_BASE_URL: `http://127.0.0.1:${modelPort}`,
 		QA_RESULT_PATH: resultPath,
 		QA_MODEL_PORT: String(modelPort),
 		AUTORAG_DISCORD_QA_INNER: "1",
