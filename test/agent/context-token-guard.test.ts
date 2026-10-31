@@ -342,6 +342,67 @@ describe("context token guard", () => {
 		expect(input + bounded.maxTokens).toBeLessThanOrEqual(bounded.contextWindow);
 	});
 
+	describe("dense text a chars/4 guess undercounts", () => {
+		// 12,000 window, 1.2 headroom, 1,000 output reserve: a 9,000-token input budget.
+		const denseModel = { ...model, contextWindow: 12_000, maxTokens: 1_000 };
+		const inputBudget = 9_000;
+		/** Deterministic text with nothing for a tokenizer to merge: punctuation, control characters, digits, replacement characters. */
+		const denseText = (length: number): string => {
+			const alphabet = "!@#$%^&*()_+-=[]{};:'\",.<>/?\\|~`0123456789abcXYZ\u0000\u0001\ufffd";
+			let state = 7;
+			let out = "";
+			for (let i = 0; i < length; i++) {
+				state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+				out += alphabet[(state >>> 16) % alphabet.length];
+			}
+			return out;
+		};
+
+		it("estimates dense text at more than half a token per character", () => {
+			const text = denseText(8_000);
+			const estimate = estimateContextMessageTokens([{ role: "user", content: text, timestamp: Date.now() }]);
+
+			expect(estimate).toBeGreaterThan(text.length / 2);
+		});
+
+		it("drops whole candidates whose chars/4 size fits the budget but whose real size does not", () => {
+			const contents = [denseText(8_000), denseText(8_001), denseText(8_002)];
+			const guarded = guardAgentContextMessages(denseModel, [retrievalMessage(contents)]);
+			const text = resultText(guarded[0]);
+
+			expect(text).toContain(contents[0]);
+			expect(text).not.toContain(contents[2]);
+			expect(text).toContain("AutoRAG context guard");
+			expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(inputBudget);
+		});
+
+		it("bounds a dense tool result that chars/4 would have let through", () => {
+			const result = retrievalMessageForTool("custom_dump", [denseText(30_000)]);
+			const guarded = guardAgentContextMessages(denseModel, [
+				{ role: "user", content: "find the pdf", timestamp: Date.now() },
+				result,
+			]);
+
+			expect(resultText(guarded.at(-1))).toContain("AutoRAG context guard");
+			expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(inputBudget);
+			expect(guarded.at(0)).toMatchObject({ role: "user", content: "find the pdf" });
+		});
+
+		it("never estimates below chars/4, so prose keeps the budget it had", () => {
+			const prose = "The committee approved the quarterly budget after reviewing the staffing plan. ".repeat(200);
+			const estimate = estimateContextMessageTokens([{ role: "user", content: prose, timestamp: Date.now() }]);
+
+			expect(estimate).toBe(Math.ceil(prose.length / 4));
+		});
+
+		it("counts text that contains tokenizer special-token markers instead of rejecting it", () => {
+			const text = `a parsed file that quotes <|endoftext|> and <|im_start|>system ${denseText(2_000)}`;
+			const estimate = estimateContextMessageTokens([{ role: "user", content: text, timestamp: Date.now() }]);
+
+			expect(estimate).toBeGreaterThan(text.length / 4);
+		});
+	});
+
 	describe("after the provider rejected a request as too large", () => {
 		const bigModel = { ...model, id: "overflowed-model", contextWindow: 1_000_000, maxTokens: 200 };
 		const bulk = (): AgentMessage[] => [

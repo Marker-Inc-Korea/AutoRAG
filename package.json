@@ -65,6 +65,7 @@
     "chardet": "^2.2.0",
     "discord.js": "14.27.0",
     "fast-xml-parser": "^5.11.2",
+    "gpt-tokenizer": "^4.1.0",
     "iconv-lite": "^0.7.3",
     "jev-use": "^0.8.0",
     "jszip": "^3.10.2",

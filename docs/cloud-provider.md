@@ -149,9 +149,19 @@ ratchets down on each further overflow), trimming the largest content first. The
 session record keeps the full tool result; only the request is trimmed. A 400 that
 gives another reason, or none, is not treated as an overflow.
 
-Verified by `test/live-e2e/dazzi-context-overflow.test.ts` (set
-`AUTORAG_DAZZI_OVERFLOW_LIVE=1` after `/login`), which sends ~2.2M characters of
-binary garbage to the real server.
+Before any overflow the guard sizes a request with the `o200k_base` BPE
+(`src/agent/token-count.ts`), never below pi's chars/4 guess. Text parsed from
+binaries and chat exports (punctuation, control characters, emoji, CJK, encoded
+blobs) runs 0.5 to 2 tokens per character, where chars/4 assumed 0.25. `o200k_base`
+is not every provider's tokenizer: against hosted models it measured within about
+20% of DeepSeek and GPT counts, but up to 1.9x under Claude's (prose, code, Korean,
+emoji) and 1.7x under Qwen's on emoji. The 1.2 headroom and the overflow ceiling
+above remain the backstop for a provider that counts more.
+
+`test/live-e2e/dazzi-context-overflow.test.ts` (set `AUTORAG_DAZZI_OVERFLOW_LIVE=1`
+after `/login`) sends a tool result of ~2.2M characters of binary garbage, about 1.2M
+tokens to the real server, and checks that the guard trims it before the request. The
+recovery above is covered offline by `test/agent/pi-session-dazzi-overflow.test.ts`.
 
 ## Defaults when signed in
 

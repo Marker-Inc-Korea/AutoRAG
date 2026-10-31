@@ -2,6 +2,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Model, SystemMessage } from "@earendil-works/pi-ai";
 import { calculateContextTokens, estimateTokens } from "@earendil-works/pi-coding-agent";
 import { contextOverflowCeiling, recordRequestEstimate } from "../cloud/context-overflow.ts";
+import { estimateTextTokens, tokensBeyondCharGuess } from "./token-count.ts";
 
 const CONTEXT_HEADROOM = 1.2;
 /**
@@ -138,7 +139,7 @@ function guardWithinBudget(
 
 		for (const [sectionIndex, section] of candidates.entries()) {
 			for (const block of section.blocks) {
-				const tokens = Math.max(1, Math.ceil(block.length / 4));
+				const tokens = Math.max(1, estimateTextTokens(block));
 				if (tokens <= remaining) {
 					kept[sectionIndex]?.push(block);
 					remaining -= tokens;
@@ -173,9 +174,11 @@ function guardWithinBudget(
 }
 
 /**
- * Estimate the current transcript with pi-coding-agent's conservative chars/4
- * counter. `useReportedUsage` adds the last assistant turn's provider-reported
- * usage for the settled prefix; pass false when the messages were just edited.
+ * Estimate the current transcript: pi-coding-agent's chars/4 counter as the
+ * floor, raised by a real BPE count for text that chars/4 undercounts (see
+ * `token-count.ts`). `useReportedUsage` adds the last assistant turn's
+ * provider-reported usage for the settled prefix; pass false when the messages
+ * were just edited.
  */
 export function estimateContextMessageTokens(messages: readonly AgentMessage[], useReportedUsage = false): number {
 	if (useReportedUsage) {
@@ -234,24 +237,27 @@ function trimFixedContext(messages: AgentMessage[], inputBudget: number): AgentM
 	return trimmed;
 }
 
+/** Re-measure at most this many times after sizing an excerpt before giving up and keeping only the marker. */
+const MAX_FIT_ATTEMPTS = 6;
+
 function fitMessageToTokens(message: AgentMessage, maxTokens: number): AgentMessage {
 	const original = textContent(message);
 	if (original === undefined) return stripNonTextContent(message);
 	const marker = `\n\n${GUARD_MARKER}\n`;
-	let low = 0;
-	let high = original.length;
-	let best = replaceTextContent(message, marker);
-	while (low <= high) {
-		const middle = Math.floor((low + high) / 2);
-		const candidate = replaceTextContent(message, excerpt(original, middle, marker));
-		if (estimateMessageTokens(candidate) <= maxTokens) {
-			best = candidate;
-			low = middle + 1;
-		} else {
-			high = middle - 1;
-		}
+	// Counting every probe of a binary search is far too slow for megabytes of dense text, so the
+	// excerpt is sized from the message's own tokens per character and then confirmed with a real
+	// count, shrinking while it still overshoots (head and tail can be denser than the average).
+	const overhead = estimateMessageTokens(replaceTextContent(message, ""));
+	const density = Math.max(0, estimateMessageTokens(message) - overhead) / Math.max(1, original.length);
+	let chars = density > 0 ? Math.floor((maxTokens - overhead) / density) : original.length;
+	for (let attempt = 0; attempt < MAX_FIT_ATTEMPTS && chars > 0; attempt++) {
+		const candidate = replaceTextContent(message, excerpt(original, chars, marker));
+		const tokens = estimateMessageTokens(candidate);
+		if (tokens <= maxTokens) return candidate;
+		const scaled = Math.floor(((chars * Math.max(0, maxTokens - overhead)) / Math.max(1, tokens - overhead)) * 0.98);
+		chars = Math.min(chars - 1, scaled);
 	}
-	return best;
+	return replaceTextContent(message, marker);
 }
 
 /**
@@ -284,22 +290,53 @@ function replaceMessageWithMarker(message: AgentMessage): AgentMessage {
 
 function estimateMessageTokens(message: AgentMessage): number {
 	if (message.role === "system") return estimateSystemMessageTokens(message);
-	const estimate = estimateTokens(message);
+	const estimate = estimateTokens(message) + tokensBeyondCharGuess(messageTextParts(message));
 	return message.role === "toolResult" ? estimate + Math.ceil(message.toolName.length / 4) : estimate;
 }
 
 function estimateSystemMessageTokens(message: SystemMessage): number {
-	let chars = typeof message.content === "string" ? message.content.length : 0;
-	if (Array.isArray(message.content)) {
+	const parts: string[] = [];
+	let chars = 0;
+	if (typeof message.content === "string") parts.push(message.content);
+	else {
 		for (const block of message.content) {
-			if (block.type === "text") chars += block.text.length;
+			if (block.type === "text") parts.push(block.text);
 			else if (block.type === "image") chars += 4_800;
 		}
 	}
-	chars += JSON.stringify(message.sections ?? {}).length;
-	chars += JSON.stringify(message.toolsAdded ?? []).length;
-	chars += JSON.stringify(message.toolsRemoved ?? []).length;
-	return Math.ceil(chars / 4);
+	parts.push(
+		JSON.stringify(message.sections ?? {}),
+		JSON.stringify(message.toolsAdded ?? []),
+		JSON.stringify(message.toolsRemoved ?? []),
+	);
+	for (const part of parts) chars += part.length;
+	return Math.ceil(chars / 4) + tokensBeyondCharGuess(parts);
+}
+
+/** The text pi's chars/4 estimate counts for a non-system message, one string per piece. */
+function messageTextParts(message: AgentMessage): string[] {
+	switch (message.role) {
+		case "user":
+		case "custom":
+		case "toolResult":
+			return typeof message.content === "string"
+				? [message.content]
+				: message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+		case "assistant":
+			return message.content.flatMap((block) => {
+				if (block.type === "text") return [block.text];
+				if (block.type === "thinking") return [block.thinking];
+				if (block.type === "toolCall") return [`${block.name}${JSON.stringify(block.arguments)}`];
+				return [];
+			});
+		case "bashExecution":
+			return [message.command, message.output];
+		case "branchSummary":
+		case "compactionSummary":
+			return [message.summary];
+		default:
+			return [];
+	}
 }
 
 function findLastAssistantUsage(

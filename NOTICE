@@ -36,6 +36,9 @@ License: Apache-2.0
 fast-xml-parser@5.11.2
 License: MIT
 
+gpt-tokenizer@4.1.0
+License: MIT
+
 iconv-lite@0.7.3
 License: MIT
 
