@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { basename, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { CloudFileProbe } from "../filesystem/cloud-placeholder.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -21,6 +22,7 @@ import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput } from "../parser/types.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
+import { CloudGate } from "./cloud.ts";
 import {
 	loadMirrorIndex,
 	mirrorIndexFromStage,
@@ -118,6 +120,24 @@ export interface ParsedMirrorSyncOptions {
 	readonly transientRetries?: number;
 	/** Base delay between transient retries; doubles per retry. Default 50ms. */
 	readonly transientRetryBackoffMs?: number;
+	/**
+	 * Cloud-aware handling of File Provider placeholders (files whose data is not on disk; reading one
+	 * downloads it). `undefined` means the platform default: macOS probes with `stat`/`brctl`, other
+	 * platforms read every file as before. Tests inject their own probe.
+	 */
+	readonly cloudProbe?: CloudFileProbe;
+	/** Most placeholders one refresh may download. Default {@link DEFAULT_CLOUD_MAX_FILES}. */
+	readonly cloudMaxFiles?: number;
+	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default {@link DEFAULT_CLOUD_MAX_BYTES}. */
+	readonly cloudMaxBytes?: number;
+	/** Release an iCloud file again once it is parsed and indexed. Default true. */
+	readonly cloudEvictAfterParse?: boolean;
+	/** Retries after a failed release (`brctl evict`), with doubling waits; `0` tries once. Default 3. */
+	readonly cloudEvictRetries?: number;
+	/** First wait before retrying a failed release, doubled each retry. Default 500 ms. */
+	readonly cloudEvictBackoffMs?: number;
+	/** Wait used between release retries. Tests inject a recorder so they never really sleep. */
+	readonly cloudSleep?: (ms: number) => Promise<void>;
 }
 
 /** Parse-phase progress. Every scanned file counts as processed, whether parsed, unchanged, skipped or excluded. */
@@ -150,7 +170,10 @@ export type ParsedMirrorDiagnosticCode =
 	| "search-root-unavailable"
 	| "mass-delete-suppressed"
 	| "walk-truncated"
-	| "directory-unreadable";
+	| "directory-unreadable"
+	| "cloud-download-deferred"
+	| "cloud-placeholder-skipped"
+	| "cloud-evict-failed";
 
 /**
  * Refresh diagnostic. `source` is an opaque virtual path, never a real filesystem path.
@@ -180,6 +203,8 @@ interface CurrentEntry {
 	readonly mtimeNs: number;
 	readonly sourceVersion: string;
 	readonly statIdentity: string;
+	/** Same as {@link statIdentity} without ctime; see {@link contentIdentity}. */
+	readonly contentIdentity: string;
 }
 
 const PARSER_FAILURE_MESSAGE = "The registered parser failed on this file; it was skipped during indexing.";
@@ -310,6 +335,17 @@ function statIdentity(info: BigIntStats): string {
 	return [info.size, info.mtimeNs, info.ctimeNs, info.ino, info.dev].join(":");
 }
 
+/**
+ * Identity of a placeholder's content across the download that reading it causes. Measured on macOS 26 with
+ * iCloud Drive: hydrating a file moves ctime every time, and the first hydrate of a file also shifts mtime
+ * by tens of nanoseconds (size, inode and device stay put) because the provider rounds the timestamp to the
+ * precision the cloud keeps. So ctime is left out and mtime is compared to the second; a real edit changes
+ * size or the mtime second.
+ */
+function contentIdentity(info: BigIntStats): string {
+	return [info.size, info.mtimeNs / 1_000_000_000n, info.ino, info.dev].join(":");
+}
+
 type SourceOmission = { reason: ParsedMirrorSkipReason; diagnostic?: Omit<ParsedMirrorDiagnostic, "source"> };
 
 function sourcePlan(
@@ -390,6 +426,15 @@ async function syncWithRegistry(
 	}
 	const transientRetries = Math.max(0, options.transientRetries ?? DEFAULT_TRANSIENT_RETRIES);
 	const transientBackoffMs = options.transientRetryBackoffMs ?? DEFAULT_TRANSIENT_BACKOFF_MS;
+	const gate = new CloudGate({
+		probe: options.cloudProbe,
+		maxFiles: options.cloudMaxFiles,
+		maxBytes: options.cloudMaxBytes,
+		evictAfterParse: options.cloudEvictAfterParse,
+		evictRetries: options.cloudEvictRetries,
+		evictBackoffMs: options.cloudEvictBackoffMs,
+		sleep: options.cloudSleep,
+	});
 	const fingerprint = parseFingerprint(options);
 	const failureFingerprint = retryFingerprint(options, fingerprint);
 	const { versions, omitted } = sourcePlan(current, registry, options);
@@ -483,6 +528,9 @@ async function syncWithRegistry(
 					source: path,
 				});
 		}
+		await gate.classify(
+			current.filter((entry) => pending.has(mirrorStageKey(entry.virtualPath))).map((entry) => entry.sourcePath),
+		);
 		for (const [position, entry] of current.entries()) {
 			options.onProgress?.({
 				processed: position,
@@ -520,6 +568,30 @@ async function syncWithRegistry(
 			}
 			const parser = registry.getForVirtualPath(entry.virtualPath)!;
 			const outputPath = parsedOutputPath(options.root, entry.virtualPath);
+			const cloudDecision = pending.has(mirrorStageKey(entry.virtualPath))
+				? await gate.decide(entry.sourcePath, entry.sizeBytes, dirname(entry.sourcePath))
+				: ({ kind: "local" } as const);
+			if (cloudDecision.kind === "skip") {
+				skipped += 1;
+				diagnostics.push({
+					code: "cloud-placeholder-skipped",
+					severity: "info",
+					message: `The file is not downloaded and its provider cannot be released again, so it was not read; its last indexed copy was kept. Make it available offline to index it.`,
+					source: entry.virtualPath,
+					...(cloudDecision.provider === undefined ? {} : { reason: cloudDecision.provider }),
+				});
+				continue;
+			}
+			if (cloudDecision.kind === "defer") {
+				skipped += 1;
+				diagnostics.push({
+					code: "cloud-download-deferred",
+					severity: "info",
+					message: "The download budget for this refresh is used up; the file stays queued for the next refresh.",
+					source: entry.virtualPath,
+				});
+				continue;
+			}
 			if (pending.has(mirrorStageKey(entry.virtualPath))) {
 				let bytes: Awaited<ReturnType<typeof readFile>>;
 				try {
@@ -576,7 +648,11 @@ async function syncWithRegistry(
 					await skipFile(entry, sourceReadFailure(error));
 					continue;
 				}
-				if (statIdentity(info) !== entry.statIdentity) {
+				const unchanged =
+					cloudDecision.kind === "download"
+						? contentIdentity(info) === entry.contentIdentity
+						: statIdentity(info) === entry.statIdentity;
+				if (!unchanged) {
 					skipped += 1;
 					diagnostics.push({
 						code: "source-changed",
@@ -618,6 +694,17 @@ async function syncWithRegistry(
 				for (const diagnostic of parsed.diagnostics ?? [])
 					diagnostics.push({ ...diagnostic, source: entry.virtualPath });
 				written += 1;
+				if (cloudDecision.kind === "download" && gate.evictAfterParse) {
+					const released = await gate.release(entry.sourcePath);
+					if (!released.ok) {
+						diagnostics.push({
+							code: "cloud-evict-failed",
+							severity: "warning",
+							message: `The file was indexed but its local copy could not be released: ${released.message}`,
+							source: entry.virtualPath,
+						});
+					}
+				}
 			}
 		}
 		await session.finish();
@@ -959,6 +1046,7 @@ async function collectFiles(state: WalkState, directory: string, depth: number):
 				mtimeNs: Number(fileStat.mtimeNs),
 				sourceVersion: sourceVersion(fileStat),
 				statIdentity: statIdentity(fileStat),
+				contentIdentity: contentIdentity(fileStat),
 			});
 		}
 	} catch (error) {

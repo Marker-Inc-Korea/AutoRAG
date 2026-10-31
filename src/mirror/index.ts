@@ -1,3 +1,5 @@
+export type { CloudEvictResult, CloudFileProbe, CloudProvider } from "../filesystem/cloud-placeholder.ts";
+export { DEFAULT_CLOUD_MAX_BYTES, DEFAULT_CLOUD_MAX_FILES } from "./cloud.ts";
 export type { ParsedMirrorEntry, ParsedMirrorIndex } from "./index-store.ts";
 export { emptyMirrorIndex, loadMirrorIndex } from "./index-store.ts";
 export {

@@ -857,6 +857,10 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	maxScannedEntries: true,
 	maxDepth: true,
 	transientRetries: true,
+	cloudMaxFiles: true,
+	cloudMaxBytes: true,
+	cloudEvictAfterParse: true,
+	cloudEvictRetries: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -890,11 +894,28 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	) {
 		throw new ConfigError("refresh.transientRetries must be a non-negative integer");
 	}
+	const cloudMaxFiles = positiveLimitField(record, "cloudMaxFiles", "refresh");
+	const cloudMaxBytes = positiveLimitField(record, "cloudMaxBytes", "refresh");
+	const cloudEvictAfterParse = record.cloudEvictAfterParse;
+	if (cloudEvictAfterParse !== undefined && typeof cloudEvictAfterParse !== "boolean") {
+		throw new ConfigError("refresh.cloudEvictAfterParse must be a boolean");
+	}
+	const cloudEvictRetries = record.cloudEvictRetries;
+	if (
+		cloudEvictRetries !== undefined &&
+		(typeof cloudEvictRetries !== "number" || !Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)
+	) {
+		throw new ConfigError("refresh.cloudEvictRetries must be a non-negative integer");
+	}
 	return {
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
 		...(transientRetries !== undefined ? { transientRetries } : {}),
+		...(cloudMaxFiles !== undefined ? { cloudMaxFiles } : {}),
+		...(cloudMaxBytes !== undefined ? { cloudMaxBytes } : {}),
+		...(cloudEvictAfterParse !== undefined ? { cloudEvictAfterParse } : {}),
+		...(cloudEvictRetries !== undefined ? { cloudEvictRetries } : {}),
 	};
 }
 
