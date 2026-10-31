@@ -372,6 +372,115 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 	});
 });
 
+describe("AutoRAGAgent Jikji candidate evidence and confidence (#2060)", () => {
+	const tool = { next_read: "original" } as const;
+
+	function packFor(paths: readonly string[], extra: Record<string, unknown> = {}): Record<string, unknown> {
+		return {
+			answer_paths: paths,
+			paths,
+			candidates: paths.map((path, index) => ({
+				p: path,
+				next_read: tool.next_read,
+				ev: `evidence of ${path}`,
+				rank: index + 1,
+				s: 10 - index,
+			})),
+			evidence_pack: paths.map((path) => ({ path, next_read: tool.next_read, evidence: [`evidence of ${path}`] })),
+			handoff_action: "direct_use",
+			tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+			agent_should_not_rerank: false,
+			...extra,
+		};
+	}
+
+	function agentFor(searchPaths: string[], excludePaths: string[] = []): AutoRAGAgent {
+		return new AutoRAGAgent({
+			searchPaths,
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+			excludePaths,
+			everything: false,
+			fsearch: false,
+		});
+	}
+
+	it("keeps candidate evidence and confidence through the merge, and drops excluded evidence with its path", async () => {
+		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
+		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");
+		writeFakeJikji(
+			packFor(["keep-notes.txt", "secret-plan.txt"], {
+				confidence: "high",
+				confidence_score: 0.9,
+				answerability: "answerable_from_payload",
+				requires_llm_rerank: false,
+			}),
+		);
+		const agent = agentFor([docs], [join(docs, "secret-plan.txt")]);
+
+		const pack = (await agent.findJikji("plans")).answerPack;
+
+		const keep = realpathSync(join(docs, "keep-notes.txt"));
+		expect(pack?.candidates).toEqual([
+			{ path: keep, nextRead: "original", score: 10, rank: 1, evidence: "evidence of keep-notes.txt" },
+		]);
+		expect(JSON.stringify(pack)).not.toContain("secret-plan");
+		expect(pack?.confidence).toEqual({
+			level: "high",
+			score: 0.9,
+			answerability: "answerable_from_payload",
+			requiresLlmRerank: false,
+		});
+	});
+
+	it("merges confidence across roots to the weakest root and ORs requires_llm_rerank", async () => {
+		const second = join(root, "notes");
+		mkdirSync(second, { recursive: true });
+		writeFileSync(join(docs, "a.txt"), "a\n");
+		writeFileSync(join(second, "b.txt"), "b\n");
+		const strong = packFor(["a.txt"], {
+			confidence: "high",
+			confidence_score: 0.9,
+			answerability: "answerable_from_payload",
+			recommended_action: "verify_top_candidates",
+			requires_llm_rerank: false,
+		});
+		const weak = packFor(["b.txt"], {
+			confidence: "low",
+			confidence_score: 0.2,
+			answerability: "needs_one_jikji_retry",
+			recommended_action: "retry",
+			requires_llm_rerank: true,
+		});
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+const strong = ${JSON.stringify(strong)};
+const weak = ${JSON.stringify(weak)};
+console.log(JSON.stringify(args[0] === "find" ? (args[1].endsWith("notes") ? weak : strong) : { prepared: true }));
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const pack = (await agentFor([docs, second]).findJikji("anything")).answerPack;
+
+		expect(pack?.candidates.map((candidate) => candidate.evidence)).toEqual([
+			"evidence of a.txt",
+			"evidence of b.txt",
+		]);
+		expect(pack?.confidence).toEqual({
+			level: "low",
+			score: 0.2,
+			answerability: "needs_one_jikji_retry",
+			recommendedAction: "retry",
+			requiresLlmRerank: true,
+		});
+	});
+});
+
 describe("AutoRAGAgent Jikji prepare budget and lifecycle (#1894)", () => {
 	function writeBehaviorJikji(body: string): void {
 		writeFileSync(

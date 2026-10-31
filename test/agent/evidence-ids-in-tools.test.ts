@@ -135,6 +135,48 @@ describe("retrieval tools issue evidence ids", () => {
 		expect(resolve(ledger, "e1")).toMatchObject({ source: "/docs/refund.txt", method: "jikji_find" });
 	});
 
+	it("jikji_find prints each candidate's evidence text and registers it as the citation content", async () => {
+		const tool = createJikjiFindTool(
+			{
+				findJikji: async () => ({
+					answerPack: {
+						answerPaths: ["/docs/refund.txt", "/docs/bare.txt"],
+						paths: ["/docs/refund.txt", "/docs/bare.txt"],
+						candidates: [
+							{
+								path: "/docs/refund.txt",
+								nextRead: "original",
+								label: "Refund policy",
+								evidence: "Refund exceptions require director approval",
+								why: ["fielded-bm25"],
+								matchedTerms: ["refund"],
+							},
+							{ path: "/docs/bare.txt", nextRead: "original" },
+						],
+						evidencePack: [],
+						handoffAction: "raw_fallback_after_retry",
+						confidence: { level: "high", score: 0.9 },
+					},
+					policy: undefined,
+					diagnostics: [],
+					perRoot: [],
+				}),
+			} as never,
+			ledger,
+		);
+
+		const text = textOf(await tool.execute("c1", { query: "refund" }));
+
+		expect(text).toContain(
+			"- [e1] /docs/refund.txt (next_read: original)\n  Refund exceptions require director approval",
+		);
+		expect(text).toMatch(/- \[e2\] \/docs\/bare\.txt \(next_read: original\)\n(?! {2})/u);
+		// Only the evidence text goes to the model; reasons, terms and confidence stay in details.
+		expect(text).not.toContain("fielded-bm25");
+		expect(text).not.toContain("0.9");
+		expect(resolve(ledger, "e1")).toMatchObject({ content: "Refund exceptions require director approval" });
+	});
+
 	it("web_search prints an id per source and records the url as the source", async () => {
 		registerSearchProvider({
 			id: "duckduckgo",
