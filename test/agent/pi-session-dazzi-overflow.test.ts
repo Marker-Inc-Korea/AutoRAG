@@ -16,8 +16,14 @@ const REJECTED_BODY_CHARS = 200_000;
 /** chars / 4 reads this as 60k tokens, comfortably inside the window, so only the server knows it is too big. */
 const HUGE_RESULT = "\u0000\ufffd\u0001spotlight pdf bytes ".repeat(10_000);
 
-const GENERIC_REJECTION = {
-	error: { message: "Provider returned error", type: "invalid_request_error", code: "upstream_rejected_request" },
+/** What the hosted server answers when the upstream provider says the input is longer than the model's window. */
+const CONTEXT_EXCEEDED = {
+	error: {
+		message:
+			"This model's maximum context length is 1048576 tokens, but the request resolved to 1244118 input tokens.",
+		type: "invalid_request_error",
+		code: "context_length_exceeded",
+	},
 };
 
 let root: string;
@@ -97,12 +103,12 @@ function lastAssistantText(messages: readonly AgentMessage[]): string {
 }
 
 describe("pi session on Dazzi when a tool result overflows the context", () => {
-	it("compacts and retries on the server's reasonless 400, then answers", async () => {
+	it("compacts, trims the oversized result and retries after the server's context_length_exceeded, then answers", async () => {
 		const requests: FakeRequest[] = [];
 		server = await startFakeServer((request): FakeResponse => {
 			requests.push(request);
 			if (request.url !== "/v1/responses") return { status: 404, body: {} };
-			if (request.body.length > REJECTED_BODY_CHARS) return { status: 400, body: GENERIC_REJECTION };
+			if (request.body.length > REJECTED_BODY_CHARS) return { status: 400, body: CONTEXT_EXCEEDED };
 			const summarizing = request.body.includes("checkpoint");
 			if (summarizing) return { headers: SSE_HEADERS, rawBody: responsesTextStream("## Goal\nfind the PDF") };
 			const hasToolOutput = request.body.includes("function_call_output");
@@ -133,11 +139,6 @@ describe("pi session on Dazzi when a tool result overflows the context", () => {
 
 			await hosted.session.prompt("PDF 찾아줘");
 			await hosted.session.agent.waitForIdle();
-			console.log(
-				"DBG",
-				requests.map((r) => r.body.length),
-				JSON.stringify(hosted.session.messages.map((m) => [m.role, JSON.stringify(m).length])),
-			);
 
 			expect(compactions).toEqual(["overflow:true:"]);
 			// prompt, the oversized follow-up the server rejects, the summary, the trimmed retry

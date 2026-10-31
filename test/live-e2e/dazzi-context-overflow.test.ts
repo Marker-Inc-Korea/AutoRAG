@@ -8,8 +8,8 @@
  *
  * A tool returns ~2.2M characters of PDF-like binary garbage. autorag's chars/4
  * estimate reads that as ~550k tokens, so it is sent, and the upstream provider
- * rejects it (the 2026-10-31 incident: HTTP 400 "Provider returned error",
- * `upstream_rejected_request`, no reason). The session must compact, trim the
+ * rejects it (the 2026-10-31 incident: the server answers 400
+ * `context_length_exceeded`). The session must compact, trim the
  * oversized result, retry, and answer on its own.
  *
  * The login is copied into a temp agent dir, so the real one is never written.
@@ -67,7 +67,7 @@ describe.skipIf(!LIVE)("Dazzi context overflow live e2e (real API)", () => {
 		if (agentDir !== undefined) rmSync(agentDir, { recursive: true, force: true });
 	});
 
-	it("compacts, trims the oversized tool result and answers after the upstream's reasonless 400", async () => {
+	it("compacts, trims the oversized tool result and answers after the server's context_length_exceeded", async () => {
 		const runtime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),

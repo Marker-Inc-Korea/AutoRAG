@@ -137,24 +137,17 @@ any model that declares them.
 
 ### Context overflow
 
-When a request is larger than the model's context window, pi compacts the
-conversation and retries once. pi decides that from the provider's error text, and
-the hosted server cannot always supply it: when the upstream provider rejects an
-oversized request, the server relays only OpenRouter's generic
-`400 upstream_rejected_request` / `Provider returned error`, with no reason.
-
-The `dazzi` provider (`src/cloud/context-overflow.ts`) therefore appends
-`context_length_exceeded` to that error, but only when the request payload is at
-least `contextWindow / 2` characters, the smallest size that can overflow the
-window at 2 tokens per character. A 400 that states its own reason (for example
-"Reasoning is mandatory") and any small request are left as they are. An HTTP 413 and
-an explicit `context_length_exceeded` code already read as overflows to pi.
+When a request is larger than the model's context window, the hosted server answers
+`400 context_length_exceeded` (HTTP 413 for an oversized body) with the provider's own
+message, and pi compacts the conversation and retries once.
 
 Compaction keeps recent turns whole, so an oversized tool result that is the latest
-turn survives it. After an overflow the context guard therefore holds that model's
-requests to half the estimated size of the one that failed (it ratchets down on each
-further overflow), trimming the largest content first. The session record keeps the
-full tool result; only the request is trimmed.
+turn survives it and the retry would be rejected again. The `dazzi` provider
+(`src/cloud/context-overflow.ts`) therefore notes each overflow, and the context guard
+then holds that model's requests to half the estimated size of the one that failed (it
+ratchets down on each further overflow), trimming the largest content first. The
+session record keeps the full tool result; only the request is trimmed. A 400 that
+gives another reason, or none, is not treated as an overflow.
 
 Verified by `test/live-e2e/dazzi-context-overflow.test.ts` (set
 `AUTORAG_DAZZI_OVERFLOW_LIVE=1` after `/login`), which sends ~2.2M characters of
