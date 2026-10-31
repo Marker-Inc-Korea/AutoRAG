@@ -98,7 +98,7 @@ credential for).
 | `vercel-ai-gateway`     | `AI_GATEWAY_API_KEY`          | `typesafe-ai/jev-1.13.0` | `openai/gpt-6-luna-decisions`, `liquid/d1`, `baseten/mammoth-1`, `convaiinnovations/laya`        |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | `typesafe/jev` | `@cf/cloudflare/clef`, `@cf/cloudflare/clef-flash`                                  |
 | `opencode`              | `OPENCODE_API_KEY`            | `jev-1.13`               | `jev-1.13-free`                                                                                  |
-| `dazzi`                 | stored `/login` credential    | `jev-1.13`               | the hosted plan's native endpoint `<root>/v1/jev` (`AUTORAG_BASE_URL`)                           |
+| `dazzi`                 | stored `/login` credential    | `jev-1.13`               | every model the hosted plan serves at `<root>/v1/jev` (`AUTORAG_BASE_URL`), e.g. `openai/gpt-6-luna-decisions`, `liquid/d1`; `autorag models list --decision --provider dazzi` asks it which |
 
 A credential stored in pi's `auth.json` works as well as the environment
 variable, and a provider `baseUrl` in pi's `models.json` (for example

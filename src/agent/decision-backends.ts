@@ -160,19 +160,20 @@ export class PiDecisionBackend implements JevBackend {
 	async judge(request: BackendRequest): Promise<BackendResponse> {
 		const runtime = this.runtime ?? (await runtimeFor(this.agentDir ?? getAgentDir()));
 		const catalog = runtime.getModelsOfType("classifier", this.name);
-		if (catalog.length === 0) {
+		const template = catalog[0];
+		if (template === undefined) {
 			throw new BackendError(this.name, `HTTP 404: ${this.name} has no decision models in pi's model catalog`, 404);
 		}
-		const id = request.model ?? this.modelId ?? DECISION_PROVIDER_DEFAULT_MODELS[this.name] ?? catalog[0]?.id;
-		const model = catalog.find((candidate) => candidate.id === id);
-		if (model === undefined) {
-			const known = catalog.map((candidate) => candidate.id).join(", ");
-			throw new BackendError(
-				this.name,
-				`HTTP 404: ${this.name} has no decision model "${id}"; its decision models: ${known}`,
-				404,
-			);
-		}
+		const id = request.model ?? this.modelId ?? DECISION_PROVIDER_DEFAULT_MODELS[this.name] ?? template.id;
+		// A model released after this pi-ai build is not in its catalog yet; it is asked on the provider's own
+		// wire anyway, and a provider that does not serve it answers with its own "model not found".
+		const model = catalog.find((candidate) => candidate.id === id) ?? {
+			...template,
+			id,
+			name: id,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		};
 		// pi types the state as a JSON object; System One takes a string or an array verbatim, and OpenAI's
 		// input is set to the raw text below, so jev-use's state is passed through as it is.
 		const state = request.state as unknown as JsonObject;

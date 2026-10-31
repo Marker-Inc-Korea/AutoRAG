@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runModels } from "../../src/cli/commands/models.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { buildStoreEntry, mapServerModels } from "../../src/cloud/models.ts";
+import { startFakeServer } from "../cloud/helpers/fake-server.ts";
 
 function context(positionals: string[], flags: CommandContext["flags"] = {}) {
 	const stdout: string[] = [];
@@ -119,6 +120,64 @@ describe("models commands", () => {
 			// No chat model is a decision model.
 			expect(ids).not.toContain("openrouter/qwen/qwen3.7-flash");
 		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("lists the decision models the signed-in hosted plan serves, and only the default when it cannot be asked", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "autorag-models-dazzi-decision-"));
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const server = await startFakeServer((request) =>
+			request.url === "/v1/models?operation=jev" && request.headers.authorization === "Bearer dz_login"
+				? {
+						body: {
+							object: "list",
+							data: [
+								{ id: "jev-1.13", object: "model", description: "Jev 1.13 from TypeSafe. Decision model." },
+								{
+									id: "openai/gpt-6-luna-decisions",
+									object: "model",
+									description: "GPT-6 Luna served through OpenAI's Decisions API.",
+								},
+							],
+						},
+					}
+				: { status: 401, body: { error: { message: "bad key" } } },
+		);
+		vi.stubEnv("AUTORAG_BASE_URL", server.url);
+		try {
+			writeFileSync(
+				join(agentDir, "auth.json"),
+				JSON.stringify({
+					dazzi: { type: "oauth", access: "dz_login", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+				}),
+			);
+			const signedIn = context(["list"], { decision: true, provider: "dazzi", json: true });
+			expect(await runModels(signedIn.ctx)).toBe(0);
+			expect(JSON.parse(signedIn.stdout[0] ?? "{}").models).toEqual([
+				{ provider: "dazzi", id: "jev-1.13", name: "Jev 1.13 from TypeSafe", api: "jev", available: true },
+				{
+					provider: "dazzi",
+					id: "openai/gpt-6-luna-decisions",
+					name: "GPT-6 Luna served through OpenAI's Decisions API",
+					api: "jev",
+					available: true,
+				},
+			]);
+
+			// The server cannot be asked (offline, or the key was revoked): the hosted default stays listed.
+			await server.close();
+			const offline = context(["list"], { decision: true, provider: "dazzi", json: true });
+			expect(await runModels(offline.ctx)).toBe(0);
+			expect(JSON.parse(offline.stdout[0] ?? "{}").models.map((model: { id: string }) => model.id)).toEqual([
+				"jev-1.13",
+			]);
+		} finally {
+			vi.unstubAllEnvs();
+			await server.close().catch(() => undefined);
 			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 			rmSync(agentDir, { recursive: true, force: true });

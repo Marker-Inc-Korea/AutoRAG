@@ -210,17 +210,36 @@ describe("PiDecisionBackend over OpenAI's Decisions API", () => {
 });
 
 describe("PiDecisionBackend failures", () => {
-	it("fails as model-not-found for a model the provider's catalog lacks, listing what it has", async () => {
+	it("asks the provider for a decision model newer than pi's catalog, on the provider's own wire", async () => {
+		server = await startFakeServer(() => ({
+			body: { model: "liquid/d1.1-20261027", answers: { probe: { type: "noul", noul: 0.7 } } },
+		}));
+		const backend = new PiDecisionBackend({
+			provider: "openrouter",
+			model: "liquid/d1.1",
+			runtime: pointedAt(server.url),
+			env: { OPENROUTER_API_KEY: "or-test-key" },
+		});
+		const judgment = await createJevJudge({ backend })("x", [{ id: "probe", type: "noul", question: "ok?" }]);
+		expect(server.requests[0]?.url).toBe("/systemone");
+		expect(server.requests[0]?.json).toMatchObject({ model: "liquid/d1.1" });
+		expect(judgment.answers.probe?.answer).toBe(0.7);
+	});
+
+	it("fails as model-not-found when the provider does not serve the model", async () => {
+		server = await startFakeServer(() => ({
+			status: 400,
+			body: { error: { message: "Model typesafe/jev-0.0-nope does not exist", code: 400 } },
+		}));
 		const backend = new PiDecisionBackend({
 			provider: "openrouter",
 			model: "typesafe/jev-0.0-nope",
-			runtime: pointedAt("http://127.0.0.1:9"),
+			runtime: pointedAt(server.url),
 			env: { OPENROUTER_API_KEY: "or-test-key" },
 		});
 		const error = await unavailable(checkDecisionModel(createJevJudge({ backend })));
 		expect(error.reason).toBe("model-not-found");
-		expect(error.detail).toContain("typesafe/jev-0.0-nope");
-		expect(error.detail).toContain("openai/gpt-6-luna-decisions");
+		expect(error.detail).toContain("typesafe/jev-0.0-nope does not exist");
 	});
 
 	it("fails as model-not-found for a provider with no decision models", async () => {

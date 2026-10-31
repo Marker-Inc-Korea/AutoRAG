@@ -267,7 +267,8 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --provider <id>  Restrict `list` to one provider",
 		"  --available      With `list`, show only providers with configured credentials",
 		"  --decision       With `list`, show decision models (jev.backend / jev.model",
-		"                   candidates, e.g. openai/gpt-6-luna) instead of chat models",
+		"                   candidates, e.g. openai/gpt-6-luna) instead of chat models;",
+		"                   signed in to Dazzi Models, the hosted plan lists its own",
 		"  --format json    Emit machine-readable JSON",
 	]),
 	"update-check": usage([
