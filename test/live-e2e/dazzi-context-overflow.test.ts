@@ -107,4 +107,60 @@ describe.skipIf(!LIVE)("Dazzi context overflow live e2e (real API)", () => {
 			await hosted.dispose();
 		}
 	}, 600_000);
+
+	it("drops the lowest-ranked chunks of an oversized retrieval result and keeps the user's earlier message", async () => {
+		const runtime = await ModelRuntime.create({
+			authPath: join(agentDir, "auth.json"),
+			modelsPath: join(agentDir, "models.json"),
+			allowModelNetwork: false,
+		});
+		await registerDazziProvider(runtime);
+		const model = runtime.getModel("dazzi", DEFAULT_DAZZI_CHAT_MODEL_ID);
+		if (model === undefined)
+			throw new Error(`${DEFAULT_DAZZI_CHAT_MODEL_ID} is missing from the stored Dazzi catalog`);
+
+		// 40 ranked chunks of ~60k characters: about 1.3M tokens, over the 1,048,576-token window.
+		const rankedTool: AgentTool = {
+			name: "search_datasource_ranked",
+			label: "Ranked files",
+			description: "Search files. Always call this once for any file question.",
+			parameters: Type.Object({ query: Type.Optional(Type.String()) }),
+			async execute() {
+				const text = Array.from(
+					{ length: 40 },
+					(_unused, index) => `[${index + 1}] /docs/${index + 1}.pdf score=0.9\n${GARBAGE.slice(0, 60_000)}`,
+				).join("\n\n");
+				return { content: [{ type: "text", text }], details: {} };
+			},
+		};
+		const hosted = await createAutoRAGPiSession({
+			cwd: agentDir,
+			agentDir,
+			model,
+			apiKey: readDazziLoginToken(agentDir),
+			getSystemPrompt: () =>
+				"You are a file librarian. For a file question use the search tool once, then answer in one short sentence without repeating any code word.",
+			customTools: [rankedTool],
+		});
+		try {
+			hosted.session.setThinkingLevel("low");
+			await hosted.session.prompt("The code word is ZEBRA-7731. Find my graduation PDF with the search tool.");
+			await hosted.session.agent.waitForIdle();
+			await hosted.session.prompt(
+				"What was the code word in my first message? Answer with just the code word, no tools.",
+			);
+			await hosted.session.agent.waitForIdle();
+
+			const turns = hosted.session.messages.filter(isAssistantMessage);
+			expect(turns.filter((turn) => turn.stopReason === "error")).toEqual([]);
+			const largestRequest = Math.max(...turns.map((turn) => turn.usage.input));
+			expect(largestRequest).toBeGreaterThan(500_000);
+			expect(largestRequest).toBeLessThanOrEqual(model.contextWindow);
+			const last = turns.at(-1);
+			const answer = last?.content.map((block) => (block.type === "text" ? block.text : "")).join("") ?? "";
+			expect(answer).toContain("ZEBRA-7731");
+		} finally {
+			await hosted.dispose();
+		}
+	}, 900_000);
 });

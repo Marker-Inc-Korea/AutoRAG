@@ -14,8 +14,6 @@ const CONTEXT_HEADROOM = 1.2;
  * the model to this cap keeps the request the guard budgeted for.
  */
 export const MAX_OUTPUT_TOKENS = 32_000;
-/** The user's query keeps at least this many tokens even when the budget is exhausted. */
-const MIN_QUERY_TOKENS = 2_000;
 const GUARD_MARKER = "[AutoRAG context guard: omitted context to stay within the model context budget.]";
 const RETRIEVAL_TOOL_PREFIX = "search_datasource_";
 const RETRIEVAL_TOOL_NAMES: Record<string, true> = {
@@ -29,10 +27,17 @@ const RETRIEVAL_TOOL_NAMES: Record<string, true> = {
 
 type ContextTokenGuardModel = Model<any> | (() => Model<any> | undefined) | undefined;
 
+/** One retrieved chunk as it appears in the text, with its position in the list it came from. */
+interface CandidateBlock {
+	readonly text: string;
+	/** 0 for the best chunk of its own ranked list, 1 for the next. */
+	readonly rank: number;
+}
+
 interface CandidateSection {
 	readonly prefix: string;
 	readonly suffix: string;
-	readonly blocks: readonly string[];
+	readonly blocks: readonly CandidateBlock[];
 }
 
 /**
@@ -60,9 +65,12 @@ export function withBoundedOutput<T extends Model<any> | undefined>(model: T): T
 }
 
 /**
- * Keep complete retrieval candidates while the assembled request fits the
- * model budget. Removing a per-chunk cut is only safe because this drops whole
- * lower-ranked candidates (with an explicit marker) instead of hiding text.
+ * Keep the request inside the model budget by dropping retrieval chunks only: the
+ * lowest-ranked ones go first, across every ranked list in the transcript (every
+ * list's best chunk stays before any list's second), each with an explicit marker.
+ * The user's query, earlier turns, and the system prompt are never edited. When no
+ * chunk is left to drop, only the newest tool result is shortened; anything still
+ * too large is left for the provider to reject and pi's compaction to recover.
  */
 export function guardAgentContextMessages(
 	model: Model<any> | undefined,
@@ -129,48 +137,43 @@ function guardWithinBudget(
 
 	let guarded = messages;
 	if (candidates.length > 0) {
-		const fixedTokens = estimateContextMessageTokens(base, false);
-		const maximumOmitted = candidates.reduce((total, section) => total + section.blocks.length, 0);
+		const entries = candidates.flatMap((section, sectionIndex) =>
+			section.blocks.map((block, blockIndex) => ({ block, sectionIndex, blockIndex })),
+		);
 		const omissionMarker = (count: number): string => `\n\n${GUARD_MARKER} Retrieval candidates omitted: ${count}.\n`;
-		let remaining = Math.max(0, budget - fixedTokens - Math.ceil(omissionMarker(maximumOmitted).length / 4));
-		const kept: string[][] = candidates.map(() => []);
-		let omitted = 0;
-		let firstOmitted = -1;
-
-		for (const [sectionIndex, section] of candidates.entries()) {
-			for (const block of section.blocks) {
-				const tokens = Math.max(1, estimateTextTokens(block));
-				if (tokens <= remaining) {
-					kept[sectionIndex]?.push(block);
-					remaining -= tokens;
-					continue;
-				}
-				omitted += section.blocks.length - (kept[sectionIndex]?.length ?? 0);
-				for (const later of candidates.slice(sectionIndex + 1)) omitted += later.blocks.length;
-				firstOmitted = sectionIndex;
-				break;
-			}
-			if (firstOmitted !== -1) break;
+		// Every message that loses a chunk carries its own marker, so each one is reserved.
+		const markerTokens = candidates.length * Math.ceil(omissionMarker(entries.length).length / 4);
+		let remaining = Math.max(0, budget - estimateContextMessageTokens(base, false) - markerTokens);
+		// Best chunk of every list first, then the second of every list; the older result wins a tie.
+		entries.sort(
+			(a, b) => a.block.rank - b.block.rank || a.sectionIndex - b.sectionIndex || a.blockIndex - b.blockIndex,
+		);
+		const kept = new Set<CandidateBlock>();
+		for (const { block } of entries) {
+			const tokens = Math.max(1, estimateTextTokens(block.text));
+			if (tokens > remaining) break;
+			remaining -= tokens;
+			kept.add(block);
 		}
 
-		if (omitted > 0) {
-			const candidateByMessage = new Map<number, number>();
-			for (const [sectionIndex, messageIndex] of candidateIndexes.entries())
-				candidateByMessage.set(messageIndex, sectionIndex);
+		if (kept.size < entries.length) {
+			const sectionByMessage = new Map(candidateIndexes.map((messageIndex, i) => [messageIndex, candidates[i]]));
 			guarded = base.map((message, index) => {
-				const sectionIndex = candidateByMessage.get(index);
-				if (sectionIndex === undefined) return message;
-				const section = candidates[sectionIndex];
-				const marker = sectionIndex === firstOmitted ? omissionMarker(omitted) : "";
+				const section = sectionByMessage.get(index);
+				if (section === undefined) return message;
+				const keptBlocks = section.blocks.filter((block) => kept.has(block));
+				const omitted = section.blocks.length - keptBlocks.length;
+				if (omitted === 0) return messages[index] ?? message;
+				const marker = omissionMarker(omitted);
 				return replaceTextContent(
 					message,
-					`${section.prefix}${kept[sectionIndex]?.join("") ?? ""}${marker}${section.suffix}`,
+					`${section.prefix}${keptBlocks.map((block) => block.text).join("")}${marker}${section.suffix}`,
 				);
 			});
 		}
 	}
-	if (estimateContextMessageTokens(guarded, false) <= budget && guarded !== messages) return guarded;
-	return trimFixedContext(guarded, budget);
+	if (guarded !== messages && estimateContextMessageTokens(guarded, false) <= budget) return guarded;
+	return fitNewestToolResult(guarded, budget);
 }
 
 /**
@@ -194,47 +197,23 @@ export function estimateContextMessageTokens(messages: readonly AgentMessage[], 
 }
 
 /**
- * Last resort once no whole candidate can be dropped. Bulk context shrinks
- * first (older turns, then the newest tool result, then the system prompt), and
- * the user's current query is only ever head/tail-excerpted, never replaced by
- * the marker, so the model always still sees what was asked.
+ * Last resort once every droppable chunk is gone and the request still does not fit:
+ * shorten the newest tool result, the one that just arrived, so pi's compact-and-retry
+ * has something smaller to send. Nothing else is edited: the query, earlier turns, and
+ * the system prompt stay whole, and when they alone exceed the budget the request is
+ * left as it is for the provider to reject and pi's compaction to summarise.
  */
-function trimFixedContext(messages: AgentMessage[], inputBudget: number): AgentMessage[] {
-	const trimmed = messages.slice();
-	const lastIndex = trimmed.length - 1;
-	const queryIndex = trimmed.reduce((found, message, index) => (message.role === "user" ? index : found), -1);
-	const fits = (): boolean => estimateContextMessageTokens(trimmed, false) <= inputBudget;
-	const fitInto = (index: number, floorTokens: number): void => {
-		const message = trimmed[index];
-		if (message === undefined) return;
-		const others = trimmed.reduce(
-			(total, other, i) => (i === index ? total : total + estimateMessageTokens(other)),
-			0,
-		);
-		trimmed[index] = fitMessageToTokens(message, Math.max(floorTokens, inputBudget - others));
-	};
-
-	for (const [index, message] of trimmed.entries()) {
-		if (index === lastIndex || index === queryIndex || message.role === "system") continue;
-		const replacement = replaceMessageWithMarker(message);
-		if (replacement === message || estimateMessageTokens(replacement) >= estimateMessageTokens(message)) continue;
-		trimmed[index] = replacement;
-		if (fits()) return trimmed;
-	}
-
-	if (lastIndex !== queryIndex && trimmed[lastIndex]?.role !== "system") {
-		fitInto(lastIndex, 0);
-		if (fits()) return trimmed;
-	}
-
-	for (const [index, message] of trimmed.entries()) {
-		if (message.role !== "system") continue;
-		fitInto(index, 0);
-		if (fits()) return trimmed;
-	}
-
-	if (queryIndex >= 0) fitInto(queryIndex, MIN_QUERY_TOKENS);
-	return trimmed;
+function fitNewestToolResult(messages: AgentMessage[], inputBudget: number): AgentMessage[] {
+	const lastIndex = messages.length - 1;
+	const last = messages[lastIndex];
+	if (last?.role !== "toolResult") return messages;
+	const others = messages.reduce(
+		(total, message, index) => (index === lastIndex ? total : total + estimateMessageTokens(message)),
+		0,
+	);
+	if (others >= inputBudget) return messages;
+	const fitted = fitMessageToTokens(last, inputBudget - others);
+	return fitted === last ? messages : [...messages.slice(0, lastIndex), fitted];
 }
 
 /** Re-measure at most this many times after sizing an excerpt before giving up and keeping only the marker. */
@@ -242,7 +221,7 @@ const MAX_FIT_ATTEMPTS = 6;
 
 function fitMessageToTokens(message: AgentMessage, maxTokens: number): AgentMessage {
 	const original = textContent(message);
-	if (original === undefined) return stripNonTextContent(message);
+	if (original === undefined) return message;
 	const marker = `\n\n${GUARD_MARKER}\n`;
 	// Counting every probe of a binary search is far too slow for megabytes of dense text, so the
 	// excerpt is sized from the message's own tokens per character and then confirmed with a real
@@ -260,32 +239,12 @@ function fitMessageToTokens(message: AgentMessage, maxTokens: number): AgentMess
 	return replaceTextContent(message, marker);
 }
 
-/**
- * A user message mixing text with images: keep every text block (the query) and
- * stand in for each image with the marker. Anything else is replaced whole.
- */
-function stripNonTextContent(message: AgentMessage): AgentMessage {
-	if (message.role !== "user" || typeof message.content === "string") return replaceMessageWithMarker(message);
-	const marker = `\n\n${GUARD_MARKER}\n`;
-	let replacedImage = false;
-	const content = message.content.map((block) => {
-		if (block.type === "text") return block;
-		replacedImage = true;
-		return { type: "text" as const, text: marker };
-	});
-	return replacedImage ? { ...message, content } : message;
-}
-
 function excerpt(text: string, maxChars: number, marker: string): string {
 	if (text.length <= maxChars) return text;
 	const available = Math.max(0, maxChars - marker.length);
 	const head = Math.ceil(available * 0.7);
 	const tail = Math.max(0, available - head);
 	return `${text.slice(0, head)}${marker}${tail > 0 ? text.slice(-tail) : ""}`;
-}
-
-function replaceMessageWithMarker(message: AgentMessage): AgentMessage {
-	return replaceTextContent(message, `\n\n${GUARD_MARKER}\n`);
 }
 
 function estimateMessageTokens(message: AgentMessage): number {
@@ -407,7 +366,7 @@ function parseCandidateSection(message: AgentMessage, text: string): CandidateSe
 		const sectionStart = (markerMatch.index ?? 0) + markerMatch[0].length;
 		const sectionEnd = findBaselineSectionEnd(text, sectionStart);
 		if (!/^\[e?\d+\] /mu.test(text.slice(sectionStart, sectionEnd))) return undefined;
-		return splitCandidates(text, sectionStart, sectionEnd);
+		return splitCandidates(text, sectionStart, sectionEnd, { lists: true });
 	}
 	if (message.role !== "toolResult") return undefined;
 	const isRetrieval =
@@ -415,7 +374,9 @@ function parseCandidateSection(message: AgentMessage, text: string): CandidateSe
 	if (!isRetrieval) return undefined;
 	if (message.toolName === "jikji_find") {
 		const directiveStart = text.indexOf("\n\ndirective:");
-		return splitCandidates(text, 0, directiveStart >= 0 ? directiveStart : text.length, /^- [^\n]*(?:\n|$)/gmu);
+		return splitCandidates(text, 0, directiveStart >= 0 ? directiveStart : text.length, {
+			pattern: /^- [^\n]*(?:\n|$)/gmu,
+		});
 	}
 	const diagnosticsStart = text.indexOf("\n\nDiagnostics:");
 	return splitCandidates(text, 0, diagnosticsStart >= 0 ? diagnosticsStart : text.length);
@@ -430,21 +391,35 @@ function findBaselineSectionEnd(text: string, startIndex: number): number {
 	return positions.length > 0 ? Math.min(...positions) : text.length;
 }
 
+/**
+ * A baseline that was not reranked lists each source (Jikji, MinSync, datasources,
+ * web) under its own "... initial candidates:" heading, every list in its own
+ * retrieval order. The heading ends the previous chunk's text; it belongs to the next list.
+ */
+const LIST_HEADING_TAIL = /\n[^\n]*initial candidates[^\n]*:\n$/u;
+
 function splitCandidates(
 	text: string,
 	sectionStart: number,
 	sectionEnd: number,
-	pattern: RegExp = /^\[e?\d+\] [^\n]*(?:\n|$)/gmu,
+	options: { readonly pattern?: RegExp; readonly lists?: boolean } = {},
 ): CandidateSection | undefined {
 	const region = text.slice(sectionStart, sectionEnd);
-	const matches = [...region.matchAll(pattern)];
+	const matches = [...region.matchAll(options.pattern ?? /^\[e?\d+\] [^\n]*(?:\n|$)/gmu)];
 	const firstStart = matches[0]?.index;
 	if (firstStart === undefined) return undefined;
-	const blocks: string[] = [];
+	const blocks: CandidateBlock[] = [];
+	let rank = 0;
+	let heading = "";
 	for (const [index, match] of matches.entries()) {
 		const start = match.index ?? 0;
 		const end = index + 1 < matches.length ? (matches[index + 1]?.index ?? region.length) : region.length;
-		blocks.push(region.slice(start, end));
+		const raw = region.slice(start, end);
+		const tail = options.lists === true ? LIST_HEADING_TAIL.exec(raw) : null;
+		blocks.push({ text: heading + (tail === null ? raw : raw.slice(0, tail.index)), rank });
+		// The next list starts over at rank 0 and keeps its heading with its best chunk.
+		rank = tail === null ? rank + 1 : 0;
+		heading = tail === null ? "" : tail[0];
 	}
 	return {
 		prefix: text.slice(0, sectionStart) + region.slice(0, firstStart),

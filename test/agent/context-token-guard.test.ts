@@ -177,51 +177,6 @@ describe("context token guard", () => {
 		expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
 	});
 
-	it("bounds oversized image input with an explicit marker", () => {
-		const messages: AgentMessage[] = [
-			{
-				role: "user",
-				content: [{ type: "image", mimeType: "image/png", data: "large-image" }],
-				timestamp: Date.now(),
-			},
-		];
-
-		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
-		const message = guarded[0];
-		const text =
-			message?.role === "user" && Array.isArray(message.content) && message.content[0]?.type === "text"
-				? message.content[0].text
-				: "";
-
-		expect(text).toContain("AutoRAG context guard");
-	});
-
-	it("preserves tool declarations while reducing an oversized system prompt", () => {
-		const messages: AgentMessage[] = [
-			{
-				role: "system",
-				content: "system instruction ".repeat(1_000),
-				toolsAdded: [
-					{ name: "search_all_documents", description: "search", parameters: { type: "object" } as never },
-				],
-				timestamp: Date.now(),
-			},
-			{ role: "user", content: "answer this", timestamp: Date.now() },
-		];
-
-		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
-		const system = guarded[0];
-
-		expect(system?.role).toBe("system");
-		const systemContent = system?.role === "system" ? system.content : "";
-		const systemText =
-			typeof systemContent === "string"
-				? systemContent
-				: systemContent.map((block) => (block.type === "text" ? block.text : "")).join("");
-		expect(systemText).toContain("AutoRAG context guard");
-		expect(system?.role === "system" ? system.toolsAdded?.[0]?.name : undefined).toBe("search_all_documents");
-	});
-
 	it("composes with an existing context transform", async () => {
 		const transform = createContextTokenGuardedTransform(
 			{ ...model, contextWindow: 500, maxTokens: 100 },
@@ -272,7 +227,36 @@ describe("context token guard", () => {
 		expect(user?.role === "user" && user.content).toBe("latest question");
 	});
 
-	it("keeps the user's query when bulky tool results exhaust the budget", () => {
+	it("shortens only the newest tool result, and leaves the query and earlier results whole, when it is what exhausts the budget", () => {
+		const messages: AgentMessage[] = [
+			{ role: "user", content: "장원영 집 잘사냐?", timestamp: Date.now() },
+			{
+				role: "toolResult",
+				toolCallId: "call-1",
+				toolName: "bash",
+				content: [{ type: "text", text: "earlier command output ".repeat(20) }],
+				isError: false,
+				timestamp: Date.now(),
+			},
+			{
+				role: "toolResult",
+				toolCallId: "call-2",
+				toolName: "bash",
+				content: [{ type: "text", text: "more command output ".repeat(1_000) }],
+				isError: false,
+				timestamp: Date.now(),
+			},
+		];
+
+		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
+
+		expect(guarded[0]).toBe(messages[0]);
+		expect(guarded[1]).toBe(messages[1]);
+		expect(resultText(guarded[2])).toContain("AutoRAG context guard");
+		expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
+	});
+
+	it("leaves everything whole when earlier turns alone exceed the budget, for pi's compaction to summarise", () => {
 		const messages: AgentMessage[] = [
 			{ role: "user", content: "장원영 집 잘사냐?", timestamp: Date.now() },
 			{
@@ -293,23 +277,18 @@ describe("context token guard", () => {
 			},
 		];
 
-		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages);
-
-		expect(guarded[0]).toEqual(messages[0]);
-		expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(Math.floor(500 / 1.2) - 100);
+		expect(guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages)).toBe(messages);
 	});
 
-	it("keeps the query of a long user prompt as an excerpt when the budget is exhausted", () => {
+	it("leaves a long user prompt whole when it alone exceeds the budget", () => {
 		const query = "Answer this original query immediately: 장원영 집 잘사냐?";
 		const messages: AgentMessage[] = [
 			{ role: "user", content: `${query}\n\n${"filler rule ".repeat(5_000)}`, timestamp: Date.now() },
 		];
 
 		const guarded = guardAgentContextMessages({ ...model, contextWindow: 500, maxTokens: 100 }, messages, false, 280);
-		const user = guarded[0];
-		const text = user?.role === "user" && typeof user.content === "string" ? user.content : "";
 
-		expect(text.startsWith(query)).toBe(true);
+		expect(guarded).toBe(messages);
 	});
 
 	it("does not let a catalog maxTokens near the context window zero the input budget", () => {
@@ -340,6 +319,122 @@ describe("context token guard", () => {
 		const input = 87_724;
 
 		expect(input + bounded.maxTokens).toBeLessThanOrEqual(bounded.contextWindow);
+	});
+
+	describe("only retrieval chunks are dropped, lowest-ranked first", () => {
+		const tight = { ...model, contextWindow: 1_200, maxTokens: 200 };
+		// About 150 tokens each, so four fit the 800-token input budget and five do not.
+		const chunks = (prefix: string, count: number): string[] =>
+			Array.from({ length: count }, (_unused, index) => `${prefix}${index + 1} chunk `.repeat(55));
+
+		it("keeps the top-ranked chunk of every retrieval result before any second-ranked one", () => {
+			const older = chunks("older", 5);
+			const newer = chunks("newer", 5);
+			const guarded = guardAgentContextMessages(tight, [retrievalMessage(older), retrievalMessage(newer)]);
+			const olderText = resultText(guarded[0]);
+			const newerText = resultText(guarded[1]);
+
+			expect(olderText).toContain(older[0] ?? "");
+			expect(newerText).toContain(newer[0] ?? "");
+			expect(olderText).not.toContain(older[4] ?? "");
+			expect(newerText).not.toContain(newer[4] ?? "");
+			// A chunk is only ever dropped after every chunk ranked above it, in any result, is gone.
+			for (const rank of [1, 2, 3]) {
+				const keptBelow = [olderText.includes(older[rank + 1] ?? ""), newerText.includes(newer[rank + 1] ?? "")];
+				if (keptBelow.some(Boolean)) {
+					expect(olderText).toContain(older[rank] ?? "");
+					expect(newerText).toContain(newer[rank] ?? "");
+				}
+			}
+			expect(estimateContextMessageTokens(guarded)).toBeLessThanOrEqual(800);
+		});
+
+		it("drops the lowest-ranked chunk of every source list, not the whole trailing list", () => {
+			const minsync = chunks("minsync", 3);
+			const datasource = chunks("datasource", 3);
+			const list = (heading: string, items: readonly string[], offset: number): string =>
+				`${heading}\n${items.map((item, index) => `[${offset + index}] /docs/${heading.length}-${index}.md\n${item}`).join("\n")}`;
+			const query = "Answer this original query immediately: 장원영 집 잘사냐?";
+			const rules = "Produce the best answer now.";
+			const messages: AgentMessage[] = [
+				{
+					role: "user",
+					content: `${query}\n\nBaseline retrieval evidence (already gathered for you):\n${list("MinSync semantic initial candidates:", minsync, 1)}\n\n${list("Datasource initial candidates:", datasource, 4)}\n\n${rules}`,
+					timestamp: Date.now(),
+				},
+			];
+
+			const guarded = guardAgentContextMessages(tight, messages, false);
+			const message = guarded[0];
+			const text = message?.role === "user" && typeof message.content === "string" ? message.content : "";
+
+			expect(text.startsWith(query)).toBe(true);
+			expect(text.endsWith(rules)).toBe(true);
+			expect(text).toContain(minsync[0] ?? "");
+			expect(text).toContain(datasource[0] ?? "");
+			expect(text).not.toContain(minsync[2] ?? "");
+			expect(text).not.toContain(datasource[2] ?? "");
+			expect(text).toContain("Datasource initial candidates:");
+			expect(text).toContain("AutoRAG context guard");
+		});
+
+		it("never edits the system prompt, an earlier user or assistant turn, an earlier tool result, or the latest query", () => {
+			const assistant: AgentMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: "first answer" }],
+				api: "test-api",
+				provider: "test-provider",
+				model: "guard-test",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			};
+			const untouched: AgentMessage[] = [
+				{ role: "system", content: "system instruction ".repeat(300), timestamp: Date.now() },
+				{ role: "user", content: "first question 장원영 집 잘사냐?", timestamp: Date.now() },
+				assistant,
+				{
+					role: "toolResult",
+					toolCallId: "call-old",
+					toolName: "bash",
+					content: [{ type: "text", text: "older command output ".repeat(600) }],
+					isError: false,
+					timestamp: Date.now(),
+				},
+				{
+					role: "user",
+					content: [{ type: "image", mimeType: "image/png", data: "large-image" }],
+					timestamp: Date.now(),
+				},
+			];
+			const retrieval = retrievalMessage(chunks("evidence", 6));
+			const latest: AgentMessage = { role: "user", content: "latest follow-up question", timestamp: Date.now() };
+			const messages = [...untouched, retrieval, latest];
+
+			const guarded = guardAgentContextMessages(tight, messages, false);
+
+			expect(guarded).toHaveLength(messages.length);
+			for (const [index, message] of untouched.entries()) expect(guarded[index]).toBe(message);
+			expect(guarded.at(-1)).toBe(latest);
+			expect(resultText(guarded[untouched.length])).toContain("AutoRAG context guard");
+		});
+
+		it("returns a transcript with no retrieval chunks untouched however far over budget it is", () => {
+			const messages: AgentMessage[] = [
+				{ role: "system", content: "system instruction ".repeat(1_000), timestamp: Date.now() },
+				{ role: "user", content: "first question", timestamp: Date.now() },
+				{ role: "user", content: `latest question\n\n${"background ".repeat(5_000)}`, timestamp: Date.now() },
+			];
+
+			expect(guardAgentContextMessages(tight, messages, false)).toBe(messages);
+		});
 	});
 
 	describe("dense text a chars/4 guess undercounts", () => {

@@ -145,9 +145,17 @@ Compaction keeps recent turns whole, so an oversized tool result that is the lat
 turn survives it and the retry would be rejected again. The `dazzi` provider
 (`src/cloud/context-overflow.ts`) therefore notes each overflow, and the context guard
 then holds that model's requests to half the estimated size of the one that failed (it
-ratchets down on each further overflow), trimming the largest content first. The
-session record keeps the full tool result; only the request is trimmed. A 400 that
-gives another reason, or none, is not treated as an overflow.
+ratchets down on each further overflow). The session record keeps the full tool result;
+only the request is trimmed. A 400 that gives another reason, or none, is not treated
+as an overflow.
+
+What the guard may cut is fixed. It drops retrieval chunks only, lowest-ranked first:
+every ranked list in the request (each source's list in an unranked baseline, each
+retrieval tool result) keeps its best chunk before any list keeps its second, and each
+edited message says how many it omitted. The user's query, earlier turns, and the
+system prompt are never edited. When no chunk is left to drop, only the newest tool
+result is shortened; if the earlier turns alone still exceed the window, the request
+goes out as it is, the provider rejects it, and pi's compaction summarises them.
 
 Before any overflow the guard sizes a request with the `o200k_base` BPE
 (`src/agent/token-count.ts`), never below pi's chars/4 guess. Text parsed from
