@@ -1,5 +1,5 @@
 /**
- * Live E2E: spreadsheets through the real CLI, the parse worker, MinSync and its local embedder.
+ * Live E2E: spreadsheets and CSV/TSV files through the real CLI, the parse worker, MinSync and its local embedder.
  *
  * Gated on AUTORAG_SPREADSHEET_LIVE=1 so the offline suite never needs MinSync or a model. Run
  * explicitly with `bun` and `minsync` on PATH (a running `minsync serve` daemon or the in-process
@@ -28,7 +28,9 @@ import {
 	createBudgetWorkbook,
 	createDetailWorkbook,
 	createFormWorkbook,
+	createOperatingCostCsv,
 	createStackedWorkbook,
+	createStaffTsv,
 	createWideWorkbook,
 	writeWorkbook,
 } from "../fixtures/spreadsheets.ts";
@@ -80,6 +82,8 @@ describe.skipIf(!LIVE)("live: spreadsheets are searchable with their labels", ()
 		writeFileSync(join(root, "docs", "신청서.xls"), writeWorkbook(createFormWorkbook(), "xls"));
 		writeFileSync(join(root, "docs", "출장.ods"), writeWorkbook(createStackedWorkbook(), "ods"));
 		writeFileSync(join(root, "docs", "세부사업별.xlsb"), writeWorkbook(createWideWorkbook(), "xlsb"));
+		writeFileSync(join(root, "docs", "운영비.csv"), createOperatingCostCsv());
+		writeFileSync(join(root, "docs", "인원현황.tsv"), createStaffTsv());
 		const modelArgs = process.env.OPENROUTER_API_KEY
 			? ["--model-provider", "openrouter", "--model-id", MODEL_ID]
 			: [];
@@ -91,7 +95,7 @@ describe.skipIf(!LIVE)("live: spreadsheets are searchable with their labels", ()
 			readonly counts?: { readonly written: number; readonly skipped: number };
 		};
 		expect(refresh.ok, JSON.stringify(refresh)).toBe(true);
-		expect(refresh.counts).toMatchObject({ written: 5, skipped: 0 });
+		expect(refresh.counts).toMatchObject({ written: 7, skipped: 0 });
 	}, REFRESH_TIMEOUT_MS + 300_000);
 
 	afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -115,6 +119,8 @@ describe.skipIf(!LIVE)("live: spreadsheets are searchable with their labels", ()
 		["연구책임자는 누구인가", "신청서.xls", "주관기관 | 마커 | 연구책임자 | 홍길동"],
 		["인건비 세부사업237 집행액", "세부사업별.xlsb", "세부사업237 집행액: 4321987"],
 		["직원30 항목18", "연구비 예산.xlsx", "| 항목18: 987654 |"],
+		["회의비 편성액", "운영비.csv", "비목: 회의비 | 산출근거: 월 2회 / × 12월 | 편성액: 480,000 | 비고: 내부"],
+		["연구지원팀 인원", "인원현황.tsv", "[인원현황!A2:C2] 부서: 연구지원팀 | 인원: 4 | 예산: 1200000"],
 	])("ranks the row that answers %j in the top 3, with its labels, from %s", (query, file, expected) => {
 		const hit = retrieve(query)
 			.slice(0, 3)

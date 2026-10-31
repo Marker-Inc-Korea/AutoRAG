@@ -1,3 +1,4 @@
+export { CsvParser, type CsvParserOptions, DELIMITED_EXTENSIONS } from "./csv.ts";
 export {
 	createDefaultParserRegistry,
 	type DefaultParserRegistryOptions,

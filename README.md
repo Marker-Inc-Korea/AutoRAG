@@ -316,6 +316,7 @@ falling back to `["ko", "en"]`. Supported tags: `ko`, `en`, `ja`, `zh-hans`,
 |---|---|
 | `.hwp` `.hwpx` `.hml` `.hwpml` `.pdf` `.docx` | `kordoc` (nested tables, no Java) |
 | `.xlsx` `.xlsm` `.xlsb` `.xls` `.ods` | built-in spreadsheet reader (SheetJS) |
+| `.csv` `.tsv` | built-in CSV reader (CP949/EUC-KR aware) |
 | `.pptx` | built-in PPTX reader |
 | `.eml` | built-in mail reader |
 | `.txt` `.text` `.md` `.markdown` | plain text (CP949/EUC-KR aware) |
@@ -342,6 +343,14 @@ header, or at least three rows below it with a mostly numeric, date or formula
 column); otherwise rows are kept exactly as written, so a form's label/value
 cells are never relabelled. Sheets are read up to 100,000 rows each; a longer
 sheet is indexed partially with a `parser-warning` diagnostic.
+
+`.csv` and `.tsv` files produce the same lines, with the file name in place of
+the sheet name. Bytes decode as UTF-8 (with or without BOM) or CP949/EUC-KR,
+quoted fields keep separators, line breaks and doubled quotes, and values stay
+exactly as written (`00123` and `=1+2` are not converted). `.tsv` is
+tab-separated; a `.csv` follows Excel's `sep=;` first line when present and
+otherwise picks the separator (`,` `;` tab `|`) that splits its first lines
+most consistently.
 
 ### Making photos and scans searchable
 
