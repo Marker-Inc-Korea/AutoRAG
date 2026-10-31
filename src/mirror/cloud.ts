@@ -8,9 +8,8 @@ export const DEFAULT_CLOUD_MAX_FILES = 200;
 export const DEFAULT_CLOUD_MAX_BYTES = 512 * 1024 * 1024;
 
 /**
- * Retries after the first failed `brctl evict`. A just-hydrated file is often briefly "in use" by the provider
- * (measured: `Resource busy ... currently in use by an application`, then success a moment later), so a short
- * doubling wait usually clears it.
+ * Retries after the first failed release. A just-hydrated file is often briefly held by the provider, so the
+ * release is refused once and succeeds on a retry; a short doubling wait usually clears it.
  */
 export const DEFAULT_CLOUD_EVICT_RETRIES = 3;
 
@@ -35,9 +34,9 @@ export type CloudReleaseResult = { readonly ok: true } | { readonly ok: false; r
 /**
  * What a refresh does with one file that needs parsing:
  * - `local`: not a placeholder; read it as always.
- * - `download`: an iCloud placeholder inside the budget; read it, then release it again.
- * - `skip`: a placeholder AutoRAG cannot release again (Google Drive, OneDrive, ...); do not read it.
- * - `defer`: an iCloud placeholder over this refresh's budget; leave it for the next refresh.
+ * - `download`: a placeholder the probe can release, inside the budget; read it, then release it again.
+ * - `skip`: a placeholder whose provider the probe cannot release; do not read it.
+ * - `defer`: a releasable placeholder over this refresh's budget; leave it for the next refresh.
  */
 export type CloudDecision =
 	| { readonly kind: "local" }
@@ -62,7 +61,7 @@ export class CloudGate {
 	private placeholders: ReadonlySet<string> = new Set();
 	private downloadedFiles = 0;
 	private downloadedBytes = 0;
-	/** Whether a downloaded iCloud file is released again after it is parsed. */
+	/** Whether a downloaded cloud file is released again after it is parsed. */
 	readonly evictAfterParse: boolean;
 
 	constructor(options: CloudGateOptions = {}) {
@@ -89,7 +88,7 @@ export class CloudGate {
 	async decide(path: string, sizeBytes: number, directory: string): Promise<CloudDecision> {
 		if (this.probe === undefined || !this.placeholders.has(path)) return LOCAL;
 		const provider = await this.providerIn(directory, path);
-		if (provider !== "icloud") return { kind: "skip", provider };
+		if (!this.probe.canRelease(provider)) return { kind: "skip", provider };
 		const overFiles = this.downloadedFiles >= this.maxFiles;
 		const overBytes = this.downloadedFiles > 0 && this.downloadedBytes + sizeBytes > this.maxBytes;
 		if (overFiles || overBytes) return { kind: "defer" };
