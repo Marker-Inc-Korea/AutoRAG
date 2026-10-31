@@ -135,6 +135,24 @@ file again if it still needs it. Text is never dropped. The session record keeps
 every image; only the request is trimmed. The same guard enforces `inputLimits` for
 any model that declares them.
 
+### Context overflow
+
+When a request is larger than the model's context window, the hosted server answers
+`400 context_length_exceeded` (HTTP 413 for an oversized body) with the provider's own
+message, and pi compacts the conversation and retries once.
+
+Compaction keeps recent turns whole, so an oversized tool result that is the latest
+turn survives it and the retry would be rejected again. The `dazzi` provider
+(`src/cloud/context-overflow.ts`) therefore notes each overflow, and the context guard
+then holds that model's requests to half the estimated size of the one that failed (it
+ratchets down on each further overflow), trimming the largest content first. The
+session record keeps the full tool result; only the request is trimmed. A 400 that
+gives another reason, or none, is not treated as an overflow.
+
+Verified by `test/live-e2e/dazzi-context-overflow.test.ts` (set
+`AUTORAG_DAZZI_OVERFLOW_LIVE=1` after `/login`), which sends ~2.2M characters of
+binary garbage to the real server.
+
 ## Defaults when signed in
 
 With a stored Dazzi Models login, AutoRAG prefers the hosted plan wherever it

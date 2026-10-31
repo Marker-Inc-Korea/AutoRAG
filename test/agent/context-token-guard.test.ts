@@ -8,6 +8,7 @@ import {
 	MAX_OUTPUT_TOKENS,
 	withBoundedOutput,
 } from "../../src/agent/context-token-guard.ts";
+import { noteContextOverflow } from "../../src/cloud/context-overflow.ts";
 
 const model = {
 	id: "guard-test",
@@ -339,5 +340,49 @@ describe("context token guard", () => {
 		const input = 87_724;
 
 		expect(input + bounded.maxTokens).toBeLessThanOrEqual(bounded.contextWindow);
+	});
+
+	describe("after the provider rejected a request as too large", () => {
+		const bigModel = { ...model, id: "overflowed-model", contextWindow: 1_000_000, maxTokens: 200 };
+		const bulk = (): AgentMessage[] => [
+			{ role: "user", content: "find the pdf", timestamp: Date.now() },
+			retrievalMessageForTool("custom_dump", ["x".repeat(40_000)]),
+		];
+
+		it("holds the next request to half the estimated size of the one that failed", () => {
+			const failed = bulk();
+			guardAgentContextMessages(bigModel, failed, false);
+			const failedTokens = estimateContextMessageTokens(failed);
+			expect(guardAgentContextMessages(bigModel, bulk(), false)).toHaveLength(2);
+
+			noteContextOverflow(bigModel);
+			const retried = guardAgentContextMessages(bigModel, bulk(), false);
+
+			expect(estimateContextMessageTokens(retried)).toBeLessThanOrEqual(Math.floor(failedTokens / 2));
+			expect(retried.at(0)).toMatchObject({ role: "user", content: "find the pdf" });
+			expect(resultText(retried.at(-1))).toContain("AutoRAG context guard");
+		});
+
+		it("only tightens further on a second overflow", () => {
+			const peer = { ...bigModel, id: "overflowed-twice" };
+			guardAgentContextMessages(peer, bulk(), false);
+			noteContextOverflow(peer);
+			const once = guardAgentContextMessages(peer, bulk(), false);
+			noteContextOverflow(peer);
+			const twice = guardAgentContextMessages(peer, bulk(), false);
+
+			expect(estimateContextMessageTokens(twice)).toBeLessThan(estimateContextMessageTokens(once));
+		});
+
+		it("leaves other models alone", () => {
+			const unrelated = { ...bigModel, id: "never-overflowed" };
+			guardAgentContextMessages(bigModel, bulk(), false);
+			noteContextOverflow(bigModel);
+
+			expect(guardAgentContextMessages(unrelated, bulk(), false)).toHaveLength(2);
+			expect(estimateContextMessageTokens(guardAgentContextMessages(unrelated, bulk(), false))).toBe(
+				estimateContextMessageTokens(bulk()),
+			);
+		});
 	});
 });
