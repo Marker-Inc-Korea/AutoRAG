@@ -6,6 +6,7 @@ import { BUILTIN_OCR_LANGUAGES, createTesseractOcrProvider, type OcrOptions } fr
 import { PptxParser } from "./office.ts";
 import { PlainTextParser } from "./plain-text.ts";
 import { ParserRegistry } from "./registry.ts";
+import { SpreadsheetParser } from "./spreadsheet.ts";
 
 export interface DefaultParserRegistryOptions {
 	readonly ocr?: OcrOptions;
@@ -13,7 +14,7 @@ export interface DefaultParserRegistryOptions {
 	/** Global document languages; selects the OCR engine when OCR is enabled. */
 	readonly languages?: readonly LanguageTag[];
 	/**
-	 * Hard per-file parse deadline in milliseconds (default 120000). kordoc, pptx and eml parse in a worker
+	 * Hard per-file parse deadline in milliseconds (default 120000). kordoc, spreadsheet, pptx and eml parse in a worker
 	 * thread during a refresh; a parse still running at the deadline has its worker terminated and the file
 	 * is skipped as `parser-failed`. A synchronous spin cannot be interrupted any other way.
 	 */
@@ -79,6 +80,7 @@ export function createDefaultParserRegistry(options: DefaultParserRegistryOption
 	return new ParserRegistry([
 		new PlainTextParser(),
 		new KordocParser(kordocOptions),
+		new SpreadsheetParser(),
 		new PptxParser(),
 		new EmlParser(),
 	]);

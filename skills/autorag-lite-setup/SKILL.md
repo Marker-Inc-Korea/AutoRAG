@@ -56,7 +56,7 @@ explicit path (`--config` or `AUTORAG_CONFIG`); `--force` refuses to replace the
 implicit `~/.autorag/config.json`. Explicit user paths win;
 otherwise propose one to three document-dense roots and get approval before
 indexing. Supported parsed formats are `md`, `markdown`, `txt`, `text`, `pdf`,
-`docx`, `pptx`, `xlsx`, `xls`, `hwp`, `hwpx`, and `eml`. Legacy `.doc` is not
+`docx`, `pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `hwp`, `hwpx`, and `eml`. Legacy `.doc` is not
 a supported parsed format.
 
 Config resolution follows the usual order: `--config`, `AUTORAG_CONFIG`,
