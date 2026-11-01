@@ -40,15 +40,6 @@ export {
 	type ResultsByMethod,
 } from "./scope.ts";
 export {
-	CLOUD_DRIVE_SKILL_DEFINITION,
-	CloudDriveSkill,
-	type CloudDriveSkillOptions,
-	RcloneConnector,
-	type RcloneConnectorOptions,
-	type RcloneRunner,
-	type RcloneRunResult,
-} from "./skills/cloud-drive/index.ts";
-export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
 	DEFAULT_DISCRAWL_MODE,
 	DiscrawlClient,
@@ -144,14 +135,6 @@ export {
 	SlacrawlClient,
 	type SlacrawlOptions,
 } from "./skills/slack/index.ts";
-export {
-	SpotlightConnector,
-	type SpotlightConnectorFailure,
-	type SpotlightConnectorOptions,
-	type SpotlightConnectorResult,
-	SpotlightSkill,
-	type SpotlightSkillOptions,
-} from "./skills/spotlight/index.ts";
 export {
 	TelecrawlClient,
 	type TelecrawlOptions,

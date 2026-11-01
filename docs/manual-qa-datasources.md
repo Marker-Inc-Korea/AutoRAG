@@ -5,7 +5,7 @@ supplies explicitly configured paths and bounded process execution; it does not
 materialize or force an AutoRAG-managed archive/config for datasource CLIs.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
-(GitHub Issues/PRs), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
+(GitHub Issues/PRs), #1314 (Obsidian vault), and #1316 (RSS/news).
 Issue #1416 adds external-crawler process coverage for WhatsApp through
 wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
@@ -43,8 +43,6 @@ synthetic store inside the container or accept `SKIP`.
 | `scripts/manual-qa/run-qa-lazykatok-live.ts` | Real KakaoTalk archive through the external `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval); Apple Silicon macOS with Full Disk Access | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
-| `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; snapshot-free refresh plus edited-file visibility without another refresh; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
-| `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
 | `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.3.0` fixture and `--source files` (`.eml`/`.mbox`) sync, LanceDB index report plus embedder-identity reuse on a no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `test/datasource/embedding-env.test.ts` | Real child-process boundary for mailcrawl and lazykatok on the shared embedder: provider/URL/model/dimension env, remote key hand-over and egress opt-in, index-only daemon start, BM25 untouched, no native fallback when no endpoint exists, TEI refused for lazykatok | `bunx vitest run test/datasource/embedding-env.test.ts` |
@@ -59,9 +57,7 @@ synthetic store inside the container or accept `SKIP`.
 
 Skills that need tenant credentials are QA'd against the mock services, which
 reproduce each API's envelope shapes and native auth failures (`invalid_auth`,
-HTTP 401/403/429). Google Drive is tested through the provider-neutral
-`cloud-drive` skill and the external `rclone` CLI; configure and authenticate
-the remote with `rclone config`, then run `bun scripts/manual-qa/run-qa-rclone.ts`.
+HTTP 401/403/429).
 Email search uses mailcrawl (Himalaya accounts or `--source files` `.eml`/`.mbox` archives).
 
 WhatsApp uses the external wacrawl CLI instead of an HTTP mock. The deterministic
@@ -137,22 +133,6 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] Per-item failures (a denied Slack channel, a 404 repo, one bad feed,
       an unparseable mbox message) degrade to warnings without failing the
       whole index run.
-
-### Rclone cloud-drive checklist
-
-- [x] `rclone lsjson --recursive --files-only --hash` is the only inventory
-      seed; provider credentials remain in rclone's own config.
-- [x] The workspace manifest stores stable virtual path, size, modtime,
-      hashes, and provider id when available.
-- [x] Initial sync copies indexable files; a no-op sync copies zero bodies and
-      does not rewrite the chunk store.
-- [x] Updating one file copies/reindexes only that file; delete and rename
-      remove stale mirror entries.
-- [x] A failed copy leaves the previous completed snapshot searchable.
-- [x] Google Drive is Tier-1; OneDrive and other remotes are provider-neutral;
-      iCloud Drive is documented as experimental/Tier 4.
-- [x] Include/exclude, maximum size, concurrency, bandwidth limit, and
-      dry-run are trusted CLI datasource configuration.
 
 ## Last run
 

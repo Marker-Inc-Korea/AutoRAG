@@ -1,5 +1,5 @@
 import { accessSync, constants, existsSync } from "node:fs";
-import { delimiter, isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { type ResolvedFileeBinary, type ResolveFileeBinaryOptions, resolveFileeBinary } from "../convert/index.ts";
 import { datasourceSkillSupported } from "../datasource/skills/factory.ts";
@@ -16,6 +16,14 @@ import {
 	type EmbeddingIdentity,
 	type ManagedEmbedder,
 } from "../embedding/index.ts";
+import {
+	type CloudFileProbe,
+	type CloudRootKind,
+	canonicalPath,
+	DarwinCloudProbe,
+	isPathInside,
+	WindowsCloudProbe,
+} from "../filesystem/cloud-placeholder.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { DEFAULT_MINSYNC_EMBEDDER_DIMENSION, DEFAULT_MINSYNC_EMBEDDER_ID } from "../minsync/embedder-config.ts";
 import type { MinSyncEmbedderConfig } from "../minsync/types.ts";
@@ -37,6 +45,19 @@ export interface SetupEmbeddingReport {
 	readonly reason?: string;
 }
 export type SetupFileeState = "installed" | "cached" | "path" | "configured" | "skipped" | "failed";
+/**
+ * One cloud or network folder detected on this machine that no `searchPaths`
+ * entry covers. The path is the folder's own absolute location; the command is
+ * the exact `autorag init` invocation that adds it to the config's
+ * `searchPaths`. Detection reads directory metadata only (never file
+ * contents) and a probe that fails is dropped, never fatal.
+ */
+export interface SetupCloudFolderReport {
+	readonly path: string;
+	readonly kind: CloudRootKind;
+	/** Exact command that adds this folder to `searchPaths` on a fresh config. */
+	readonly command: string;
+}
 /** The Filee command line behind `convert_files`; setup installs it unless the operator opted out. */
 export interface SetupFileeReport {
 	readonly state: SetupFileeState;
@@ -56,6 +77,12 @@ export interface SetupReport {
 	readonly histers?: readonly HisterSetupReport[];
 	/** Present on every run; `skipped` when `filee.enabled` or `filee.autoInstall` is false. */
 	readonly filee?: SetupFileeReport;
+	/**
+	 * Cloud and network folders this machine has that no `searchPaths` entry
+	 * covers, each with the command that adds it. Absent when there are none or
+	 * on a platform without a probe. Never affects `ok`.
+	 */
+	readonly cloudFolders?: readonly SetupCloudFolderReport[];
 	readonly changed: boolean;
 }
 
@@ -74,6 +101,12 @@ export interface SetupDeps {
 	readonly filee?: (
 		options: Pick<ResolveFileeBinaryOptions, "executable" | "autoInstall">,
 	) => Promise<ResolvedFileeBinary>;
+	/**
+	 * Cloud/network root probe; defaults to the platform probe (`DarwinCloudProbe`
+	 * on macOS, `WindowsCloudProbe` on Windows, none elsewhere). Injected by
+	 * tests so they need no real cloud mounts.
+	 */
+	readonly cloudProbe?: CloudFileProbe;
 }
 
 const LOCK_TIMEOUT_MS = 10_000;
@@ -89,7 +122,6 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	discord: "discrawl",
 	notion: "notcrawl",
 	mailcrawl: "mailcrawl",
-	"cloud-drive": "rclone",
 	hister: "hister",
 };
 /**
@@ -182,12 +214,62 @@ function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platf
 			"mailcrawl",
 			"notion",
 			"github",
-			"cloud-drive",
 			"obsidian",
 			"rss",
-			"spotlight",
 		]),
 	];
+}
+
+/** A probe for this machine's non-physical roots; none on a platform AutoRAG does not detect them on. */
+function defaultCloudProbe(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): CloudFileProbe | undefined {
+	if (platform === "darwin") return new DarwinCloudProbe({ home: resolveUserHome(env) });
+	if (platform === "win32") return new WindowsCloudProbe();
+	return undefined;
+}
+
+/** Absolute search paths a raw config's `searchPaths` resolves to; relative entries resolve against the workspace. */
+function resolvedSearchPaths(raw: Record<string, unknown>, workspacePath: string): string[] {
+	const paths = Array.isArray(raw.searchPaths)
+		? raw.searchPaths.filter((path): path is string => typeof path === "string" && path.length > 0)
+		: [];
+	return paths.map((path) => (isAbsolute(path) ? path : resolve(workspacePath, path)));
+}
+
+/**
+ * Quote a path for a copy-pasteable `autorag ... --search-paths` command. A folder name is user-controlled, so it
+ * is single-quoted, which keeps quotes, backslashes, `$(...)` and backticks literal: POSIX shells end and reopen
+ * the quote around an embedded `'` (`'\''`); PowerShell, Windows' default terminal, doubles it (`''`).
+ */
+function quoteCommandArg(value: string, platform: NodeJS.Platform): string {
+	return platform === "win32" ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * Cloud and network folders this machine has that no search path covers, each with the command that adds it.
+ * Reads directory metadata only and never fails setup: a probe error contributes no folders.
+ */
+async function detectCloudFolders(
+	raw: Record<string, unknown>,
+	workspacePath: string,
+	probe: CloudFileProbe | undefined,
+	platform: NodeJS.Platform,
+): Promise<readonly SetupCloudFolderReport[]> {
+	if (probe === undefined) return [];
+	try {
+		const searchPaths = resolvedSearchPaths(raw, workspacePath);
+		const covered = searchPaths.map((path) => canonicalPath(path));
+		const roots = await probe.cloudRoots(searchPaths);
+		return roots
+			.map((root) => ({ root, canonical: canonicalPath(root.path) }))
+			.filter(({ canonical }) => !covered.some((path) => isPathInside(path, canonical)))
+			.map(({ root }) => ({
+				path: root.path,
+				kind: root.kind,
+				command: `autorag init --search-paths ${quoteCommandArg(root.path, platform)}`,
+			}));
+	} catch {
+		return [];
+	}
 }
 
 export async function runSetup(options: {
@@ -348,12 +430,21 @@ export async function runSetup(options: {
 			raw.filee,
 			options.deps?.filee ?? ((o) => resolveFileeBinary({ ...o, env })),
 		);
+		// Cloud/network folders the user has not pointed `searchPaths` at: pure metadata detection, reported so
+		// a mounted share (or a retired cloud datasource) can move to the folder-based path.
+		const cloudFolders = await detectCloudFolders(
+			raw,
+			options.workspacePath,
+			options.deps?.cloudProbe ?? defaultCloudProbe(platform, env),
+			platform,
+		);
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
 			mode: semantic ? "semantic" : "bm25",
 			embedding,
 			datasources,
 			filee: fileeReport,
+			...(cloudFolders.length === 0 ? {} : { cloudFolders }),
 			...(semantic ? {} : { remediation: REMEDIATION }),
 			...(histerReports[0] === undefined ? {} : { hister: histerReports[0] }),
 			...(histerReports.length > 1 ? { histers: histerReports } : {}),

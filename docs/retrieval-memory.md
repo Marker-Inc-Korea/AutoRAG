@@ -64,7 +64,7 @@ config report has no citations and does not enter retrieval memory.
 - **Threshold.** `EVIDENCE_SUPPORT_THRESHOLD` is **0.7**. Jev's
   P(supports) >= 0.7 stores the record as `judgedEvidence`; below 0.7 it is
   discarded. A unit Jev leaves unanswered is simply absent.
-- **Failure behavior.** With Jev disabled or unreachable, **nothing is judged
+- **Failure behavior.** With Jev unreachable, **nothing is judged
   and nothing is stored**, and an `evidence-judgment-fallback` diagnostic
   carries the verbatim error (or Jev's own hint when it answered with no usable
   number). Judging never blocks a search.

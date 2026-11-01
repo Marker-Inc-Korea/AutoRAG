@@ -32,32 +32,6 @@ trusted `vdr sync`. Keyword, V-SPLADE lexical, dense embedding, and hybrid
 search are delegated to `clawgallery search --json`; AutoRAG never reads
 `images.jsonl` or `vdr.sqlite3`, and does not trigger captioning or renaming.
 
-### Spotlight
-
-`spotlight` is a macOS-only live-search skill. It drives the built-in `mdfind`
-CLI (no extra install). macOS owns and refreshes the Spotlight index; AutoRAG
-does not create a snapshot. Each configured query is a trusted Spotlight
-filter AND-ed with the user's search text, and only the requested hits are
-hydrated. Datasource refresh only checks platform, configuration, and index
-readiness without running `mdfind`. Result metadata carries the real absolute
-path. Grant Full Disk Access to the host app when searching Mail, Messages,
-Safari, or other protected locations. Unavailable on non-macOS hosts.
-
-```json
-{
-  "datasources": {
-    "mac-files": {
-      "type": "spotlight",
-      "instanceId": "local",
-      "connector": {
-        "queries": ["kMDItemContentTypeTree == 'public.text'"],
-        "onlyIn": "/Users/me/Documents"
-      }
-    }
-  }
-}
-```
-
 ### Obsidian
 
 `obsidian` indexes a markdown vault with MinSync — the same engine and
@@ -334,14 +308,11 @@ servers apart.
 ```json
 {
   "datasources": {
-    "personal-google-drive": {
-      "type": "cloud-drive",
-      "instanceId": "personal",
-      "description": "Project contracts and government-support documents. Prefer this connection for current agreements; treat Archive/ as historical.",
-      "connector": {
-        "provider": "google-drive",
-        "remote": "personal-gdrive:"
-      }
+    "company-slack": {
+      "type": "slack",
+      "instanceId": "company",
+      "description": "Engineering and product channels. Prefer this connection for current project decisions; treat #general as historical chatter.",
+      "connector": { "configPath": "/secure/company-slack.toml" }
     }
   }
 }
@@ -571,114 +542,52 @@ Arabic message that the base tokenizer splits differently is still ranked lexica
 a supplemental native candidate. Tables that are not configured are ignored. Set `sidecar: false` to retain the
 native method and its language-index fusion throughout.
 
-## Cloud drives via rclone
+## Cloud drives and network folders
 
-The `cloud-drive` datasource uses the external [`rclone`](https://rclone.org)
-CLI as the provider boundary. Configure OAuth, Apple ID/session, or other
-credentials only in `rclone config`; AutoRAG receives the trusted remote name,
-never provider secrets.
+Cloud storage is a folder, not a datasource skill. Connect it by adding the
+provider's desktop-sync folder to `searchPaths` — the sync app (iCloud Drive,
+Google Drive, OneDrive, Dropbox, …) owns the mount, its authentication, and its
+placeholder lifecycle, and the parsed mirror indexes the folder like any other.
+A refresh reads each cloud or network file once per change, downloads a cloud
+placeholder within the per-refresh budget, then releases the local copy again;
+see [Cloud and network folders](minsync-setup.md#cloud-and-network-folders) for
+the detection rules, the download budget (`refresh.cloudMaxFiles` /
+`refresh.cloudMaxBytes`), and what is unverified.
 
-Tier-1 is Google Drive. OneDrive and mounted/network remotes use the same
-provider-neutral contract. iCloud Drive is explicitly experimental because
-its rclone backend is Tier 4 and periodically requires Apple ID/password,
-2FA, and reauthentication.
+Storage without a desktop sync app can be mounted instead: `rclone mount
+<remote>: <mountpoint>` exposes it as a local folder, or `rclone serve webdav
+<remote>:` plus an OS WebDAV mount (`mount_webdav` on macOS, a mapped drive on
+Windows) does the same. However it is mounted, AutoRAG then treats the folder as
+a network folder and reads each file over the wire, with no download budget.
 
-```json
-{
-  "datasources": {
-    "personal-google-drive": {
-      "type": "cloud-drive",
-      "instanceId": "personal",
-      "connector": {
-        "provider": "google-drive",
-        "remote": "personal-gdrive:"
-      }
-    },
-    "company-onedrive": {
-      "type": "cloud-drive",
-      "instanceId": "work",
-      "pollingIntervalMs": 900000,
-      "connector": {
-        "provider": "onedrive",
-        "remote": "onedrive:Team Docs",
-        "include": ["**/*.md", "**/*.pdf"],
-        "exclude": ["Archive/**"],
-        "maxBytesPerFile": 52428800,
-        "concurrency": 4,
-        "bandwidthLimit": "10M",
-        "dryRun": false
-      }
-    }
-  }
-}
-```
+### Removed: the `cloud-drive` datasource
 
-`cloud-drive` is the reusable template, not the required connection name.
-Every key whose `type` is `"cloud-drive"` becomes an independent datasource:
+The rclone-backed `cloud-drive` datasource is removed. A config entry that still
+names `cloud-drive` (or an alias with `"type": "cloud-drive"`) is now an unknown
+datasource skill: it is skipped with the existing `unknown-datasource-skill`
+warning, as for any other retired skill, and nothing is migrated or shimmed. To
+keep a Google Drive, OneDrive, Dropbox, or iCloud Drive collection searchable:
 
-- its key is the datasource id and skill suffix;
-- `datasource-personal-google-drive` and `datasource-company-onedrive` are
-  independently loadable with `load_datasource_skill`;
-- source scopes are isolated under the same aliases;
-- manifests, mirrors, and chunks are stored independently under
-  `.autorag/datasources/<alias>/<instance>/`.
+1. Remove the `cloud-drive` entry (and every alias whose `type` is
+   `"cloud-drive"`) from `datasources`.
+2. Add the provider's sync folder to `searchPaths` — for example
+   `~/Library/CloudStorage/GoogleDrive-<account>` or
+   `~/Library/Mobile Documents/com~apple~CloudDocs` on macOS, or the
+   OneDrive/Dropbox/iCloud-for-Windows folder on Windows — and run
+   `autorag refresh`.
+3. Delete the old rclone data left under `<workspace>/.autorag/datasources/<name>/`
+   (each removed connection's `mirror/`, `manifest.json`, and `chunks.json`).
 
-This lets one process connect multiple accounts from the same provider as well
-as different providers. For example, `personal-google-drive` and
-`client-google-drive` may both use Google Drive but different rclone remotes.
+`autorag setup` reports every cloud or network folder the machine has that no
+`searchPaths` entry covers, with the exact command to add it.
 
-### Migrating from the legacy `gdrive` datasource
+Google Docs, Sheets, and Slides are a known gap: in a sync folder they appear
+only as small `.gdoc`/`.gsheet`/`.gslides` pointer files with no document
+content, so they are not indexed beyond their names. Whether `rclone mount` /
+`rclone serve webdav` exports them as readable files is unverified.
 
-The former REST-backed `gdrive` datasource and its `backend: "rclone"`
-compatibility mode are removed. Configure every Google Drive connection as a
-named `cloud-drive` alias and authenticate the remote with `rclone config`:
-
-```json
-{
-  "datasources": {
-    "google-drive": {
-      "type": "cloud-drive",
-      "instanceId": "default",
-      "connector": {
-        "provider": "google-drive",
-        "remote": "my-google-drive:"
-      }
-    }
-  }
-}
-```
-
-Existing `gdrive` configurations must be renamed and converted before the next
-refresh; the old REST token settings and `/gdrive/**` scopes are not read.
-
-Run the CLI datasource refresh with:
-
-```bash
-rclone config
-autorag refresh --method datasources --config ./config.json
-autorag search "the renewal terms in the team drive"
-```
-
-Each refresh runs `rclone lsjson --recursive --files-only --hash`, compares
-the result with the workspace-local manifest at
-`.autorag/datasources/<connection-alias>/<instance>/manifest.json`, then copies only
-added/changed indexable files into `mirror/`. Deleted and renamed virtual paths
-are removed from the completed snapshot. A no-op refresh downloads zero bodies
-and does not rewrite `chunks.json`. A failed copy leaves the previous manifest
-and mirror available for query-time search. `include`, `exclude`,
-`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
-`bandwidthLimit`, and `dryRun` are trusted server configuration; model/tool
-arguments cannot change them. The RSS connector takes the same trusted
-`maxDocuments`/`maxItemsPerFeed`/`maxContentChars` caps, and Spotlight takes
-`maxDocuments`/`maxContentChars`/`maxResultsPerQuery`/`maxBytesPerFile`.
-
-Before searching, the agent loads the datasource skill with
-`load_datasource_skill`, then calls the connection's dedicated
-`search_datasource_<name>` tool using a natural-language query and, when
-useful, a narrowing scope such as `/company-onedrive/work/**`. Read-only
-`rclone` inspection (e.g. `rclone lsl <remote>:<path>`) may run directly
-through bash per the skill's Native CLI section; credentials stay with
-rclone and the agent never requests them.
+Connector ingest caps stay trusted configuration: the RSS connector takes
+`maxDocuments`/`maxItemsPerFeed`/`maxContentChars`.
 
 ## Chat channel selection
 

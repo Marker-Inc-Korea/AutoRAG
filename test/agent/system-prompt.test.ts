@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toDatasourceAgentSkill } from "../../src/agent/datasource-skill.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
-import { CloudDriveSkill } from "../../src/datasource/skills/cloud-drive/skill.ts";
+import { RssSkill } from "../../src/datasource/skills/rss/skill.ts";
 
 function prompt(
 	toolNames = [
@@ -35,53 +35,42 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(prompt([])).toMatch(/blocked\/degraded state/i);
 	});
 
-	it("teaches the agent to load and search configured cloud-drive skills", () => {
-		const skill = new CloudDriveSkill({
-			instanceId: "icloud-docs",
-			provider: "icloud",
-			connector: { fetch: async () => ({ ok: true, documents: [] }) },
+	it("teaches the agent to load and search configured datasource skills", () => {
+		const skill = new RssSkill({
+			instanceId: "news",
+			connectorOptions: { feeds: [{ url: "https://example.com/feed.xml" }] },
 		});
 		const prompt = buildSystemPrompt({
-			toolNames: ["search_datasource_cloud_drive", "load_datasource_skill"],
+			toolNames: ["search_datasource_rss", "load_datasource_skill"],
 			datasourceSkills: [toDatasourceAgentSkill(skill.skillManifest())],
 		});
 
-		expect(prompt).toContain("datasource-cloud-drive");
+		expect(prompt).toContain("datasource-rss");
 		expect(prompt).toContain("load_datasource_skill");
-		expect(prompt).toContain("search_datasource_cloud_drive");
-		const manifest = skill.skillManifest().content;
-		expect(manifest).toContain("Google Drive");
-		expect(manifest).toContain("OneDrive");
-		expect(manifest).toMatch(/iCloud.*experimental/i);
-		expect(manifest).toContain("/cloud-drive/icloud-docs");
+		expect(prompt).toContain("search_datasource_rss");
+		expect(skill.skillManifest().content).toContain("/rss/news");
 	});
 
-	it("lists multiple drive connections as independently loadable skills", () => {
-		const personal = new CloudDriveSkill({
-			skillName: "personal-google-drive",
+	it("lists multiple connections as independently loadable skills", () => {
+		const personal = new RssSkill({
+			skillName: "personal-feeds",
 			instanceId: "personal",
-			provider: "google-drive",
-			connector: { fetch: async () => ({ ok: true, documents: [] }) },
+			connectorOptions: { feeds: [{ url: "https://example.com/a.xml" }] },
 		});
-		const work = new CloudDriveSkill({
-			skillName: "company-onedrive",
+		const work = new RssSkill({
+			skillName: "company-news",
 			instanceId: "work",
-			provider: "onedrive",
-			connector: { fetch: async () => ({ ok: true, documents: [] }) },
+			connectorOptions: { feeds: [{ url: "https://example.com/b.xml" }] },
 		});
 		const prompt = buildSystemPrompt({
-			toolNames: [
-				"search_datasource_personal_google_drive",
-				"search_datasource_company_onedrive",
-				"load_datasource_skill",
-			],
+			toolNames: ["search_datasource_personal_feeds", "search_datasource_company_news", "load_datasource_skill"],
 			datasourceSkills: [personal, work].map((skill) => toDatasourceAgentSkill(skill.skillManifest())),
 		});
 
-		expect(prompt).toContain("datasource-personal-google-drive");
-		expect(prompt).toContain("datasource-company-onedrive");
-		expect(personal.skillManifest().content).toContain("/personal-google-drive/personal");
-		expect(work.skillManifest().content).toContain("/company-onedrive/work");
+		expect(prompt).toContain("datasource-personal-feeds");
+		expect(prompt).toContain("datasource-company-news");
+		expect(personal.skillManifest().content).toContain("/personal-feeds/personal");
+		expect(work.skillManifest().content).toContain("/company-news/work");
 	});
 
 	it("frames AutoRAG as a librarian for document collections, cloud drives, images, and messenger history without codebases", () => {

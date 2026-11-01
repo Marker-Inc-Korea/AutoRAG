@@ -363,32 +363,18 @@ describe("AutoRAGAgent retrieval limits", () => {
 		expect(specs[0]?.instanceScopes).toHaveLength(2);
 	});
 
-	it("forwards prefetch.jikjiTopK and truncates prefetch.jikjiPathLimit", async () => {
-		const internals = agentWith({ prefetch: { jikjiTopK: 12, jikjiPathLimit: 2 } });
+	it("forwards prefetch.jikjiTopK to Jikji find", async () => {
+		const internals = agentWith({ prefetch: { jikjiTopK: 12 } });
 		const seenTopK: number[] = [];
 		internals.jikjiClient = {};
 		internals.findJikji = async (_query, opts) => {
 			seenTopK.push(opts?.topK ?? 0);
-			return { answerPack: { answerPaths: ["/p/1", "/p/2", "/p/3", "/p/4"] } };
+			return { answerPack: { answerPaths: ["/p/1", "/p/2"] } };
 		};
 
-		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
+		await internals.prefetchInitialRetrievalContext("query", ["query"], {});
 
 		expect(seenTopK).toEqual([12]);
-		expect((context.match(/^\[e\d+\]/gmu) ?? []).length).toBe(2);
-		expect(context).toContain("/p/2");
-		expect(context).not.toContain("/p/3");
-	});
-
-	it("numbers the unranked Jikji and MinSync sections as one flat citation list", async () => {
-		const internals = agentWith({ prefetch: { jikjiPathLimit: 2, sectionLimit: 2 } });
-		internals.jikjiClient = {};
-		internals.findJikji = async () => ({ answerPack: { answerPaths: ["/p/1", "/p/2"] } });
-		injectMinSync(internals, 2);
-
-		const context = await internals.prefetchInitialRetrievalContext("query", ["query"], {});
-
-		expect(context.match(/^\[e\d+\]/gmu)).toEqual(["[e1]", "[e2]", "[e3]", "[e4]"]);
 	});
 
 	it("passes mergedEvidenceCeiling to the standalone retrieval engine", async () => {

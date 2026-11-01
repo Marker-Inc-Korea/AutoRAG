@@ -1,3 +1,19 @@
+export type {
+	CloudEvictResult,
+	CloudFileProbe,
+	CloudProvider,
+	CloudRoot,
+	CloudRootKind,
+} from "../filesystem/cloud-placeholder.ts";
+export { DEFAULT_CLOUD_MAX_BYTES, DEFAULT_CLOUD_MAX_FILES } from "./cloud.ts";
+export type { CloudFingerprint, CloudFingerprintStore } from "./cloud-fingerprints.ts";
+export {
+	cloudFingerprintExclusions,
+	cloudFingerprintStorePath,
+	emptyCloudFingerprints,
+	loadCloudFingerprints,
+	saveCloudFingerprints,
+} from "./cloud-fingerprints.ts";
 export type { ParsedMirrorEntry, ParsedMirrorIndex } from "./index-store.ts";
 export { emptyMirrorIndex, loadMirrorIndex } from "./index-store.ts";
 export {

@@ -142,7 +142,7 @@ function scriptedJev(
 }
 
 describe("gate inside a real pi session (headless)", () => {
-	async function run(mode: PermissionMode, command: string, jev?: ScriptedJev) {
+	async function run(mode: PermissionMode, command: string, jev: Pick<ScriptedJev, "backend"> = scriptedJev()) {
 		const registration = registerFauxProvider({ api: `faux-perm-${randomUUID()}`, models: [{ id: "perm" }] });
 		registration.setResponses(bashThenDone(command));
 		const controller = new PermissionController(mode);
@@ -152,16 +152,7 @@ describe("gate inside a real pi session (headless)", () => {
 			model: registration.getModel(),
 			getSystemPrompt: () => "system",
 			customTools: [],
-			extensionFactories: [
-				createPermissionGate({
-					controller,
-					...(jev === undefined
-						? {}
-						: {
-								judge: createJevJudge({ backend: jev.backend }),
-							}),
-				}),
-			],
+			extensionFactories: [createPermissionGate({ controller, judge: createJevJudge({ backend: jev.backend }) })],
 		});
 		try {
 			await hosted.session.prompt("tidy up");
@@ -197,10 +188,16 @@ describe("gate inside a real pi session (headless)", () => {
 		expect(readFileSync(copy, "utf8")).toBe("hello");
 	});
 
-	it("blocks everything gated when there is no Jev to classify, so it fails closed", async () => {
+	it("blocks everything gated when Jev cannot classify the call, so it fails closed", async () => {
 		const file = join(root, "keep.txt");
 		writeFileSync(file, "precious");
-		const result = await run("auto", `rm ${file}`);
+		const down: JevBackend = {
+			name: "down",
+			async judge() {
+				throw new Error("connection refused");
+			},
+		};
+		const result = await run("auto", `rm ${file}`, { backend: down });
 		expect(existsSync(file)).toBe(true);
 		expect(result).toMatch(/could not classify/i);
 	});
@@ -230,7 +227,7 @@ describe("gate inside the agent's interactive runtime", () => {
 	async function tui(
 		mode: PermissionMode,
 		responses: FauxResponseStep[],
-		jev: JevBackend | undefined,
+		jev: JevBackend,
 		select: ExtensionUIContext["select"],
 	) {
 		const registration = registerFauxProvider({ api: `faux-perm-tui-${randomUUID()}`, models: [{ id: "perm-tui" }] });
@@ -253,7 +250,7 @@ describe("gate inside the agent's interactive runtime", () => {
 			piAgentDir: agentDir,
 			piSessionDir: join(root, "sessions"),
 			permissionMode: mode,
-			...(jev === undefined ? { jev: false as const } : { jev: { backend: jev } }),
+			jev: { backend: jev },
 		});
 		const hosted = await agent.createPiInteractiveRuntime();
 		await hosted.runtime.session.bindExtensions({ uiContext: ui(select) });

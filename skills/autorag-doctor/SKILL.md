@@ -1,6 +1,6 @@
 ---
 name: autorag-doctor
-description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, mailcrawl, rclone, Spotlight), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
+description: Diagnose and repair a broken or half-working AutoRAG install so every configured source is both indexed and searchable. Checks AutoRAG, MinSync, Jikji, the embedding backend, and every CLI-backed datasource (lazykatok, discrawl, slacrawl, wacrawl, telecrawl, notcrawl, mailcrawl), then fixes orphan locks, orphan processes, embedding dimension or identity mismatches, stale indexes, and missing setup. Use when search returns nothing or too little, refresh hangs or fails, a datasource disappeared from results, indexes look stale, the embedder is unavailable, or the user asks to check, diagnose, verify, or repair AutoRAG.
 license: Apache-2.0
 ---
 
@@ -72,8 +72,6 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 | Notion | `notcrawl doctor`, `notcrawl status` | `notcrawl sync --source desktop` |
 | Obsidian / notes | `autorag status` (AutoRAG-owned index) | `autorag refresh --method datasources`; if corrupt, delete `.autorag/datasources/obsidian/<instance>` first |
 | Mail | `mailcrawl doctor`, `mailcrawl status` | `mailcrawl sync && mailcrawl index` |
-| Cloud drive | `rclone listremotes` | `autorag refresh --method datasources` |
-| Spotlight (macOS) | `mdutil -s /` | indexed by the OS; no AutoRAG sync |
 | Lark / Feishu | `lark-cli auth status --format json` | no local sync; search is remote |
 
 Rules:
@@ -230,6 +228,10 @@ to retry those files once without re-indexing healthy ones.
   (`cargo install minsync`) or leave `minSync.autoInstall` on, then retry.
 - `jikji-unavailable`: the binary is missing and auto-install failed. It
   installs through cargo; verify the Rust toolchain, then `autorag refresh --method jikji` to retry.
+- `jikji-unsupported-version`: the `jikji` AutoRAG found is older than 0.2.0, so it was never run.
+  The message names the detected version and the binary path. `autorag refresh --method jikji`
+  installs the pinned build; with `jikji.autoInstall: false` or `jikji.binaryPath` upgrade it yourself
+  (`cargo install jikji-cli --version 0.2.1 --locked --force`).
 - `datasource-auth-error` / `datasource-rate-limited`: datasource credentials or quota. Report the
   missing environment-variable **name** and let the user supply it.
 - A configured datasource that returns nothing is a native store, connector, or
@@ -247,6 +249,7 @@ to retry those files once without re-indexing healthy ones.
 | `minsync-lock-held` | Another `minsync` run holds `.minsync/lock`, often an orphan left by a killed host; retryable | Wait for it to finish or stop that `minsync` process, then `autorag refresh --method minsync` |
 | `lexical-tokenizer-unavailable` | Warning: the BM25 tokenizer needs the Kiwi library and model, which were not found, so MinSync tokenizes on whitespace and `인증서를` does not match `인증서` | Install Kiwi (set `KIWI_LIBRARY_PATH` and `KIWI_MODEL_PATH`, or install under `~/.local/kiwi`), then `autorag refresh --method minsync` |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check cargo, retry refresh |
+| `jikji-unsupported-version` | Jikji older than 0.2.0 was found and not run; message names the version and path | `autorag refresh --method jikji` installs the pinned build, or upgrade it yourself |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
 | `embedder-unavailable` | No remote endpoint answered, no daemon could start, and the in-process addon is missing or failed | Run `minsync serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
