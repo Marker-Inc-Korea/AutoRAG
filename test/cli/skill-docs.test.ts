@@ -268,7 +268,7 @@ describe("parent-agent skill docs", () => {
 		const setup = readSkill("autorag-setup");
 		expect(setup).toMatch(/`hwp`, `hwpx`/);
 		expect(setup).not.toMatch(/or `hwp` as fully supported parsed formats/);
-		expect(setup).toMatch(/`xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `hwp`, `hwpx`/);
+		expect(setup).toMatch(/`xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`/);
 		expect(setup).toMatch(/Do not present legacy\n`\.doc` as a supported parsed format/s);
 	});
 

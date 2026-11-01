@@ -94,7 +94,7 @@ approval before indexing:
 | Windows | Documents, Downloads, Desktop shell folders | OneDrive document roots, user-named project docs |
 
 Supported parsed formats are `md`, `markdown`, `txt`, `text`, `pdf`, `docx`,
-`pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `hwp`, `hwpx`, and `eml`. OCR for `jpg`, `jpeg`, `png`, `bmp`,
+`pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`, and `eml`. OCR for `jpg`, `jpeg`, `png`, `bmp`,
 and `tiff` is optional (`parserOptions.ocr.enabled`). Do not present legacy
 `.doc` as a supported parsed format.
 
