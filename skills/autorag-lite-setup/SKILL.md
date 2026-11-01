@@ -56,7 +56,7 @@ explicit path (`--config` or `AUTORAG_CONFIG`); `--force` refuses to replace the
 implicit `~/.autorag/config.json`. Explicit user paths win;
 otherwise propose one to three document-dense roots and get approval before
 indexing. Supported parsed formats are `md`, `markdown`, `txt`, `text`, `pdf`,
-`docx`, `pptx`, `xlsx`, `xls`, `hwp`, `hwpx`, and `eml`. Legacy `.doc` is not
+`docx`, `pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`, and `eml`. Legacy `.doc` is not
 a supported parsed format.
 
 Config resolution follows the usual order: `--config`, `AUTORAG_CONFIG`,
@@ -137,7 +137,7 @@ Datasource skills belong in trusted config.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`,
-`mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, `hister`) or connection
+`mailcrawl`, `obsidian`, `rss`, `lark`, `hister`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are

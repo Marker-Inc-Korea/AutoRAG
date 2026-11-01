@@ -392,7 +392,7 @@ function candidateQuestion(candidate: DatasourceCandidate, webCandidate: boolean
  * withheld when a configured datasource already uses that id
  * ({@link DatasourceSelection.webIdTaken}), so a question id never names two
  * candidates. Never throws: a missing credential or an unreachable backend
- * searches nothing, which is the behavior without Jev.
+ * searches nothing.
  */
 export async function selectDatasources(
 	judge: JevJudge,

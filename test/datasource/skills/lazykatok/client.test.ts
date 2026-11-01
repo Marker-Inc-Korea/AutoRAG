@@ -76,6 +76,26 @@ async function waitForLogFile(): Promise<void> {
 	throw new Error("timed out waiting for fake lazykatok log");
 }
 
+function isAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * A SIGKILLed descendant stays kill(pid, 0)-visible until init reaps it, so poll instead of asserting once.
+ * The descendant is not our child (no exit event to await) and reaping is OS scheduling, so fake timers
+ * cannot drive it; a bounded real-clock poll on the pid table is the only observable signal.
+ */
+async function expectReaped(pid: number): Promise<void> {
+	const deadline = Date.now() + 5_000;
+	while (isAlive(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(isAlive(pid)).toBe(false);
+}
+
 function parseLoggedCall(line: string): LoggedCall {
 	const parsed: unknown = JSON.parse(line);
 	if (!isLoggedCall(parsed)) throw new Error(`unexpected fake lazykatok log: ${line}`);
@@ -491,7 +511,7 @@ setInterval(() => undefined, 1000);
 			expect(result).toMatchObject({ ok: false, reason: "timeout" });
 			expect(descendantPid).toEqual(expect.any(Number));
 			if (descendantPid === undefined) throw new Error("fake lazykatok did not record descendant PID");
-			expect(() => process.kill(descendantPid, 0)).toThrow();
+			await expectReaped(descendantPid);
 		} finally {
 			if (descendantPid !== undefined) {
 				try {
