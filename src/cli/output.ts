@@ -389,6 +389,7 @@ export function renderError(err: unknown, opts: RenderOptions): string {
 			envelope.reason = error.reason;
 			if (error.backend !== undefined) envelope.backend = error.backend;
 			if (error.model !== undefined) envelope.model = error.model;
+			envelope.attempts = error.attempts;
 		}
 		if (hint) {
 			envelope.hint = {

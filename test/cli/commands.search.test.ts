@@ -156,6 +156,54 @@ describe("runSearch", () => {
 		expect(stderr.join("\n")).toMatch(/^error: \[decision-model-unavailable\] AutoRAG cannot be used/u);
 	});
 
+	it("lists every decision model it tried in the JSON envelope", async () => {
+		const { ctx, stderr } = context(["krill habitats"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield* [];
+					throw new DecisionModelUnavailableError(
+						{ reason: "missing-credential", detail: "needs OPENROUTER_API_KEY", backend: "openrouter" },
+						{
+							reason: "unreachable",
+							detail: "request timed out",
+							backend: "sllm",
+							model: "openrouter/qwen/qwen3.7-flash",
+						},
+					);
+				},
+			}),
+			releaseEmbedders: async () => {},
+		});
+		const envelope = JSON.parse(stderr.join("\n"));
+		expect(envelope.reason).toBe("missing-credential");
+		expect(envelope.attempts).toEqual([
+			{ reason: "missing-credential", detail: "needs OPENROUTER_API_KEY", backend: "openrouter" },
+			{
+				reason: "unreachable",
+				detail: "request timed out",
+				backend: "sllm",
+				model: "openrouter/qwen/qwen3.7-flash",
+			},
+		]);
+	});
+
+	it("hands the agent Jev's sLLM fallback, resolved like the decomposition model", async () => {
+		let jev: unknown;
+		await runSearch(context(["query"]).ctx, {
+			modelResolver: () => ({ model: model() }),
+			agentFactory: (options) => {
+				jev = options.jev;
+				return completeStream();
+			},
+			releaseEmbedders: async () => {},
+		});
+		expect(jev).toMatchObject({
+			backend: "openrouter",
+			fallback: { model: { provider: "openrouter", id: "qwen/qwen3.7-flash" } },
+		});
+	});
+
 	it("reports usage for an empty query", async () => {
 		const { ctx, stderr } = context([]);
 		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);

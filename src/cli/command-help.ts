@@ -254,7 +254,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --whatsapp-group <jid> With --whatsapp, answer only this WhatsApp group",
 	]),
 	models: usage([
-		"autorag models - list configured chat models",
+		"autorag models - list configured chat and decision models",
 		"",
 		"Usage: autorag models list [flags]",
 		"",
@@ -266,6 +266,9 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Flags:",
 		"  --provider <id>  Restrict `list` to one provider",
 		"  --available      With `list`, show only providers with configured credentials",
+		"  --decision       With `list`, show decision models (jev.backend / jev.model",
+		"                   candidates, e.g. openai/gpt-6-luna) instead of chat models;",
+		"                   signed in to Dazzi Models, the hosted plan lists its own",
 		"  --format json    Emit machine-readable JSON",
 	]),
 	"update-check": usage([

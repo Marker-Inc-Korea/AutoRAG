@@ -24,6 +24,7 @@ const BOOLEAN_FLAGS = new Set([
 	"strict",
 	"refresh",
 	"available",
+	"decision",
 	"whatsapp",
 	"telegram",
 	"discord",

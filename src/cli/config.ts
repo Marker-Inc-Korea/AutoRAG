@@ -5,7 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
-import type { JevBackendName, JevToolOptions } from "../agent/jev-extension.ts";
+import type { JevToolOptions } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -19,6 +19,7 @@ import {
 } from "../agent/permission-gate.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
+import type { SllmDecisionModel } from "../agent/sllm-decision.ts";
 import {
 	DAZZI_INPUT_LIMITS,
 	PROVIDER_ID as DAZZI_PROVIDER_ID,
@@ -113,18 +114,31 @@ export interface WebSearchCliConfig {
 /**
  * Jev decision-model config. The decision model is required: an absent
  * section or `{}` uses {@link defaultJevBackend}, and there is no opt-out.
- * Secrets never appear here: `jev-use` reads the backend credential from its
- * own environment variable (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or
- * `AI_GATEWAY_API_KEY`), and the hosted Dazzi Models `dazzi` backend uses the
- * credential stored by `/login`.
+ * Secrets never appear here: a pi provider's credential comes from its
+ * environment variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, ...) or pi's
+ * `auth.json`, and the hosted Dazzi Models `dazzi` backend uses the credential
+ * stored by `/login`.
  */
 export interface JevCliConfig {
-	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `dazzi`); omit to let the first credential present win. */
-	backend?: JevBackendName;
-	/** Model id sent with every call, e.g. `jev-latest`. */
+	/**
+	 * `dazzi`, or a pi provider with decision models: `openrouter`, `openai`, `typesafe`,
+	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode` (`autorag models list --decision`).
+	 */
+	backend?: string;
+	/** Decision model id within the backend, e.g. `openai/gpt-6-luna-decisions` on OpenRouter. */
 	model?: string;
 	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
 	confidenceThreshold?: number;
+	/**
+	 * Small chat LLM the session moves to when Jev is unavailable. Absent or `{}` uses the
+	 * question-decomposition model; `false` turns the fallback off.
+	 */
+	fallback?: JevFallbackConfig | false;
+}
+
+/** The sLLM fallback; same model reference shape and auth rules as the top-level `model`. */
+export interface JevFallbackConfig {
+	model?: AgentModelConfig;
 }
 
 /** Question-decomposition config. Secrets stay in env/pi auth like the main model. */
@@ -1064,10 +1078,8 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 	backend: true,
 	model: true,
 	confidenceThreshold: true,
+	fallback: true,
 };
-
-/** Jev backends AutoRAG can build: jev-use's own plus the hosted Dazzi Models plan. */
-const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "dazzi"];
 
 const JEV_REQUIRED_MESSAGE =
 	"AutoRAG requires its decision model (Jev) and cannot run without it; remove the setting, or point jev.backend at a backend you can reach";
@@ -1088,12 +1100,28 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 	}
 	const out: JevCliConfig = {};
 	if (record.backend !== undefined) {
-		const backend = record.backend;
-		if (typeof backend !== "string" || !JEV_BACKEND_NAMES.some((known) => known === backend)) {
-			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKEND_NAMES.join(", ")}`);
+		if (typeof record.backend !== "string" || record.backend.trim().length === 0) {
+			throw new ConfigError("jev.backend must be a non-empty string: dazzi, or a pi provider with decision models");
 		}
-		// Narrowed by the membership check above.
-		out.backend = backend as JevBackendName;
+		const backend = record.backend.trim();
+		// jev-use's name for Vercel AI Gateway; decision backends are pi provider ids now.
+		if (backend === "vercel")
+			throw new ConfigError('jev.backend "vercel" is now "vercel-ai-gateway", its pi provider id');
+		out.backend = backend;
+	}
+	if (record.fallback !== undefined) {
+		if (record.fallback === false) {
+			out.fallback = false;
+		} else if (typeof record.fallback === "object" && record.fallback !== null && !Array.isArray(record.fallback)) {
+			const fallback = record.fallback as Record<string, unknown>;
+			for (const key of Object.keys(fallback)) {
+				if (key !== "model") throw new ConfigError(`jev.fallback.${key} is not a recognized field`);
+			}
+			const model = modelReference(fallback.model, "jev.fallback.model");
+			out.fallback = model === undefined ? {} : { model };
+		} else {
+			throw new ConfigError("jev.fallback must be an object or false");
+		}
 	}
 	if (record.model !== undefined) {
 		if (typeof record.model !== "string" || record.model.trim().length === 0) {
@@ -1119,7 +1147,7 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
  * Jev backend used when the config names none (absent section or `{}`): the
  * hosted Dazzi Models plan when the user is signed in, else OpenRouter.
  */
-export function defaultJevBackend(agentDir: string = getAgentDir()): JevBackendName {
+export function defaultJevBackend(agentDir: string = getAgentDir()): string {
 	return isDazziSignedIn(agentDir) ? "dazzi" : "openrouter";
 }
 
@@ -1161,7 +1189,9 @@ export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecomposit
  * OpenRouter).
  */
 function buildJevAgentOption(raw: JevCliConfig | undefined, agentDir: string | undefined): JevToolOptions {
-	return { backend: defaultJevBackend(agentDir), ...normalizeJevConfig(raw ?? {}) };
+	// The sLLM fallback needs its credential resolved; resolveDecisionFallbackModel adds it.
+	const { fallback: _fallback, ...fields } = normalizeJevConfig(raw ?? {});
+	return { backend: defaultJevBackend(agentDir), ...fields };
 }
 
 /** Validate and map the webSearch config section onto the agent option. */
@@ -1927,6 +1957,25 @@ export async function resolveQueryDecompositionModel(
 ): Promise<DecompositionModel | undefined> {
 	if (config.queryDecomposition === false) return undefined;
 	const reference = config.queryDecomposition?.model ?? defaultQueryDecompositionModel(resolveAgentDir(options));
+	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
+	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
+	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
+}
+
+/**
+ * Resolve Jev's sLLM fallback and its credential through the same chain as the
+ * agent model. An absent `jev.fallback` or `{}` uses the question-decomposition
+ * model (its configured one, else {@link defaultQueryDecompositionModel});
+ * `jev.fallback: false` returns undefined, so a session without Jev fails.
+ */
+export async function resolveDecisionFallbackModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<SllmDecisionModel | undefined> {
+	const fallback = config.jev?.fallback;
+	if (fallback === false) return undefined;
+	const decomposition = config.queryDecomposition === false ? undefined : config.queryDecomposition?.model;
+	const reference = fallback?.model ?? decomposition ?? defaultQueryDecompositionModel(resolveAgentDir(options));
 	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
 	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
 	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
