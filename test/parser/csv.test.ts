@@ -103,6 +103,16 @@ describe("CsvParser keeps every value next to its labels", () => {
 		expect(lineContaining(markdown, "A-01")).toBe('[코드표!A4:C4] 코드: A-01 | 설명: 따옴표 "인용" | 수량: 30');
 	});
 
+	it("drops control characters such as NUL that a cell picked up from extracted text", async () => {
+		// MinSync's Korean tokenizer rejects a whole file when its text contains NUL.
+		const content =
+			"질문,답변,점수\n환불 규정은?,승인\u0000 후 지급\u0007,1\n보관 기간은?,5년,2\n담당 부서는?,재무팀,3\n";
+		const { markdown } = await parse("/docs/qa.csv", content);
+
+		expect(markdown).not.toMatch(/[\u0000-\u0008\u000e-\u001f\u007f]/);
+		expect(lineContaining(markdown, "환불")).toBe("[qa!A2:C2] 질문: 환불 규정은? | 답변: 승인 후 지급 | 점수: 1");
+	});
+
 	it("indexes the first rows of an oversized file and says how many it kept", async () => {
 		const parsed = await parse("/docs/주문.csv", createLongCsv(120), new CsvParser({ maxRows: 50 }));
 

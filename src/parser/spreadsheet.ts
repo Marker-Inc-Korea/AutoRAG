@@ -12,7 +12,6 @@ export const SPREADSHEET_EXTENSIONS = [".xlsx", ".xlsm", ".xlsb", ".xls", ".ods"
 const DEFAULT_MAX_ROWS_PER_SHEET = 100_000;
 const ZIP_SIGNATURE = [0x50, 0x4b] as const;
 const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] as const;
-const ZIP_FORMATS: Readonly<Record<string, true>> = { xlsx: true, xlsm: true, xlsb: true, ods: true };
 
 export interface SpreadsheetParserOptions {
 	/** Rows read per sheet, header included. Default 100,000. */
@@ -27,11 +26,14 @@ export interface SpreadsheetParserOptions {
  * (`742,000`, `32.1%`, dates). A format that scales or hides the stored number (`#,##0,"천원"`) keeps
  * the stored value next to it, Korean-numeral formats (`[DBNum1]`) fall back to the plain number, and a
  * formula saved without a result is shown as its formula (`=SUM(B2:B3)`).
+ *
+ * A web export saved under a workbook extension (an HTML table, common for bank and ERP downloads) is read
+ * as a sheet with its cell text kept as written, so `2023-06-01` and `00123` are not turned into numbers.
  */
 export class SpreadsheetParser extends Parser {
 	readonly name = "spreadsheet";
 	readonly extensions = SPREADSHEET_EXTENSIONS;
-	readonly version = `1+sheetjs-${XLSX.version}`;
+	readonly version = `2+sheetjs-${XLSX.version}`;
 	readonly #maxRowsPerSheet: number;
 
 	constructor(options: SpreadsheetParserOptions = {}) {
@@ -51,6 +53,8 @@ export class SpreadsheetParser extends Parser {
 				cellNF: true,
 				cellDates: false,
 				sheetRows: this.#maxRowsPerSheet,
+				// Only affects text containers (HTML/XML exports): keep their cells verbatim.
+				raw: true,
 			});
 		} catch (cause) {
 			throw new ParseError(this.name, input.virtualPath, cause);
@@ -82,20 +86,20 @@ export class SpreadsheetParser extends Parser {
 }
 
 /**
- * SheetJS reads almost any bytes as a one-cell CSV sheet, so the container is checked first: OOXML and
- * ODS are ZIP packages, and `.xls` is an OLE2 compound file or the HTML/XML a web export saves as `.xls`.
+ * SheetJS reads almost any bytes as a one-cell CSV sheet, so the container is checked first. A real workbook
+ * is a ZIP package (OOXML, ODS) or an OLE2 compound file (`.xls`, encrypted OOXML); a web export is HTML/XML
+ * markup. Files are often renamed between `.xls` and `.xlsx`, so any of the three is accepted for any of
+ * the workbook extensions and SheetJS decides from the content.
  */
 function assertWorkbookSignature(format: string, bytes: Uint8Array): void {
-	if (ZIP_FORMATS[format] === true) {
-		if (!startsWith(bytes, ZIP_SIGNATURE)) throw new Error(`not a ${format} workbook: missing ZIP signature`);
-		return;
-	}
-	if (startsWith(bytes, OLE_SIGNATURE)) return;
+	if (startsWith(bytes, ZIP_SIGNATURE) || startsWith(bytes, OLE_SIGNATURE)) return;
 	const head = new TextDecoder()
 		.decode(bytes.subarray(0, 64))
 		.replace(/^\uFEFF/, "")
 		.trimStart();
-	if (!head.startsWith("<")) throw new Error(`not a ${format} workbook: neither an OLE2 file nor HTML/XML markup`);
+	if (!head.startsWith("<")) {
+		throw new Error(`not a ${format} workbook: neither a ZIP or OLE2 file nor HTML/XML markup`);
+	}
 }
 
 function startsWith(bytes: Uint8Array, prefix: readonly number[]): boolean {
