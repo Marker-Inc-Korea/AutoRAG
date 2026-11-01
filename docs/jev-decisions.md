@@ -125,15 +125,36 @@ fills it in), AutoRAG takes Dazzi Models when signed in, else the first of
 ### sLLM fallback
 
 When the session check finds Jev unavailable, it probes the **sLLM fallback**, a
-small chat LLM answering the same typed questions through a tool call (with
-constrained JSON-schema sampling where the provider offers it). When the
-fallback answers, the session runs on it, and the run reports a
-`decision-model-fallback` warning naming Jev's failure and the fallback model.
-The progress step reads `sLLM fallback … (Jev: <reason>)`. A chat model's
-probabilities are its own estimate rather than a calibrated decision head, so
-routing and judgments on the fallback are less reliable. The next session checks
-Jev again first. When the fallback fails too, the error lists both failures in
-`attempts`.
+small chat LLM answering the same typed questions. When the fallback answers,
+the session runs on it, and the run reports a `decision-model-fallback` warning
+naming Jev's failure and the fallback model. The progress step reads
+`sLLM fallback … (Jev: <reason>)`. A chat model's probabilities are its own
+estimate rather than a calibrated decision head, so routing and judgments on
+the fallback are less reliable. The next session checks Jev again first. When
+the fallback fails too, the error lists both failures in `attempts`.
+
+Each request fixes its own answer format, so the reply can be read as typed
+verdicts:
+
+- **Format per request.** The `submit_decisions` tool's schema has one required
+  key per question (the same wire-safe key the decision backends send), holding
+  `yes` for a yes/no question, or one named probability per option (choice) or
+  per level index (score), plus a `confidence`. The tool asks for JSON-schema
+  constrained sampling (`strict: "prefer"`), which providers that support it
+  enforce (OpenRouter's OpenAI-compatible models, for example).
+- **Prompt.** The state, each question with its key and options or levels, and
+  an example reply in exactly that format.
+- **Sampling.** Temperature 0, reasoning off, up to 4,096 output tokens.
+- **Parsing.** The tool call's arguments, or else the JSON the reply's text
+  holds: code fences, surrounding prose, trailing commas, a missing `answers`
+  wrapper, and numbers written as strings or percentages are all read. Choice
+  and score probabilities are normalized to sum to one.
+- **Retry.** Answers that are missing or malformed (a key absent, an option
+  without a probability, a reply cut off) are asked again once, alone, with
+  their own format; the answers already read are kept. A question still
+  unanswered after that goes back as unanswered, so only that judgment takes its
+  per-call fallback. A request fails as a whole only when no answer could be
+  read from either attempt or the provider returned an error.
 
 The fallback model defaults to the question-decomposition model (its configured
 `queryDecomposition.model`, else `dazzi/openai/gpt-6-luna` when signed in, else

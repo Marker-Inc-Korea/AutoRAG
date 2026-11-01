@@ -329,10 +329,13 @@ describe("first question with the sLLM fallback", () => {
 					JSON.stringify(context.messages).includes(DECISION_MODEL_PROBE_QUESTION_ID)
 						? fauxAssistantMessage(
 								fauxToolCall(SLLM_DECISION_TOOL_NAME, {
-									answers: [
-										{ id: DECISION_MODEL_PROBE_QUESTION_ID, probabilities: [1], confidence: 1 },
-										{ id: DECISION_MODEL_CHOICE_PROBE_QUESTION_ID, probabilities: [1, 0], confidence: 1 },
-									],
+									answers: {
+										[DECISION_MODEL_PROBE_QUESTION_ID]: { yes: 1, confidence: 1 },
+										[DECISION_MODEL_CHOICE_PROBE_QUESTION_ID]: {
+											probabilities: { decision_model: 1, search_index: 0 },
+											confidence: 1,
+										},
+									},
 								}),
 								{ stopReason: "toolUse" },
 							)
