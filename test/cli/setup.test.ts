@@ -3,8 +3,18 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSetup } from "../../src/cli/setup.ts";
-
 import type { ManagedEmbedder } from "../../src/embedding/embedder.ts";
+import type { CloudFileProbe, CloudRoot } from "../../src/filesystem/cloud-placeholder.ts";
+
+function fakeCloudProbe(roots: readonly CloudRoot[]): CloudFileProbe {
+	return {
+		cloudRoots: async () => roots,
+		datalessAmong: async () => new Set<string>(),
+		providerOf: async () => undefined,
+		canRelease: () => false,
+		evict: async () => ({ ok: false, message: "not used" }),
+	};
+}
 
 const roots: string[] = [];
 afterEach(() => {
@@ -305,6 +315,92 @@ describe("setup orchestration", () => {
 		expect(report.embedding.reason).toContain("addon missing");
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
 		expect(report.remediation).toContain("minsync serve");
+	});
+});
+
+describe("cloud and network folder migration report", () => {
+	it("reports detected cloud/network folders not covered by searchPaths, each with the add command", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-cloud-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		const docs = join(root, "docs");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [docs], workspacePath: root }));
+		const googleDrive = join(root, "Library", "CloudStorage", "GoogleDrive-user");
+		const iCloud = join(root, "Library", "Mobile Documents");
+		const share = join(root, "Volumes", "shared");
+
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+				cloudProbe: fakeCloudProbe([
+					{ path: googleDrive, kind: "file-provider" },
+					{ path: iCloud, kind: "file-provider" },
+					{ path: docs, kind: "file-provider" },
+					{ path: share, kind: "network" },
+				]),
+			},
+		});
+
+		// `docs` is covered by searchPaths and is not reported; the rest are, in probe order.
+		expect(report.cloudFolders?.map((folder) => folder.path)).toEqual([googleDrive, iCloud, share]);
+		expect(report.cloudFolders?.map((folder) => folder.kind)).toEqual(["file-provider", "file-provider", "network"]);
+		expect(report.cloudFolders?.[0]?.command).toBe(`autorag init --search-paths "${googleDrive}"`);
+		expect(report.cloudFolders?.[2]?.command).toBe(`autorag init --search-paths "${share}"`);
+		// Detection is additive: readiness still reflects the embedding backend and datasources only.
+		const withoutProbe = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+				cloudProbe: fakeCloudProbe([]),
+			},
+		});
+		expect(report.ok).toBe(withoutProbe.ok);
+		expect(withoutProbe.cloudFolders).toBeUndefined();
+	});
+
+	it("omits the report when a probe finds nothing and never fails setup when a probe throws", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-cloud-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		const baseDeps = {
+			env: { PATH: "/bin", HOME: root } as NodeJS.ProcessEnv,
+			executable: () => undefined,
+			pathExists: () => true,
+			acquireLock: fakeLock,
+			embedder: fakeEmbedder({}),
+		};
+
+		const empty = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: { ...baseDeps, cloudProbe: fakeCloudProbe([]) },
+		});
+		expect(empty.cloudFolders).toBeUndefined();
+
+		const throwingProbe: CloudFileProbe = {
+			...fakeCloudProbe([]),
+			cloudRoots: async () => {
+				throw new Error("no mount helper");
+			},
+		};
+		const threw = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: { ...baseDeps, cloudProbe: throwingProbe },
+		});
+		expect(threw.cloudFolders).toBeUndefined();
 	});
 });
 

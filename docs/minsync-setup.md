@@ -575,6 +575,32 @@ by the `~/Library/CloudStorage` listing, while a Synology virtual drive on Windo
   reports `search-root-unavailable` and leaves its previously indexed documents untouched, so the mirror
   survives until the root is back.
 
+### Connecting cloud storage and migrating from the `cloud-drive` datasource
+
+Cloud storage is connected by adding the provider's sync folder to
+`searchPaths`; AutoRAG keeps no separate cloud datasource and no `rclone`
+credential boundary. `autorag setup` reports every cloud or network folder the
+machine has that no `searchPaths` entry covers, with the exact command to add
+it.
+
+The removed rclone-backed `cloud-drive` datasource is not migrated or shimmed: a
+config entry that still names it is skipped with the `unknown-datasource-skill`
+warning. Remove it from `datasources`, add the sync folder above, then delete
+the old `.autorag/datasources/<name>/` mirror data (`mirror/`, `manifest.json`,
+`chunks.json`) — AutoRAG no longer reads it.
+
+Storage that has no desktop sync app can be mounted instead: `rclone mount
+<remote>: <mountpoint>` exposes a remote as a local folder, or `rclone serve
+webdav <remote>:` plus an OS WebDAV mount (`mount_webdav` on macOS, a mapped
+drive on Windows) does the same. Mounted this way the folder is a network
+folder: each file is read over the wire, with no download budget and nothing to
+release.
+
+Google Docs, Sheets, and Slides are a known gap: in a sync folder they appear
+only as small `.gdoc`/`.gsheet`/`.gslides` pointer files with no document
+content, so they are not indexed beyond their names. Whether `rclone mount` /
+`rclone serve webdav` exports them as readable files is unverified.
+
 ### Cloud folders (macOS)
 
 A folder synced by a File Provider app (iCloud Drive, Google Drive, OneDrive under

@@ -19,7 +19,6 @@ const readyFetch = async (): Promise<FetchResponse> =>
 const optionalBinaries = Object.freeze({
 	lazykatok: false,
 	discrawl: false,
-	rclone: false,
 	mailcrawl: false,
 	jikji: false,
 	minsync: false,

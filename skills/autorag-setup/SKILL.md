@@ -331,10 +331,8 @@ size with `prefetch.sectionLimit` / `prefetch.minSyncTopK` /
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,
 `maxItemsPerFeed`, and `maxContentChars` (RSS); `maxDocuments`,
-`maxContentChars`, `maxResultsPerQuery`, and `maxBytesPerFile` (Spotlight);
-`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
-`bandwidthLimit`, and `dryRun` (cloud-drive/rclone). `maxContentChars` defaults
-to 20000 for RSS and 100000 for Spotlight and cloud-drive.
+`maxContentChars`, `maxResultsPerQuery`, and `maxBytesPerFile` (Spotlight).
+`maxContentChars` defaults to 20000 for RSS and 100000 for Spotlight.
 
 ### Refresh safety limits
 
@@ -366,7 +364,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`lazykatok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `rclone`, `lark-cli`) and its
+   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `lark-cli`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
    tokens) are never required or checked for them. Non-CLI connectors
@@ -388,7 +386,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
-`clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`,
+`clawgallery`, `notion`, `github`, `github-gist`,
 `mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, and `hister`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
@@ -399,8 +397,6 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
   "datasources": {
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
     "github-gist": { "connector": { "tokenEnv": "GITHUB_TOKEN" } },
-    "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
-    "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
