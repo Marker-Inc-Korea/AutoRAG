@@ -36,6 +36,9 @@ import {
 	XATTR_BATCH,
 } from "../../src/filesystem/cloud-placeholder.ts";
 
+/** The comparable form of a path: `join` uses `\` on Windows while every root comparison works in `/`. */
+const slash = (path: string): string => path.replaceAll("\\", "/");
+
 describe("darwin dataless flag parsing", () => {
 	// Values measured with `/usr/bin/stat -f %f` on macOS 26: a File Provider placeholder reads
 	// 1073741920 (0x40000060, `compressed,dataless`); a plain hidden file reads 32768 (0x8000).
@@ -482,7 +485,8 @@ describe("cloud scope (pure)", () => {
 		const real = join(base, "real");
 		const link = join(base, "link");
 		mkdirSync(real);
-		symlinkSync(real, link);
+		// A junction on Windows (no privilege needed) and an ordinary symlink elsewhere; the type is ignored on POSIX.
+		symlinkSync(real, link, "junction");
 		try {
 			// A mount at the real path (macOS reports `/private/var/…` for a mount made at `/var/…`).
 			expect(cloudScope(link, [{ path: real, kind: "network" }]).insideCloudRoot).toBe(true);
@@ -505,12 +509,14 @@ describe("canonical path mapping", () => {
 		const real = join(base, "real");
 		const link = join(base, "link");
 		mkdirSync(real);
-		symlinkSync(real, link);
+		// A junction on Windows (no privilege needed) and an ordinary symlink elsewhere; the type is ignored on POSIX.
+		symlinkSync(real, link, "junction");
 		try {
 			expect(canonicalPath(link)).toBe(real);
 			const map = canonicalPathMapper([link, join(base, "other")]);
-			expect(map(join(link, "a", "b.txt"))).toBe(join(real, "a", "b.txt"));
-			expect(map(join(base, "other", "c.txt"))).toBe(join(base, "other", "c.txt"));
+			// The mapper returns the comparable form, which is `/`-separated even where `join` is not.
+			expect(map(join(link, "a", "b.txt"))).toBe(slash(join(real, "a", "b.txt")));
+			expect(map(join(base, "other", "c.txt"))).toBe(slash(join(base, "other", "c.txt")));
 			// A sibling path that merely shares a prefix is not rewritten.
 			expect(map(`${link}-sibling/c.txt`)).toBe(`${link}-sibling/c.txt`);
 		} finally {
@@ -686,6 +692,9 @@ describe("cloud root listing", () => {
 		return { exec, calls };
 	}
 
+	/** The probe's roots in the comparable form (`join` separates with `\` on Windows). */
+	const machineRoot = (root: CloudRoot): string => `${root.kind}:${slash(root.path)}`;
+
 	it("lists the File Provider mounts, iCloud Drive, and non-local mounts without reading file contents", async () => {
 		const readDir = fakeTree({
 			"/home/u/Library/CloudStorage": [dir("GoogleDrive-user"), dir("OneDrive-Work"), file("stray.txt")],
@@ -695,13 +704,13 @@ describe("cloud root listing", () => {
 
 		const roots = await new DarwinCloudProbe({ readDir, exec, home: "/home/u" }).cloudRoots();
 
-		expect(roots).toEqual([
-			{ path: "/home/u/Library/CloudStorage/GoogleDrive-user", kind: "file-provider" },
-			{ path: "/home/u/Library/CloudStorage/OneDrive-Work", kind: "file-provider" },
-			{ path: "/home/u/Library/Mobile Documents", kind: "file-provider" },
-			{ path: "/private/var/folders/tmp.X", kind: "network" },
-			{ path: "/Volumes/My Share", kind: "network" },
-			{ path: "/Volumes/NFS NAS", kind: "network" },
+		expect(roots.map(machineRoot)).toEqual([
+			"file-provider:/home/u/Library/CloudStorage/GoogleDrive-user",
+			"file-provider:/home/u/Library/CloudStorage/OneDrive-Work",
+			"file-provider:/home/u/Library/Mobile Documents",
+			"network:/private/var/folders/tmp.X",
+			"network:/Volumes/My Share",
+			"network:/Volumes/NFS NAS",
 		]);
 	});
 
@@ -721,14 +730,15 @@ describe("cloud root listing", () => {
 	});
 
 	it("finds a File Provider–managed directory among the search root's direct children", async () => {
-		const readDir = fakeTree({ "/Users/testuser": [dir("Documents"), dir("Library")] });
-		const { exec } = fakeExec({ managed: ["/Users/testuser/Documents"] });
+		// The probe builds a child path with `join`, so the fixture and the expectation build it the same way.
+		const searchRoot = join("/Users/testuser");
+		const child = join(searchRoot, "Documents");
+		const readDir = fakeTree({ [searchRoot]: [dir("Documents"), dir("Library")] });
+		const { exec } = fakeExec({ managed: [child] });
 
-		const roots = await new DarwinCloudProbe({ readDir, exec, home: "/Users/testuser" }).cloudRoots([
-			"/Users/testuser",
-		]);
+		const roots = await new DarwinCloudProbe({ readDir, exec, home: searchRoot }).cloudRoots([searchRoot]);
 
-		expect(roots).toEqual([{ path: "/Users/testuser/Documents", kind: "file-provider" }]);
+		expect(roots).toEqual([{ path: child, kind: "file-provider" }]);
 	});
 
 	it("reads the mount table and the xattr in one process each", async () => {

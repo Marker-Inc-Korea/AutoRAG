@@ -219,10 +219,12 @@ async function runProductChecks(options: {
 	readonly reads?: () => readonly string[];
 	/** The search root itself is inside a cloud or network root, so Jikji must be skipped whole. */
 	readonly jikjiSkipped: boolean;
+	/** The search root itself is inside such a root, so dupey must not scan it at all (no scan result). */
+	readonly dupeySkipped: boolean;
 	/** Drop the client's file-content cache before a measured call (macOS: unmount and mount again). */
 	readonly remount?: () => Promise<void>;
 }): Promise<void> {
-	const { label, searchPaths, mountRoot, reads, jikjiSkipped, remount } = options;
+	const { label, searchPaths, mountRoot, reads, jikjiSkipped, dupeySkipped, remount } = options;
 	const fixtureNames = FIXTURE_FILES.map((fixture) => fixture.name);
 	const workspace = mkdtempSync(join(qaRoot, "ws-"));
 	const sizesBefore = fixtureNames.map((name) => statSync(join(mountRoot, name)).size);
@@ -267,9 +269,14 @@ async function runProductChecks(options: {
 			);
 		}
 
+		let scanCount = -1;
 		const dupeyReads = await measure(async () => {
-			await agent.scanDuplicateDocuments();
+			const details = await agent.scanDuplicateDocuments();
+			scanCount = details.scans.length;
 		});
+		if (dupeySkipped) {
+			check(`${label}: dupey never scanned the network root`, scanCount === 0, `${scanCount} scan(s)`);
+		}
 		if (reads !== undefined) {
 			check(`${label}: dupey read no mount file`, dupeyReads.every((count) => count === 0), dupeyReads.join(", "));
 		}
@@ -379,6 +386,7 @@ async function runDarwin(): Promise<void> {
 			mountRoot: mountDir,
 			reads: () => webdavReads(logPath),
 			jikjiSkipped: true,
+			dupeySkipped: true,
 			remount: () => remountWebdav(webdav, mountDir),
 		});
 
@@ -390,6 +398,7 @@ async function runDarwin(): Promise<void> {
 			reads: () => webdavReads(logPath),
 			// The mount is nested under this root, so Jikji runs and must exclude it rather than skip the root.
 			jikjiSkipped: false,
+			dupeySkipped: false,
 			remount: () => remountWebdav(webdav, mountDir),
 		});
 	} catch (error) {
@@ -455,12 +464,14 @@ async function runWindows(): Promise<void> {
 			searchPaths: [`${drive}:\\`],
 			mountRoot: `${drive}:\\`,
 			jikjiSkipped: true,
+			dupeySkipped: true,
 		});
 		await runProductChecks({
 			label: "search root = the UNC path",
 			searchPaths: [unc],
 			mountRoot: unc,
 			jikjiSkipped: true,
+			dupeySkipped: true,
 		});
 	} catch (error) {
 		check("windows network-mount harness completed", false, error instanceof Error ? error.message : String(error));

@@ -1,7 +1,7 @@
 {
   "mode": "cold",
-  "root": "/e2e-root",
-  "startedAt": "2026-10-24T03:52:03.293Z",
+  "root": "/Volumes/SSD1/1/AutoRAG/scripts/live-e2e",
+  "startedAt": "2026-11-01T04:37:06.874Z",
   "commands": [
     {
       "command": [
@@ -9,7 +9,7 @@
         "scripts/live-e2e/runner.mjs",
         "verify-corpus",
         "--root",
-        "/e2e-root"
+        "/Volumes/SSD1/1/AutoRAG/scripts/live-e2e"
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
@@ -20,9 +20,9 @@
         "bun",
         "scripts/live-e2e/live-stack.mts",
         "--root",
-        "/e2e-root",
+        "/Volumes/SSD1/1/AutoRAG/scripts/live-e2e",
         "--workspace",
-        "/workspace/.autorag-e2e/workspace",
+        "/Volumes/SSD1/1/AutoRAG/.autorag-e2e/workspace",
         "--mode",
         "cold"
       ],
@@ -31,9 +31,13 @@
       "stderr": ""
     }
   ],
-  "diagnostics": [],
+  "diagnostics": [
+    "live-e2e-datasource-failure"
+  ],
   "datasourceSelection": [
-    "local"
+    "local",
+    "cloud-mount",
+    "network-mount"
   ],
   "datasourceLanes": [
     {
@@ -41,26 +45,46 @@
       "status": "PASS",
       "reason": "absolute corpus source is readable",
       "evidence": {
-        "source": "/e2e-root/corpus/sample.txt",
+        "source": "/Volumes/SSD1/1/AutoRAG/scripts/live-e2e/corpus/sample.txt",
         "identity": "local:corpus/sample.txt",
         "sourceAbsolute": true,
         "sourceReadable": true,
+        "nativeIdentity": true
+      }
+    },
+    {
+      "name": "cloud-mount",
+      "status": "FAIL",
+      "reason": "embedding backend: daemon alive=true (http://127.0.0.1:59608)\nPASS  an embedding backend is alive (run `minsync serve --idle-timeout 0` first)\nFAIL  [path-redacted] harness completed — EACCES: permission denied, mkdir '[path-redacted]\n\nCLOUD_MOUNT LIVE QA: 1 failure(s)\n",
+      "evidence": {
+        "binary": "osascript",
+        "nativeStorePreserved": true
+      }
+    },
+    {
+      "name": "network-mount",
+      "status": "PASS",
+      "reason": "native-store harness passed with verified native identity",
+      "evidence": {
+        "binary": "rclone",
+        "nativeStorePreserved": true,
+        "output": "int was recorded for every fixture — 3 entr(ies)\nPASS  search root = the mount: the duplicate is excluded on the next refresh\nPASS  search root = the mount: excluding the duplicate read no mount file — 0, 0, 0\nPASS  search root = the mount: unchanged refresh wrote nothing — written=0\nPASS  search root = the mount: an unchanged refresh read no mount file — 0, 0, 0\nPASS  search root = the mount: the mount files were never modified\nPASS  search root = a folder holding the mount: Jikji read no mount file — 0, 0, 0\nPASS  search root = a folder holding the mount: Jikji ran over the root and excluded the nested network folder — [{\"ok\":true,\"code\":0,\"diagnostics\":[]}]\nPASS  search root = a folder holding the mount: dupey read no mount file — 0, 0, 0\nPASS  search root = a folder holding the mount: refresh indexed every fixture — written=4 embedding-identity-mismatch:info\n    network reads per mount file during the refresh: 1, 1, 1\nPASS  search root = a folder holding the mount: each changed mount file was read 1 time(s) over the wire for the parsed mirror, its fingerprint served from the client cache — 1, 1, 1\nNETWORK_MOUNT_LIVE_QA source=/private/var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-network-mount-live-EsL28H/holder/mnt/notes-a.txt\nPASS  search root = a folder holding the mount: search returns the token with an OS-absolute readable source under the mount\nPASS  search root = a folder holding the mount: a stored fingerprint was recorded for every fixture — 3 entr(ies)\nPASS  search root = a folder holding the mount: the duplicate is excluded on the next refresh\nPASS  search root = a folder holding the mount: excluding the duplicate read no mount file — 0, 0, 0\nPASS  search root = a folder holding the mount: unchanged refresh wrote nothing — written=0\nPASS  search root = a folder holding the mount: an unchanged refresh read no mount file — 0, 0, 0\nPASS  search root = a folder holding the mount: the mount files were never modified\n\nNETWORK_MOUNT LIVE QA PASSED\n",
         "nativeIdentity": true
       }
     }
   ],
   "commandsSummary": {
     "core": "PASS",
-    "datasources": "PASS_OR_SKIP"
+    "datasources": "FAIL"
   },
   "cleanup": {
     "lockReleased": true,
     "cloneStateRemoved": false
   },
   "preflight": {
-    "verdict": "degraded",
+    "verdict": "ready",
     "exitCode": 0,
-    "endpoint": "http://127.0.0.1:46447/",
+    "endpoint": "http://127.0.0.1:59608/",
     "openaiKeyPresent": false,
     "embedding": {
       "status": "ready",
@@ -69,24 +93,19 @@
     },
     "lanes": {
       "lazykatok": {
-        "status": "SKIP",
-        "reason": "lazykatok-not-installed"
+        "status": "READY"
       },
       "discrawl": {
-        "status": "SKIP",
-        "reason": "discrawl-not-installed"
+        "status": "READY"
       },
       "rclone": {
-        "status": "SKIP",
-        "reason": "rclone-not-installed"
+        "status": "READY"
       },
       "mailcrawl": {
-        "status": "SKIP",
-        "reason": "mailcrawl-not-installed"
+        "status": "READY"
       },
       "jikji": {
-        "status": "SKIP",
-        "reason": "jikji-not-installed"
+        "status": "READY"
       },
       "minsync": {
         "status": "READY"
@@ -110,9 +129,40 @@
           "source": "minsync"
         }
       ]
-    }
+    },
+    "minsyncProgress": [
+      {
+        "phase": "minsync",
+        "processed": 0,
+        "total": 2
+      },
+      {
+        "phase": "minsync",
+        "processed": 2,
+        "total": 2
+      },
+      {
+        "phase": "minsync",
+        "processed": 2,
+        "total": 2
+      }
+    ],
+    "persistedMinsyncProgress": [
+      {
+        "synced": 0,
+        "total": 2
+      },
+      {
+        "synced": 2,
+        "total": 2
+      },
+      {
+        "synced": 2,
+        "total": 2
+      }
+    ]
   },
-  "cursorPath": "/workspace/.autorag-e2e/workspace/.minsync/cursor.json",
+  "cursorPath": "/Volumes/SSD1/1/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
   "koreanLexical": {
     "status": "PASS",
@@ -120,7 +170,7 @@
     "fixture": "korean-policy.txt"
   },
   "hit": {
-    "source": "/e2e-root/corpus/sample.txt",
+    "source": "/Volumes/SSD1/1/AutoRAG/scripts/live-e2e/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
@@ -131,7 +181,7 @@
     "stale": false,
     "components": {
       "minsync": "ready",
-      "fsearch": "unavailable"
+      "fsearch": "ready"
     }
   },
   "liteRetrieve": {
@@ -141,7 +191,7 @@
       "stale": false,
       "resultCount": 2,
       "unsearched": [],
-      "sourceMatched": "/e2e-root/corpus/sample.txt"
+      "sourceMatched": "/Volumes/SSD1/1/AutoRAG/scripts/live-e2e/corpus/sample.txt"
     },
     "embedderDown": {
       "exitCode": 0,
@@ -152,30 +202,30 @@
           "methods": [
             "hybrid"
           ],
-          "reason": "MinSyncQueryError: \u001b[2m2026-10-24T03:54:06.449252Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:06.931381Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:07.858260Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:09.355283Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n"
+          "reason": "MinSyncQueryError: 2026-11-01T04:37:21.043667Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:21.523906Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:22.069853Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:23.120303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n"
         }
       ],
       "diagnostics": [
         {
           "code": "retrieval-method-failed",
           "severity": "warning",
-          "message": "Retrieval method \"hybrid\" failed and was answered by its fallback \"bm25\": MinSyncQueryError: \u001b[2m2026-10-24T03:54:06.449252Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:06.931381Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:07.858260Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:09.355283Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n",
+          "message": "Retrieval method \"hybrid\" failed and was answered by its fallback \"bm25\": MinSyncQueryError: 2026-11-01T04:37:21.043667Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:21.523906Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:22.069853Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:23.120303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n",
           "source": "hybrid",
-          "reason": "MinSyncQueryError: \u001b[2m2026-10-24T03:54:06.449252Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:06.931381Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:07.858260Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:09.355283Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n"
+          "reason": "MinSyncQueryError: 2026-11-01T04:37:21.043667Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:21.523906Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:22.069853Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:23.120303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n"
         }
       ],
       "skippedSurface": "minsync",
       "skippedMethods": [
         "hybrid"
       ],
-      "reasonVerbatim": "MinSyncQueryError: \u001b[2m2026-10-24T03:54:06.449252Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:06.931381Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:07.858260Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m3 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n\u001b[2m2026-10-24T03:54:09.355283Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)\n",
+      "reasonVerbatim": "MinSyncQueryError: 2026-11-01T04:37:21.043667Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:21.523906Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=2 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:22.069853Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=3 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n2026-11-01T04:37:23.120303Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=4 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\nError: embedding failed: retries exhausted after 4 attempts: OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)\n",
       "humanWarningWithoutDebug": [
-        "warning: not searched: minsync (hybrid): MinSyncQueryError: \u001b[2m2026-10-24T03:54:12.949851Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mminsync::embedder::retry\u001b[0m\u001b[2m:\u001b[0m retryable embedding request failure \u001b[3mattempt\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mmax_attempts\u001b[0m\u001b[2m=\u001b[0m4 \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mOpenAI request failed: error sending request for url (http://127.0.0.1:40351/v1/embeddings)"
+        "warning: not searched: minsync (hybrid): MinSyncQueryError: 2026-11-01T04:37:25.208077Z  WARN minsync::embedder::retry: retryable embedding request failure attempt=1 max_attempts=4 error=OpenAI request failed: error sending request for url (http://127.0.0.1:59623/v1/embeddings)"
       ]
     }
   },
   "embedding": {
-    "endpoint": "http://127.0.0.1:46447",
+    "endpoint": "http://127.0.0.1:59608",
     "model": "Qwen/Qwen3-Embedding-0.6B",
     "dimension": 1024,
     "queryPrefix": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
@@ -186,12 +236,12 @@
   "incremental": false,
   "fullSync": true,
   "datasourceSummary": {
-    "pass": 1,
+    "pass": 2,
     "skip": 0,
-    "fail": 0
+    "fail": 1
   },
-  "finishedAt": "2026-10-24T03:54:17.234Z",
-  "exitCode": 0,
+  "finishedAt": "2026-11-01T04:37:54.601Z",
+  "exitCode": 1,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",
   "cleanupReceipt": "runner lock released; native stores untouched"
