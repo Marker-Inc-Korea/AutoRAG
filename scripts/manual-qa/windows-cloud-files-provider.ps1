@@ -1,3 +1,15 @@
+<#
+  Synthetic Cloud Files provider for Windows QA of the cloud release path (#2043). Test tooling only.
+
+  Registers -SyncRoot as a Cloud Files sync root for the current user, creates one in-sync placeholder per file
+  under -SourceRoot, and serves hydration (FETCH_DATA) from those source files, so reads, CfDehydratePlaceholder
+  and the platform's refusals behave as they do under a real provider. Prints PROVIDER=READY once the
+  placeholders exist, then serves until it reads a line "stop" (or stdin closes); it always disconnects and
+  unregisters the root on the way out.
+
+  Windows denies hydration to third-party processes that cannot show its download notification (error 395,
+  e.g. SSH in session 0), so readers such as node.exe must run in an interactive desktop session.
+#>
 param(
   [Parameter(Mandatory=$true)][string]$SyncRoot,
   [Parameter(Mandatory=$true)][string]$SourceRoot,

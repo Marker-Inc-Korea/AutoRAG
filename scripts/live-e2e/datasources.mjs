@@ -19,15 +19,15 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
 	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\/spotlight\/[^/\s]+\/chunks\/[a-f0-9]{16}/u },
 	{ name: "hister", binary: "hister", command: "scripts/manual-qa/run-qa-hister-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
- 	// Opt-in: macOS writes to the user's real cloud mounts; Windows uses the self-contained synthetic
- 	// Cloud Files provider when AUTORAG_E2E_CLOUD_SYNTHETIC=1. The harness emits an OS-absolute source
- 	// under its throwaway `autorag-e2e-<hex>/` folder.
- 	{
- 		name: "cloud-mount",
- 		binary: process.platform === "win32" ? "powershell.exe" : "osascript",
- 		command: "scripts/manual-qa/run-qa-cloud-mount-live.ts",
- 		identityPattern: /[\\/]autorag-e2e-[0-9a-f]+[\\/]/u,
- 	},
+	// Opt-in. macOS writes into the user's real cloud mounts (AUTORAG_E2E_CLOUD_DIRS names the parent folders);
+	// Windows registers its own synthetic Cloud Files provider in a temp folder (AUTORAG_E2E_CLOUD_SYNTHETIC=1).
+	// Its identity is an OS-absolute source under the throwaway `autorag-e2e-<hex>` folder the harness creates.
+	{
+		name: "cloud-mount",
+		binary: process.platform === "win32" ? "powershell.exe" : "osascript",
+		command: "scripts/manual-qa/run-qa-cloud-mount-live.ts",
+		identityPattern: /[\\/]autorag-e2e-[0-9a-f]+[\\/]/u,
+	},
 ]);
 
 // Native-store presence probes: a lane runs for real when its CLI's own
@@ -50,13 +50,14 @@ const NATIVE_STORE_PROBES = Object.freeze({
 	// or broken) mdfind can still hit system-volume files, so a bare darwin
 	// check is not enough. Probe whether a fresh user file becomes searchable.
 	spotlight: () => process.platform === "darwin" && spotlightIndexingHealthy(),
-	// Opt-in and dangerous (writes to the user's real cloud): Windows additionally requires the synthetic
-	// Cloud Files provider because this QA host has no signed-in OneDrive account.
+	// Opt-in: macOS writes to the user's real cloud, so it runs only when the operator names the parent folders;
+	// Windows runs only when the synthetic provider is requested. Otherwise the lane is SKIP.
 	"cloud-mount": () =>
 		process.platform === "win32"
 			? process.env.AUTORAG_E2E_CLOUD_SYNTHETIC === "1"
 			: (process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length > 0,
 });
+
 function spotlightIndexingHealthy() {
 	// Spotlight skips dot-directories, and mdimport returns before the index commits.
 	const dir = join(homedir(), `autorag-spotlight-probe-${process.pid}`);
