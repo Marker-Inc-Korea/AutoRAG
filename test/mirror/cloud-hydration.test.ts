@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import type * as FsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -7,6 +7,7 @@ import {
 	type CloudEvictResult,
 	type CloudFileProbe,
 	type CloudProvider,
+	loadCloudFingerprints,
 	loadMirrorIndex,
 	type ParsedMirrorSyncOptions,
 	type ParsedMirrorSyncResult,
@@ -62,9 +63,16 @@ afterEach(() => {
 class FakeCloud implements CloudFileProbe {
 	readonly dataless = new Set<string>();
 	readonly providers = new Map<string, CloudProvider>();
+	/** Cloud sync roots this probe reports; files under them are the ones a refresh fingerprints. */
+	readonly roots: string[] = [];
+	async cloudRoots(): Promise<readonly string[]> {
+		return this.roots;
+	}
 	/** Providers this probe claims it can release; the gate must not download any other provider's placeholder. */
 	readonly releasable = new Set<CloudProvider>(["icloud"]);
 	readonly evicted: string[] = [];
+	/** Called with each path just before the fake records a release; lets a test watch the fingerprint/release order. */
+	onEvict: ((path: string) => void) | undefined;
 	evictResult: CloudEvictResult = { ok: true };
 	/** Results handed out one per evict call before falling back to `evictResult`. */
 	evictScript: CloudEvictResult[] = [];
@@ -83,6 +91,7 @@ class FakeCloud implements CloudFileProbe {
 		return provider !== undefined && this.releasable.has(provider);
 	}
 	async evict(path: string): Promise<CloudEvictResult> {
+		this.onEvict?.(path);
 		this.evicted.push(path);
 		return this.evictScript.shift() ?? this.evictResult;
 	}
@@ -440,5 +449,135 @@ describe("a placeholder whose download times out", () => {
 		expect(failed[0]?.reason).toBe("ETIMEDOUT");
 		// The stuck file stayed a placeholder, so there is nothing to release.
 		expect(cloud.evicted).toEqual([]);
+	});
+});
+
+describe("cloud fingerprints", () => {
+	/** A dupey double: `fingerprint <path>` echoes the file's text as its exact hash and records the call order. */
+	function fakeDupey(order: string[]): {
+		readonly calls: string[][];
+		readonly run: (args: readonly string[]) => Promise<string>;
+	} {
+		const calls: string[][] = [];
+		return {
+			calls,
+			run: async (args) => {
+				calls.push([...args]);
+				if (args[0] !== "fingerprint") throw new Error(`unexpected dupey command: ${args[0]}`);
+				order.push("fingerprint");
+				const path = args[1] ?? "";
+				const text = readFileSync(path, "utf8");
+				return [
+					`path\t${path}`,
+					"format\tTxt",
+					`chars\t${text.length}`,
+					`exact\t${text.trim()}`,
+					"minhash_width\t128",
+					"modified\t-",
+					"revision\t-",
+					"",
+				].join("\n");
+			},
+		};
+	}
+
+	it("fingerprints a downloaded cloud file while it is on disk, before releasing it", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		const placeholder = write("remote.txt", "alpha\n");
+		cloud.markDataless(placeholder, "icloud");
+		const order: string[] = [];
+		const dupey = fakeDupey(order);
+		cloud.onEvict = () => order.push("evict");
+
+		const result = await sync(cloud, { cloudFingerprints: { dupey: { run: dupey.run } } });
+
+		expect(dupey.calls).toEqual([["fingerprint", placeholder]]);
+		expect(order).toEqual(["fingerprint", "evict"]);
+		expect(loadCloudFingerprints(root).entries[placeholder]?.exact).toBe("alpha");
+		expect(codes(result)).not.toContain("cloud-fingerprint-failed");
+	});
+
+	it("fingerprints a cloud file that was already on disk", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		const local = write("local.txt", "beta\n");
+
+		await sync(cloud, { cloudFingerprints: { dupey: { run: fakeDupey([]).run } } });
+
+		expect(loadCloudFingerprints(root).entries[local]?.exact).toBe("beta");
+	});
+
+	it("reuses a stored fingerprint without reading the file again when it is unchanged", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		cloud.markDataless(write("remote.txt", "alpha\n"), "icloud");
+		const dupey = fakeDupey([]);
+
+		await sync(cloud, { cloudFingerprints: { dupey: { run: dupey.run } } });
+		await sync(cloud, { cloudFingerprints: { dupey: { run: dupey.run } }, force: true });
+
+		expect(dupey.calls).toHaveLength(1);
+	});
+
+	it("records a new fingerprint when the file changes", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		const file = write("remote.txt", "alpha\n");
+		const dupey = fakeDupey([]);
+
+		await sync(cloud, { cloudFingerprints: { dupey: { run: dupey.run } } });
+		write("remote.txt", "changed and longer\n");
+		await sync(cloud, { cloudFingerprints: { dupey: { run: dupey.run } } });
+
+		expect(dupey.calls).toHaveLength(2);
+		expect(loadCloudFingerprints(root).entries[file]?.exact).toBe("changed and longer");
+	});
+
+	it("drops the fingerprint of a removed cloud file", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		const file = write("remote.txt", "alpha\n");
+		await sync(cloud, { cloudFingerprints: { dupey: { run: fakeDupey([]).run } } });
+		unlinkSync(file);
+
+		await sync(cloud, { cloudFingerprints: { dupey: { run: fakeDupey([]).run } } });
+
+		expect(loadCloudFingerprints(root).entries[file]).toBeUndefined();
+	});
+
+	it("keeps the document indexed and reports one diagnostic when fingerprinting fails", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		cloud.markDataless(write("remote.txt", "alpha\n"), "icloud");
+		const run = async (): Promise<string> => {
+			throw new Error("dupey fingerprint unsupported format");
+		};
+
+		const result = await sync(cloud, { cloudFingerprints: { dupey: { run } } });
+
+		expect(result.written).toBe(1);
+		expect(loadMirrorIndex(root).entries["/docs/remote.txt"]).toBeDefined();
+		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-fingerprint-failed")).toHaveLength(1);
+	});
+
+	it("records nothing when the caller asks for no fingerprints", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(source);
+		write("remote.txt", "alpha\n");
+
+		await sync(cloud);
+
+		expect(loadCloudFingerprints(root).entries).toEqual({});
+	});
+
+	it("ignores files outside every cloud root", async () => {
+		const cloud = new FakeCloud();
+		cloud.roots.push(join(root, "other-cloud"));
+		write("plain.txt", "not cloud\n");
+
+		await sync(cloud, { cloudFingerprints: { dupey: { run: fakeDupey([]).run } } });
+
+		expect(loadCloudFingerprints(root).entries).toEqual({});
 	});
 });

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { lstat } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -84,6 +84,51 @@ export function cloudProviderFromDomain(domain: string): CloudProvider {
 	return "file-provider";
 }
 
+/** One entry of a cloud-root listing: its name and whether it is a directory. Never carries file contents. */
+export interface CloudDirEntry {
+	readonly name: string;
+	readonly isDirectory: () => boolean;
+}
+
+function normalizeCloudPath(value: string): string {
+	let normalized = value.replaceAll("\\", "/");
+	if (normalized.length > 1) normalized = normalized.replace(/\/+$/u, "");
+	return normalized;
+}
+
+/**
+ * Whether `target` is `parent` itself or lies under it. Pure: compares normalized paths only.
+ * Case-insensitive on Windows, where a drive letter and file names may differ in case.
+ */
+export function isPathInside(target: string, parent: string): boolean {
+	const normalizedParent = normalizeCloudPath(parent);
+	if (normalizedParent === "") return false;
+	const left = normalizeCloudPath(target);
+	const [a, b] =
+		process.platform === "win32" ? [left.toLowerCase(), normalizedParent.toLowerCase()] : [left, normalizedParent];
+	return a === b || a.startsWith(`${b}/`);
+}
+
+/** What a search root's relationship to this machine's cloud sync folders is. */
+export interface CloudScope {
+	/** The search root is a cloud folder (or lies inside one): readers that open contents must skip it. */
+	readonly insideCloudRoot: boolean;
+	/** Cloud folders nested under the search root: readers that must not read them exclude these paths. */
+	readonly nestedCloudRoots: readonly string[];
+}
+
+/**
+ * Classify a search root against the machine's cloud sync roots. Both Jikji `prepare` and the dupey
+ * exact-duplicate scan use this: a root inside a cloud folder is skipped entirely (reading a placeholder
+ * downloads it), and cloud folders nested inside a root are excluded. Pure; tests use plain paths.
+ */
+export function cloudScope(searchRoot: string, cloudRoots: readonly string[]): CloudScope {
+	return {
+		insideCloudRoot: cloudRoots.some((root) => isPathInside(searchRoot, root)),
+		nestedCloudRoots: cloudRoots.filter((root) => isPathInside(root, searchRoot) && !isPathInside(searchRoot, root)),
+	};
+}
+
 export type CloudEvictResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /**
@@ -91,6 +136,13 @@ export type CloudEvictResult = { readonly ok: true } | { readonly ok: false; rea
  * is read-only except {@link CloudFileProbe.evict}, which only drops the local copy of a file.
  */
 export interface CloudFileProbe {
+	/**
+	 * Absolute roots of the cloud sync folders on this machine (each File Provider mount on macOS; the
+	 * registered Cloud Files sync roots on Windows). Listing them never reads file contents. Readers that
+	 * open originals — Jikji's prepare pass and the dupey exact-duplicate scan — use this to skip or exclude
+	 * cloud folders so a released placeholder is never downloaded again.
+	 */
+	cloudRoots(): Promise<readonly string[]>;
 	/** The subset of `paths` whose data is not on disk. Reading one of these downloads it. */
 	datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>>;
 	/** Provider behind a placeholder, or `undefined` when the path is not under a File Provider domain. */
@@ -210,9 +262,18 @@ function describeReleaseHelperFailure(error: unknown): string {
 	return `osascript could not release the local copy: ${parts.join("; ")}`;
 }
 
+async function defaultDarwinReadDir(path: string): Promise<readonly CloudDirEntry[]> {
+	const entries = await readdir(path, { withFileTypes: true });
+	return entries.map((entry) => ({ name: entry.name, isDirectory: () => entry.isDirectory() }));
+}
+
 export interface DarwinCloudProbeOptions {
 	/** Process runner for `stat` and the release helper. Injected by tests. */
 	readonly exec?: CloudExec;
+	/** Directory listing for {@link DarwinCloudProbe.cloudRoots}; injected by tests so they need no real mounts. */
+	readonly readDir?: (path: string) => Promise<readonly CloudDirEntry[]>;
+	/** Home directory holding `Library/CloudStorage` and `Library/Mobile Documents`; defaults to the user's home. */
+	readonly home?: string;
 }
 
 /**
@@ -224,9 +285,37 @@ export interface DarwinCloudProbeOptions {
  */
 export class DarwinCloudProbe implements CloudFileProbe {
 	private readonly exec: CloudExec;
+	private readonly readDir: (path: string) => Promise<readonly CloudDirEntry[]>;
+	private readonly home: string;
 
 	constructor(options: DarwinCloudProbeOptions = {}) {
 		this.exec = options.exec ?? defaultCloudExec;
+		this.readDir = options.readDir ?? defaultDarwinReadDir;
+		this.home = options.home ?? homedir();
+	}
+
+	/**
+	 * Each File Provider mount is its own directory directly under `~/Library/CloudStorage` (for example
+	 * `GoogleDrive-user`, `OneDrive-Work`, `Dropbox`); iCloud Drive's own root is `~/Library/Mobile Documents`.
+	 * Only directory names are read, never file contents, so a released placeholder is not downloaded.
+	 */
+	async cloudRoots(): Promise<readonly string[]> {
+		const roots: string[] = [];
+		const cloudStorage = join(this.home, "Library", "CloudStorage");
+		for (const entry of (await this.tryReadDir(cloudStorage)) ?? []) {
+			if (entry.isDirectory()) roots.push(join(cloudStorage, entry.name));
+		}
+		const mobileDocuments = join(this.home, "Library", "Mobile Documents");
+		if ((await this.tryReadDir(mobileDocuments)) !== undefined) roots.push(mobileDocuments);
+		return roots;
+	}
+
+	private async tryReadDir(path: string): Promise<readonly CloudDirEntry[] | undefined> {
+		try {
+			return await this.readDir(path);
+		} catch {
+			return undefined;
+		}
 	}
 
 	async datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>> {
@@ -439,6 +528,11 @@ export class WindowsCloudProbe implements CloudFileProbe {
 
 	constructor(options: WindowsCloudProbeOptions = {}) {
 		this.run = options.run ?? defaultPowerShellRunner;
+	}
+
+	/** The registered Cloud Files sync roots, read from the registry — never from file contents. */
+	async cloudRoots(): Promise<readonly string[]> {
+		return (await this.loadSyncRoots()).map((root) => root.path);
 	}
 
 	async datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>> {

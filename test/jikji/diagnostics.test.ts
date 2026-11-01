@@ -52,6 +52,21 @@ describe("jikjiPrepareDiagnostic", () => {
 		expect(jikjiPrepareDiagnostic(failed)?.code).toBe("jikji-prepare-failed");
 	});
 
+	it("reports a skipped cloud root as info, not a degraded Jikji run", () => {
+		const skipped: JikjiPrepareResult = {
+			ok: false,
+			reason: "cloud-root-skipped",
+			stdout: "",
+			stderr: "",
+			code: null,
+		};
+		const diag = jikjiPrepareDiagnostic(skipped);
+		expect(diag?.code).toBe("jikji-cloud-root-skipped");
+		expect(diag?.severity).toBe("info");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toMatch(/cloud/u);
+	});
+
 	it("maps an unsupported-version to its own code and keeps the detected version, path and floor verbatim", () => {
 		const message = "jikji 0.1.1 at /opt/jikji/bin/jikji is older than the 0.2.0 AutoRAG requires";
 		const failed: JikjiPrepareResult = {

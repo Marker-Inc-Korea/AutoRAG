@@ -473,6 +473,7 @@ refresh continues:
 | `cloud-placeholder-skipped` | info | A File Provider placeholder whose provider has no verified release path was not read; `reason` carries the provider. |
 | `cloud-download-deferred` | info | A cloud placeholder is over this refresh's download budget and waits for the next refresh. |
 | `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the release helper's own error text and the attempt count. |
+| `cloud-fingerprint-failed` | warning | A cloud file was indexed but its duplicate fingerprint could not be read or saved; it stays indexed and does not take part in exact-duplicate exclusion. |
 
 `EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
 (50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
@@ -575,13 +576,36 @@ refresh downloads; the first file is always allowed, so one large file cannot st
 `cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. These
 keys apply on Windows too (below); Linux reads every file as before.
 
-Two other readers open file contents themselves and download a released cloud file
-again, so with their defaults the local copy comes back after the refresh: the Jikji
-`prepare` pass (`jikji`) and the exact-duplicate scan (`dupey`, `excludeExactDuplicates`).
-Measured on macOS 26 with iCloud Drive, a refresh with both switched off
-(`"jikji": false`, `"excludeExactDuplicates": false`) left every released file released;
-with either one on, they were downloaded again. The parsed mirror, MinSync, and fsearch
-passes never re-download. Making Jikji and dupey placeholder-aware is tracked separately.
+Two other readers open file contents themselves, so each one used to download a released
+cloud file again on every refresh: the Jikji `prepare` pass (`jikji`) and the
+exact-duplicate scan (`dupey`, `excludeExactDuplicates`). Both are now placeholder-aware
+and keep their defaults on:
+
+- **Jikji** is never run over a search root that is a cloud folder (or lies inside one).
+  Such a root is skipped whole and reported once as the informational
+  `jikji-cloud-root-skipped` diagnostic; its documents are already indexed through the
+  parsed mirror. A cloud folder nested under a search root is excluded from the Jikji run
+  by its relative path (`--exclude`), measured to drop the whole subtree with jikji 0.2.1.
+- **dupey** never scans a search root inside a cloud folder, and excludes a cloud folder
+  nested under one by its name (`--exclude-dir`, measured to skip reads under it entirely).
+  A cloud file instead joins the exact-duplicate exclusion through a **stored fingerprint**:
+  while the file is on disk during its single download (before it is released), a refresh
+  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, modified, revision}`
+  under `.autorag/cloud-fingerprints.json` in the workspace (an AutoRAG-owned store; the
+  MinSync stage schema is unchanged). An unchanged file keeps that fingerprint without being
+  read; a changed file gets a new one; a removed file drops it. A file whose provider has no
+  verified release path is never read, so it is never fingerprinted. A missing dupey or a
+  fingerprint failure never fails the refresh: the document stays indexed and one
+  `cloud-fingerprint-failed` warning is recorded.
+
+Exact-duplicate exclusion then groups the cloud fingerprints with the scanned, non-cloud
+files by exact hash and keeps one keeper — the newest by dupey's own ranking for scanned
+files, and the fingerprint's recorded `modified` time for a cloud file (falling back to a
+filesystem `stat`, which reports metadata without downloading the placeholder). The other
+copies are excluded through the normal `duplicate-excluded` path. Because the fingerprints
+are written during a refresh, a cloud file first fingerprinted this refresh can be excluded
+on the *next* one; that is expected and still never reads the released original. The parsed
+mirror, MinSync, and fsearch passes never re-download.
 
 ### Cloud Files folders (Windows)
 
@@ -604,6 +628,11 @@ or an SSH session in session 0) gets `ERROR_CLOUD_FILE_ACCESS_DENIED` (395) for 
 files are skipped with `source-read-failed` and nothing is released. Run the refresh in the desktop
 session, and if the notification offers to block the app, allow it (Settings, Privacy & security,
 Automatic file downloads).
+
+Jikji and dupey keep their placeholders released on Windows the same way as on macOS: Jikji skips a
+search root inside a registered sync root, dupey excludes nested sync roots by name and judges cloud
+files from their stored fingerprints. This part is verified by unit tests only; no commercial Windows
+sync provider has been measured.
 
 ## Cancelling a refresh
 

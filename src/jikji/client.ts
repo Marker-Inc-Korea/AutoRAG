@@ -159,8 +159,13 @@ export class JikjiClient {
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
 		const canonicalRoot = canonicalJikjiRoot(root);
-		const clientOptions: JikjiOptions =
-			options.parseTimeout === undefined ? this.options : { ...this.options, parseTimeout: options.parseTimeout };
+		const clientOptions: JikjiOptions = {
+			...this.options,
+			...(options.parseTimeout === undefined ? {} : { parseTimeout: options.parseTimeout }),
+			...(options.exclude === undefined || options.exclude.length === 0
+				? {}
+				: { exclude: [...(this.options.exclude ?? []), ...options.exclude] }),
+		};
 		const result = await this.prepareQueue.run(
 			async () => {
 				const resolved = await this.resolveCommand();

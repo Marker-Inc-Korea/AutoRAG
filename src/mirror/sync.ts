@@ -3,7 +3,8 @@ import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { CloudFileProbe } from "../filesystem/cloud-placeholder.ts";
+import { type DupeyCliOptions, fingerprintWithDupey } from "../dupey/cli.ts";
+import { type CloudFileProbe, isPathInside } from "../filesystem/cloud-placeholder.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -23,6 +24,7 @@ import type { ParseOutput } from "../parser/types.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
 import { CloudGate } from "./cloud.ts";
+import { type CloudFingerprint, loadCloudFingerprints, saveCloudFingerprints } from "./cloud-fingerprints.ts";
 import {
 	loadMirrorIndex,
 	mirrorIndexFromStage,
@@ -138,6 +140,18 @@ export interface ParsedMirrorSyncOptions {
 	readonly cloudEvictBackoffMs?: number;
 	/** Wait used between release retries. Tests inject a recorder so they never really sleep. */
 	readonly cloudSleep?: (ms: number) => Promise<void>;
+	/**
+	 * Record a dupey fingerprint for every cloud file parsed in this refresh, while it is on disk and before it
+	 * is released, into an AutoRAG-owned store under the workspace. The stored identity lets the next refresh's
+	 * exact-duplicate exclusion group the cloud file without reading its released placeholder. Absent keeps no
+	 * fingerprints. Needs {@link ParsedMirrorSyncOptions.cloudProbe} for the machine's cloud roots.
+	 */
+	readonly cloudFingerprints?: CloudFingerprintSyncOptions;
+}
+
+/** How a refresh fingerprints cloud files: the dupey CLI (or a test double) that reads the exact hash. */
+export interface CloudFingerprintSyncOptions {
+	readonly dupey?: DupeyCliOptions;
 }
 
 /** Parse-phase progress. Every scanned file counts as processed, whether parsed, unchanged, skipped or excluded. */
@@ -173,7 +187,8 @@ export type ParsedMirrorDiagnosticCode =
 	| "directory-unreadable"
 	| "cloud-download-deferred"
 	| "cloud-placeholder-skipped"
-	| "cloud-evict-failed";
+	| "cloud-evict-failed"
+	| "cloud-fingerprint-failed";
 
 /**
  * Refresh diagnostic. `source` is an opaque virtual path, never a real filesystem path.
@@ -437,6 +452,22 @@ async function syncWithRegistry(
 	});
 	const fingerprint = parseFingerprint(options);
 	const failureFingerprint = retryFingerprint(options, fingerprint);
+	// Cloud roots are read only when this refresh is asked to fingerprint: listing them touches the filesystem,
+	// and with no cloud roots there is nothing to fingerprint (stored entries are then left untouched, never
+	// pruned away because a mount was momentarily absent).
+	const cloudRoots = options.cloudFingerprints === undefined ? [] : ((await options.cloudProbe?.cloudRoots()) ?? []);
+	const fingerprintCloud = options.cloudFingerprints !== undefined && cloudRoots.length > 0;
+	const cloudFingerprintEntries: Record<string, CloudFingerprint> = fingerprintCloud
+		? { ...loadCloudFingerprints(options.root).entries }
+		: {};
+	const cloudFilePaths = new Set(
+		cloudRoots.length === 0
+			? []
+			: current
+					.filter((entry) => cloudRoots.some((root) => isPathInside(entry.sourcePath, root)))
+					.map((entry) => entry.sourcePath),
+	);
+	let cloudFingerprintsDirty = false;
 	const { versions, omitted } = sourcePlan(current, registry, options);
 	const currentPaths = new Set(current.map((entry) => entry.virtualPath));
 	const pathsByKey = new Map([...currentPaths, ...(previous.known ?? [])].map((path) => [mirrorStageKey(path), path]));
@@ -694,6 +725,33 @@ async function syncWithRegistry(
 				for (const diagnostic of parsed.diagnostics ?? [])
 					diagnostics.push({ ...diagnostic, source: entry.virtualPath });
 				written += 1;
+				if (fingerprintCloud && cloudFilePaths.has(entry.sourcePath)) {
+					const existing = cloudFingerprintEntries[entry.sourcePath];
+					// An unchanged file keeps its stored fingerprint without being read; a new or changed one is
+					// fingerprinted now, while it is on disk, before the release below drops the local copy.
+					if (existing === undefined || existing.sourceVersion !== entry.sourceVersion) {
+						try {
+							const fingerprintResult = await fingerprintWithDupey(
+								entry.sourcePath,
+								options.cloudFingerprints?.dupey ?? {},
+							);
+							cloudFingerprintEntries[entry.sourcePath] = {
+								sourceVersion: entry.sourceVersion,
+								exact: fingerprintResult.exact,
+								modified: fingerprintResult.modified,
+								revision: fingerprintResult.revision,
+							};
+							cloudFingerprintsDirty = true;
+						} catch (error) {
+							diagnostics.push({
+								code: "cloud-fingerprint-failed",
+								severity: "warning",
+								message: `The cloud file was indexed but its duplicate fingerprint could not be read, so it will not take part in exact-duplicate exclusion: ${error instanceof Error ? error.message : String(error)}`,
+								source: entry.virtualPath,
+							});
+						}
+					}
+				}
 				if (cloudDecision.kind === "download" && gate.evictAfterParse) {
 					const released = await gate.release(entry.sourcePath);
 					if (!released.ok) {
@@ -708,6 +766,28 @@ async function syncWithRegistry(
 			}
 		}
 		await session.finish();
+		if (fingerprintCloud) {
+			// A cloud file that is gone drops its fingerprint; the rest keep theirs for the next refresh's
+			// exact-duplicate exclusion. A store write failure never fails the refresh.
+			for (const path of Object.keys(cloudFingerprintEntries)) {
+				if (!cloudFilePaths.has(path)) {
+					delete cloudFingerprintEntries[path];
+					cloudFingerprintsDirty = true;
+				}
+			}
+			if (cloudFingerprintsDirty) {
+				try {
+					saveCloudFingerprints(options.root, cloudFingerprintEntries);
+				} catch (error) {
+					diagnostics.push({
+						code: "cloud-fingerprint-failed",
+						severity: "warning",
+						message: `The cloud duplicate fingerprints could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+						source: "parsed-mirror",
+					});
+				}
+			}
+		}
 		options.onProgress?.({ processed: current.length, total: current.length, written, deleted, skipped });
 		return {
 			scanned: current.length,
