@@ -30,6 +30,7 @@ const DOCS: Record<string, string> = {
 type Internals = {
 	minSyncMethod: unknown;
 	jikjiStartingPoints: readonly string[];
+	jikjiDiscovery: Promise<void>;
 	prefetchInitialRetrievalContext: (
 		query: string,
 		searchQueries: readonly string[],
@@ -130,6 +131,7 @@ describe.skipIf(!LIVE)("jikji files as verification starting points over the rea
 		const before = rerankRequests.length;
 		const question = "지급일 이전에 퇴사하면 지급 대상에서 제외되나요";
 		const context = await internals.prefetchInitialRetrievalContext(question, [question], {});
+		await internals.jikjiDiscovery;
 
 		expect(rerankRequests).toHaveLength(before + 1);
 		expect(rerankRequests[before]?.documents).toEqual([DOCS["0233.md"], DOCS["0720.md"]]);
@@ -156,6 +158,7 @@ describe.skipIf(!LIVE)("jikji files as verification starting points over the rea
 
 		const before = rerankRequests.length;
 		await internals.prefetchInitialRetrievalContext("지급", ["지급"], {});
+		await internals.jikjiDiscovery;
 
 		expect(rerankRequests, `jikji agentShouldNotRerank=${String(verdict)}`).toHaveLength(before + 1);
 	}, 60_000);

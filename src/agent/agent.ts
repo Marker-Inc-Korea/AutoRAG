@@ -998,6 +998,8 @@ export class AutoRAGAgent {
 	 * a path says nothing about what a file contains, and the reranker cannot judge one.
 	 */
 	private jikjiStartingPoints: readonly string[] = [];
+	/** Settles once Jikji's find for every query of the current search is done. Never rejects. */
+	private jikjiDiscovery: Promise<void> = Promise.resolve();
 	/** Search-tool queries by tool call id, read back when the call ends. */
 	private readonly searchToolQueries = new Map<string, string>();
 	/** Identifies this agent's conversation: everything judged in it is "current" memory. */
@@ -2349,6 +2351,9 @@ export class AutoRAGAgent {
 				const preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText);
 				if (preliminary !== undefined) {
 					emitPreliminary(preliminary);
+					// Jikji's find has run alongside the fast answer; its files are needed only from here on, so it
+					// must be done before the follow-up check and never held the fast answer back.
+					await this.jikjiDiscovery;
 					// With Jev enabled, a fast answer that needs no correction,
 					// clarification, or further research ends the run here. A steer
 					// means the search is going wrong, so it always verifies.
@@ -2374,6 +2379,8 @@ export class AutoRAGAgent {
 					}
 					publishPreliminary(preliminary);
 				}
+				// Without a fast answer there was no follow-up check to wait before.
+				await this.jikjiDiscovery;
 				setThinking(this.finalThinkingLevel);
 				// Only a preliminary consumer actually received may turn the final answer into a delta.
 				const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
@@ -3011,11 +3018,53 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Baseline local evidence for the fast answer. Jikji, MinSync, every
+	 * Start Jikji's find for every search query without waiting for it. The fast answer never sees Jikji's
+	 * files (a path says nothing about what a file contains), so nothing in the baseline depends on this; it
+	 * runs alongside the fast answer and `searchDocuments` waits for it only before the follow-up check, to
+	 * hand the files to the verification prompt. It stops with the run, not with a steer: a steer makes the
+	 * run verify anyway, which is when the files are used. A failed find contributes no files.
+	 */
+	private discoverJikjiFiles(searchQueries: readonly string[]): Promise<void> {
+		if (this.jikjiClient === undefined) return Promise.resolve();
+		const signal = this.activeRunAbort?.signal;
+		return Promise.all(
+			searchQueries.map(async (searchQuery) => {
+				const found = await this.searchProgress
+					.track(
+						"jikji",
+						"Jikji file discovery",
+						this.findJikji(searchQuery, {
+							topK: this.limits.prefetch.jikjiTopK,
+							...(signal === undefined ? {} : { signal }),
+						}),
+						{ count: (result) => result.answerPack?.answerPaths.length ?? 0 },
+					)
+					.catch(() => undefined);
+				return { searchQuery, paths: found?.answerPack?.answerPaths ?? [] };
+			}),
+		).then((perQuery) => {
+			for (const { searchQuery, paths } of perQuery) {
+				for (const path of paths) {
+					this.evidenceOrigins.add({
+						query: searchQuery,
+						method: JIKJI_FIND_TOOL_NAME,
+						source: path,
+						content: "",
+					});
+				}
+			}
+			const files = [...new Set(interleave(perQuery.map((entry) => entry.paths)))];
+			this.jikjiStartingPoints = files.slice(0, this.limits.prefetch.jikjiPathLimit);
+		});
+	}
+
+	/**
+	 * Baseline local evidence for the fast answer. MinSync, every
 	 * Jev-selected datasource, and (when Jev selected it) one web search run for
 	 * every search query in parallel (MinSync itself queues per workspace), the
 	 * per-query hits are interleaved and deduplicated into one pool, and that
-	 * pool is reranked against the original question.
+	 * pool is reranked against the original question. Jikji is started here too
+	 * (see `discoverJikjiFiles`) but is not awaited and adds nothing to the pool.
 	 */
 	private async prefetchInitialRetrievalContext(
 		query: string,
@@ -3028,6 +3077,8 @@ export class AutoRAGAgent {
 		// whatever already returned plus the steer, instead of waiting on a slow source.
 		const signal = this.interactive.steerInterrupt.signal;
 		const retrieveOptions = { topK: this.limits.prefetch.minSyncTopK, scope: options.scope, signal };
+		this.jikjiStartingPoints = [];
+		this.jikjiDiscovery = this.discoverJikjiFiles(searchQueries);
 		// Queries only read the prebuilt MinSync index; an unbuilt workspace makes
 		// `minsync query` fail fast and this source contributes nothing.
 		const formatSearchQueries = (list: readonly string[]): string =>
@@ -3035,18 +3086,6 @@ export class AutoRAGAgent {
 		const perQuery = await Promise.all(
 			searchQueries.map((searchQuery) =>
 				Promise.all([
-					this.jikjiClient === undefined
-						? Promise.resolve(undefined)
-						: this.searchProgress
-								.track(
-									"jikji",
-									"Jikji file discovery",
-									this.findJikji(searchQuery, { topK: this.limits.prefetch.jikjiTopK, signal }),
-									{
-										count: (found) => found.answerPack?.answerPaths.length ?? 0,
-									},
-								)
-								.catch(() => undefined),
 					this.searchProgress
 						.track(
 							"minsync",
@@ -3087,13 +3126,10 @@ export class AutoRAGAgent {
 			),
 		);
 		const webFailures: string[] = [];
-		for (const [index, [jikji, vector, perDatasource, webSearch]] of perQuery.entries()) {
+		for (const [index, [vector, perDatasource, webSearch]] of perQuery.entries()) {
 			const searchQuery = searchQueries[index];
 			if (searchQuery === undefined) continue;
 			if (webSearch.error !== undefined) webFailures.push(`${JSON.stringify(searchQuery)}: ${webSearch.error}`);
-			for (const path of jikji?.answerPack?.answerPaths ?? []) {
-				this.evidenceOrigins.add({ query: searchQuery, method: JIKJI_FIND_TOOL_NAME, source: path, content: "" });
-			}
 			const labelled = [
 				...vector.map((result) => ({ result, fallback: SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME })),
 				...perDatasource.flatMap((results, datasourceIndex) =>
@@ -3125,19 +3161,6 @@ export class AutoRAGAgent {
 				source: "web",
 			});
 		}
-		const interleave = <T>(lists: readonly (readonly T[])[]): T[] => {
-			const merged: T[] = [];
-			const longest = Math.max(0, ...lists.map((list) => list.length));
-			for (let rank = 0; rank < longest; rank++) {
-				for (const list of lists) {
-					const item = list[rank];
-					if (item !== undefined) merged.push(item);
-				}
-			}
-			return merged;
-		};
-		const jikjiPaths = [...new Set(interleave(perQuery.map(([jikji]) => jikji?.answerPack?.answerPaths ?? [])))];
-		this.jikjiStartingPoints = jikjiPaths.slice(0, this.limits.prefetch.jikjiPathLimit);
 		const seenChunks = new Set<string>();
 		const unseen = (result: RetrievalResult): boolean => {
 			const key = `${result.source}\0${result.content}`;
@@ -3145,12 +3168,12 @@ export class AutoRAGAgent {
 			seenChunks.add(key);
 			return true;
 		};
-		const minSyncResults = interleave(perQuery.map(([, vector]) => vector)).filter(unseen);
-		const datasourceResults = interleave(perQuery.map(([, , perDatasource]) => interleave(perDatasource))).filter(
+		const minSyncResults = interleave(perQuery.map(([vector]) => vector)).filter(unseen);
+		const datasourceResults = interleave(perQuery.map(([, perDatasource]) => interleave(perDatasource))).filter(
 			unseen,
 		);
-		const webResults = interleave(perQuery.map(([, , , webSearch]) => webSearch.results)).filter(unseen);
-		// Rerank the whole merged pre-fast-answer pool (every query's Jikji paths,
+		const webResults = interleave(perQuery.map(([, , webSearch]) => webSearch.results)).filter(unseen);
+		// Rerank the whole merged pre-fast-answer pool (every query's
 		// MinSync chunks, selected-datasource chunks, and web hits) against the
 		// original question, so decomposed sub-query hits compete on relevance to
 		// what the user asked. A configured reranker that fails is reported like a
@@ -4613,6 +4636,19 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+/** Round-robin merge of ranked lists: every list's first item, then every list's second, and so on. */
+function interleave<T>(lists: readonly (readonly T[])[]): T[] {
+	const merged: T[] = [];
+	const longest = Math.max(0, ...lists.map((list) => list.length));
+	for (let rank = 0; rank < longest; rank++) {
+		for (const list of lists) {
+			const item = list[rank];
+			if (item !== undefined) merged.push(item);
+		}
+	}
+	return merged;
 }
 
 /**

@@ -14,6 +14,7 @@ type AgentInternals = {
 	jikjiClient: unknown;
 	findJikji: (query: string) => Promise<unknown>;
 	jikjiStartingPoints: readonly string[];
+	jikjiDiscovery: Promise<void>;
 	prefetchInitialRetrievalContext: (
 		query: string,
 		searchQueries: readonly string[],
@@ -200,8 +201,29 @@ describe("Jikji files as verification starting points (#2060)", () => {
 		injectMinSync(internals, []);
 
 		await internals.prefetchInitialRetrievalContext("question", ["first", "second"], {});
+		await internals.jikjiDiscovery;
 
 		expect(internals.jikjiStartingPoints).toEqual(["/docs/a.md", "/docs/b.md", "/docs/d.md", "/docs/c.md"]);
+	});
+
+	it("does not wait for Jikji: the baseline is built while its find is still running", async () => {
+		let finish = (): void => undefined;
+		const gate = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const internals = agentWith(async () => {
+			await gate;
+			return { answerPack: pack(["/docs/late.md"]) };
+		});
+		injectMinSync(internals, ["a chunk"]);
+
+		const context = await internals.prefetchInitialRetrievalContext("q", ["q"], {});
+
+		expect(context).toContain("a chunk");
+		expect(internals.jikjiStartingPoints).toEqual([]);
+		finish();
+		await internals.jikjiDiscovery;
+		expect(internals.jikjiStartingPoints).toEqual(["/docs/late.md"]);
 	});
 
 	it("has no starting points when Jikji found nothing or is unavailable", async () => {
@@ -210,6 +232,7 @@ describe("Jikji files as verification starting points (#2060)", () => {
 		injectMinSync(internals, []);
 
 		await internals.prefetchInitialRetrievalContext("q", ["q"], {});
+		await internals.jikjiDiscovery;
 
 		expect(internals.jikjiStartingPoints).toEqual([]);
 	});
