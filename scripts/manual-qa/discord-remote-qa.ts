@@ -25,13 +25,41 @@ const ALLOWED = "42";
 const STRANGER = "99";
 const ANSWER = "QA-ANSWER: the handbook lives in docs/.";
 
+/**
+ * The fake decision model's answer to one question: the local route, verification after the fast answer
+ * (so the fast answer is posted first), every citation kept, and "no" to everything else.
+ */
+function fakeDecision(id: string, question: { type?: string; criteria?: unknown }): Record<string, unknown> {
+	if (question.type === "choice") {
+		const options = typeof question.criteria === "object" && question.criteria !== null ? Object.keys(question.criteria) : [];
+		const choice = id === "route" ? "local" : (options[0] ?? "");
+		return { type: "choice", choice, probabilities: { [choice]: 1 }, confidence: 1 };
+	}
+	if (question.type === "score") return { type: "score", score: 0, probabilities: { 0: 1 }, confidence: 1 };
+	const yes = id === "follow_up" || id === "decision_model_probe" || id.startsWith("citation:");
+	return { type: "noul", noul: yes ? 1 : 0 };
+}
+
 /** Starts the fakes (awaited by the preload, so they exist before the TUI boots) and returns the driver. */
 async function startFakes(): Promise<() => Promise<void>> {
 	const resultPath = process.env.QA_RESULT_PATH as string;
 	const result: Record<string, unknown> = {};
 	const model = createServer((req, res) => {
-		req.resume();
+		let body = "";
+		req.on("data", (chunk: Buffer) => {
+			body += chunk.toString();
+		});
 		req.on("end", () => {
+			// Jev is required: the same port serves the decision model's native dialect.
+			if (req.url?.includes("decisions") || req.url?.includes("systemone")) {
+				const request = JSON.parse(body) as { questions: Record<string, { type?: string; criteria?: unknown }> };
+				const answers = Object.fromEntries(
+					Object.entries(request.questions).map(([id, question]) => [id, fakeDecision(id, question)]),
+				);
+				res.writeHead(200, { "content-type": "application/json" });
+				res.end(JSON.stringify({ model: "qa-jev", answers }));
+				return;
+			}
 			res.writeHead(200, { "content-type": "text/event-stream" });
 			const chunk = (delta: unknown, finish: string | null) =>
 				`data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", created: 1, model: "qa-model", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
@@ -93,7 +121,7 @@ async function orchestrate(): Promise<number> {
 			memoryPath: join(autoragHome, "memory.json"),
 			minSync: { autoInstall: false },
 			jikji: false,
-			jev: false,
+			jev: { backend: "openrouter" },
 			model: { provider: "qamodel", id: "qa-model", baseUrl: `http://127.0.0.1:${modelPort}/v1`, apiKeyEnv: "QAMODEL_API_KEY" },
 		}),
 	);
@@ -111,6 +139,9 @@ async function orchestrate(): Promise<number> {
 		PI_CODING_AGENT_DIR: agentDir,
 		AUTORAG_NO_UPDATE_CHECK: "1",
 		QAMODEL_API_KEY: "qa-key",
+		// The fake model port also answers Jev's decisions endpoint; no real provider can be reached.
+		OPENROUTER_API_KEY: "qa-key",
+		OPENROUTER_BASE_URL: `http://127.0.0.1:${modelPort}`,
 		QA_RESULT_PATH: resultPath,
 		QA_MODEL_PORT: String(modelPort),
 		AUTORAG_DISCORD_QA_INNER: "1",

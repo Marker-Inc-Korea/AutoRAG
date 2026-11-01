@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildAgentOptions, type CliConfig, ConfigError, normalizeJevConfig } from "../../src/cli/config.ts";
+import {
+	buildAgentOptions,
+	type CliConfig,
+	ConfigError,
+	normalizeJevConfig,
+	resolveConfig,
+} from "../../src/cli/config.ts";
 
 let root: string;
 
@@ -68,9 +74,13 @@ describe("jev CLI config", () => {
 		});
 	});
 
-	it("maps false and enabled:false to the agent opt-out", () => {
-		expect(buildAgentOptions(baseConfig(false)).jev).toBe(false);
-		expect(buildAgentOptions(baseConfig({ enabled: false })).jev).toBe(false);
+	it("rejects turning the decision model off, in the file and in the section", () => {
+		expect(() => normalizeJevConfig(false)).toThrow(/jev' cannot be false.*requires its decision model/u);
+		expect(() => normalizeJevConfig({ enabled: false })).toThrow(/jev\.enabled is no longer supported/u);
+		expect(() => normalizeJevConfig({ enabled: true, backend: "openrouter" })).toThrow(ConfigError);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [root], jev: false }));
+		expect(() => resolveConfig({ flags: { config: configPath }, env: {}, readOnly: true })).toThrow(ConfigError);
 	});
 
 	it("keeps the OpenRouter default for an empty section", () => {

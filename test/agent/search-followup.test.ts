@@ -19,6 +19,7 @@ import { jikjiFindDiagnostic } from "../../src/jikji/diagnostics.ts";
 import type { JikjiAnswerPack, JikjiDiagnostic, JikjiFindResult } from "../../src/jikji/index.ts";
 import type { MinSyncVectorMethod } from "../../src/minsync/method.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -98,6 +99,7 @@ function setup(
 		searchPaths,
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
+		jev: baselineJev(),
 		minSync: { autoInstall: false },
 		jikji: false,
 		everything: false,

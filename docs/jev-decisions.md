@@ -1,8 +1,9 @@
 # Jev Decisions
 
-AutoRAG Agent can expose one optional extra tool, `jev`, backed by
-[TypeSafe's Jev](https://docs.typesafe.ai/) judgment model through the
-[`jev-use`](https://www.npmjs.com/package/jev-use) engine. Jev is not a chat
+AutoRAG Agent requires one decision model: Jev,
+[TypeSafe's Jev](https://docs.typesafe.ai/) judgment model, called through the
+[`jev-use`](https://www.npmjs.com/package/jev-use) engine and also exposed to the
+model as the `jev` tool. Jev is not a chat
 model: it answers **typed questions about a state** — `noul` (yes/no
 probability), `choice` (one option from a set), and `score` (position on an
 ordered rubric) — with calibrated probabilities instead of generated prose.
@@ -15,10 +16,38 @@ between runs.
 `jev-use` owns backend auto-selection, request screening, and response
 validation; AutoRAG registers a thin pi extension tool (`createJevExtension`)
 on top, and uses the same client for the query pipeline described below. Jev
-is **on by default**, on the hosted Dazzi Models backend when you are signed in
-(`/login`) and on OpenRouter otherwise.
+is **required**: routing, the follow-up check, citation and evidence judgment,
+and the `auto` permission gate all ask it, so there is no mode that runs
+without it. It uses the hosted Dazzi Models backend when you are signed in
+(`/login`) and OpenRouter otherwise.
 
-## Defaults and opt-out
+## Session check: `decision-model-unavailable`
+
+The first question of every session puts one probe question to the decision
+model before any model call: the first question of a TUI session (again after
+`/new`), and the first `searchDocuments()` call of an `AutoRAGAgent` instance
+outside a TUI session (every `autorag search` process). A later question in the
+same session does not repeat it. When the probe gets a number back, the run
+goes on and records a `decision-model-checked` info diagnostic naming the
+backend and model that answered. When it does not, the run stops with
+`DecisionModelUnavailableError` and nothing else happens:
+
+- `code`: always `decision-model-unavailable`.
+- `reason`: `missing-credential` (no API key or no `/login`), `unauthorized`
+  (HTTP 401/403), `payment-required` (402), `model-not-found` (404, or the
+  backend says the model does not exist), `rate-limited` (429), `unreachable`
+  (network failure, timeout, 5xx), or `invalid-response` (no usable verdict).
+- The message starts with `[decision-model-unavailable]`, says AutoRAG cannot be
+  used, quotes the backend's own error, and says what to fix.
+
+`autorag search` prints that error and exits with status **3**; with `--json`
+the error envelope carries `code`, `reason`, and, when known, `backend` and
+`model`. The TUI shows the same message in the conversation; the next question
+checks again, so fixing the credential and asking again is enough. Library
+callers can catch `DecisionModelUnavailableError` (exported with
+`DECISION_MODEL_UNAVAILABLE_CODE`) and branch on `reason`.
+
+## Defaults
 
 With no `jev` section, AutoRAG behaves as if the config said, **when signed in to
 Dazzi Models**:
@@ -42,12 +71,9 @@ and, **when not signed in** (the fallback):
 The choice is made when AutoRAG reads the config, from whether a Dazzi Models
 `/login` credential is stored. `autorag init` writes the matching block into new
 configs so it is visible and editable; an existing config keeps what it says. An
-empty `{}` keeps the defaults. `"jev": false` or `enabled: false` turns Jev off
-completely: no routing, no follow-up check, no `jev` tool. Both features send the
-question text to the chosen backend, so disable them when questions must stay on
-the machine. Without a credential for that backend (a Dazzi login, or
-`OPENROUTER_API_KEY`), routing falls back to a single local search with a
-`query-route-fallback` diagnostic; searches keep working.
+empty `{}` keeps the defaults. There is no opt-out: `"jev": false` and
+`jev.enabled` are rejected with a config error. Jev sends the question text (and,
+for citation and evidence judgment, the cited excerpts) to the chosen backend.
 
 ### Backends
 
@@ -76,7 +102,6 @@ returns HTTP 400. Set `model` to override the pin.
 
 | Field                 | Meaning                                                                 |
 | --------------------- | ----------------------------------------------------------------------- |
-| `enabled`             | `false` disables Jev (same as `"jev": false`).                          |
 | `backend`             | `dazzi` when signed in, else `openrouter` (default); or `typesafe`, `vercel`. |
 | `model`               | Wire model id sent with every call. Omit for the backend default.       |
 | `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.     |
@@ -133,7 +158,7 @@ Guidance:
 > resolves after any number of turns or searches, and after `/resume`.
 > `/new` starts a fresh conversation with the full pipeline again.
 
-Enabling `jev` also turns on a Jev-driven pipeline that runs in the two-phase
+Jev drives a pipeline that runs in the two-phase
 search **before** the fast answer. Jev answers two typed questions about the
 user question in one batched call:
 
@@ -272,7 +297,7 @@ before the fast answer; the skipped ones are not searched before the fast answer
 including `web (p=…)` — with their probabilities. If the check fails (missing
 credential, unreachable
 backend), neither a datasource nor the web is searched before the fast answer
-(`datasource-selection-fallback`), which is the behavior without Jev.
+(`datasource-selection-fallback`).
 
 The check needs only the question, so it is sent **while the route check is
 still in flight**; the two calls overlap and the run waits for the slower one
@@ -450,7 +475,7 @@ with Jev on, each cited chunk is checked before the answer is returned.
   chunk is not an invented id, so no `citation-without-result` warning is raised.
 - **What is never judged.** Evidence that is only a path (a file the model
   located but did not read) has no text to judge and is kept.
-- **Failure behavior.** If Jev is disabled, the call fails, or Jev gives no usable
+- **Failure behavior.** If the call fails or Jev gives no usable
   verdict for any chunk, **every citation is kept** and a
   `citation-relevance-fallback` diagnostic carries the verbatim reason. A chunk
   Jev left unanswered is kept. The check never blocks a search.
@@ -503,7 +528,7 @@ none of it can forge the state's structure. Every question in a run is sent in
 **one batched call**, so one or many pieces cost about the same.
 
 At P(supports) >= **0.7** the evidence is stored in `~/.autorag/memory.json`;
-below 0.7 it is discarded. With Jev disabled or unreachable nothing is judged or
+below 0.7 it is discarded. With Jev unreachable nothing is judged or
 stored, and an `evidence-judgment-fallback` diagnostic carries the verbatim
 error. See [retrieval-memory.md](retrieval-memory.md) for the stored fields,
 the prompt context, privacy rules, and the long-term insights.
