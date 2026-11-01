@@ -29,7 +29,6 @@ const RESERVED_ENV_NAMES = new Set([
 	"E2E_MODE",
 	"E2E_ARGS",
 	"QA_MODEL_ENV",
-	"AUTORAG_LIVE_E2E_KIWI",
 	"AUTORAG_LIVE_E2E_GIT_SHA",
 	"AUTORAG_LIVE_E2E_GIT_DIRTY",
 ]);
@@ -197,9 +196,6 @@ function runLive() {
 	args.push(
 		"--env",
 		`E2E_DATASOURCES=${process.env.E2E_DATASOURCES ?? ""}`,
-		// The QA image provisions Kiwi, so a whitespace fallback inside it is a broken image, not a skippable lane.
-		"--env",
-		"AUTORAG_LIVE_E2E_KIWI=required",
 		...(gitIdentity !== undefined
 			? [
 					"--env",

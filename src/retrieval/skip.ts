@@ -13,11 +13,11 @@
 
 import type { RetrievalMethodDescriptor, RetrievalUnsearchedSurface } from "./types.ts";
 
-/** Surface label shared by every MinSync-backed local method (vector, BM25, hybrid). */
+/** Surface label shared by every MinSync-backed local method (vector, sparse, hybrid). */
 export const MINSYNC_SURFACE = "minsync";
 
 /** Registered method names that read the same local MinSync workspace. */
-const MINSYNC_METHOD_NAMES: ReadonlySet<string> = new Set(["minsync", "hybrid", "bm25"]);
+const MINSYNC_METHOD_NAMES: ReadonlySet<string> = new Set(["minsync", "hybrid"]);
 
 /** One method that did not run, with the error that stopped it. */
 export interface RetrievalSkip {

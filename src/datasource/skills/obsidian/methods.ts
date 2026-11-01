@@ -27,11 +27,11 @@ class ObsidianMinSyncMethod implements RetrievalMethod {
 	}
 
 	describe(): RetrievalMethodDescriptor {
-		return this.mode === "bm25"
+		return this.mode === "sparse"
 			? {
-					name: "obsidian-bm25",
-					type: "bm25",
-					description: "BM25 lexical retrieval over an Obsidian vault, indexed by MinSync",
+					name: "obsidian-sparse",
+					type: "sparse",
+					description: "SPLADE sparse retrieval over an Obsidian vault, indexed by MinSync",
 					status: "active",
 					capabilities: ["lexical", ...COMMON_CAPABILITIES],
 					datasourceId: OBSIDIAN_DATASOURCE_ID,
@@ -57,9 +57,9 @@ class ObsidianMinSyncMethod implements RetrievalMethod {
 	}
 }
 
-export class ObsidianBm25Method extends ObsidianMinSyncMethod {
+export class ObsidianSparseMethod extends ObsidianMinSyncMethod {
 	constructor(options: ObsidianMethodOptions) {
-		super("bm25", options);
+		super("sparse", options);
 	}
 }
 

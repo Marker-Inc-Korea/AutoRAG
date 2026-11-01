@@ -45,15 +45,12 @@ function realMinSync(): string {
 let root: string;
 let savedEnv: Record<string, string | undefined>;
 
-// The suite's setup files stub Kiwi (an empty library file) and the pi agent dir; the real MinSync would
-// fail to load that stub, so this lane drops the Kiwi variables to get the developer's real discovery.
-const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR", "KIWI_LIBRARY_PATH", "KIWI_MODEL_PATH"] as const;
+// The suite's setup files point the pi agent dir at a temp stand-in; this live lane restores the real one.
+const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR"] as const;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "arag-progress-live-"));
 	savedEnv = Object.fromEntries(RESTORED_VARIABLES.map((name) => [name, process.env[name]]));
-	delete process.env.KIWI_LIBRARY_PATH;
-	delete process.env.KIWI_MODEL_PATH;
 });
 
 afterEach(() => {

@@ -7,10 +7,11 @@ import { pipeline } from "node:stream/promises";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { spawnProcess } from "./process.ts";
 import { MinSyncStageSession } from "./stage.ts";
+import { outdatedMinSyncVersion } from "./version.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.5.1";
+export const MINSYNC_VERSION = "0.6.0";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
@@ -46,8 +47,12 @@ export interface EnsureMinSyncBinaryOptions {
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) {
-		await verifyInstalledBinary(binaryPath, options.root);
-		return { binaryPath, version: "cached" };
+		// A cached build older than the floor speaks the retired BM25 surface; it is replaced, never run.
+		if (outdatedMinSyncVersion(binaryPath) === undefined) {
+			await verifyInstalledBinary(binaryPath, options.root);
+			return { binaryPath, version: "cached" };
+		}
+		rmSync(binaryPath, { force: true });
 	}
 	mkdirSync(dirname(binaryPath), { recursive: true });
 	const cargoInstaller =

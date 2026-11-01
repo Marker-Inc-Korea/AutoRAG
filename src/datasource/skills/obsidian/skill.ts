@@ -9,7 +9,7 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
-import { ObsidianBm25Method, ObsidianSemanticMethod } from "./methods.ts";
+import { ObsidianSemanticMethod, ObsidianSparseMethod } from "./methods.ts";
 import { OBSIDIAN_DATASOURCE_ID, OBSIDIAN_SKILL_TYPE, obsidianInstanceSource } from "./paths.ts";
 import { type ObsidianMinSyncOptions, ObsidianVaultIndex } from "./vault-index.ts";
 
@@ -123,7 +123,7 @@ export class ObsidianSkill implements DatasourceSkill {
 
 	retrievalMethods(): readonly RetrievalMethod[] {
 		const methodOptions = { index: this.vaultIndex, tags: this.tags };
-		return [new ObsidianBm25Method(methodOptions), new ObsidianSemanticMethod(methodOptions)];
+		return [new ObsidianSparseMethod(methodOptions), new ObsidianSemanticMethod(methodOptions)];
 	}
 
 	describeSources(): readonly SourceDescription[] {

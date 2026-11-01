@@ -191,7 +191,7 @@ Three principles drive every design decision in AutoRAG Agent:
 
 2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding backend](docs/minsync-setup.md#embedding-backends) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) is an opt-in extra: it runs only when you name one in `rerank.model`, and otherwise the first answer is built from each source's own top 10.
 
-3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (BM25, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
+3. **Fast by design.** Rather than coordinating slow multi-agent hierarchies, a single configured model owns the entire retrieval, direct-read, and curation loop. Local CDC chunks (SPLADE sparse, vector, and hybrid modes) deliver rapid, low-latency turnaround across multi-turn research queries.
 
 ---
 
@@ -201,9 +201,9 @@ AutoRAG Agent orchestrates five integrated subsystems:
 
 1. **Retrieval Memory (`check_memory`):** After each answer, cited evidence Jev judges to genuinely support it is stored in `~/.autorag/memory.json`. Later searches receive this conversation's evidence, similar past questions, and long-term insights as **advisory reference** — it never reorders results or overrides current evidence. See [docs/retrieval-memory.md](docs/retrieval-memory.md).
 2. **Pluggable Multi-Method Retrieval:**
-   - **BM25 Lexical Search:** Fast keyword ranking via MinSync over parsed markdown mirrors. AutoRAG always uses MinSync's `multilingual` tokenizer, which keeps each original word and adds Korean morphemes (via the [Kiwi](https://github.com/bab2min/Kiwi) library), so both `연구목표` and `인증서를` → `인증서` match; without Kiwi AutoRAG warns and tokenizes on whitespace. See [docs/minsync-setup.md](docs/minsync-setup.md#bm25-tokenizer).
+   - **SPLADE Sparse Search:** Learned-sparse keyword ranking via MinSync's KURE-Sparse-nano encoder over parsed markdown mirrors; it replaced BM25 in MinSync 0.6 and matches Korean inflected forms (`인증서를` → `인증서`) with no tokenizer library. Exact identifiers among many look-alike files rank less reliably than with BM25. See [docs/minsync-setup.md](docs/minsync-setup.md#sparse-retrieval-splade).
    - **Semantic Vector Search:** Dense vector retrieval over CDC chunks via the shared MinSync embedder.
-   - **Hybrid Search:** Combines BM25 and vector ranking via Reciprocal Rank Fusion (RRF).
+   - **Hybrid Search:** MinSync fuses sparse and vector ranking over the same chunks.
    - **Jikji Find-First Discovery:** Local CLI-backed fast discovery answer packs.
    - **Everything File-Name Search (Windows):** The bundled [voidtools Everything](https://www.voidtools.com/) indexes file and folder names under your search roots so the agent finds files by name, extension, path, size, or date instantly (`everything_search`).
    - **FSearch File-Name Search (macOS/Linux):** [fsearch-cli](https://github.com/NomaDamas/fsearch-mac) (FSearch) keeps a live, per-workspace name index of your search roots so the agent finds files by name, extension, path, size, or date instantly (`fsearch_search`); without fsearch-cli installed it degrades to a slow filesystem walk.
@@ -279,7 +279,7 @@ autorag init --search-paths ~/Documents/research
 # Korean + English is the default; set it explicitly for other corpora
 autorag init --search-paths ~/Documents/research --languages ja,en
 
-# Index documents (parses PDFs/Markdown, builds BM25 and MinSync vectors)
+# Index documents (parses PDFs/Markdown, builds MinSync sparse and dense vectors)
 autorag refresh
 
 # Check indexing health
@@ -683,7 +683,7 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 
 | Datasource | Skill Alias | Backend / Driver | Storage & Privacy Model | Search Capabilities |
 |---|---|---|---|---|
-| **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | BM25, Semantic, Hybrid |
+| **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | Sparse (SPLADE), Semantic, Hybrid |
 | **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
 | **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25 + native semantic hybrid ranking by default via a [read-only sidecar](docs/datasource-skills.md#discord-bm25-ranking); native FTS supplements lexical recall |
 | **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](docs/datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |

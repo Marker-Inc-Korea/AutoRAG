@@ -49,7 +49,7 @@ function makeSkill(options: { readonly instanceId?: string } = {}): ObsidianSkil
 	});
 }
 
-function method(skill: ObsidianSkill, name: "obsidian-bm25" | "obsidian-semantic"): RetrievalMethod {
+function method(skill: ObsidianSkill, name: "obsidian-sparse" | "obsidian-semantic"): RetrievalMethod {
 	const found = skill.retrievalMethods().find((candidate) => candidate.describe().name === name);
 	if (found === undefined) throw new Error(`skill exposes no ${name} method`);
 	return found;
@@ -116,9 +116,9 @@ describe("ObsidianSkill indexing through MinSync", () => {
 
 		expect(second).toMatchObject({ ok: true, chunkCount: 2 });
 		expect(stagedFiles().sort()).toEqual(["Projects/New.md", "Projects/Roadmap.md"]);
-		const hits = await method(skill, "obsidian-bm25").retrieve("november", { topK: 5 });
+		const hits = await method(skill, "obsidian-sparse").retrieve("november", { topK: 5 });
 		expect(hits.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Projects/Roadmap.md"]);
-		expect(await method(skill, "obsidian-bm25").retrieve("frozen", { topK: 5 })).toEqual([]);
+		expect(await method(skill, "obsidian-sparse").retrieve("frozen", { topK: 5 })).toEqual([]);
 
 		const untouched = join(workspace(), "files", "Projects", "Roadmap.md");
 		utimesSync(untouched, pinned, pinned);
@@ -210,14 +210,14 @@ describe("ObsidianSkill retrieval", () => {
 		const skill = makeSkill();
 		await skill.index();
 
-		const hits = await method(skill, "obsidian-bm25").retrieve("beta october", { topK: 5 });
+		const hits = await method(skill, "obsidian-sparse").retrieve("beta october", { topK: 5 });
 
 		expect(hits).toHaveLength(1);
 		expect(hits[0]).toMatchObject({
 			source: "/obsidian/vault-1/Projects/Roadmap.md",
 			content: expect.stringContaining("mobile app beta"),
 			metadata: {
-				method: "obsidian-bm25",
+				method: "obsidian-sparse",
 				datasourceId: "obsidian",
 				instanceId: "vault-1",
 				file: "Projects/Roadmap.md",
@@ -230,9 +230,9 @@ describe("ObsidianSkill retrieval", () => {
 	it("filters by folder through scope without leaking sibling folders that share a prefix", async () => {
 		const skill = makeSkill();
 		await skill.index();
-		const bm25 = method(skill, "obsidian-bm25");
+		const sparse = method(skill, "obsidian-sparse");
 
-		const everything = await bm25.retrieve("mobile", { topK: 10 });
+		const everything = await sparse.retrieve("mobile", { topK: 10 });
 		expect(everything.map((hit) => hit.source).sort()).toEqual([
 			"/obsidian/vault-1/Daily/2026-10-01.md",
 			"/obsidian/vault-1/Projects-old/Archive.md",
@@ -241,17 +241,17 @@ describe("ObsidianSkill retrieval", () => {
 			"/obsidian/vault-1/Work/Daily/2026-10-02.md",
 		]);
 
-		const projects = await bm25.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/Projects" });
+		const projects = await sparse.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/Projects" });
 		expect(projects.map((hit) => hit.source).sort()).toEqual([
 			"/obsidian/vault-1/Projects/Nested/Plan.md",
 			"/obsidian/vault-1/Projects/Roadmap.md",
 		]);
 
 		// The shared scope matcher's `**/` needs at least one folder before `Daily`, so a top-level `Daily` is not included.
-		const nestedDaily = await bm25.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/**/Daily/**" });
+		const nestedDaily = await sparse.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/**/Daily/**" });
 		expect(nestedDaily.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Work/Daily/2026-10-02.md"]);
 
-		const oneNote = await bm25.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/Projects/Roadmap.md" });
+		const oneNote = await sparse.retrieve("mobile", { topK: 10, scope: "/obsidian/vault-1/Projects/Roadmap.md" });
 		expect(oneNote.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Projects/Roadmap.md"]);
 	});
 
@@ -262,7 +262,7 @@ describe("ObsidianSkill retrieval", () => {
 		const skill = makeSkill();
 		await skill.index();
 
-		const scoped = await method(skill, "obsidian-bm25").retrieve("mobile", {
+		const scoped = await method(skill, "obsidian-sparse").retrieve("mobile", {
 			topK: 3,
 			scope: "/obsidian/vault-1/Daily",
 		});
@@ -274,14 +274,14 @@ describe("ObsidianSkill retrieval", () => {
 		const skill = makeSkill();
 		await skill.index();
 
-		await method(skill, "obsidian-bm25").retrieve("mobile", { topK: 4 });
+		await method(skill, "obsidian-sparse").retrieve("mobile", { topK: 4 });
 		await method(skill, "obsidian-semantic").retrieve("mobile", { topK: 4 });
 
 		const queries = minsyncCalls().filter((call) => call.args[0] === "query");
-		expect(queries.map((call) => call.args[call.args.indexOf("--mode") + 1])).toEqual(["bm25", "vector"]);
+		expect(queries.map((call) => call.args[call.args.indexOf("--mode") + 1])).toEqual(["sparse", "vector"]);
 		expect(new Set(queries.map((call) => call.cwd))).toEqual(new Set([workspace()]));
-		expect(method(skill, "obsidian-bm25").describe()).toMatchObject({
-			type: "bm25",
+		expect(method(skill, "obsidian-sparse").describe()).toMatchObject({
+			type: "sparse",
 			datasourceId: "obsidian",
 			capabilities: expect.arrayContaining(["lexical", "scoped"]),
 		});
@@ -299,23 +299,23 @@ describe("ObsidianSkill retrieval", () => {
 		const skill = makeSkill();
 		await skill.index();
 
-		const special = await method(skill, "obsidian-bm25").retrieve("specialchars", { topK: 5 });
+		const special = await method(skill, "obsidian-sparse").retrieve("specialchars", { topK: 5 });
 		expect(special.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Ideas/C%23 tips 100%25.md"]);
 		expect(special[0]?.metadata.file).toBe("Ideas/C# tips 100%.md");
 		expect(
-			await method(skill, "obsidian-bm25").retrieve("specialchars", {
+			await method(skill, "obsidian-sparse").retrieve("specialchars", {
 				topK: 5,
 				scope: "/obsidian/vault-1/Ideas/C%23 tips 100%25.md",
 			}),
 		).toHaveLength(1);
 
-		const korean = await method(skill, "obsidian-bm25").retrieve("모바일", { topK: 5 });
+		const korean = await method(skill, "obsidian-sparse").retrieve("모바일", { topK: 5 });
 		expect(korean.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/프로젝트/계획.md".normalize("NFC")]);
 		expect(korean[0]?.metadata.path).toBe(join(vault, "프로젝트", decomposed));
 	});
 
 	it("rejects with an actionable reason before the first successful index", async () => {
-		await expect(method(makeSkill(), "obsidian-bm25").retrieve("mobile", { topK: 3 })).rejects.toThrow(
+		await expect(method(makeSkill(), "obsidian-sparse").retrieve("mobile", { topK: 3 })).rejects.toThrow(
 			/not indexed yet/u,
 		);
 	});
@@ -325,7 +325,7 @@ describe("ObsidianSkill retrieval", () => {
 		await skill.index();
 		note("Projects/Another.md", "# Another\nmobile");
 		const syncing = skill.index();
-		await expect(method(skill, "obsidian-bm25").retrieve("mobile", { topK: 3 })).rejects.toThrow(
+		await expect(method(skill, "obsidian-sparse").retrieve("mobile", { topK: 3 })).rejects.toThrow(
 			/sync is in progress/u,
 		);
 		await syncing;
@@ -336,7 +336,7 @@ describe("ObsidianSkill retrieval", () => {
 		await skill.index();
 		const before = minsyncCalls().length;
 
-		expect(await method(skill, "obsidian-bm25").retrieve("   ", { topK: 3 })).toEqual([]);
+		expect(await method(skill, "obsidian-sparse").retrieve("   ", { topK: 3 })).toEqual([]);
 		expect(minsyncCalls()).toHaveLength(before);
 	});
 });

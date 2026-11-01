@@ -20,7 +20,6 @@ import {
 	buildLiveStackOptions,
 	cleanupCloneState,
 	isFingerprintCurrent,
-	resolveKoreanLexicalLane,
 	tryAcquireWorkflowLock,
 } from "../../scripts/live-e2e/workflow.mjs";
 
@@ -157,12 +156,12 @@ describe("live-e2e core workflow invariants", () => {
 		expect(() => assertAbsoluteReadableSource("relative.txt")).toThrow("source-not-absolute");
 	});
 
-	it("requires a Korean stem query to reach the fixture through MinSync BM25", () => {
+	it("requires a Korean stem query to reach the fixture through MinSync sparse retrieval", () => {
 		const hit = JSON.stringify({
 			results: [{ path: "files/corpus/korean-policy.txt.md", score: 1.2, text: "인증서를" }],
 		});
 		expect(assertKoreanLexicalHit(hit, "korean-policy.txt")).toBe(true);
-		// The shape a whitespace-only tokenizer produces for the stem: no hit at all.
+		// The shape a retriever blind to Korean inflection produces for the stem: no hit at all.
 		expect(() => assertKoreanLexicalHit(JSON.stringify({ results: [] }), "korean-policy.txt")).toThrow(
 			"korean-lexical-stem-miss",
 		);
@@ -173,15 +172,5 @@ describe("live-e2e core workflow invariants", () => {
 			),
 		).toThrow("korean-lexical-stem-miss");
 		expect(() => assertKoreanLexicalHit("not json", "korean-policy.txt")).toThrow("korean-lexical-unparseable");
-	});
-
-	it("asserts the Korean stem only when the run really used the Korean tokenizer", () => {
-		expect(resolveKoreanLexicalLane(undefined, false)).toBe("assert");
-		expect(resolveKoreanLexicalLane(undefined, true)).toBe("assert");
-		const fallback = { requested: "ko", used: "simple" };
-		// Without Kiwi on the host the lane is skipped with a reason, never reported as a pass.
-		expect(resolveKoreanLexicalLane(fallback, false)).toBe("skip");
-		// The Docker QA image provisions Kiwi, so a fallback there is a broken image, not a skip.
-		expect(() => resolveKoreanLexicalLane(fallback, true)).toThrow("korean-lexical-kiwi-missing");
 	});
 });

@@ -79,11 +79,11 @@ try {
 
 	const lexical = await search("hiring frozen budget");
 	check(
-		"BM25: finds the note by exact terms",
+		"sparse: finds the note by exact terms",
 		sources(lexical.results)[0] === "/obsidian/vault/Projects/Budget.md",
 		sources(lexical.results).join(", "),
 	);
-	check("BM25: result carries the real file path and title", lexical.results[0]?.metadata.title === "Budget");
+	check("sparse: result carries the real file path and title", lexical.results[0]?.metadata.title === "Budget");
 
 	const semantic = await search("when does the phone application get released to testers");
 	check(

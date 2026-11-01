@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
-import type { MinSyncLexicalLanguage } from "./lexical-language.ts";
 import type { MinSyncEmbedderConfig } from "./types.ts";
 
 export interface MinSyncEmbeddingIdentity {
@@ -72,23 +71,6 @@ export function configuredVectorDimension(workspacePath: string): number | undef
 }
 
 /**
- * The BM25 tokenizer in `[lexical].language`, or undefined when there is no config. A config without the section
- * (written before MinSync had one) behaves as MinSync's default, `simple`.
- */
-export function configuredLexicalLanguage(workspacePath: string): string | undefined {
-	let raw: string;
-	try {
-		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
-	} catch {
-		return undefined;
-	}
-	const lexical = (parse(raw) as Record<string, unknown>).lexical;
-	if (typeof lexical !== "object" || lexical === null || Array.isArray(lexical)) return "simple";
-	const language = (lexical as Record<string, unknown>).language;
-	return typeof language === "string" ? language : "simple";
-}
-
-/**
  * Atomically rewrite allowlisted embedder fields in MinSync config.toml.
  * Reads the existing file, merges the allowlisted fields from `embedder`,
  * and writes the result back. Only fields present on `embedder` are applied;
@@ -97,16 +79,15 @@ export function configuredLexicalLanguage(workspacePath: string): string | undef
  * Allowlisted [embedder] fields: id, base_url, query_prefix, passage_prefix,
  * batch_size, max_retries, max_concurrent, timeout_seconds (from timeoutMs / 1000 ceil).
  * Dimension is written under [vectorstore.options] as `dimension`.
- * `managed.maxChunkSize` goes to [chunker.options] and `managed.lexicalLanguage` to [lexical].language. MinSync
- * itself records the tokenizer an index was built with in its cursor and, when [lexical].language differs, deletes
- * and re-indexes every chunk on the next sync, so changing it needs no `--full` from the caller.
+ * `managed.maxChunkSize` goes to [chunker.options]. The `[lexical]` table of a BM25-era workspace is removed: MinSync
+ * 0.6 replaced BM25 with SPLADE sparse retrieval and migrates such an index in place on its next sync.
  *
  * Returns true if the file was rewritten, false if the file does not exist.
  */
 export function rewriteEmbedderConfig(
 	workspacePath: string,
 	embedder: MinSyncEmbedderConfig,
-	managed: { readonly maxChunkSize?: number; readonly lexicalLanguage?: MinSyncLexicalLanguage } = {},
+	managed: { readonly maxChunkSize?: number } = {},
 ): boolean {
 	const configPath = minSyncConfigPath(workspacePath);
 	let raw: string;
@@ -154,14 +135,7 @@ export function rewriteEmbedderConfig(
 	}
 	if (embedder.dimension !== undefined) options.dimension = embedder.dimension;
 	if (managed.maxChunkSize !== undefined) chunkerOptions.max_chunk_size = managed.maxChunkSize;
-	if (managed.lexicalLanguage !== undefined) {
-		const lexical =
-			typeof parsed.lexical === "object" && parsed.lexical !== null && !Array.isArray(parsed.lexical)
-				? (parsed.lexical as Record<string, unknown>)
-				: {};
-		parsed.lexical = lexical;
-		lexical.language = managed.lexicalLanguage;
-	}
+	delete parsed.lexical;
 
 	writeFileSync(configPath, stringify(parsed));
 	return true;

@@ -54,7 +54,7 @@ Only `.md` and `.markdown` notes are staged. Dot-prefixed folders and files
 (`.obsidian`, `.trash`, `.git`), `node_modules`, and symlinks are skipped, and a
 re-index is incremental: only changed or deleted notes are touched. The former
 `connector.binaryPath` and `connector.configPath` options no longer exist.
-Retrieval exposes `obsidian-bm25` (lexical) and `obsidian-semantic` (vector,
+Retrieval exposes `obsidian-sparse` (SPLADE sparse) and `obsidian-semantic` (vector,
 through the shared embedder), and both accept an ordinary `scope`. Sources are
 vault-relative note paths as opaque slash paths —
 `/obsidian/<instanceId>/<folder>/<note>.md`, for example

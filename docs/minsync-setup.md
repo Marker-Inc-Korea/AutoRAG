@@ -1,6 +1,6 @@
 # MinSync setup
 
-AutoRAG uses MinSync for local lexical BM25, semantic vector, and hybrid
+AutoRAG uses MinSync for local SPLADE sparse, semantic vector, and hybrid
 retrieval over parsed document mirrors. MinSync remains the owner of its
 workspace, chunks, vectors, cursor, and embedding identity.
 
@@ -18,11 +18,13 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync --version 0.5.1 --locked` when
-auto-install cannot run. MinSync 0.5.1 on Apple Silicon and Linux needs rustc
+yourself with `cargo install minsync --version 0.6.0 --locked` when
+auto-install cannot run. MinSync on Apple Silicon and Linux needs rustc
 1.96 or newer, because its dependency candle-core requires NEON f16 support;
 with an older toolchain the cargo install fails and AutoRAG falls back to the
-GitHub release binary. AutoRAG's installer pins MinSync 0.5.1 from crates.io.
+GitHub release binary. AutoRAG's installer pins MinSync 0.6.0 from crates.io.
+A `minsync` older than 0.6.0 is never run; see
+[Upgrading a BM25 workspace](#upgrading-a-bm25-workspace).
 
 Existing executables are not silently replaced. New installations, including
 GitHub release fallbacks, must pass the read-only protocol check before they
@@ -275,63 +277,59 @@ writes only the supported MinSync embedder fields and does not write secrets.
 The weights are MinSync's dependency and are not part of the AutoRAG npm
 package.
 
-## BM25 tokenizer
+## Sparse retrieval (SPLADE)
 
-MinSync tokenizes text before indexing it and before every BM25 query. Its
-default, `simple`, splits on whitespace only, so a Korean word with a particle
-(`인증서를`) never matches a query for its stem (`인증서`), and `환불정책과` never
-matches `환불`.
+MinSync 0.6 replaced its BM25 full-text index with learned-sparse retrieval:
+[nlpai-lab/KURE-Sparse-nano](https://huggingface.co/nlpai-lab/KURE-Sparse-nano)
+(Apache-2.0) encodes every chunk and every query into weighted vocabulary terms.
+The keyword half of AutoRAG's local search (the `sparse` mode, and the sparse
+side of `hybrid`) runs through it. It needs no tokenizer library: Korean
+inflected forms (`인증서를` → `인증서`) match without Kiwi, which AutoRAG no
+longer probes for, and `minsync init` no longer takes `--language`.
 
-AutoRAG always sets MinSync's `[lexical].language` to `multilingual`, whatever
-the global `languages` setting says; `languages` only drives OCR. `multilingual`
-indexes the original whitespace-separated words together with the morphemes
-from Kiwi (Korean) and the other analyzers' tokens, so an exact term such as a
-compound (`연구목표`) and an inflected form (`인증서를`) both match, and Latin
-words stay case-insensitive. MinSync's `ko` preset indexes the morphemes only:
-a compound then exists only as its pieces, and exact-term queries lose to
-documents that merely contain both pieces. AutoRAG never selects `ko`.
+MinSync downloads the 299 MB model into `~/.cache/minsync/models` on first use
+(sha256-verified) and runs it in-process on Metal or CPU. AutoRAG does not
+start a `minsync serve --sparse` daemon.
 
-Measured on a sample of real Korean documents (410 documents, BM25 only, queries
-sampled from the documents themselves, top-5 precision / top-50 recall):
+### Upgrading a BM25 workspace
 
-| Queries | `simple` | `ko` | `multilingual` |
-| --- | --- | --- | --- |
-| 60 stems that also occur with particles or endings | 0.18 / 0.10 | 0.45 / 0.67 | 0.54 / 0.77 |
-| 40 exact words and compounds | 0.97 / 0.93 | 0.59 / 0.79 | 0.89 / 0.98 |
+AutoRAG requires MinSync 0.6.0 or newer. A `minsync` on `PATH` or in the
+workspace cache that reports an older version is never run: one later on
+`PATH` is used instead, a cached one is replaced by the next install (`autorag
+refresh` with `minSync.autoInstall`), and a query with no usable binary fails
+with a `MinSyncRequiredError` naming the version and path it found. A binary
+whose `--version` does not print a MinSync version line (a custom build) is not
+gated.
 
-Tokenizing is slower than whitespace splitting: indexing 5,456 chunks took
-about 36 s with `multilingual` against 2 s with `simple`.
+The first `autorag refresh` after the upgrade removes the `[lexical]` table
+from `.minsync/config.toml` and MinSync migrates the index in place: the BM25
+index and `lexical_text` column are dropped and sparse vectors are encoded for
+every chunk; dense vectors are kept. This is a one-time cost that grows with
+the corpus. On an Apple M4 Max, a 5,394-file workspace with 52,851 chunks took
+38 minutes (45,361 chunks encoded, 7,490 reused) with a 2.7 GB peak memory
+footprint, and the store grew from 0.65 GB to 2.3 GB.
 
-### Kiwi is required
+### Measured quality
 
-`multilingual` loads the [Kiwi](https://github.com/bab2min/Kiwi) native library
-and its base model at run time. Neither ships with MinSync or AutoRAG, and
-without them every sync fails. AutoRAG therefore uses `multilingual` only when
-it finds both, by the same rules as MinSync's `kiwi-rs` loader:
-`KIWI_LIBRARY_PATH` and `KIWI_MODEL_PATH` when set (an explicit path is never
-second-guessed), otherwise the per-user install `~/.local/kiwi`
-(`%LOCALAPPDATA%\kiwi` on Windows) and the usual system directories
-(`/usr/local`, `/usr`, `/opt/homebrew`). A library that only the OS loader's own
-search path can find is not probed; set `KIWI_LIBRARY_PATH` for it.
+On that workspace (the maintainer's own Downloads/Documents/Desktop, mostly
+Korean), 594 queries were generated from 297 sampled passages (one natural
+question and one keyword query each), and recall counted a hit when the
+passage's file, or a byte-identical copy, ranked in the top k:
 
-When Kiwi is missing, a new workspace is created with `simple` and `autorag
-refresh` reports a `lexical-tokenizer-unavailable` warning that names what to
-install, instead of failing. This applies to every corpus, including an
-English-only one. The next refresh after Kiwi is installed switches the
-workspace to `multilingual`. A workspace that is already on `multilingual` is
-never switched back on a missing Kiwi, since that would re-embed every chunk;
-its sync reports MinSync's own error instead.
+| Mode | R@1 | R@5 | R@10 | MRR@10 |
+| --- | --- | --- | --- | --- |
+| BM25 (`multilingual`, MinSync 0.5.1) | 0.473 | 0.732 | 0.811 | 0.583 |
+| SPLADE sparse (MinSync 0.6.0) | 0.564 | 0.825 | 0.887 | 0.676 |
+| Hybrid, BM25 + dense (0.5.1) | 0.481 | 0.779 | 0.848 | 0.607 |
+| Hybrid, SPLADE + dense (0.6.0) | 0.492 | 0.779 | 0.847 | 0.614 |
 
-### Changing the tokenizer
+For the natural-language questions, a model judged whether the top 5 chunks
+contained the reference answer: BM25 0.657, SPLADE 0.838, hybrid 0.717 → 0.768.
 
-A new workspace is initialized with `multilingual`. For an existing workspace,
-`autorag refresh` writes it to `[lexical].language` in `.minsync/config.toml`.
-MinSync records the tokenizer an index was built with in its cursor; when the
-two differ, its next `sync` deletes and re-indexes every chunk, re-embedding
-them as well, not only rebuilding the BM25 lane. A refresh that fails or is
-cancelled restores the previous `config.toml`, so the rebuild is retried by the
-next refresh. Every workspace created before this change used `simple`, so
-upgrading re-indexes it once (when Kiwi is present).
+Known limit (from MinSync's release notes, not measured here): exact strings
+such as error codes, hashes, and version strings among many look-alike
+documents match far less reliably than with BM25. Use a bounded `grep` for
+exact lookups.
 
 ## Chunk size
 
@@ -390,8 +388,7 @@ daemon or the in-process engine.
 ## Durable incremental parsing
 
 Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
-including a refresh that selects only `parsed`. MinSync 0.5.1 — the version
-AutoRAG installs — ships it; published binaries up to 0.5.0 have the original
+including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.6.0 — ship it; published binaries up to 0.5.0 have the original
 durable stage, but not `capabilities`, `plan`, `inspect`, deliberate skips or
 deferred-failure policy. AutoRAG probes capabilities before opening a run and
 refuses an older build before mutating stage state. Parsing itself uses no

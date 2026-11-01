@@ -24,7 +24,6 @@ export type SearchDocumentDiagnosticCode =
 	| "minsync-lock-held"
 	| "embedder-unavailable"
 	| "embedding-identity-mismatch"
-	| "lexical-tokenizer-unavailable"
 	| "parser-skipped"
 	| "parser-failed"
 	| "parser-crashed"

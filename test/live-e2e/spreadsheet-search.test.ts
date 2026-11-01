@@ -11,8 +11,8 @@
  * real model (AUTORAG_SPREADSHEET_LIVE_MODEL, default anthropic/claude-haiku-5.5) and expects the
  * cached formula value 742,000 in the answer.
  *
- * Rankings are asserted as "in the top 3": without the Kiwi library MinSync falls back to its `simple`
- * lexical tokenizer (observed on Windows), which moves some answers from rank 1 to rank 2 or 3. The first
+ * Rankings are asserted as "in the top 3", not rank 1, so a small ranking shift between MinSync builds does
+ * not fail the lane. The first
  * refresh embeds every chunk; on a CPU-only Windows PC that took ~21 minutes, hence the long deadlines.
  *
  * Every command runs with AUTORAG_HOME and AUTORAG_CONFIG inside a temp root, so the real
@@ -66,14 +66,12 @@ describe.skipIf(!LIVE)("live: spreadsheets are searchable with their labels", ()
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), "autorag-spreadsheet-live-"));
 		const home = join(root, ".autorag-home");
-		// The suite setup puts an inert `minsync` first on PATH and points Kiwi at empty stand-in files; this
-		// live run needs the real MinSync and its real Korean tokenizer.
-		const { KIWI_LIBRARY_PATH: _library, KIWI_MODEL_PATH: _model, ...inherited } = process.env;
+		// The suite setup puts an inert `minsync` first on PATH; this live run needs the real MinSync.
 		const path = (process.env.PATH ?? "")
 			.split(delimiter)
 			.filter((entry) => !entry.includes("autorag-fake-minsync-path-"))
 			.join(delimiter);
-		env = { ...inherited, PATH: path, AUTORAG_HOME: home, AUTORAG_CONFIG: join(home, "config.json") };
+		env = { ...process.env, PATH: path, AUTORAG_HOME: home, AUTORAG_CONFIG: join(home, "config.json") };
 		mkdirSync(join(root, "docs"), { recursive: true });
 		mkdirSync(join(root, "ws"), { recursive: true });
 		mkdirSync(home, { recursive: true });

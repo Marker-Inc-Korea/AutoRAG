@@ -14,10 +14,11 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { resolveMinSyncBinary } from "../../src/minsync/binary.ts";
 import {
 	ensureLocalEmbedder,
 	ensureMinSyncBinary,
@@ -32,6 +33,7 @@ import {
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
+import { MINSYNC_MIN_VERSION } from "../../src/minsync/version.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
 import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
@@ -106,9 +108,7 @@ appendFileSync(${JSON.stringify(`${logPath}.env`)}, JSON.stringify({ command: ar
 if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
-  const languageIndex = args.indexOf("--language");
-  const lexical = languageIndex === -1 ? "" : "\\n[lexical]\\nlanguage = \\"" + args[languageIndex + 1] + "\\"\\n";
-  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n" + lexical);
+  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
 }
@@ -127,7 +127,7 @@ if (args[0] === "sync") {
 }
 
 if (args[0] === "query") {
-  ${strictQuery ? 'const supported = args.length === 8 && args[1] === "--format" && args[2] === "json" && args[3] === "--mode" && args[4] === "bm25" && args[5] === "-k" && !args[6].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
+  ${strictQuery ? 'const supported = args.length === 8 && args[1] === "--format" && args[2] === "json" && args[3] === "--mode" && args[4] === "sparse" && args[5] === "-k" && !args[6].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
   console.log(${JSON.stringify(queryJson)});
   process.exit(0);
 }
@@ -163,7 +163,7 @@ describe("MinSyncClient", () => {
 		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
 
 		// When
-		const results = await client.query("renewal cancellation", 2, "bm25");
+		const results = await client.query("renewal cancellation", 2, "sparse");
 
 		// Then
 		expect(results).toEqual([{ path: parsedOutput, score: 0.9, text: "semantic hit" }]);
@@ -172,7 +172,7 @@ describe("MinSyncClient", () => {
 			"--format",
 			"json",
 			"--mode",
-			"bm25",
+			"sparse",
 			"-k",
 			"2",
 			"renewal cancellation",
@@ -309,9 +309,7 @@ describe("MinSyncVectorMethod", () => {
 
 		// Then
 		expect(result).toMatchObject({ synced: 1 });
-		expect(loggedCalls()).toContainEqual(
-			JSON.stringify({ args: ["init", "--format", "json", "--language", "multilingual"], cwd: minSyncCwd() }),
-		);
+		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["init", "--format", "json"], cwd: minSyncCwd() }));
 		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["check", "--format", "json"], cwd: minSyncCwd() }));
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({ args: ["sync", "--full", "--format", "json", "--progress", "jsonl"], cwd: minSyncCwd() }),
@@ -846,7 +844,7 @@ process.exit(0);
 		expect(hybridResults).toHaveLength(1);
 	});
 
-	it("answers a failed hybrid query from BM25 and tells the pipeline the semantic half was down", async () => {
+	it("answers a failed hybrid query from sparse retrieval and tells the pipeline the semantic half was down", async () => {
 		writeFileSync(
 			minsyncBinary,
 			`#!/usr/bin/env node
@@ -859,7 +857,7 @@ if (args[args.indexOf("--mode") + 1] === "hybrid") {
   console.error("embedder unreachable at http://127.0.0.1:9");
   process.exit(2);
 }
-console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "BM25 answer." }] }));
+console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, score: 0.9, text: "Sparse answer." }] }));
 }
 `,
 		);
@@ -869,9 +867,9 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 
 		const results = await hybrid.retrieve("renewal", { topK: 2, onFallback: (event) => events.push(event) });
 
-		expect(results.map((result) => result.content)).toEqual(["BM25 answer."]);
+		expect(results.map((result) => result.content)).toEqual(["Sparse answer."]);
 		expect(events).toHaveLength(1);
-		expect(events[0]).toMatchObject({ method: "hybrid", fallback: "bm25" });
+		expect(events[0]).toMatchObject({ method: "hybrid", fallback: "sparse" });
 		expect(events[0]?.reason).toContain("embedder unreachable at http://127.0.0.1:9");
 	});
 
@@ -890,14 +888,14 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		await refresh;
 	});
 
-	it("routes lexical retrieval through MinSync BM25 mode", async () => {
+	it("routes lexical retrieval through MinSync sparse mode", async () => {
 		writeFakeMinSync(
 			JSON.stringify({
 				results: [
 					{
 						path: "files/docs/policy.txt.md",
 						score: 0.88,
-						text: "BM25 lexical hit from MinSync.",
+						text: "Sparse hit from MinSync.",
 					},
 				],
 			}),
@@ -906,15 +904,15 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 			binaryPath: minsyncBinary,
 			root,
 			workspacePath: minsyncWorkspace,
-			mode: "bm25",
+			mode: "sparse",
 		});
 
 		const results = await method.retrieve("renewal cancellation", { topK: 2 });
 
-		expect(results[0]?.metadata.method).toBe("minsync-bm25");
+		expect(results[0]?.metadata.method).toBe("minsync-sparse");
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "--mode", "bm25", "-k", "2", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "sparse", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -1600,7 +1598,7 @@ if (args[0] === "sync") process.exit(1);
 		expect(syncCall?.cursorExists).toBe(true);
 	});
 
-	it("uses the MinSync chunk size for lexical indexing", async () => {
+	it("uses the MinSync chunk size for sparse indexing", async () => {
 		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
 		mkdirSync(minsyncConfigDir, { recursive: true });
 		writeFileSync(minSyncConfigPath(minsyncWorkspace), "[chunker.options]\n");
@@ -1611,7 +1609,7 @@ if (args[0] === "sync") process.exit(1);
 			root,
 			workspacePath: minsyncWorkspace,
 			maxChunkSize: 1000,
-			mode: "bm25",
+			mode: "sparse",
 		});
 
 		await method.sync();
@@ -1980,169 +1978,102 @@ dimension = 768
 	});
 });
 
-describe("MinSync lexical (BM25) tokenizer", () => {
+describe("BM25-era MinSync workspace", () => {
 	function callArgs(command: string): readonly string[] | undefined {
 		return loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[] })
 			.find((call) => call.args[0] === command)?.args;
 	}
 
-	function languageFlag(args: readonly string[] | undefined): string | undefined {
-		const index = args?.indexOf("--language") ?? -1;
-		return index === -1 ? undefined : args?.[index + 1];
-	}
-
-	/** An initialized and already-synced workspace, as an earlier refresh leaves it. */
-	function writeWorkspaceConfig(toml: string): void {
-		const dir = join(minsyncWorkspace, ".minsync");
-		mkdirSync(dir, { recursive: true });
-		writeFileSync(minSyncConfigPath(minsyncWorkspace), toml);
-		writeFileSync(join(dir, "cursor.json"), "{}");
-	}
-
-	function configuredLanguage(): unknown {
-		const parsed = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
-			string,
-			Record<string, unknown>
-		>;
-		return parsed.lexical?.language;
-	}
-
 	function method(): MinSyncVectorMethod {
 		return new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 	}
 
-	function agentWith(languages?: readonly ("ko" | "en" | "ja")[]): AutoRAGAgent {
-		return new AutoRAGAgent({
-			searchPaths: [source],
-			memoryPath: join(root, "memory.json"),
-			workspacePath: root,
-			...(languages === undefined ? {} : { languages }),
-			jikji: false,
-			everything: false,
-			fsearch: false,
-			minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
-		});
-	}
-
-	afterEach(() => {
-		vi.unstubAllEnvs();
-	});
-
-	it("initializes MinSync with the multilingual tokenizer", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-
-		const result = await method().sync();
-
-		expect(languageFlag(callArgs("init"))).toBe("multilingual");
-		expect(configuredLanguage()).toBe("multilingual");
-		expect(result.lexicalFallback).toBeUndefined();
-	});
-
-	it("uses the multilingual tokenizer whatever languages the agent is configured with", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-		await agentWith().refresh(false, { methods: ["minsync"] });
-		expect(languageFlag(callArgs("init"))).toBe("multilingual");
-
-		rmSync(join(minsyncWorkspace, ".minsync"), { recursive: true, force: true });
-		rmSync(logPath);
-		await agentWith(["en"]).refresh(false, { methods: ["minsync"] });
-		expect(languageFlag(callArgs("init"))).toBe("multilingual");
-	});
-
-	it("falls back to whitespace tokenization when the Kiwi library the tokenizer needs is missing", async () => {
-		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-
-		const result = await method().sync();
-
-		expect(result).toMatchObject({ ok: true, lexicalFallback: { requested: "multilingual", used: "simple" } });
-		expect(languageFlag(callArgs("init"))).toBe("simple");
-		expect(configuredLanguage()).toBe("simple");
-	});
-
-	it("keeps an index already built with the multilingual tokenizer instead of rebuilding it on a missing Kiwi", async () => {
-		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
-		writeWorkspaceConfig('[lexical]\nlanguage = "multilingual"\n');
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-
-		const result = await method().sync();
-
-		expect(configuredLanguage()).toBe("multilingual");
-		expect(result.lexicalFallback).toBeUndefined();
-	});
-
-	it("reports the fallback as a refresh warning naming what to install", async () => {
-		vi.stubEnv("KIWI_LIBRARY_PATH", join(root, "no-such-libkiwi"));
-		writeFakeMinSync(JSON.stringify({ results: [] }));
-
-		const refresh = await agentWith().refresh(false, { methods: ["minsync"] });
-
-		const warning = refresh.diagnostics.find((diagnostic) => diagnostic.code === "lexical-tokenizer-unavailable");
-		expect(warning).toMatchObject({ severity: "warning", source: "minsync" });
-		expect(warning?.message).toContain("KIWI_LIBRARY_PATH");
-	});
-
-	it("points an existing workspace at the multilingual tokenizer without re-initializing it", async () => {
-		writeWorkspaceConfig('[lexical]\nlanguage = "simple"\n');
+	it("drops a BM25-era [lexical] table so MinSync 0.6 can migrate the index in place", async () => {
+		const dir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			'[embedder]\nid = "kept"\n\n[lexical]\nlanguage = "multilingual"\n',
+		);
+		writeFileSync(join(dir, "cursor.json"), "{}");
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
 		const result = await method().sync();
 
 		expect(result).toMatchObject({ ok: true });
 		expect(callArgs("init")).toBeUndefined();
-		expect(callArgs("sync")).toBeDefined();
-		expect(configuredLanguage()).toBe("multilingual");
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<string, unknown>;
+		expect(rewritten.lexical).toBeUndefined();
+	});
+});
+
+describe("MinSync version floor", () => {
+	const originalPath = process.env.PATH;
+
+	afterEach(() => {
+		process.env.PATH = originalPath;
 	});
 
-	it("adds the tokenizer to a config written before MinSync had a lexical section", async () => {
-		writeWorkspaceConfig("[chunker.options]\nmax_chunk_size = 4096\n");
+	function versionedBinary(directory: string, version: string): string {
+		mkdirSync(directory, { recursive: true });
+		const path = join(directory, "minsync");
+		writeFileSync(
+			path,
+			`#!${process.execPath}\nif (process.argv[2] === "--version") { console.log("minsync ${version}"); process.exit(0); }\nprocess.exit(0);\n`,
+		);
+		chmodSync(path, 0o755);
+		return path;
+	}
+
+	it("skips a PATH minsync older than the floor for a newer one later on PATH", async () => {
+		const old = versionedBinary(join(root, "old-bin"), "0.5.1");
+		const current = versionedBinary(join(root, "new-bin"), MINSYNC_MIN_VERSION);
+		process.env.PATH = [dirname(old), dirname(current)].join(delimiter);
+
+		await expect(resolveMinSyncBinary({ root, install: false })).resolves.toBe(current);
+	});
+
+	it("refuses an outdated binary instead of running it, naming its version", async () => {
+		const old = versionedBinary(join(root, "old-bin"), "0.5.1");
+		process.env.PATH = dirname(old);
+
+		const resolved = resolveMinSyncBinary({ root, install: false });
+
+		await expect(resolved).rejects.toBeInstanceOf(MinSyncRequiredError);
+		await expect(resolved).rejects.toThrow(`0.5.1 at ${old}`);
+	});
+
+	it("replaces an outdated cached binary through the installer", async () => {
+		process.env.PATH = [join(root, "empty-path"), dirname(process.execPath)].join(delimiter);
+		const cached = versionedBinary(join(root, ".autorag", "bin"), "0.5.1");
+		const installs: string[] = [];
+
+		const resolved = await resolveMinSyncBinary({
+			root,
+			installer: {
+				cargoInstaller: async (destination) => {
+					installs.push(destination);
+					writeFakeMinSync(JSON.stringify({ results: [] }));
+					copyFileSync(minsyncBinary, destination);
+					chmodSync(destination, 0o755);
+					return { binaryPath: destination, version: MINSYNC_VERSION };
+				},
+			},
+		});
+
+		expect(installs).toEqual([cached]);
+		expect(resolved).toBe(cached);
+	});
+
+	it("uses a binary whose --version is not a MinSync version line (custom build)", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const custom = join(root, "custom-bin", "minsync");
+		mkdirSync(dirname(custom), { recursive: true });
+		copyFileSync(minsyncBinary, custom);
+		chmodSync(custom, 0o755);
+		process.env.PATH = dirname(custom);
 
-		await method().sync();
-
-		expect(configuredLanguage()).toBe("multilingual");
-	});
-
-	it("restores the previous tokenizer when the rebuild fails", async () => {
-		writeWorkspaceConfig('[lexical]\nlanguage = "simple"\n');
-		const original = readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8");
-		writeFileSync(
-			minsyncBinary,
-			`#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
-const args = process.argv.slice(2);
-if (args[0] === "stage") {
-  (await import("node:module")).createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir: args[args.indexOf("--state-dir") + 1] });
-} else {
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
-if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
-if (args[0] === "sync") process.exit(1);
-}
-`,
-		);
-		chmodSync(minsyncBinary, 0o755);
-
-		const result = await method().sync();
-
-		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
-		expect(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")).toBe(original);
-	});
-
-	it("rewriteEmbedderConfig writes only the lexical language when asked", () => {
-		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
-		writeFileSync(
-			minSyncConfigPath(minsyncWorkspace),
-			'[embedder]\nid = "old-id"\n\n[lexical]\nlanguage = "simple"\n',
-		);
-
-		rewriteEmbedderConfig(minsyncWorkspace, {}, { lexicalLanguage: "multilingual" });
-
-		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
-			string,
-			Record<string, unknown>
-		>;
-		expect(rewritten.lexical?.language).toBe("multilingual");
-		expect(rewritten.embedder?.id).toBe("old-id");
+		await expect(resolveMinSyncBinary({ root, install: false })).resolves.toBe(custom);
 	});
 });

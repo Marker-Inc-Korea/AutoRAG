@@ -116,11 +116,11 @@ export {
 	type NotionSkillOptions,
 } from "./skills/notion/index.ts";
 export {
-	ObsidianBm25Method,
 	type ObsidianMethodOptions,
 	ObsidianSemanticMethod,
 	ObsidianSkill,
 	type ObsidianSkillOptions,
+	ObsidianSparseMethod,
 } from "./skills/obsidian/index.ts";
 export {
 	RssConnector,
