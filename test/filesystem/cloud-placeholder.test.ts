@@ -514,9 +514,10 @@ describe("canonical path mapping", () => {
 		try {
 			expect(canonicalPath(link)).toBe(real);
 			const map = canonicalPathMapper([link, join(base, "other")]);
-			// The mapper returns the comparable form, which is `/`-separated even where `join` is not.
+			// A search root that is already canonical is not rewritten, so its path keeps the platform's separators;
+			// a rewritten path comes back in the comparable (`/`-separated) form.
 			expect(map(join(link, "a", "b.txt"))).toBe(slash(join(real, "a", "b.txt")));
-			expect(map(join(base, "other", "c.txt"))).toBe(slash(join(base, "other", "c.txt")));
+			expect(map(join(base, "other", "c.txt"))).toBe(join(base, "other", "c.txt"));
 			// A sibling path that merely shares a prefix is not rewritten.
 			expect(map(`${link}-sibling/c.txt`)).toBe(`${link}-sibling/c.txt`);
 		} finally {

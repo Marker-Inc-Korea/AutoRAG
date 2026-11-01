@@ -143,8 +143,9 @@ export function canonicalPath(value: string): string {
 /**
  * Rewrites a walked path into the same canonical space as {@link CloudRoot.path}: the search root's own
  * symlinks are resolved once, so a file reached through `/var/…` compares against a mount root that `mount`
- * reports at `/private/var/…`. A path under no search root is returned unchanged. Pure apart from one
- * `realpath` per search root.
+ * reports at `/private/var/…`. The result is a comparison key, not a path to open: a path under a rewritten
+ * search root comes back in the comparable (`/`-separated) form, and a path under no such search root is
+ * returned unchanged. Pure apart from one `realpath` per search root.
  */
 export function canonicalPathMapper(searchRoots: readonly string[]): (path: string) => string {
 	const forms = searchRoots
