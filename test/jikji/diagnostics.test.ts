@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../../src/jikji/diagnostics.ts";
+import { jikjiDiscoverDiagnostic, jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../../src/jikji/diagnostics.ts";
 import type { JikjiFindResult, JikjiPrepareResult } from "../../src/jikji/types.ts";
 
 const ABS_BINARY = "/Users/someone/.local/bin/jikji";
@@ -51,6 +51,38 @@ describe("jikjiPrepareDiagnostic", () => {
 		};
 		expect(jikjiPrepareDiagnostic(failed)?.code).toBe("jikji-prepare-failed");
 	});
+
+	it("reports a skipped cloud root as info, not a degraded Jikji run", () => {
+		const skipped: JikjiPrepareResult = {
+			ok: false,
+			reason: "cloud-root-skipped",
+			stdout: "",
+			stderr: "",
+			code: null,
+		};
+		const diag = jikjiPrepareDiagnostic(skipped);
+		expect(diag?.code).toBe("jikji-cloud-root-skipped");
+		expect(diag?.severity).toBe("info");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toMatch(/cloud/u);
+	});
+
+	it("maps an unsupported-version to its own code and keeps the detected version, path and floor verbatim", () => {
+		const message = "jikji 0.1.1 at /opt/jikji/bin/jikji is older than the 0.2.0 AutoRAG requires";
+		const failed: JikjiPrepareResult = {
+			ok: false,
+			reason: "unsupported-version",
+			stdout: "",
+			stderr: message,
+			code: null,
+			detectedVersion: "0.1.1",
+		};
+		const diag = jikjiPrepareDiagnostic(failed);
+		expect(diag?.code).toBe("jikji-unsupported-version");
+		expect(diag?.severity).toBe("warning");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toContain(message);
+	});
 	it("[red-team] never leaks a path for ANY failure reason even with path-laden stderr/stdout", () => {
 		const reasons = [
 			"aborted",
@@ -95,6 +127,7 @@ describe("jikjiFindDiagnostic", () => {
 				handoffAction: "direct_use",
 				toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
 				agentShouldNotRerank: false,
+				rawFallbackAllowed: false,
 			},
 			stdout: "{}",
 			stderr: "",
@@ -144,6 +177,21 @@ describe("jikjiFindDiagnostic", () => {
 		expect(jikjiFindDiagnostic(failed)?.code).toBe("jikji-find-failed");
 	});
 
+	it("maps an unsupported-version find to its own code and keeps the message verbatim", () => {
+		const message = "jikji 0.1.1 at /opt/jikji/bin/jikji is older than the 0.2.0 AutoRAG requires";
+		const failed: JikjiFindResult = {
+			ok: false,
+			reason: "unsupported-version",
+			stdout: "",
+			stderr: message,
+			code: null,
+			detectedVersion: "0.1.1",
+		};
+		const diag = jikjiFindDiagnostic(failed);
+		expect(diag?.code).toBe("jikji-unsupported-version");
+		expect(diag?.message).toContain(message);
+	});
+
 	it("maps a timeout to jikji-find-failed with a path-free message", () => {
 		const failed: JikjiFindResult = {
 			ok: false,
@@ -187,5 +235,59 @@ describe("jikjiFindDiagnostic", () => {
 			expect(diag?.message).not.toContain("C:\\");
 			expect(diag?.message).not.toContain(ABS_BINARY);
 		}
+	});
+});
+
+describe("jikjiDiscoverDiagnostic", () => {
+	it("returns undefined for a successful discover", () => {
+		const ok: JikjiFindResult = {
+			ok: true,
+			answerPack: {
+				answerPaths: [],
+				paths: [],
+				candidates: [],
+				evidencePack: [],
+				handoffAction: "raw_fallback_after_retry",
+				toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
+				agentShouldNotRerank: false,
+				rawFallbackAllowed: true,
+			},
+			stdout: "{}",
+			stderr: "",
+			code: 0,
+		};
+		expect(jikjiDiscoverDiagnostic(ok)).toBeUndefined();
+	});
+
+	it("surfaces the exit status, stderr and real paths verbatim", () => {
+		const failed: JikjiFindResult = {
+			ok: false,
+			reason: "nonzero-exit",
+			stdout: "",
+			stderr: "error: cannot open /Users/someone/docs/.jikji/index.db: disk I/O error\n",
+			code: 3,
+		};
+		const diag = jikjiDiscoverDiagnostic(failed);
+		expect(diag?.code).toBe("jikji-discover-failed");
+		expect(diag?.severity).toBe("warning");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toContain("exit status 3");
+		expect(diag?.message).toContain("error: cannot open /Users/someone/docs/.jikji/index.db: disk I/O error");
+	});
+
+	it("maps a missing binary to jikji-unavailable", () => {
+		const failed: JikjiFindResult = {
+			ok: false,
+			reason: "spawn-error",
+			stdout: "",
+			stderr: `spawn ${ABS_BINARY} ENOENT`,
+			code: null,
+		};
+		expect(jikjiDiscoverDiagnostic(failed)?.code).toBe("jikji-unavailable");
+	});
+
+	it("names a step issued for another root", () => {
+		const failed: JikjiFindResult = { ok: false, reason: "bad-retry-step", stdout: "", stderr: "", code: null };
+		expect(jikjiDiscoverDiagnostic(failed)?.message).toMatch(/another root/);
 	});
 });

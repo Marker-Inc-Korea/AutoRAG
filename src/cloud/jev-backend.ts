@@ -22,7 +22,9 @@ import {
 	type RawAnswer,
 	type State,
 } from "jev-use";
-import { API_PATH, resolveBaseUrl } from "./config.ts";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { API_PATH, MODELS_PATH, normalizeBaseUrl, resolveBaseUrl } from "./config.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "./credential.ts";
 
 /** API path appended to the normalized server root. */
@@ -37,6 +39,40 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;
+
+/** One decision model the hosted plan serves at `POST <root>/v1/jev`. */
+export interface DazziDecisionModel {
+	readonly id: string;
+	readonly description?: string;
+}
+
+const decisionModelListSchema = Type.Object({
+	data: Type.Array(Type.Object({ id: Type.String({ minLength: 1 }), description: Type.Optional(Type.String()) })),
+});
+
+/**
+ * `GET <root>/v1/models?operation=jev`: the decision models the hosted plan serves, in its order. Throws on a
+ * network failure, a non-2xx answer, or a body that is not a model list.
+ */
+export async function listDazziDecisionModels(options: {
+	readonly baseUrl: string;
+	readonly apiKey: string;
+	readonly signal?: AbortSignal;
+	readonly fetchImpl?: typeof fetch;
+}): Promise<DazziDecisionModel[]> {
+	const response = await (options.fetchImpl ?? fetch)(
+		`${normalizeBaseUrl(options.baseUrl)}${MODELS_PATH}?operation=jev`,
+		{
+			headers: { authorization: `Bearer ${options.apiKey}`, accept: "application/json" },
+			...(options.signal !== undefined ? { signal: options.signal } : {}),
+		},
+	);
+	if (!response.ok) throw new Error(`Dazzi Models decision model listing failed: HTTP ${response.status}`);
+	const body: unknown = await response.json();
+	if (!Value.Check(decisionModelListSchema, body))
+		throw new Error("Dazzi Models returned an unexpected decision model list");
+	return body.data.map(({ id, description }) => (description === undefined ? { id } : { id, description }));
+}
 
 /** Options for {@link DazziJevBackend}. */
 export interface DazziJevBackendOptions {
@@ -207,19 +243,45 @@ function toNativeQuestion(question: Question): NativeWireQuestion {
 	}
 }
 
-/** Build the whole request body: model, a string state, and the questions by id. */
+/** A question key every decision model accepts; Cloudflare Clef Omni rejects any other with HTTP 422. */
+const WIRE_QUESTION_KEY = /^[A-Za-z0-9_.-]{1,100}$/u;
+const WIRE_QUESTION_KEY_MAX_LENGTH = 100;
+
+/**
+ * The key each question goes out under, in question order. An id that is already a valid key keeps
+ * it; any other, such as `datasource:web` or a long `evidence:...` id, has every other character
+ * replaced with `_`, is cut to 100 characters, and takes a numeric suffix when that key is taken.
+ * Answers are read back under the same keys, so each stays with its own question.
+ */
+export function wireQuestionKeys(ids: readonly string[]): string[] {
+	const taken = new Set(ids.filter((id) => WIRE_QUESTION_KEY.test(id)));
+	return ids.map((id) => {
+		if (WIRE_QUESTION_KEY.test(id)) return id;
+		const base = id.replace(/[^A-Za-z0-9_.-]/gu, "_").slice(0, WIRE_QUESTION_KEY_MAX_LENGTH) || "q";
+		let key = base;
+		for (let attempt = 2; taken.has(key); attempt += 1) {
+			const suffix = `_${attempt}`;
+			key = `${base.slice(0, WIRE_QUESTION_KEY_MAX_LENGTH - suffix.length)}${suffix}`;
+		}
+		taken.add(key);
+		return key;
+	});
+}
+
+/** Build the whole request body: model, a string state, and the questions by {@link wireQuestionKeys}. */
 export function toNativeBody(state: State, questions: (Question & { id: string })[], model: string): NativeBody {
+	const keys = wireQuestionKeys(questions.map((question) => question.id));
 	return {
 		model,
 		state: serializeState(state),
-		questions: Object.fromEntries(questions.map((question) => [question.id, toNativeQuestion(question)])),
+		questions: Object.fromEntries(questions.map((question, index) => [keys[index], toNativeQuestion(question)])),
 	};
 }
 
 /**
- * Read the provider's answer map back into raw answers, in question order.
- * Anything missing or mistyped is a `BackendError` — a silently dropped answer
- * would read as a low-confidence judgment.
+ * Read the provider's answer map back into raw answers, in question order, under the keys
+ * {@link toNativeBody} sent. Anything missing or mistyped is a `BackendError` — a silently dropped
+ * answer would read as a low-confidence judgment.
  */
 export function parseNativeAnswers(
 	backend: string,
@@ -229,8 +291,9 @@ export function parseNativeAnswers(
 	if (!answers || typeof answers !== "object") {
 		throw new BackendError(backend, "response has no answers object");
 	}
-	const byId = answers as Record<string, NativeAnswer>;
-	return questions.map((question) => parseNativeAnswer(backend, question, byId[question.id]));
+	const byKey = answers as Record<string, NativeAnswer>;
+	const keys = wireQuestionKeys(questions.map((question) => question.id));
+	return questions.map((question, index) => parseNativeAnswer(backend, question, byKey[keys[index] ?? question.id]));
 }
 
 /** Shape one provider answer into a raw answer for its question's primitive. */

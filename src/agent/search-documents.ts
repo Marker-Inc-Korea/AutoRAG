@@ -28,6 +28,7 @@ export type SearchDocumentDiagnosticCode =
 	| "parser-skipped"
 	| "parser-failed"
 	| "parser-crashed"
+	| "source-changed"
 	| "source-vanished"
 	| "source-unreadable"
 	| "source-read-failed"
@@ -41,12 +42,20 @@ export type SearchDocumentDiagnosticCode =
 	| "mass-delete-suppressed"
 	| "walk-truncated"
 	| "directory-unreadable"
+	| "cloud-download-deferred"
+	| "cloud-placeholder-skipped"
+	| "cloud-evict-failed"
+	| "cloud-fingerprint-failed"
 	| "pdf-extract-thin"
 	| "retrieval-method-failed"
 	| "rerank-failed"
+	| "rerank-disabled"
 	| "jikji-unavailable"
 	| "jikji-prepare-failed"
+	| "jikji-cloud-root-skipped"
 	| "jikji-find-failed"
+	| "jikji-discover-failed"
+	| "jikji-unsupported-version"
 	| "everything-index-failed"
 	| "fsearch-index-failed"
 	| "fsearch-binary-missing"
@@ -58,6 +67,8 @@ export type SearchDocumentDiagnosticCode =
 	| "no-final-answer"
 	| "model-request-failed"
 	| "tool-call-burst"
+	| "decision-model-checked"
+	| "decision-model-fallback"
 	| "query-routed"
 	| "query-route-fallback"
 	| "query-decomposition-failed"
@@ -85,6 +96,8 @@ export interface SearchDocumentDiagnostic {
 	readonly message: string;
 	/** Component label (e.g. "sanitizer", "minsync") or opaque virtual path — never a real filesystem path. */
 	readonly source?: string;
+	/** Structured cause for a component diagnostic, such as a changed source revision. */
+	readonly reason?: string;
 }
 
 export interface SearchDocumentEvidence {

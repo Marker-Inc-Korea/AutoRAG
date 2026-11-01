@@ -18,7 +18,6 @@ import { resolveSidecarOptions } from "../sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
-import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import {
 	DiscordAttachmentStore,
 	DiscrawlClient,
@@ -33,13 +32,11 @@ import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/
 import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
-import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill } from "./slack/index.ts";
-import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
 import { TelecrawlSkill } from "./telecrawl/index.ts";
 import { WacrawlSkill } from "./wacrawl/index.ts";
 
@@ -363,21 +360,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 					: { semantic: { embedder: embedding.embedder } }),
 		});
 	},
-	"cloud-drive": (config, workspaceRoot, registrationName) =>
-		new CloudDriveSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
-			connectorOptions: {
-				...(config.connector as RcloneConnectorOptions),
-			},
-		}),
-	"mail-export": (config, workspaceRoot, registrationName) =>
-		new MailExportSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: config.connector as MailExportConnectorOptions,
-		}),
 	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
@@ -399,12 +381,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions: config.connector as RssConnectorOptions,
-		}),
-	spotlight: (config, workspaceRoot, registrationName) =>
-		new SpotlightSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: config.connector as SpotlightConnectorOptions,
 		}),
 };
 

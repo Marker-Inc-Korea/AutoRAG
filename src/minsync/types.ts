@@ -31,6 +31,11 @@ export interface MinSyncOptions {
 	readonly maxChunkSize?: number;
 }
 
+export interface MinSyncSyncProgress {
+	readonly processed: number;
+	readonly total: number;
+}
+
 export interface MinSyncSyncResult {
 	readonly ok: boolean;
 	readonly synced: number;

@@ -97,9 +97,10 @@ describe("agent: a missing MinSync is an error, not a degraded answer", () => {
 		await expect(agentWithMissingBinary().syncMinSync()).rejects.toBeInstanceOf(MinSyncRequiredError);
 	});
 
-	it("does not need the binary to refresh only the parsed mirrors", async () => {
-		const result = await agentWithMissingBinary().refresh(true, { methods: ["parsed"] });
-		expect(result.minsync).toBeUndefined();
+	it("requires MinSync for durable parsed-mirror refresh too", async () => {
+		await expect(agentWithMissingBinary().refresh(true, { methods: ["parsed"] })).rejects.toBeInstanceOf(
+			MinSyncRequiredError,
+		);
 	});
 });
 

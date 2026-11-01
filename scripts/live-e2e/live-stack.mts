@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { AutoRAGAgent, type AutoRAGRefreshProgress } from "../../src/agent/agent.ts";
 import { QWEN3_QUERY_PREFIX } from "../../src/embedding/prefixes.ts";
 import {
 	assertKoreanLexicalHit,
@@ -28,8 +28,30 @@ const source = realpathSync(join(root, "corpus", "sample.txt"));
 const cursorPath = join(workspace, ".minsync", "cursor.json");
 const cursorExistedBefore = existsSync(cursorPath);
 const agent = new AutoRAGAgent(buildLiveStackOptions(root, workspace));
-const refresh = await agent.refresh(mode === "cold", { methods: ["parsed", "minsync"] });
+const minsyncProgress: AutoRAGRefreshProgress[] = [];
+const persistedMinsyncProgress: { synced?: number; total?: number }[] = [];
+const refresh = await agent.refresh(mode === "cold", {
+	methods: ["parsed", "minsync"],
+	onProgress: (event) => {
+		if (event.phase !== "minsync") return;
+		minsyncProgress.push({ ...event });
+		const marker = JSON.parse(readFileSync(join(workspace, ".autorag", "refresh-progress.json"), "utf8"));
+		persistedMinsyncProgress.push({ ...marker.minsync });
+	},
+});
 if (refresh.minsync?.ok !== true) throw new Error(`minsync-${refresh.minsync?.reason ?? "unready"}`);
+if (minsyncProgress.length < 2 || !minsyncProgress.some((event) => event.processed > 0)) {
+	throw new Error("minsync-progress-not-observed");
+}
+if (
+	persistedMinsyncProgress.length !== minsyncProgress.length ||
+	persistedMinsyncProgress.some(
+		(event, index) =>
+			event.synced !== minsyncProgress[index].processed || event.total !== minsyncProgress[index].total,
+	)
+) {
+	throw new Error("minsync-progress-persistence-mismatch");
+}
 if (!existsSync(cursorPath)) throw new Error("minsync-cursor-missing");
 // The Korean fixture holds only suffixed forms of 인증서 (인증서를, 인증서는). Its bare stem reaches the fixture through
 // BM25 only when the agent built the index with the multilingual tokenizer, which AutoRAG always selects and which
@@ -203,7 +225,12 @@ embedderDown = {
 const status = await agent.getRefreshStatus();
 const result = {
 	mode,
-	refresh: { parsed: { scanned: refresh.scanned, written: refresh.written, skipped: refresh.skipped }, minsync: refresh.minsync },
+	refresh: {
+		parsed: { scanned: refresh.scanned, written: refresh.written, skipped: refresh.skipped },
+		minsync: refresh.minsync,
+		minsyncProgress,
+		persistedMinsyncProgress,
+	},
 	cursorPath: resolve(cursorPath),
 	cursorExists: true,
 	koreanLexical:

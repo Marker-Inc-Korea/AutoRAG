@@ -11,7 +11,7 @@ The server exposes an OpenAI Responses API surface under `<root>/v1`:
 |---|---|
 | Streaming, tools, usage | Pi's built-in `openai-responses` API (`api: "openai-responses"`, `baseUrl: "<root>/v1"`). No custom stream code. |
 | Login | OAuth2 authorization code + PKCE (S256) against `<root>/desktop/authorize?client=agent`, with a loopback redirect on `127.0.0.1`. Token exchange at `POST <root>/api/desktop/token`. This is the **only** way to authenticate. |
-| Model catalog | The **chat** catalog is discovered live from `GET <root>/v1/models` — no chat model id is hardcoded. The Jev id (`jev-1.13`) and the default reranker are the ids the server lists under `GET <root>/v1/models?operation=jev\|rerank`; Jev and rerankers are not chat LLMs (the 2026+ model rule covers chat LLMs only). |
+| Model catalog | The **chat** catalog is discovered live from `GET <root>/v1/models` — no chat model id is hardcoded. The Jev id (`jev-1.13`) and the rerank models are the ids the server lists under `GET <root>/v1/models?operation=jev\|rerank`; AutoRAG does not pick a rerank model for you, so set `rerank.model` to one of them. Jev and rerankers are not chat LLMs (the 2026+ model rule covers chat LLMs only). |
 
 ## Sign in
 
@@ -135,6 +135,42 @@ file again if it still needs it. Text is never dropped. The session record keeps
 every image; only the request is trimmed. The same guard enforces `inputLimits` for
 any model that declares them.
 
+### Context overflow
+
+When a request is larger than the model's context window, the hosted server answers
+`400 context_length_exceeded` (HTTP 413 for an oversized body) with the provider's own
+message, and pi compacts the conversation and retries once.
+
+Compaction keeps recent turns whole, so an oversized tool result that is the latest
+turn survives it and the retry would be rejected again. The `dazzi` provider
+(`src/cloud/context-overflow.ts`) therefore notes each overflow, and the context guard
+then holds that model's requests to half the estimated size of the one that failed (it
+ratchets down on each further overflow). The session record keeps the full tool result;
+only the request is trimmed. A 400 that gives another reason, or none, is not treated
+as an overflow.
+
+What the guard may cut is fixed. It drops retrieval chunks only, lowest-ranked first:
+every ranked list in the request (each source's list in an unranked baseline, each
+retrieval tool result) keeps its best chunk before any list keeps its second, and each
+edited message says how many it omitted. The user's query, earlier turns, and the
+system prompt are never edited. When no chunk is left to drop, only the newest tool
+result is shortened; if the earlier turns alone still exceed the window, the request
+goes out as it is, the provider rejects it, and pi's compaction summarises them.
+
+Before any overflow the guard sizes a request with the `o200k_base` BPE
+(`src/agent/token-count.ts`), never below pi's chars/4 guess. Text parsed from
+binaries and chat exports (punctuation, control characters, emoji, CJK, encoded
+blobs) runs 0.5 to 2 tokens per character, where chars/4 assumed 0.25. `o200k_base`
+is not every provider's tokenizer: against hosted models it measured within about
+20% of DeepSeek and GPT counts, but up to 1.9x under Claude's (prose, code, Korean,
+emoji) and 1.7x under Qwen's on emoji. The 1.2 headroom and the overflow ceiling
+above remain the backstop for a provider that counts more.
+
+`test/live-e2e/dazzi-context-overflow.test.ts` (set `AUTORAG_DAZZI_OVERFLOW_LIVE=1`
+after `/login`) sends a tool result of ~2.2M characters of binary garbage, about 1.2M
+tokens to the real server, and checks that the guard trims it before the request. The
+recovery above is covered offline by `test/agent/pi-session-dazzi-overflow.test.ts`.
+
 ## Defaults when signed in
 
 With a stored Dazzi Models login, AutoRAG prefers the hosted plan wherever it
@@ -145,7 +181,7 @@ picks a default. OpenRouter stays the fallback when you are signed out.
 | Chat model (no `model` in config, none in Pi settings) | `dazzi/z-ai/glm-5.3-flash`, else the catalog's first model | CLI: Pi default, then the local Codex runtime. `autorag tui`: Pi's own picker, no local fallback |
 | Jev (`jev.backend` unset) | `dazzi` | `openrouter` |
 | Question decomposition (`queryDecomposition.model` unset) | `dazzi/openai/gpt-6-luna` | `openrouter/qwen/qwen3.7-flash` |
-| Rerank block `autorag init` writes | `dazzi` / `qwen/qwen3-reranker-8b` | `openrouter` / `voyageai/rerank-3-lite` |
+| Rerank block `autorag init` writes | none (reranking is opt-in) | none (reranking is opt-in) |
 
 Explicit config always wins. An existing `config.json` keeps the blocks it already
 has; `autorag init` writes the signed-in or signed-out set once, when it creates
@@ -174,10 +210,10 @@ other credential:
 | Capability | Endpoint | Default model | Credential |
 |---|---|---|---|
 | Jev (`jev.backend: "dazzi"`) | `POST <root>/v1/jev` (Jev's native dialect) | `jev-1.13` | stored `/login` |
-| Rerank (`rerank.provider: "dazzi"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | `qwen/qwen3-reranker-8b` | stored `/login` |
+| Rerank (`rerank.provider: "dazzi"`) | `POST <root>/v1/rerank` (OpenRouter-compatible rerank shape) | none: reranking runs only when `rerank.model` names one | stored `/login` |
 
 Both read `AUTORAG_BASE_URL` for the server root. An explicit `rerank.baseUrl` or
-`rerank.model` (and `jev.model`) overrides the defaults. `rerank.apiKeyEnv` is
+`jev.model` overrides the defaults. `rerank.apiKeyEnv` is
 rejected for `dazzi` rather than ignored. Without a stored login the backend
 reports a named, non-silent "needs a sign-in" error instead of silently degrading.
 

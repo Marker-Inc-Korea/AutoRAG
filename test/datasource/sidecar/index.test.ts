@@ -42,9 +42,16 @@ function seedSlack(rows: readonly { channel: string; ts: string; text: string; u
 		"insert into messages (channel_id, ts, workspace_id, user_id, text, normalized_text) values (?, ?, 'T1', ?, ?, ?)",
 	);
 	const insertFts = db.prepare("insert into message_fts (message_key, content) values (?, ?)");
-	for (const row of rows) {
-		insertMessage.run(row.channel, row.ts, row.user ?? "U1", row.text, row.text);
-		insertFts.run(`${row.channel}|${row.ts}`, row.text);
+	db.exec("begin");
+	try {
+		for (const row of rows) {
+			insertMessage.run(row.channel, row.ts, row.user ?? "U1", row.text, row.text);
+			insertFts.run(`${row.channel}|${row.ts}`, row.text);
+		}
+		db.exec("commit");
+	} catch (error) {
+		db.exec("rollback");
+		throw error;
 	}
 	db.close();
 }

@@ -6,10 +6,11 @@ import { basename, delimiter, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { spawnProcess } from "./process.ts";
+import { MinSyncStageSession } from "./stage.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.5.0";
+export const MINSYNC_VERSION = "0.5.1";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 
@@ -44,13 +45,19 @@ export interface EnsureMinSyncBinaryOptions {
 
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
-	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
+	if (existsSync(binaryPath)) {
+		await verifyInstalledBinary(binaryPath, options.root);
+		return { binaryPath, version: "cached" };
+	}
 	mkdirSync(dirname(binaryPath), { recursive: true });
 	const cargoInstaller =
 		options.cargoInstaller ?? ((destination) => installMinSyncFromCargoIfAvailable(options, destination));
 	try {
 		const fromCargo = await cargoInstaller(binaryPath);
-		if (fromCargo !== undefined) return fromCargo;
+		if (fromCargo !== undefined) {
+			await verifyInstalledBinary(fromCargo.binaryPath, options.root, true);
+			return fromCargo;
+		}
 	} catch (error) {
 		if (!(error instanceof MinSyncReleaseError)) throw error;
 	}
@@ -70,7 +77,18 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	const assetInstaller = options.assetInstaller ?? installReleaseAsset;
 	await assetInstaller(asset, binaryPath);
 	await chmod(binaryPath, 0o755);
+	await verifyInstalledBinary(binaryPath, options.root, true);
 	return { binaryPath, version: release.tagName };
+}
+
+async function verifyInstalledBinary(binaryPath: string, root: string, newlyInstalled = false): Promise<void> {
+	const session = new MinSyncStageSession(binaryPath, join(root, ".autorag", "parsed", "stage"), root);
+	try {
+		await session.verifyProtocol().finally(() => session.close());
+	} catch (error) {
+		if (newlyInstalled) rmSync(binaryPath, { force: true });
+		throw error;
+	}
 }
 
 function isIsolatedTestRuntime(): boolean {

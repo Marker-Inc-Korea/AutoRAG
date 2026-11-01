@@ -252,11 +252,11 @@ export class HisterClient {
  * Wrap a free-text question as a Hister query confined to web pages.
  *
  * Hister ANDs bare terms, so a natural-language question would match almost nothing. Plain words become one
- * alternation group `(a|b|c)`. That pipe is Hister's only OR: the word `OR` is not an operator there, it is searched
- * as the literal English word, which matches most English pages. Hister's own syntax (quoted phrases,
- * `field:value`, wildcards, negation) passes through untouched, and a query using any of it is sent with its plain
- * words ANDed, exactly as written. A `sort:` directive is hoisted out of the group because Hister only honours it at
- * the top level.
+ * alternation group `(a|b|c)`, while uppercase `AND`/`OR`/`NOT` tokens in natural-language questions are stripped by
+ * {@link normalizeTerm} so Hister 0.21+'s boolean operator parser never rejects casual English phrasing. Hister's own
+ * syntax (quoted phrases, `field:value`, wildcards, negation) passes through untouched, and a query using any of it is
+ * sent with its plain words ANDed, exactly as written. A `sort:` directive is hoisted out of the group because Hister
+ * only honours it at the top level.
  */
 export function buildWebQuery(question: string, domain?: string): string | undefined {
 	const tokens = tokenize(question);

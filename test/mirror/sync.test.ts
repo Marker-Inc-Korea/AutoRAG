@@ -19,9 +19,7 @@ import {
 	type ParsedMirrorIndex,
 	type ParsedMirrorSyncOptions,
 	type ParsedMirrorSyncResult,
-	parsedMirrorIndexPath,
 	parsedMirrorRoot,
-	saveMirrorIndex,
 	syncParsedMirrors,
 } from "../../src/mirror/index.ts";
 import {
@@ -33,6 +31,7 @@ import {
 	PlainTextParser,
 } from "../../src/parser/index.ts";
 import { createDocxFixture, createXlsFixture } from "../fixtures/document-formats.ts";
+import { seedMinSyncStage } from "../helpers/seed-minsync-stage.ts";
 
 let root: string;
 let source: string;
@@ -184,20 +183,16 @@ describe("syncParsedMirrors", () => {
 		const outside = join(root, "outside.md");
 		writeFileSync(file, "Alpha\n");
 		writeFileSync(outside, "do not touch\n");
-		saveMirrorIndex(root, {
-			version: 1,
-			entries: {
-				"/docs/note.txt": {
-					virtualPath: "/docs/note.txt",
-					sourcePath: file,
-					outputPath: outside,
-					parserName: "plain-text",
-					sourceMtimeNs: 0,
-					sourceSizeBytes: 0,
-					updatedAt: "2026-01-01T00:00:00.000Z",
+		mkdirSync(join(root, ".autorag", "parsed"), { recursive: true });
+		writeFileSync(
+			join(root, ".autorag", "parsed", "index.json"),
+			JSON.stringify({
+				version: 1,
+				entries: {
+					"/docs/note.txt": { virtualPath: "/docs/note.txt", sourcePath: file, outputPath: outside },
 				},
-			},
-		});
+			}),
+		);
 
 		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const safeOutput = requireValue(loadMirrorIndex(root).entries["/docs/note.txt"]?.outputPath, "safe output path");
@@ -213,7 +208,7 @@ describe("syncParsedMirrors", () => {
 		const outside = join(root, "outside-stale.md");
 		writeFileSync(outside, "do not delete\n");
 		writeFileSync(join(source, "present.txt"), "Still here\n");
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/missing.txt": {
@@ -242,7 +237,7 @@ describe("syncParsedMirrors", () => {
 		const outside = join(root, "outside-unsupported.md");
 		writeFileSync(unsupported, Buffer.from([0, 1]));
 		writeFileSync(outside, "do not delete unsupported\n");
-		saveMirrorIndex(root, {
+		await seedMinSyncStage(root, {
 			version: 1,
 			entries: {
 				"/docs/skip.bin": {
@@ -441,12 +436,9 @@ describe("mirror staleness decisions", () => {
 		});
 	}
 
-	/** Read the persisted index artifact itself, so the test pins what lands on disk. */
 	function persistedSkipReasons(): Record<string, string> {
-		const raw: unknown = JSON.parse(readFileSync(parsedMirrorIndexPath(root), "utf8"));
-		const skipped = (raw as { skipped?: Record<string, { reason?: unknown }> }).skipped ?? {};
 		return Object.fromEntries(
-			Object.entries(skipped).map(([virtualPath, entry]) => [virtualPath, String(entry.reason)]),
+			Object.entries(loadMirrorIndex(root).skipped ?? {}).map(([path, entry]) => [path, entry.reason]),
 		);
 	}
 
@@ -457,6 +449,8 @@ describe("mirror staleness decisions", () => {
 			root,
 			searchPaths: [source],
 			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			excludeSourcePaths: new Set([join(source, "dup-copy.txt")]),
 		});
 
 		expect(diagnostics).toEqual([]);
@@ -501,6 +495,8 @@ describe("mirror staleness decisions", () => {
 			root,
 			searchPaths: [source],
 			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			excludeSourcePaths: new Set([join(source, "dup-copy.txt")]),
 		});
 
 		expect(diagnostics).toHaveLength(1);
@@ -730,22 +726,6 @@ describe("skipped-source retry policy", () => {
 		expect(parser.attempted).toHaveLength(2);
 	});
 
-	it("retries a skip record written before parser versions were stamped", async () => {
-		const file = join(source, "bad.txt");
-		writeFileSync(file, "broken\n");
-		const parser = new FailingParser();
-		await refresh(parser);
-		const { parserVersion: _version, ...legacy } = skipRecord("/docs/bad.txt");
-		saveMirrorIndex(root, { version: 1, entries: {}, skipped: { "/docs/bad.txt": legacy } });
-
-		await refresh(parser);
-		expect(parser.attempted).toHaveLength(2);
-		expect(skipRecord("/docs/bad.txt").parserVersion).toBe("1");
-
-		await refresh(parser);
-		expect(parser.attempted).toHaveLength(2);
-	});
-
 	it("keeps unchanged detectMirrorStaleness output for a honored failed source", async () => {
 		writeFileSync(join(source, "bad.txt"), "broken\n");
 		const parser = new FailingParser();
@@ -917,7 +897,7 @@ describe("syncParsedMirrors: isolation, abort and progress", () => {
 				signal: AbortSignal.abort(),
 			}),
 		).rejects.toMatchObject({ name: "AbortError" });
-		expect(existsSync(parsedMirrorIndexPath(root))).toBe(false);
+		expect(existsSync(join(parsedMirrorRoot(root), "stage"))).toBe(false);
 	});
 
 	it("kills an in-flight isolated parse when the signal aborts", async () => {

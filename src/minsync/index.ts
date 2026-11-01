@@ -48,6 +48,7 @@ export type {
 	MinSyncFileFailure,
 	MinSyncOptions,
 	MinSyncQueryHit,
+	MinSyncSyncProgress,
 	MinSyncSyncResult,
 } from "./types.ts";
 export {

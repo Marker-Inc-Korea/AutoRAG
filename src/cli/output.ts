@@ -1,4 +1,5 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
+import { DecisionModelUnavailableError } from "../agent/decision-model-check.ts";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchema } from "../memory/memory.ts";
 import { describeLocation } from "../retrieval/chunk-location.ts";
@@ -77,6 +78,9 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		if (result.minsync.stagingExcludedCount !== undefined) {
 			minsyncObj.stagingExcludedCount = result.minsync.stagingExcludedCount;
 		}
+		if (result.minsync.filesSkippedCount !== undefined) {
+			minsyncObj.filesSkippedCount = result.minsync.filesSkippedCount;
+		}
 		envelope.minsync = minsyncObj;
 	}
 	if (result.datasources && result.datasources.length > 0) {
@@ -103,6 +107,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	);
 	if (result.minsync !== undefined) {
 		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
+		if (result.minsync.filesSkippedCount !== undefined) parts.push(`skipped=${result.minsync.filesSkippedCount}`);
 		if (result.minsync.reason !== undefined) {
 			parts.push(`reason=${result.minsync.reason}`);
 		}
@@ -161,7 +166,11 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 			lines.push(`    sourceFiles: total=${status.progress.sourceFiles.total}`);
 		}
 		if (status.progress.minsync?.synced !== undefined) {
-			lines.push(`    minsync: synced=${status.progress.minsync.synced}`);
+			const total = status.progress.minsync.total;
+			const filesSkipped = status.progress.minsync.filesSkipped;
+			lines.push(
+				`    minsync: synced=${status.progress.minsync.synced}${total === undefined ? "" : ` total=${total}`}${filesSkipped === undefined ? "" : ` filesSkipped=${filesSkipped}`}`,
+			);
 		}
 	}
 	const comps = status.components;
@@ -374,6 +383,14 @@ export function renderError(err: unknown, opts: RenderOptions): string {
 	const hint = opts.hint;
 	if (opts.json) {
 		const envelope: Record<string, unknown> = { ok: false, error: message };
+		// A decision model that cannot answer makes AutoRAG unusable; hosts branch on its stable code.
+		if (error instanceof DecisionModelUnavailableError) {
+			envelope.code = error.code;
+			envelope.reason = error.reason;
+			if (error.backend !== undefined) envelope.backend = error.backend;
+			if (error.model !== undefined) envelope.model = error.model;
+			envelope.attempts = error.attempts;
+		}
 		if (hint) {
 			envelope.hint = {
 				command: hint.command,

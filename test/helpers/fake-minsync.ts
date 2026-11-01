@@ -1,7 +1,26 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type ModuleFormat = "esm" | "cjs";
+
+/**
+ * Absolute path of the shared `stage` protocol simulator
+ * (`test/helpers/fake-minsync-stage.cjs`). The generated stand-ins below embed
+ * it, so a `minsync stage --state-dir DIR` run drives the same resume/lock/
+ * snapshot logic no matter which binary a test resolved. It stays CommonJS, so
+ * both the ESM entry (`require` via `createRequire`) and the no-extension
+ * shebang entry (plain `require`) can load it.
+ */
+export const fakeMinSyncStageSimulatorPath = fileURLToPath(new URL("./fake-minsync-stage.cjs", import.meta.url));
+
+/** Argument parsing shared by every generated stand-in: read `--state-dir`. */
+const STAGE_DISPATCH = `if (args[0] === "stage") {
+  const eqArg = args.find((a) => a.startsWith("--state-dir="));
+  const flagAt = args.indexOf("--state-dir");
+  const stateDir = eqArg ? eqArg.slice("--state-dir=".length) : flagAt >= 0 ? args[flagAt + 1] : args[1];
+  require(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir });
+} else if`;
 
 /**
  * Platform name the MinSync resolver looks up on PATH and in the workspace
@@ -15,7 +34,9 @@ function fakeMinSyncScript(logPath: string | undefined, format: ModuleFormat): s
 	const loader =
 		format === "esm"
 			? `import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";`
+import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);`
 			: `const { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");`;
 	return `#!/usr/bin/env node
@@ -26,23 +47,20 @@ const config = join(process.cwd(), ".minsync", "config.toml");
 const cursor = join(process.cwd(), ".minsync", "cursor.json");
 ${logPath ? `appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");` : ""}
 
-if (args[0] === "init") {
+${STAGE_DISPATCH} (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
-}
-if (args[0] === "sync") {
+} else if (args[0] === "sync") {
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ files_processed: 1 }));
   process.exit(0);
-}
-if (args[0] === "query") {
+} else if (args[0] === "query") {
   const filesRoot = join(process.cwd(), "files");
   const hits = [];
   const walk = (dir, rel) => {
@@ -57,9 +75,10 @@ if (args[0] === "query") {
   walk(filesRoot, "");
   console.log(JSON.stringify({ results: hits }));
   process.exit(0);
+} else {
+  console.error("unexpected fake minsync command: " + args.join(" "));
+  process.exit(2);
 }
-console.error("unexpected fake minsync command: " + args.join(" "));
-process.exit(2);
 `;
 }
 
@@ -89,13 +108,16 @@ export function writeFakeMinSyncExecutable(directory: string, logPath?: string):
  * An inert `minsync` for the suite-wide PATH stand-in: every command succeeds
  * and a query never finds anything. It exists so an agent can resolve a binary
  * without a test's result depending on a real install or on whatever corpus a
- * `.autorag/` directory next to the test happens to hold.
+ * `.autorag/` directory next to the test happens to hold. `stage` is the one
+ * command that still does real test work: it routes to the shared stage
+ * simulator, so a `MinSyncStageSession` over the PATH binary behaves like one
+ * over a test's own fake.
  */
 export function writeInertMinSyncExecutable(directory: string): string {
 	const binaryPath = join(directory, fakeMinSyncExecutableName());
 	const script = `#!/usr/bin/env node
 const args = process.argv.slice(2);
-if (args[0] === "check") console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+${STAGE_DISPATCH} (args[0] === "check") console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
 else if (args[0] === "query") console.log(JSON.stringify({ results: [] }));
 else if (args[0] === "sync") console.log(JSON.stringify({ files_processed: 0 }));
 else console.log(JSON.stringify({ initialized: true }));

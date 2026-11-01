@@ -94,7 +94,7 @@ approval before indexing:
 | Windows | Documents, Downloads, Desktop shell folders | OneDrive document roots, user-named project docs |
 
 Supported parsed formats are `md`, `markdown`, `txt`, `text`, `pdf`, `docx`,
-`pptx`, `xlsx`, `xls`, `hwp`, `hwpx`, and `eml`. OCR for `jpg`, `jpeg`, `png`, `bmp`,
+`pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`, and `eml`. OCR for `jpg`, `jpeg`, `png`, `bmp`,
 and `tiff` is optional (`parserOptions.ocr.enabled`). Do not present legacy
 `.doc` as a supported parsed format.
 
@@ -162,8 +162,9 @@ workspace still answers, but without MinSync/Jikji evidence.
 
 Refresh (never a query) auto-installs the binaries: MinSync installs a verified
 GitHub release into `<workspace>/.autorag/bin` (`minSync.autoInstall` defaults
-to true), and Jikji installs `jikji-cli` through cargo (`jikji.autoInstall`
-defaults to true; requires the Rust toolchain). Set `"autoInstall": false` only
+to true), and Jikji installs the pinned `jikji-cli` 0.2.1 through cargo (`jikji.autoInstall`
+defaults to true; requires the Rust toolchain). A `jikji` older than 0.2.0 on PATH
+or in the cache is skipped and replaced by that build on refresh. Set `"autoInstall": false` only
 when managing the binary yourself. Refresh is incremental: MinSync syncs only
 changed parsed mirrors, and `jikji prepare` reuses unchanged documents. Jikji
 roots prepare one at a time (they share one central SQLite file that rejects
@@ -178,8 +179,11 @@ with the `JIKJI_DATA_DIR` environment variable). The only file `refresh` adds
 inside an approved document root is the `.jikji_agent_map.md` guide. Tell the
 user that before the first `refresh`, and never delete or edit Jikji's central
 store by hand; removing it only forces a full Jikji re-prepare on the next
-refresh. Older Jikji versions wrote a `<root>/.jikji` directory instead; such a
-leftover is now unused and safe for the user to delete.
+refresh. Jikji 0.1.x wrote a `<root>/.jikji` directory instead; such a
+leftover is now unused and safe for the user to delete. Jikji 0.2.0 and newer
+refuse to index a root nested inside, or containing, an already indexed root
+(`prepare root overlaps existing indexed root`), which is why overlapping search
+roots are collapsed to the outermost one before Jikji runs.
 
 Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
 `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
@@ -231,10 +235,11 @@ endpoint POSTs `{baseUrl}/embed`; `openai:` with no `baseUrl` means
 value. `dimension` and `batchSize` must be positive integers, and `dimension`
 must match the endpoint (the local default is 1024).
 
-### Jev routing and question decomposition (on by default)
+### Jev decision model (required) and question decomposition (on by default)
 
-Leave both enabled. They are the recommended setup: they make simple questions
-fast and multi-part questions thorough.
+Jev is required: AutoRAG cannot answer without it. Decomposition is on by
+default; leave it enabled. Together they make simple questions fast and
+multi-part questions thorough.
 
 - **Jev** (`jev`, default `{ "backend": "dazzi" }` when signed in to Dazzi
   Models, else `{ "backend": "openrouter" }`; model `jev-1.13` on Dazzi,
@@ -263,10 +268,13 @@ fast and multi-part questions thorough.
 
 Both need a credential for the chosen backend: a Dazzi Models `/login` (check with
 `autorag models list --provider dazzi --available`), or the user's
-`OPENROUTER_API_KEY` (`test -n "$OPENROUTER_API_KEY"`, never print it). Tell the
-user Jev routing is on. Without a credential, routing falls back to a single
-local search and the run always verifies, so searches still work. A
-`query-route-fallback` diagnostic (`autorag search --debug`) shows that state.
+`OPENROUTER_API_KEY` (`test -n "$OPENROUTER_API_KEY"`, never print it). The first
+question of every session checks that Jev answers; without a working credential
+the search stops with `[decision-model-unavailable]` (`autorag search` exits 3,
+and `--json` carries `code`, `reason`, `backend`, `model`). Read `reason`:
+`missing-credential` means set the key or sign in, `unauthorized` means replace
+the key, `model-not-found` means fix `jev.model`, `payment-required` means the
+backend account is out of credit, `unreachable` and `rate-limited` mean retry.
 
 ```json
 {
@@ -277,14 +285,22 @@ local search and the run always verifies, so searches still work. A
 
 `autorag init` writes these defaults into new configs. To change them:
 
-- Jev backend: `"backend": "typesafe"` (`TYPESAFE_API_KEY`) or `"vercel"`
-  (`AI_GATEWAY_API_KEY`).
+- Jev backend and model: any provider with decision models, e.g.
+  `{ "backend": "openai", "model": "gpt-6-luna" }` (`OPENAI_API_KEY`),
+  `{ "backend": "openrouter", "model": "openai/gpt-6-luna-decisions" }`,
+  `"typesafe"` (`TYPESAFE_API_KEY`), `"vercel-ai-gateway"` (`AI_GATEWAY_API_KEY`),
+  `"cloudflare-workers-ai"`, or `"opencode"`. List the choices with
+  `autorag models list --decision --available`; never invent a model id.
+- sLLM fallback: when Jev is unavailable, the session runs on a small chat model
+  (default: the decomposition model) and warns `decision-model-fallback`. Set
+  `"jev": { "fallback": { "model": { "provider": …, "id": … } } }`, or
+  `"fallback": false` to fail instead.
 - Decomposition model: any catalog `provider`/`id`, with the same fields as
   the top-level `model`.
 - `"queryDecomposition": false` decomposes with the search model itself.
-- `"jev": false` turns routing off entirely. Do this only when the user
-  explicitly opts out, for example because questions must never leave the
-  machine (Jev and decomposition send the question text to OpenRouter).
+- Jev cannot be turned off: `"jev": false` and `jev.enabled` are config errors.
+  When questions must never leave the machine, AutoRAG is not usable; say so
+  instead of editing the config (Jev sends the question text to its backend).
 
 When a user asks the running agent itself to change its settings (switch the
 default model, add a provider, check that a provider works), Jev's `config`
@@ -305,12 +321,13 @@ resolution.
 | Field | Default | Controls |
 |---|---|---|
 | `mergedEvidenceCeiling` | 500 | `search_all_documents` / model-free merge ceiling when the model omits `topK` |
-| `singleDatasourceTopK` | 50 | `search_datasource_*` merge default when the model omits `topK` |
+| `singleDatasourceTopK` | 20 | `search_datasource_*` merge default when the model omits `topK` |
 | `minSyncTopK` | 50 | MinSync semantic default `topK` |
 | `minSyncScopedQueryTopK` | 100 | MinSync fetch cap applied when a scope narrows the query |
 | `toolDescriptionInstanceScopes` | 8 | Instance scopes listed in one datasource tool description |
-| `prefetch.jikjiTopK` | 30 | Jikji find candidate count |
-| `prefetch.minSyncTopK` | 100 | MinSync retrieve candidate count |
+| `prefetch.jikjiTopK` | 10 (30 with a rerank model) | Jikji find candidate count |
+| `prefetch.minSyncTopK` | 10 (100 with a rerank model) | MinSync retrieve candidate count |
+| `prefetch.datasourceTopK` | 10 (20 with a rerank model) | Hits requested from each selected datasource |
 | `prefetch.jikjiPathLimit` | 100 | Max Jikji answer paths rendered into the baseline |
 | `prefetch.sectionLimit` | 100 | Max results rendered per baseline section |
 
@@ -326,15 +343,19 @@ resolution.
 The baseline renders each prefetched result's full chunk content (not a
 per-result excerpt) so the model can see where the hit came from. Bound baseline
 size with `prefetch.sectionLimit` / `prefetch.minSyncTopK` /
-`prefetch.jikjiPathLimit`, not with a per-result content truncation.
+`prefetch.datasourceTopK` / `prefetch.jikjiPathLimit`, not with a per-result
+content truncation.
+
+The `prefetch.*TopK` defaults depend on reranking. Reranking is opt-in and runs
+only when `rerank.model` names a model; then the pool is wide (Jikji 30, MinSync
+100, each datasource 20) and the reranker picks the best. Without it (the
+default) each source contributes its own top 10 to the first answer. An explicit
+value always wins.
 
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,
-`maxItemsPerFeed`, and `maxContentChars` (RSS); `maxDocuments`,
-`maxContentChars`, `maxResultsPerQuery`, and `maxBytesPerFile` (Spotlight);
-`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
-`bandwidthLimit`, and `dryRun` (cloud-drive/rclone). `maxContentChars` defaults
-to 20000 for RSS and 100000 for Spotlight and cloud-drive.
+`maxItemsPerFeed`, and `maxContentChars` (RSS). `maxContentChars` defaults to
+20000 for RSS.
 
 ### Refresh safety limits
 
@@ -366,7 +387,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`lazykatok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `rclone`, `lark-cli`) and its
+   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `lark-cli`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
    tokens) are never required or checked for them. Non-CLI connectors
@@ -382,14 +403,14 @@ setup. Configure datasources directly in trusted config, wizard-style:
    report the skipped list to the user, with what is missing for each.
 4. Set up a skipped datasource only when the user explicitly asks for it:
    install or authenticate the backing CLI first, then configure it.
-5. E-mail datasources (`mail-export`, `mailcrawl`) matter to most
-   users — always probe them and report their status, even when they end up
+5. E-mail (`mailcrawl`) matters to most
+   users — always probe it and report its status, even when it ends up
    skipped.
 
 Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
-`clawgallery`, `notion`, `github`, `github-gist`, `cloud-drive`, `mail-export`,
-`mailcrawl`, `obsidian`, `rss`, `spotlight`, `lark`, and `hister`. Config keys may be connection
+`clawgallery`, `notion`, `github`, `github-gist`,
+`mailcrawl`, `obsidian`, `rss`, `lark`, and `hister`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.
@@ -399,8 +420,6 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
   "datasources": {
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
     "github-gist": { "connector": { "tokenEnv": "GITHUB_TOKEN" } },
-    "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
-    "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
@@ -411,17 +430,17 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
 Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration.
 
-Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.2.2` or newer)
-and configured through its own Himalaya account. AutoRAG runs its local `sync`
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.3.0` or newer)
+and configured through its own Himalaya account (or `source: "files"` with `paths` for `.eml`/`.mbox` archives on disk without Himalaya). AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
-fails with `text array must be non-empty`. 0.2.2 embeds through the same
+fails with `text array must be non-empty`. 0.3.0 embeds through the same
 backend as the rest of AutoRAG (a remote `minSync.embedder`, else the
 `minsync serve` daemon) instead of its own in-process model, and keeps vectors
 in LanceDB. Switching from the old native model rebuilds the semantic index on
 the next `index`. kakao needs `lazykatok` 0.3.3 or newer for the same reason.
-Use mailcrawl for Gmail, IMAP, and Maildir retrieval. The former Gmail REST
-datasource is removed.
+Use mailcrawl for Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval. The former Gmail REST and `mail-export`
+datasources are removed.
 
 ### Browser history (Hister) and the shared embedding model
 

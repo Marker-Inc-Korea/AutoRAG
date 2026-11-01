@@ -127,11 +127,8 @@ export class PermissionController {
 
 export interface PermissionGateOptions {
 	readonly controller: PermissionController;
-	/**
-	 * Jev, which classifies every gated call. Without one the gate cannot classify, so in `ask` and `auto` it
-	 * asks the user about every `bash`, `write`, and `edit` call.
-	 */
-	readonly judge?: JevJudge;
+	/** Jev, which classifies every gated call in `auto`. */
+	readonly judge: JevJudge;
 	/**
 	 * What the user has said in this conversation: the first question, every follow-up, every steer. Jev judges
 	 * the call against all of it. The host feeds it from the user's own input, so AutoRAG's internal phase
@@ -328,16 +325,13 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 		/** `ask` puts every gated call to the user; `auto` has Jev classify it and approve first. */
 		async function judgeCall(call: ProposedCall, ctx: ExtensionContext): Promise<Decision | undefined> {
 			if (controller.mode === "ask") return decide(askReviewOf(call), ctx);
-			const classification =
-				judge === undefined
-					? ({ status: "failed", why: "Jev is not configured" } as const)
-					: await classifyCall(judge, {
-							call,
-							requests: requests?.entries() ?? [],
-							history: successfulCalls(branchOf(ctx)),
-							maxStateChars,
-							isCreated: (path) => controller.isCreated(path),
-						});
+			const classification = await classifyCall(judge, {
+				call,
+				requests: requests?.entries() ?? [],
+				history: successfulCalls(branchOf(ctx)),
+				maxStateChars,
+				isCreated: (path) => controller.isCreated(path),
+			});
 
 			if (classification.status === "failed") {
 				return decide(

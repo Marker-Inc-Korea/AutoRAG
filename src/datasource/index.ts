@@ -40,15 +40,6 @@ export {
 	type ResultsByMethod,
 } from "./scope.ts";
 export {
-	CLOUD_DRIVE_SKILL_DEFINITION,
-	CloudDriveSkill,
-	type CloudDriveSkillOptions,
-	RcloneConnector,
-	type RcloneConnectorOptions,
-	type RcloneRunner,
-	type RcloneRunResult,
-} from "./skills/cloud-drive/index.ts";
-export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
 	DEFAULT_DISCRAWL_MODE,
 	DiscrawlClient,
@@ -104,12 +95,6 @@ export {
 	LazykatokSkill,
 } from "./skills/lazykatok/index.ts";
 export {
-	MailExportConnector,
-	type MailExportConnectorOptions,
-	MailExportSkill,
-	type MailExportSkillOptions,
-} from "./skills/mail-export/index.ts";
-export {
 	MAILCRAWL_MODES,
 	MailcrawlClient,
 	type MailcrawlFailure,
@@ -150,12 +135,6 @@ export {
 	SlacrawlClient,
 	type SlacrawlOptions,
 } from "./skills/slack/index.ts";
-export {
-	SpotlightConnector,
-	type SpotlightConnectorOptions,
-	SpotlightSkill,
-	type SpotlightSkillOptions,
-} from "./skills/spotlight/index.ts";
 export {
 	TelecrawlClient,
 	type TelecrawlOptions,

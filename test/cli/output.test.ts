@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AutoRAGRefreshResult } from "../../src/agent/agent.ts";
+import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../../src/agent/agent.ts";
 import type { HealthReportV1 } from "../../src/cli/commands/health.ts";
-import { renderHealth, renderRefresh } from "../../src/cli/output.ts";
+import { renderHealth, renderRefresh, renderStatus } from "../../src/cli/output.ts";
 
 const report: HealthReportV1 = {
 	healthSchemaVersion: 1,
@@ -23,7 +23,7 @@ const report: HealthReportV1 = {
 	indexHealth: { separate: true, command: "autorag status", included: false },
 };
 
-describe("renderRefresh", () => {
+describe("renderRefresh exclusions and Everything", () => {
 	it("carries the MinSync staging-exclusion count in the JSON envelope", () => {
 		// A file name with no canonical source-id form is excluded from the
 		// MinSync index; the count must be visible where the reporter looks.
@@ -89,6 +89,7 @@ describe("renderRefresh", () => {
 			minsync: {
 				ok: true,
 				synced: 2,
+				filesSkippedCount: 1,
 			},
 		};
 
@@ -96,12 +97,12 @@ describe("renderRefresh", () => {
 		const parsed = JSON.parse(jsonStr);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.counts).toEqual({ scanned: 3, written: 2, deleted: 0, skipped: 1 });
-		expect(parsed.minsync).toEqual({ ok: true, synced: 2 });
+		expect(parsed.minsync).toEqual({ ok: true, synced: 2, filesSkippedCount: 1 });
 		expect(jsonStr).not.toContain("/secret/path");
 
 		const humanStr = renderRefresh(result, { json: false });
 		expect(humanStr).toContain("refresh: ok");
-		expect(humanStr).toContain("minsync: ok=true synced=2");
+		expect(humanStr).toContain("minsync: ok=true synced=2 skipped=1");
 	});
 
 	it("reports ok: false and surfaces minsync error diagnostic when minsync fails", () => {
@@ -229,5 +230,22 @@ describe("renderRefresh", () => {
 		const parsed = JSON.parse(renderRefresh(result, { json: true }));
 		expect(parsed.ok).toBe(false);
 		expect(parsed.datasources[0].ok).toBe(false);
+	});
+});
+
+describe("renderStatus", () => {
+	it("shows MinSync skipped-file counts without exposing file paths", () => {
+		const status: AutoRAGRefreshStatus = {
+			state: "indexing",
+			inFlight: true,
+			stale: false,
+			diagnostics: [],
+			components: {},
+			progress: { phase: "finalizing", minsync: { synced: 2, filesSkipped: 1 } },
+		};
+
+		const output = renderStatus(status, { json: false });
+		expect(output).toContain("minsync: synced=2 filesSkipped=1");
+		expect(JSON.parse(renderStatus(status, { json: true })).progress.minsync.filesSkipped).toBe(1);
 	});
 });

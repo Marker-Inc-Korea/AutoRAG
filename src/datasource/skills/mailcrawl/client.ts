@@ -51,6 +51,8 @@ const SAFE_MAILCRAWL_ENV_KEYS = new Set([
 	"MAILCRAWL_EMBED_DIM",
 	"MAILCRAWL_EMBED_TIMEOUT",
 	"MAILCRAWL_EMBED_BATCH_SIZE",
+	"MAILCRAWL_EMBED_API_KEY_ENV",
+	"MAILCRAWL_EMBED_ALLOW_REMOTE",
 	"MAILCRAWL_QUERY_PREFIX",
 	"MAILCRAWL_PASSAGE_PREFIX",
 	"MAILCRAWL_NATIVE_MODEL",
@@ -94,12 +96,21 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			...(this.options.backend === undefined ? [] : ["--backend", this.options.backend]),
 			...(this.options.source === undefined ? [] : ["--source", this.options.source]),
 			...(this.options.fixture === undefined ? [] : ["--fixture", this.options.fixture]),
+			...(this.options.paths ?? []).flatMap((path) => ["--path", path]),
+			...(this.options.pageSize === undefined ? [] : ["--page-size", String(this.options.pageSize)]),
+			...(this.options.concurrency === undefined ? [] : ["--concurrency", String(this.options.concurrency)]),
+			...(this.options.readTimeoutMs === undefined ? [] : ["--read-timeout", String(this.options.readTimeoutMs)]),
 			...(this.options.himalayaConfig === undefined ? [] : ["--himalaya-config", this.options.himalayaConfig]),
+			...(this.options.includeCategories ?? []).flatMap((category) => ["--include-category", category]),
+			...(this.options.excludeCategories ?? []).flatMap((category) => ["--exclude-category", category]),
 		];
 		const result = await this.run(args, signal, this.indexTimeoutMs());
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
-		if (parsed === undefined || !hasAnyNumber(parsed, ["added", "updated", "deleted", "unchanged", "chunksAdded"])) {
+		if (
+			parsed === undefined ||
+			!hasAnyNumber(parsed, ["added", "updated", "deleted", "unchanged", "chunksAdded", "files"])
+		) {
 			return failure({ ...result, ok: false, reason: "invalid-output" });
 		}
 		const messages = number(parsed, "added") ?? number(parsed, "updated") ?? number(parsed, "unchanged") ?? 0;
@@ -111,7 +122,11 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 				deleted: number(parsed, "deleted"),
 				unchanged: number(parsed, "unchanged"),
 				chunksAdded: number(parsed, "chunksAdded"),
+				excluded: number(parsed, "excluded"),
+				files: number(parsed, "files"),
+				filesRead: number(parsed, "filesRead"),
 				archiveRevision: string(parsed, "archiveRevision"),
+				account: string(parsed, "account"),
 			},
 			result,
 		);
@@ -217,7 +232,8 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 	}
 
 	async index(signal?: AbortSignal): Promise<MailcrawlOk<MailcrawlIndexInfo> | MailcrawlFailure> {
-		const result = await this.run(["index", "--json"], signal, this.indexTimeoutMs(), true);
+		const indexArgs = this.options.rebuildIndex === true ? ["index", "--rebuild", "--json"] : ["index", "--json"];
+		const result = await this.run(indexArgs, signal, this.indexTimeoutMs(), true);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (
