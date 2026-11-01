@@ -6,9 +6,9 @@ import { writeFileAtomic } from "./atomic-write.ts";
 export const CLOUD_FINGERPRINTS_FILE = "cloud-fingerprints.json";
 
 /**
- * A cloud file's dupey identity, taken once while the file was on disk during its single download and reused
- * afterwards. This is what lets the exact-duplicate exclusion group a cloud file with a scanned copy without
- * reading the released placeholder again.
+ * A cloud or network file's dupey identity, taken once while the file was on disk during its single download
+ * (or its single read over the network) and reused afterwards. This is what lets the exact-duplicate exclusion
+ * group such a file with a scanned copy without reading the released placeholder or the share again.
  */
 export interface CloudFingerprint {
 	/** The mirror's own source identity at fingerprint time (`size:mtimeNs`), so an unchanged file is not re-read. */

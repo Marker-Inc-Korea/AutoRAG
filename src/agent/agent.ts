@@ -37,7 +37,13 @@ import {
 	type EverythingSearchRequest,
 	type EverythingSearchResult,
 } from "../everything/index.ts";
-import { type CloudFileProbe, cloudScope, defaultCloudProbe } from "../filesystem/cloud-placeholder.ts";
+import {
+	type CloudFileProbe,
+	type CloudRoot,
+	canonicalPath,
+	cloudScope,
+	defaultCloudProbe,
+} from "../filesystem/cloud-placeholder.ts";
 import {
 	FSearchClient,
 	type FSearchClientOptions,
@@ -700,7 +706,7 @@ export interface AutoRAGAgentOptions {
 	dupey?: DupeyCliOptions | false;
 	/**
 	 * Cloud placeholder probe. Omitted, the platform probe is used (macOS and Windows). A programmatic seam for
-	 * hosts and tests that need to stand in for this machine's cloud sync folders.
+	 * hosts and tests that need to stand in for this machine's cloud and network roots.
 	 */
 	cloudProbe?: CloudFileProbe;
 	/**
@@ -1008,8 +1014,8 @@ export class AutoRAGAgent {
 	private readonly fileeOptions: FileeCliOptions | false;
 	/** Platform cloud probe; `undefined` where AutoRAG has no cloud handling. */
 	private readonly cloudProbe: CloudFileProbe | undefined;
-	/** Resolved once: the machine's cloud sync roots, or `[]` when they cannot be listed. */
-	private cloudRootsPromise: Promise<readonly string[]> | undefined;
+	/** Resolved once: the machine's non-physical roots, or `[]` when they cannot be listed. */
+	private cloudRootsPromise: Promise<readonly CloudRoot[]> | undefined;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
@@ -1348,14 +1354,18 @@ export class AutoRAGAgent {
 		if (this.dupeyOptions === false) {
 			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
 		}
-		// A search root inside a cloud folder is skipped whole and a cloud folder nested under a root is
-		// excluded by name: `dupey scan` opens file contents, which would re-download every released placeholder.
+		// A search root inside a cloud or network folder is skipped whole and a cloud or network folder nested
+		// under a root is excluded by name: `dupey scan` opens file contents, which would re-download a released
+		// placeholder and re-read a network file over the wire.
 		const cloudRoots = await this.cloudRoots();
 		const scanRoots: { readonly path: string; readonly excludeDirs: string[] }[] = [];
 		for (const searchPath of this.searchPaths) {
 			const scope = cloudScope(searchPath, cloudRoots);
 			if (scope.insideCloudRoot) continue;
-			scanRoots.push({ path: searchPath, excludeDirs: scope.nestedCloudRoots.map((root) => basename(root)) });
+			scanRoots.push({
+				path: searchPath,
+				excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)),
+			});
 		}
 		const scans = await Promise.all(
 			scanRoots.map(({ path, excludeDirs }) =>
@@ -4226,9 +4236,9 @@ export class AutoRAGAgent {
 		};
 	}
 
-	/** The machine's cloud sync roots, resolved once; a probe failure reads as no cloud roots, never an error. */
-	private cloudRoots(): Promise<readonly string[]> {
-		this.cloudRootsPromise ??= (this.cloudProbe?.cloudRoots() ?? Promise.resolve([])).catch(() => []);
+	/** The machine's non-physical roots, resolved once; a probe failure reads as no roots, never an error. */
+	private cloudRoots(): Promise<readonly CloudRoot[]> {
+		this.cloudRootsPromise ??= (this.cloudProbe?.cloudRoots(this.searchPaths) ?? Promise.resolve([])).catch(() => []);
 		return this.cloudRootsPromise;
 	}
 
@@ -4237,16 +4247,18 @@ export class AutoRAGAgent {
 		const excluded = new Set<string>();
 		const userExcluded = new Set(this.excludePaths);
 		const cloudRoots = await this.cloudRoots();
-		// Cloud files are never scanned (their placeholders must not be read), so their stored fingerprints from
-		// the refresh that downloaded them join the same hash groups as the scanned, non-cloud copies.
+		// Cloud and network files are never scanned (their placeholders must not be read, and a network file
+		// would be re-read over the wire), so their stored fingerprints from the refresh that read them join the
+		// same hash groups as the scanned, non-cloud copies.
 		const fingerprints = cloudFingerprintExclusions(loadCloudFingerprints(this.workspaceProjectRoot));
 		for (const searchPath of this.searchPaths) {
 			const scope = cloudScope(searchPath, cloudRoots);
 			let scan: DupeyScanResult;
 			if (scope.insideCloudRoot) {
-				// `dupey scan` opens file contents, which would re-download every released placeholder, so a cloud
-				// search root is never scanned. Its cloud files still join the merge through their stored
-				// fingerprints, so an exact duplicate among them is still excluded.
+				// `dupey scan` opens file contents, which would re-download every released placeholder (and
+				// re-read every network file), so such a search root is never scanned. Its cloud and network
+				// files still join the merge through their stored fingerprints, so an exact duplicate among
+				// them is still excluded.
 				scan = { dir: searchPath, files: [], families: [], errors: [] };
 			} else {
 				try {
@@ -4254,7 +4266,7 @@ export class AutoRAGAgent {
 						...(this.dupeyOptions || {}),
 						...(scope.nestedCloudRoots.length === 0
 							? {}
-							: { excludeDirs: scope.nestedCloudRoots.map((root) => basename(root)) }),
+							: { excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)) }),
 					});
 				} catch (error) {
 					if (!(error instanceof DupeyCliError)) throw error;
@@ -4345,14 +4357,18 @@ export class AutoRAGAgent {
 			this.jikjiRoots.map(async (sourcePath): Promise<JikjiPrepareResult> => {
 				const scope = cloudScope(sourcePath, cloudRoots);
 				// Jikji's prepare pass opens file contents (it hashes them), which downloads a released
-				// placeholder; a root inside a cloud folder is skipped whole and the skip is reported.
+				// placeholder and re-reads a network file; a root inside such a folder is skipped whole and the
+				// skip is reported.
 				if (scope.insideCloudRoot) {
 					return { ok: false, reason: "cloud-root-skipped", stdout: "", stderr: "", code: null };
 				}
-				// Cloud folders nested under the root are excluded by their relative path so jikji never walks
-				// them; measured with jikji 0.2.1: a relative multi-segment `--exclude` removes the whole subtree.
+				// Cloud or network folders nested under the root are excluded by their relative path so jikji
+				// never walks them; measured with jikji 0.2.1: a relative multi-segment `--exclude` removes the
+				// whole subtree. The nested roots are canonical (a mount point is reported at its real path), so
+				// the root path they are made relative to is canonicalized too.
+				const canonicalSourcePath = canonicalPath(sourcePath);
 				const exclude = scope.nestedCloudRoots
-					.map((root) => relative(sourcePath, root).split(sep).join("/"))
+					.map((root) => relative(canonicalSourcePath, root.path).split(sep).join("/"))
 					.filter((pattern) => pattern !== "" && !pattern.startsWith(".."));
 				return client.prepare(sourcePath, { ...options, ...(exclude.length === 0 ? {} : { exclude }) });
 			}),

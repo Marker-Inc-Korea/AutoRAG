@@ -1,4 +1,10 @@
-export type { CloudEvictResult, CloudFileProbe, CloudProvider } from "../filesystem/cloud-placeholder.ts";
+export type {
+	CloudEvictResult,
+	CloudFileProbe,
+	CloudProvider,
+	CloudRoot,
+	CloudRootKind,
+} from "../filesystem/cloud-placeholder.ts";
 export { DEFAULT_CLOUD_MAX_BYTES, DEFAULT_CLOUD_MAX_FILES } from "./cloud.ts";
 export type { CloudFingerprint, CloudFingerprintStore } from "./cloud-fingerprints.ts";
 export {

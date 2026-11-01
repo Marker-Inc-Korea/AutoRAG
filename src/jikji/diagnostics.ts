@@ -58,7 +58,7 @@ export function jikjiPrepareDiagnostic(result: JikjiPrepareResult): JikjiDiagnos
 			code: "jikji-cloud-root-skipped",
 			severity: "info",
 			message:
-				"Jikji was not run for this root because it is a cloud sync folder; its files are indexed through the parsed mirror, and reading them with Jikji would download released placeholders again.",
+				"Jikji was not run for this root because it is a cloud or network folder; its files are indexed through the parsed mirror, and reading them with Jikji would download released placeholders again or re-read a network share.",
 			source: "jikji",
 		};
 	}

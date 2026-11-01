@@ -28,6 +28,15 @@ const NATIVE_LANES = Object.freeze([
 		command: "scripts/manual-qa/run-qa-cloud-mount-live.ts",
 		identityPattern: /[\\/]autorag-e2e-[0-9a-f]+[\\/]/u,
 	},
+	// Opt-in. macOS starts its own rclone WebDAV server on a loopback port and mounts it in a temp folder;
+	// Windows shares a temp folder over SMB and maps it to a free drive letter plus its UNC path. Nothing the
+	// user owns is touched, and every mount, share, mapping, server and temp folder is removed again.
+	{
+		name: "network-mount",
+		binary: process.platform === "win32" ? "powershell.exe" : "rclone",
+		command: "scripts/manual-qa/run-qa-network-mount-live.ts",
+		identityPattern: /[\\/]autorag-(?:network-mount-live|e2e)-[A-Za-z0-9]+[\\/]/u,
+	},
 ]);
 
 // Native-store presence probes: a lane runs for real when its CLI's own
@@ -56,6 +65,9 @@ const NATIVE_STORE_PROBES = Object.freeze({
 		process.platform === "win32"
 			? process.env.AUTORAG_E2E_CLOUD_SYNTHETIC === "1"
 			: (process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length > 0,
+	// Opt-in: the harness builds and removes its own loopback WebDAV mount / temp SMB share, so it runs only
+	// when the operator asks for it.
+	"network-mount": () => process.env.AUTORAG_E2E_NETWORK_MOUNT === "1",
 });
 
 function spotlightIndexingHealthy() {
