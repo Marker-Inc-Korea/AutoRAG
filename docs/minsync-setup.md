@@ -470,6 +470,9 @@ refresh continues:
 | `source-changed` | warning | The source identity changed during parsing; no completion is committed and the next refresh retries it. |
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
+| `cloud-placeholder-skipped` | info | A Google Drive, OneDrive, or other File Provider placeholder was not read; `reason` carries the provider. |
+| `cloud-download-deferred` | info | An iCloud placeholder is over this refresh's download budget and waits for the next refresh. |
+| `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the last `brctl` error and the attempt count. |
 
 `EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
 (50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
@@ -521,6 +524,45 @@ siblings from indexing.
 ```json
 { "refresh": { "maxDeleteRatio": 0.3, "maxScannedEntries": 2000000, "maxDepth": 64 } }
 ```
+
+### iCloud Drive and other cloud folders (macOS)
+
+A folder synced by a File Provider app (iCloud Drive, Google Drive, OneDrive under
+`~/Library/CloudStorage` or `~/Library/Mobile Documents`) lists every file, but a
+file you have not opened is a placeholder: its data is only in the cloud, and
+reading it downloads it. A refresh looks at the file's `st_flags` (`SF_DATALESS`)
+before reading and treats the three cases differently:
+
+| Provider | What a refresh does with a placeholder |
+| --- | --- |
+| iCloud Drive | Downloads it within the budget below, parses and indexes it, then releases the local copy with `brctl evict`. The file stays in iCloud and keeps its size and modification time, so an unchanged file is never downloaded again; a changed one is downloaded once and released again. |
+| Google Drive, OneDrive, other File Providers | Does not read it (`cloud-placeholder-skipped`, `reason` is the provider), because AutoRAG has no way to release the copy again and would otherwise leave every document on disk. A previously indexed copy is kept. Make the file or folder available offline in the provider's app to index it. |
+
+Files already on disk are read as before and never evicted. Downloads per refresh
+are bounded; the rest wait for the next refresh (`cloud-download-deferred`, one
+diagnostic per deferred file). A failed `brctl evict` is retried with doubling
+waits (500 ms, 1 s, 2 s; `Resource busy ... currently in use by an application` is
+common right after a download and usually clears). When the retries are spent the
+file is left on disk, the document stays indexed, and one `cloud-evict-failed`
+records the command's own error text and the attempt count. Giving up is final:
+an unchanged file is not processed again, so it stays on disk until its content changes.
+
+```json
+{ "refresh": { "cloudMaxFiles": 200, "cloudMaxBytes": 536870912, "cloudEvictAfterParse": true, "cloudEvictRetries": 3 } }
+```
+
+`cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
+refresh downloads; the first file is always allowed, so one large file cannot starve.
+`cloudEvictAfterParse: false` keeps downloaded iCloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. Other platforms
+read every file as before; Windows Cloud Files placeholders are not handled yet.
+
+Two other readers open file contents themselves and download a released iCloud file
+again, so with their defaults the local copy comes back after the refresh: the Jikji
+`prepare` pass (`jikji`) and the exact-duplicate scan (`dupey`, `excludeExactDuplicates`).
+Measured on macOS 26 with iCloud Drive, a refresh with both switched off
+(`"jikji": false`, `"excludeExactDuplicates": false`) left every released file released;
+with either one on, they were downloaded again. The parsed mirror, MinSync, and fsearch
+passes never re-download. Making Jikji and dupey placeholder-aware is tracked separately.
 
 ## Cancelling a refresh
 
