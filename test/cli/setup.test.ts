@@ -75,7 +75,7 @@ describe("setup orchestration", () => {
 				embedder: fakeEmbedder({ identityError: "health /Users/alice/.secret/token=abc" }),
 			},
 		});
-		expect(report.mode).toBe("bm25");
+		expect(report.mode).toBe("sparse");
 		expect(report.datasources.find((d) => d.name === "discord")?.state).toBe("blocked");
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
 		const config = JSON.parse(readFileSync(configPath, "utf8"));
@@ -312,7 +312,7 @@ describe("setup orchestration", () => {
 				}),
 			},
 		});
-		expect(report.mode).toBe("bm25");
+		expect(report.mode).toBe("sparse");
 		expect(report.embedding.reason).toContain("addon missing");
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
 		expect(report.remediation).toContain("minsync serve");

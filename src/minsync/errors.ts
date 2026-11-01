@@ -1,3 +1,6 @@
+import { MINSYNC_VERSION } from "./installer.ts";
+import { MINSYNC_MIN_VERSION, type OutdatedMinSyncBinary } from "./version.ts";
+
 /**
  * MinSync is the only retrieval method that searches document content
  * semantically, so AutoRAG treats it as required: when it cannot be used there
@@ -17,6 +20,16 @@ export function minSyncBinaryMissingError(): MinSyncRequiredError {
 	return new MinSyncRequiredError(
 		"MinSync is required but the `minsync` binary was not found on PATH or in the workspace .autorag/bin cache. " +
 			"Install it with `cargo install minsync`, or leave `minSync.autoInstall` enabled and run `autorag refresh`.",
+	);
+}
+
+/** Raised when every `minsync` found is older than {@link MINSYNC_MIN_VERSION} and none may be installed now. */
+export function minSyncOutdatedError(found: readonly OutdatedMinSyncBinary[]): MinSyncRequiredError {
+	const list = found.map((binary) => `${binary.version} at ${binary.path}`).join(", ");
+	return new MinSyncRequiredError(
+		`MinSync ${MINSYNC_MIN_VERSION} or newer is required, but only an older \`minsync\` was found (${list}). ` +
+			"Run `autorag refresh` with `minSync.autoInstall` enabled to install the pinned version, or upgrade it with " +
+			`\`cargo install minsync --version ${MINSYNC_VERSION} --locked\`.`,
 	);
 }
 

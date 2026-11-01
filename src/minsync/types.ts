@@ -1,7 +1,4 @@
 /** Embedder configuration for MinSync vector indexing. Shared by config and method layers. */
-
-import type { MinSyncLexicalLanguage } from "./lexical-language.ts";
-
 export interface MinSyncEmbedderConfig {
 	readonly id?: string;
 	readonly baseUrl?: string;
@@ -50,11 +47,6 @@ export interface MinSyncSyncResult {
 	readonly stagingExcluded?: readonly string[];
 	/** Files MinSync skipped (exit 6, `partial`); the sync itself completed and the next sync retries them. */
 	readonly filesFailed?: readonly MinSyncFileFailure[];
-	/**
-	 * Set when the multilingual tokenizer needs the Kiwi native library and it was not found, so the index was
-	 * built with whitespace tokenization instead. The sync itself succeeded.
-	 */
-	readonly lexicalFallback?: { readonly requested: MinSyncLexicalLanguage; readonly used: MinSyncLexicalLanguage };
 }
 
 export interface MinSyncFileFailure {

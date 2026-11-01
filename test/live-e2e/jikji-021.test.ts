@@ -44,7 +44,7 @@ const LIVE = process.env.AUTORAG_JIKJI_LIVE === "1" && Boolean(process.env.OPENR
 const MODEL_ID = process.env.AUTORAG_JIKJI_LIVE_MODEL ?? "qwen/qwen3.7-flash";
 const STALE_BIN = process.env.AUTORAG_JIKJI_LIVE_STALE_BIN;
 
-const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR", "KIWI_LIBRARY_PATH", "KIWI_MODEL_PATH", "JIKJI_DATA_DIR"] as const;
+const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR", "JIKJI_DATA_DIR"] as const;
 
 let root: string;
 let savedEnv: Record<string, string | undefined>;
@@ -52,8 +52,6 @@ let savedEnv: Record<string, string | undefined>;
 beforeEach(() => {
 	root = realpathSync(mkdtempSync(join(tmpdir(), "arag-jikji-live-")));
 	savedEnv = Object.fromEntries(RESTORED_VARIABLES.map((name) => [name, process.env[name]]));
-	delete process.env.KIWI_LIBRARY_PATH;
-	delete process.env.KIWI_MODEL_PATH;
 	// Jikji's central store stays inside the temp root: the live run never writes the maintainer's real one.
 	process.env.JIKJI_DATA_DIR = join(root, "jikji-data");
 });

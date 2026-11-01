@@ -22,16 +22,11 @@ import { realMinSync } from "../helpers/real-minsync.ts";
 const LIVE = process.env.AUTORAG_TELEGRAM_LIVE === "1" && Boolean(process.env.OPENROUTER_API_KEY);
 const MODEL_ID = process.env.AUTORAG_TELEGRAM_LIVE_MODEL ?? "anthropic/claude-haiku-5.5";
 const realFetch = globalThis.fetch;
-// The suite's setup files stub Kiwi; the real MinSync would fail to load the stub.
-const RESTORED_VARIABLES = ["KIWI_LIBRARY_PATH", "KIWI_MODEL_PATH"] as const;
-let savedEnv: Record<string, string | undefined>;
 
 let root: string;
 let fake: FakeTelegramApi;
 
 beforeEach(async () => {
-	savedEnv = Object.fromEntries(RESTORED_VARIABLES.map((name) => [name, process.env[name]]));
-	for (const name of RESTORED_VARIABLES) delete process.env[name];
 	root = mkdtempSync("/tmp/arag-tg-live-");
 	fake = await FakeTelegramApi.start();
 	process.env.PI_TELEGRAM_NETWORK_FAMILY = "auto";
@@ -45,11 +40,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
 	globalThis.fetch = realFetch;
-	for (const name of RESTORED_VARIABLES) {
-		const value = savedEnv[name];
-		if (value === undefined) delete process.env[name];
-		else process.env[name] = value;
-	}
 	delete process.env.PI_TELEGRAM_NETWORK_FAMILY;
 	await fake.stop();
 	rmSync(root, { recursive: true, force: true });

@@ -1164,9 +1164,9 @@ export class AutoRAGAgent {
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
 		};
 		// The vector method owns sync, readiness and the dedicated semantic tool, but is not part of the
-		// fan-out: the hybrid method already fuses BM25 and vectors over the same chunks and degrades to
-		// BM25 by itself, so registering both would search the workspace twice and let the merger count one
-		// index as two corroborating methods.
+		// fan-out: the hybrid method already fuses SPLADE sparse and dense vectors over the same chunks and
+		// degrades to sparse by itself, so registering both would search the workspace twice and let the
+		// merger count one index as two corroborating methods.
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
 		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
@@ -5125,14 +5125,6 @@ function minSyncRefreshDiagnostics(minsync: MinSyncSyncResult | undefined): Sear
 	const diagnostics: SearchDocumentDiagnostic[] = [];
 	if (minsync.diagnostic) diagnostics.push(toMinSyncDiagnostic(minsync.diagnostic, minsync.ok));
 	else if (!minsync.ok && minsync.reason) diagnostics.push(toMinSyncReasonDiagnostic(minsync.reason));
-	if (minsync.lexicalFallback) {
-		diagnostics.push({
-			code: "lexical-tokenizer-unavailable",
-			severity: "warning",
-			message: `The "${minsync.lexicalFallback.requested}" BM25 tokenizer needs the Kiwi native library and model, which were not found, so MinSync tokenizes on whitespace and a word with an inflectional suffix (e.g. a Korean word with a particle) does not match its stem. Install Kiwi (set KIWI_LIBRARY_PATH and KIWI_MODEL_PATH, or install it under ~/.local/kiwi), then refresh again.`,
-			source: "minsync",
-		});
-	}
 	return diagnostics;
 }
 

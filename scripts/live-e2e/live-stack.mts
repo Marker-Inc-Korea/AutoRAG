@@ -9,7 +9,6 @@ import {
 	assertLiteRetrieveReportsSkippedSurface,
 	buildLiveStackOptions,
 	REPO_ROOT,
-	resolveKoreanLexicalLane,
 } from "./workflow.mjs";
 
 const args = process.argv.slice(2);
@@ -53,19 +52,14 @@ if (
 	throw new Error("minsync-progress-persistence-mismatch");
 }
 if (!existsSync(cursorPath)) throw new Error("minsync-cursor-missing");
-// The Korean fixture holds only suffixed forms of 인증서 (인증서를, 인증서는). Its bare stem reaches the fixture through
-// BM25 only when the agent built the index with the multilingual tokenizer, which AutoRAG always selects and which
-// needs Kiwi on the host. Without Kiwi the sync falls back to whitespace tokenization and the lane is a SKIP.
-const koreanLane = resolveKoreanLexicalLane(
-	refresh.minsync.lexicalFallback,
-	process.env.AUTORAG_LIVE_E2E_KIWI === "required",
-);
-if (koreanLane === "assert") {
+// The Korean fixture holds only suffixed forms of 인증서 (인증서를, 인증서는). Its bare stem has to reach the fixture
+// through MinSync's SPLADE sparse retrieval, which needs no tokenizer library on the host.
+{
 	const minsyncExecutable = process.platform === "win32" ? "minsync.exe" : "minsync";
 	const cachedMinsync = join(workspace, ".autorag", "bin", minsyncExecutable);
 	const koreanQuery = spawnSync(
 		existsSync(cachedMinsync) ? cachedMinsync : minsyncExecutable,
-		["query", "--mode", "bm25", "--format", "json", "-k", "5", "인증서"],
+		["query", "--mode", "sparse", "--format", "json", "-k", "5", "인증서"],
 		{ cwd: workspace, encoding: "utf8", timeout: 60_000 },
 	);
 	if (koreanQuery.status !== 0) throw new Error(`korean-lexical-query-exit-${koreanQuery.status}`);
@@ -233,10 +227,7 @@ const result = {
 	},
 	cursorPath: resolve(cursorPath),
 	cursorExists: true,
-	koreanLexical:
-		koreanLane === "assert"
-			? { status: "PASS", query: "인증서", fixture: "korean-policy.txt" }
-			: { status: "SKIP", reason: "kiwi-unavailable", lexicalFallback: refresh.minsync.lexicalFallback },
+	koreanLexical: { status: "PASS", query: "인증서", fixture: "korean-policy.txt" },
 	hit: { source: hit.source, sourceAbsolute: true, sourceExists: true, sourceReadable: true, score: hit.score },
 	status: { state: status.state, stale: status.stale, components: status.components },
 	liteRetrieve: {

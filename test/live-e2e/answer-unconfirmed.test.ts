@@ -128,13 +128,11 @@ const CASES: readonly Case[] = [
 
 let root: string;
 let savedEnv: Record<string, string | undefined>;
-const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR", "KIWI_LIBRARY_PATH", "KIWI_MODEL_PATH"] as const;
+const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR"] as const;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "arag-unconfirmed-live-"));
 	savedEnv = Object.fromEntries(RESTORED_VARIABLES.map((name) => [name, process.env[name]]));
-	delete process.env.KIWI_LIBRARY_PATH;
-	delete process.env.KIWI_MODEL_PATH;
 });
 
 afterEach(() => {

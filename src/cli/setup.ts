@@ -67,7 +67,7 @@ export interface SetupFileeReport {
 
 export interface SetupReport {
 	readonly ok: boolean;
-	readonly mode: "semantic" | "bm25";
+	readonly mode: "semantic" | "sparse";
 	readonly embedding: SetupEmbeddingReport;
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
@@ -440,7 +440,7 @@ export async function runSetup(options: {
 		);
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
-			mode: semantic ? "semantic" : "bm25",
+			mode: semantic ? "semantic" : "sparse",
 			embedding,
 			datasources,
 			filee: fileeReport,

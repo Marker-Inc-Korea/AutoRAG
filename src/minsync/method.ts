@@ -65,16 +65,16 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	describe(): RetrievalMethodDescriptor {
 		return {
 			name: "minsync",
-			type: this.mode === "bm25" ? "bm25" : this.mode === "hybrid" ? "hybrid" : "vector",
+			type: this.mode,
 			description:
-				this.mode === "bm25"
-					? "MinSync-backed BM25 lexical retrieval over parsed markdown mirrors"
+				this.mode === "sparse"
+					? "MinSync-backed SPLADE sparse retrieval over parsed markdown mirrors"
 					: this.mode === "hybrid"
 						? "MinSync-backed hybrid retrieval over parsed markdown mirrors"
 						: "MinSync-backed semantic vector retrieval over parsed markdown mirrors",
 			status: "active",
 			capabilities: [
-				...(this.mode === "bm25" ? ["lexical"] : this.mode === "hybrid" ? ["semantic", "lexical"] : ["semantic"]),
+				...(this.mode === "sparse" ? ["lexical"] : this.mode === "hybrid" ? ["semantic", "lexical"] : ["semantic"]),
 				"incremental",
 				"parsed-mirrors",
 				"virtual-paths",
@@ -148,12 +148,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			hits = await client.query(query, queryK, this.mode, options.signal);
 		} catch (error) {
 			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
-			hits = await client.query(query, queryK, "bm25", options.signal);
+			hits = await client.query(query, queryK, "sparse", options.signal);
 			// Hybrid is the only MinSync method searched, so a semantic half that is down (embedder
 			// unreachable, stale index) would vanish from the result unless the pipeline is told.
 			options.onFallback?.({
 				method: this.describe().name,
-				fallback: "bm25",
+				fallback: "sparse",
 				reason: describeRetrievalError(error),
 			});
 		}
@@ -217,7 +217,7 @@ export class MinSyncHybridMethod extends MinSyncVectorMethod {
 		return {
 			name: "hybrid",
 			type: "hybrid",
-			description: "MinSync-backed hybrid BM25+vector retrieval over shared CDC chunks",
+			description: "MinSync-backed hybrid SPLADE sparse + dense vector retrieval over shared CDC chunks",
 			status: "active",
 			capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
 		};
