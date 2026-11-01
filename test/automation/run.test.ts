@@ -136,6 +136,17 @@ writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
 		expect(result.exitCode).toBeNull();
 
 		const grandchildPid = Number(readFileSync(pidFile, "utf8").trim());
+		// A SIGKILLed grandchild stays kill(pid, 0)-visible until init reaps it, and it is not our child
+		// (no exit event to await), so poll the pid table for a bounded time instead of asserting once.
+		const deadline = Date.now() + 5_000;
+		while (Date.now() < deadline) {
+			try {
+				process.kill(grandchildPid, 0);
+			} catch {
+				break;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
 		expect(() => process.kill(grandchildPid, 0)).toThrow();
 	});
 

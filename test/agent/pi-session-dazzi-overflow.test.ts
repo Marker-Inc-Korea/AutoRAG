@@ -14,7 +14,7 @@ const CONTEXT_WINDOW = 100_000;
 /** What the real upstream tokenizer would turn into more than the window; the server's rejection threshold. */
 const REJECTED_BODY_CHARS = 200_000;
 /** chars / 4 reads this as 60k tokens, comfortably inside the window, so only the server knows it is too big. */
-const HUGE_RESULT = "\u0000\ufffd\u0001spotlight pdf bytes ".repeat(10_000);
+const HUGE_RESULT = "\u0000\ufffd\u0001pdf bytes ".repeat(10_000);
 
 /** What the hosted server answers when the upstream provider says the input is longer than the model's window. */
 const CONTEXT_EXCEEDED = {
@@ -83,10 +83,10 @@ function signIn(baseUrl: string): void {
 	);
 }
 
-const spotlightTool: AgentTool = {
-	name: "search_datasource_spotlight",
-	label: "Spotlight",
-	description: "Returns whatever Spotlight found",
+const bulkFileTool: AgentTool = {
+	name: "search_datasource_files",
+	label: "Files",
+	description: "Returns whatever bulky file text was found",
 	parameters: Type.Object({}),
 	async execute() {
 		return { content: [{ type: "text", text: HUGE_RESULT }], details: {} };
@@ -116,7 +116,7 @@ describe("pi session on Dazzi when a tool result overflows the context", () => {
 				headers: SSE_HEADERS,
 				rawBody: hasToolOutput
 					? responsesTextStream("final answer after recovery")
-					: responsesToolCallStream("search_datasource_spotlight", {}),
+					: responsesToolCallStream("search_datasource_files", {}),
 			};
 		});
 		const baseUrl = `${server.url}/v1`;
@@ -128,7 +128,7 @@ describe("pi session on Dazzi when a tool result overflows the context", () => {
 			apiKey: "dz_login",
 			providerApiKeys: { dazzi: "dz_login" },
 			getSystemPrompt: () => "AutoRAG system prompt",
-			customTools: [spotlightTool],
+			customTools: [bulkFileTool],
 		});
 		try {
 			const compactions: string[] = [];
