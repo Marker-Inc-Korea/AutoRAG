@@ -103,6 +103,84 @@ describe("fsearch_search tool", () => {
 		expect(result.details).toMatchObject({ resultCount: 0, sources: [] });
 	});
 
+	it("searches every alternative name at once and merges the hits, labelling who found each", async () => {
+		const requests: FSearchSearchRequest[] = [];
+		let inFlight = 0;
+		let peak = 0;
+		const tool = createFSearchSearchTool({
+			async searchFsearch(request) {
+				requests.push(request);
+				inFlight += 1;
+				peak = Math.max(peak, inFlight);
+				await Promise.resolve();
+				await Promise.resolve();
+				inFlight -= 1;
+				const entry = (path: string) => ({
+					path,
+					name: path,
+					type: "file" as const,
+					size: undefined,
+					dateModified: undefined,
+				});
+				if (request.query === "invoice")
+					return { ok: true, backend: "fsearch-cli", results: [entry("/d/invoice.pdf"), entry("/d/shared.pdf")] };
+				if (request.query === "receipt")
+					return { ok: true, backend: "fsearch-cli", results: [entry("/d/shared.pdf")] };
+				return { ok: false, reason: "search-failed", message: "database is corrupt" };
+			},
+		});
+		const result = await tool.execute("call-multi", {
+			query: "invoice",
+			alternatives: ["receipt", "bill"],
+			kind: "files",
+			maxResults: 10,
+		});
+		expect(requests.map((request) => request.query).sort()).toEqual(["bill", "invoice", "receipt"]);
+		expect(requests.every((request) => request.kind === "files" && request.maxResults === 10)).toBe(true);
+		expect(peak).toBe(3);
+		expect(result.details).toMatchObject({
+			resultCount: 2,
+			sources: ["/d/shared.pdf", "/d/invoice.pdf"],
+		});
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain("3 names searched");
+		// Found by two names, so it leads; the name-only hit follows.
+		expect(text).toContain("[1] file /d/shared.pdf (found by: invoice, receipt)");
+		expect(text).toContain("[2] file /d/invoice.pdf (found by: invoice)");
+		expect(text).toContain('"bill" failed: search-failed: database is corrupt');
+	});
+
+	it("reports alternatives beyond the cap instead of dropping them silently", async () => {
+		const requests: FSearchSearchRequest[] = [];
+		const tool = createFSearchSearchTool({
+			async searchFsearch(request) {
+				requests.push(request);
+				return { ok: true, backend: "fsearch-cli", results: [] };
+			},
+		});
+		const alternatives = Array.from({ length: 10 }, (_, index) => `alt-${index}`);
+		const result = await tool.execute("call-cap", { query: "first", alternatives });
+		expect(requests).toHaveLength(8);
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain("3 more names were not searched");
+	});
+
+	it("keeps the single-name output when no alternative adds a candidate", async () => {
+		const tool = createFSearchSearchTool({
+			async searchFsearch() {
+				return {
+					ok: true,
+					backend: "fsearch-cli",
+					results: [{ path: "/d/a.txt", name: "a.txt", type: "file", size: undefined, dateModified: undefined }],
+				};
+			},
+		});
+		const result = await tool.execute("call-same", { query: "a", alternatives: ["A", "  a "] });
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain("FSearch found 1 item(s):");
+		expect(text).not.toContain("found by");
+	});
+
 	it("rejects an empty query without calling fsearch", async () => {
 		let called = false;
 		const tool = createFSearchSearchTool({
