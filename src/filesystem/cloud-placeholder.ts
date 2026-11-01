@@ -386,7 +386,7 @@ export function providerFromWindowsSyncRoot(label: string): CloudProvider {
  * message is the OS text when the script printed one, otherwise the process stderr.
  */
 export function parseWindowsDehydrateOutput(result: PowerShellResult): CloudEvictResult {
-	const open = /^OPEN=0x([0-9A-Fa-f]{8})$/mu.exec(result.stdout);
+	const open = /^OPEN=(?:0x)?([0-9A-Fa-f]{8})$/mu.exec(result.stdout);
 	if (open === null)
 		return { ok: false, message: windowsFailureMessage(result, "the release command produced no result") };
 	if (Number.parseInt(open[1] as string, 16) !== 0) {
@@ -395,16 +395,24 @@ export function parseWindowsDehydrateOutput(result: PowerShellResult): CloudEvic
 			message: windowsFailureMessage(result, `could not open the file for release (0x${open[1]})`),
 		};
 	}
-	const dehydrate = /^DEHYDRATE=0x([0-9A-Fa-f]{8})$/mu.exec(result.stdout);
+	const dehydrate = /^DEHYDRATE=(?:0x)?([0-9A-Fa-f]{8})$/mu.exec(result.stdout);
 	if (dehydrate === null) {
 		return { ok: false, message: windowsFailureMessage(result, "the release command produced no result") };
 	}
-	if (Number.parseInt(dehydrate[1] as string, 16) === 0) return { ok: true };
+	const hresult = dehydrate[1] as string;
+	if (Number.parseInt(hresult, 16) === 0) return { ok: true };
+	const refusal = WINDOWS_DEHYDRATE_REFUSALS[hresult.toUpperCase()];
 	return {
 		ok: false,
-		message: windowsFailureMessage(result, `the provider refused to dehydrate the file (0x${dehydrate[1]})`),
+		message: refusal ?? windowsFailureMessage(result, `the provider refused to dehydrate the file (0x${hresult})`),
 	};
 }
+
+/** `CfDehydratePlaceholder` refusals the platform enforces, measured against a Cloud Files sync root. */
+const WINDOWS_DEHYDRATE_REFUSALS: Readonly<Record<string, string>> = {
+	"80070179": "The file has changes the cloud provider has not synced yet, so it cannot be released.",
+	"80070188": "The file is pinned to stay on this device, so it is not released.",
+};
 
 function windowsFailureMessage(result: PowerShellResult, fallback: string): string {
 	const printed = /^MSG=(.*)$/mu.exec(result.stdout)?.[1]?.trim();
@@ -419,10 +427,11 @@ export interface WindowsCloudProbeOptions {
 }
 
 /**
- * The Windows probe. Cloud Files placeholders carry `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`; the provider is
- * the registered sync root that contains the path (falling back to the path's own marker), and the local
- * copy is released with `CfDehydratePlaceholder`. Only OneDrive is enabled by {@link canRelease} because it
- * is the only provider whose release was verified live.
+ * The Windows probe. A Cloud Files placeholder carries `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`; the provider is the
+ * registered sync root that contains the path (else the path's own marker); the local copy is released with
+ * `CfDehydratePlaceholder`. Release is allowed for every Cloud Files sync root because the platform itself refuses
+ * to dehydrate a file with unsynced changes or a pinned file (measured: 0x80070179 and 0x80070188). Verified against
+ * a synthetic cfapi provider only; OneDrive, Dropbox and other commercial providers were not measured.
  */
 export class WindowsCloudProbe implements CloudFileProbe {
 	private readonly run: PowerShellRunner;
@@ -455,7 +464,7 @@ export class WindowsCloudProbe implements CloudFileProbe {
 	}
 
 	canRelease(provider: CloudProvider | undefined): boolean {
-		return provider !== undefined && WINDOWS_RELEASABLE.has(provider);
+		return provider !== undefined;
 	}
 
 	async evict(path: string): Promise<CloudEvictResult> {
@@ -471,15 +480,6 @@ export class WindowsCloudProbe implements CloudFileProbe {
 		return this.syncRoots;
 	}
 }
-
-/** The release call is platform-enforced for Cloud Files roots; live verification uses the synthetic provider. */
-const WINDOWS_RELEASABLE: ReadonlySet<CloudProvider> = new Set<CloudProvider>([
-	"icloud",
-	"google-drive",
-	"onedrive",
-	"dropbox",
-	"file-provider",
-]);
 
 /** Longest registered sync root containing `path`, so a nested root wins over its parent. */
 function longestSyncRoot(roots: readonly WindowsSyncRoot[], target: string): WindowsSyncRoot | undefined {

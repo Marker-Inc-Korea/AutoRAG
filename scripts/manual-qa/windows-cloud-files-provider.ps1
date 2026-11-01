@@ -23,8 +23,10 @@ public static class AutoragSyntheticCloudFiles
     const ushort CF_HYDRATION_POLICY_MODIFIER_AUTO_DEHYDRATION_ALLOWED = 4;
     const uint CF_POPULATION_POLICY_ALWAYS_FULL = 3;
     const uint CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC = 2;
+    const uint CF_CONNECT_FLAG_REQUIRE_FULL_FILE_PATH = 4;
     const uint CF_CONNECT_FLAG_REQUIRE_PROCESS_INFO = 2;
     const int STATUS_SUCCESS = 0;
+    const uint FILE_ATTRIBUTE_NORMAL = 0x80;
 
     [StructLayout(LayoutKind.Sequential)] public struct UShortPair { public ushort Primary; public ushort Modifier; }
     [StructLayout(LayoutKind.Sequential)] public struct Policies {
@@ -34,7 +36,7 @@ public static class AutoragSyntheticCloudFiles
     [StructLayout(LayoutKind.Sequential)] public struct Registration {
         public uint StructSize; public IntPtr ProviderName; public IntPtr ProviderVersion;
         public IntPtr SyncRootIdentity; public uint SyncRootIdentityLength;
-        public IntPtr FileIdentity; public uint FileIdentityLength; public Guid ProviderId;
+        public IntPtr FileIdentity; public uint FileIdentityLength;
     }
     [StructLayout(LayoutKind.Sequential)] public struct FileBasicInfo {
         public long CreationTime; public long LastAccessTime; public long LastWriteTime; public long ChangeTime;
@@ -61,14 +63,7 @@ public static class AutoragSyntheticCloudFiles
         public IntPtr CorrelationVector; public IntPtr SyncStatus; public long RequestKey;
     }
 
-[DllImport(Dll, CharSet=CharSet.Unicode)] static extern int CfConvertToPlaceholder(IntPtr fileHandle, IntPtr fileIdentity, uint fileIdentityLength, uint flags, out long convertUsn, IntPtr overlapped);
-[DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
-[DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
-const uint GENERIC_READ_WRITE = 0xC0000000;
-const uint FILE_SHARE_ALL = 7;
-const uint OPEN_EXISTING = 3;
-const uint FILE_ATTRIBUTE_NORMAL = 0x80;
-const uint CF_CONVERT_FLAG_MARK_IN_SYNC = 1;
+[DllImport(Dll, CharSet=CharSet.Unicode)] static extern int CfCreatePlaceholders(string baseDirectory, IntPtr placeholderArray, uint placeholderCount, uint createFlags, out uint entriesProcessed);
     [StructLayout(LayoutKind.Explicit)] public struct OperationParameters {
         [FieldOffset(0)] public uint ParamSize;
         [FieldOffset(8)] public uint TransferFlags;
@@ -78,13 +73,13 @@ const uint CF_CONVERT_FLAG_MARK_IN_SYNC = 1;
         [FieldOffset(32)] public long Length;
     }
 [DllImport(Dll)] static extern int CfExecute(ref OperationInfo info, ref OperationParameters parameters);
-const uint CF_CONVERT_FLAG_DEHYDRATE = 2;
     [DllImport(Dll, CharSet=CharSet.Unicode)] static extern int CfRegisterSyncRoot(string path, ref Registration registration, ref Policies policies, uint flags);
     [DllImport(Dll, CharSet=CharSet.Unicode)] static extern int CfUnregisterSyncRoot(string path);
     [DllImport(Dll, CharSet=CharSet.Unicode)] static extern int CfConnectSyncRoot(string path, [In] CallbackRegistration[] callbacks, IntPtr context, uint flags, out ConnectionKey key);
     [DllImport(Dll)] static extern int CfDisconnectSyncRoot(ConnectionKey key);
 
     static string sourceRoot;
+    static string syncRootPath;
     static Callback callback;
     static ConnectionKey connection;
 
@@ -100,9 +95,22 @@ const uint CF_CONVERT_FLAG_DEHYDRATE = 2;
             var info = Marshal.PtrToStructure<CallbackInfo>(infoPtr);
             long offset = Marshal.ReadInt64(parametersPtr, 16);
             long length = Marshal.ReadInt64(parametersPtr, 24);
+            
             string normalized = Marshal.PtrToStringUni(info.NormalizedPath) ?? "";
-            normalized = normalized.TrimStart('\\');
-            string sourcePath = Path.Combine(sourceRoot, normalized.Replace('\\', Path.DirectorySeparatorChar));
+            string rel;
+            if (info.NormalizedPath != IntPtr.Zero && normalized.Length > 0) {
+                rel = normalized;
+                if (rel.StartsWith(syncRootPath, StringComparison.OrdinalIgnoreCase)) rel = rel.Substring(syncRootPath.Length);
+            } else if (info.FileIdentity != IntPtr.Zero && info.FileIdentityLength > 0) {
+                var idBytes = new byte[info.FileIdentityLength];
+                Marshal.Copy(info.FileIdentity, idBytes, 0, (int)info.FileIdentityLength);
+                rel = Encoding.UTF8.GetString(idBytes);
+            } else {
+                throw new IOException("callback carried neither a path nor a file identity");
+            }
+            rel = rel.TrimStart('\\');
+            string sourcePath = Path.Combine(sourceRoot, rel.Replace('\\', Path.DirectorySeparatorChar));
+            if (!File.Exists(sourcePath)) sourcePath = Path.Combine(sourceRoot, Path.GetFileName(rel));
             byte[] data = File.ReadAllBytes(sourcePath);
             if (offset < 0 || offset > data.LongLength) throw new IOException("invalid offset");
             int take = (int)Math.Min(length, data.LongLength - offset);
@@ -121,11 +129,12 @@ const uint CF_CONVERT_FLAG_DEHYDRATE = 2;
     public static string Start(string syncRootArg, string sourceRootArg, string providerName)
     {
         sourceRoot = Path.GetFullPath(sourceRootArg);
+        syncRootPath = Path.GetFullPath(syncRootArg).TrimEnd(Path.DirectorySeparatorChar);
         Directory.CreateDirectory(syncRootArg);
         var providerPtr = Marshal.StringToHGlobalUni(providerName);
         var versionPtr = Marshal.StringToHGlobalUni("1.0");
         try {
-            var reg = new Registration { StructSize=(uint)Marshal.SizeOf<Registration>(), ProviderName=providerPtr, ProviderVersion=versionPtr, ProviderId=Guid.NewGuid() };
+            var reg = new Registration { StructSize=(uint)Marshal.SizeOf<Registration>(), ProviderName=providerPtr, ProviderVersion=versionPtr };
             var policy = new Policies {
                 StructSize=(uint)Marshal.SizeOf<Policies>(),
                 Hydration=new UShortPair { Primary=(ushort)CF_HYDRATION_POLICY_FULL, Modifier=(ushort)CF_HYDRATION_POLICY_MODIFIER_AUTO_DEHYDRATION_ALLOWED },
@@ -136,7 +145,7 @@ const uint CF_CONVERT_FLAG_DEHYDRATE = 2;
             if (hr != 0) throw new Exception("CfRegisterSyncRoot=0x" + ((uint)hr).ToString("X8"));
             callback = FetchData;
             var callbacks = new[] { new CallbackRegistration { Type=CF_CALLBACK_TYPE_FETCH_DATA, Callback=callback }, new CallbackRegistration { Type=CF_CALLBACK_TYPE_NONE, Callback=null } };
-            hr = CfConnectSyncRoot(syncRootArg, callbacks, IntPtr.Zero, CF_CONNECT_FLAG_REQUIRE_PROCESS_INFO, out connection);
+            hr = CfConnectSyncRoot(syncRootArg, callbacks, IntPtr.Zero, CF_CONNECT_FLAG_REQUIRE_FULL_FILE_PATH | CF_CONNECT_FLAG_REQUIRE_PROCESS_INFO, out connection);
             if (hr != 0) { CfUnregisterSyncRoot(syncRootArg); throw new Exception("CfConnectSyncRoot=0x" + ((uint)hr).ToString("X8")); }
             CreateSourcePlaceholders(syncRootArg);
             return "READY";
@@ -148,19 +157,33 @@ const uint CF_CONVERT_FLAG_DEHYDRATE = 2;
         var files = Directory.GetFiles(sourceRoot, "*", SearchOption.AllDirectories);
         foreach (string sourceFile in files) {
             string rel = Relative(sourceFile);
-            string target = Path.Combine(syncRoot, rel);
-            string parent = Path.GetDirectoryName(target);
-            if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
-            File.WriteAllBytes(target, new byte[0]);
             byte[] identityBytes = Encoding.UTF8.GetBytes(rel);
+            IntPtr name = Marshal.StringToHGlobalUni(rel);
             IntPtr identity = Marshal.AllocHGlobal(identityBytes.Length);
             Marshal.Copy(identityBytes, 0, identity, identityBytes.Length);
-            IntPtr handle = CreateFile(target, GENERIC_READ_WRITE, FILE_SHARE_ALL, IntPtr.Zero, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
-            if (handle == IntPtr.Zero || handle == new IntPtr(-1)) { Marshal.FreeHGlobal(identity); throw new Exception("CreateFile=0x" + Marshal.GetLastWin32Error().ToString("X8")); }
             try {
-                long usn; int hr = CfConvertToPlaceholder(handle, identity, (uint)identityBytes.Length, CF_CONVERT_FLAG_MARK_IN_SYNC | CF_CONVERT_FLAG_DEHYDRATE, out usn, IntPtr.Zero);
-                if (hr != 0) throw new Exception("CfConvertToPlaceholder=0x" + ((uint)hr).ToString("X8"));
-            } finally { CloseHandle(handle); Marshal.FreeHGlobal(identity); }
+                var metadata = new FsMetadata {
+                    BasicInfo = new FileBasicInfo {
+                        CreationTime = FileTime(sourceFile), LastAccessTime = FileTime(sourceFile),
+                        LastWriteTime = FileTime(sourceFile), ChangeTime = FileTime(sourceFile),
+                        FileAttributes = FILE_ATTRIBUTE_NORMAL,
+                    },
+                    FileSize = new FileInfo(sourceFile).Length,
+                };
+                var info = new PlaceholderCreateInfo {
+                    RelativeFileName = name, FsMetadata = metadata,
+                    FileIdentity = identity, FileIdentityLength = (uint)identityBytes.Length,
+                    Flags = CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC,
+                };
+                IntPtr array = Marshal.AllocHGlobal(Marshal.SizeOf<PlaceholderCreateInfo>());
+                try {
+                    Marshal.StructureToPtr(info, array, false);
+                    uint processed;
+                    int hr = CfCreatePlaceholders(syncRoot, array, 1, 0, out processed);
+                    var result = Marshal.PtrToStructure<PlaceholderCreateInfo>(array);
+                    if (hr != 0 || result.Result != 0) throw new Exception("CfCreatePlaceholders=0x" + ((uint)(hr != 0 ? hr : result.Result)).ToString("X8"));
+                } finally { Marshal.FreeHGlobal(array); }
+            } finally { Marshal.FreeHGlobal(name); Marshal.FreeHGlobal(identity); }
         }
     }
 

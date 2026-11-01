@@ -314,7 +314,7 @@ describe("WindowsCloudProbe", () => {
 		expect(await probe.providerOf(String.raw`C:\Users\x\Documents\a.txt`)).toBe("file-provider");
 	});
 
-	it("releases any identified Cloud Files provider after synthetic verification", () => {
+	it("releases every identified Cloud Files provider, because the platform enforces the refusals", () => {
 		const probe = new WindowsCloudProbe({ run: new FakePowerShell().run });
 
 		for (const provider of ["onedrive", "google-drive", "icloud", "dropbox", "file-provider"] as const)
@@ -333,6 +333,59 @@ describe("WindowsCloudProbe", () => {
 		});
 		expect(powerShell.scripts).toHaveLength(1);
 		expect(powerShell.scripts[0]).toContain("CfDehydratePlaceholder");
+	});
+
+	it("parses the unprefixed hex the dehydrate script actually prints", async () => {
+		const powerShell = new FakePowerShell();
+		powerShell.handler = () => ({ ok: true, stdout: "OPEN=00000000\nDEHYDRATE=00000000\n", stderr: "" });
+
+		await expect(
+			new WindowsCloudProbe({ run: powerShell.run }).evict(String.raw`C:\Users\x\OneDrive\a.txt`),
+		).resolves.toEqual({ ok: true });
+	});
+
+	it("reports the refusal HRESULT when the provider will not dehydrate", async () => {
+		const powerShell = new FakePowerShell();
+		powerShell.handler = () => ({ ok: true, stdout: "OPEN=00000000\nDEHYDRATE=8007018A\n", stderr: "" });
+
+		await expect(
+			new WindowsCloudProbe({ run: powerShell.run }).evict(String.raw`C:\Users\x\OneDrive\a.txt`),
+		).resolves.toEqual({
+			ok: false,
+			message: "the provider refused to dehydrate the file (0x8007018A)",
+		});
+	});
+
+	it("names the platform refusals instead of the generic OS text the script prints", async () => {
+		const results = [];
+		for (const hresult of ["80070179", "80070188"]) {
+			const powerShell = new FakePowerShell();
+			powerShell.handler = () => ({
+				ok: true,
+				stdout: `OPEN=00000000\nDEHYDRATE=${hresult}\nMSG=The cloud operation failed.\n`,
+				stderr: "",
+			});
+			results.push(
+				await new WindowsCloudProbe({ run: powerShell.run }).evict(String.raw`C:\Users\x\OneDrive\a.txt`),
+			);
+		}
+
+		const [unsynced, pinned] = results;
+		expect(unsynced).toMatchObject({ ok: false, message: expect.stringMatching(/not synced/) });
+		expect(pinned).toMatchObject({ ok: false, message: expect.stringMatching(/pinned/) });
+	});
+
+	it("keeps the OS text for a refusal it does not know", async () => {
+		const powerShell = new FakePowerShell();
+		powerShell.handler = () => ({
+			ok: true,
+			stdout: "OPEN=00000000\nDEHYDRATE=8007018A\nMSG=The cloud operation was canceled.\n",
+			stderr: "",
+		});
+
+		await expect(
+			new WindowsCloudProbe({ run: powerShell.run }).evict(String.raw`C:\Users\x\OneDrive\a.txt`),
+		).resolves.toEqual({ ok: false, message: "The cloud operation was canceled." });
 	});
 
 	it("propagates a failed attribute read instead of silently treating placeholders as local", async () => {

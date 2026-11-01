@@ -1,22 +1,30 @@
 /**
  * Live manual QA for the cloud-mount release path (#2043).
  *
- * Walks the real user-visible path on a Mac: fixture documents are written into a throwaway folder inside a
- * cloud mount (iCloud Drive, Google Drive, OneDrive under `~/Library/CloudStorage` / `~/Library/Mobile
+ * macOS walks the real user-visible path: fixture documents are written into a throwaway folder inside a
+ * cloud mount (iCloud Drive, Google Drive, OneDrive, Dropbox under `~/Library/CloudStorage` / `~/Library/Mobile
  * Documents`), released so they are data-less placeholders, then indexed through a real AutoRAG refresh and
  * found again through a real search — with an OS-absolute, readable source under the mount. It then proves the
  * refresh released them a second time and that an unchanged refresh writes nothing and hydrates nothing.
+ * Opt-in and destructive on macOS: it writes into the user's real cloud, so it only runs when
+ * `AUTORAG_E2E_CLOUD_DIRS` is a `:`-delimited list of existing writable parent folders inside cloud mounts. In
+ * each it creates exactly one `autorag-e2e-<hex>/` folder and deletes only that folder.
  *
- * Opt-in and destructive: it writes into the user's real cloud. It only runs when `AUTORAG_E2E_CLOUD_DIRS` is
- * a platform path-delimited list (`:` on POSIX, `;` on Windows) of existing writable parent folders inside
- * cloud mounts. In each it creates exactly one `autorag-e2e-<hex>/` folder and deletes only that folder.
+ * Windows runs the same checks against a synthetic Cloud Files provider
+ * (`windows-cloud-files-provider.ps1`) that this harness registers in its own temp folder and always
+ * unregisters; it never touches a real sync root. Opt in with `AUTORAG_E2E_CLOUD_SYNTHETIC=1`. Windows denies
+ * downloads to third-party processes that cannot show its download prompt (error 395, e.g. over SSH in session
+ * 0), so run it in an interactive desktop session.
  *
  * Run: AUTORAG_E2E_CLOUD_DIRS="$HOME/Library/CloudStorage/GoogleDrive-x/My Drive:..." \
  *        bun scripts/manual-qa/run-qa-cloud-mount-live.ts
+ *      (Windows) set AUTORAG_E2E_CLOUD_SYNTHETIC=1 && bun scripts/manual-qa/run-qa-cloud-mount-live.ts
  */
 
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import {
 	accessSync,
+	appendFileSync,
 	constants,
 	mkdirSync,
 	mkdtempSync,
@@ -27,14 +35,17 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, delimiter, join, sep } from "node:path";
+import { basename, delimiter, isAbsolute, join, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { spawn } from "node:child_process";
-import { WindowsCloudProbe } from "../../src/filesystem/cloud-placeholder.ts";
 import { fileURLToPath } from "node:url";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createEmbedderFromConfig, releaseEmbedders } from "../../src/embedding/index.ts";
-import { DarwinCloudProbe } from "../../src/filesystem/cloud-placeholder.ts";
+import {
+	buildWindowsSyncRootsScript,
+	DarwinCloudProbe,
+	parseWindowsSyncRoots,
+	WindowsCloudProbe,
+} from "../../src/filesystem/cloud-placeholder.ts";
 
 // Isolate before anything constructs the agent: never touch the maintainer's real ~/.autorag. No imported
 // module reads these at import time, so setting them in the module body (after the imports) is enough.
@@ -155,54 +166,132 @@ async function runDarwin(dirs: readonly string[]): Promise<void> {
 	await releaseEmbedders();
 }
 
-/** Windows lane uses the opt-in synthetic Cloud Files provider when requested. */
-async function runWindows(dirs: readonly string[]): Promise<void> {
+/** Sync roots currently registered for this user, read the way the probe reads them. */
+function registeredSyncRoots(): string[] {
+	const stdout = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", buildWindowsSyncRootsScript()], {
+		encoding: "utf8",
+	});
+	return parseWindowsSyncRoots(stdout).map((root) => root.path.toLowerCase().replace(/\\+$/u, ""));
+}
+
+/** Start the synthetic provider and wait until it has registered the root and created the placeholders. */
+async function startSyntheticProvider(syncRoot: string, sourceDir: string): Promise<ChildProcess> {
+	const providerScript = fileURLToPath(new URL("./windows-cloud-files-provider.ps1", import.meta.url));
+	const child = spawn(
+		"powershell.exe",
+		["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", providerScript, "-SyncRoot", syncRoot, "-SourceRoot", sourceDir],
+		{ stdio: ["pipe", "pipe", "inherit"] },
+	);
+	let output = "";
+	child.stdout?.on("data", (chunk) => {
+		output += String(chunk);
+	});
+	const deadline = Date.now() + 60_000;
+	while (!output.includes("PROVIDER=READY")) {
+		if (child.exitCode !== null || Date.now() > deadline) {
+			throw new Error(`synthetic provider did not start: ${output.trim() || `exit ${child.exitCode}`}`);
+		}
+		await sleep(200);
+	}
+	return child;
+}
+
+async function stopSyntheticProvider(child: ChildProcess | undefined): Promise<void> {
+	if (child === undefined || child.exitCode !== null) return;
+	const { promise: exited, resolve } = Promise.withResolvers<void>();
+	child.once("exit", () => resolve());
+	child.stdin?.end("stop\n");
+	await Promise.race([exited, sleep(15_000)]);
+	if (child.exitCode === null) child.kill();
+}
+
+/**
+ * Windows: the same product checks as macOS against a synthetic Cloud Files sync root registered in this run's
+ * temp folder, plus the two refusals the platform enforces on release (unsynced changes, pinned file).
+ */
+async function runWindows(): Promise<void> {
 	if (process.env.AUTORAG_E2E_CLOUD_SYNTHETIC !== "1") {
 		check("AUTORAG_E2E_CLOUD_SYNTHETIC=1 is set for Windows Cloud Files QA", false);
 		return;
 	}
-	const providerScript = fileURLToPath(new URL("./windows-cloud-files-provider.ps1", import.meta.url));
 	const probe = new WindowsCloudProbe();
-	const embedder = createEmbedderFromConfig({});
-	const health = await embedder.health();
-	check("an embedding backend is alive", health.alive);
-	for (const dir of dirs) {
-		const fixtureDir = join(dir, `autorag-e2e-${Math.random().toString(16).slice(2, 10)}`);
-		const sourceDir = mkdtempSync(join(qaRoot, "synthetic-source-"));
-		const syncRoot = join(qaRoot, `synthetic-root-${Math.random().toString(16).slice(2, 10)}`);
-		const files = [join(fixtureDir, "notes-a.txt"), join(fixtureDir, "notes-b.txt")];
-		const workspace = mkdtempSync(join(qaRoot, "ws-"));
-		let child: ReturnType<typeof spawn> | undefined;
-		try {
-			mkdirSync(fixtureDir, { recursive: true });
-			writeFileSync(files[0]!, `Indexed cloud fixture alpha ${TOKEN}.\n`);
-			writeFileSync(files[1]!, `Indexed cloud fixture beta ${TOKEN}.\n`);
-			for (const file of files) writeFileSync(join(sourceDir, basename(file)), readFileSync(file));
-			child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", providerScript, "-SyncRoot", syncRoot, "-SourceRoot", sourceDir], { stdio: ["pipe", "ignore", "inherit"] });
-			await sleep(3000);
-			const syntheticFiles = files.map((file) => join(syncRoot, basename(file)));
-			check(`${dir}: synthetic placeholders created`, (await probe.datalessAmong(syntheticFiles)).size === files.length);
-			const agent = new AutoRAGAgent({ searchPaths: [syncRoot], workspacePath: workspace, minSync: { autoInstall: false }, everything: false, fsearch: false, jikji: false, excludeExactDuplicates: false });
-			const first = await agent.refresh(true, { methods: ["parsed", "minsync"] });
-			check(`${dir}: refresh indexed synthetic placeholders`, first.written === files.length, `written=${first.written}`);
-			const { results } = await agent.searchAllDocuments(TOKEN, { topK: 10 });
-			const hit = results.find((result) => typeof result.source === "string" && result.content.includes(TOKEN));
-			if (hit !== undefined) console.log(`CLOUD_MOUNT_LIVE_QA source=${hit.source}`);
-			check(`${dir}: search returned synthetic token`, hit !== undefined);
-			check(`${dir}: refresh released synthetic files`, (await probe.datalessAmong(syntheticFiles)).size === files.length);
-			const second = await agent.refresh(false, { methods: ["parsed", "minsync"] });
-			check(`${dir}: unchanged synthetic refresh wrote nothing`, second.written === 0, `written=${second.written}`);
-			await releaseEmbedders();
-		} catch (error) {
-			check(`${dir}: Windows synthetic harness completed`, false, error instanceof Error ? error.message : String(error));
-		} finally {
-			try { child?.stdin.write("stop\n"); child?.stdin.end(); } catch {}
-			try { child?.kill(); } catch {}
-			rmSync(fixtureDir, { recursive: true, force: true });
-			rmSync(sourceDir, { recursive: true, force: true });
-			rmSync(syncRoot, { recursive: true, force: true });
-			rmSync(workspace, { recursive: true, force: true });
-		}
+	const health = await createEmbedderFromConfig({}).health();
+	console.log(`embedding backend: ${health.backend} alive=${health.alive}${health.detail ? ` (${health.detail})` : ""}`);
+	check("an embedding backend is alive (run `minsync serve --idle-timeout 0` first)", health.alive);
+
+	const sourceDir = mkdtempSync(join(qaRoot, "synthetic-source-"));
+	const syncRoot = join(qaRoot, `autorag-e2e-${Math.random().toString(16).slice(2, 10)}`);
+	const workspace = mkdtempSync(join(qaRoot, "ws-"));
+	const names = ["notes-a.txt", "notes-b.txt", "notes-c.txt", "notes-d.txt"];
+	const files = names.map((name) => join(syncRoot, name));
+	const [, , unsynced, pinned] = files as [string, string, string, string];
+	for (const name of names) writeFileSync(join(sourceDir, name), `Indexed cloud fixture ${name} for ${TOKEN}.\n`);
+	check("no synthetic root is registered before the lane", !registeredSyncRoots().includes(syncRoot.toLowerCase()));
+	let child: ChildProcess | undefined;
+	try {
+		child = await startSyntheticProvider(syncRoot, sourceDir);
+		check("the synthetic files are placeholders", (await probe.datalessAmong(files)).size === files.length);
+
+		const agent = new AutoRAGAgent({
+			searchPaths: [syncRoot],
+			workspacePath: workspace,
+			minSync: { autoInstall: false },
+			everything: false,
+			fsearch: false,
+			// Same placeholder-unaware readers the macOS branch turns off (issue #2043 item 4).
+			jikji: false,
+			excludeExactDuplicates: false,
+		});
+		const first = await agent.refresh(true, { methods: ["parsed", "minsync"] });
+		const firstCodes = first.diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`);
+		check("refresh indexed the placeholders", first.written === files.length, `written=${first.written} ${firstCodes.join(" | ")}`);
+
+		const { results } = await agent.searchAllDocuments(TOKEN, { topK: 10 });
+		const hit = results.find(
+			(result) =>
+				typeof result.source === "string" &&
+				isAbsolute(result.source) &&
+				result.source.toLowerCase().startsWith(`${syncRoot.toLowerCase()}${sep}`) &&
+				result.content.includes(TOKEN),
+		);
+		if (hit !== undefined) console.log(`CLOUD_MOUNT_LIVE_QA source=${hit.source}`);
+		check(
+			"search returns the token with an absolute source under the sync root",
+			hit !== undefined,
+			hit === undefined ? `${results.length} result(s): ${results.map((result) => result.source).join(", ")}` : undefined,
+		);
+		check("refresh released the files again", (await probe.datalessAmong(files)).size === files.length);
+
+		const second = await agent.refresh(false, { methods: ["parsed", "minsync"] });
+		check("unchanged refresh wrote nothing", second.written === 0, `written=${second.written}`);
+		check("unchanged refresh hydrated nothing", (await probe.datalessAmong(files)).size === files.length);
+
+		// Platform refusals, through the real release call. A local edit leaves the file out of sync with the cloud.
+		appendFileSync(unsynced, "local edit the provider has not synced\n");
+		const editedBytes = readFileSync(unsynced, "utf8");
+		const unsyncedResult = await probe.evict(unsynced);
+		check(
+			"a file with unsynced changes is not released and keeps its bytes",
+			!unsyncedResult.ok && readFileSync(unsynced, "utf8") === editedBytes,
+			unsyncedResult.ok ? "released" : unsyncedResult.message,
+		);
+		readFileSync(pinned, "utf8");
+		execFileSync("attrib.exe", ["+P", pinned]);
+		const pinnedResult = await probe.evict(pinned);
+		check(
+			"a pinned file is not released",
+			!pinnedResult.ok && !(await probe.datalessAmong([pinned])).has(pinned),
+			pinnedResult.ok ? "released" : pinnedResult.message,
+		);
+	} catch (error) {
+		check("Windows synthetic harness completed", false, error instanceof Error ? error.message : String(error));
+	} finally {
+		await stopSyntheticProvider(child);
+		check("the synthetic root is unregistered after the lane", !registeredSyncRoots().includes(syncRoot.toLowerCase()));
+		rmSync(sourceDir, { recursive: true, force: true });
+		rmSync(syncRoot, { recursive: true, force: true });
+		rmSync(workspace, { recursive: true, force: true });
+		await releaseEmbedders();
 	}
 }
 
@@ -211,13 +300,13 @@ try {
 		.split(delimiter)
 		.map((dir) => dir.trim())
 		.filter(Boolean);
-	if (dirs.length === 0) {
-		console.log("cloud-mount live QA needs AUTORAG_E2E_CLOUD_DIRS (platform path-delimited cloud folders)");
-		process.exitCode = 1;
-	} else if (process.platform === "darwin") {
-		await runDarwin(dirs);
+	if (process.platform === "darwin") {
+		if (dirs.length === 0) {
+			console.log("cloud-mount live QA needs AUTORAG_E2E_CLOUD_DIRS (platform path-delimited cloud folders)");
+			process.exitCode = 1;
+		} else await runDarwin(dirs);
 	} else if (process.platform === "win32") {
-		await runWindows(dirs);
+		await runWindows();
 	} else {
 		check("platform is macOS or Windows", false, process.platform);
 	}
