@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../../src/jikji/diagnostics.ts";
+import { jikjiDiscoverDiagnostic, jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../../src/jikji/diagnostics.ts";
 import type { JikjiFindResult, JikjiPrepareResult } from "../../src/jikji/types.ts";
 
 const ABS_BINARY = "/Users/someone/.local/bin/jikji";
@@ -95,6 +95,7 @@ describe("jikjiFindDiagnostic", () => {
 				handoffAction: "direct_use",
 				toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
 				agentShouldNotRerank: false,
+				rawFallbackAllowed: false,
 			},
 			stdout: "{}",
 			stderr: "",
@@ -187,5 +188,59 @@ describe("jikjiFindDiagnostic", () => {
 			expect(diag?.message).not.toContain("C:\\");
 			expect(diag?.message).not.toContain(ABS_BINARY);
 		}
+	});
+});
+
+describe("jikjiDiscoverDiagnostic", () => {
+	it("returns undefined for a successful discover", () => {
+		const ok: JikjiFindResult = {
+			ok: true,
+			answerPack: {
+				answerPaths: [],
+				paths: [],
+				candidates: [],
+				evidencePack: [],
+				handoffAction: "raw_fallback_after_retry",
+				toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
+				agentShouldNotRerank: false,
+				rawFallbackAllowed: true,
+			},
+			stdout: "{}",
+			stderr: "",
+			code: 0,
+		};
+		expect(jikjiDiscoverDiagnostic(ok)).toBeUndefined();
+	});
+
+	it("surfaces the exit status, stderr and real paths verbatim", () => {
+		const failed: JikjiFindResult = {
+			ok: false,
+			reason: "nonzero-exit",
+			stdout: "",
+			stderr: "error: cannot open /Users/someone/docs/.jikji/index.db: disk I/O error\n",
+			code: 3,
+		};
+		const diag = jikjiDiscoverDiagnostic(failed);
+		expect(diag?.code).toBe("jikji-discover-failed");
+		expect(diag?.severity).toBe("warning");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toContain("exit status 3");
+		expect(diag?.message).toContain("error: cannot open /Users/someone/docs/.jikji/index.db: disk I/O error");
+	});
+
+	it("maps a missing binary to jikji-unavailable", () => {
+		const failed: JikjiFindResult = {
+			ok: false,
+			reason: "spawn-error",
+			stdout: "",
+			stderr: `spawn ${ABS_BINARY} ENOENT`,
+			code: null,
+		};
+		expect(jikjiDiscoverDiagnostic(failed)?.code).toBe("jikji-unavailable");
+	});
+
+	it("names a step issued for another root", () => {
+		const failed: JikjiFindResult = { ok: false, reason: "bad-retry-step", stdout: "", stderr: "", code: null };
+		expect(jikjiDiscoverDiagnostic(failed)?.message).toMatch(/another root/);
 	});
 });
