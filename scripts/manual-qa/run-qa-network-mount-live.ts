@@ -198,7 +198,9 @@ async function waitForMount(mountDir: string): Promise<void> {
 /** The retrieval hit under `root` whose content carries the token, or undefined. */
 async function findHit(agent: AutoRAGAgent, root: string): Promise<{ readonly source: string } | undefined> {
 	const { results } = await agent.searchAllDocuments(TOKEN, { topK: 10 });
-	const canonicalRoot = `${realpathSync(root)}${sep}`;
+	const resolvedRoot = realpathSync(root);
+	// `realpath` already ends with a separator for a drive or share root on Windows, so never double it.
+	const canonicalRoot = resolvedRoot.endsWith(sep) ? resolvedRoot : `${resolvedRoot}${sep}`;
 	for (const result of results) {
 		if (typeof result.source !== "string" || !result.content.includes(TOKEN)) continue;
 		try {
