@@ -4,7 +4,12 @@ import { opendir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type DupeyCliOptions, fingerprintWithDupey } from "../dupey/cli.ts";
-import { type CloudFileProbe, isPathInside } from "../filesystem/cloud-placeholder.ts";
+import {
+	type CloudFileProbe,
+	canonicalPath,
+	canonicalPathMapper,
+	isPathInside,
+} from "../filesystem/cloud-placeholder.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -124,8 +129,9 @@ export interface ParsedMirrorSyncOptions {
 	readonly transientRetryBackoffMs?: number;
 	/**
 	 * Cloud-aware handling of File Provider placeholders (files whose data is not on disk; reading one
-	 * downloads it). `undefined` means the platform default: macOS probes with `stat` and releases through a
-	 * Foundation call, other platforms read every file as before. Tests inject their own probe.
+	 * downloads it) and the roots — cloud or network — that other readers must skip or exclude. `undefined`
+	 * means the platform default: macOS probes with `stat` and releases through a Foundation call, other
+	 * platforms read every file as before. Tests inject their own probe.
 	 */
 	readonly cloudProbe?: CloudFileProbe;
 	/** Most placeholders one refresh may download. Default {@link DEFAULT_CLOUD_MAX_FILES}. */
@@ -141,15 +147,15 @@ export interface ParsedMirrorSyncOptions {
 	/** Wait used between release retries. Tests inject a recorder so they never really sleep. */
 	readonly cloudSleep?: (ms: number) => Promise<void>;
 	/**
-	 * Record a dupey fingerprint for every cloud file parsed in this refresh, while it is on disk and before it
-	 * is released, into an AutoRAG-owned store under the workspace. The stored identity lets the next refresh's
-	 * exact-duplicate exclusion group the cloud file without reading its released placeholder. Absent keeps no
-	 * fingerprints. Needs {@link ParsedMirrorSyncOptions.cloudProbe} for the machine's cloud roots.
+	 * Record a dupey fingerprint for every cloud or network file parsed in this refresh, while it is on disk,
+	 * into an AutoRAG-owned store under the workspace. The stored identity lets the next refresh's
+	 * exact-duplicate exclusion group the file without reading its released placeholder or its share again.
+	 * Absent keeps no fingerprints. Needs {@link ParsedMirrorSyncOptions.cloudProbe} for the machine's roots.
 	 */
 	readonly cloudFingerprints?: CloudFingerprintSyncOptions;
 }
 
-/** How a refresh fingerprints cloud files: the dupey CLI (or a test double) that reads the exact hash. */
+/** How a refresh fingerprints cloud and network files: the dupey CLI (or a test double) that reads the exact hash. */
 export interface CloudFingerprintSyncOptions {
 	readonly dupey?: DupeyCliOptions;
 }
@@ -452,19 +458,29 @@ async function syncWithRegistry(
 	});
 	const fingerprint = parseFingerprint(options);
 	const failureFingerprint = retryFingerprint(options, fingerprint);
-	// Cloud roots are read only when this refresh is asked to fingerprint: listing them touches the filesystem,
-	// and with no cloud roots there is nothing to fingerprint (stored entries are then left untouched, never
-	// pruned away because a mount was momentarily absent).
-	const cloudRoots = options.cloudFingerprints === undefined ? [] : ((await options.cloudProbe?.cloudRoots()) ?? []);
+	// Cloud and network roots are read only when this refresh is asked to fingerprint: listing them touches the
+	// filesystem, and with no roots there is nothing to fingerprint (stored entries are then left untouched,
+	// never pruned away because a mount was momentarily absent).
+	const cloudRoots =
+		options.cloudFingerprints === undefined
+			? []
+			: ((await options.cloudProbe?.cloudRoots(options.searchPaths)) ?? []);
 	const fingerprintCloud = options.cloudFingerprints !== undefined && cloudRoots.length > 0;
 	const cloudFingerprintEntries: Record<string, CloudFingerprint> = fingerprintCloud
 		? { ...loadCloudFingerprints(options.root).entries }
 		: {};
+	// A walked path is compared in the canonical space of the roots: macOS reports a mount point at its real path
+	// (`/private/var/…` for a mount made at `/var/…`), so both the search root's own symlinks and the roots
+	// themselves are resolved before the prefix test.
+	const toCanonical = canonicalPathMapper(options.searchPaths);
+	const cloudRootPaths = cloudRoots.map((root) => canonicalPath(root.path));
 	const cloudFilePaths = new Set(
 		cloudRoots.length === 0
 			? []
 			: current
-					.filter((entry) => cloudRoots.some((root) => isPathInside(entry.sourcePath, root)))
+					.filter((entry) =>
+						cloudRootPaths.some((rootPath) => isPathInside(toCanonical(entry.sourcePath), rootPath)),
+					)
 					.map((entry) => entry.sourcePath),
 	);
 	let cloudFingerprintsDirty = false;
@@ -746,7 +762,7 @@ async function syncWithRegistry(
 							diagnostics.push({
 								code: "cloud-fingerprint-failed",
 								severity: "warning",
-								message: `The cloud file was indexed but its duplicate fingerprint could not be read, so it will not take part in exact-duplicate exclusion: ${error instanceof Error ? error.message : String(error)}`,
+								message: `The cloud or network file was indexed but its duplicate fingerprint could not be read, so it will not take part in exact-duplicate exclusion: ${error instanceof Error ? error.message : String(error)}`,
 								source: entry.virtualPath,
 							});
 						}

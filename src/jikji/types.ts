@@ -81,7 +81,7 @@ export interface JikjiPrepareOptions {
 	readonly parseTimeout?: number;
 	/**
 	 * Extra `--exclude` patterns for this one root, appended to the client's own list. AutoRAG passes the
-	 * relative paths of cloud sync folders nested under the root so `jikji prepare` never reads them.
+	 * relative paths of cloud or network folders nested under the root so `jikji prepare` never reads them.
 	 */
 	readonly exclude?: readonly string[];
 }

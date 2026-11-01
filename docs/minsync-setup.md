@@ -473,7 +473,7 @@ refresh continues:
 | `cloud-placeholder-skipped` | info | A File Provider placeholder whose provider has no verified release path was not read; `reason` carries the provider. |
 | `cloud-download-deferred` | info | A cloud placeholder is over this refresh's download budget and waits for the next refresh. |
 | `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the release helper's own error text and the attempt count. |
-| `cloud-fingerprint-failed` | warning | A cloud file was indexed but its duplicate fingerprint could not be read or saved; it stays indexed and does not take part in exact-duplicate exclusion. |
+| `cloud-fingerprint-failed` | warning | A cloud or network file was indexed but its duplicate fingerprint could not be read or saved; it stays indexed and does not take part in exact-duplicate exclusion. |
 
 `EMFILE`, `EBUSY`, `EIO`, and `ETIMEDOUT` are retried with doubling backoff
 (50 ms, 100 ms, 200 ms) before the file is skipped. The retry count is the
@@ -525,6 +525,55 @@ siblings from indexing.
 ```json
 { "refresh": { "maxDeleteRatio": 0.3, "maxScannedEntries": 2000000, "maxDepth": 64 } }
 ```
+
+### Cloud and network folders
+
+AutoRAG treats every location that is not a local, physical volume as a folder it must not open on its own: a
+cloud sync folder, a network share, or a virtual filesystem. A refresh reads each such file once — a cloud
+placeholder is downloaded within the budget below, a network file is read over the wire — releases the cloud
+placeholder it downloaded, and takes the file's dupey fingerprint on that same read. The Jikji `prepare` pass
+and the dupey exact-duplicate scan open file contents themselves, so both are kept away from these folders: a
+released placeholder is never downloaded twice, and a network file is never read twice.
+
+Every refresh detects this machine's non-physical roots from directory metadata only, never from file
+contents. A helper that fails (no `mount`, no `xattr`, an unmounted share) contributes no roots rather than
+failing the refresh.
+
+| Root | Platform | Detected by |
+| --- | --- | --- |
+| File Provider mount (Google Drive, OneDrive, Dropbox, Box, …) | macOS | One directory per provider under `~/Library/CloudStorage` |
+| iCloud Drive | macOS | The presence of `~/Library/Mobile Documents` |
+| A File Provider–managed directory outside those two (the iCloud-synced `~/Desktop` and `~/Documents`) | macOS | `com.apple.file-provider-domain-id` on a search root, on one of its ancestors (the root is inside it) or on one of its direct children (it is nested under the root), read in batches with `xattr` |
+| Network share (SMB/NFS/AFP), WebDAV mount, FUSE volume | macOS | A mount point from `/sbin/mount` whose options lack `local` and whose type is not `autofs` (the automounter is not a share), canonicalized to its real path |
+| Cloud Files sync root (OneDrive, Dropbox, iCloud for Windows, …) | Windows | `HKCU\…\Explorer\SyncRootManager`, as before |
+| Mapped network drive (`DriveType 4`) | Windows | `Win32_LogicalDisk`, one PowerShell process per refresh |
+| FUSE-compatible volume (WinFsp, Dokan, rclone) | Windows | The disk's `FileSystem` starting with `FUSE`, `WinFsp`, or `Dokan` |
+| UNC search root (`\\server\share\…`) | Windows | The search root's own share prefix; `\\?\…` and `\\.\…` device paths are not shares |
+
+Both sides of every comparison are canonicalized, so a mount that macOS reports at its real path
+(`/private/var/…` for a mount the caller made at `/var/…`) still matches the search root the user configured.
+
+**Unverified.** No Windows host with *Google Drive for desktop* installed has been measured; its virtual drive
+is recognized by a `GoogleDriveFS` filesystem or a `Google Drive` volume name, which is a documented guess.
+*Synology Drive Client* modes have not been measured on either platform: its macOS File Provider mount is found
+by the `~/Library/CloudStorage` listing, while a Synology virtual drive on Windows is not recognized at all.
+
+**Behaviour.**
+
+- Jikji is never run over a search root that is a cloud or network folder (or lies inside one): the root is
+  skipped whole and reported once as the informational `jikji-cloud-root-skipped` diagnostic, and its
+  documents are already indexed through the parsed mirror. A folder nested under a search root is excluded
+  from the Jikji run by its relative path (`--exclude`), measured with jikji 0.2.1 to drop the whole subtree.
+- dupey never scans a search root inside such a folder and excludes a nested one by its name
+  (`--exclude-dir`, measured to skip reads under it entirely). Files in these folders join the exact-duplicate
+  exclusion through the stored fingerprints below.
+- A network file is read normally: no download budget and no release, because no local copy remains to give
+  back.
+- A cloud or network file is read once per change and fingerprinted on that same read; an unchanged file is
+  never read again, and an unchanged refresh issues no content read at all.
+- A root that is currently offline (an unmounted share, a signed-out provider) is never deleted: the refresh
+  reports `search-root-unavailable` and leaves its previously indexed documents untouched, so the mirror
+  survives until the root is back.
 
 ### Cloud folders (macOS)
 
@@ -578,18 +627,18 @@ keys apply on Windows too (below); Linux reads every file as before.
 
 Two other readers open file contents themselves, so each one used to download a released
 cloud file again on every refresh: the Jikji `prepare` pass (`jikji`) and the
-exact-duplicate scan (`dupey`, `excludeExactDuplicates`). Both are now placeholder-aware
-and keep their defaults on:
+exact-duplicate scan (`dupey`, `excludeExactDuplicates`). Both are now aware of cloud
+and network folders (see *Cloud and network folders* above) and keep their defaults on:
 
-- **Jikji** is never run over a search root that is a cloud folder (or lies inside one).
+- **Jikji** is never run over a search root that is a cloud or network folder (or lies inside one).
   Such a root is skipped whole and reported once as the informational
   `jikji-cloud-root-skipped` diagnostic; its documents are already indexed through the
-  parsed mirror. A cloud folder nested under a search root is excluded from the Jikji run
+  parsed mirror. A folder nested under a search root is excluded from the Jikji run
   by its relative path (`--exclude`), measured to drop the whole subtree with jikji 0.2.1.
-- **dupey** never scans a search root inside a cloud folder, and excludes a cloud folder
-  nested under one by its name (`--exclude-dir`, measured to skip reads under it entirely).
-  A cloud file instead joins the exact-duplicate exclusion through a **stored fingerprint**:
-  while the file is on disk during its single download (before it is released), a refresh
+- **dupey** never scans a search root inside such a folder, and excludes a nested folder
+  under one by its name (`--exclude-dir`, measured to skip reads under it entirely).
+  A cloud or network file instead joins the exact-duplicate exclusion through a **stored fingerprint**:
+  while the file is on disk during its single read (before a downloaded placeholder is released), a refresh
   runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, modified, revision}`
   under `.autorag/cloud-fingerprints.json` in the workspace (an AutoRAG-owned store; the
   MinSync stage schema is unchanged). An unchanged file keeps that fingerprint without being
@@ -628,6 +677,14 @@ or an SSH session in session 0) gets `ERROR_CLOUD_FILE_ACCESS_DENIED` (395) for 
 files are skipped with `source-read-failed` and nothing is released. Run the refresh in the desktop
 session, and if the notification offers to block the app, allow it (Settings, Privacy & security,
 Automatic file downloads).
+
+Beyond the Cloud Files registry, a Windows refresh also treats a mapped network drive (`DriveType 4`), a
+FUSE-compatible volume (a `FileSystem` starting with `FUSE`, `WinFsp`, or `Dokan`), and a search root that is
+itself a UNC path (`\\server\share\…`) as a cloud or network folder, so Jikji and dupey never read them. The
+disk list comes from one `Win32_LogicalDisk` PowerShell process per refresh; a failure contributes no roots
+instead of failing the refresh. See *Cloud and network folders* above for what is unverified — in particular
+Google Drive for desktop's virtual drive (recognized by a `GoogleDriveFS` filesystem or a `Google Drive`
+volume name, never measured) and Synology Drive Client's Windows mode (not recognized).
 
 Jikji and dupey keep their placeholders released on Windows the same way as on macOS: Jikji skips a
 search root inside a registered sync root, dupey excludes nested sync roots by name and judges cloud

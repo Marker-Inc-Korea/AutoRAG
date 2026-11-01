@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -109,23 +110,81 @@ export function isPathInside(target: string, parent: string): boolean {
 	return a === b || a.startsWith(`${b}/`);
 }
 
-/** What a search root's relationship to this machine's cloud sync folders is. */
-export interface CloudScope {
-	/** The search root is a cloud folder (or lies inside one): readers that open contents must skip it. */
-	readonly insideCloudRoot: boolean;
-	/** Cloud folders nested under the search root: readers that must not read them exclude these paths. */
-	readonly nestedCloudRoots: readonly string[];
+/**
+ * What kind of non-physical location a machine root is:
+ * - `file-provider`: a macOS File Provider directory (a `~/Library/CloudStorage` mount, iCloud Drive, or a
+ *   directory carrying `com.apple.file-provider-domain-id`, such as the iCloud-synced `~/Desktop`/`~/Documents`).
+ * - `cloud-files`: a Windows Cloud Files sync root (OneDrive, Dropbox, iCloud for Windows, …).
+ * - `network`: a network share or virtual filesystem — an SMB/NFS/AFP/WebDAV/FUSE mount, a mapped network
+ *   drive, a UNC path, or a Windows network/FUSE volume.
+ */
+export type CloudRootKind = "file-provider" | "cloud-files" | "network";
+
+/** One detected non-physical root on this machine: its absolute path and what it is. */
+export interface CloudRoot {
+	readonly path: string;
+	readonly kind: CloudRootKind;
 }
 
 /**
- * Classify a search root against the machine's cloud sync roots. Both Jikji `prepare` and the dupey
- * exact-duplicate scan use this: a root inside a cloud folder is skipped entirely (reading a placeholder
- * downloads it), and cloud folders nested inside a root are excluded. Pure; tests use plain paths.
+ * Best-effort canonical absolute path: symlinks are resolved when the path exists, and the input is returned
+ * unchanged otherwise (a path that does not exist, or one whose lookup fails). macOS reports a mount point at
+ * its real path — `mount_webdav … /var/…` shows up as `/private/var/…` — so both sides of a root comparison
+ * are canonicalized. Resolving a path reads directory metadata only, never file contents.
  */
-export function cloudScope(searchRoot: string, cloudRoots: readonly string[]): CloudScope {
+export function canonicalPath(value: string): string {
+	try {
+		return realpathSync(value);
+	} catch {
+		return value;
+	}
+}
+
+/**
+ * Rewrites a walked path into the same canonical space as {@link CloudRoot.path}: the search root's own
+ * symlinks are resolved once, so a file reached through `/var/…` compares against a mount root that `mount`
+ * reports at `/private/var/…`. The result is a comparison key, not a path to open: a path under a rewritten
+ * search root comes back in the comparable (`/`-separated) form, and a path under no such search root is
+ * returned unchanged. Pure apart from one `realpath` per search root.
+ */
+export function canonicalPathMapper(searchRoots: readonly string[]): (path: string) => string {
+	const forms = searchRoots
+		.map((root) => ({ raw: normalizeCloudPath(root), canonical: normalizeCloudPath(canonicalPath(root)) }))
+		.filter(({ raw, canonical }) => raw !== "" && raw !== canonical)
+		.sort((left, right) => right.raw.length - left.raw.length);
+	if (forms.length === 0) return (path) => path;
+	return (path) => {
+		const normalized = normalizeCloudPath(path);
+		for (const { raw, canonical } of forms) {
+			if (isPathInside(normalized, raw)) return `${canonical}${normalized.slice(raw.length)}`;
+		}
+		return path;
+	};
+}
+
+/** What a search root's relationship to this machine's non-physical roots is. */
+export interface CloudScope {
+	/** The search root is a cloud or network folder (or lies inside one): readers that open contents skip it. */
+	readonly insideCloudRoot: boolean;
+	/** Cloud or network folders nested under the search root: readers that must not read them exclude these. */
+	readonly nestedCloudRoots: readonly CloudRoot[];
+}
+
+/**
+ * Classify a search root against the machine's non-physical roots. Jikji `prepare`, the dupey exact-duplicate
+ * scan, and the cloud fingerprints all use this: a root inside a cloud or network folder is skipped entirely
+ * (reading a cloud placeholder downloads it; a network file is re-read over the wire), and folders nested
+ * inside a root are excluded. Both sides are canonicalized, so a search root or a mount reported at its real
+ * path (`/private/var/…`) still matches; paths that do not exist compare as given.
+ */
+export function cloudScope(searchRoot: string, cloudRoots: readonly CloudRoot[]): CloudScope {
+	const canonicalSearchRoot = canonicalPath(searchRoot);
+	const roots = cloudRoots.map((root) => ({ path: canonicalPath(root.path), kind: root.kind }));
 	return {
-		insideCloudRoot: cloudRoots.some((root) => isPathInside(searchRoot, root)),
-		nestedCloudRoots: cloudRoots.filter((root) => isPathInside(root, searchRoot) && !isPathInside(searchRoot, root)),
+		insideCloudRoot: roots.some((root) => isPathInside(canonicalSearchRoot, root.path)),
+		nestedCloudRoots: roots.filter(
+			(root) => isPathInside(root.path, canonicalSearchRoot) && !isPathInside(canonicalSearchRoot, root.path),
+		),
 	};
 }
 
@@ -137,12 +196,15 @@ export type CloudEvictResult = { readonly ok: true } | { readonly ok: false; rea
  */
 export interface CloudFileProbe {
 	/**
-	 * Absolute roots of the cloud sync folders on this machine (each File Provider mount on macOS; the
-	 * registered Cloud Files sync roots on Windows). Listing them never reads file contents. Readers that
-	 * open originals — Jikji's prepare pass and the dupey exact-duplicate scan — use this to skip or exclude
-	 * cloud folders so a released placeholder is never downloaded again.
+	 * Absolute roots of the non-physical folders on this machine (each File Provider mount and File
+	 * Provider–managed directory on macOS; the registered Cloud Files sync roots, network/FUSE volumes, and the
+	 * search roots that are UNC paths on Windows). `searchRoots` are the roots a refresh is about to walk, so a
+	 * folder provider that is not under a known mount (iCloud Desktop/Documents) can be found through the
+	 * `com.apple.file-provider-domain-id` xattr. Listing reads directory metadata only, never file contents.
+	 * Readers that open originals — Jikji's prepare pass, the dupey exact-duplicate scan, and the cloud
+	 * fingerprints — use this to skip or exclude them.
 	 */
-	cloudRoots(): Promise<readonly string[]>;
+	cloudRoots(searchRoots: readonly string[]): Promise<readonly CloudRoot[]>;
 	/** The subset of `paths` whose data is not on disk. Reading one of these downloads it. */
 	datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>>;
 	/** Provider behind a placeholder, or `undefined` when the path is not under a File Provider domain. */
@@ -267,8 +329,95 @@ async function defaultDarwinReadDir(path: string): Promise<readonly CloudDirEntr
 	return entries.map((entry) => ({ name: entry.name, isDirectory: () => entry.isDirectory() }));
 }
 
+/** Paths per `xattr` invocation: keeps argv well under the OS limit while batching whole trees. */
+export const XATTR_BATCH = 200;
+
+/** Filesystem types that are never storage, even though they also lack the `local` mount option. */
+const DARWIN_NON_STORAGE_FILE_SYSTEMS: Readonly<Record<string, true>> = { autofs: true };
+
+/** The mount option every local volume carries (`apfs`, `hfs`, and `devfs` all do; network and FUSE mounts do not). */
+const DARWIN_LOCAL_MOUNT_OPTION = "local";
+
+/** One line of `/sbin/mount`: `<device> on <mountpoint> (<fstype>, <option>, …)`. */
+export interface DarwinMount {
+	readonly device: string;
+	readonly mountPoint: string;
+	readonly fileSystem: string;
+	readonly options: readonly string[];
+}
+
+/**
+ * Parses `/sbin/mount` output. The mount point is everything between the first ` on ` and the final ` (`, so a
+ * path or device name containing spaces survives; the parenthesised tail is `<fstype>, <option>, …`.
+ */
+export function parseDarwinMounts(stdout: string): DarwinMount[] {
+	const mounts: DarwinMount[] = [];
+	for (const line of stdout.split("\n")) {
+		if (line.trim() === "") continue;
+		const open = line.lastIndexOf(" (");
+		if (open <= 0 || !line.endsWith(")")) continue;
+		const head = line.slice(0, open);
+		const on = head.indexOf(" on ");
+		if (on <= 0) continue;
+		const mountPoint = head.slice(on + " on ".length);
+		if (mountPoint === "") continue;
+		const fields = line
+			.slice(open + 2, -1)
+			.split(",")
+			.map((field) => field.trim())
+			.filter((field) => field !== "");
+		mounts.push({
+			device: head.slice(0, on),
+			mountPoint,
+			fileSystem: fields[0] ?? "",
+			options: fields.slice(1),
+		});
+	}
+	return mounts;
+}
+
+/**
+ * Mount points of the volumes that are not local storage: a share (SMB/NFS/AFP/WebDAV), a FUSE mount, or any
+ * other filesystem that does not carry the `local` option. `autofs` (the `map auto_home` automounter) also
+ * lacks `local` but is not a share, so it is skipped. Mount points are canonicalized by the caller.
+ */
+export function networkMountPoints(mounts: readonly DarwinMount[]): readonly string[] {
+	const points: string[] = [];
+	const seen = new Set<string>();
+	for (const mount of mounts) {
+		if (DARWIN_NON_STORAGE_FILE_SYSTEMS[mount.fileSystem] === true) continue;
+		if (mount.options.includes(DARWIN_LOCAL_MOUNT_OPTION)) continue;
+		if (seen.has(mount.mountPoint)) continue;
+		seen.add(mount.mountPoint);
+		points.push(mount.mountPoint);
+	}
+	return points;
+}
+
+/**
+ * Parses `xattr -v -p <attr> <path>…` stdout. Each path that carries the attribute is printed as
+ * `<path as given>: <value>`; paths without it print nothing to stdout (the `No such xattr` note goes to
+ * stderr and the process exits nonzero). A line is matched to its candidate by prefix, longest candidate
+ * first, so a path that contains `: ` is not mis-split.
+ */
+export function parseXattrValues(stdout: string, candidates: readonly string[]): ReadonlyMap<string, string> {
+	const values = new Map<string, string>();
+	if (candidates.length === 0) return values;
+	const ordered = [...candidates].sort((left, right) => right.length - left.length);
+	for (const line of stdout.split("\n")) {
+		if (line === "") continue;
+		for (const candidate of ordered) {
+			if (line.startsWith(`${candidate}: `)) {
+				values.set(candidate, line.slice(candidate.length + 2));
+				break;
+			}
+		}
+	}
+	return values;
+}
+
 export interface DarwinCloudProbeOptions {
-	/** Process runner for `stat` and the release helper. Injected by tests. */
+	/** Process runner for `stat`, the release helper, `/sbin/mount`, and `xattr`. Injected by tests. */
 	readonly exec?: CloudExec;
 	/** Directory listing for {@link DarwinCloudProbe.cloudRoots}; injected by tests so they need no real mounts. */
 	readonly readDir?: (path: string) => Promise<readonly CloudDirEntry[]>;
@@ -295,19 +444,94 @@ export class DarwinCloudProbe implements CloudFileProbe {
 	}
 
 	/**
-	 * Each File Provider mount is its own directory directly under `~/Library/CloudStorage` (for example
-	 * `GoogleDrive-user`, `OneDrive-Work`, `Dropbox`); iCloud Drive's own root is `~/Library/Mobile Documents`.
-	 * Only directory names are read, never file contents, so a released placeholder is not downloaded.
+	 * The machine's non-physical roots, without ever reading file contents:
+	 * - each File Provider mount is its own directory directly under `~/Library/CloudStorage` (for example
+	 *   `GoogleDrive-user`, `OneDrive-Work`, `Dropbox`), and iCloud Drive's own root is `~/Library/Mobile
+	 *   Documents`;
+	 * - every mount from `/sbin/mount` that lacks the `local` option is a network share, WebDAV, or FUSE
+	 *   mount (`autofs` is not), reported by `mount` at its real path;
+	 * - a directory managed by a File Provider that is not under a known mount — the iCloud-synced `~/Desktop`
+	 *   and `~/Documents` carry `com.apple.file-provider-domain-id` — is found on each search root and its
+	 *   ancestors (`inside`) and on each direct child directory (`nested`), batched through `xattr`.
+	 *
+	 * A helper that fails (no `mount`, no `xattr`, a hung share) contributes no roots rather than failing the
+	 * refresh: the roots found by the other sources stand.
 	 */
-	async cloudRoots(): Promise<readonly string[]> {
-		const roots: string[] = [];
-		const cloudStorage = join(this.home, "Library", "CloudStorage");
+	async cloudRoots(searchRoots: readonly string[] = []): Promise<readonly CloudRoot[]> {
+		const roots: CloudRoot[] = [];
+		const seen = new Set<string>();
+		const add = (path: string, kind: CloudRootKind): void => {
+			const canonical = canonicalPath(path);
+			const key = normalizeCloudPath(canonical);
+			if (key === "" || seen.has(key)) return;
+			seen.add(key);
+			roots.push({ path: canonical, kind });
+		};
+		const [cloudStorage, mobileDocuments] = homeCloudRoots(this.home);
 		for (const entry of (await this.tryReadDir(cloudStorage)) ?? []) {
-			if (entry.isDirectory()) roots.push(join(cloudStorage, entry.name));
+			if (entry.isDirectory()) add(join(cloudStorage, entry.name), "file-provider");
 		}
-		const mobileDocuments = join(this.home, "Library", "Mobile Documents");
-		if ((await this.tryReadDir(mobileDocuments)) !== undefined) roots.push(mobileDocuments);
+		if ((await this.tryReadDir(mobileDocuments)) !== undefined) add(mobileDocuments, "file-provider");
+		for (const mountPoint of await this.networkMountPoints()) add(mountPoint, "network");
+		for (const directory of await this.fileProviderDirectories(searchRoots)) add(directory, "file-provider");
 		return roots;
+	}
+
+	/** Mount points of the volumes `/sbin/mount` reports without the `local` option; `[]` when `mount` fails. */
+	private async networkMountPoints(): Promise<readonly string[]> {
+		try {
+			const { stdout } = await this.exec("/sbin/mount", [], { timeoutMs: 10_000, maxBuffer: 4 * 1024 * 1024 });
+			return networkMountPoints(parseDarwinMounts(stdout));
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Directories carrying `com.apple.file-provider-domain-id` among each search root's ancestors and direct
+	 * child directories. One directory listing per search root and as few `xattr` processes as the path count
+	 * allows; a failure of either contributes no directories.
+	 */
+	private async fileProviderDirectories(searchRoots: readonly string[]): Promise<readonly string[]> {
+		if (searchRoots.length === 0) return [];
+		const candidates = new Set<string>();
+		for (const searchRoot of searchRoots) {
+			const canonical = canonicalPath(searchRoot);
+			for (let cursor = canonical; ; cursor = dirname(cursor)) {
+				candidates.add(cursor);
+				const parent = dirname(cursor);
+				if (parent === cursor) break;
+			}
+			for (const entry of (await this.tryReadDir(canonical)) ?? []) {
+				if (entry.isDirectory()) candidates.add(join(canonical, entry.name));
+			}
+		}
+		const paths = [...candidates];
+		const managed: string[] = [];
+		for (let start = 0; start < paths.length; start += XATTR_BATCH) {
+			for (const path of (await this.xattrValues(paths.slice(start, start + XATTR_BATCH))).keys())
+				managed.push(path);
+		}
+		return managed;
+	}
+
+	/**
+	 * The paths carrying {@link FILE_PROVIDER_XATTR}. `xattr` exits nonzero as soon as one path lacks the
+	 * attribute, so the values it printed before that are read off the rejected helper's stdout; a helper that
+	 * produced nothing usable contributes no paths.
+	 */
+	private async xattrValues(paths: readonly string[]): Promise<ReadonlyMap<string, string>> {
+		try {
+			const { stdout } = await this.exec("/usr/bin/xattr", ["-v", "-p", FILE_PROVIDER_XATTR, ...paths], {
+				timeoutMs: 15_000,
+				maxBuffer: 8 * 1024 * 1024,
+			});
+			return parseXattrValues(stdout, paths);
+		} catch (error) {
+			// Node's execFile rejection carries the partial stdout off-type; only the one field read here is touched.
+			const failure = error as { stdout?: unknown };
+			return typeof failure.stdout === "string" ? parseXattrValues(failure.stdout, paths) : new Map();
+		}
 	}
 
 	private async tryReadDir(path: string): Promise<readonly CloudDirEntry[] | undefined> {
@@ -469,6 +693,94 @@ export function providerFromWindowsSyncRoot(label: string): CloudProvider {
 	return "file-provider";
 }
 
+/** `Win32_LogicalDisk.DriveType` for a mapped network drive. */
+export const WINDOWS_DRIVE_TYPE_NETWORK = 4;
+
+/** One logical disk as `Win32_LogicalDisk` reports it. */
+export interface WindowsLogicalDisk {
+	/** The drive letter, for example `C:`. */
+	readonly deviceId: string;
+	readonly driveType: number;
+	readonly fileSystem: string;
+	readonly volumeName: string;
+}
+
+/** Dumps every logical disk, one `deviceId<TAB>driveType<TAB>fileSystem<TAB>volumeName` line each. */
+export function buildWindowsDiskScript(): string {
+	return (
+		"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8\n" +
+		"Get-CimInstance -ClassName Win32_LogicalDisk | ForEach-Object {" +
+		"$_.DeviceID + [char]9 + $_.DriveType + [char]9 + $_.FileSystem + [char]9 + $_.VolumeName}\n"
+	);
+}
+
+/** Parses the tab-separated lines of {@link buildWindowsDiskScript}. */
+export function parseWindowsLogicalDisks(stdout: string): WindowsLogicalDisk[] {
+	const disks: WindowsLogicalDisk[] = [];
+	for (const line of stdout.split(/\r?\n/)) {
+		if (line.trim() === "") continue;
+		const [deviceId, driveType, fileSystem, ...rest] = line.split("\t");
+		const type = Number.parseInt((driveType ?? "").trim(), 10);
+		if (!Number.isFinite(type)) continue;
+		disks.push({
+			deviceId: (deviceId ?? "").trim(),
+			driveType: type,
+			fileSystem: (fileSystem ?? "").trim(),
+			volumeName: rest.join("\t").trim(),
+		});
+	}
+	return disks;
+}
+
+/** Filesystem names a FUSE-compatible mount (WinFsp, rclone's `FUSE`, Dokan) reports on Windows. */
+const WINDOWS_FUSE_FILE_SYSTEM_PREFIXES = ["fuse", "winfsp", "dokan"] as const;
+
+/**
+ * The non-physical roots among a disk list:
+ * - `DriveType 4` is a mapped network drive (`X:\`), always `network`;
+ * - a FUSE-compatible volume (WinFsp, Dokan, rclone) is a virtual filesystem, treated as `network`;
+ * - Google Drive for desktop mounts a drive letter the Cloud Files registry does not list, recognized by its
+ *   `GoogleDriveFS` filesystem or `Google Drive` volume name — **unverified**: no Windows host with Google
+ *   Drive for desktop installed has been measured.
+ */
+export function windowsRootsFromDisks(disks: readonly WindowsLogicalDisk[]): readonly CloudRoot[] {
+	const roots: CloudRoot[] = [];
+	for (const disk of disks) {
+		if (disk.deviceId === "") continue;
+		const path = `${disk.deviceId}\\`;
+		const fileSystem = disk.fileSystem.toLowerCase();
+		if (disk.driveType === WINDOWS_DRIVE_TYPE_NETWORK) {
+			roots.push({ path, kind: "network" });
+			continue;
+		}
+		if (WINDOWS_FUSE_FILE_SYSTEM_PREFIXES.some((prefix) => fileSystem.startsWith(prefix))) {
+			roots.push({ path, kind: "network" });
+			continue;
+		}
+		if (fileSystem.startsWith("googledrivefs") || disk.volumeName.toLowerCase().includes("google drive")) {
+			roots.push({ path, kind: "cloud-files" });
+		}
+	}
+	return roots;
+}
+
+/**
+ * The share root of a UNC path — `\\server\share` for `\\server\share\folder`. Returns `undefined` for a local
+ * path and for a device path (`\\?\…`, `\\.\…`), which is not a share.
+ */
+export function uncShareRoot(target: string): string | undefined {
+	const normalized = target.replaceAll("/", "\\");
+	if (!normalized.startsWith("\\\\") || normalized.startsWith("\\\\?\\") || normalized.startsWith("\\\\.\\"))
+		return undefined;
+	const rest = normalized.slice(2);
+	const separator = rest.indexOf("\\");
+	if (separator <= 0) return undefined;
+	const server = rest.slice(0, separator);
+	const share = rest.slice(separator + 1).split("\\")[0] ?? "";
+	if (server === "" || share === "") return undefined;
+	return `\\\\${server}\\${share}`;
+}
+
 /**
  * Maps the `OPEN`/`DEHYDRATE`/`MSG` lines of {@link buildWindowsDehydrateScript} to an eviction result.
  * `HRESULT 0` is success; anything else (including a process that produced no lines) is a failure whose
@@ -525,14 +837,34 @@ export interface WindowsCloudProbeOptions {
 export class WindowsCloudProbe implements CloudFileProbe {
 	private readonly run: PowerShellRunner;
 	private syncRoots: Promise<readonly WindowsSyncRoot[]> | undefined;
+	private disks: Promise<readonly CloudRoot[]> | undefined;
 
 	constructor(options: WindowsCloudProbeOptions = {}) {
 		this.run = options.run ?? defaultPowerShellRunner;
 	}
 
-	/** The registered Cloud Files sync roots, read from the registry — never from file contents. */
-	async cloudRoots(): Promise<readonly string[]> {
-		return (await this.loadSyncRoots()).map((root) => root.path);
+	/**
+	 * The machine's non-physical roots, none of which reads a file's contents: the registered Cloud Files sync
+	 * roots (registry), the mapped network and FUSE-compatible volume letters (`Win32_LogicalDisk`, one
+	 * PowerShell process), and the share root of any search root that is a UNC path (`\\server\share\…`).
+	 */
+	async cloudRoots(searchRoots: readonly string[] = []): Promise<readonly CloudRoot[]> {
+		const roots: CloudRoot[] = [];
+		const seen = new Set<string>();
+		const add = (path: string, kind: CloudRootKind): void => {
+			const canonical = canonicalPath(path);
+			const key = normalizeCloudPath(canonical).toLowerCase();
+			if (key === "" || seen.has(key)) return;
+			seen.add(key);
+			roots.push({ path: canonical, kind });
+		};
+		for (const root of await this.loadSyncRoots()) add(root.path, "cloud-files");
+		for (const root of await this.loadDiskRoots()) add(root.path, root.kind);
+		for (const searchRoot of searchRoots) {
+			const share = uncShareRoot(searchRoot);
+			if (share !== undefined) add(share, "network");
+		}
+		return roots;
 	}
 
 	async datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>> {
@@ -572,6 +904,15 @@ export class WindowsCloudProbe implements CloudFileProbe {
 			() => [],
 		);
 		return this.syncRoots;
+	}
+
+	/** The disk list is read once per probe in one PowerShell process; a failure contributes no roots. */
+	private loadDiskRoots(): Promise<readonly CloudRoot[]> {
+		this.disks ??= this.run(buildWindowsDiskScript(), 30_000).then(
+			(result) => (result.ok ? windowsRootsFromDisks(parseWindowsLogicalDisks(result.stdout)) : []),
+			() => [],
+		);
+		return this.disks;
 	}
 }
 

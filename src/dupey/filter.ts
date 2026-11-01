@@ -8,7 +8,7 @@ export interface ExactDuplicateFilterResult {
 	readonly errors: readonly string[];
 }
 
-/** A cloud file's stored dupey identity: its exact hash and the document's own modified time (if any). */
+/** A cloud or network file's stored dupey identity: its exact hash and the document's own modified time (if any). */
 export interface ExactDuplicateFingerprint {
 	readonly exact: string;
 	readonly modified: string | null;

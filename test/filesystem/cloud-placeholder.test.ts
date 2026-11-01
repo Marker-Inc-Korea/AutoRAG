@@ -1,7 +1,14 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	buildWindowsDiskScript,
 	type CloudDirEntry,
 	type CloudExec,
+	type CloudRoot,
+	canonicalPath,
+	canonicalPathMapper,
 	cloudProviderFromDomain,
 	cloudProviderFromPath,
 	cloudScope,
@@ -11,15 +18,26 @@ import {
 	defaultCloudProbe,
 	homeCloudRoots,
 	isPathInside,
+	networkMountPoints,
 	type PowerShellResult,
+	parseDarwinMounts,
 	parseWindowsAttributeOutput,
 	parseWindowsDehydrateOutput,
+	parseWindowsLogicalDisks,
 	parseWindowsSyncRoots,
+	parseXattrValues,
 	pathLooksLikeCloudRoot,
 	providerFromWindowsSyncRoot,
+	uncShareRoot,
 	WINDOWS_ATTRIBUTE_BATCH,
+	WINDOWS_DRIVE_TYPE_NETWORK,
 	WindowsCloudProbe,
+	windowsRootsFromDisks,
+	XATTR_BATCH,
 } from "../../src/filesystem/cloud-placeholder.ts";
+
+/** The comparable form of a path: `join` uses `\` on Windows while every root comparison works in `/`. */
+const slash = (path: string): string => path.replaceAll("\\", "/");
 
 describe("darwin dataless flag parsing", () => {
 	// Values measured with `/usr/bin/stat -f %f` on macOS 26: a File Provider placeholder reads
@@ -424,10 +442,11 @@ describe("defaultCloudProbe platform selection", () => {
 });
 
 describe("cloud scope (pure)", () => {
-	const roots = [
-		"/Users/x/Library/CloudStorage/GoogleDrive-user",
-		"/Users/x/Library/CloudStorage/OneDrive-Work",
-		"/Users/x/Library/Mobile Documents",
+	const roots: CloudRoot[] = [
+		{ path: "/Users/x/Library/CloudStorage/GoogleDrive-user", kind: "file-provider" },
+		{ path: "/Users/x/Library/CloudStorage/OneDrive-Work", kind: "file-provider" },
+		{ path: "/Users/x/Library/Mobile Documents", kind: "file-provider" },
+		{ path: "/Volumes/nas", kind: "network" },
 	];
 
 	it("matches equality and descendants, not sibling prefixes", () => {
@@ -437,25 +456,194 @@ describe("cloud scope (pure)", () => {
 		expect(isPathInside("/a", "/a/b")).toBe(false);
 	});
 
-	it("marks a search root inside a cloud root, including the root itself", () => {
+	it("marks a search root inside a root of any kind, including the root itself", () => {
 		expect(cloudScope("/Users/x/Library/CloudStorage/GoogleDrive-user/My Drive", roots).insideCloudRoot).toBe(true);
 		expect(cloudScope("/Users/x/Library/Mobile Documents", roots).insideCloudRoot).toBe(true);
+		expect(cloudScope("/Volumes/nas/shared", roots).insideCloudRoot).toBe(true);
 		expect(cloudScope("/Users/x/Documents", roots).insideCloudRoot).toBe(false);
 	});
 
-	it("reports the cloud roots nested under a search root and not the root itself", () => {
+	it("reports the roots nested under a search root, with their kind, and not the root itself", () => {
 		const scope = cloudScope("/Users/x", roots);
 		expect(scope.insideCloudRoot).toBe(false);
 		expect(scope.nestedCloudRoots).toEqual([
-			"/Users/x/Library/CloudStorage/GoogleDrive-user",
-			"/Users/x/Library/CloudStorage/OneDrive-Work",
-			"/Users/x/Library/Mobile Documents",
+			{ path: "/Users/x/Library/CloudStorage/GoogleDrive-user", kind: "file-provider" },
+			{ path: "/Users/x/Library/CloudStorage/OneDrive-Work", kind: "file-provider" },
+			{ path: "/Users/x/Library/Mobile Documents", kind: "file-provider" },
 		]);
 		expect(cloudScope("/Users/x/Library/CloudStorage/GoogleDrive-user", roots).nestedCloudRoots).toEqual([]);
+		// A root on another volume is never nested under this search root.
+		expect(cloudScope("/Users/x", roots).nestedCloudRoots.some((root) => root.kind === "network")).toBe(false);
 	});
 
 	it("normalizes Windows separators and trailing slashes", () => {
 		expect(isPathInside(String.raw`C:\Users\x\OneDrive\a`, "C:/Users/x/OneDrive/")).toBe(true);
+	});
+
+	it("resolves a search root's own symlinks so a root reported at its real path still matches", () => {
+		const base = realpathSync(mkdtempSync(join(tmpdir(), "autorag-cloudscope-")));
+		const real = join(base, "real");
+		const link = join(base, "link");
+		mkdirSync(real);
+		// A junction on Windows (no privilege needed) and an ordinary symlink elsewhere; the type is ignored on POSIX.
+		symlinkSync(real, link, "junction");
+		try {
+			// A mount at the real path (macOS reports `/private/var/…` for a mount made at `/var/…`).
+			expect(cloudScope(link, [{ path: real, kind: "network" }]).insideCloudRoot).toBe(true);
+			expect(cloudScope(link, [{ path: link, kind: "network" }]).nestedCloudRoots).toEqual([]);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("canonical path mapping", () => {
+	it("returns the path unchanged when no search root needs rewriting", () => {
+		const map = canonicalPathMapper(["/nonexistent-autorag-root"]);
+		expect(map("/nonexistent-autorag-root/a.txt")).toBe("/nonexistent-autorag-root/a.txt");
+		expect(map("/elsewhere/a.txt")).toBe("/elsewhere/a.txt");
+	});
+
+	it("rewrites a walked path below the canonical search root", () => {
+		const base = realpathSync(mkdtempSync(join(tmpdir(), "autorag-canonical-")));
+		const real = join(base, "real");
+		const link = join(base, "link");
+		mkdirSync(real);
+		// A junction on Windows (no privilege needed) and an ordinary symlink elsewhere; the type is ignored on POSIX.
+		symlinkSync(real, link, "junction");
+		try {
+			expect(canonicalPath(link)).toBe(real);
+			const map = canonicalPathMapper([link, join(base, "other")]);
+			// A search root that is already canonical is not rewritten, so its path keeps the platform's separators;
+			// a rewritten path comes back in the comparable (`/`-separated) form.
+			expect(map(join(link, "a", "b.txt"))).toBe(slash(join(real, "a", "b.txt")));
+			expect(map(join(base, "other", "c.txt"))).toBe(join(base, "other", "c.txt"));
+			// A sibling path that merely shares a prefix is not rewritten.
+			expect(map(`${link}-sibling/c.txt`)).toBe(`${link}-sibling/c.txt`);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+});
+
+/** Measured `/sbin/mount` shapes: local volumes carry `local`, `autofs` does not but is not a share. */
+const DARWIN_MOUNT_OUTPUT = [
+	"/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)",
+	"devfs on /dev (devfs, local, nobrowse)",
+	"map auto_home on /System/Volumes/Data/home (autofs, automounted, nobrowse)",
+	"/dev/disk5s1 on /Volumes/SSD1 (apfs, local, nodev, nosuid, journaled, noowners)",
+	"http://127.0.0.1:18765/ on /private/var/folders/tmp.X (webdav, nodev, noexec, nosuid, mounted by jeffrey)",
+	"//server/share on /Volumes/My Share (smbfs, nodev, nosuid, mounted by jeffrey)",
+	"nas:/export on /Volumes/NFS NAS (nfs, nodev, nosuid, mounted by jeffrey)",
+].join("\n");
+
+describe("darwin mount parsing", () => {
+	it("parses device, mount point, filesystem, and options, keeping spaces in the mount point", () => {
+		const mounts = parseDarwinMounts(DARWIN_MOUNT_OUTPUT);
+
+		expect(mounts[0]).toEqual({
+			device: "/dev/disk3s1s1",
+			mountPoint: "/",
+			fileSystem: "apfs",
+			options: ["sealed", "local", "read-only", "journaled"],
+		});
+		expect(mounts.find((mount) => mount.fileSystem === "smbfs")).toEqual({
+			device: "//server/share",
+			mountPoint: "/Volumes/My Share",
+			fileSystem: "smbfs",
+			options: ["nodev", "nosuid", "mounted by jeffrey"],
+		});
+		expect(mounts.some((mount) => mount.mountPoint === "/Volumes/NFS NAS")).toBe(true);
+	});
+
+	it("ignores blank and malformed lines", () => {
+		expect(parseDarwinMounts("\nnot a mount line\n(on /x (apfs, local))\n")).toEqual([]);
+	});
+
+	it("returns only the volumes that are not local storage", () => {
+		expect(networkMountPoints(parseDarwinMounts(DARWIN_MOUNT_OUTPUT))).toEqual([
+			"/private/var/folders/tmp.X",
+			"/Volumes/My Share",
+			"/Volumes/NFS NAS",
+		]);
+	});
+
+	it("never treats autofs as a network share", () => {
+		expect(
+			networkMountPoints(parseDarwinMounts("map auto_home on /System/Volumes/Data/home (autofs, automounted)")),
+		).toEqual([]);
+	});
+});
+
+describe("xattr batch parsing", () => {
+	it("maps each printed line to its path, even when the path itself contains a colon", () => {
+		const candidates = ["/a/Documents", "/a/Documents: weird", "/a/plain", "/a/Desktop"];
+		const stdout = [
+			"/a/Documents: com.apple.CloudDocs.iCloudDriveFileProvider/ABC",
+			"/a/Documents: weird: com.apple.CloudDocs.iCloudDriveFileProvider/ABC",
+			"/a/Desktop: com.apple.CloudDocs.iCloudDriveFileProvider/ABC",
+		].join("\n");
+
+		expect([...parseXattrValues(stdout, candidates).entries()]).toEqual([
+			["/a/Documents", "com.apple.CloudDocs.iCloudDriveFileProvider/ABC"],
+			["/a/Documents: weird", "com.apple.CloudDocs.iCloudDriveFileProvider/ABC"],
+			["/a/Desktop", "com.apple.CloudDocs.iCloudDriveFileProvider/ABC"],
+		]);
+	});
+
+	it("returns nothing for empty output or no candidates", () => {
+		expect(parseXattrValues("", ["/a"]).size).toBe(0);
+		expect(parseXattrValues("/a: x", []).size).toBe(0);
+	});
+});
+
+describe("windows disk list parsing", () => {
+	const DISKS = [
+		"C:\t3\tNTFS\tWindows",
+		"Z:\t4\t\t",
+		"M:\t3\tFUSE\t",
+		"G:\t3\tGoogleDriveFS\tGoogle Drive",
+		"E:\t3\tNTFS\tData",
+	].join("\r\n");
+
+	it("parses the tab-separated disk list and keeps volume names with spaces", () => {
+		expect(parseWindowsLogicalDisks(DISKS)).toEqual([
+			{ deviceId: "C:", driveType: 3, fileSystem: "NTFS", volumeName: "Windows" },
+			{ deviceId: "Z:", driveType: 4, fileSystem: "", volumeName: "" },
+			{ deviceId: "M:", driveType: 3, fileSystem: "FUSE", volumeName: "" },
+			{ deviceId: "G:", driveType: 3, fileSystem: "GoogleDriveFS", volumeName: "Google Drive" },
+			{ deviceId: "E:", driveType: 3, fileSystem: "NTFS", volumeName: "Data" },
+		]);
+		expect(parseWindowsLogicalDisks("C:\t3\tNTFS\tMy Data Disk")[0]).toMatchObject({
+			volumeName: "My Data Disk",
+		});
+		expect(parseWindowsLogicalDisks("garbage\n")).toEqual([]);
+	});
+
+	it("names mapped network drives, FUSE volumes, and the unverified Google Drive virtual drive", () => {
+		expect(windowsRootsFromDisks(parseWindowsLogicalDisks(DISKS))).toEqual([
+			{ path: "Z:\\", kind: "network" },
+			{ path: "M:\\", kind: "network" },
+			{ path: "G:\\", kind: "cloud-files" },
+		]);
+		expect(WINDOWS_DRIVE_TYPE_NETWORK).toBe(4);
+		expect(buildWindowsDiskScript()).toContain("Win32_LogicalDisk");
+	});
+});
+
+describe("UNC share roots", () => {
+	it("returns the share root of a UNC path", () => {
+		expect(uncShareRoot(String.raw`\\server\share`)).toBe(String.raw`\\server\share`);
+		expect(uncShareRoot(String.raw`\\server\share\docs\a.txt`)).toBe(String.raw`\\server\share`);
+		expect(uncShareRoot("//localhost/D/docs")).toBe(String.raw`\\localhost\D`);
+	});
+
+	it("rejects local paths, bare servers, and device paths", () => {
+		expect(uncShareRoot(String.raw`C:\Users\x`)).toBeUndefined();
+		expect(uncShareRoot(String.raw`\\server`)).toBeUndefined();
+		expect(uncShareRoot(String.raw`\\?\C:\Users\x`)).toBeUndefined();
+		expect(uncShareRoot(String.raw`\\.\PhysicalDrive0`)).toBeUndefined();
+		expect(uncShareRoot("/Volumes/nas/docs")).toBeUndefined();
 	});
 });
 
@@ -478,39 +666,155 @@ describe("cloud root listing", () => {
 	const dir = (name: string): CloudDirEntry => ({ name, isDirectory: () => true });
 	const file = (name: string): CloudDirEntry => ({ name, isDirectory: () => false });
 
-	it("lists each File Provider mount and iCloud Drive without reading file contents", async () => {
+	/**
+	 * A fake helper runner: `/sbin/mount` prints `mount`, `xattr -v -p <attr> <path>…` marks only the `managed`
+	 * paths as carrying the attribute, and a helper named in `fail` rejects without partial output.
+	 */
+	function fakeExec(options: {
+		readonly mount?: string;
+		readonly managed?: readonly string[];
+		readonly fail?: readonly string[];
+	}): { readonly exec: CloudExec; readonly calls: readonly string[] } {
+		const calls: string[] = [];
+		const exec: CloudExec = async (helper, args) => {
+			calls.push(helper);
+			if (options.fail?.includes(helper) === true) throw new Error(`${helper} is unavailable`);
+			if (helper === "/sbin/mount") return { stdout: options.mount ?? "", stderr: "" };
+			if (helper === "/usr/bin/xattr") {
+				const stdout = args
+					.slice(3)
+					.filter((path) => (options.managed ?? []).includes(path))
+					.map((path) => `${path}: com.apple.CloudDocs.iCloudDriveFileProvider/ABC`)
+					.join("\n");
+				return { stdout: stdout === "" ? "" : `${stdout}\n`, stderr: "" };
+			}
+			throw new Error(`unexpected helper: ${helper}`);
+		};
+		return { exec, calls };
+	}
+
+	/** The probe's roots in the comparable form (`join` separates with `\` on Windows). */
+	const machineRoot = (root: CloudRoot): string => `${root.kind}:${slash(root.path)}`;
+
+	it("lists the File Provider mounts, iCloud Drive, and non-local mounts without reading file contents", async () => {
 		const readDir = fakeTree({
 			"/home/u/Library/CloudStorage": [dir("GoogleDrive-user"), dir("OneDrive-Work"), file("stray.txt")],
 			"/home/u/Library/Mobile Documents": [dir("com~apple~CloudDocs")],
 		});
+		const { exec } = fakeExec({ mount: DARWIN_MOUNT_OUTPUT });
 
-		const roots = await new DarwinCloudProbe({ readDir, home: "/home/u" }).cloudRoots();
+		const roots = await new DarwinCloudProbe({ readDir, exec, home: "/home/u" }).cloudRoots();
 
-		expect(roots).toEqual([
-			"/home/u/Library/CloudStorage/GoogleDrive-user",
-			"/home/u/Library/CloudStorage/OneDrive-Work",
-			"/home/u/Library/Mobile Documents",
+		expect(roots.map(machineRoot)).toEqual([
+			"file-provider:/home/u/Library/CloudStorage/GoogleDrive-user",
+			"file-provider:/home/u/Library/CloudStorage/OneDrive-Work",
+			"file-provider:/home/u/Library/Mobile Documents",
+			"network:/private/var/folders/tmp.X",
+			"network:/Volumes/My Share",
+			"network:/Volumes/NFS NAS",
 		]);
 	});
 
-	it("returns an empty list when neither cloud folder exists", async () => {
-		const roots = await new DarwinCloudProbe({ readDir: fakeTree({}), home: "/home/u" }).cloudRoots();
+	it("finds a File Provider–managed search root from the xattr on itself or an ancestor", async () => {
+		const readDir = fakeTree({ "/Users/testuser/Documents": [dir("sub"), file("note.txt")] });
+		const { exec } = fakeExec({ managed: ["/Users/testuser/Documents"] });
+
+		const direct = await new DarwinCloudProbe({ readDir, exec, home: "/Users/testuser" }).cloudRoots([
+			"/Users/testuser/Documents",
+		]);
+		expect(direct).toEqual([{ path: "/Users/testuser/Documents", kind: "file-provider" }]);
+
+		const nested = await new DarwinCloudProbe({ readDir, exec, home: "/Users/testuser" }).cloudRoots([
+			"/Users/testuser/Documents/project",
+		]);
+		expect(nested).toEqual([{ path: "/Users/testuser/Documents", kind: "file-provider" }]);
+	});
+
+	it("finds a File Provider–managed directory among the search root's direct children", async () => {
+		// The probe builds a child path with `join`, so the fixture and the expectation build it the same way.
+		const searchRoot = join("/Users/testuser");
+		const child = join(searchRoot, "Documents");
+		const readDir = fakeTree({ [searchRoot]: [dir("Documents"), dir("Library")] });
+		const { exec } = fakeExec({ managed: [child] });
+
+		const roots = await new DarwinCloudProbe({ readDir, exec, home: searchRoot }).cloudRoots([searchRoot]);
+
+		expect(roots).toEqual([{ path: child, kind: "file-provider" }]);
+	});
+
+	it("reads the mount table and the xattr in one process each", async () => {
+		const readDir = fakeTree({ "/Users/testuser/Documents": [] });
+		const { exec, calls } = fakeExec({});
+
+		await new DarwinCloudProbe({ readDir, exec, home: "/Users/testuser" }).cloudRoots(["/Users/testuser/Documents"]);
+
+		expect(calls).toEqual(["/sbin/mount", "/usr/bin/xattr"]);
+	});
+
+	it("batches the xattr query over a search root with many entries", async () => {
+		const children = Array.from({ length: XATTR_BATCH + 50 }, (_, index) => dir(`child-${index}`));
+		const readDir = fakeTree({ "/Users/testuser/Documents": children });
+		const { exec, calls } = fakeExec({ managed: ["/Users/testuser/Documents"] });
+
+		const roots = await new DarwinCloudProbe({ readDir, exec, home: "/Users/testuser" }).cloudRoots([
+			"/Users/testuser/Documents",
+		]);
+
+		// The root, its ancestors and its direct children: two batches for more than XATTR_BATCH candidates.
+		expect(calls.filter((helper) => helper === "/usr/bin/xattr")).toHaveLength(2);
+		expect(roots).toEqual([{ path: "/Users/testuser/Documents", kind: "file-provider" }]);
+	});
+
+	it("returns no extra roots when a helper fails, never failing the refresh", async () => {
+		const readDir = fakeTree({});
+		const { exec } = fakeExec({ fail: ["/sbin/mount", "/usr/bin/xattr"] });
+
+		const roots = await new DarwinCloudProbe({ readDir, exec, home: "/Users/testuser" }).cloudRoots([
+			"/Users/testuser/Documents",
+		]);
+
 		expect(roots).toEqual([]);
 	});
 
-	it("returns the registered Windows sync roots", async () => {
+	it("returns an empty list when neither cloud folder exists", async () => {
+		const { exec } = fakeExec({});
+		const roots = await new DarwinCloudProbe({ readDir: fakeTree({}), exec, home: "/home/u" }).cloudRoots([]);
+		expect(roots).toEqual([]);
+	});
+
+	it("lists Windows sync roots, network drives, FUSE volumes, and the UNC search root", async () => {
 		const powerShell = new FakePowerShell();
-		powerShell.handler = (script) =>
-			script.includes("SyncRootManager")
-				? {
-						ok: true,
-						stdout: `${String.raw`C:\Users\x\OneDrive - Work`}\tOneDrive - Work\n${String.raw`C:\Users\x\Dropbox`}\tDropbox\n`,
-						stderr: "",
-					}
-				: { ok: true, stdout: "", stderr: "" };
+		powerShell.handler = (script) => {
+			if (script.includes("SyncRootManager")) {
+				return {
+					ok: true,
+					stdout: `${String.raw`C:\Users\x\OneDrive - Work`}\tOneDrive - Work\n${String.raw`C:\Users\x\Dropbox`}\tDropbox\n`,
+					stderr: "",
+				};
+			}
+			if (script.includes("Win32_LogicalDisk")) {
+				return { ok: true, stdout: "C:\t3\tNTFS\tWindows\nZ:\t4\t\t\nM:\t3\tFUSE\t\n", stderr: "" };
+			}
+			return { ok: true, stdout: "", stderr: "" };
+		};
 
-		const roots = await new WindowsCloudProbe({ run: powerShell.run }).cloudRoots();
+		const roots = await new WindowsCloudProbe({ run: powerShell.run }).cloudRoots([String.raw`\\server\share\docs`]);
 
-		expect(roots).toEqual([String.raw`C:\Users\x\OneDrive - Work`, String.raw`C:\Users\x\Dropbox`]);
+		expect(roots).toEqual([
+			{ path: String.raw`C:\Users\x\OneDrive - Work`, kind: "cloud-files" },
+			{ path: String.raw`C:\Users\x\Dropbox`, kind: "cloud-files" },
+			{ path: "Z:\\", kind: "network" },
+			{ path: "M:\\", kind: "network" },
+			{ path: String.raw`\\server\share`, kind: "network" },
+		]);
+	});
+
+	it("returns no Windows roots when the disk list cannot be read", async () => {
+		const powerShell = new FakePowerShell();
+		powerShell.handler = () => ({ ok: false, stdout: "", stderr: "powershell.exe is unavailable" });
+
+		await expect(
+			new WindowsCloudProbe({ run: powerShell.run }).cloudRoots([String.raw`\\server\share\docs`]),
+		).resolves.toEqual([{ path: String.raw`\\server\share`, kind: "network" }]);
 	});
 });

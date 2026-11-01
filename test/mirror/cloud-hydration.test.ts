@@ -7,6 +7,8 @@ import {
 	type CloudEvictResult,
 	type CloudFileProbe,
 	type CloudProvider,
+	type CloudRoot,
+	type CloudRootKind,
 	loadCloudFingerprints,
 	loadMirrorIndex,
 	type ParsedMirrorSyncOptions,
@@ -65,8 +67,10 @@ class FakeCloud implements CloudFileProbe {
 	readonly providers = new Map<string, CloudProvider>();
 	/** Cloud sync roots this probe reports; files under them are the ones a refresh fingerprints. */
 	readonly roots: string[] = [];
-	async cloudRoots(): Promise<readonly string[]> {
-		return this.roots;
+	/** Kind reported for a root; a root without an entry is a `file-provider`. */
+	readonly rootKinds = new Map<string, CloudRootKind>();
+	async cloudRoots(): Promise<readonly CloudRoot[]> {
+		return this.roots.map((path) => ({ path, kind: this.rootKinds.get(path) ?? "file-provider" }));
 	}
 	/** Providers this probe claims it can release; the gate must not download any other provider's placeholder. */
 	readonly releasable = new Set<CloudProvider>(["icloud"]);

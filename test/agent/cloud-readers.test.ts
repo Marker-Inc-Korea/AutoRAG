@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
-import type { CloudEvictResult, CloudFileProbe, CloudProvider } from "../../src/filesystem/cloud-placeholder.ts";
+import type {
+	CloudEvictResult,
+	CloudFileProbe,
+	CloudProvider,
+	CloudRoot,
+} from "../../src/filesystem/cloud-placeholder.ts";
 import { loadCloudFingerprints, loadMirrorIndex } from "../../src/mirror/index.ts";
 
 let root: string;
@@ -21,11 +26,11 @@ afterEach(() => {
 
 /** A probe over ordinary temp files: it reports the given roots and treats every file as already on disk. */
 class FakeProbe implements CloudFileProbe {
-	private readonly roots: readonly string[];
-	constructor(roots: readonly string[]) {
+	private readonly roots: readonly CloudRoot[];
+	constructor(roots: readonly CloudRoot[]) {
 		this.roots = roots;
 	}
-	async cloudRoots(): Promise<readonly string[]> {
+	async cloudRoots(): Promise<readonly CloudRoot[]> {
 		return this.roots;
 	}
 	async datalessAmong(): Promise<ReadonlySet<string>> {
@@ -79,7 +84,10 @@ describe("dupey and cloud folders", () => {
 	it("never runs dupey scan over a search root inside a cloud root", async () => {
 		writeFileSync(join(docs, "note.txt"), "hello\n");
 		const dupey = fakeDupey();
-		const agent = makeAgent({ cloudProbe: new FakeProbe([docs]), dupey: { run: dupey.run } });
+		const agent = makeAgent({
+			cloudProbe: new FakeProbe([{ path: docs, kind: "file-provider" }]),
+			dupey: { run: dupey.run },
+		});
 
 		await agent.refresh(true);
 
@@ -101,7 +109,7 @@ describe("dupey and cloud folders", () => {
 			everything: false,
 			fsearch: false,
 			minSync: { autoInstall: false },
-			cloudProbe: new FakeProbe([nested]),
+			cloudProbe: new FakeProbe([{ path: nested, kind: "file-provider" }]),
 			dupey: { run: dupey.run },
 		});
 
@@ -115,7 +123,10 @@ describe("dupey and cloud folders", () => {
 	it("returns no scans for a search root inside a cloud root", async () => {
 		writeFileSync(join(docs, "note.txt"), "hello\n");
 		const dupey = fakeDupey();
-		const agent = makeAgent({ cloudProbe: new FakeProbe([docs]), dupey: { run: dupey.run } });
+		const agent = makeAgent({
+			cloudProbe: new FakeProbe([{ path: docs, kind: "file-provider" }]),
+			dupey: { run: dupey.run },
+		});
 
 		const details = await agent.scanDuplicateDocuments();
 
@@ -127,7 +138,7 @@ describe("dupey and cloud folders", () => {
 describe("jikji and cloud folders", () => {
 	it("skips Jikji for a search root inside a cloud root and reports it", async () => {
 		writeFileSync(join(docs, "note.txt"), "hello\n");
-		const agent = makeAgent({ cloudProbe: new FakeProbe([docs]), jikji: {} });
+		const agent = makeAgent({ cloudProbe: new FakeProbe([{ path: docs, kind: "file-provider" }]), jikji: {} });
 
 		const results = await agent.prepareJikji();
 
@@ -144,7 +155,10 @@ describe("cloud fingerprints across refreshes", () => {
 		utimesSync(older, 1, 1);
 		utimesSync(newer, 2, 2);
 		const dupey = fakeDupey();
-		const agent = makeAgent({ cloudProbe: new FakeProbe([docs]), dupey: { run: dupey.run } });
+		const agent = makeAgent({
+			cloudProbe: new FakeProbe([{ path: docs, kind: "file-provider" }]),
+			dupey: { run: dupey.run },
+		});
 
 		const first = await agent.refresh(true);
 
@@ -160,5 +174,69 @@ describe("cloud fingerprints across refreshes", () => {
 		expect(index.entries["/cloud/older.txt"]).toBeUndefined();
 		// The dedupe used the stored fingerprints: dupey never scanned the cloud root.
 		expect(dupey.calls.some((args) => args[0] === "scan")).toBe(false);
+	});
+});
+
+describe("jikji and dupey on network roots", () => {
+	it("skips Jikji for a search root inside a network root and reports it", async () => {
+		writeFileSync(join(docs, "note.txt"), "hello\n");
+		const agent = makeAgent({ cloudProbe: new FakeProbe([{ path: docs, kind: "network" }]), jikji: {} });
+
+		const results = await agent.prepareJikji();
+
+		expect(results?.[0]).toMatchObject({ ok: false, reason: "cloud-root-skipped" });
+	});
+
+	it("never scans a search root inside a network root with dupey", async () => {
+		writeFileSync(join(docs, "note.txt"), "hello\n");
+		const dupey = fakeDupey();
+		const agent = makeAgent({
+			cloudProbe: new FakeProbe([{ path: docs, kind: "network" }]),
+			dupey: { run: dupey.run },
+		});
+
+		await agent.scanDuplicateDocuments();
+
+		expect(dupey.calls).toEqual([]);
+	});
+
+	it("excludes a network folder nested under a local search root by name", async () => {
+		const local = join(root, "local");
+		const mount = join(local, "mnt", "share");
+		mkdirSync(mount, { recursive: true });
+		writeFileSync(join(local, "note.txt"), "hello\n");
+		const dupey = fakeDupey();
+		const agent = new AutoRAGAgent({
+			searchPaths: [local],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			everything: false,
+			fsearch: false,
+			minSync: { autoInstall: false },
+			cloudProbe: new FakeProbe([{ path: mount, kind: "network" }]),
+			dupey: { run: dupey.run },
+		});
+
+		await agent.scanDuplicateDocuments();
+
+		expect(dupey.calls.filter((args) => args[0] === "scan")).toEqual([
+			["scan", local, "--json", "--exclude-dir", "share"],
+		]);
+	});
+
+	it("fingerprints a network file during its single read", async () => {
+		writeFileSync(join(docs, "note.txt"), "network content\n");
+		const dupey = fakeDupey();
+		const agent = makeAgent({
+			cloudProbe: new FakeProbe([{ path: docs, kind: "network" }]),
+			dupey: { run: dupey.run },
+		});
+
+		const first = await agent.refresh(true);
+
+		expect(first.written).toBe(1);
+		expect(Object.keys(loadCloudFingerprints(root).entries)).toEqual([join(docs, "note.txt")]);
+		expect(dupey.calls.map((args) => args[0])).toContain("fingerprint");
 	});
 });
