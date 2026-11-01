@@ -18,7 +18,6 @@ import { resolveSidecarOptions } from "../sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
-import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import {
 	DiscordAttachmentStore,
 	DiscrawlClient,
@@ -361,15 +360,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 					: { semantic: { embedder: embedding.embedder } }),
 		});
 	},
-	"cloud-drive": (config, workspaceRoot, registrationName) =>
-		new CloudDriveSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
-			connectorOptions: {
-				...(config.connector as RcloneConnectorOptions),
-			},
-		}),
 	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),

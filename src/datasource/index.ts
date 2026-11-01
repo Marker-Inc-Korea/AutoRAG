@@ -40,15 +40,6 @@ export {
 	type ResultsByMethod,
 } from "./scope.ts";
 export {
-	CLOUD_DRIVE_SKILL_DEFINITION,
-	CloudDriveSkill,
-	type CloudDriveSkillOptions,
-	RcloneConnector,
-	type RcloneConnectorOptions,
-	type RcloneRunner,
-	type RcloneRunResult,
-} from "./skills/cloud-drive/index.ts";
-export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
 	DEFAULT_DISCRAWL_MODE,
 	DiscrawlClient,

@@ -1,61 +1,48 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Jev, type JevBackend, type Judgment, type Question, type State } from "jev-use";
 import { type Static, Type } from "typebox";
-import { DAZZI_DEFAULT_JEV_MODEL, DazziJevBackend } from "../cloud/jev-backend.ts";
+import { isDazziSignedIn } from "../cloud/credential.ts";
+import { DazziJevBackend } from "../cloud/jev-backend.ts";
+import { DECISION_PROVIDER_ORDER, PiDecisionBackend } from "./decision-backends.ts";
 import { toToolDefinition } from "./pi-session.ts";
+import type { SllmDecisionModel } from "./sllm-decision.ts";
 
 /** `jev` tool name, kept in AutoRAG's reserved set and system prompt. */
 export const JEV_TOOL_NAME = "jev";
 
 /**
- * Jev backends the `jev-use` engine resolves from the environment, in
- * auto-select order: TypeSafe -> OpenRouter -> Vercel AI Gateway. `dazzi` is
- * the hosted Dazzi Models plan, built here rather than resolved by jev-use.
- */
-export type JevBackendName = "typesafe" | "openrouter" | "vercel" | "dazzi";
-
-/**
- * OpenRouter's live Jev model id. `jev-use` 0.8.0 ships `typesafe/jev-latest`,
- * which OpenRouter rejects with HTTP 400 ("Model ... does not exist"), so the
- * OpenRouter path is pinned here.
- */
-export const OPENROUTER_DEFAULT_MODEL = "typesafe/jev-1.13";
-
-/** Per-backend model overrides applied when the caller names none. */
-const BACKEND_DEFAULT_MODEL: Record<string, string> = {
-	openrouter: OPENROUTER_DEFAULT_MODEL,
-	dazzi: DAZZI_DEFAULT_JEV_MODEL,
-};
-
-/**
- * Options for the `jev` decision tool. Secrets never appear here: `jev-use`
- * reads the backend credential from its own environment variable
- * (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`).
+ * Options for the decision model. Secrets never appear here: a pi provider's credential comes from
+ * its environment variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `TYPESAFE_API_KEY`,
+ * `AI_GATEWAY_API_KEY`, `CLOUDFLARE_API_KEY`, `OPENCODE_API_KEY`) or pi's `auth.json`, and the
+ * hosted `dazzi` backend uses the `/login` credential.
  */
 export interface JevToolOptions {
 	/**
-	 * Force one backend by name; omit to let the first credential present win.
-	 * A ready-made `jev-use` backend instance is a programmatic seam (tests,
-	 * custom transports); config only accepts names.
+	 * The decision backend: `dazzi`, or any pi provider whose catalog carries decision models
+	 * (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode`).
+	 * Omit to take the Dazzi plan when signed in, else the first of
+	 * {@link DECISION_PROVIDER_ORDER} whose API key is set. A ready-made `jev-use` backend instance is a
+	 * programmatic seam (tests, custom transports); config only accepts names.
 	 */
-	readonly backend?: JevBackendName | JevBackend;
-	/**
-	 * Wire model id sent with every call. Omit for the backend default;
-	 * OpenRouter is pinned to {@link OPENROUTER_DEFAULT_MODEL} because
-	 * `jev-use` 0.8.0's own default (`typesafe/jev-latest`) is not a live
-	 * OpenRouter model id.
-	 */
+	readonly backend?: string | JevBackend;
+	/** Decision model id within the backend, e.g. `openai/gpt-6-luna-decisions` on OpenRouter. Omit for the backend default. */
 	readonly model?: string;
 	/** Escalate verdicts below this confidence. Default: per-source thresholds. */
 	readonly confidenceThreshold?: number;
+	/**
+	 * Small chat LLM (sLLM) the session moves to when the session check finds the decision model
+	 * unavailable; a `jev-use` backend instance is the programmatic seam. Omit for no fallback.
+	 */
+	readonly fallback?: SllmDecisionModel | JevBackend;
 }
 
-/** {@link JevToolOptions} plus the environment `jev-use` resolves credentials from. */
+/** {@link JevToolOptions} plus where credentials are read from. */
 export interface JevJudgeOptions extends JevToolOptions {
-	/** Environment consulted for the backend credential. Default `process.env`. */
+	/** Environment consulted for the backend credential, ahead of `process.env`. */
 	readonly env?: Record<string, string | undefined>;
-	/** Pi agent home whose `auth.json` holds the Dazzi `/login` credential. Default: Pi's agent dir. */
+	/** Pi agent home: `auth.json` (credentials, the Dazzi `/login`) and `models.json`. Default: Pi's agent dir. */
 	readonly agentDir?: string;
 }
 
@@ -70,45 +57,44 @@ export type JevJudge = (
 	options?: { readonly confidenceThreshold?: number },
 ) => Promise<Judgment>;
 
+/** The backend named by `options.backend`, or the first one with a credential. Throws when there is none. */
+function resolveBackend(options: JevJudgeOptions): JevBackend {
+	const { backend, agentDir } = options;
+	if (backend !== undefined && typeof backend !== "string") return backend;
+	const env = options.env ?? process.env;
+	const providerEnv = Object.fromEntries(
+		Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+	);
+	const name =
+		backend ??
+		(isDazziSignedIn(agentDir) ? "dazzi" : undefined) ??
+		DECISION_PROVIDER_ORDER.find((provider) => getEnvApiKey(provider, providerEnv) !== undefined);
+	if (name === undefined) {
+		throw new Error(
+			"No Jev credentials found: set OPENROUTER_API_KEY, OPENAI_API_KEY, TYPESAFE_API_KEY, AI_GATEWAY_API_KEY, CLOUDFLARE_API_KEY, or OPENCODE_API_KEY, or sign in to Dazzi Models with /login.",
+		);
+	}
+	if (name === "dazzi") return new DazziJevBackend({ env, agentDir });
+	return new PiDecisionBackend({
+		provider: name,
+		...(agentDir !== undefined ? { agentDir } : {}),
+		...(options.env !== undefined ? { env: options.env } : {}),
+	});
+}
+
 /**
- * Builds the Jev judge shared by the `jev` tool and the query router. The
- * `jev-use` client is created lazily on the first call, so no credential
- * resolves at construction time, and the per-backend model default (the
- * OpenRouter pin, or `jev-1.13` on the hosted plan) applies to every caller.
+ * Builds a Jev judge over one decision backend. The backend is built lazily on the first call, so
+ * no credential resolves at construction time; a missing one rejects that call with a named error.
  */
 export function createJevJudge(options: JevJudgeOptions = {}): JevJudge {
 	let client: Jev | undefined;
 	return async (state, questions, callOptions = {}) => {
-		if (client === undefined) {
-			// `dazzi` is built here (not by jev-use): the hosted plan needs its
-			// own bearer token (the `/login` credential) and native endpoint. That
-			// covers both the explicit option and the `JEV_BACKEND=dazzi` env route,
-			// which jev-use would otherwise reject as an unknown backend. A missing
-			// sign-in throws a named error on the first call.
-			const env = options.env ?? process.env;
-			const explicit = options.backend;
-			let backend: JevBackend | "typesafe" | "openrouter" | "vercel" | undefined;
-			if (typeof explicit === "string") {
-				backend = explicit === "dazzi" ? new DazziJevBackend({ env, agentDir: options.agentDir }) : explicit;
-			} else if (explicit !== undefined) {
-				backend = explicit;
-			} else if (env.JEV_BACKEND?.toLowerCase() === "dazzi") {
-				backend = new DazziJevBackend({ env, agentDir: options.agentDir });
-			} else {
-				// Leave it unset: jev-use resolves its own backends from `env`
-				// (including `JEV_BACKEND`), which is why only `dazzi` is special.
-				backend = undefined;
-			}
-			client = new Jev({
-				...(backend !== undefined ? { backend } : {}),
-				...(options.env !== undefined ? { env: options.env } : {}),
-				...(options.model !== undefined ? { model: options.model } : {}),
-				...(options.confidenceThreshold !== undefined ? { confidenceThreshold: options.confidenceThreshold } : {}),
-			});
-		}
-		const model = options.model ?? BACKEND_DEFAULT_MODEL[client.backend.name];
+		client ??= new Jev({
+			backend: resolveBackend(options),
+			...(options.model !== undefined ? { model: options.model } : {}),
+			...(options.confidenceThreshold !== undefined ? { confidenceThreshold: options.confidenceThreshold } : {}),
+		});
 		return client.judge(state, questions, {
-			...(model !== undefined ? { model } : {}),
 			...(callOptions.confidenceThreshold !== undefined
 				? { confidenceThreshold: callOptions.confidenceThreshold }
 				: {}),

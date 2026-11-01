@@ -187,7 +187,7 @@ AutoRAG Agent:
 
 Three principles drive every design decision in AutoRAG Agent:
 
-1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`, `rclone`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
+1. **Never migrate your data to search it.** Traditional RAG systems force you to upload, ETL, and duplicate your files into a centralized vector database. AutoRAG Agent federates your data **in place**, querying CLI-native stores (`lazykatok`, `discrawl`, `slacrawl`, `mailcrawl`) where your data already lives. Results retain opaque, source-native identities (`/kakao/...`, `/slack/...`) that preserve local access control and privacy. *(See our [Competitive Landscape Study](docs/competitive-landscape-2026-09.md) on why in-place federation is the durable differentiator).*
 
 2. **Just works — no RAG degree required.** No pipeline tuning, no vector-DB maintenance, and no remote embedding keys required. AutoRAG Agent automatically manages [MinSync](docs/minsync-setup.md) for incremental Change Data Capture (CDC) chunking and provides a local [embedding backend](docs/minsync-setup.md#embedding-backends) out of the box with zero external telemetry. A [remote rerank model](docs/rerank.md) (the hosted Dazzi Models reranker when signed in, else OpenRouter `voyageai/rerank-3-lite`) is an opt-in extra.
 
@@ -260,7 +260,7 @@ bun add @autorag/librarian
 ### System Prerequisites
 
 - **No Java required:** Document parsing (HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS) runs in-process through [`kordoc`](https://github.com/chrisryugj/kordoc).
-- **Rust Toolchain (Optional):** Automatically compiles Jikji (`jikji-cli`) if installed.
+- **Rust Toolchain (Optional):** Automatically compiles Jikji (`jikji-cli`, pinned to 0.2.1) if installed. A `jikji` older than 0.2.0 on your PATH is skipped and replaced by the pinned build on the next refresh.
 - **MinSync:** Automatically downloaded and installed into `<workspace>/.autorag/bin` on first run.
 - **Everything (Windows only, bundled):** The package ships the portable Everything 1.4.1.1032 and its ES 1.1.0.38 CLI (x64 and ARM64, SHA-256 pinned). On Windows, AutoRAG extracts them into `<workspace>/.autorag/everything/` and runs a private, user-level instance that indexes only your configured search roots: no administrator rights, no Everything service, no whole-drive scan, no HTTP/ETP server, and no change to any Everything you already run. Set `"everything": false` in the config to turn it off. macOS and Linux are not affected.
 - **filee-cli (file conversion, automatic):** `autorag setup` and the TUI download the pinned filee-cli release (~85 MB, SHA-256 verified) into `<AUTORAG_HOME>/tools/filee-cli/<version>/`, so the agent can convert between 255 formats offline with `convert_files`. A `filee`/`filee-cli` already on `PATH` is used instead. Set `"filee": { "autoInstall": false }` to forbid the download or `"filee": { "enabled": false }` to remove the tools. Filee fetches its own engines (FFmpeg, Pandoc, LibreOffice, calibre, Ghostscript; hundreds of MB, only when a conversion needs one) on first use.
@@ -314,13 +314,43 @@ falling back to `["ko", "en"]`. Supported tags: `ko`, `en`, `ja`, `zh-hans`,
 
 | Extension | Parser |
 |---|---|
-| `.hwp` `.hwpx` `.hml` `.hwpml` `.pdf` `.docx` `.xlsx` `.xls` | `kordoc` (nested tables, per-sheet workbooks, no Java) |
+| `.hwp` `.hwpx` `.hml` `.hwpml` `.pdf` `.docx` | `kordoc` (nested tables, no Java) |
+| `.xlsx` `.xlsm` `.xlsb` `.xls` `.ods` | built-in spreadsheet reader (SheetJS) |
+| `.csv` `.tsv` | built-in CSV reader (CP949/EUC-KR aware) |
 | `.pptx` | built-in PPTX reader |
 | `.eml` | built-in mail reader |
 | `.txt` `.text` `.md` `.markdown` | plain text (CP949/EUC-KR aware) |
 | `.png` `.jpg` `.jpeg` `.webp` | `kordoc` image OCR (only when `parserOptions.ocr.enabled` is `true`) |
 
 `.bmp` and `.tiff` are not parsed: kordoc rejects both as unsupported.
+
+The spreadsheet reader writes one line per row. Each line names the sheet, the
+cell range and the table title, and pairs every value with its column label, so
+a search hit always says what a number is:
+
+```text
+[예산총괄!A4:F4 · 2026년 연구개발비 편성표 (단위: 천원)] 구분: 직접비 | 비목: 인건비 | 편성액: 742,000 | 비율(%): 32.1%
+```
+
+Values are what the spreadsheet shows: cached formula results with their number
+formats (`742,000`, `32.1%`, dates). A format that scales the stored number keeps
+that number too (`742천원 (742000)`), and a formula saved without a result shows
+its formula (`=SUM(B2:B3)`). Titles above a table become its caption, merged
+group headers become `상반기 > 1월`, several tables on one sheet are kept apart,
+and a row longer than a search chunk is split into lines that repeat its first
+value. A first row counts as the header only with clear evidence (a merged group
+header, or at least three rows below it with a mostly numeric, date or formula
+column); otherwise rows are kept exactly as written, so a form's label/value
+cells are never relabelled. Sheets are read up to 100,000 rows each; a longer
+sheet is indexed partially with a `parser-warning` diagnostic.
+
+`.csv` and `.tsv` files produce the same lines, with the file name in place of
+the sheet name. Bytes decode as UTF-8 (with or without BOM) or CP949/EUC-KR,
+quoted fields keep separators, line breaks and doubled quotes, and values stay
+exactly as written (`00123` and `=1+2` are not converted). `.tsv` is
+tab-separated; a `.csv` follows Excel's `sep=;` first line when present and
+otherwise picks the separator (`,` `;` tab `|`) that splits its first lines
+most consistently.
 
 ### Making photos and scans searchable
 
@@ -348,7 +378,7 @@ explicit `parserOptions.kordoc.ocr` overrides the language-based choice.
 
 ### Bounding and cancelling a parse
 
-`kordoc` (PDF, HWP/HWPX, DOCX, XLSX/XLS, images), `.pptx` and `.eml` parse in a worker
+`kordoc` (PDF, HWP/HWPX, DOCX, images), the spreadsheet reader, `.pptx` and `.eml` parse in a worker
 thread during a refresh, so one corrupt or hostile file cannot hang or crash the run. A
 `Promise.race` deadline cannot stop a synchronous parse; terminating the worker can.
 
@@ -480,7 +510,7 @@ behaves as before.
 | `autorag search "<query>"` | Run the librarian agent to curate structured answers |
 | `autorag status` | Inspect corpus freshness, indexing status, and vector readiness |
 | `autorag health` | Check model provider authentication, token validity, and API reachability |
-| `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; never prints credential values |
+| `autorag models list` | List chat models the pi runtime can resolve (built-ins, `models.json`, custom/extension providers) with provider auth status; `--decision` lists decision models (`jev.backend`/`jev.model` candidates) instead; never prints credential values |
 | `autorag update-check` | Compare the running `autorag` against the published npm version (also runs on `autorag tui` launch) |
 | `autorag tui` | Open Pi's interactive librarian TUI (`/login`, `/model`, `/resume`, …); the agent can stop and ask you a multiple-choice or open question through the [`ask_user` tool](docs/ask-user.md); `--telegram` / `--whatsapp` / `--discord` add the Telegram / WhatsApp / Discord remote-control bridges; `--permission-mode ask\|auto\|full` (Shift+Tab, `/permissions`) sets the [approval gate for file changes](docs/permissions.md) |
 | `autorag duplicates [DIR]` | Read-only scan for exact and near-duplicate document families with `dupey` |
@@ -664,7 +694,6 @@ AutoRAG Agent connects to external tools and communication platforms using dedic
 | **Obsidian Vaults** | `obsidian` | Indexed with MinSync in its own workspace (no external CLI) | Markdown notes, folder-scopable | Lexical (BM25), Semantic, Scoped |
 | **GitHub** | `github` | GitHub REST API | In-memory fetched Issues and Pull Requests | Lexical, Scoped |
 | **GitHub Gists** | `github-gist` | GitHub REST API | Incremental local index of own-account public and permitted secret Gist content/metadata; token not stored | Lexical (BM25), Local Semantic, Scoped |
-| **Cloud Drives** | `cloud-drive` | [`rclone`](https://rclone.org) CLI | Google Drive (Tier-1), OneDrive, Dropbox, etc. | Incremental Mirror + BM25 |
 | **Photos & Shots** | `clawgallery` | `clawgallery` CLI | Local screenshot and photo store | Hybrid OCR/Visual Search |
 | **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
 | **Browser History** | `hister` | [Hister](https://github.com/asciimoo/hister) server (AGPL-3.0-or-later, separate program, HTTP API) | Pages visited in Chrome/Chromium/Firefox, captured by Hister's own extension and indexed by Hister (web pages only; its local-file indexing is never used) | Lexical full-text; optional Semantic via Hister's own embedding endpoint |
@@ -749,7 +778,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[Telegram Remote Control](docs/telegram.md):** Ask the librarian from a Telegram chat through a running `autorag tui --telegram` session: setup, commands, and keeping it alive.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Apple Calendar & Reminders via EventKit MCP](docs/eventkit-mcp.md):** macOS-only: read Calendar events and Reminders (Google/iCloud/Exchange accounts already in Calendar.app) by running `mcp-server-apple-events` beside `autorag-mcp`. Live, read-only; not indexed.
-- **[Jev Decisions](docs/jev-decisions.md):** Jev query pipeline, **on by default** via Dazzi Models when signed in (OpenRouter otherwise): it routes each question to local search (everything needing more information, including the public web when the question needs recent public facts), `extra` (a knowledge answer or any other action such as committing code; one turn with every tool, no retrieval), `organize` (move, rename, convert, or sort files and folders), or its own `config` branch, and keeps a weakly-favored non-local verdict on local search through a 0.75 confidence floor. It also splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete. Also covers the `jev` judgment tool, backends (OpenRouter, TypeSafe, Vercel AI Gateway), and how to opt out.
+- **[Jev Decisions](docs/jev-decisions.md):** Jev, the **required** decision model, via Dazzi Models when signed in (OpenRouter otherwise), or any decision model in pi's catalog: `jev.backend` names the provider (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, or `dazzi`) and `jev.model` the model (e.g. `openai/gpt-6-luna-decisions` on OpenRouter, `gpt-6-luna` on OpenAI); `autorag models list --decision` lists them. The first question of every session checks that it answers; when it cannot, the session moves to an sLLM fallback (the decomposition model by default, with a `decision-model-fallback` warning), and when that fails too it stops with `decision-model-unavailable` (exit 3 for `autorag search`). It routes each question to local search (everything needing more information, including the public web when the question needs recent public facts), `extra` (a knowledge answer or any other action such as committing code; one turn with every tool, no retrieval), `organize` (move, rename, convert, or sort files and folders), or its own `config` branch, and keeps a weakly-favored non-local verdict on local search through a 0.75 confidence floor. It also splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
 - **[Competitive Landscape Study](docs/competitive-landscape-2026-09.md):** In-depth analysis of why in-place federation outperforms centralized RAG.
@@ -781,7 +810,7 @@ AutoRAG Agent stands on the shoulders of fantastic open-source projects:
 - **[Hister](https://github.com/asciimoo/hister)** by [asciimoo](https://github.com/asciimoo) and contributors — Self-hosted browser web-history search (AGPL-3.0-or-later). Never bundled, linked, copied, or modified: users run Hister as a separate program and AutoRAG only calls its public HTTP search API (mere aggregation). Hister is always named as the backend of the `hister` datasource.
 - **[dupey](https://github.com/NomaDamas/dupey)** by [NomaDamas](https://github.com/NomaDamas) — Fast duplicate and near-duplicate document family detection.
 - **[Filee](https://github.com/KnifeLemon/Filee)** by [KnifeLemon](https://github.com/KnifeLemon) — Offline conversion of 240+ file formats (MIT). Never bundled or linked: AutoRAG downloads the SHA-256-pinned [`filee-cli`](https://github.com/NomaDamas/filee-cli) release (NomaDamas' CLI-only redistribution, MIT) into `<AUTORAG_HOME>/tools/filee-cli/` on `autorag setup` / first conversion and spawns it as a separate process. An existing `filee`/`filee-cli` on `PATH` or `filee.binaryPath` wins. Filee downloads its own engines (FFmpeg, Pandoc, LibreOffice, …) on first use.
-- **Federated CLI Authors:** External datasource tools [`lazykatok`](https://github.com/changeroa/lazykatok), [`discrawl`](https://github.com/openclaw/discrawl), [`mailcrawl`](https://github.com/NomaDamas/mailcrawl), [`wacrawl`](https://github.com/openclaw/wacrawl), [`telecrawl`](https://github.com/openclaw/telecrawl), [`slacrawl`](https://github.com/openclaw/slacrawl), [`notcrawl`](https://github.com/openclaw/notcrawl), and [`rclone`](https://rclone.org).
+- **Federated CLI Authors:** External datasource tools [`lazykatok`](https://github.com/changeroa/lazykatok), [`discrawl`](https://github.com/openclaw/discrawl), [`mailcrawl`](https://github.com/NomaDamas/mailcrawl), [`wacrawl`](https://github.com/openclaw/wacrawl), [`telecrawl`](https://github.com/openclaw/telecrawl), [`slacrawl`](https://github.com/openclaw/slacrawl), and [`notcrawl`](https://github.com/openclaw/notcrawl).
 - **[kordoc](https://github.com/chrisryugj/kordoc)** by [chrisryugj](https://github.com/chrisryugj) — HWP/HWPX/HWPML, PDF, DOCX and XLSX parsing with nested-table fidelity, used as AutoRAG's default document parser.
 
 ---
@@ -822,9 +851,11 @@ Common failures and their fix:
 | A datasource errors during refresh | `datasource-index-failed` | run that CLI's own `doctor` |
 | MinSync binary missing (search and refresh fail with `MinSync is required ...`) | — | `cargo install minsync`, or leave `minSync.autoInstall` on and re-run refresh |
 | Jikji missing | `jikji-unavailable` | check the Rust toolchain, re-run refresh |
+| Jikji older than 0.2.0 (the message names the version and the binary path) | `jikji-unsupported-version` | re-run `autorag refresh --method jikji` to install the pinned build, or `cargo install jikji-cli --version 0.2.1 --locked --force`; with `jikji.autoInstall: false` or `jikji.binaryPath`, upgrade it yourself |
 | Jikji prepare of a large root times out (`the Jikji prepare run timed out`) | `jikji-prepare-failed` | the refresh still finishes and the other roots are indexed. There is no fixed total wall: the per-root hang guard is `jikji.timeoutMs` (60 s base) plus `jikji.prepareTimeoutMsPerFile` ms per file under the root (default: `jikji.parseTimeout`, 5 s), uncapped, so a huge root is not cut by its size and only a run stuck beyond every file hitting its parse limit is killed. Set `prepareTimeoutMsPerFile: 0` for a flat `timeoutMs` wall. `jikji.parseTimeout` (seconds) is the per-file limit, forwarded to `jikji prepare --parse-timeout`; jikji skips a file that exceeds it. A timeout kills jikji's whole process group |
+| `jikji_find` miss: the `discover` retry step fails (`Jikji discover retry failed: ... (exit status N): <stderr>`) | `jikji-discover-failed` | a miss makes AutoRAG run the `jikji discover ... --after-jikji-retry --retry-proof <proof>` command jikji named (the proof is bound to that root and rewritten query; `--no-background-refresh --no-auto-prepare` keep it from reindexing or rewriting `AGENTS.md`/`CLAUDE.md`/`.cursorrules`). The message carries the CLI exit status and stderr verbatim, real paths included; the failed root is dropped and healthy roots still answer. A `next_commands` line AutoRAG cannot parse as a plain `discover` step is quoted in the same diagnostic and is never executed |
 | Windows file-name search fails during refresh | `everything-index-failed` | read the ES exit code and stderr in the message, then `autorag refresh --method everything --json` |
-| Every search does a full local search and verification, even for small talk | `query-route-fallback` | sign in to Dazzi Models with `/login`, or set `OPENROUTER_API_KEY` (Jev routing and decomposition are on by default) |
+| A search stops before answering with `[decision-model-unavailable] ... (missing-credential)` | `decision-model-unavailable` (exit 3) | sign in to Dazzi Models with `/login`, or set `OPENROUTER_API_KEY`; the error's `reason` names what failed (Jev is required) |
 
 Native datasource stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a broken archive with `lazykatok doctor`, `discrawl --json metadata`, `slacrawl --json doctor`, `wacrawl --json doctor`, `telecrawl --json doctor`, `notcrawl doctor`, or `mailcrawl doctor`, then re-run `autorag refresh --method datasources --json`.
 

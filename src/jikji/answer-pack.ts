@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { SourceRoot } from "../filesystem/source-paths.ts";
+import { parseJikjiRetryCommand } from "./retry-command.ts";
 import type {
 	JikjiAnswerPack,
 	JikjiCandidate,
@@ -27,6 +28,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((v) => typeof v === "string");
+}
+
+/** Absent → undefined; a non-negative integer → itself; anything else → null (malformed). */
+function parseCount(value: unknown): number | undefined | null {
+	if (value === undefined) return undefined;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function parseNextRead(value: unknown): JikjiNextRead | undefined {
@@ -133,12 +140,14 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		};
 		candidates.push(candidate);
 	}
-
 	const handoffAction = parsed.handoff_action;
 	if (typeof handoffAction !== "string" || !HANDOFF_VALUES.has(handoffAction)) return undefined;
 
-	const evidenceRaw =
-		parsed.evidence_pack === undefined && handoffAction === "jikji_retry" ? [] : parsed.evidence_pack;
+	// The recovery envelopes (`jikji_retry`, and `raw_fallback_after_retry` after a verified retry)
+	// are emitted by `emit_find_recovery` with `evidence_pack` and `agent_should_not_rerank` absent.
+	// Only a real answer (`direct_use`) must carry them.
+	const isRecovery = handoffAction === "jikji_retry" || handoffAction === "raw_fallback_after_retry";
+	const evidenceRaw = parsed.evidence_pack === undefined && isRecovery ? [] : parsed.evidence_pack;
 	if (!Array.isArray(evidenceRaw)) return undefined;
 	const evidencePack: JikjiEvidence[] = [];
 	for (const entry of evidenceRaw) {
@@ -161,12 +170,28 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 	};
 
 	const agentShouldNotRerank =
-		parsed.agent_should_not_rerank === undefined && handoffAction === "jikji_retry"
-			? false
-			: parsed.agent_should_not_rerank;
+		parsed.agent_should_not_rerank === undefined && isRecovery ? false : parsed.agent_should_not_rerank;
 	if (typeof agentShouldNotRerank !== "boolean") return undefined;
 
 	const confidence = parseConfidence(parsed);
+	const rawFallbackAllowed =
+		parsed.raw_fallback_allowed === undefined
+			? handoffAction === "raw_fallback_after_retry"
+			: parsed.raw_fallback_allowed;
+	if (typeof rawFallbackAllowed !== "boolean") return undefined;
+	const maxJikjiRetries = parseCount(parsed.max_jikji_retries);
+	const maxRawFallbackCommands = parseCount(parsed.max_raw_fallback_commands);
+	if (maxJikjiRetries === null || maxRawFallbackCommands === null) return undefined;
+	const nextCommands = parsed.next_commands === undefined ? [] : parsed.next_commands;
+	if (!isStringArray(nextCommands)) return undefined;
+	const retryProof = parsed.retry_proof;
+	if (retryProof !== undefined && typeof retryProof !== "string") return undefined;
+	// Only a `jikji_retry` envelope's own discover command is a retry step; its
+	// proof is bound by jikji to that root and rewritten query.
+	const retry =
+		handoffAction === "jikji_retry"
+			? nextCommands.map((command) => parseJikjiRetryCommand(command, retryProof)).find((step) => step !== undefined)
+			: undefined;
 	return {
 		answerPaths,
 		paths,
@@ -175,6 +200,11 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		handoffAction: handoffAction as JikjiHandoffAction,
 		toolCallPolicy,
 		agentShouldNotRerank,
+		rawFallbackAllowed,
+		...(maxJikjiRetries === undefined ? {} : { maxJikjiRetries }),
+		...(maxRawFallbackCommands === undefined ? {} : { maxRawFallbackCommands }),
+		nextCommands,
+		...(retry === undefined ? {} : { retry }),
 		...(confidence !== undefined ? { confidence } : {}),
 	};
 }

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import type { JikjiAnswerPack } from "../../src/jikji/index.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 /** Bench-only view of the agent's private Jikji provider, MinSync method and follow-up check. */
 type AgentInternals = {
@@ -54,15 +55,17 @@ function pack(paths: readonly string[]): JikjiAnswerPack {
 		handoffAction: "direct_use",
 		toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
 		agentShouldNotRerank: false,
+		rawFallbackAllowed: false,
 	};
 }
 
-function agentFor(events: string[], prompts: string[]): AutoRAGAgent {
+function agentFor(events: string[], prompts: string[], onFastModel?: () => void): AutoRAGAgent {
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "bg-model" }] });
 	registrations.push(registration);
 	registration.setResponses([
 		(context) => {
 			events.push("fast-model");
+			onFastModel?.();
 			prompts.push(userText(context));
 			return fauxAssistantMessage("first answer", { stopReason: "stop" });
 		},
@@ -81,6 +84,7 @@ function agentFor(events: string[], prompts: string[]): AutoRAGAgent {
 		jikji: false,
 		everything: false,
 		fsearch: false,
+		jev: baselineJev(),
 	});
 }
 
@@ -107,11 +111,12 @@ describe("Jikji find runs in the background of the fast answer (#2060)", () => {
 	it("does not hold the fast answer; it settles before the follow-up check and the verification prompt", async () => {
 		const events: string[] = [];
 		const prompts: string[] = [];
-		const agent = agentFor(events, prompts);
 		let release = (): void => undefined;
 		const gate = new Promise<void>((resolve) => {
 			release = resolve;
 		});
+		// Jikji is released only once the fast model has been called, so the fast answer cannot have waited for it.
+		const agent = agentFor(events, prompts, () => release());
 		wire(
 			agent,
 			async () => {
@@ -123,22 +128,9 @@ describe("Jikji find runs in the background of the fast answer (#2060)", () => {
 			events,
 		);
 
-		for await (const event of agent.searchDocumentsStream("refund approval", {})) {
-			// The first answer reaches the caller while Jikji is still running.
-			if (event.type === "preliminary") {
-				events.push("preliminary");
-				release();
-			}
-		}
+		await agent.searchDocuments("refund approval");
 
-		expect(events).toEqual([
-			"jikji-start",
-			"fast-model",
-			"preliminary",
-			"jikji-done",
-			"follow-up-check",
-			"verify-model",
-		]);
+		expect(events).toEqual(["jikji-start", "fast-model", "jikji-done", "follow-up-check", "verify-model"]);
 		expect(prompts[0]).not.toContain("Jikji's file discovery");
 		expect(prompts[1]).toContain("start exploring from them.\n- /docs/0417.md");
 	});

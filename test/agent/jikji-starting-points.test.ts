@@ -42,6 +42,7 @@ function pack(paths: readonly string[], overrides: Partial<JikjiAnswerPack> = {}
 		handoffAction: "direct_use",
 		toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
 		agentShouldNotRerank: false,
+		rawFallbackAllowed: false,
 		...overrides,
 	};
 }

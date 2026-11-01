@@ -49,6 +49,20 @@ describe("datasource skill factory", () => {
 		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("mail-export");
 	});
 
+	it("treats datasources.cloud-drive config as unknown because rclone support was removed", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			"cloud-drive": { connector: { remote: "gdrive:" } },
+			"my-drive": { type: "cloud-drive" },
+			rss: { connector: { feeds: [{ url: "https://example.com/feed.xml" }] } },
+		});
+
+		expect(unknown).toEqual(["cloud-drive", "my-drive"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("cloud-drive");
+		expect(builtinDatasourceSkillNames("darwin")).not.toContain("cloud-drive");
+		expect(builtinDatasourceSkillNames("win32")).not.toContain("cloud-drive");
+	});
+
 	it("treats datasources.spotlight config as unknown because Spotlight support was removed", () => {
 		const { skills, unknown } = buildDatasourceSkills({
 			spotlight: { connector: { queries: ["kMDItemContentTypeTree == 'public.text'"] } },
