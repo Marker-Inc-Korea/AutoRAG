@@ -19,6 +19,7 @@ import { jikjiFindDiagnostic } from "../../src/jikji/diagnostics.ts";
 import type { JikjiAnswerPack, JikjiDiagnostic, JikjiFindResult } from "../../src/jikji/index.ts";
 import type { MinSyncVectorMethod } from "../../src/minsync/method.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -98,6 +99,7 @@ function setup(
 		searchPaths,
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
+		jev: baselineJev(),
 		minSync: { autoInstall: false },
 		jikji: false,
 		everything: false,
@@ -160,6 +162,7 @@ function jikjiTool(paths: string[] | undefined, diagnostics: readonly JikjiDiagn
 							handoffAction: "direct_use",
 							toolCallPolicy: { stopAfterFind: false, forbiddenTools: [], allowedFollowups: [] },
 							agentShouldNotRerank: false,
+							rawFallbackAllowed: false,
 						},
 			policy: undefined,
 			diagnostics,
@@ -350,6 +353,7 @@ describe("multi-root Jikji diagnostics via recordSearchToolEvent", () => {
 				handoffAction: "direct_use",
 				toolCallPolicy: { stopAfterFind: false, forbiddenTools: ["bash"], allowedFollowups: [] },
 				agentShouldNotRerank: true,
+				rawFallbackAllowed: false,
 			};
 			const healthy: JikjiFindResult = { ok: true, answerPack: pack, stdout: "", stderr: "", code: 0 };
 			const other: JikjiFindResult =

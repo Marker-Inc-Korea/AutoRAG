@@ -94,7 +94,10 @@ export type JikjiFailureReason =
 	| "stderr-too-large"
 	| "stdout-too-large"
 	| "timeout"
-	| "bad-answer-pack";
+	| "bad-answer-pack"
+	| "bad-retry-step"
+	/** The resolved `jikji` is older than {@link JIKJI_MIN_VERSION}; it was probed, never run for real. */
+	| "unsupported-version";
 
 export type JikjiPrepareResult =
 	| {
@@ -109,6 +112,8 @@ export type JikjiPrepareResult =
 			readonly stdout: string;
 			readonly stderr: string;
 			readonly code: number | null;
+			/** Set with `reason: "unsupported-version"`: the version `jikji --version` reported. */
+			readonly detectedVersion?: string;
 	  };
 
 // ---------------------------------------------------------------------------
@@ -137,6 +142,18 @@ export interface JikjiToolCallPolicy {
 
 export type JikjiHandoffAction = "direct_use" | "jikji_retry" | "raw_fallback_after_retry";
 
+/**
+ * The follow-up step jikji names when `find` answers `jikji_retry`: a
+ * `discover` run on the same root with the rewritten query and the proof jikji
+ * issued for exactly that root and query.
+ */
+export interface JikjiRetryStep {
+	readonly root: string;
+	readonly query: string;
+	readonly topK?: number;
+	readonly proof: string;
+}
+
 export interface JikjiAnswerPack {
 	readonly answerPaths: readonly string[];
 	readonly paths: readonly string[];
@@ -145,6 +162,16 @@ export interface JikjiAnswerPack {
 	readonly handoffAction: JikjiHandoffAction;
 	readonly toolCallPolicy: JikjiToolCallPolicy;
 	readonly agentShouldNotRerank: boolean;
+	/** `raw_fallback_allowed`; derived from the handoff when the envelope omits it. */
+	readonly rawFallbackAllowed: boolean;
+	/** `max_jikji_retries`: how many more jikji steps jikji allows before raw fallback. */
+	readonly maxJikjiRetries?: number;
+	/** `max_raw_fallback_commands`: raw shell commands jikji allows once raw fallback is open. */
+	readonly maxRawFallbackCommands?: number;
+	/** `next_commands` verbatim. */
+	readonly nextCommands?: readonly string[];
+	/** Present only for `jikji_retry` when `next_commands` names an understood discover step. */
+	readonly retry?: JikjiRetryStep;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,4 +201,6 @@ export type JikjiFindResult =
 			readonly stdout: string;
 			readonly stderr: string;
 			readonly code: number | null;
+			/** Set with `reason: "unsupported-version"`: the version `jikji --version` reported. */
+			readonly detectedVersion?: string;
 	  };

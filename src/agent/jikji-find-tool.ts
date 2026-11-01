@@ -23,7 +23,10 @@ export interface MergedJikjiPolicy {
 	readonly forbiddenTools: readonly string[];
 	readonly allowedFollowups: readonly string[];
 	readonly agentShouldNotRerank: boolean;
+	/** True only when every root's envelope allowed raw fallback. */
 	readonly rawFallbackAllowed: boolean;
+	/** Smallest `max_raw_fallback_commands` any root reported; undefined when none did. */
+	readonly maxRawFallbackCommands?: number;
 }
 
 /**
@@ -67,6 +70,8 @@ export interface JikjiFindDetails {
 	readonly handoffAction: JikjiHandoffAction | undefined;
 	readonly stopAfterFind: boolean | undefined;
 	readonly rawFallbackAllowed: boolean | undefined;
+	/** Raw shell commands jikji allows once raw fallback is open (`max_raw_fallback_commands`). */
+	readonly maxRawFallbackCommands: number | undefined;
 	readonly sources: readonly string[];
 	readonly candidates: readonly JikjiCandidate[];
 	readonly evidencePack: readonly JikjiEvidence[];
@@ -108,6 +113,7 @@ export function createJikjiFindTool(
 						handoffAction: undefined,
 						stopAfterFind: undefined,
 						rawFallbackAllowed: undefined,
+						maxRawFallbackCommands: undefined,
 						sources: [],
 						candidates: [],
 						evidencePack: [],
@@ -142,6 +148,7 @@ export function createJikjiFindTool(
 						handoffAction: undefined,
 						stopAfterFind: undefined,
 						rawFallbackAllowed: undefined,
+						maxRawFallbackCommands: undefined,
 						sources: [],
 						candidates: [],
 						evidencePack: [],
@@ -174,6 +181,7 @@ export function createJikjiFindTool(
 					handoffAction: policy?.handoffAction,
 					stopAfterFind: policy?.stopAfterFind,
 					rawFallbackAllowed: policy?.rawFallbackAllowed,
+					maxRawFallbackCommands: policy?.maxRawFallbackCommands,
 					sources: [...answerPack.answerPaths],
 					candidates: [...answerPack.candidates],
 					evidencePack: [...answerPack.evidencePack],
@@ -220,10 +228,17 @@ function formatDirective(policy: MergedJikjiPolicy | undefined): string {
 		case "jikji_retry":
 			return "directive: jikji_retry — retry jikji_find with a refined query before falling back; raw shell is disallowed.";
 		case "raw_fallback_after_retry":
+			// The discover retry step already ran inside the provider; there is no
+			// further jikji step for the model to repeat before raw fallback.
 			return policy.rawFallbackAllowed
-				? "directive: raw fallback allowed — you may use bash to explore if the answer_paths are insufficient."
-				: "directive: raw_fallback_after_retry — retry jikji_find once more; raw shell is allowed only after a second jikji_find.";
+				? `directive: raw fallback allowed after the jikji retry — you may use bash to explore if the answer_paths are insufficient${rawCommandBudget(policy.maxRawFallbackCommands)}.`
+				: "directive: raw_fallback_after_retry without raw fallback permission — raw shell is disallowed; use the answer_paths.";
 		default:
 			return "directive: honor the Jikji policy.";
 	}
+}
+
+function rawCommandBudget(max: number | undefined): string {
+	if (max === undefined) return "";
+	return `, at most ${max} raw ${max === 1 ? "command" : "commands"}`;
 }
