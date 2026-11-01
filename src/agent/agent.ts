@@ -143,6 +143,7 @@ import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./aut
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
+import { createCloudReleaseExtension } from "./cloud-release-extension.ts";
 import { ConversationQueries } from "./conversation-queries.ts";
 import {
 	CONVERT_FILES_TOOL_NAME,
@@ -1032,6 +1033,8 @@ export class AutoRAGAgent {
 	private cloudRootsPromise: Promise<readonly CloudRoot[]> | undefined;
 	/** pi extension registering the `jev` tool. */
 	private readonly jevExtension: ExtensionFactory;
+	/** pi extension releasing the cloud files the agent opened during a run. */
+	private readonly cloudRelease: ExtensionFactory;
 	/** Jev and its sLLM fallback: the session check picks which one {@link jevJudge} asks. */
 	private readonly decisionModels: DecisionModels;
 	/** Jev judge shared by the `jev` tool, the query router, the judgments, and the permission gate. */
@@ -1248,6 +1251,10 @@ export class AutoRAGAgent {
 			requests: this.userRequests,
 			// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
 			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
+		});
+		this.cloudRelease = createCloudReleaseExtension({
+			probe: this.cloudProbe,
+			cloudRoots: () => this.cloudRoots(),
 		});
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
@@ -1658,7 +1665,7 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			extensionFactories: [this.permissionGate, this.jevExtension],
+			extensionFactories: [this.permissionGate, this.jevExtension, this.cloudRelease],
 			extensionToolNames: [JEV_TOOL_NAME],
 		});
 		const agent = piSession.session.agent;
@@ -1790,6 +1797,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				this.permissionGate,
+				this.cloudRelease,
 				createUserRequestPersistence(this.userRequests),
 				createEvidencePersistence(this.evidenceLedger, this.citationNumbers, this.conversationQueries),
 				createCitationLinks(this.evidenceLedger),

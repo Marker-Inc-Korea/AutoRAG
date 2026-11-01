@@ -635,6 +635,17 @@ not processed again, so it stays on disk until its content changes. A read that 
 per file (a OneDrive placeholder has timed out) is a `source-read-failed` skip, never a
 failed refresh.
 
+The agent's own tools open originals too. When the indexed text is not enough, the model
+may read the file with `bash` or `read`, which hydrates one placeholder. AutoRAG watches
+the absolute paths a run's tool calls name (including the direct children of a directory a
+call names, capped at 500) and the absolute sources its retrieval results print, and
+releases every one that became local when the run ends, with the same retry-and-backoff
+as a refresh release. A file that was already on disk before the run is never released,
+and a release that keeps failing is logged once and never fails the answer. The watch is
+deliberately narrow: it does not see a file the agent opens through a path it never
+printed, such as a relative name after `cd` into a subfolder deeper than the direct
+children of a directory the call named.
+
 A file written on this Mac is downloaded one extra time. Its first hydrate rounds the
 modification time to the precision the cloud keeps (measured on macOS 26: Google Drive
 `+101 ns`, OneDrive `+77 ns`, iCloud `+110 ns`, Dropbox `-24 ns`), so the next refresh sees the placeholder
