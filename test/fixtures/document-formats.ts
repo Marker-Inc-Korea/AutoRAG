@@ -139,28 +139,6 @@ export async function createNestedTableHwpxFixture(): Promise<Buffer> {
 	return Buffer.from(await zip.generateAsync({ type: "uint8array" }));
 }
 
-/** Real multi-sheet XLSX workbook: sheet boundaries and rows must survive parsing. */
-export function createMultiSheetXlsxFixture(): Buffer {
-	const workbook = XLSX.utils.book_new();
-	XLSX.utils.book_append_sheet(
-		workbook,
-		XLSX.utils.aoa_to_sheet([
-			["Quarter", "Revenue", "Owner"],
-			["Q3", 742000, "finance team"],
-		]),
-		"RevenueSheet",
-	);
-	XLSX.utils.book_append_sheet(
-		workbook,
-		XLSX.utils.aoa_to_sheet([
-			["Risk", "Status"],
-			["supply chain", "open"],
-		]),
-		"RiskSheet",
-	);
-	return Buffer.from(XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }));
-}
-
 export function createEmlFixture(text: string): Buffer {
 	return Buffer.from(
 		[

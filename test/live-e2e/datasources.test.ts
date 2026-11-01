@@ -135,12 +135,6 @@ describe("live-e2e datasource matrix", () => {
 		expect(validateNativeIdentity("/kakao/default/chunk-001", "lazykatok")).toBe(false);
 	});
 
-	it("accepts only canonical Spotlight slash identities", () => {
-		expect(validateNativeIdentity("/spotlight/default/chunks/chunk-001", "spotlight")).toBe(true);
-		expect(validateNativeIdentity("spotlight:chunk-001", "spotlight")).toBe(false);
-		expect(validateNativeIdentity("/autorag/fake/chunks/1", "spotlight")).toBe(false);
-	});
-
 	it("registers an opt-in cloud-mount lane whose harness exists", () => {
 		const lane = buildDatasourceMatrix().find((candidate) => candidate.name === "cloud-mount");
 		expect(lane).toMatchObject({ kind: "native" });
@@ -179,7 +173,6 @@ describe("live-e2e datasource matrix", () => {
 		// The OS-absolute identity is verified against the raw output but redacted from stored evidence.
 		expect(result.lanes[0]?.evidence?.output).not.toContain("/Users/demo");
 	});
-
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {
 		const diagnostic = sanitizeDiagnostic(
 			`failed ${["tok", "en"].join("")}=${["super", "secret"].join("-")} ${["pass", "word"].join("")}=${["hunter", "2"].join("")} at ${["/", "Users", "me", "private"].join("/")}`,

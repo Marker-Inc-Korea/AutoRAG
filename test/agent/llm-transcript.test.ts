@@ -6,6 +6,7 @@ import { type FauxProviderRegistration, fauxAssistantMessage, type Message } fro
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
 let registrations: FauxProviderRegistration[];
@@ -64,6 +65,7 @@ describe("provider transcript", () => {
 			memoryPath: join(root, "memory.json"),
 			jikji: false,
 			minSync: { autoInstall: false },
+			jev: baselineJev(),
 		});
 
 		const response = await agent.searchDocuments("find the grounded answer");
