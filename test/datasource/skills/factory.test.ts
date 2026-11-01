@@ -63,6 +63,19 @@ describe("datasource skill factory", () => {
 		expect(builtinDatasourceSkillNames("win32")).not.toContain("cloud-drive");
 	});
 
+	it("treats datasources.spotlight config as unknown because Spotlight support was removed", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			spotlight: { connector: { queries: ["kMDItemContentTypeTree == 'public.text'"] } },
+			"my-files": { type: "spotlight" },
+			rss: { connector: { feeds: [{ url: "https://example.com/feed.xml" }] } },
+		});
+
+		expect(unknown).toEqual(["spotlight", "my-files"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("spotlight");
+		expect(builtinDatasourceSkillNames("darwin")).not.toContain("spotlight");
+	});
+
 	it("builds a github-gist skill from a typed alias entry", () => {
 		const { skills, unknown } = buildDatasourceSkills(
 			{

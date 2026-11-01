@@ -19,6 +19,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
@@ -120,6 +121,7 @@ function agentFor(m: AutoRAGAgentOptions["model"]) {
 		jikji: false,
 		minSync: { autoInstall: false },
 		datasourceSkills: [skill()],
+		jev: baselineJev(),
 	});
 }
 
@@ -232,6 +234,7 @@ describe("evidence refs through the real agent loop", () => {
 			jikji: false,
 			minSync: { autoInstall: false },
 			datasourceSkills: [{ ...skill(), retrievalMethods: () => [method] }],
+			jev: baselineJev(),
 		});
 
 		await agent.searchDocuments("first run");

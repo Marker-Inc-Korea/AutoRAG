@@ -73,6 +73,48 @@ export async function startFakeServer(handler: (request: FakeRequest) => FakeRes
 	};
 }
 
+/** The question keys Cloudflare Clef Omni accepts; any other key is an HTTP 422. */
+const STRICT_QUESTION_KEY = /^[A-Za-z0-9_.-]{1,100}$/u;
+
+/**
+ * A decision provider as strict as Cloudflare Clef Omni: a question key outside
+ * {@link STRICT_QUESTION_KEY} is rejected with Clef Omni's HTTP 422, and otherwise each noul
+ * question gets the probability `probabilities` names for its instructions.
+ */
+export function strictKeyDecisionHandler(
+	probabilities: Readonly<Record<string, number>>,
+): (request: FakeRequest) => FakeResponse {
+	return (request) => {
+		const body = request.json as { questions?: Record<string, { instructions?: string }> } | undefined;
+		const questions = Object.entries(body?.questions ?? {});
+		const rejected = questions.find(([key]) => !STRICT_QUESTION_KEY.test(key));
+		if (rejected !== undefined) {
+			return {
+				status: 422,
+				body: {
+					errors: [
+						{
+							message: `AiError: Request body failed validation: questions.${rejected[0]}.[key]: String should match pattern '^[A-Za-z0-9_.-]{1,100}$'`,
+							code: 3030,
+						},
+					],
+				},
+			};
+		}
+		return {
+			body: {
+				model: "cloudflare/clef-omni-20261009",
+				answers: Object.fromEntries(
+					questions.map(([key, question]) => [
+						key,
+						{ type: "noul", noul: probabilities[question.instructions ?? ""] ?? 0.5 },
+					]),
+				),
+			},
+		};
+	};
+}
+
 /** Retry a request until it fails (the listener closed) or the budget runs out. */
 export async function expectConnectionRefused(url: string, attempts = 20): Promise<void> {
 	let lastError: unknown;

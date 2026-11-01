@@ -216,7 +216,6 @@ function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platf
 			"github",
 			"obsidian",
 			"rss",
-			"spotlight",
 		]),
 	];
 }
