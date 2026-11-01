@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE } from "../../src/cloud/credential.ts";
 import { DAZZI_DEFAULT_JEV_MODEL, DazziJevBackend } from "../../src/cloud/jev-backend.ts";
-import { startFakeServer } from "./helpers/fake-server.ts";
+import { startFakeServer, strictKeyDecisionHandler } from "./helpers/fake-server.ts";
 
 let agentDir: string;
 
@@ -115,6 +115,33 @@ describe("DazziJevBackend", () => {
 				},
 			]);
 			expect(response.usage).toEqual({ inputTokens: 7, outputTokens: 2 });
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("keys AutoRAG's question ids the way a strict model (Clef Omni) accepts, and reads each answer back for its own question", async () => {
+		const evidenceId = `evidence:1:minsync:${"f".repeat(120)}`;
+		const server = await startFakeServer(
+			strictKeyDecisionHandler({
+				"Search the web?": 0.9,
+				"Is citation 0 relevant?": 0.2,
+				"Is citation 0 on topic?": 0.6,
+				"Does the evidence support it?": 0.4,
+			}),
+		);
+		try {
+			const backend = new DazziJevBackend({ apiKey: "dz_test", baseUrl: server.url });
+			const judgment = await createJevJudge({ backend, model: "cloudflare/clef-omni" })("x", [
+				{ id: "datasource:web", type: "noul", question: "Search the web?" },
+				{ id: "citation:0", type: "noul", question: "Is citation 0 relevant?" },
+				{ id: "citation_0", type: "noul", question: "Is citation 0 on topic?" },
+				{ id: evidenceId, type: "noul", question: "Does the evidence support it?" },
+			]);
+			expect(judgment.answers["datasource:web"]?.answer).toBe(0.9);
+			expect(judgment.answers["citation:0"]?.answer).toBe(0.2);
+			expect(judgment.answers.citation_0?.answer).toBe(0.6);
+			expect(judgment.answers[evidenceId]?.answer).toBe(0.4);
 		} finally {
 			await server.close();
 		}

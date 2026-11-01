@@ -11,7 +11,7 @@ import {
 } from "../../src/agent/decision-backends.ts";
 import { checkDecisionModel, DecisionModelUnavailableError } from "../../src/agent/decision-model-check.ts";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
-import { type FakeServer, startFakeServer } from "../cloud/helpers/fake-server.ts";
+import { type FakeServer, startFakeServer, strictKeyDecisionHandler } from "../cloud/helpers/fake-server.ts";
 
 let agentDir: string;
 let runtime: ModelRuntime;
@@ -130,6 +130,34 @@ describe("PiDecisionBackend over System One (OpenRouter)", () => {
 		});
 		await createJevJudge({ backend })("x", [{ id: "probe", type: "noul", question: "ok?" }]);
 		expect(server.requests[0]?.json).toMatchObject({ model: "openai/gpt-6-luna-decisions" });
+	});
+
+	it("keys AutoRAG's question ids the way a strict provider (Clef Omni) accepts, and reads each answer back for its own question", async () => {
+		const evidenceId = `evidence:1:minsync:${"f".repeat(120)}`;
+		server = await startFakeServer(
+			strictKeyDecisionHandler({
+				"Search the web?": 0.9,
+				"Is citation 0 relevant?": 0.2,
+				"Is citation 0 on topic?": 0.6,
+				"Does the evidence support it?": 0.4,
+			}),
+		);
+		const backend = new PiDecisionBackend({
+			provider: "openrouter",
+			model: "cloudflare/clef-omni",
+			runtime: pointedAt(server.url),
+			env: { OPENROUTER_API_KEY: "or-test-key" },
+		});
+		const judgment = await createJevJudge({ backend })("x", [
+			{ id: "datasource:web", type: "noul", question: "Search the web?" },
+			{ id: "citation:0", type: "noul", question: "Is citation 0 relevant?" },
+			{ id: "citation_0", type: "noul", question: "Is citation 0 on topic?" },
+			{ id: evidenceId, type: "noul", question: "Does the evidence support it?" },
+		]);
+		expect(judgment.answers["datasource:web"]?.answer).toBe(0.9);
+		expect(judgment.answers["citation:0"]?.answer).toBe(0.2);
+		expect(judgment.answers.citation_0?.answer).toBe(0.6);
+		expect(judgment.answers[evidenceId]?.answer).toBe(0.4);
 	});
 
 	it("fails as unauthorized when the provider rejects the key", async () => {

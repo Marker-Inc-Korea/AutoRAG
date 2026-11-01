@@ -11,6 +11,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { BackendError, type BackendRequest, type BackendResponse, type JevBackend, type RawAnswer } from "jev-use";
+import { wireQuestionKeys } from "../cloud/jev-backend.ts";
 
 /**
  * Decision models come from pi's model catalog: pi-ai ships every provider's typed-question
@@ -179,12 +180,13 @@ export class PiDecisionBackend implements JevBackend {
 		const state = request.state as unknown as JsonObject;
 		const text = typeof request.state === "string" ? request.state : undefined;
 		const started = Date.now();
+		const keys = wireQuestionKeys(request.questions.map((question) => question.id));
 		const result = await runtime.classify(
 			model,
 			{
 				state,
 				questions: Object.fromEntries(
-					request.questions.map((question) => [question.id, classifierQuestion(question, model.api)]),
+					request.questions.map((question, index) => [keys[index], classifierQuestion(question, model.api)]),
 				),
 			},
 			{
@@ -206,7 +208,9 @@ export class PiDecisionBackend implements JevBackend {
 			throw new BackendError(this.name, message, statusOf(message));
 		}
 		return {
-			answers: request.questions.map((question) => rawAnswer(this.name, question, result.answers[question.id])),
+			answers: request.questions.map((question, index) =>
+				rawAnswer(this.name, question, result.answers[keys[index] ?? question.id]),
+			),
 			model: result.model,
 			latencyMs: Date.now() - started,
 			...(result.usage !== undefined

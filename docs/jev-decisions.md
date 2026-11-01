@@ -24,13 +24,15 @@ without it. It uses the hosted Dazzi Models backend when you are signed in
 
 ## Session check: `decision-model-unavailable`
 
-The first question of every session puts one probe question to the decision
-model before any model call: the first question of a TUI session (again after
-`/new`), and the first `searchDocuments()` call of an `AutoRAGAgent` instance
-outside a TUI session (every `autorag search` process). A later question in the
-same session does not repeat it. When the probe gets a number back, the run
-goes on and records a `decision-model-checked` info diagnostic naming the
-backend and model that answered. When it does not, the configured
+The first question of every session puts two probe questions to the decision
+model before any model call, a yes/no question and a choice question (the two
+kinds every AutoRAG judgment is made of): the first question of a TUI session
+(again after `/new`), and the first `searchDocuments()` call of an
+`AutoRAGAgent` instance outside a TUI session (every `autorag search` process).
+A later question in the same session does not repeat it. When the probe gets a
+probability and an option back, the run goes on and records a
+`decision-model-checked` info diagnostic naming the backend and model that
+answered. When it does not, the configured
 [sLLM fallback](#sllm-fallback) is probed and, if it answers, serves the session
 with a `decision-model-fallback` warning. When neither answers, the run stops with
 `DecisionModelUnavailableError` and nothing else happens:
@@ -39,7 +41,9 @@ with a `decision-model-fallback` warning. When neither answers, the run stops wi
 - `reason`: `missing-credential` (no API key or no `/login`), `unauthorized`
   (HTTP 401/403), `payment-required` (402), `model-not-found` (404, or the
   backend says the model does not exist), `rate-limited` (429), `unreachable`
-  (network failure, timeout, 5xx), or `invalid-response` (no usable verdict).
+  (network failure, timeout, 5xx), `unsupported-question` (400/422: the model
+  rejects a yes/no or choice question, e.g. a model that answers yes/no
+  questions only), or `invalid-response` (no usable verdict).
 - `attempts`: every model tried, Jev first and the fallback after it, each with
   its own `reason` and error text.
 - The message starts with `[decision-model-unavailable]`, says AutoRAG cannot be
@@ -107,7 +111,11 @@ moves its decision models to a proxy or gateway speaking the same dialect.
 OpenRouter stays on `typesafe/jev-1.13` by default: AutoRAG's routing
 floor and permission thresholds were calibrated on it. A model id the provider
 does not serve fails the session check as `model-not-found`, and the message
-lists the provider's decision models. A config written for `jev-use`'s old
+lists the provider's decision models. A model newer than this pi-ai build's
+catalog is still asked, on its provider's own wire. Both the pi providers and
+Dazzi send a question under a key matching `^[A-Za-z0-9_.-]{1,100}$` (Cloudflare Clef Omni
+rejects any other); an id such as `datasource:web` goes out as `datasource_web`
+and its answer comes back under the original id. A config written for `jev-use`'s old
 backend names still loads, except `"backend": "vercel"`, which is now
 `vercel-ai-gateway`. With `backend` unset (programmatic use only; the CLI always
 fills it in), AutoRAG takes Dazzi Models when signed in, else the first of

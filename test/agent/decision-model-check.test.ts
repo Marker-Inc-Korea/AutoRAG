@@ -10,6 +10,7 @@ import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts
 import {
 	checkDecisionModel,
 	createDecisionModels,
+	DECISION_MODEL_CHOICE_PROBE_QUESTION_ID,
 	DECISION_MODEL_PROBE_QUESTION_ID,
 	DECISION_MODEL_UNAVAILABLE_CODE,
 	DecisionModelUnavailableError,
@@ -95,6 +96,7 @@ describe("checkDecisionModel", () => {
 		[new BackendError("openrouter", "HTTP 400: Model does-not/exist does not exist", 400), "model-not-found"],
 		[new BackendError("openrouter", "HTTP 404: Not Found", 404), "model-not-found"],
 		[new BackendError("openrouter", "HTTP 429: Rate limit exceeded", 429), "rate-limited"],
+		[new BackendError("openrouter", "HTTP 422: Request body failed validation", 422), "unsupported-question"],
 		[new BackendError("openrouter", "HTTP 503: upstream unavailable", 503), "unreachable"],
 		[new BackendError("openrouter", "request timed out after 10000ms"), "unreachable"],
 		[new BackendError("openrouter", "network error: TypeError: fetch failed"), "unreachable"],
@@ -116,6 +118,28 @@ describe("checkDecisionModel", () => {
 		expect(error.reason).toBe("invalid-response");
 		expect(error.backend).toBe("silent");
 		expect(error.detail).toMatch(/returned no answer/u);
+	});
+
+	it("fails as unsupported-question when the model answers yes/no questions but rejects choice questions", async () => {
+		// Respan Span-01 answers noul questions only, while query routing and the permission gate ask choice questions.
+		const noulOnly: JevBackend = {
+			name: "noul-only",
+			async judge(request) {
+				if (request.questions.some((question) => question.type !== "noul")) {
+					throw new BackendError(
+						"noul-only",
+						"System One API error (400): Respan only accepts noul questions",
+						400,
+					);
+				}
+				return { answers: request.questions.map(() => ({ answer: 0.9 })) };
+			},
+		};
+		const error = await unavailable(checkDecisionModel(createJevJudge({ backend: noulOnly })));
+		expect(error.reason).toBe("unsupported-question");
+		expect(error.backend).toBe("noul-only");
+		expect(error.detail).toContain("only accepts noul questions");
+		expect(error.message).toMatch(/yes\/no and choice questions/u);
 	});
 });
 
@@ -305,7 +329,10 @@ describe("first question with the sLLM fallback", () => {
 					JSON.stringify(context.messages).includes(DECISION_MODEL_PROBE_QUESTION_ID)
 						? fauxAssistantMessage(
 								fauxToolCall(SLLM_DECISION_TOOL_NAME, {
-									answers: [{ id: DECISION_MODEL_PROBE_QUESTION_ID, probabilities: [1], confidence: 1 }],
+									answers: [
+										{ id: DECISION_MODEL_PROBE_QUESTION_ID, probabilities: [1], confidence: 1 },
+										{ id: DECISION_MODEL_CHOICE_PROBE_QUESTION_ID, probabilities: [1, 0], confidence: 1 },
+									],
 								}),
 								{ stopReason: "toolUse" },
 							)

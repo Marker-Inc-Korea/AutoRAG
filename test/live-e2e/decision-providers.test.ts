@@ -8,9 +8,11 @@
  *
  * Acceptance bar: several decision models from different vendors (TypeSafe Jev, OpenAI's GPT-6 Luna
  * Decisions, Liquid d1, Perplexity's decider) answer a routing-shaped question correctly through
- * OpenRouter; GPT-6 Luna answers natively on OpenAI when a key is present; a small chat LLM answers the
- * same typed questions as the fallback on OpenRouter and on Fireworks; and a session whose Jev model does
- * not exist moves to the fallback with Jev's reason attached. Every chat model is a 2026+ release.
+ * OpenRouter; Cloudflare Clef Omni answers under AutoRAG's colon ids, which it rejects as wire keys; a
+ * model that answers yes/no questions only fails the session check as unsupported-question; GPT-6 Luna
+ * answers natively on OpenAI when a key is present; a small chat LLM answers the same typed questions as
+ * the fallback on OpenRouter and on Fireworks; and a session whose Jev model does not exist moves to the
+ * fallback with Jev's reason attached. Every chat model is a 2026+ release.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -99,6 +101,24 @@ describe.skipIf(!LIVE)("decision models through pi's catalog", () => {
 			(caught: unknown) => caught,
 		);
 		expect(error).toMatchObject({ code: "decision-model-unavailable", reason: "model-not-found" });
+	}, 60_000);
+
+	it("Cloudflare Clef Omni answers questions under AutoRAG's own ids, which it rejects as wire keys", async () => {
+		const judgment = await createJevJudge({ backend: "openrouter", model: "cloudflare/clef-omni" })(STATE, [
+			{ id: "datasource:web", type: "noul", question: "Does answering need a search of the public web?" },
+			{ ...QUESTIONS[0], id: `evidence:1:minsync:${"d8a3".repeat(30)}` },
+		]);
+		expect(judgment.verdicts.map((verdict) => verdict.reason)).not.toContain("unreachable");
+		expect(judgment.answers["datasource:web"]?.answer).toEqual(expect.any(Number));
+		expect(judgment.answers[`evidence:1:minsync:${"d8a3".repeat(30)}`]?.answer).toEqual(expect.any(Number));
+	}, 60_000);
+
+	it("fails the session check as unsupported-question for a model that answers yes/no questions only", async () => {
+		const error = await checkDecisionModel(createJevJudge({ backend: "openrouter", model: "respan/span-01" })).then(
+			() => undefined,
+			(caught: unknown) => caught,
+		);
+		expect(error).toMatchObject({ code: "decision-model-unavailable", reason: "unsupported-question" });
 	}, 60_000);
 });
 

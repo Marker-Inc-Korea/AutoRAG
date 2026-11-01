@@ -1,13 +1,14 @@
-import { check, type Judgment, type Question } from "jev-use";
+import { check, type Judgment, pick, type Question } from "jev-use";
 import { createJevJudge, type JevJudge, type JevJudgeOptions } from "./jev-extension.ts";
 import { SllmDecisionBackend } from "./sllm-decision.ts";
 
 /**
  * AutoRAG cannot answer without its decision model (Jev): routing, the follow-up check, citation and
- * evidence judgment, and the permission gate all ask it. The first question of every session therefore
- * puts one tiny probe to the decision model. When Jev cannot answer, the configured small chat LLM
- * (sLLM) is probed and serves the session in its place, reported as degraded; when neither answers,
- * the run ends with {@link DecisionModelUnavailableError} instead of a pipeline that guesses.
+ * evidence judgment, and the permission gate all ask it, in yes/no and choice questions. The first
+ * question of every session therefore puts one tiny probe of each kind to the decision model. When Jev
+ * cannot answer, the configured small chat LLM (sLLM) is probed and serves the session in its place,
+ * reported as degraded; when neither answers, the run ends with {@link DecisionModelUnavailableError}
+ * instead of a pipeline that guesses.
  */
 
 /** Error code every surface reports when the session's decision model cannot be used. */
@@ -15,6 +16,9 @@ export const DECISION_MODEL_UNAVAILABLE_CODE = "decision-model-unavailable";
 
 /** Question id of the availability probe. */
 export const DECISION_MODEL_PROBE_QUESTION_ID = "decision_model_probe";
+
+/** Question id of the choice probe, asked in the same call. */
+export const DECISION_MODEL_CHOICE_PROBE_QUESTION_ID = "decision_model_choice_probe";
 
 /** Why the decision model could not be used. */
 export type DecisionModelFailureReason =
@@ -32,6 +36,8 @@ export type DecisionModelFailureReason =
 	| "rate-limited"
 	/** Network failure, timeout, or a 5xx from the backend. */
 	| "unreachable"
+	/** The backend rejected a yes/no or choice question (HTTP 400/422): the model cannot answer what AutoRAG asks. */
+	| "unsupported-question"
 	/** The backend answered, but not with a usable verdict. */
 	| "invalid-response";
 
@@ -44,6 +50,8 @@ const REMEDIES: Readonly<Record<DecisionModelFailureReason, string>> = {
 	"model-not-found": "The backend does not serve this model; set `jev.model` to a live decision model id.",
 	"rate-limited": "The backend is rate limiting requests; wait a moment and ask again.",
 	unreachable: "The backend could not be reached; check the network connection and ask again.",
+	"unsupported-question":
+		"This model cannot answer the yes/no and choice questions AutoRAG asks; set `jev.model` to another decision model (`autorag models list --decision`).",
 	"invalid-response": "The backend answered without a usable verdict; check `jev.backend` and `jev.model`.",
 };
 
@@ -108,6 +116,7 @@ export function classifyDecisionModelFailure(detail: string): DecisionModelFailu
 	if (/timed out|timeout|network error|fetch failed|econn|enotfound|eai_again|\b5\d\d\b|unreachable/u.test(text)) {
 		return "unreachable";
 	}
+	if (/\b(400|422)\b/u.test(text)) return "unsupported-question";
 	return "invalid-response";
 }
 
@@ -115,10 +124,17 @@ export function classifyDecisionModelFailure(detail: string): DecisionModelFailu
 const BACKEND_FAILED_HINT = /^Jev backend failed \((.*)\); answer this yourself\.$/su;
 
 const PROBE_STATE = "AutoRAG starts a session and checks that its decision model answers.";
-const PROBE_QUESTION: Question = {
-	...check("Does the state say that AutoRAG checks its decision model?"),
-	id: DECISION_MODEL_PROBE_QUESTION_ID,
-};
+/** Yes/no first, then choice: the two question kinds every AutoRAG judgment is made of. */
+const PROBE_QUESTIONS: readonly Question[] = [
+	{ ...check("Does the state say that AutoRAG checks its decision model?"), id: DECISION_MODEL_PROBE_QUESTION_ID },
+	{
+		...pick("Which part of AutoRAG does the state say is checked?", {
+			decision_model: "its decision model",
+			search_index: "its search index",
+		}),
+		id: DECISION_MODEL_CHOICE_PROBE_QUESTION_ID,
+	},
+];
 
 /** The decision model that answered the probe. */
 export interface DecisionModelStatus {
@@ -129,23 +145,25 @@ export interface DecisionModelStatus {
 }
 
 /**
- * Put one probe question to the decision model. Resolves with the backend and model that answered;
- * throws {@link DecisionModelUnavailableError} when no backend could be built or it gave no number.
- * Whether the probe's answer is "right" does not matter: any number proves the model is reachable,
- * authorized, and served.
+ * Put the probe questions to the decision model. Resolves with the backend and model that answered;
+ * throws {@link DecisionModelUnavailableError} when no backend could be built, or it gave no
+ * probability to the yes/no probe or no option to the choice probe. Whether the answers are "right"
+ * does not matter: answers to both prove the model is reachable, authorized, served, and able to
+ * answer the kinds of question AutoRAG asks.
  */
 export async function checkDecisionModel(judge: JevJudge): Promise<DecisionModelStatus> {
 	let judgment: Judgment;
 	try {
-		judgment = await judge(PROBE_STATE, [PROBE_QUESTION]);
+		judgment = await judge(PROBE_STATE, [...PROBE_QUESTIONS]);
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new DecisionModelUnavailableError({ reason: classifyDecisionModelFailure(detail), detail });
 	}
-	const verdict = judgment.verdicts[0];
+	const [yesNo, choice] = judgment.verdicts;
 	const served = { backend: judgment.backend, ...(judgment.model !== undefined ? { model: judgment.model } : {}) };
-	if (typeof verdict?.answer === "number") return served;
-	const hint = verdict?.hint ?? "the decision model returned no verdict";
+	if (typeof yesNo?.answer === "number" && typeof choice?.answer === "string") return served;
+	const unanswered = typeof yesNo?.answer === "number" ? choice : yesNo;
+	const hint = unanswered?.hint ?? "the decision model returned no verdict";
 	const backendFailure = BACKEND_FAILED_HINT.exec(hint)?.[1];
 	throw new DecisionModelUnavailableError({
 		reason: backendFailure === undefined ? "invalid-response" : classifyDecisionModelFailure(backendFailure),
