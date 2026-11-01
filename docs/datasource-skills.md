@@ -32,32 +32,6 @@ trusted `vdr sync`. Keyword, V-SPLADE lexical, dense embedding, and hybrid
 search are delegated to `clawgallery search --json`; AutoRAG never reads
 `images.jsonl` or `vdr.sqlite3`, and does not trigger captioning or renaming.
 
-### Spotlight
-
-`spotlight` is a macOS-only live-search skill. It drives the built-in `mdfind`
-CLI (no extra install). macOS owns and refreshes the Spotlight index; AutoRAG
-does not create a snapshot. Each configured query is a trusted Spotlight
-filter AND-ed with the user's search text, and only the requested hits are
-hydrated. Datasource refresh only checks platform, configuration, and index
-readiness without running `mdfind`. Result metadata carries the real absolute
-path. Grant Full Disk Access to the host app when searching Mail, Messages,
-Safari, or other protected locations. Unavailable on non-macOS hosts.
-
-```json
-{
-  "datasources": {
-    "mac-files": {
-      "type": "spotlight",
-      "instanceId": "local",
-      "connector": {
-        "queries": ["kMDItemContentTypeTree == 'public.text'"],
-        "onlyIn": "/Users/me/Documents"
-      }
-    }
-  }
-}
-```
-
 ### Obsidian
 
 `obsidian` indexes a markdown vault with MinSync — the same engine and
@@ -669,8 +643,7 @@ and mirror available for query-time search. `include`, `exclude`,
 `maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
 `bandwidthLimit`, and `dryRun` are trusted server configuration; model/tool
 arguments cannot change them. The RSS connector takes the same trusted
-`maxDocuments`/`maxItemsPerFeed`/`maxContentChars` caps, and Spotlight takes
-`maxDocuments`/`maxContentChars`/`maxResultsPerQuery`/`maxBytesPerFile`.
+`maxDocuments`/`maxItemsPerFeed`/`maxContentChars` caps.
 
 Before searching, the agent loads the datasource skill with
 `load_datasource_skill`, then calls the connection's dedicated

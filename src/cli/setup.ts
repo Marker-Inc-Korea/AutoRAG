@@ -185,7 +185,6 @@ function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platf
 			"cloud-drive",
 			"obsidian",
 			"rss",
-			"spotlight",
 		]),
 	];
 }

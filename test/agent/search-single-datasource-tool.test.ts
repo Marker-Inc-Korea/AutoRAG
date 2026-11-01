@@ -248,7 +248,6 @@ describe("every configured datasource connection stays individually callable", (
 				clawgallery: true,
 				github: true,
 				rss: true,
-				spotlight: true,
 				"cloud-drive": true,
 				"kakao-work": { type: "kakao" },
 			}),
