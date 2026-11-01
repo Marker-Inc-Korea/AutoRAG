@@ -410,6 +410,12 @@ async function runDarwin(): Promise<void> {
 	}
 }
 
+/** Whether two Windows paths name the same location: `realpath` may add a trailing separator to a share root. */
+function sameWindowsPath(left: string, right: string): boolean {
+	const normalize = (value: string): string => value.replaceAll("/", "\\").replace(/\\+$/u, "").toLowerCase();
+	return normalize(left) === normalize(right);
+}
+
 /** A drive letter that is not currently used. */
 function freeDriveLetter(): string {
 	for (let index = 0; index < 8; index += 1) {
@@ -454,8 +460,8 @@ async function runWindows(): Promise<void> {
 		const roots = await probe.cloudRoots([`${drive}:\\`, unc]);
 		check(
 			"the mapped drive and the UNC share are classified as network roots",
-			roots.some((root) => root.kind === "network" && root.path.toLowerCase().startsWith(`${drive.toLowerCase()}:`)) &&
-				roots.some((root) => root.kind === "network" && root.path.toLowerCase() === unc.toLowerCase()),
+			roots.some((root) => root.kind === "network" && sameWindowsPath(root.path, `${drive}:\\`)) &&
+				roots.some((root) => root.kind === "network" && sameWindowsPath(root.path, unc)),
 			roots.map((root) => `${root.kind}:${root.path}`).join(" "),
 		);
 
