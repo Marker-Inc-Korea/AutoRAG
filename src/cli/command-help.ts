@@ -46,7 +46,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --memory-path <file>          Retrieval memory file",
 		"  --model-provider <name>       Librarian model provider",
 		"  --model-id <id>               Librarian model id (provider and id go together)",
-		"  --embedder-id <id>            MinSync embedder id",
+		'  --embedder-id <id>            MinSync embedder id ("none": sparse-only SPLADE index, no dense model)',
 		"  --embedder-base-url <url>     MinSync embedder endpoint",
 		"  --embedder-api-key-env <var>  Env var holding the embedder key (name only, never the key)",
 		"  --embedder-dimension <n>      Embedding dimension",

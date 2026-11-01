@@ -85,6 +85,7 @@ import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
+	isSparseOnlyEmbedder,
 	type MinSyncDiagnostic,
 	type MinSyncEmbedderConfig,
 	type MinSyncFileFailure,
@@ -4065,6 +4066,8 @@ export class AutoRAGAgent {
 	 * way out; AutoRAG does not start the daemon itself. Shown by `status`, `lite status`, and the MCP status tool.
 	 */
 	private async embeddingDiagnostics(): Promise<SearchDocumentDiagnostic[]> {
+		// A sparse-only index asked for no dense embedder; nothing is missing.
+		if (isSparseOnlyEmbedder(this.minSyncEmbedderConfig)) return [];
 		const health = await this.embedder.health().catch(() => undefined);
 		if (health === undefined || health.alive) return [];
 		return [

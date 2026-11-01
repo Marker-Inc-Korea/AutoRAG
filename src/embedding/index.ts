@@ -1,3 +1,4 @@
+import { isSparseOnlyEmbedder } from "../minsync/embedder-config.ts";
 import type { MinSyncEmbedderConfig } from "../minsync/types.ts";
 import { DEFAULT_DAEMON_MODEL } from "./daemon.ts";
 import type { ManagedEmbedder } from "./embedder.ts";
@@ -45,9 +46,21 @@ function localModel(embedder: MinSyncEmbedderConfig | undefined): string {
 /**
  * The single embedder AutoRAG shares between its own semantic stores and the datasources: a configured
  * remote endpoint, else the `minsync serve` daemon the operator runs, else MinSync's in-process engine.
- * AutoRAG never starts the daemon for it.
+ * AutoRAG never starts the daemon for it. A sparse-only config (`minSync.embedder.id: "none"`) asked for no
+ * dense model, so the embedder reports no backend and every embed fails with that reason: consumers keep their
+ * lexical path and nothing loads Qwen3.
  */
 export function createEmbedderFromConfig(options: EmbedderFromConfigOptions): ManagedEmbedder {
+	if (isSparseOnlyEmbedder(options.embedder)) {
+		const reason = 'dense embedding is off: minSync.embedder.id is "none" (sparse-only index)';
+		return {
+			identity: () => Promise.reject(new Error(reason)),
+			embed: () => Promise.reject(new Error(reason)),
+			health: async () => ({ backend: "none", alive: false, detail: reason }),
+			describeEndpoint: async () => undefined,
+			close: async () => undefined,
+		};
+	}
 	const remote = remoteEmbedderFromMinSync(options.embedder);
 	const embedder = createManagedEmbedder({
 		...(remote === undefined ? {} : { remote }),
