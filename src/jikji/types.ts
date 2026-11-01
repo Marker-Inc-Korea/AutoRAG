@@ -129,6 +129,19 @@ export interface JikjiCandidate {
 	readonly score?: number;
 }
 
+/**
+ * Response-level confidence jikji reports for one `find`. A signal, not a verdict: jikji reports `high`
+ * confidence for weak matches, so nothing here may skip reranking or verification.
+ */
+export interface JikjiConfidence {
+	readonly level?: string;
+	readonly score?: number;
+	readonly answerability?: string;
+	readonly recommendedAction?: string;
+	readonly requiresLlmRerank?: boolean;
+	readonly indexStatus?: string;
+}
+
 export interface JikjiEvidence {
 	readonly path: string;
 	readonly nextRead: JikjiNextRead;
@@ -162,6 +175,8 @@ export interface JikjiAnswerPack {
 	readonly handoffAction: JikjiHandoffAction;
 	readonly toolCallPolicy: JikjiToolCallPolicy;
 	readonly agentShouldNotRerank: boolean;
+	/** Absent when jikji reported none of the confidence fields. */
+	readonly confidence?: JikjiConfidence;
 	/** `raw_fallback_allowed`; derived from the handoff when the envelope omits it. */
 	readonly rawFallbackAllowed: boolean;
 	/** `max_jikji_retries`: how many more jikji steps jikji allows before raw fallback. */

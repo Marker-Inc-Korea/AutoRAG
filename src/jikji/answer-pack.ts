@@ -5,6 +5,7 @@ import { parseJikjiRetryCommand } from "./retry-command.ts";
 import type {
 	JikjiAnswerPack,
 	JikjiCandidate,
+	JikjiConfidence,
 	JikjiEvidence,
 	JikjiHandoffAction,
 	JikjiNextRead,
@@ -43,6 +44,57 @@ function parseNextRead(value: unknown): JikjiNextRead | undefined {
 		return value.kind as JikjiNextRead;
 	}
 	return undefined;
+}
+
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Optional response-level fields: a missing or wrong-typed one is dropped, never a reason to reject the
+ * pack, because confidence is advisory and upstream owns its exact shape.
+ */
+function parseConfidence(parsed: Record<string, unknown>): JikjiConfidence | undefined {
+	const level = optionalString(parsed.confidence);
+	const score = typeof parsed.confidence_score === "number" ? parsed.confidence_score : undefined;
+	const answerability = optionalString(parsed.answerability);
+	const recommendedAction = optionalString(parsed.recommended_action);
+	const requiresLlmRerank = typeof parsed.requires_llm_rerank === "boolean" ? parsed.requires_llm_rerank : undefined;
+	const indexStatus = optionalString(parsed.index_status);
+	const confidence: JikjiConfidence = {
+		...(level !== undefined ? { level } : {}),
+		...(score !== undefined ? { score } : {}),
+		...(answerability !== undefined ? { answerability } : {}),
+		...(recommendedAction !== undefined ? { recommendedAction } : {}),
+		...(requiresLlmRerank !== undefined ? { requiresLlmRerank } : {}),
+		...(indexStatus !== undefined ? { indexStatus } : {}),
+	};
+	return Object.keys(confidence).length === 0 ? undefined : confidence;
+}
+
+const CONFIDENCE_RANK: Readonly<Record<string, number>> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * Combine the confidence of several roots' responses into one. Weakest wins: the root with the lowest level
+ * (then lowest score) supplies every field, and `requiresLlmRerank` is true when any root asked for it. A
+ * missing or unknown level counts as the weakest.
+ */
+export function mergeJikjiConfidence(entries: readonly (JikjiConfidence | undefined)[]): JikjiConfidence | undefined {
+	const present = entries.filter((entry): entry is JikjiConfidence => entry !== undefined);
+	const rank = (entry: JikjiConfidence): number => CONFIDENCE_RANK[entry.level ?? ""] ?? 0;
+	let weakest = present[0];
+	for (const entry of present) {
+		if (
+			weakest !== undefined &&
+			(rank(entry) < rank(weakest) ||
+				(rank(entry) === rank(weakest) && (entry.score ?? Infinity) < (weakest.score ?? Infinity)))
+		) {
+			weakest = entry;
+		}
+	}
+	if (weakest === undefined) return undefined;
+	const flags = present.map((entry) => entry.requiresLlmRerank).filter((flag): flag is boolean => flag !== undefined);
+	return flags.length === 0 ? weakest : { ...weakest, requiresLlmRerank: flags.some(Boolean) };
 }
 
 /**
@@ -121,6 +173,7 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		parsed.agent_should_not_rerank === undefined && isRecovery ? false : parsed.agent_should_not_rerank;
 	if (typeof agentShouldNotRerank !== "boolean") return undefined;
 
+	const confidence = parseConfidence(parsed);
 	const rawFallbackAllowed =
 		parsed.raw_fallback_allowed === undefined
 			? handoffAction === "raw_fallback_after_retry"
@@ -139,7 +192,6 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		handoffAction === "jikji_retry"
 			? nextCommands.map((command) => parseJikjiRetryCommand(command, retryProof)).find((step) => step !== undefined)
 			: undefined;
-
 	return {
 		answerPaths,
 		paths,
@@ -153,6 +205,7 @@ export function parseJikjiAnswerPack(stdout: string): JikjiAnswerPack | undefine
 		...(maxRawFallbackCommands === undefined ? {} : { maxRawFallbackCommands }),
 		nextCommands,
 		...(retry === undefined ? {} : { retry }),
+		...(confidence !== undefined ? { confidence } : {}),
 	};
 }
 

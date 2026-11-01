@@ -1,4 +1,5 @@
 export {
+	mergeJikjiConfidence,
 	normalizeJikjiAnswerPath,
 	parseJikjiAnswerPack,
 } from "./answer-pack.ts";
@@ -29,6 +30,7 @@ export { mapJikjiPath, outermostJikjiRoots, planJikjiSourceRoots, resolveReturne
 export type {
 	JikjiAnswerPack,
 	JikjiCandidate,
+	JikjiConfidence,
 	JikjiEvidence,
 	JikjiFailureReason,
 	JikjiFindOptions,

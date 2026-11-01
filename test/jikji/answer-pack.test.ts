@@ -160,6 +160,7 @@ describe("parseJikjiAnswerPack", () => {
 			maxJikjiRetries: 1,
 			maxRawFallbackCommands: 0,
 			nextCommands: [],
+			confidence: { answerability: "needs_one_jikji_retry", indexStatus: "missing" },
 		});
 	});
 
@@ -285,6 +286,7 @@ describe("parseJikjiAnswerPack", () => {
 			maxRawFallbackCommands: 2,
 			maxJikjiRetries: 0,
 			nextCommands: [],
+			confidence: { answerability: "needs_raw_fallback_after_retry", indexStatus: "missing" },
 		});
 	});
 
@@ -528,5 +530,82 @@ describe("normalizeJikjiAnswerPath", () => {
 	it("returns undefined when the path does not exist on disk", () => {
 		const roots = [root(repoRoot)];
 		expect(normalizeJikjiAnswerPath("src/nonexistent.ts", roots)).toBeUndefined();
+	});
+});
+
+/** Trimmed from a real `jikji find --json` 0.2.1 run over a three-file Korean corpus. */
+function realJikjiPayload(overrides: Record<string, unknown> = {}): string {
+	return JSON.stringify({
+		answer_paths: ["pay.md"],
+		paths: ["pay.md"],
+		candidates: [
+			{
+				ev: "2026년 3분기 보험금 지급 기준 안내 | 지급 청구는 14일 이내 처리됩니다",
+				next_read: { kind: "original", path: "pay.md" },
+				p: "pay.md",
+				queries: ["보험금 지급 기준"],
+				rank: 1,
+				s: 5130.7564,
+				strategies: ["lexical", "lexical_anchors"],
+				terms: ["기준", "보험금", "지급"],
+				why: ["fielded-bm25", "strong-map-term"],
+			},
+		],
+		evidence_pack: [
+			{
+				evidence: ["2026년 3분기 보험금 지급 기준 안내", "지급 청구는 14일 이내 처리됩니다"],
+				matched_terms: ["기준", "보험금", "지급"],
+				next_read: { kind: "original", path: "pay.md" },
+				path: "pay.md",
+				why: ["fielded-bm25"],
+			},
+		],
+		handoff_action: "direct_use",
+		tool_call_policy: { stop_after_find: true, forbidden_tools: ["bash"], allowed_followups: [] },
+		agent_should_not_rerank: true,
+		confidence: "high",
+		confidence_score: 0.9,
+		answerability: "answerable_from_payload",
+		recommended_action: "verify_top_candidates",
+		requires_llm_rerank: false,
+		index_status: "ready",
+		...overrides,
+	});
+}
+
+describe("parseJikjiAnswerPack real 0.2.1 payload and confidence", () => {
+	it("parses the real payload's candidates by path, next_read and score", () => {
+		expect(parseJikjiAnswerPack(realJikjiPayload())?.candidates).toEqual([
+			{ path: "pay.md", nextRead: "original", score: 5130.7564 },
+		]);
+	});
+
+	it("keeps the response-level confidence, answerability and rerank signals", () => {
+		expect(parseJikjiAnswerPack(realJikjiPayload())?.confidence).toEqual({
+			level: "high",
+			score: 0.9,
+			answerability: "answerable_from_payload",
+			recommendedAction: "verify_top_candidates",
+			requiresLlmRerank: false,
+			indexStatus: "ready",
+		});
+	});
+
+	it("has no confidence when jikji sent none, without rejecting the pack", () => {
+		const pack = parseJikjiAnswerPack(validAnswerPack());
+		expect(pack).toBeDefined();
+		expect(pack?.confidence).toBeUndefined();
+	});
+
+	it("drops wrong-typed confidence fields instead of rejecting the pack", () => {
+		const pack = parseJikjiAnswerPack(
+			realJikjiPayload({ confidence: 7, confidence_score: "0.9", requires_llm_rerank: "no" }),
+		);
+		expect(pack).toBeDefined();
+		expect(pack?.confidence).toEqual({
+			answerability: "answerable_from_payload",
+			recommendedAction: "verify_top_candidates",
+			indexStatus: "ready",
+		});
 	});
 });
