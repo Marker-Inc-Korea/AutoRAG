@@ -3850,6 +3850,12 @@ export class AutoRAGAgent {
 					...fileSkippedDiagnostics(minsync?.filesFailed),
 					...everythingDiagnostics,
 					...fsearchDiagnostics,
+					...jikjiDiagnostics.map((d) => ({
+						code: d.code,
+						severity: d.severity,
+						message: d.message,
+						source: d.source,
+					})),
 				],
 				minsync: publicMinsync,
 				datasources,
