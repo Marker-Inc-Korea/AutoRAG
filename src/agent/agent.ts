@@ -311,7 +311,7 @@ export interface AutoRAGRetrievalLimits {
 		readonly jikjiTopK?: number;
 		/** MinSync retrieve candidate count. Default 100. */
 		readonly minSyncTopK?: number;
-		/** Max Jikji answer paths rendered into the baseline. Default 100. */
+		/** Max Jikji answer paths handed to the verification prompt as starting points. Default 100. */
 		readonly jikjiPathLimit?: number;
 		/** Max results rendered per baseline section. Default 100. */
 		readonly sectionLimit?: number;
@@ -346,12 +346,6 @@ type ResolvedRetrievalLimits = {
 interface SearchDatasourceChoice {
 	readonly datasources: readonly string[];
 	readonly web: boolean;
-}
-
-/** One Jikji answer path and the evidence text Jikji returned for it, as the baseline prefetch carries it. */
-interface JikjiHit {
-	readonly path: string;
-	readonly evidence?: string;
 }
 
 /**
@@ -998,6 +992,12 @@ export class AutoRAGAgent {
 	private readonly memoryVectorPath: string;
 	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
 	private readonly evidenceOrigins = new EvidenceOriginIndex();
+	/**
+	 * Files Jikji found for the current search's queries, in Jikji's order. The baseline prefetch sets it;
+	 * only the verification prompt uses it, as places to start exploring. The fast answer never sees them:
+	 * a path says nothing about what a file contains, and the reranker cannot judge one.
+	 */
+	private jikjiStartingPoints: readonly string[] = [];
 	/** Search-tool queries by tool call id, read back when the call ends. */
 	private readonly searchToolQueries = new Map<string, string>();
 	/** Identifies this agent's conversation: everything judged in it is "current" memory. */
@@ -2388,6 +2388,7 @@ export class AutoRAGAgent {
 							fastText,
 							fastAnswerDelivered,
 							this.interactive.steers,
+							this.jikjiStartingPoints,
 						),
 					),
 				);
@@ -3090,15 +3091,8 @@ export class AutoRAGAgent {
 			const searchQuery = searchQueries[index];
 			if (searchQuery === undefined) continue;
 			if (webSearch.error !== undefined) webFailures.push(`${JSON.stringify(searchQuery)}: ${webSearch.error}`);
-			const jikjiPack = jikji?.answerPack;
-			for (const path of jikjiPack?.answerPaths ?? []) {
-				const evidence = jikjiPack?.candidates.find((entry) => entry.path === path)?.evidence ?? "";
-				this.evidenceOrigins.add({
-					query: searchQuery,
-					method: JIKJI_FIND_TOOL_NAME,
-					source: path,
-					content: evidence,
-				});
+			for (const path of jikji?.answerPack?.answerPaths ?? []) {
+				this.evidenceOrigins.add({ query: searchQuery, method: JIKJI_FIND_TOOL_NAME, source: path, content: "" });
 			}
 			const labelled = [
 				...vector.map((result) => ({ result, fallback: SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME })),
@@ -3142,22 +3136,8 @@ export class AutoRAGAgent {
 			}
 			return merged;
 		};
-		const jikjiFound = perQuery.some(([jikji]) => jikji?.answerPack !== undefined);
-		// Evidence text is retrieved content: it rides on the same normalized, `excludePaths`-filtered paths
-		// (see `mergeAnswerPacks`), the first non-empty text per path wins across queries.
-		const jikjiEvidence = new Map<string, string>();
-		for (const [jikji] of perQuery) {
-			for (const entry of jikji?.answerPack?.candidates ?? []) {
-				if (entry.evidence !== undefined && !jikjiEvidence.has(entry.path))
-					jikjiEvidence.set(entry.path, entry.evidence);
-			}
-		}
-		const jikjiHits: JikjiHit[] = [
-			...new Set(interleave(perQuery.map(([jikji]) => jikji?.answerPack?.answerPaths ?? []))),
-		].map((path) => {
-			const evidence = jikjiEvidence.get(path);
-			return evidence === undefined ? { path } : { path, evidence };
-		});
+		const jikjiPaths = [...new Set(interleave(perQuery.map(([jikji]) => jikji?.answerPack?.answerPaths ?? [])))];
+		this.jikjiStartingPoints = jikjiPaths.slice(0, this.limits.prefetch.jikjiPathLimit);
 		const seenChunks = new Set<string>();
 		const unseen = (result: RetrievalResult): boolean => {
 			const key = `${result.source}\0${result.content}`;
@@ -3182,7 +3162,7 @@ export class AutoRAGAgent {
 			reranked = await this.searchProgress.step(
 				"rerank",
 				"Ranking the candidates",
-				() => this.rerankPrefetchPool(query, jikjiHits, minSyncResults, datasourceResults, webResults, signal),
+				() => this.rerankPrefetchPool(query, minSyncResults, datasourceResults, webResults, signal),
 				(ranked) => (ranked === undefined ? undefined : `${ranked.length} kept`),
 			);
 		} catch (error) {
@@ -3203,7 +3183,6 @@ export class AutoRAGAgent {
 		const sections: string[] = [];
 		if (searchQueries.length > 1) sections.push(formatSearchQueries(searchQueries));
 		const idFor = (result: RetrievalResult): string => this.evidenceLedger.registerResult("baseline", result);
-		let shownJikji = jikjiHits.slice(0, this.limits.prefetch.jikjiPathLimit);
 		let shownMinSync = minSyncResults.slice(0, this.limits.prefetch.sectionLimit);
 		let shownDatasource = datasourceResults.slice(0, this.limits.prefetch.sectionLimit);
 		let shownWeb = webResults.slice(0, this.limits.prefetch.sectionLimit);
@@ -3211,7 +3190,7 @@ export class AutoRAGAgent {
 			// Retrieval order, not rerank order: fill the cut round-robin by rank
 			// across the sources so one source cannot take every slot, and
 			// each source keeps its own order.
-			const sources = [shownJikji, shownMinSync, shownDatasource, shownWeb];
+			const sources = [shownMinSync, shownDatasource, shownWeb];
 			const quota = sources.map(() => 0);
 			for (let taken = 0, rank = 0; taken < this.rerankTopN; rank++) {
 				let advanced = false;
@@ -3223,24 +3202,9 @@ export class AutoRAGAgent {
 				}
 				if (!advanced) break;
 			}
-			shownJikji = shownJikji.slice(0, quota[0]);
-			shownMinSync = shownMinSync.slice(0, quota[1]);
-			shownDatasource = shownDatasource.slice(0, quota[2]);
-			shownWeb = shownWeb.slice(0, quota[3]);
-		}
-		if (jikjiFound && shownJikji.length > 0) {
-			sections.push(
-				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${shownJikji
-					.map(({ path, evidence }) => {
-						const id = this.evidenceLedger.register({
-							method: JIKJI_FIND_TOOL_NAME,
-							source: path,
-							content: evidence ?? path,
-						});
-						return evidence === undefined ? `[${id}] ${path}` : `[${id}] ${path}\n${evidence}`;
-					})
-					.join("\n")}`,
-			);
+			shownMinSync = shownMinSync.slice(0, quota[0]);
+			shownDatasource = shownDatasource.slice(0, quota[1]);
+			shownWeb = shownWeb.slice(0, quota[2]);
 		}
 		if (shownMinSync.length > 0) {
 			sections.push(
@@ -3312,7 +3276,7 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Rerank the pre-fast-answer baseline pool — Jikji answer paths, MinSync
+	 * Rerank the pre-fast-answer baseline pool — MinSync
 	 * chunks, Jev-selected datasource chunks, and prefetched web hits — down to
 	 * the configured `rerank.topN`. With decomposition the pool merges every
 	 * search query's hits (interleaved), capped at the same per-source sizes as a
@@ -3323,7 +3287,6 @@ export class AutoRAGAgent {
 	 */
 	private async rerankPrefetchPool(
 		query: string,
-		jikjiHits: readonly JikjiHit[],
 		minSyncResults: readonly RetrievalResult[],
 		datasourceResults: readonly RetrievalResult[],
 		webResults: readonly RetrievalResult[],
@@ -3331,16 +3294,7 @@ export class AutoRAGAgent {
 	): Promise<RetrievalResult[] | undefined> {
 		const reranker = this.reranker;
 		if (reranker === undefined) return undefined;
-		const candidates: RetrievalResult[] = jikjiHits
-			.slice(0, this.limits.prefetch.jikjiPathLimit)
-			.map(({ path, evidence }, index) => ({
-				id: `jikji:${index}`,
-				content: evidence ?? path,
-				source: path,
-				score: 1 - index / Math.max(jikjiHits.length, 1),
-				metadata: { method: "jikji" },
-			}));
-		candidates.push(...minSyncResults.slice(0, this.limits.prefetch.minSyncTopK));
+		const candidates: RetrievalResult[] = minSyncResults.slice(0, this.limits.prefetch.minSyncTopK);
 		candidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
 		candidates.push(...webResults.slice(0, this.limits.prefetch.sectionLimit));
 		if (candidates.length === 0) return undefined;
@@ -3588,6 +3542,7 @@ export class AutoRAGAgent {
 		fastAnswer: string | undefined,
 		fastAnswerDelivered: boolean,
 		steers: readonly string[] = [],
+		jikjiStartingPoints: readonly string[] = [],
 	): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
@@ -3621,6 +3576,9 @@ export class AutoRAGAgent {
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
 			formatSteerContext(steers) +
+			(jikjiStartingPoints.length === 0
+				? ""
+				: `Jikji's file discovery found these local files for the query. They are unverified candidates, not evidence: start exploring from them.\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`) +
 			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
@@ -4389,7 +4347,12 @@ export class AutoRAGAgent {
 			for (const cand of entry.pack.candidates) {
 				const norm = normalizeJikjiAnswerPath(cand.path, originRoots);
 				if (norm !== undefined && !isPathExcluded(norm, excluded) && !candidates.some((c) => c.path === norm)) {
-					candidates.push({ ...cand, path: norm });
+					candidates.push({
+						path: norm,
+						nextRead: cand.nextRead,
+						...(cand.label !== undefined ? { label: cand.label } : {}),
+						...(cand.score !== undefined ? { score: cand.score } : {}),
+					});
 				}
 			}
 			for (const ev of entry.pack.evidencePack) {

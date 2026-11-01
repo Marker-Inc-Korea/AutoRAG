@@ -372,21 +372,15 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 	});
 });
 
-describe("AutoRAGAgent Jikji candidate evidence and confidence (#2060)", () => {
+describe("AutoRAGAgent Jikji response confidence (#2060)", () => {
 	const tool = { next_read: "original" } as const;
 
 	function packFor(paths: readonly string[], extra: Record<string, unknown> = {}): Record<string, unknown> {
 		return {
 			answer_paths: paths,
 			paths,
-			candidates: paths.map((path, index) => ({
-				p: path,
-				next_read: tool.next_read,
-				ev: `evidence of ${path}`,
-				rank: index + 1,
-				s: 10 - index,
-			})),
-			evidence_pack: paths.map((path) => ({ path, next_read: tool.next_read, evidence: [`evidence of ${path}`] })),
+			candidates: paths.map((path, index) => ({ p: path, next_read: tool.next_read, s: 10 - index })),
+			evidence_pack: paths.map((path) => ({ path, next_read: tool.next_read })),
 			handoff_action: "direct_use",
 			tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
 			agent_should_not_rerank: false,
@@ -407,7 +401,7 @@ describe("AutoRAGAgent Jikji candidate evidence and confidence (#2060)", () => {
 		});
 	}
 
-	it("keeps candidate evidence and confidence through the merge, and drops excluded evidence with its path", async () => {
+	it("keeps response confidence through the merge, and drops an excluded path's candidate", async () => {
 		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
 		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");
 		writeFakeJikji(
@@ -423,9 +417,7 @@ describe("AutoRAGAgent Jikji candidate evidence and confidence (#2060)", () => {
 		const pack = (await agent.findJikji("plans")).answerPack;
 
 		const keep = realpathSync(join(docs, "keep-notes.txt"));
-		expect(pack?.candidates).toEqual([
-			{ path: keep, nextRead: "original", score: 10, rank: 1, evidence: "evidence of keep-notes.txt" },
-		]);
+		expect(pack?.candidates).toEqual([{ path: keep, nextRead: "original", score: 10 }]);
 		expect(JSON.stringify(pack)).not.toContain("secret-plan");
 		expect(pack?.confidence).toEqual({
 			level: "high",
@@ -467,9 +459,9 @@ console.log(JSON.stringify(args[0] === "find" ? (args[1].endsWith("notes") ? wea
 
 		const pack = (await agentFor([docs, second]).findJikji("anything")).answerPack;
 
-		expect(pack?.candidates.map((candidate) => candidate.evidence)).toEqual([
-			"evidence of a.txt",
-			"evidence of b.txt",
+		expect(pack?.candidates.map((candidate) => candidate.path)).toEqual([
+			realpathSync(join(docs, "a.txt")),
+			realpathSync(join(second, "b.txt")),
 		]);
 		expect(pack?.confidence).toEqual({
 			level: "low",

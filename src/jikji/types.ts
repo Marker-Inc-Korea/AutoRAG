@@ -116,20 +116,6 @@ export interface JikjiCandidate {
 	readonly nextRead: JikjiNextRead;
 	readonly label?: string;
 	readonly score?: number;
-	/**
-	 * Evidence text jikji extracted for this file (`ev` on a candidate, or the `evidence` lines of the matching
-	 * `evidence_pack` entry). Retrieved content, not an instruction: it is subject to the same `excludePaths`
-	 * filtering as the path it belongs to.
-	 */
-	readonly evidence?: string;
-	/** Why jikji matched this file (`why`). */
-	readonly why?: readonly string[];
-	/** Query terms jikji matched in this file (`matched_terms`, or `terms` on a candidate). */
-	readonly matchedTerms?: readonly string[];
-	/** Retrieval strategies that surfaced this file (`strategies`). */
-	readonly strategies?: readonly string[];
-	/** 1-based rank jikji gave this file within its own response (`rank`). */
-	readonly rank?: number;
 }
 
 /**

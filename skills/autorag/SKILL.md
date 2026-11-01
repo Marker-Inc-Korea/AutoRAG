@@ -81,8 +81,9 @@ A folder entry excludes everything under it. Removing an entry and running
 `autorag refresh --method minsync` indexes the file again. Excluded sources are
 recorded as `user-excluded` skips, so they are not reported as stale. Jikji
 indexes the source folders directly and is not refreshed here, so AutoRAG also
-drops excluded paths, and the evidence text Jikji returned for them, from the `jikji_find` answer pack and the baseline prefetch
-at retrieval time; the on-disk `.jikji_agent_map.md` stays complete, and direct
+drops excluded paths from the `jikji_find` answer pack and from the files Jikji
+hands to the verification step as starting points, at retrieval time; the
+on-disk `.jikji_agent_map.md` stays complete, and direct
 file reads remain available.
 
 `status` is model-free and path-opaque. `health` resolves the single model,
