@@ -108,7 +108,9 @@ appendFileSync(${JSON.stringify(`${logPath}.env`)}, JSON.stringify({ command: ar
 if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(dirname(config), { recursive: true });
-  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
+  const embedderAt = args.indexOf("--embedder");
+  const embedderId = embedderAt === -1 ? "openai" : args[embedderAt + 1];
+  writeFileSync(config, "[embedder]\\nid = \\"" + embedderId + "\\"\\n" + (embedderId === "none" ? "\\n[vectorstore.options]\\ndimension = 1\\n" : ""));
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
 }
@@ -2005,6 +2007,115 @@ describe("BM25-era MinSync workspace", () => {
 		expect(callArgs("init")).toBeUndefined();
 		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<string, unknown>;
 		expect(rewritten.lexical).toBeUndefined();
+	});
+});
+
+describe("sparse-only MinSync workspace", () => {
+	const sparseOnly = { id: "none" } as const;
+
+	function calls(): { args: string[] }[] {
+		return loggedCalls().map((line) => JSON.parse(line) as { args: string[] });
+	}
+
+	function writeDenseWorkspace(): void {
+		const dir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			'[embedder]\nid = "native:Qwen/Qwen3-Embedding-0.6B"\n\n[vectorstore.options]\ndimension = 1024\n',
+		);
+		writeFileSync(join(dir, "cursor.json"), "{}");
+		writeFileSync(join(dir, "autorag-embedding-identity.json"), "{}");
+	}
+
+	it("re-initializes a dense workspace as sparse-only and rebuilds it in full", async () => {
+		writeDenseWorkspace();
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			embedder: sparseOnly,
+		});
+
+		const result = await method.sync();
+
+		expect(result).toMatchObject({ ok: true });
+		expect(calls().find((call) => call.args[0] === "init")?.args).toEqual([
+			"init",
+			"--format",
+			"json",
+			"--force",
+			"--embedder",
+			"none",
+		]);
+		expect(calls().find((call) => call.args[0] === "sync")?.args).toContain("--full");
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as {
+			embedder?: { id?: string };
+			vectorstore?: { options?: { dimension?: number } };
+		};
+		expect(rewritten.embedder?.id).toBe("none");
+		// A leftover 1024 would make MinSync refuse the sparse-only store.
+		expect(rewritten.vectorstore?.options?.dimension).not.toBe(1024);
+		expect(existsSync(join(minsyncWorkspace, ".minsync", "autorag-embedding-identity.json"))).toBe(false);
+	});
+
+	it("re-initializes a sparse-only workspace when a dense embedder is configured again", async () => {
+		const dir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(minSyncConfigPath(minsyncWorkspace), '[embedder]\nid = "none"\n');
+		writeFileSync(join(dir, "cursor.json"), "{}");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+		await method.sync();
+
+		expect(calls().find((call) => call.args[0] === "init")?.args).toContain("--force");
+		expect(calls().find((call) => call.args[0] === "sync")?.args).toContain("--full");
+	});
+
+	it("leaves an already sparse-only workspace alone and syncs it incrementally", async () => {
+		const dir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(minSyncConfigPath(minsyncWorkspace), '[embedder]\nid = "none"\n');
+		writeFileSync(join(dir, "cursor.json"), "{}");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			embedder: sparseOnly,
+		});
+
+		await method.sync();
+
+		expect(calls().some((call) => call.args[0] === "init")).toBe(false);
+		expect(calls().find((call) => call.args[0] === "sync")?.args).not.toContain("--full");
+	});
+
+	it("answers the hybrid method with sparse retrieval, not a degraded fallback", async () => {
+		writeFakeMinSync(
+			JSON.stringify({ results: [{ path: "files/docs/policy.txt.md", score: 3.1, text: "Sparse hit." }] }),
+		);
+		const hybrid = new MinSyncHybridMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			embedder: sparseOnly,
+		});
+		const events: RetrievalFallbackEvent[] = [];
+
+		const results = await hybrid.retrieve("renewal", { topK: 2, onFallback: (event) => events.push(event) });
+
+		expect(results.map((result) => result.content)).toEqual(["Sparse hit."]);
+		expect(events).toEqual([]);
+		expect(
+			calls()
+				.filter((call) => call.args[0] === "query")
+				.map((call) => call.args[4]),
+		).toEqual(["sparse"]);
+		expect(hybrid.describe()).toMatchObject({ name: "hybrid", type: "sparse" });
+		expect(hybrid.describe().capabilities).not.toContain("semantic");
 	});
 });
 

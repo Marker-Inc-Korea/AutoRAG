@@ -367,4 +367,20 @@ describe("ObsidianSkill description", () => {
 		expect(workspace("one")).not.toBe(workspace("two"));
 		expect(existsSync(join(root, ".autorag", "minsync"))).toBe(false);
 	});
+
+	it("offers only sparse retrieval over a sparse-only index", async () => {
+		note("Projects/Budget.md", "# Budget\nhiring frozen");
+		const skill = new ObsidianSkill({
+			instanceId: "vault-1",
+			vaultPath: vault,
+			workspaceRoot: root,
+			minSync: { binaryPath: fake.binaryPath, autoInstall: false, embedder: { id: "none" } },
+		});
+		await skill.index();
+
+		expect(skill.retrievalMethods().map((candidate) => candidate.describe().name)).toEqual(["obsidian-sparse"]);
+		expect(skill.describe().capabilities).not.toContain("semantic");
+		const hits = await method(skill, "obsidian-sparse").retrieve("frozen", { topK: 5 });
+		expect(hits.map((hit) => hit.source)).toEqual(["/obsidian/vault-1/Projects/Budget.md"]);
+	});
 });

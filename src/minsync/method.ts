@@ -13,6 +13,7 @@ import type {
 import { isMinSyncBinaryMissing, resolveMinSyncBinary } from "./binary.ts";
 import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
+import { isSparseOnlyEmbedder } from "./embedder-config.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
@@ -59,7 +60,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.maxChunkSize = options.maxChunkSize;
 		this.defaultTopK = options.defaultTopK ?? 50;
 		this.scopedTopK = options.scopedTopK ?? 100;
-		this.mode = options.mode ?? "vector";
+		// A sparse-only index has no dense vectors, so MinSync answers only `--mode sparse` for it.
+		this.mode = isSparseOnlyEmbedder(options.embedder) ? "sparse" : (options.mode ?? "vector");
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -209,18 +211,31 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 }
 
 export class MinSyncHybridMethod extends MinSyncVectorMethod {
+	private readonly sparseOnly: boolean;
+
 	constructor(options: MinSyncHybridMethodOptions) {
 		super({ ...options, mode: "hybrid" });
+		this.sparseOnly = isSparseOnlyEmbedder(options.embedder);
 	}
 
 	override describe(): RetrievalMethodDescriptor {
-		return {
-			name: "hybrid",
-			type: "hybrid",
-			description: "MinSync-backed hybrid SPLADE sparse + dense vector retrieval over shared CDC chunks",
-			status: "active",
-			capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
-		};
+		// The registered name stays `hybrid` so tools and the skip report keep one MinSync surface; a sparse-only
+		// index ranks by SPLADE alone and says so.
+		return this.sparseOnly
+			? {
+					name: "hybrid",
+					type: "sparse",
+					description: "MinSync-backed SPLADE sparse retrieval over shared CDC chunks (sparse-only index)",
+					status: "active",
+					capabilities: ["lexical", "incremental", "parsed-mirrors", "virtual-paths"],
+				}
+			: {
+					name: "hybrid",
+					type: "hybrid",
+					description: "MinSync-backed hybrid SPLADE sparse + dense vector retrieval over shared CDC chunks",
+					status: "active",
+					capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
+				};
 	}
 }
 

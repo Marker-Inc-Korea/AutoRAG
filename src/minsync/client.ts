@@ -1,15 +1,18 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveEmbeddingPrefixes } from "../embedding/prefixes.ts";
 import {
+	configuredEmbedderId,
 	configuredMaxChunkSize,
 	configuredVectorDimension,
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 	DEFAULT_MINSYNC_EMBEDDER_ID,
+	isSparseOnlyEmbedder,
 	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
+	SPARSE_ONLY_EMBEDDER_ID,
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
@@ -80,10 +83,13 @@ export class MinSyncClient {
 	/**
 	 * What MinSync is told to embed with. No `id`, or a `native:` id, is MinSync's own Qwen3 engine, which
 	 * MinSync provisions and runs (in-process, or through a `minsync serve` daemon it finds on its own).
+	 * {@link SPARSE_ONLY_EMBEDDER_ID} is a sparse-only index: only the id is passed on, since a dimension or an
+	 * endpoint left over from a dense setup would describe vectors MinSync no longer builds.
 	 * Anything else is an endpoint the operator configured, passed through untouched.
 	 */
 	private effectiveEmbedder(): { config: MinSyncEmbedderConfig; identity?: MinSyncEmbeddingIdentity } {
 		const configured = this.embedder;
+		if (isSparseOnlyEmbedder(configured)) return { config: { id: SPARSE_ONLY_EMBEDDER_ID } };
 		const isNative =
 			configured?.baseUrl === undefined && (configured?.id === undefined || configured.id.startsWith("native:"));
 		if (!isNative) return { config: configured ?? {} };
@@ -177,9 +183,15 @@ export class MinSyncClient {
 		// caller's `signal` can stop them, and it takes the whole process tree.
 		const spawnOptions = signal === undefined ? {} : { signal };
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
+		// A dense index cannot become sparse-only in place (or back): the vector column's dimension differs, so
+		// MinSync refuses the store. Switching re-initializes the workspace and rebuilds it from the staged files.
+		const sparseOnly = isSparseOnlyEmbedder(this.embedder);
+		const modeSwitched =
+			initialized && (configuredEmbedderId(this.workspacePath) === SPARSE_ONLY_EMBEDDER_ID) !== sparseOnly;
 
-		if (!initialized) {
+		if (!initialized || modeSwitched) {
 			const initArgs = ["init", "--format", "json"];
+			if (modeSwitched) initArgs.push("--force");
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
@@ -190,8 +202,13 @@ export class MinSyncClient {
 					synced: 0,
 					workspacePath: this.workspacePath,
 					reason: "init-failed",
+					...(init.stderr.trim() === ""
+						? {}
+						: { diagnostic: { code: "sync-failed" as const, message: init.stderr.trim(), retryable: true } }),
 				};
 			}
+			// The dense vectors this file describes are gone with the old store.
+			if (modeSwitched) rmSync(minSyncEmbeddingIdentityPath(this.workspacePath), { force: true });
 		}
 		// Read before the rewrite below: the rewrite changes what these report.
 		const chunkSizeChanged =
@@ -206,7 +223,7 @@ export class MinSyncClient {
 		};
 		try {
 			return await this.checkAndSync(
-				force || chunkSizeChanged || dimensionChanged,
+				force || modeSwitched || chunkSizeChanged || dimensionChanged,
 				signal,
 				effective,
 				restoreConfig,

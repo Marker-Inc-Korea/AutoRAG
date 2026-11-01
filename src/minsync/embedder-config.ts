@@ -23,6 +23,31 @@ export const DEFAULT_MINSYNC_EMBEDDER_CONFIG: MinSyncEmbedderConfig = {
 };
 
 /**
+ * `minSync.embedder.id` for a sparse-only index: MinSync builds SPLADE sparse vectors and no dense ones, so nothing
+ * downloads or runs a dense embedding model. Every MinSync search is then a sparse search.
+ */
+export const SPARSE_ONLY_EMBEDDER_ID = "none";
+
+/** True when the configured embedder asks for a sparse-only MinSync index. */
+export function isSparseOnlyEmbedder(embedder: MinSyncEmbedderConfig | undefined): boolean {
+	return embedder?.id === SPARSE_ONLY_EMBEDDER_ID;
+}
+
+/** The `[embedder].id` an initialized workspace was built with, or undefined when there is no config. */
+export function configuredEmbedderId(workspacePath: string): string | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
+	} catch {
+		return undefined;
+	}
+	const embedder = (parse(raw) as Record<string, unknown>).embedder;
+	if (typeof embedder !== "object" || embedder === null || Array.isArray(embedder)) return undefined;
+	const id = (embedder as Record<string, unknown>).id;
+	return typeof id === "string" ? id : undefined;
+}
+
+/**
  * MinSync config.toml lives at `<workspace>/.minsync/config.toml`.
  * After `minsync init` runs, we rewrite allowlisted embedder fields so
  * the caller's configuration wins over init defaults.

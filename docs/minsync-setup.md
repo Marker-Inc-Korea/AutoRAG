@@ -291,6 +291,22 @@ MinSync downloads the 299 MB model into `~/.cache/minsync/models` on first use
 (sha256-verified) and runs it in-process on Metal or CPU. AutoRAG does not
 start a `minsync serve --sparse` daemon.
 
+### Sparse-only index (no dense embedder)
+
+Set `"minSync": { "embedder": { "id": "none" } }` to build a SPLADE-only index:
+MinSync encodes sparse vectors and no dense ones, so no dense model is
+downloaded or run (indexing a small corpus peaked at about 1.5 GB). Every
+MinSync search is then a sparse search: the `hybrid` and `minsync` methods
+query `--mode sparse` and describe themselves as `sparse`, an Obsidian vault
+offers only `obsidian-sparse`, the shared embedder reports no backend (memory,
+chat sidecars and gist keep their keyword paths), and neither `autorag status`
+nor `autorag setup` warns about a missing embedder.
+
+A dense index cannot become sparse-only in place, or back: the vector column's
+dimension differs. When the configured embedder switches between `none` and a
+dense one, the next refresh runs `minsync init --force` with the new embedder
+and rebuilds the index with a full sync.
+
 ### Upgrading a BM25 workspace
 
 AutoRAG requires MinSync 0.6.0 or newer. A `minsync` on `PATH` or in the

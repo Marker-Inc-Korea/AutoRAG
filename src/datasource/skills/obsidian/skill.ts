@@ -1,3 +1,4 @@
+import { isSparseOnlyEmbedder } from "../../../minsync/embedder-config.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
@@ -43,6 +44,7 @@ export class ObsidianSkill implements DatasourceSkill {
 	private readonly instances: readonly string[];
 	private readonly pollingIntervalMs: number;
 	private readonly tags: readonly string[];
+	private readonly sparseOnly: boolean;
 	private lastIndexedAt: number | undefined;
 	private lastError: string | undefined;
 
@@ -52,6 +54,7 @@ export class ObsidianSkill implements DatasourceSkill {
 			options.instances !== undefined && options.instances.length > 0 ? options.instances : [this.instanceId];
 		this.pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
 		this.tags = options.tags ?? DEFAULT_OBSIDIAN_TAGS;
+		this.sparseOnly = isSparseOnlyEmbedder(options.minSync?.embedder);
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.vaultIndex = new ObsidianVaultIndex({
 			instanceId: this.instanceId,
@@ -67,7 +70,14 @@ export class ObsidianSkill implements DatasourceSkill {
 			id: OBSIDIAN_DATASOURCE_ID,
 			type: OBSIDIAN_SKILL_TYPE,
 			description: "Obsidian vault datasource, indexed by MinSync",
-			capabilities: ["notes", "polling", "lexical", "semantic", "incremental", "scoped"],
+			capabilities: [
+				"notes",
+				"polling",
+				"lexical",
+				...(this.sparseOnly ? [] : ["semantic"]),
+				"incremental",
+				"scoped",
+			],
 			tags: this.tags,
 			status: "active",
 			datasourceId: OBSIDIAN_DATASOURCE_ID,
@@ -123,7 +133,10 @@ export class ObsidianSkill implements DatasourceSkill {
 
 	retrievalMethods(): readonly RetrievalMethod[] {
 		const methodOptions = { index: this.vaultIndex, tags: this.tags };
-		return [new ObsidianSparseMethod(methodOptions), new ObsidianSemanticMethod(methodOptions)];
+		// A sparse-only index has no dense vectors to search.
+		return this.sparseOnly
+			? [new ObsidianSparseMethod(methodOptions)]
+			: [new ObsidianSparseMethod(methodOptions), new ObsidianSemanticMethod(methodOptions)];
 	}
 
 	describeSources(): readonly SourceDescription[] {

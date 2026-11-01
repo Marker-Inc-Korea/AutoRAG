@@ -12,6 +12,7 @@ import {
 } from "../datasource/skills/hister/setup.ts";
 import {
 	createEmbedderFromConfig,
+	type EmbedderHealth,
 	type EmbeddingBackend,
 	type EmbeddingIdentity,
 	type ManagedEmbedder,
@@ -25,7 +26,11 @@ import {
 	WindowsCloudProbe,
 } from "../filesystem/cloud-placeholder.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
-import { DEFAULT_MINSYNC_EMBEDDER_DIMENSION, DEFAULT_MINSYNC_EMBEDDER_ID } from "../minsync/embedder-config.ts";
+import {
+	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
+	DEFAULT_MINSYNC_EMBEDDER_ID,
+	isSparseOnlyEmbedder,
+} from "../minsync/embedder-config.ts";
 import type { MinSyncEmbedderConfig } from "../minsync/types.ts";
 import { normalizeEmbedder, readRawConfigObject, writeConfigObject } from "./config.ts";
 
@@ -301,8 +306,12 @@ export async function runSetup(options: {
 		}
 		embedder = options.deps?.embedder ?? createEmbedderFromConfig({ embedder: configuredEmbedder, env });
 		let embedding: SetupEmbeddingReport;
+		// A sparse-only index asked for no dense embedder, so none is probed and its absence is not a fault.
+		const sparseOnly = isSparseOnlyEmbedder(configuredEmbedder);
 		try {
-			const health = await embedder.health();
+			const health: EmbedderHealth = sparseOnly
+				? { backend: "none", alive: false, detail: "sparse-only index: no dense embedder is configured" }
+				: await embedder.health();
 			if (health.alive && health.backend !== "none") {
 				const identity: EmbeddingIdentity = await embedder.identity();
 				embedding = {
@@ -316,7 +325,7 @@ export async function runSetup(options: {
 				embedding = { reason: safeReason(health.detail ?? "no embedding backend answers") };
 			}
 		} catch (error) {
-			// Embedding is independent from datasource probes: the report stays useful in BM25 mode, but the
+			// Embedding is independent from datasource probes: the report stays useful in sparse mode, but the
 			// failure reason must reach the caller instead of being discarded.
 			embedding = { reason: safeReason(error) };
 		}
@@ -445,7 +454,7 @@ export async function runSetup(options: {
 			datasources,
 			filee: fileeReport,
 			...(cloudFolders.length === 0 ? {} : { cloudFolders }),
-			...(semantic ? {} : { remediation: REMEDIATION }),
+			...(semantic || sparseOnly ? {} : { remediation: REMEDIATION }),
 			...(histerReports[0] === undefined ? {} : { hister: histerReports[0] }),
 			...(histerReports.length > 1 ? { histers: histerReports } : {}),
 			changed,
