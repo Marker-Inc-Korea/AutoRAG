@@ -41,7 +41,6 @@ import {
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
 	defaultRerankApiKeyEnv,
-	defaultRerankModel,
 	SUPPORTED_RERANK_PROVIDERS,
 } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -148,19 +147,17 @@ export interface QueryDecompositionConfig {
 }
 
 /**
- * Post-merge reranking config. Routes merged evidence through a dedicated
- * rerank model. `provider` is `openrouter` (default) or the hosted Dazzi Models
- * plan (`dazzi`); each provider supplies its own default `model`. OpenRouter
- * reads its key from `apiKeyEnv`; Dazzi uses the credential stored by `/login`.
- * Secrets never appear here — only the environment-variable name that holds a
- * provider API key.
+ * Post-merge reranking config. Opt-in: reranking runs only when a `model` is named, and a block without one is treated
+ * as off (reported once at startup). `provider` is `openrouter` (default) or the hosted Dazzi Models plan (`dazzi`).
+ * OpenRouter reads its key from `apiKeyEnv`; Dazzi uses the credential stored by `/login`. Secrets never appear
+ * here, only the environment-variable name that holds a provider API key.
  */
 export interface RerankConfig {
-	/** `false` disables reranking. Missing means enabled when the block is present. */
+	/** `false` disables reranking. Missing means enabled when the block is present and names a model. */
 	enabled?: boolean;
 	/** Provider id (`openrouter` or `dazzi`). @default "openrouter" */
 	provider?: string;
-	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`dazzi`) */
+	/** Wire model id. Required to turn reranking on; there is no default model. */
 	model?: string;
 	/** Environment variable holding the provider API key (`openrouter` only). @default "OPENROUTER_API_KEY" */
 	apiKeyEnv?: string;
@@ -806,6 +803,7 @@ const LIMITS_ALLOWLIST: Record<string, true> = {
 const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
 	jikjiTopK: true,
 	minSyncTopK: true,
+	datasourceTopK: true,
 	jikjiPathLimit: true,
 	sectionLimit: true,
 };
@@ -847,11 +845,13 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		}
 		const jikjiTopK = positiveLimitField(prefetchRecord, "jikjiTopK", "limits.prefetch");
 		const prefetchMinSyncTopK = positiveLimitField(prefetchRecord, "minSyncTopK", "limits.prefetch");
+		const datasourceTopK = positiveLimitField(prefetchRecord, "datasourceTopK", "limits.prefetch");
 		const jikjiPathLimit = positiveLimitField(prefetchRecord, "jikjiPathLimit", "limits.prefetch");
 		const sectionLimit = positiveLimitField(prefetchRecord, "sectionLimit", "limits.prefetch");
 		prefetch = {
 			...(jikjiTopK !== undefined ? { jikjiTopK } : {}),
 			...(prefetchMinSyncTopK !== undefined ? { minSyncTopK: prefetchMinSyncTopK } : {}),
+			...(datasourceTopK !== undefined ? { datasourceTopK } : {}),
 			...(jikjiPathLimit !== undefined ? { jikjiPathLimit } : {}),
 			...(sectionLimit !== undefined ? { sectionLimit } : {}),
 		};
@@ -1281,7 +1281,10 @@ function buildWebSearchAgentOption(
 
 const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKeyEnv", "baseUrl", "topN", "timeoutMs"]);
 
-/** Normalize and validate the `rerank` config section, filling in defaults. */
+/**
+ * Normalize and validate the `rerank` config section, filling in the provider, key-env, and `topN` defaults. It never
+ * invents a model: reranking is opt-in and runs only on a model the operator names.
+ */
 export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig | false {
 	if (raw === false) return false;
 	let record: Record<string, unknown> = {};
@@ -1294,7 +1297,7 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 			if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
 		}
 	}
-	// The provider decides the model and key-env defaults, so resolve it first.
+	// The provider decides the key-env default, so resolve it first.
 	let provider = DEFAULT_RERANK_PROVIDER;
 	if (record.provider !== undefined) {
 		if (typeof record.provider !== "string" || record.provider.trim() === "") {
@@ -1308,7 +1311,6 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	const defaultApiKeyEnv = defaultRerankApiKeyEnv(provider);
 	const out: RerankConfig = {
 		provider,
-		model: defaultRerankModel(provider),
 		...(defaultApiKeyEnv !== undefined ? { apiKeyEnv: defaultApiKeyEnv } : {}),
 		topN: DEFAULT_RERANK_TOP_N,
 	};
@@ -1348,17 +1350,6 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 		out[field] = value;
 	}
 	return out;
-}
-
-/**
- * Rerank block `autorag init` writes when none is given: the hosted Dazzi
- * Models reranker when signed in, else OpenRouter's.
- */
-export function defaultRerankConfig(agentDir: string = getAgentDir()): RerankConfig {
-	return normalizeRerankConfig(
-		{ provider: isDazziSignedIn(agentDir) ? DAZZI_PROVIDER_ID : DEFAULT_RERANK_PROVIDER },
-		"rerank",
-	) as RerankConfig;
 }
 
 export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<AutoRAGAgentOptions, "model"> {
@@ -2124,7 +2115,8 @@ export function writeDefaultConfig(
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
-	full.rerank = partial.rerank ?? defaultRerankConfig();
+	// Reranking is opt-in and sends text to a remote model, so a new config carries no `rerank` block.
+	if (partial.rerank !== undefined) full.rerank = partial.rerank;
 	// Jev routing and question decomposition are on by default; new configs
 	// spell the defaults out so they are visible and editable.
 	full.jev = partial.jev ?? { backend: defaultJevBackend() };

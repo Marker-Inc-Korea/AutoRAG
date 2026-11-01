@@ -49,6 +49,7 @@ export type SearchDocumentDiagnosticCode =
 	| "pdf-extract-thin"
 	| "retrieval-method-failed"
 	| "rerank-failed"
+	| "rerank-disabled"
 	| "jikji-unavailable"
 	| "jikji-prepare-failed"
 	| "jikji-cloud-root-skipped"
