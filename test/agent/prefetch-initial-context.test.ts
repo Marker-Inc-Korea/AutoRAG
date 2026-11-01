@@ -125,6 +125,30 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		expect(prompts.join("\n")).toContain(source);
 	});
 
+	it("hands Jikji's files to the verification prompt as starting points, not to the fast answer", async () => {
+		writeFakeJikji(join(root, "fake-jikji.mjs"));
+		writeFakeMinSync(join(root, "fake-minsync.mjs"));
+		const source = realpathSync(join(docs, "refund-policy.txt"));
+		const prompts: string[] = [];
+		const agent = new AutoRAGAgent({
+			model: emitModel((text) => prompts.push(text)),
+			searchPaths: [docs],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
+			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
+			everything: false,
+			fsearch: false,
+			jev: baselineJev(),
+		});
+		await agent.refresh(true);
+		await agent.searchDocuments("refund director approval");
+
+		expect(prompts).toHaveLength(2);
+		expect(prompts[0]).not.toContain("Jikji's file discovery");
+		expect(prompts[1]).toContain(`start exploring from them.\n- ${source}\n\n`);
+	});
+
 	it("never indexes or prepares during a query, even on a never-refreshed workspace", async () => {
 		// Inference must only read prebuilt indexes. Index builds belong to
 		// `autorag refresh` / `watch`, never to the turn a user is waiting on.
