@@ -1,4 +1,13 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -409,6 +418,55 @@ ${body}
 		expect(diag?.code).toBe("jikji-prepare-failed");
 		expect(diag?.message).toMatch(/timed out/);
 		expect(diag?.message).not.toContain(root);
+	});
+
+	// `autorag refresh` and `autorag status` are separate processes, so the only place an operator sees a
+	// degraded Jikji is the refresh result itself. It used to carry every other index's diagnostics
+	// (MinSync, Everything, FSearch) but silently dropped Jikji's: `refresh --json` printed no jikji entry
+	// and a later `status` reported `jikji=configured`.
+	it("returns the jikji diagnostic in the refresh result itself, not only in later status", async () => {
+		writeBehaviorJikji("process.exit(3);");
+		const agent = agentFor([docs]);
+
+		const refreshed = await agent.refresh(true, { methods: ["jikji"] });
+
+		const diag = refreshed.diagnostics.find((item) => item.source === "jikji");
+		expect(diag?.code).toBe("jikji-prepare-failed");
+		expect(diag?.message).not.toContain(root);
+	});
+
+	it("returns the verbatim unsupported-version diagnostic in the refresh result", async () => {
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+if (process.argv[2] === "--version") { console.log("jikji 0.1.1"); process.exit(0); }
+process.exit(0);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		// PATH is only `stale`, so no real jikji/cargo on the machine can be picked up; node is linked in
+		// because the stand-in is a `#!/usr/bin/env node` script.
+		const stale = join(root, "stale-bin");
+		mkdirSync(stale, { recursive: true });
+		const link = join(stale, "jikji");
+		symlinkSync(binaryPath, link);
+		symlinkSync(process.execPath, join(stale, "node"));
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { autoInstall: false, env: { PATH: stale } },
+			everything: false,
+			fsearch: false,
+		});
+
+		const refreshed = await agent.refresh(true, { methods: ["jikji"] });
+
+		const diag = refreshed.diagnostics.find((item) => item.source === "jikji");
+		expect(diag?.code).toBe("jikji-unsupported-version");
+		expect(diag?.message).toContain("0.1.1");
+		expect(diag?.message).toContain(link);
 	});
 
 	it("forwards refresh jikjiPrepare.parseTimeout to the CLI for every root", async () => {

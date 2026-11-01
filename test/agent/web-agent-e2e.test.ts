@@ -16,6 +16,7 @@ import { WEB_FETCH_TOOL_NAME } from "../../src/agent/web-fetch-tool.ts";
 import { WEB_SEARCH_TOOL_NAME } from "../../src/agent/web-search-tool.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER } from "../../src/web/search/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 import { storedEvidence } from "../helpers/stored-evidence.ts";
 
 let root: string;
@@ -97,6 +98,7 @@ describe("AutoRAGAgent actively uses the web tools", () => {
 				order: ["duckduckgo"],
 				exclude: SEARCH_PROVIDER_ORDER.filter((id) => id !== "duckduckgo"),
 			},
+			jev: baselineJev(),
 		});
 
 		const names = (

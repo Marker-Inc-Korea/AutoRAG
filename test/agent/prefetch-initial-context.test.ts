@@ -16,6 +16,7 @@ import { type FauxProviderRegistration, fauxAssistantMessage } from "@earendil-w
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
 
 let root: string;
@@ -116,6 +117,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
 			everything: false,
 			fsearch: false,
+			jev: baselineJev(),
 		});
 		await agent.refresh(true);
 		const response = await agent.searchDocuments("refund director approval");
@@ -150,6 +152,7 @@ console.log(JSON.stringify(process.argv[2] === "find"
 			jikji: { binaryPath: join(root, "fake-jikji.mjs"), autoInstall: false },
 			everything: false,
 			fsearch: false,
+			jev: baselineJev(),
 		});
 
 		await agent.searchDocuments("refund director approval");
@@ -290,6 +293,7 @@ console.log(JSON.stringify({ prepared: true }));
 			jikji: { binaryPath: join(root, "missing-jikji") },
 			everything: false,
 			fsearch: false,
+			jev: baselineJev(),
 		});
 		(agent as unknown as { findJikji: () => Promise<never> }).findJikji = async () => {
 			throw new Error("jikji prefetch boom");

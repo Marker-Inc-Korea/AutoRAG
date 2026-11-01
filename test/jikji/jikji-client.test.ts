@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JikjiOptions } from "../../src/jikji/index.ts";
 import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
+import { JIKJI_INSTALL_VERSION } from "../../src/jikji/version.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
@@ -37,6 +38,9 @@ function writeFakeJikji(body: string, exitCode = 0): void {
 import { appendFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
+// A real jikji answers --version. The client probes it once when it resolves the binary from PATH,
+// so the stand-in answers it without logging, keeping argsOfFirstCall() the real command.
+if (args[0] === "--version") { console.log(${JSON.stringify(`jikji ${JIKJI_INSTALL_VERSION}`)}); process.exit(0); }
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
 ${body}
 process.exit(${exitCode});
@@ -616,6 +620,60 @@ describe("JikjiClient.find", () => {
 		]);
 	});
 
+	// `jikji find` reindexes synchronously when a query returns no paths (0.2.x; no CLI opt-out). That
+	// reindex runs `prepare` with jikji's built-in defaults, so it indexes what `exclude`, `includeHidden`
+	// and `includeSensitive` were set to keep out. Observed with real 0.2.1: after `prepare --exclude secret`,
+	// `find "<text only in secret/>"` returned secret/payroll.txt. Forwarding the scope fixes it.
+	it("forwards the prepare scope to find so an empty-result reindex cannot widen the index", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = new JikjiClient({
+			env: pathEnv(),
+			includeHidden: true,
+			includeSensitive: true,
+			maxFiles: 7,
+			exclude: ["secret/**", "*.tmp"],
+			maxHashBytes: 2048,
+			parseTimeout: 9,
+		});
+
+		await client.find(corpusRoot, "q");
+
+		expect(argsOfFirstCall()).toEqual([
+			"find",
+			corpusRoot,
+			"q",
+			"--json",
+			"--no-background-refresh",
+			"--include-hidden",
+			"--include-sensitive",
+			"--max-files",
+			"7",
+			"--exclude",
+			"secret/**",
+			"--exclude",
+			"*.tmp",
+			"--max-hash-bytes",
+			"2048",
+			"--parse-timeout",
+			"9",
+		]);
+	});
+
+	it("does not forward scope flags that are unset, false or zero", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = new JikjiClient({
+			env: pathEnv(),
+			includeHidden: false,
+			includeSensitive: false,
+			maxFiles: 0,
+			exclude: [],
+		});
+
+		await client.find(corpusRoot, "q");
+
+		expect(argsOfFirstCall()).toEqual(["find", corpusRoot, "q", "--json", "--no-background-refresh"]);
+	});
+
 	it("parses a valid answer-pack into ok:true with right answerPaths", async () => {
 		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
 		const client = clientWithPath();
@@ -715,5 +773,114 @@ describe("JikjiClient.find", () => {
 		const recorded = loggedCalls();
 		expect(recorded[0]?.args[1]).toBe(canonical);
 		expect(recorded[1]?.args[1]).toBe(canonical);
+	});
+});
+
+describe("JikjiClient.discover", () => {
+	const PROOF = "ab9ebb1eb3f6e5460b4f1c23";
+	const RAW_FALLBACK_PACK = {
+		...ANSWER_PACK,
+		answer_paths: [],
+		paths: [],
+		candidates: [],
+		evidence_pack: [],
+		handoff_action: "raw_fallback_after_retry",
+		tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+		agent_should_not_rerank: false,
+		raw_fallback_allowed: true,
+		max_raw_fallback_commands: 2,
+		max_jikji_retries: 0,
+	};
+
+	function step(overrides: Partial<{ root: string; query: string; topK: number; proof: string }> = {}) {
+		return { root: corpusRoot, query: "rewritten query", topK: 20, proof: PROOF, ...overrides };
+	}
+
+	it("runs discover with the issued proof, never reindexing or refreshing in the background", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		await clientWithPath().discover(corpusRoot, step());
+
+		expect(argsOfFirstCall()).toEqual([
+			"discover",
+			corpusRoot,
+			"rewritten query",
+			"--json",
+			"--no-background-refresh",
+			"--no-auto-prepare",
+			"--top-k",
+			"20",
+			"--after-jikji-retry",
+			"--retry-proof",
+			PROOF,
+		]);
+	});
+
+	it("omits --top-k when the step names none", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		await clientWithPath().discover(corpusRoot, { root: corpusRoot, query: "q", proof: PROOF });
+
+		expect(argsOfFirstCall()).not.toContain("--top-k");
+	});
+
+	it("parses the discover envelope like a find result", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		const result = await clientWithPath().discover(corpusRoot, step());
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.answerPack.handoffAction).toBe("raw_fallback_after_retry");
+		expect(result.answerPack.rawFallbackAllowed).toBe(true);
+		expect(result.answerPack.maxRawFallbackCommands).toBe(2);
+	});
+
+	it("refuses a step issued for another root without spawning anything", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`);
+
+		const result = await clientWithPath().discover(corpusRoot, step({ root: join(root, "other-root") }));
+
+		expect(result).toMatchObject({ ok: false, reason: "bad-retry-step" });
+		expect(existsSync(logPath)).toBe(false);
+	});
+
+	it("keeps exit status, stderr and real paths verbatim when discover fails", async () => {
+		writeFakeJikji(`console.error("discover failed: cannot read /real/path/index.db");`, 3);
+
+		const result = await clientWithPath().discover(corpusRoot, step());
+
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "nonzero-exit",
+			code: 3,
+			stderr: "discover failed: cannot read /real/path/index.db\n",
+		});
+	});
+
+	it("reports an unparseable discover envelope", async () => {
+		writeFakeJikji(`console.log("not json");`);
+
+		const result = await clientWithPath().discover(corpusRoot, step());
+
+		expect(result).toMatchObject({ ok: false, reason: "bad-answer-pack" });
+	});
+
+	it("runs behind queued finds, not behind a refresh", async () => {
+		writeFakeJikji(
+			`await new Promise((r) => setTimeout(r, args[0] === "prepare" ? 400 : 0));
+console.log(args[0] === "prepare" ? JSON.stringify({ prepared: true }) : ${JSON.stringify(JSON.stringify(RAW_FALLBACK_PACK))});`,
+		);
+		const client = clientWithPath();
+		const prepare = client.prepare(corpusRoot, { timeoutMs: 5_000 });
+		await waitForLogFile();
+		const started = Date.now();
+
+		const result = await client.discover(corpusRoot, step());
+		const elapsed = Date.now() - started;
+		await prepare;
+
+		expect(result.ok).toBe(true);
+		expect(elapsed).toBeLessThan(350);
 	});
 });

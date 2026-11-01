@@ -38,7 +38,12 @@ import {
 	type FSearchSearchRequest,
 	type FSearchSearchResult,
 } from "../fsearch/index.ts";
-import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
+import {
+	jikjiDiscoverDiagnostic,
+	jikjiFindDiagnostic,
+	jikjiPrepareDiagnostic,
+	jikjiUnusableRetryDiagnostic,
+} from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
 	type JikjiCandidate,
@@ -138,6 +143,12 @@ import {
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
+import {
+	createDecisionModels,
+	type DecisionModelStatus,
+	type DecisionModels,
+	DecisionModelUnavailableError,
+} from "./decision-model-check.ts";
 import { createDiscordRemoteExtension, DISCORD_REMOTE_TOOL_NAMES } from "./discord-remote.ts";
 import {
 	createScanDuplicateDocumentsTool,
@@ -152,13 +163,7 @@ import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import { intentOfMessage } from "./intent-tracing.ts";
-import {
-	createJevExtension,
-	createJevJudge,
-	JEV_TOOL_NAME,
-	type JevJudge,
-	type JevToolOptions,
-} from "./jev-extension.ts";
+import { createJevExtension, JEV_TOOL_NAME, type JevJudge, type JevToolOptions } from "./jev-extension.ts";
 import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
@@ -260,6 +265,14 @@ const SEARCH_TOOLS = [
  * retrieve.
  */
 const MERGED_EVIDENCE_CEILING = 500;
+
+/** Session key of runs that own no TUI session: the agent instance is the session. */
+const UNBOUND_DECISION_SESSION = "unbound";
+
+/** `backend / model` of the decision model that answered a session check. */
+function describeDecisionModel(status: DecisionModelStatus): string {
+	return [status.backend, status.model].filter((part) => part !== undefined).join(" / ");
+}
 
 /** Similar past questions shown to the Jev datasource check; enough for a pattern, small enough for one batch. */
 const SIMILAR_PAST_SEARCH_LIMIT = 5;
@@ -697,18 +710,20 @@ export interface AutoRAGAgentOptions {
 	 */
 	filee?: FileeCliOptions | false;
 	/**
-	 * Jev (TypeSafe's judgment model: typed questions in, calibrated
-	 * probabilities out). When set, the two-phase search asks Jev before the
-	 * fast answer which branch handles the question (local search, file
-	 * organization, an extra task, or — in a local host — its own configuration)
-	 * and whether to decompose it; after the fast answer, whether
-	 * verification is needed. It also exposes the `jev` tool.
+	 * Jev, the decision model (typed questions in, calibrated probabilities
+	 * out). It is required: before the fast answer the two-phase search asks
+	 * it which branch handles the question (local search, file organization,
+	 * an extra task, or — in a local host — its own configuration) and whether
+	 * to decompose it; after the fast answer, whether verification is needed.
+	 * It also judges citations and evidence, drives the `auto` permission
+	 * gate, and backs the `jev` tool.
 	 *
-	 * The CLI config enables this by default on OpenRouter (`buildAgentOptions`
-	 * fills it in). On this programmatic option, absent or `false` keeps Jev
-	 * off, so library callers never make paid network calls they did not ask for.
+	 * The first question of every session probes it and fails with
+	 * `DecisionModelUnavailableError` (code `decision-model-unavailable`) when
+	 * it cannot answer. Omitted, the backend is resolved from the environment
+	 * (the first credential present); `false` is rejected.
 	 */
-	jev?: JevToolOptions | false;
+	jev?: JevToolOptions;
 	/**
 	 * The embedder shared by memory and the datasources. Omitted, it is built from `minSync.embedder`: a
 	 * configured remote endpoint, else MinSync's `minsync serve` daemon, else MinSync's in-process engine.
@@ -722,11 +737,10 @@ export interface AutoRAGAgentOptions {
 	 */
 	memoryEmbedder?: Embedder | false;
 	/**
-	 * Agent self-configuration. When set (and Jev is on), Jev gains a `config`
-	 * branch for questions about AutoRAG's own settings: the turn skips the
-	 * fast answer, receives the full `autorag-setup` skill, edits
-	 * `configPath` with the pi tools, and reports what it changed as its final
-	 * message.
+	 * Agent self-configuration. When set, Jev gains a `config` branch for
+	 * questions about AutoRAG's own settings: the turn skips the fast answer,
+	 * receives the full `autorag-setup` skill, edits `configPath` with the pi
+	 * tools, and reports what it changed as its final message.
 	 */
 	selfConfig?: SelfConfigOptions;
 	/**
@@ -993,14 +1007,22 @@ export class AutoRAGAgent {
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	private readonly fileeOptions: FileeCliOptions | false;
-	/** pi extension registering the optional `jev` tool; undefined when disabled. */
-	private readonly jevExtension: ExtensionFactory | undefined;
-	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
-	private readonly jevJudge: JevJudge | undefined;
+	/** pi extension registering the `jev` tool. */
+	private readonly jevExtension: ExtensionFactory;
+	/** Jev and its sLLM fallback: the session check picks which one {@link jevJudge} asks. */
+	private readonly decisionModels: DecisionModels;
+	/** Jev judge shared by the `jev` tool, the query router, the judgments, and the permission gate. */
+	private readonly jevJudge: JevJudge;
+	/**
+	 * Session whose first question already confirmed that the decision model answers: the bound pi
+	 * session's id, or {@link UNBOUND_DECISION_SESSION} for runs without a TUI session. Undefined until a
+	 * check passed; a failed check leaves it unchanged, so the next question checks again.
+	 */
+	private decisionModelCheckedSession: string | undefined;
 	/** Mode and grants of the file-change approval gate; shared by every pi session this agent creates. */
 	private readonly permissions: PermissionController;
 	private readonly permissionGate: ExtensionFactory;
-	/** Self-configuration, enabled only with Jev on a local session. */
+	/** Self-configuration, enabled only on a local session. */
 	private readonly selfConfig: SelfConfigOptions | undefined;
 	/** Override for the packaged organize skill the `organize` branch loads; undefined keeps the packaged one. */
 	private readonly organizeSkillPath: string | undefined;
@@ -1101,6 +1123,13 @@ export class AutoRAGAgent {
 				"MinSync is required and cannot be disabled; remove `minSync: false` and install the `minsync` binary.",
 			);
 		}
+		// The decision model is required the same way: no option turns it off.
+		if ((options.jev as unknown) === false) {
+			throw new DecisionModelUnavailableError({
+				reason: "disabled",
+				detail: "The `jev` option is `false`.",
+			});
+		}
 		const minSyncDefaults = {
 			...(options.minSync ?? { autoInstall: true }),
 			root: this.workspaceProjectRoot,
@@ -1183,17 +1212,15 @@ export class AutoRAGAgent {
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
-		this.jevJudge =
-			options.jev === undefined || options.jev === false
-				? undefined
-				: createJevJudge({ ...options.jev, agentDir: options.piAgentDir });
-		this.jevExtension = this.jevJudge === undefined ? undefined : createJevExtension(this.jevJudge);
-		this.selfConfig = this.jevJudge === undefined ? undefined : options.selfConfig;
+		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
+		this.jevJudge = this.decisionModels.judge;
+		this.jevExtension = createJevExtension(this.jevJudge);
+		this.selfConfig = options.selfConfig;
 		this.organizeSkillPath = options.organizeSkillPath;
 		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
-			...(this.jevJudge === undefined ? {} : { judge: this.jevJudge }),
+			judge: this.jevJudge,
 			requests: this.userRequests,
 			// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
 			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
@@ -1283,11 +1310,7 @@ export class AutoRAGAgent {
 		this.tools = tools;
 		// pi registers the jev tool from its extension; AutoRAG still lists the
 		// name so the prompt advertises it and reserved-name checks cover it.
-		const toolNames = [
-			...PI_BUILTIN_TOOL_NAMES,
-			...tools.map((tool) => tool.name),
-			...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
-		];
+		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name), JEV_TOOL_NAME];
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
@@ -1458,8 +1481,8 @@ export class AutoRAGAgent {
 	 * After the final answer: map every cited evidence back to the search query
 	 * and method that found it, ask Jev (one batched call, evidence judged in
 	 * parallel) whether it really supports the answer sentence it backs, and
-	 * keep only what clears the threshold. Runs without Jev
-	 * store nothing; a failed judgment stores nothing and says why.
+	 * keep only what clears the threshold. A failed judgment stores nothing and
+	 * says why.
 	 */
 	private async recordJudgedEvidence(
 		sessionId: string,
@@ -1467,14 +1490,6 @@ export class AutoRAGAgent {
 		details: AutoRAGResultsDetails,
 	): Promise<SearchDocumentDiagnostic | undefined> {
 		if (details.mapping.length === 0) return undefined;
-		if (this.jevJudge === undefined) {
-			return {
-				code: "evidence-judgment-fallback",
-				severity: "info",
-				message: "Jev is disabled, so this answer's evidence was not judged and nothing was added to memory.",
-				source: "memory",
-			};
-		}
 		const resultByNumber = new Map(details.results.map((result) => [result.number, result]));
 		const units: (EvidenceJudgmentUnit & {
 			readonly record: Omit<JudgedEvidenceRecord, "probability" | "createdAt">;
@@ -1601,8 +1616,8 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			extensionFactories: [this.permissionGate, ...(this.jevExtension !== undefined ? [this.jevExtension] : [])],
-			extensionToolNames: this.jevExtension !== undefined ? [JEV_TOOL_NAME] : [],
+			extensionFactories: [this.permissionGate, this.jevExtension],
+			extensionToolNames: [JEV_TOOL_NAME],
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -1747,12 +1762,12 @@ export class AutoRAGAgent {
 							autoInstall: false,
 						}),
 				}),
-				...(this.jevExtension !== undefined ? [this.jevExtension] : []),
+				this.jevExtension,
 				...(telegramBridge !== undefined ? [telegramBridge] : []),
 				...(this.discordRemote ? [this.discordRemoteExtension()] : []),
 			],
 			extensionToolNames: [
-				...(this.jevExtension !== undefined ? [JEV_TOOL_NAME] : []),
+				JEV_TOOL_NAME,
 				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
 				...(askUser ? [ASK_USER_TOOL_NAME] : []),
 			],
@@ -1856,7 +1871,7 @@ export class AutoRAGAgent {
 
 	/**
 	 * Resolve the model's inline `[eN]` citations against this run's evidence and derive the structured results.
-	 * With Jev on, every cited chunk is first checked for relevance to the sentence that cites it and to what
+	 * Every cited chunk is first checked for relevance to the sentence that cites it and to what
 	 * the user typed in this conversation; a chunk Jev finds unrelated (a table of contents, a footer) is dropped
 	 * from the citations before the answer is returned or judged for memory.
 	 */
@@ -1864,25 +1879,23 @@ export class AutoRAGAgent {
 		const options = { allowLocalFiles: true };
 		let excludedChunks: ReadonlySet<string> | undefined;
 		let removedSources: readonly string[] = [];
-		if (this.jevJudge !== undefined) {
-			const chunks = citedChunks(text, this.evidenceLedger, options);
-			const relevance = await judgeCitationRelevance(this.jevJudge, {
-				userMessages: this.conversationQueries.all(),
-				chunks,
+		const chunks = citedChunks(text, this.evidenceLedger, options);
+		const relevance = await judgeCitationRelevance(this.jevJudge, {
+			userMessages: this.conversationQueries.all(),
+			chunks,
+		});
+		if (relevance.fallbackReason !== undefined) {
+			this.routingDiagnostics.push({
+				code: "citation-relevance-fallback",
+				severity: "warning",
+				message: `Jev citation relevance check was unavailable; every citation was kept. ${relevance.fallbackReason}`,
+				source: "agent",
 			});
-			if (relevance.fallbackReason !== undefined) {
-				this.routingDiagnostics.push({
-					code: "citation-relevance-fallback",
-					severity: "warning",
-					message: `Jev citation relevance check was unavailable; every citation was kept. ${relevance.fallbackReason}`,
-					source: "agent",
-				});
-			} else if (relevance.rejected.size > 0) {
-				excludedChunks = relevance.rejected;
-				removedSources = [
-					...new Set(chunks.filter((chunk) => relevance.rejected.has(chunk.key)).map((chunk) => chunk.source)),
-				];
-			}
+		} else if (relevance.rejected.size > 0) {
+			excludedChunks = relevance.rejected;
+			removedSources = [
+				...new Set(chunks.filter((chunk) => relevance.rejected.has(chunk.key)).map((chunk) => chunk.source)),
+			];
 		}
 		const derived = deriveResultsFromAnswer(text, this.evidenceLedger, {
 			...options,
@@ -2140,7 +2153,32 @@ export class AutoRAGAgent {
 		// Jev gate and the baseline pipeline.
 		const conversational = this.isConversationTurn();
 		this.activeRun = true;
+		// Progress is up the moment the question is submitted, before any network call.
 		this.searchProgress.begin(trimmedQuery);
+		// The decision model is required: the first question of a session checks
+		// that it answers, and a session whose decision model cannot fails here,
+		// before any model call, with `decision-model-unavailable`.
+		let decisionModel: DecisionModelStatus | undefined;
+		// The check is kept per session: the bound pi session in the TUI (so `/new` checks again), else this agent.
+		const decisionSession = this.boundPiRuntime?.session.sessionId ?? UNBOUND_DECISION_SESSION;
+		if (!conversational && this.decisionModelCheckedSession !== decisionSession) {
+			try {
+				decisionModel = await this.searchProgress.step(
+					"decision-model",
+					"Checking the decision model",
+					() => this.decisionModels.check(),
+					(status) =>
+						status.fallbackFrom === undefined
+							? describeDecisionModel(status)
+							: `sLLM fallback ${describeDecisionModel(status)} (Jev: ${status.fallbackFrom.reason})`,
+				);
+			} catch (error) {
+				this.searchProgress.end();
+				this.activeRun = false;
+				throw error;
+			}
+			this.decisionModelCheckedSession = decisionSession;
+		}
 		this.toolBurstGuard.reset();
 		this.retrievalTrace = [];
 		// A conversation keeps one evidence ledger for its whole life: the transcript still shows the earlier
@@ -2155,6 +2193,24 @@ export class AutoRAGAgent {
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
 		this.routingDiagnostics = [];
+		if (decisionModel !== undefined) {
+			this.routingDiagnostics.push({
+				code: "decision-model-checked",
+				severity: "info",
+				message: `Decision model answered the session check: ${describeDecisionModel(decisionModel)}.`,
+				source: "jev",
+			});
+			const jev = decisionModel.fallbackFrom;
+			if (jev !== undefined) {
+				const target = [jev.backend, jev.model].filter((part) => part !== undefined).join(" / ");
+				this.routingDiagnostics.push({
+					code: "decision-model-fallback",
+					severity: "warning",
+					message: `Jev${target === "" ? "" : ` (${target})`} is unavailable (${jev.reason}): ${jev.detail} This session decides with the sLLM fallback ${describeDecisionModel(decisionModel)}, whose probabilities are less calibrated than Jev's.`,
+					source: "jev",
+				});
+			}
+		}
 		this.lastQuery = trimmedQuery;
 		// A run that owns no TUI session is its own conversation. In the TUI the log is the session's and is fed
 		// as the user types, so a follow-up or a steer is never missing and a phase prompt is never in it.
@@ -2168,13 +2224,6 @@ export class AutoRAGAgent {
 		let fastCaptured: AutoRAGResultsDetails | undefined;
 		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, or an `extra` turn that cited nothing); it never feeds retrieval memory. */
 		let isolatedRun = false;
-		/**
-		 * Without Jev every fast answer goes on to verification, so it is
-		 * published as soon as it is written. With Jev, publishing waits for
-		 * the follow-up check: an answer that turns out to be final reaches the
-		 * caller once, as the complete response.
-		 */
-		const publishOnCapture = this.jevJudge === undefined;
 		let published = false;
 		// An abort() cancels this controller. A slow follow-up check or a
 		// late tool call can outlive the run, so publishing is gated on it:
@@ -2206,7 +2255,6 @@ export class AutoRAGAgent {
 		const emitPreliminary = (details: AutoRAGResultsDetails): void => {
 			if (fastCaptured !== undefined) return;
 			fastCaptured = details;
-			if (publishOnCapture) publishPreliminary(details);
 		};
 		let session: AutoRAGSearchSession | undefined;
 		let unsubscribers: readonly (() => void)[] = [];
@@ -2379,21 +2427,19 @@ export class AutoRAGAgent {
 				const preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText);
 				if (preliminary !== undefined) {
 					emitPreliminary(preliminary);
-					// With Jev enabled, a fast answer that needs no correction,
-					// clarification, or further research ends the run here. A steer
-					// means the search is going wrong, so it always verifies.
-					// Without Jev there is no check to show: `shouldFollowUp` answers true at once.
-					const checkFollowUp = (): Promise<boolean> => this.shouldFollowUp(trimmedQuery, preliminary);
+					// A fast answer that needs no correction, clarification, or
+					// further research ends the run here. A steer means the search
+					// is going wrong, so it always verifies. Publishing waits for
+					// this check: an answer that turns out to be final reaches the
+					// caller once, as the complete response.
 					const followUp =
 						steered() ||
-						(this.jevJudge === undefined
-							? await checkFollowUp()
-							: await this.searchProgress.step(
-									"followup",
-									"Checking whether the first answer needs verification",
-									checkFollowUp,
-									(needed) => (needed ? "verifying" : "final"),
-								));
+						(await this.searchProgress.step(
+							"followup",
+							"Checking whether the first answer needs verification",
+							() => this.shouldFollowUp(trimmedQuery, preliminary),
+							(needed) => (needed ? "verifying" : "final"),
+						));
 					// The follow-up check is not tied to the session abort, so it
 					// can resolve after the run's timeout fired; stop here rather
 					// than publishing or prompting on behalf of a dead run.
@@ -2758,11 +2804,10 @@ export class AutoRAGAgent {
 	/**
 	 * Jev check run after the fast answer: does the answer need correction,
 	 * clarification, or further research? "No" ends the run with the fast
-	 * answer as the final answer. Without Jev, or when the check fails, the run
-	 * always continues into verification.
+	 * answer as the final answer. When the check fails, the run continues into
+	 * verification.
 	 */
 	private async shouldFollowUp(query: string, fastAnswer: AutoRAGResultsDetails): Promise<boolean> {
-		if (this.jevJudge === undefined) return true;
 		const decision = await needsFollowUp(this.jevJudge, query, fastAnswer.answer);
 		if (decision.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
@@ -2792,8 +2837,8 @@ export class AutoRAGAgent {
 	 * most five search queries with the configured decomposition model
 	 * (default: the session model). On the local branch, Jev also judges, per
 	 * registered datasource, whether it must be searched (in parallel with
-	 * decomposition). Without Jev, and on any routing failure, this is today's
-	 * single local search for the original question with no datasource search.
+	 * decomposition). On any routing failure this is a single local search for
+	 * the original question with no datasource search.
 	 * A non-local branch that misses the confidence floor is not a failure: it
 	 * becomes a full local plan, decomposition and datasource check included.
 	 */
@@ -2815,7 +2860,6 @@ export class AutoRAGAgent {
 		readonly organizeSkill?: PackagedAgentSkill;
 	}> {
 		const judge = this.jevJudge;
-		if (judge === undefined) return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
 		const routing = this.searchProgress.step(
 			"route",
 			"Routing the question",
@@ -2954,7 +2998,6 @@ export class AutoRAGAgent {
 	 */
 	private async selectSearchDatasources(query: string): Promise<SearchDatasourcePlan> {
 		const none: SearchDatasourceChoice = { datasources: [], web: false };
-		if (this.jevJudge === undefined) return { choice: none, diagnostics: [] };
 		const searchable = new Set(
 			this.methodRegistry
 				.list()
@@ -3882,6 +3925,12 @@ export class AutoRAGAgent {
 					...fileSkippedDiagnostics(minsync?.filesFailed),
 					...everythingDiagnostics,
 					...fsearchDiagnostics,
+					...jikjiDiagnostics.map((d) => ({
+						code: d.code,
+						severity: d.severity,
+						message: d.message,
+						source: d.source,
+					})),
 				],
 				minsync: publicMinsync,
 				datasources,
@@ -4313,19 +4362,16 @@ export class AutoRAGAgent {
 		const diagnostics: JikjiDiagnostic[] = [];
 		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
 		const searchResults = await Promise.all(
-			this.jikjiRoots.map(async (sourcePath) => {
-				const result: JikjiFindResult = await this.jikjiClient!.find(sourcePath, query, findOpts);
-				return { sourcePath, result };
-			}),
+			this.jikjiRoots.map(async (sourcePath) => ({
+				sourcePath,
+				...(await this.findJikjiRoot(this.jikjiClient!, sourcePath, query, findOpts)),
+			})),
 		);
-		for (const { sourcePath, result } of searchResults) {
-			if (result.ok) {
-				okPacks.push({ pack: result.answerPack, root: sourcePath });
-			} else {
-				const diag = jikjiFindDiagnostic(result);
-				if (diag !== undefined) diagnostics.push(diag);
-			}
+		for (const { sourcePath, pack, diagnostic } of searchResults) {
+			if (pack !== undefined) okPacks.push({ pack, root: sourcePath });
+			if (diagnostic !== undefined) diagnostics.push(diagnostic);
 		}
+
 		if (okPacks.length === 0) {
 			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.jikjiRoots, perRoot: [] };
 		}
@@ -4343,6 +4389,40 @@ export class AutoRAGAgent {
 		const policy = this.mergePolicy(okPacks.map((entry) => entry.pack));
 		const merged = this.mergeAnswerPacks(okPacks, sourceRoots, policy);
 		return { answerPack: merged, policy, diagnostics, roots: this.jikjiRoots, perRoot };
+	}
+
+	/**
+	 * One root's find, followed by jikji's recovery step. When `find` answers
+	 * `jikji_retry`, run the `discover` command it named with the proof it
+	 * issued for this root and rewritten query (re-running `find` with the proof
+	 * does not advance jikji, only `discover` does). One step per find: whatever
+	 * discover answers is final for the root, so the protocol cannot loop. A
+	 * failed discover drops the root and reports the CLI failure verbatim.
+	 */
+	private async findJikjiRoot(
+		client: JikjiClient,
+		sourcePath: string,
+		query: string,
+		findOpts: JikjiFindOptions,
+	): Promise<{ readonly pack?: JikjiAnswerPack; readonly diagnostic?: JikjiDiagnostic }> {
+		const found: JikjiFindResult = await client.find(sourcePath, query, findOpts);
+		if (!found.ok) {
+			const diagnostic = jikjiFindDiagnostic(found);
+			return diagnostic === undefined ? {} : { diagnostic };
+		}
+		const pack = found.answerPack;
+		if (pack.handoffAction !== "jikji_retry") return { pack };
+		const commands = pack.nextCommands ?? [];
+		if (pack.retry === undefined || (pack.maxJikjiRetries ?? 1) < 1) {
+			// Nothing runnable: keep jikji's own answer; flag a command we refused to run.
+			return commands.length > 0 ? { pack, diagnostic: jikjiUnusableRetryDiagnostic(commands) } : { pack };
+		}
+		const discovered = await client.discover(sourcePath, pack.retry, {
+			...(findOpts.signal === undefined ? {} : { signal: findOpts.signal }),
+		});
+		if (discovered.ok) return { pack: discovered.answerPack };
+		const diagnostic = jikjiDiscoverDiagnostic(discovered);
+		return diagnostic === undefined ? {} : { diagnostic };
 	}
 
 	/**
@@ -4423,6 +4503,10 @@ export class AutoRAGAgent {
 				allowedFollowups: policy.allowedFollowups,
 			},
 			agentShouldNotRerank: policy.agentShouldNotRerank,
+			rawFallbackAllowed: policy.rawFallbackAllowed,
+			...(policy.maxRawFallbackCommands === undefined
+				? {}
+				: { maxRawFallbackCommands: policy.maxRawFallbackCommands }),
 		};
 	}
 
@@ -4433,7 +4517,8 @@ export class AutoRAGAgent {
 	 * - stopAfterFind: OR
 	 * - agentShouldNotRerank: OR
 	 * - handoffAction: MOST RESTRICTIVE (direct_use < jikji_retry < raw_fallback_after_retry)
-	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry
+	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry and every root's raw_fallback_allowed
+	 * - maxRawFallbackCommands: MIN over the roots that report one
 	 */
 	private mergePolicy(packs: readonly JikjiAnswerPack[]): MergedJikjiPolicy {
 		const HANDOFF_RANK: Record<JikjiHandoffAction, number> = {
@@ -4463,7 +4548,11 @@ export class AutoRAGAgent {
 				allowedFollowups = next;
 			}
 		}
-		const rawFallbackAllowed = handoff === "raw_fallback_after_retry";
+		const rawFallbackAllowed =
+			handoff === "raw_fallback_after_retry" && packs.every((pack) => pack.rawFallbackAllowed);
+		const rawCommandLimits = packs.flatMap((pack) =>
+			pack.maxRawFallbackCommands === undefined ? [] : [pack.maxRawFallbackCommands],
+		);
 		return {
 			handoffAction: handoff,
 			stopAfterFind,
@@ -4471,6 +4560,7 @@ export class AutoRAGAgent {
 			allowedFollowups: allowedFollowups ? [...allowedFollowups] : [],
 			agentShouldNotRerank,
 			rawFallbackAllowed,
+			...(rawCommandLimits.length === 0 ? {} : { maxRawFallbackCommands: Math.min(...rawCommandLimits) }),
 		};
 	}
 
