@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -350,8 +351,8 @@ describe("cloud and network folder migration report", () => {
 		// `docs` is covered by searchPaths and is not reported; the rest are, in probe order.
 		expect(report.cloudFolders?.map((folder) => folder.path)).toEqual([googleDrive, iCloud, share]);
 		expect(report.cloudFolders?.map((folder) => folder.kind)).toEqual(["file-provider", "file-provider", "network"]);
-		expect(report.cloudFolders?.[0]?.command).toBe(`autorag init --search-paths "${googleDrive}"`);
-		expect(report.cloudFolders?.[2]?.command).toBe(`autorag init --search-paths "${share}"`);
+		expect(report.cloudFolders?.[0]?.command).toBe(`autorag init --search-paths '${googleDrive}'`);
+		expect(report.cloudFolders?.[2]?.command).toBe(`autorag init --search-paths '${share}'`);
 		// Detection is additive: readiness still reflects the embedding backend and datasources only.
 		const withoutProbe = await runSetup({
 			configPath,
@@ -401,6 +402,35 @@ describe("cloud and network folder migration report", () => {
 			deps: { ...baseDeps, cloudProbe: throwingProbe },
 		});
 		expect(threw.cloudFolders).toBeUndefined();
+	});
+
+	it("quotes the add command so a folder name cannot inject shell syntax", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-cloud-quote-"));
+		roots.push(root);
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		// A mount or folder name is user-controlled: quotes, a backslash, `$(...)` and backticks must stay literal.
+		const hostile = join(root, `it's "my" \\ $(touch pwned) \`id\``);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+				cloudProbe: fakeCloudProbe([{ path: hostile, kind: "network" }]),
+			},
+		});
+
+		const command = report.cloudFolders?.[0]?.command ?? "";
+		const echoed = spawnSync("/bin/sh", ["-c", `printf %s ${command.slice("autorag init --search-paths ".length)}`], {
+			encoding: "utf8",
+			cwd: root,
+		});
+		expect(echoed.stdout).toBe(hostile);
+		expect(existsSync(join(root, "pwned"))).toBe(false);
 	});
 });
 

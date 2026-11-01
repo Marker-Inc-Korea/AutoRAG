@@ -235,9 +235,13 @@ function resolvedSearchPaths(raw: Record<string, unknown>, workspacePath: string
 	return paths.map((path) => (isAbsolute(path) ? path : resolve(workspacePath, path)));
 }
 
-/** Quote a path for a copy-pasteable `autorag ... --search-paths` command (always double-quoted). */
-function quoteCommandArg(value: string): string {
-	return `"${value.replace(/"/gu, '\\"')}"`;
+/**
+ * Quote a path for a copy-pasteable `autorag ... --search-paths` command. A folder name is user-controlled, so it
+ * is single-quoted, which keeps quotes, backslashes, `$(...)` and backticks literal: POSIX shells end and reopen
+ * the quote around an embedded `'` (`'\''`); PowerShell, Windows' default terminal, doubles it (`''`).
+ */
+function quoteCommandArg(value: string, platform: NodeJS.Platform): string {
+	return platform === "win32" ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 /**
@@ -248,6 +252,7 @@ async function detectCloudFolders(
 	raw: Record<string, unknown>,
 	workspacePath: string,
 	probe: CloudFileProbe | undefined,
+	platform: NodeJS.Platform,
 ): Promise<readonly SetupCloudFolderReport[]> {
 	if (probe === undefined) return [];
 	try {
@@ -260,7 +265,7 @@ async function detectCloudFolders(
 			.map(({ root }) => ({
 				path: root.path,
 				kind: root.kind,
-				command: `autorag init --search-paths ${quoteCommandArg(root.path)}`,
+				command: `autorag init --search-paths ${quoteCommandArg(root.path, platform)}`,
 			}));
 	} catch {
 		return [];
@@ -431,6 +436,7 @@ export async function runSetup(options: {
 			raw,
 			options.workspacePath,
 			options.deps?.cloudProbe ?? defaultCloudProbe(platform, env),
+			platform,
 		);
 		return {
 			ok: semantic || datasources.some((d) => d.state === "configured"),
