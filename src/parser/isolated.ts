@@ -14,7 +14,7 @@ export const DEFAULT_PARSE_FILE_TIMEOUT_MS = 120_000;
  * Parsers that run third-party or format-parsing code which can spin, exhaust
  * the heap, or crash on a hostile file. Plain text decoding stays in-process.
  */
-export const ISOLATED_PARSER_NAMES: ReadonlySet<string> = new Set(["kordoc", "pptx", "eml"]);
+export const ISOLATED_PARSER_NAMES: ReadonlySet<string> = new Set(["kordoc", "spreadsheet", "pptx", "eml"]);
 
 /** The structured-cloneable subset of {@link DefaultParserRegistryOptions} a worker can rebuild its registry from. */
 export interface WorkerParserOptions {

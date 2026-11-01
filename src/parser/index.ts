@@ -21,6 +21,7 @@ export {
 export { PptxParser } from "./office.ts";
 export { PlainTextParser } from "./plain-text.ts";
 export { ParserRegistry } from "./registry.ts";
+export { SPREADSHEET_EXTENSIONS, SpreadsheetParser, type SpreadsheetParserOptions } from "./spreadsheet.ts";
 export {
 	type ParseDiagnostic,
 	type ParseDiagnosticCode,
