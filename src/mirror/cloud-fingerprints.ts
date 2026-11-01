@@ -15,6 +15,8 @@ export interface CloudFingerprint {
 	readonly sourceVersion: string;
 	/** Canonical-text hash; equals `content_hash` from `dupey scan --json`. */
 	readonly exact: string;
+	/** Characters dupey extracted; `0` means no text, so {@link exact} identifies nothing. */
+	readonly chars: number;
 	/** The document's own last-modified time, or `null` when dupey records none. */
 	readonly modified: string | null;
 	readonly revision: string | null;
@@ -40,6 +42,7 @@ function isCloudFingerprint(value: unknown): value is CloudFingerprint {
 	return (
 		typeof record.sourceVersion === "string" &&
 		typeof record.exact === "string" &&
+		typeof record.chars === "number" &&
 		(record.modified === null || typeof record.modified === "string") &&
 		(record.revision === null || typeof record.revision === "string")
 	);
@@ -74,7 +77,7 @@ export function cloudFingerprintExclusions(
 ): ReadonlyMap<string, ExactDuplicateFingerprint> {
 	const map = new Map<string, ExactDuplicateFingerprint>();
 	for (const [sourcePath, fingerprint] of Object.entries(store.entries)) {
-		map.set(sourcePath, { exact: fingerprint.exact, modified: fingerprint.modified });
+		map.set(sourcePath, { exact: fingerprint.exact, modified: fingerprint.modified, chars: fingerprint.chars });
 	}
 	return map;
 }

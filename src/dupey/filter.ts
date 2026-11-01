@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { DupeyScanResult } from "./cli.ts";
+import type { DupeyScanFile, DupeyScanResult } from "./cli.ts";
 
 export interface ExactDuplicateFilterResult {
 	readonly excluded: ReadonlySet<string>;
@@ -12,6 +12,18 @@ export interface ExactDuplicateFilterResult {
 export interface ExactDuplicateFingerprint {
 	readonly exact: string;
 	readonly modified: string | null;
+	/** Characters dupey extracted. `0` means no text, so the hash says nothing about the content. */
+	readonly chars: number;
+}
+
+/**
+ * Whether dupey extracted no text from a scanned file. Measured with dupey 0.1.2: a document it cannot read
+ * (a binary HWP5 file, for one) reports `signals.chars: 0` and every such file shares one content hash, so the
+ * hash cannot tell two different documents apart. A file whose count is missing is judged by its hash as before.
+ */
+function extractedNoText(file: DupeyScanFile): boolean {
+	const signals = file.signals;
+	return typeof signals === "object" && signals !== null && "chars" in signals && signals.chars === 0;
 }
 
 /** Selects the newest copy for each exact canonical-text hash.
@@ -29,7 +41,7 @@ export async function selectExactDuplicateExclusions(
 ): Promise<ExactDuplicateFilterResult> {
 	const byHash = new Map<string, string[]>();
 	for (const file of scan.files) {
-		if (typeof file.content_hash !== "string" || file.content_hash.length === 0) continue;
+		if (typeof file.content_hash !== "string" || file.content_hash.length === 0 || extractedNoText(file)) continue;
 		const path = resolve(root, file.path);
 		const group = byHash.get(file.content_hash) ?? [];
 		group.push(path);
@@ -39,7 +51,7 @@ export async function selectExactDuplicateExclusions(
 	// the same hash groups here; a scanned copy elsewhere and a cloud copy then resolve to one keeper.
 	const fingerprintModified = new Map<string, string | null>();
 	for (const [path, fingerprint] of fingerprints ?? []) {
-		if (fingerprint.exact.length === 0) continue;
+		if (fingerprint.exact.length === 0 || fingerprint.chars === 0) continue;
 		fingerprintModified.set(path, fingerprint.modified);
 		const group = byHash.get(fingerprint.exact) ?? [];
 		if (!group.includes(path)) group.push(path);
