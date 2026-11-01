@@ -1,7 +1,8 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import type * as FsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { basename, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type CloudEvictResult,
 	type CloudFileProbe,
@@ -19,17 +20,41 @@ import {
 	PlainTextParser,
 } from "../../src/parser/index.ts";
 
+/**
+ * A OneDrive placeholder can fail to download (`Operation timed out`) and stay a placeholder. The read hook
+ * reproduces that per-file failure without a real mount, so the test proves the refresh treats it as a skip.
+ */
+const fsMock = vi.hoisted(() => ({ readFileHook: undefined as ((path: unknown) => void) | undefined }));
+vi.mock("node:fs/promises", async () => {
+	const actual = await vi.importActual<typeof FsPromises>("node:fs/promises");
+	return {
+		...actual,
+		readFile: ((...args: Parameters<typeof actual.readFile>) => {
+			fsMock.readFileHook?.(args[0]);
+			return actual.readFile(...args);
+		}) as typeof actual.readFile,
+	};
+});
+
+function errno(code: string): NodeJS.ErrnoException {
+	const error: NodeJS.ErrnoException = new Error(`${code}: injected failure`);
+	error.code = code;
+	return error;
+}
+
 let root: string;
 let source: string;
 
 beforeEach(() => {
 	waits = [];
+	fsMock.readFileHook = undefined;
 	root = mkdtempSync(join(tmpdir(), "autorag-cloud-hydration-"));
 	source = join(root, "docs");
 	mkdirSync(source, { recursive: true });
 });
 
 afterEach(() => {
+	fsMock.readFileHook = undefined;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -37,6 +62,8 @@ afterEach(() => {
 class FakeCloud implements CloudFileProbe {
 	readonly dataless = new Set<string>();
 	readonly providers = new Map<string, CloudProvider>();
+	/** Providers this probe claims it can release; the gate must not download any other provider's placeholder. */
+	readonly releasable = new Set<CloudProvider>(["icloud"]);
 	readonly evicted: string[] = [];
 	evictResult: CloudEvictResult = { ok: true };
 	/** Results handed out one per evict call before falling back to `evictResult`. */
@@ -51,6 +78,9 @@ class FakeCloud implements CloudFileProbe {
 	}
 	async providerOf(path: string): Promise<CloudProvider | undefined> {
 		return this.providers.get(path);
+	}
+	canRelease(provider: CloudProvider | undefined): boolean {
+		return provider !== undefined && this.releasable.has(provider);
 	}
 	async evict(path: string): Promise<CloudEvictResult> {
 		this.evicted.push(path);
@@ -159,10 +189,10 @@ describe("iCloud placeholders are indexed, then released", () => {
 		const cloud = new FakeCloud();
 		cloud.markDataless(write("remote.txt"), "icloud");
 		cloud.evictScript = [
-			{ ok: false, message: "brctl: busy 1" },
-			{ ok: false, message: "brctl: busy 2" },
-			{ ok: false, message: "brctl: busy 3" },
-			{ ok: false, message: "brctl: busy 4" },
+			{ ok: false, message: "release refused 1" },
+			{ ok: false, message: "release refused 2" },
+			{ ok: false, message: "release refused 3" },
+			{ ok: false, message: "release refused 4" },
 		];
 
 		const result = await sync(cloud, { cloudEvictRetries: 3 });
@@ -172,7 +202,7 @@ describe("iCloud placeholders are indexed, then released", () => {
 		const failures = result.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-evict-failed");
 		expect(failures).toHaveLength(1);
 		expect(failures[0]?.source).toBe("/docs/remote.txt");
-		expect(failures[0]?.message).toContain("brctl: busy 4");
+		expect(failures[0]?.message).toContain("release refused 4");
 		expect(failures[0]?.message).toContain("4 attempts");
 		expect(loadMirrorIndex(root).entries["/docs/remote.txt"]).toBeDefined();
 	});
@@ -232,7 +262,7 @@ describe("iCloud placeholders are indexed, then released", () => {
 
 		const result = await sync(cloud, { cloudEvictRetries: 2 });
 
-		expect(cloud.evicted.map((path) => path.split("/").pop())).toEqual(["a.txt", "a.txt", "a.txt", "b.txt", "c.txt"]);
+		expect(cloud.evicted.map((path) => basename(path))).toEqual(["a.txt", "a.txt", "a.txt", "b.txt", "c.txt"]);
 		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-evict-failed")).toHaveLength(1);
 		expect(result.written).toBe(3);
 	});
@@ -354,13 +384,13 @@ describe("download budget", () => {
 	});
 });
 
-describe("providers that cannot be released", () => {
-	it("skips a Google Drive placeholder without reading it and keeps its previous mirror", async () => {
+describe("placeholders the probe cannot release", () => {
+	it("skips an unverified provider's placeholder without reading it and keeps its previous mirror", async () => {
 		const cloud = new FakeCloud();
-		const path = write("drive.txt", "indexed while it was local\n");
+		const path = write("unknown.txt", "indexed while it was local\n");
 		await sync(cloud);
-		write("drive.txt", "changed upstream and now a placeholder\n");
-		cloud.markDataless(path, "google-drive");
+		write("unknown.txt", "changed upstream and now a placeholder\n");
+		cloud.markDataless(path, "file-provider");
 		const parser = new HydratingParser(cloud.dataless);
 
 		const result = await sync(cloud, { registry: new ParserRegistry([parser]) });
@@ -368,19 +398,47 @@ describe("providers that cannot be released", () => {
 		expect(parser.parsed).toEqual([]);
 		expect(result.written).toBe(0);
 		const skipped = result.diagnostics.find((diagnostic) => diagnostic.code === "cloud-placeholder-skipped");
-		expect(skipped?.source).toBe("/docs/drive.txt");
-		expect(skipped?.reason).toBe("google-drive");
-		expect(loadMirrorIndex(root).entries["/docs/drive.txt"]).toBeDefined();
+		expect(skipped?.source).toBe("/docs/unknown.txt");
+		expect(skipped?.reason).toBe("file-provider");
+		expect(loadMirrorIndex(root).entries["/docs/unknown.txt"]).toBeDefined();
 		expect(cloud.evicted).toEqual([]);
 	});
 
-	it("skips a placeholder whose provider is unknown", async () => {
+	it("downloads, indexes and releases a placeholder of any provider the probe can release", async () => {
 		const cloud = new FakeCloud();
-		cloud.markDataless(write("unknown.txt"), "file-provider");
+		cloud.releasable.add("onedrive");
+		const path = write("onedrive.txt", "only in the cloud\n");
+		cloud.markDataless(path, "onedrive");
 
 		const result = await sync(cloud);
 
-		expect(result.written).toBe(0);
-		expect(codes(result)).toContain("cloud-placeholder-skipped");
+		expect(result.written).toBe(1);
+		expect(codes(result)).not.toContain("cloud-placeholder-skipped");
+		expect(cloud.evicted).toEqual([path]);
+	});
+});
+
+describe("a placeholder whose download times out", () => {
+	it("is a per-file skip with a diagnostic; the refresh continues and never releases it", async () => {
+		const cloud = new FakeCloud();
+		cloud.releasable.add("onedrive");
+		const stuck = write("stuck.txt", "never arrives\n");
+		write("healthy.txt", "local\n");
+		cloud.markDataless(stuck, "onedrive");
+		fsMock.readFileHook = (path) => {
+			if (path === stuck) throw errno("ETIMEDOUT");
+		};
+
+		const result = await sync(cloud);
+
+		// The timeout is the file's problem, not the refresh's: the healthy file is still indexed and nothing throws.
+		expect(result.written).toBe(1);
+		expect(loadMirrorIndex(root).entries["/docs/healthy.txt"]).toBeDefined();
+		const failed = result.diagnostics.filter((diagnostic) => diagnostic.code === "source-read-failed");
+		expect(failed).toHaveLength(1);
+		expect(failed[0]?.source).toBe("/docs/stuck.txt");
+		expect(failed[0]?.reason).toBe("ETIMEDOUT");
+		// The stuck file stayed a placeholder, so there is nothing to release.
+		expect(cloud.evicted).toEqual([]);
 	});
 });
