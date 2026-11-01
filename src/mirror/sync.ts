@@ -754,6 +754,7 @@ async function syncWithRegistry(
 							cloudFingerprintEntries[entry.sourcePath] = {
 								sourceVersion: entry.sourceVersion,
 								exact: fingerprintResult.exact,
+								chars: fingerprintResult.chars,
 								modified: fingerprintResult.modified,
 								revision: fingerprintResult.revision,
 							};

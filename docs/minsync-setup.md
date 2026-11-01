@@ -575,6 +575,32 @@ by the `~/Library/CloudStorage` listing, while a Synology virtual drive on Windo
   reports `search-root-unavailable` and leaves its previously indexed documents untouched, so the mirror
   survives until the root is back.
 
+### Connecting cloud storage and migrating from the `cloud-drive` datasource
+
+Cloud storage is connected by adding the provider's sync folder to
+`searchPaths`; AutoRAG keeps no separate cloud datasource and no `rclone`
+credential boundary. `autorag setup` reports every cloud or network folder the
+machine has that no `searchPaths` entry covers, with the exact command to add
+it.
+
+The removed rclone-backed `cloud-drive` datasource is not migrated or shimmed: a
+config entry that still names it is skipped with the `unknown-datasource-skill`
+warning. Remove it from `datasources`, add the sync folder above, then delete
+the old `.autorag/datasources/<name>/` mirror data (`mirror/`, `manifest.json`,
+`chunks.json`) — AutoRAG no longer reads it.
+
+Storage that has no desktop sync app can be mounted instead: `rclone mount
+<remote>: <mountpoint>` exposes a remote as a local folder, or `rclone serve
+webdav <remote>:` plus an OS WebDAV mount (`mount_webdav` on macOS, a mapped
+drive on Windows) does the same. Mounted this way the folder is a network
+folder: each file is read over the wire, with no download budget and nothing to
+release.
+
+Google Docs, Sheets, and Slides are a known gap: in a sync folder they appear
+only as small `.gdoc`/`.gsheet`/`.gslides` pointer files with no document
+content, so they are not indexed beyond their names. Whether `rclone mount` /
+`rclone serve webdav` exports them as readable files is unverified.
+
 ### Cloud folders (macOS)
 
 A folder synced by a File Provider app (iCloud Drive, Google Drive, OneDrive under
@@ -609,6 +635,17 @@ not processed again, so it stays on disk until its content changes. A read that 
 per file (a OneDrive placeholder has timed out) is a `source-read-failed` skip, never a
 failed refresh.
 
+The agent's own tools open originals too. When the indexed text is not enough, the model
+may read the file with `bash` or `read`, which hydrates one placeholder. AutoRAG watches
+the absolute paths a run's tool calls name (including the direct children of a directory a
+call names, capped at 500) and the absolute sources its retrieval results print, and
+releases every one that became local when the run ends, with the same retry-and-backoff
+as a refresh release. A file that was already on disk before the run is never released,
+and a release that keeps failing is logged once and never fails the answer. The watch is
+deliberately narrow: it does not see a file the agent opens through a path it never
+printed, such as a relative name after `cd` into a subfolder deeper than the direct
+children of a directory the call named.
+
 A file written on this Mac is downloaded one extra time. Its first hydrate rounds the
 modification time to the precision the cloud keeps (measured on macOS 26: Google Drive
 `+101 ns`, OneDrive `+77 ns`, iCloud `+110 ns`, Dropbox `-24 ns`), so the next refresh sees the placeholder
@@ -639,7 +676,7 @@ and network folders (see *Cloud and network folders* above) and keep their defau
   under one by its name (`--exclude-dir`, measured to skip reads under it entirely).
   A cloud or network file instead joins the exact-duplicate exclusion through a **stored fingerprint**:
   while the file is on disk during its single read (before a downloaded placeholder is released), a refresh
-  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, modified, revision}`
+  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, chars, modified, revision}`
   under `.autorag/cloud-fingerprints.json` in the workspace (an AutoRAG-owned store; the
   MinSync stage schema is unchanged). An unchanged file keeps that fingerprint without being
   read; a changed file gets a new one; a removed file drops it. A file whose provider has no
@@ -651,7 +688,10 @@ Exact-duplicate exclusion then groups the cloud fingerprints with the scanned, n
 files by exact hash and keeps one keeper — the newest by dupey's own ranking for scanned
 files, and the fingerprint's recorded `modified` time for a cloud file (falling back to a
 filesystem `stat`, which reports metadata without downloading the placeholder). The other
-copies are excluded through the normal `duplicate-excluded` path. Because the fingerprints
+copies are excluded through the normal `duplicate-excluded` path. A file dupey extracted no
+text from (`chars` 0; a binary HWP5 document with dupey 0.1.2, for one) is never part of a
+duplicate group, scanned or fingerprinted: every such file shares one hash, so the hash says
+nothing about which document it is. Because the fingerprints
 are written during a refresh, a cloud file first fingerprinted this refresh can be excluded
 on the *next* one; that is expected and still never reads the released original. The parsed
 mirror, MinSync, and fsearch passes never re-download.

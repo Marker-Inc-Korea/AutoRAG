@@ -205,7 +205,7 @@ make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
 executes the `local` lane, the self-contained `obsidian` vault lane, and every
 native CLI lane (lazykatok, discrawl, wacrawl, telecrawl, slacrawl, lark,
-notcrawl, rclone, and mailcrawl).
+notcrawl, and mailcrawl).
 `E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
 skips native lanes entirely). The summary separates the core MinSync result
 (`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
@@ -235,7 +235,7 @@ filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
-only. Leave lazykatok, discrawl, crawler, rclone, and mailcrawl
+only. Leave lazykatok, discrawl, crawler, and mailcrawl
 native stores untouched.
 Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
 
@@ -356,7 +356,7 @@ Three core values drive every design decision. Features and PRs that conflict
 with any of them should be rejected or reshaped:
 
 1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
-   stores (lazykatok, discrawl, msgvault, rclone, …) in place. No forced
+   stores (lazykatok, discrawl, msgvault, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
    (`/kakao/<instance>/chunks/<chunk>`), and secrets
@@ -412,7 +412,7 @@ write new files, edit or replace existing files, and move files to the OS trash
 
 ## New CLI-backed datasource
 
-External datasource CLIs (lazykatok, discrawl, slacrawl, rclone,
+External datasource CLIs (lazykatok, discrawl, slacrawl,
 crawlers) are driven **directly** with their own native stores. There is no
 AutoRAG-managed workspace/config forcing and no bash gate: the agent may run
 these CLIs through `bash` as well as through the datasource tools.
@@ -642,7 +642,7 @@ configured for the run is never shown. See
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mailcrawl, obsidian, rss (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, mailcrawl, obsidian, rss (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
 | `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
 | `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |
