@@ -154,4 +154,51 @@ describe("exact duplicate filter", () => {
 		expect(result.keepers).toEqual(new Set([fallback]));
 		expect(result.excluded).toEqual(new Set());
 	});
+	it("groups a scanned copy with a cloud fingerprint and keeps the newer one", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dupey-filter-"));
+		roots.push(root);
+		mkdirSync(join(root, "docs"));
+		const scanned = join(root, "docs", "report.txt");
+		writeFileSync(scanned, "same");
+		utimesSync(scanned, 1, 1);
+		// The cloud copy is not on disk at all: its stored fingerprint carries its modified time, so ranking
+		// never has to stat or read it.
+		const cloudCopy = join(root, "Library", "CloudStorage", "GoogleDrive-x", "report.txt");
+		const fingerprints = new Map([[cloudCopy, { exact: "same-hash", modified: "2030-01-01T00:00:00Z" }]]);
+
+		const result = await selectExactDuplicateExclusions(
+			root,
+			{ dir: root, files: [{ path: "docs/report.txt", content_hash: "same-hash" }], families: [], errors: [] },
+			undefined,
+			fingerprints,
+		);
+
+		expect(result.keepers).toEqual(new Set([cloudCopy]));
+		expect(result.excluded).toEqual(new Set([scanned]));
+	});
+
+	it("falls back to filesystem mtime when the fingerprint records no modified time", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dupey-filter-"));
+		roots.push(root);
+		const older = join(root, "older.txt");
+		const cloudNewer = join(root, "cloud-newer.txt");
+		writeFileSync(older, "same");
+		writeFileSync(cloudNewer, "same");
+		utimesSync(older, 1, 1);
+		utimesSync(cloudNewer, 2, 2);
+		const fingerprints = new Map([
+			[older, { exact: "same-hash", modified: null }],
+			[cloudNewer, { exact: "same-hash", modified: null }],
+		]);
+
+		const result = await selectExactDuplicateExclusions(
+			root,
+			{ dir: root, files: [], families: [], errors: [] },
+			undefined,
+			fingerprints,
+		);
+
+		expect(result.keepers).toEqual(new Set([cloudNewer]));
+		expect(result.excluded).toEqual(new Set([older]));
+	});
 });

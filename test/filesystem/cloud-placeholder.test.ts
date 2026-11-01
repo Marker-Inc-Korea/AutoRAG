@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+	type CloudDirEntry,
 	type CloudExec,
 	cloudProviderFromDomain,
 	cloudProviderFromPath,
+	cloudScope,
 	DarwinCloudProbe,
 	datalessFromDarwinFlags,
 	datalessFromWindowsAttributes,
 	defaultCloudProbe,
 	homeCloudRoots,
+	isPathInside,
 	type PowerShellResult,
 	parseWindowsAttributeOutput,
 	parseWindowsDehydrateOutput,
@@ -417,5 +420,97 @@ describe("defaultCloudProbe platform selection", () => {
 
 	it("returns no probe on platforms AutoRAG does not handle yet", () => {
 		withPlatform("linux", () => expect(defaultCloudProbe()).toBeUndefined());
+	});
+});
+
+describe("cloud scope (pure)", () => {
+	const roots = [
+		"/Users/x/Library/CloudStorage/GoogleDrive-user",
+		"/Users/x/Library/CloudStorage/OneDrive-Work",
+		"/Users/x/Library/Mobile Documents",
+	];
+
+	it("matches equality and descendants, not sibling prefixes", () => {
+		expect(isPathInside("/a/b", "/a/b")).toBe(true);
+		expect(isPathInside("/a/b/c", "/a/b")).toBe(true);
+		expect(isPathInside("/a/bc", "/a/b")).toBe(false);
+		expect(isPathInside("/a", "/a/b")).toBe(false);
+	});
+
+	it("marks a search root inside a cloud root, including the root itself", () => {
+		expect(cloudScope("/Users/x/Library/CloudStorage/GoogleDrive-user/My Drive", roots).insideCloudRoot).toBe(true);
+		expect(cloudScope("/Users/x/Library/Mobile Documents", roots).insideCloudRoot).toBe(true);
+		expect(cloudScope("/Users/x/Documents", roots).insideCloudRoot).toBe(false);
+	});
+
+	it("reports the cloud roots nested under a search root and not the root itself", () => {
+		const scope = cloudScope("/Users/x", roots);
+		expect(scope.insideCloudRoot).toBe(false);
+		expect(scope.nestedCloudRoots).toEqual([
+			"/Users/x/Library/CloudStorage/GoogleDrive-user",
+			"/Users/x/Library/CloudStorage/OneDrive-Work",
+			"/Users/x/Library/Mobile Documents",
+		]);
+		expect(cloudScope("/Users/x/Library/CloudStorage/GoogleDrive-user", roots).nestedCloudRoots).toEqual([]);
+	});
+
+	it("normalizes Windows separators and trailing slashes", () => {
+		expect(isPathInside(String.raw`C:\Users\x\OneDrive\a`, "C:/Users/x/OneDrive/")).toBe(true);
+	});
+});
+
+describe("cloud root listing", () => {
+	/** A fake directory tree keyed by absolute path; every value is one entry. */
+	function fakeTree(
+		tree: Record<string, readonly CloudDirEntry[]>,
+	): (path: string) => Promise<readonly CloudDirEntry[]> {
+		return async (path: string) => {
+			const entries = tree[path];
+			if (entries === undefined) {
+				const error: NodeJS.ErrnoException = new Error(`ENOENT: ${path}`);
+				error.code = "ENOENT";
+				throw error;
+			}
+			return entries;
+		};
+	}
+
+	const dir = (name: string): CloudDirEntry => ({ name, isDirectory: () => true });
+	const file = (name: string): CloudDirEntry => ({ name, isDirectory: () => false });
+
+	it("lists each File Provider mount and iCloud Drive without reading file contents", async () => {
+		const readDir = fakeTree({
+			"/home/u/Library/CloudStorage": [dir("GoogleDrive-user"), dir("OneDrive-Work"), file("stray.txt")],
+			"/home/u/Library/Mobile Documents": [dir("com~apple~CloudDocs")],
+		});
+
+		const roots = await new DarwinCloudProbe({ readDir, home: "/home/u" }).cloudRoots();
+
+		expect(roots).toEqual([
+			"/home/u/Library/CloudStorage/GoogleDrive-user",
+			"/home/u/Library/CloudStorage/OneDrive-Work",
+			"/home/u/Library/Mobile Documents",
+		]);
+	});
+
+	it("returns an empty list when neither cloud folder exists", async () => {
+		const roots = await new DarwinCloudProbe({ readDir: fakeTree({}), home: "/home/u" }).cloudRoots();
+		expect(roots).toEqual([]);
+	});
+
+	it("returns the registered Windows sync roots", async () => {
+		const powerShell = new FakePowerShell();
+		powerShell.handler = (script) =>
+			script.includes("SyncRootManager")
+				? {
+						ok: true,
+						stdout: `${String.raw`C:\Users\x\OneDrive - Work`}\tOneDrive - Work\n${String.raw`C:\Users\x\Dropbox`}\tDropbox\n`,
+						stderr: "",
+					}
+				: { ok: true, stdout: "", stderr: "" };
+
+		const roots = await new WindowsCloudProbe({ run: powerShell.run }).cloudRoots();
+
+		expect(roots).toEqual([String.raw`C:\Users\x\OneDrive - Work`, String.raw`C:\Users\x\Dropbox`]);
 	});
 });

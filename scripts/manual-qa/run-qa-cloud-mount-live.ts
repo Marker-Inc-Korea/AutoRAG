@@ -82,12 +82,20 @@ async function runDarwin(dirs: readonly string[]): Promise<void> {
 
 	for (const dir of dirs) {
 		const fixtureDir = join(dir, `autorag-e2e-${Math.random().toString(16).slice(2, 10)}`);
-		const files = [join(fixtureDir, "notes-a.txt"), join(fixtureDir, "notes-b.txt")];
+		// notes-a and notes-dup carry identical content on purpose: the exact-duplicate exclusion must collapse
+		// them to one keeper on the refresh after the one that fingerprinted them, without reading either again.
+		const files = [
+			join(fixtureDir, "notes-a.txt"),
+			join(fixtureDir, "notes-b.txt"),
+			join(fixtureDir, "notes-dup.txt"),
+		];
 		const workspace = mkdtempSync(join(qaRoot, "ws-"));
 		try {
 			mkdirSync(fixtureDir, { recursive: true });
-			writeFileSync(files[0]!, `Indexed cloud fixture alpha, project codename ${TOKEN}.\n`);
+			const duplicateBody = `Indexed cloud fixture alpha, project codename ${TOKEN}.\n`;
+			writeFileSync(files[0]!, duplicateBody);
 			writeFileSync(files[1]!, `Indexed cloud fixture beta, budget reviewed for ${TOKEN}.\n`);
+			writeFileSync(files[2]!, duplicateBody);
 			const before = new Map(files.map((file) => [file, statSync(file).size]));
 
 			for (const file of files) {
@@ -100,19 +108,17 @@ async function runDarwin(dirs: readonly string[]): Promise<void> {
 			for (const file of files) readFileSync(file, "utf8");
 			for (const file of files) await releaseWhenUploaded(probe, file);
 			const dataless = await probe.datalessAmong(files);
-			check(`${dir}: both fixtures are data-less placeholders`, dataless.size === files.length);
+			check(`${dir}: all fixtures are data-less placeholders`, dataless.size === files.length);
 
+			// Jikji and the dupey exact-duplicate exclusion stay ON (their defaults): Jikji skips a search root
+			// inside a cloud folder, and dupey judges cloud files from the fingerprints recorded during this
+			// refresh instead of reading them, so neither re-downloads a released placeholder.
 			const agent = new AutoRAGAgent({
 				searchPaths: [fixtureDir],
 				workspacePath: workspace,
 				minSync: { autoInstall: false },
 				everything: false,
 				fsearch: false,
-				// Jikji's prepare and the dupey exact-duplicate scan open file contents themselves and re-download
-				// released placeholders (measured; tracked separately, issue #2043 item 4). The release path is what
-				// this lane verifies, so both placeholder-unaware readers are off, exactly as the #2044 measurement did.
-				jikji: false,
-				excludeExactDuplicates: false,
 			});
 			const first = await agent.refresh(true, { methods: ["parsed", "minsync"] });
 			check(`${dir}: refresh indexed the placeholders`, first.written === files.length, `written=${first.written}`);
@@ -147,10 +153,25 @@ async function runDarwin(dirs: readonly string[]): Promise<void> {
 			const releasedAfterRefresh = await probe.datalessAmong(files);
 			check(`${dir}: refresh released the files again`, releasedAfterRefresh.size === files.length);
 
+			// The following refresh collapses the two identical cloud files to one keeper using the fingerprints the
+			// first refresh stored; the loser's mirror is dropped and neither file is read, so nothing hydrates.
 			const second = await agent.refresh(false, { methods: ["parsed", "minsync"] });
+			const afterSecond = await probe.datalessAmong(files);
+			const secondSizesUnchanged = files.every((file) => statSync(file).size === before.get(file));
+			check(
+				`${dir}: the duplicate cloud file is excluded on the next refresh`,
+				second.deleted === 1 && second.diagnostics.some((diagnostic) => diagnostic.code === "duplicate-excluded"),
+				`deleted=${second.deleted}`,
+			);
+			check(
+				`${dir}: excluding the duplicate hydrated nothing and left the files released`,
+				afterSecond.size === files.length && secondSizesUnchanged,
+			);
+
+			const third = await agent.refresh(false, { methods: ["parsed", "minsync"] });
 			const stillDataless = await probe.datalessAmong(files);
 			const sizesUnchanged = files.every((file) => statSync(file).size === before.get(file));
-			check(`${dir}: unchanged refresh wrote nothing`, second.written === 0, `written=${second.written}`);
+			check(`${dir}: unchanged refresh wrote nothing`, third.written === 0, `written=${third.written}`);
 			check(
 				`${dir}: unchanged refresh hydrated nothing and left the files released`,
 				stillDataless.size === files.length && sizesUnchanged,

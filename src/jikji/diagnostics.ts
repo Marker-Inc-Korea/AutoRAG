@@ -6,11 +6,15 @@ import type { JikjiFailureReason, JikjiFindResult, JikjiPrepareResult } from "./
  * path-free so they can be surfaced through public search/refresh diagnostics
  * without leaking filesystem or binary paths.
  */
-export type JikjiDiagnosticCode = "jikji-unavailable" | "jikji-prepare-failed" | "jikji-find-failed";
+export type JikjiDiagnosticCode =
+	| "jikji-unavailable"
+	| "jikji-prepare-failed"
+	| "jikji-cloud-root-skipped"
+	| "jikji-find-failed";
 
 export interface JikjiDiagnostic {
 	readonly code: JikjiDiagnosticCode;
-	readonly severity: "warning" | "error";
+	readonly severity: "info" | "warning" | "error";
 	readonly message: string;
 	readonly source: "jikji";
 }
@@ -49,6 +53,15 @@ function describeReason(reason: JikjiFailureReason, action: "prepare" | "find" =
  */
 export function jikjiPrepareDiagnostic(result: JikjiPrepareResult): JikjiDiagnostic | undefined {
 	if (result.ok) return undefined;
+	if (result.reason === "cloud-root-skipped") {
+		return {
+			code: "jikji-cloud-root-skipped",
+			severity: "info",
+			message:
+				"Jikji was not run for this root because it is a cloud sync folder; its files are indexed through the parsed mirror, and reading them with Jikji would download released placeholders again.",
+			source: "jikji",
+		};
+	}
 	const unavailable = UNAVAILABLE_REASONS.has(result.reason);
 	return {
 		code: unavailable ? "jikji-unavailable" : "jikji-prepare-failed",

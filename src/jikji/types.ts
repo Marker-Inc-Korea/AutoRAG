@@ -79,10 +79,16 @@ export interface JikjiPrepareOptions {
 	readonly timeoutMs?: number;
 	/** `--parse-timeout` seconds for this root; replaces the client `parseTimeout`. */
 	readonly parseTimeout?: number;
+	/**
+	 * Extra `--exclude` patterns for this one root, appended to the client's own list. AutoRAG passes the
+	 * relative paths of cloud sync folders nested under the root so `jikji prepare` never reads them.
+	 */
+	readonly exclude?: readonly string[];
 }
 
 export type JikjiFailureReason =
 	| "aborted"
+	| "cloud-root-skipped"
 	| "nonzero-exit"
 	| "spawn-error"
 	| "stderr-too-large"

@@ -242,6 +242,37 @@ describe("JikjiClient", () => {
 		]);
 	});
 
+	it("appends per-call excludes after the client's own, repeatable", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ env: pathEnv(), exclude: ["private/**"] });
+
+		await client.prepare(corpusRoot, {
+			exclude: ["Library/CloudStorage/GoogleDrive-user", "Library/Mobile Documents"],
+		});
+
+		expect(argsOfFirstCall()).toEqual([
+			"prepare",
+			corpusRoot,
+			"--json",
+			"--no-agent-rules",
+			"--exclude",
+			"private/**",
+			"--exclude",
+			"Library/CloudStorage/GoogleDrive-user",
+			"--exclude",
+			"Library/Mobile Documents",
+		]);
+	});
+
+	it("omits --exclude entirely when neither the client nor the call sets one", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ env: pathEnv() });
+
+		await client.prepare(corpusRoot, { exclude: [] });
+
+		expect(argsOfFirstCall()).not.toContain("--exclude");
+	});
+
 	it("gates media-index-max-mb behind enableMediaIndex", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = new JikjiClient({

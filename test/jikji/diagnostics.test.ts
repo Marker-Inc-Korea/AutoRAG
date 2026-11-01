@@ -51,6 +51,21 @@ describe("jikjiPrepareDiagnostic", () => {
 		};
 		expect(jikjiPrepareDiagnostic(failed)?.code).toBe("jikji-prepare-failed");
 	});
+
+	it("reports a skipped cloud root as info, not a degraded Jikji run", () => {
+		const skipped: JikjiPrepareResult = {
+			ok: false,
+			reason: "cloud-root-skipped",
+			stdout: "",
+			stderr: "",
+			code: null,
+		};
+		const diag = jikjiPrepareDiagnostic(skipped);
+		expect(diag?.code).toBe("jikji-cloud-root-skipped");
+		expect(diag?.severity).toBe("info");
+		expect(diag?.source).toBe("jikji");
+		expect(diag?.message).toMatch(/cloud/u);
+	});
 	it("[red-team] never leaks a path for ANY failure reason even with path-laden stderr/stdout", () => {
 		const reasons = [
 			"aborted",

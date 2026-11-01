@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
@@ -18,7 +18,13 @@ import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
-import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
+import {
+	DupeyCliError,
+	type DupeyCliOptions,
+	type DupeyScanResult,
+	scanWithDupey,
+	selectExactDuplicateExclusions,
+} from "../dupey/index.ts";
 import {
 	createEmbedderFromConfig,
 	type Embedder,
@@ -31,6 +37,7 @@ import {
 	type EverythingSearchRequest,
 	type EverythingSearchResult,
 } from "../everything/index.ts";
+import { type CloudFileProbe, cloudScope, defaultCloudProbe } from "../filesystem/cloud-placeholder.ts";
 import {
 	FSearchClient,
 	type FSearchClientOptions,
@@ -76,6 +83,7 @@ import {
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
 import { MinSyncStageError } from "../minsync/stage.ts";
+import { cloudFingerprintExclusions, loadCloudFingerprints } from "../mirror/cloud-fingerprints.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
@@ -691,6 +699,11 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
 	/**
+	 * Cloud placeholder probe. Omitted, the platform probe is used (macOS and Windows). A programmatic seam for
+	 * hosts and tests that need to stand in for this machine's cloud sync folders.
+	 */
+	cloudProbe?: CloudFileProbe;
+	/**
 	 * Filee command line behind `convert_files` and `list_file_conversions`.
 	 * `false` leaves both tools out. The duplicate-family check on converted
 	 * copies follows `dupey`.
@@ -993,6 +1006,10 @@ export class AutoRAGAgent {
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	private readonly fileeOptions: FileeCliOptions | false;
+	/** Platform cloud probe; `undefined` where AutoRAG has no cloud handling. */
+	private readonly cloudProbe: CloudFileProbe | undefined;
+	/** Resolved once: the machine's cloud sync roots, or `[]` when they cannot be listed. */
+	private cloudRootsPromise: Promise<readonly string[]> | undefined;
 	/** pi extension registering the optional `jev` tool; undefined when disabled. */
 	private readonly jevExtension: ExtensionFactory | undefined;
 	/** Jev judge shared by the `jev` tool and the query router; undefined when disabled. */
@@ -1081,6 +1098,7 @@ export class AutoRAGAgent {
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
 		this.dupeyOptions = options.dupey ?? {};
 		this.fileeOptions = options.filee ?? {};
+		this.cloudProbe = options.cloudProbe ?? defaultCloudProbe();
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 		this.excludePaths = (options.excludePaths ?? []).map(pinExcludedPath);
 		this.limits = resolveRetrievalLimits(options.limits);
@@ -1330,8 +1348,22 @@ export class AutoRAGAgent {
 		if (this.dupeyOptions === false) {
 			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
 		}
+		// A search root inside a cloud folder is skipped whole and a cloud folder nested under a root is
+		// excluded by name: `dupey scan` opens file contents, which would re-download every released placeholder.
+		const cloudRoots = await this.cloudRoots();
+		const scanRoots: { readonly path: string; readonly excludeDirs: string[] }[] = [];
+		for (const searchPath of this.searchPaths) {
+			const scope = cloudScope(searchPath, cloudRoots);
+			if (scope.insideCloudRoot) continue;
+			scanRoots.push({ path: searchPath, excludeDirs: scope.nestedCloudRoots.map((root) => basename(root)) });
+		}
 		const scans = await Promise.all(
-			this.searchPaths.map((searchPath) => scanWithDupey(searchPath, this.dupeyOptions || {})),
+			scanRoots.map(({ path, excludeDirs }) =>
+				scanWithDupey(path, {
+					...(this.dupeyOptions || {}),
+					...(excludeDirs.length === 0 ? {} : { excludeDirs }),
+				}),
+			),
 		);
 		const familyCount = scans.reduce((count, scan) => count + scan.families.length, 0);
 		const exactDuplicateCount = scans.reduce((count, scan) => {
@@ -4074,7 +4106,10 @@ export class AutoRAGAgent {
 					? "ready"
 					: "configured";
 		if (this.jikjiClient !== undefined) {
-			status.jikji = this.refreshState.jikjiDiagnostics.length > 0 ? "degraded" : "configured";
+			// An informational diagnostic (a cloud root skipped on purpose) is not a degraded Jikji run.
+			status.jikji = this.refreshState.jikjiDiagnostics.some((diagnostic) => diagnostic.severity !== "info")
+				? "degraded"
+				: "configured";
 		}
 		if (this.datasourceSkills.length > 0) {
 			status.datasources = this.refreshState.datasources.some((result) => !result.ok) ? "degraded" : "configured";
@@ -4155,6 +4190,11 @@ export class AutoRAGAgent {
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
+			cloudProbe: this.cloudProbe,
+			// Cloud fingerprints feed the exact-duplicate exclusion, so they are recorded only when that is on.
+			...(this.excludeExactDuplicates && this.dupeyOptions !== false
+				? { cloudFingerprints: { dupey: this.dupeyOptions } }
+				: {}),
 		});
 	}
 
@@ -4174,6 +4214,7 @@ export class AutoRAGAgent {
 			parserOptions: this.parserOptions,
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
+			cloudProbe: this.cloudProbe,
 		});
 		return {
 			scanned: 0,
@@ -4185,21 +4226,49 @@ export class AutoRAGAgent {
 		};
 	}
 
+	/** The machine's cloud sync roots, resolved once; a probe failure reads as no cloud roots, never an error. */
+	private cloudRoots(): Promise<readonly string[]> {
+		this.cloudRootsPromise ??= (this.cloudProbe?.cloudRoots() ?? Promise.resolve([])).catch(() => []);
+		return this.cloudRootsPromise;
+	}
+
 	private async exactDuplicateExclusions(): Promise<{ readonly excluded: ReadonlySet<string> }> {
 		if (!this.excludeExactDuplicates || this.dupeyOptions === false) return { excluded: new Set() };
 		const excluded = new Set<string>();
 		const userExcluded = new Set(this.excludePaths);
+		const cloudRoots = await this.cloudRoots();
+		// Cloud files are never scanned (their placeholders must not be read), so their stored fingerprints from
+		// the refresh that downloaded them join the same hash groups as the scanned, non-cloud copies.
+		const fingerprints = cloudFingerprintExclusions(loadCloudFingerprints(this.workspaceProjectRoot));
 		for (const searchPath of this.searchPaths) {
-			try {
-				const scan = await scanWithDupey(searchPath, this.dupeyOptions || {});
-				const selected = await selectExactDuplicateExclusions(searchPath, scan, (path) =>
-					isPathExcluded(path, userExcluded),
-				);
-				for (const path of selected.excluded) excluded.add(path);
-			} catch (error) {
-				if (!(error instanceof DupeyCliError)) throw error;
-				// Optional optimizer: missing/broken dupey must not make the corpus unavailable.
+			const scope = cloudScope(searchPath, cloudRoots);
+			let scan: DupeyScanResult;
+			if (scope.insideCloudRoot) {
+				// `dupey scan` opens file contents, which would re-download every released placeholder, so a cloud
+				// search root is never scanned. Its cloud files still join the merge through their stored
+				// fingerprints, so an exact duplicate among them is still excluded.
+				scan = { dir: searchPath, files: [], families: [], errors: [] };
+			} else {
+				try {
+					scan = await scanWithDupey(searchPath, {
+						...(this.dupeyOptions || {}),
+						...(scope.nestedCloudRoots.length === 0
+							? {}
+							: { excludeDirs: scope.nestedCloudRoots.map((root) => basename(root)) }),
+					});
+				} catch (error) {
+					if (!(error instanceof DupeyCliError)) throw error;
+					// Optional optimizer: missing/broken dupey must not make the corpus unavailable.
+					continue;
+				}
 			}
+			const selected = await selectExactDuplicateExclusions(
+				searchPath,
+				scan,
+				(path) => isPathExcluded(path, userExcluded),
+				fingerprints,
+			);
+			for (const path of selected.excluded) excluded.add(path);
 		}
 		return { excluded };
 	}
@@ -4271,7 +4340,23 @@ export class AutoRAGAgent {
 	): Promise<readonly JikjiPrepareResult[] | undefined> {
 		const client = this.jikjiClient;
 		if (client === undefined) return undefined;
-		return Promise.all(this.jikjiRoots.map((sourcePath) => client.prepare(sourcePath, options)));
+		const cloudRoots = await this.cloudRoots();
+		return Promise.all(
+			this.jikjiRoots.map(async (sourcePath): Promise<JikjiPrepareResult> => {
+				const scope = cloudScope(sourcePath, cloudRoots);
+				// Jikji's prepare pass opens file contents (it hashes them), which downloads a released
+				// placeholder; a root inside a cloud folder is skipped whole and the skip is reported.
+				if (scope.insideCloudRoot) {
+					return { ok: false, reason: "cloud-root-skipped", stdout: "", stderr: "", code: null };
+				}
+				// Cloud folders nested under the root are excluded by their relative path so jikji never walks
+				// them; measured with jikji 0.2.1: a relative multi-segment `--exclude` removes the whole subtree.
+				const exclude = scope.nestedCloudRoots
+					.map((root) => relative(sourcePath, root).split(sep).join("/"))
+					.filter((pattern) => pattern !== "" && !pattern.startsWith(".."));
+				return client.prepare(sourcePath, { ...options, ...(exclude.length === 0 ? {} : { exclude }) });
+			}),
+		);
 	}
 
 	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
