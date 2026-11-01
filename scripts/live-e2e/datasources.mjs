@@ -18,14 +18,14 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "rclone", binary: "rclone" },
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
 	{ name: "hister", binary: "hister", command: "scripts/manual-qa/run-qa-hister-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
-	// Opt-in: the harness writes to the user's real cloud mounts, so it only runs when the operator names the
-	// parent folders to use (AUTORAG_E2E_CLOUD_DIRS, platform path-delimited). Its identity is an OS-absolute
-	// source under the throwaway `autorag-e2e-<hex>/` folder the harness creates inside each mount.
+	// Opt-in. macOS writes into the user's real cloud mounts (AUTORAG_E2E_CLOUD_DIRS names the parent folders);
+	// Windows registers its own synthetic Cloud Files provider in a temp folder (AUTORAG_E2E_CLOUD_SYNTHETIC=1).
+	// Its identity is an OS-absolute source under the throwaway `autorag-e2e-<hex>` folder the harness creates.
 	{
 		name: "cloud-mount",
 		binary: process.platform === "win32" ? "powershell.exe" : "osascript",
 		command: "scripts/manual-qa/run-qa-cloud-mount-live.ts",
-		identityPattern: /\/autorag-e2e-[0-9a-f]+\//u,
+		identityPattern: /[\\/]autorag-e2e-[0-9a-f]+[\\/]/u,
 	},
 ]);
 
@@ -44,9 +44,12 @@ const NATIVE_STORE_PROBES = Object.freeze({
 	obsidian: () => true,
 	rclone: () => existsSync(join(homedir(), ".config", "rclone", "rclone.conf")),
 	mailcrawl: () => existsSync(join(homedir(), ".mailcrawl")),
-	// Opt-in and dangerous (writes to the user's real cloud): only run when the operator names the parent
-	// folders. Without AUTORAG_E2E_CLOUD_DIRS the lane is SKIP.
-	"cloud-mount": () => (process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length > 0,
+	// Opt-in: macOS writes to the user's real cloud, so it runs only when the operator names the parent folders;
+	// Windows runs only when the synthetic provider is requested. Otherwise the lane is SKIP.
+	"cloud-mount": () =>
+		process.platform === "win32"
+			? process.env.AUTORAG_E2E_CLOUD_SYNTHETIC === "1"
+			: (process.env.AUTORAG_E2E_CLOUD_DIRS ?? "").trim().length > 0,
 });
 
 function defaultConfigured(name) {

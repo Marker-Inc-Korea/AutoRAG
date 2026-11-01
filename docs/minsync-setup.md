@@ -547,7 +547,6 @@ Any **other File Provider** has no verified release path, so a placeholder is no
 (`cloud-placeholder-skipped`, `reason` is the provider): AutoRAG cannot give the local
 copy back and would otherwise leave every document on disk. A previously indexed copy is
 kept. Make the file or folder available offline in the provider's app to index it.
-Windows Cloud Files placeholders are not handled yet.
 
 Downloads per refresh are bounded; the rest wait for the next refresh
 (`cloud-download-deferred`, one diagnostic per deferred file). A refused release is
@@ -573,8 +572,8 @@ rounded time from the start and is not re-downloaded.
 
 `cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
 refresh downloads; the first file is always allowed, so one large file cannot starve.
-`cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. Other platforms
-read every file as before; Windows Cloud Files placeholders are not handled yet.
+`cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. These
+keys apply on Windows too (below); Linux reads every file as before.
 
 Two other readers open file contents themselves and download a released cloud file
 again, so with their defaults the local copy comes back after the refresh: the Jikji
@@ -583,6 +582,28 @@ Measured on macOS 26 with iCloud Drive, a refresh with both switched off
 (`"jikji": false`, `"excludeExactDuplicates": false`) left every released file released;
 with either one on, they were downloaded again. The parsed mirror, MinSync, and fsearch
 passes never re-download. Making Jikji and dupey placeholder-aware is tracked separately.
+
+### Cloud Files folders (Windows)
+
+Windows sync apps (OneDrive, Dropbox, iCloud for Windows, and others built on the Cloud Files API) keep
+online-only files as placeholders that carry `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` (`0x400000`);
+`FILE_ATTRIBUTE_OFFLINE` is not set on them. A refresh reads the attributes of the files it is about to
+parse in one PowerShell process per batch, downloads placeholders within the same budget as on macOS,
+parses and indexes them, then releases the local copy with `CfDehydratePlaceholder` (one PowerShell
+process per file). The file's pin state is not changed.
+
+Release is enabled for every Cloud Files sync root because Windows itself refuses the two unsafe cases:
+a file with local changes the provider has not synced (`0x80070179`) and a file pinned to stay on the
+device (`0x80070188`); either is reported in `cloud-evict-failed` and the file stays as it is. This was
+measured against a synthetic Cloud Files provider (`scripts/manual-qa/windows-cloud-files-provider.ps1`)
+on Windows 11; OneDrive, Dropbox, and other commercial providers have not been measured.
+
+Windows lets a third-party process download an online-only file only where it can show its "app is
+downloading files" notification. An AutoRAG refresh running without an interactive desktop (a service,
+or an SSH session in session 0) gets `ERROR_CLOUD_FILE_ACCESS_DENIED` (395) for every placeholder; those
+files are skipped with `source-read-failed` and nothing is released. Run the refresh in the desktop
+session, and if the notification offers to block the app, allow it (Settings, Privacy & security,
+Automatic file downloads).
 
 ## Cancelling a refresh
 

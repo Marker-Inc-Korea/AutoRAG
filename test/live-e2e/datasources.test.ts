@@ -141,9 +141,11 @@ describe("live-e2e datasource matrix", () => {
 		expect(existsSync(lane?.command ?? "")).toBe(true);
 	});
 
-	it("skips the cloud-mount lane unless AUTORAG_E2E_CLOUD_DIRS is set", async () => {
-		const previous = process.env.AUTORAG_E2E_CLOUD_DIRS;
+	it("skips the cloud-mount lane unless its platform opt-in is set", async () => {
+		const previousDirs = process.env.AUTORAG_E2E_CLOUD_DIRS;
+		const previousSynthetic = process.env.AUTORAG_E2E_CLOUD_SYNTHETIC;
 		delete process.env.AUTORAG_E2E_CLOUD_DIRS;
+		delete process.env.AUTORAG_E2E_CLOUD_SYNTHETIC;
 		try {
 			const result = await runDatasourceMatrix({
 				root: fixtureRoot(),
@@ -156,7 +158,8 @@ describe("live-e2e datasource matrix", () => {
 				reason: "cloud-mount-native-store-not-configured",
 			});
 		} finally {
-			if (previous !== undefined) process.env.AUTORAG_E2E_CLOUD_DIRS = previous;
+			if (previousDirs !== undefined) process.env.AUTORAG_E2E_CLOUD_DIRS = previousDirs;
+			if (previousSynthetic !== undefined) process.env.AUTORAG_E2E_CLOUD_SYNTHETIC = previousSynthetic;
 		}
 	});
 
