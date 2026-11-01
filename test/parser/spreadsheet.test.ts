@@ -204,6 +204,26 @@ describe("SpreadsheetParser workbook structure and values", () => {
 		]);
 	});
 
+	it.each(["/docs/크레딧 내역.xlsx", "/docs/거래내역.xls"])(
+		"reads %s when it is really an HTML table saved by a web export, keeping its text as written",
+		async (virtualPath) => {
+			// Bank and ERP "download as Excel" buttons often save an HTML table under a workbook extension.
+			const html = [
+				"",
+				"<style>td{mso-number-format:\\@}</style>",
+				"<table><tr><td>거래일자</td><td>내역</td><td>금액</td></tr>",
+				"<tr><td>2023-06-01</td><td>크레딧 충전</td><td>50,000</td></tr>",
+				"<tr><td>2023-06-02</td><td>사용</td><td>-12,000</td></tr>",
+				"<tr><td>2023-06-08</td><td>사용</td><td>-8,000</td></tr></table>",
+			].join("\r\n");
+			const { markdown } = await new SpreadsheetParser().parse({ virtualPath, bytes: Buffer.from(html, "utf8") });
+
+			expect(lineContaining(markdown, "크레딧 충전")).toBe(
+				"[Sheet1!A2:C2] 거래일자: 2023-06-01 | 내역: 크레딧 충전 | 금액: 50,000",
+			);
+		},
+	);
+
 	it.each([
 		["/docs/a.xlsx", Buffer.from("not a workbook")],
 		["/docs/a.ods", Buffer.from("PK\u0003\u0004 truncated zip")],

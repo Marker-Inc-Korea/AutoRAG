@@ -430,14 +430,17 @@ function captionText(captions: readonly string[]): string {
 }
 
 /**
- * One line per value: line breaks become " / " and tabs a space. Everything else stays verbatim; the lines are
- * not Markdown tables, so a literal "|" or "\" in a cell needs no escaping.
+ * One line per value: line breaks become " / ", tabs a space, and other control characters (NUL picked up
+ * from extracted text, BEL, DEL, C1 controls) are dropped; MinSync's Korean tokenizer rejects a whole file
+ * that contains NUL. Everything else stays verbatim; the lines are not Markdown tables, so a literal "|" or
+ * "\" in a cell needs no escaping.
  */
 function clean(text: string): string {
 	return text
 		.trim()
 		.replace(/\s*(?:\r\n|\r|\n)\s*/g, " / ")
-		.replace(/[\t\f\v]+/g, " ");
+		.replace(/[\t\f\v]+/g, " ")
+		.replace(/\p{Cc}/gu, "");
 }
 
 function cellRange(left: number, right: number, row: number): string {

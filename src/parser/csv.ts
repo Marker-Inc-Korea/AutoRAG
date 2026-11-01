@@ -33,6 +33,7 @@ export interface CsvParserOptions {
 export class CsvParser extends Parser {
 	readonly name = "csv";
 	readonly extensions = DELIMITED_EXTENSIONS;
+	readonly version = "2";
 	readonly #maxRows: number;
 
 	constructor(options: CsvParserOptions = {}) {
