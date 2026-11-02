@@ -1020,6 +1020,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
 	if (file.jev !== undefined) config.jev = normalizeJevConfig(file.jev);
+	if (file.webSearch !== undefined) config.webSearch = file.webSearch;
 	config.permissionMode = resolvePermissionMode(
 		flags,
 		env,
