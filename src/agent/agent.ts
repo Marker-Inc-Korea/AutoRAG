@@ -22,6 +22,7 @@ import {
 	DupeyCliError,
 	type DupeyCliOptions,
 	type DupeyScanResult,
+	planDupeyScans,
 	scanWithDupey,
 	selectExactDuplicateExclusions,
 } from "../dupey/index.ts";
@@ -1425,23 +1426,11 @@ export class AutoRAGAgent {
 
 	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {
 		if (this.dupeyOptions === false) {
-			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
+			return { scans: [], skippedRoots: [], familyCount: 0, exactDuplicateCount: 0 };
 		}
-		// A search root inside a cloud or network folder is skipped whole and a cloud or network folder nested
-		// under a root is excluded by name: `dupey scan` opens file contents, which would re-download a released
-		// placeholder and re-read a network file over the wire.
-		const cloudRoots = await this.cloudRoots();
-		const scanRoots: { readonly path: string; readonly excludeDirs: string[] }[] = [];
-		for (const searchPath of this.searchPaths) {
-			const scope = cloudScope(searchPath, cloudRoots);
-			if (scope.insideCloudRoot) continue;
-			scanRoots.push({
-				path: searchPath,
-				excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)),
-			});
-		}
+		const { targets, skipped } = planDupeyScans(this.searchPaths, await this.cloudRoots());
 		const scans = await Promise.all(
-			scanRoots.map(({ path, excludeDirs }) =>
+			targets.map(({ path, excludeDirs }) =>
 				scanWithDupey(path, {
 					...(this.dupeyOptions || {}),
 					...(excludeDirs.length === 0 ? {} : { excludeDirs }),
@@ -1457,7 +1446,7 @@ export class AutoRAGAgent {
 			}
 			return count + [...hashes.values()].reduce((sum, size) => sum + Math.max(0, size - 1), 0);
 		}, 0);
-		return { scans, familyCount, exactDuplicateCount };
+		return { scans, skippedRoots: skipped, familyCount, exactDuplicateCount };
 	}
 
 	/**
@@ -4358,9 +4347,9 @@ export class AutoRAGAgent {
 		// same hash groups as the scanned, non-cloud copies.
 		const fingerprints = cloudFingerprintExclusions(loadCloudFingerprints(this.workspaceProjectRoot));
 		for (const searchPath of this.searchPaths) {
-			const scope = cloudScope(searchPath, cloudRoots);
+			const target = planDupeyScans([searchPath], cloudRoots).targets[0];
 			let scan: DupeyScanResult;
-			if (scope.insideCloudRoot) {
+			if (target === undefined) {
 				// `dupey scan` opens file contents, which would re-download every released placeholder (and
 				// re-read every network file), so such a search root is never scanned. Its cloud and network
 				// files still join the merge through their stored fingerprints, so an exact duplicate among
@@ -4370,9 +4359,7 @@ export class AutoRAGAgent {
 				try {
 					scan = await scanWithDupey(searchPath, {
 						...(this.dupeyOptions || {}),
-						...(scope.nestedCloudRoots.length === 0
-							? {}
-							: { excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)) }),
+						...(target.excludeDirs.length === 0 ? {} : { excludeDirs: target.excludeDirs }),
 					});
 				} catch (error) {
 					if (!(error instanceof DupeyCliError)) throw error;
