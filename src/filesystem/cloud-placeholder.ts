@@ -599,7 +599,7 @@ export interface PowerShellResult {
 	readonly stderr: string;
 }
 
-/** Runs one PowerShell process. The default spawns `powershell.exe -NoProfile -NonInteractive -Command <script>`. */
+/** Runs one PowerShell process. The default is {@link runPowerShell}. */
 export type PowerShellRunner = (script: string, timeoutMs: number) => Promise<PowerShellResult>;
 
 /** One local sync root registered by a Cloud Files provider, with the name Explorer shows for it. */
@@ -840,7 +840,7 @@ export class WindowsCloudProbe implements CloudFileProbe {
 	private disks: Promise<readonly CloudRoot[]> | undefined;
 
 	constructor(options: WindowsCloudProbeOptions = {}) {
-		this.run = options.run ?? defaultPowerShellRunner;
+		this.run = options.run ?? runPowerShell;
 	}
 
 	/**
@@ -932,13 +932,41 @@ function longestSyncRoot(roots: readonly WindowsSyncRoot[], target: string): Win
 	return match;
 }
 
-async function defaultPowerShellRunner(script: string, timeoutMs: number): Promise<PowerShellResult> {
+/** The environment variable the PowerShell command line reads its script from. */
+const POWERSHELL_SCRIPT_VARIABLE = "AUTORAG_POWERSHELL_SCRIPT";
+
+/**
+ * How {@link runPowerShell} starts `powershell.exe`. The command line itself is a fixed, ASCII statement that
+ * switches the console to UTF-8 and only then evaluates the script, which it reads from the environment. An error in
+ * the script itself (a parse error included) is then written in UTF-8. A script passed on the command line is
+ * parsed before any statement can run, so a parse error came out in the console code page (CP949 on Korean Windows),
+ * which reads as mojibake.
+ */
+export function powerShellLaunch(script: string): {
+	readonly args: readonly string[];
+	readonly env: Readonly<Record<string, string>>;
+} {
+	return {
+		args: [
+			"-NoProfile",
+			"-NonInteractive",
+			"-Command",
+			`[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Invoke-Expression $env:${POWERSHELL_SCRIPT_VARIABLE}`,
+		],
+		env: { [POWERSHELL_SCRIPT_VARIABLE]: script },
+	};
+}
+
+/** The default {@link PowerShellRunner}. */
+export async function runPowerShell(script: string, timeoutMs: number): Promise<PowerShellResult> {
+	const launch = powerShellLaunch(script);
 	try {
-		const { stdout, stderr } = await execFileAsync(
-			"powershell.exe",
-			["-NoProfile", "-NonInteractive", "-Command", script],
-			{ timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
-		);
+		const { stdout, stderr } = await execFileAsync("powershell.exe", [...launch.args], {
+			timeout: timeoutMs,
+			maxBuffer: 16 * 1024 * 1024,
+			windowsHide: true,
+			env: { ...process.env, ...launch.env },
+		});
 		return { ok: true, stdout, stderr };
 	} catch (error) {
 		const record = typeof error === "object" && error !== null ? (error as Record<string, unknown>) : {};
