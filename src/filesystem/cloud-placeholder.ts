@@ -982,6 +982,12 @@ async function readFileProviderDomainUpwards(target: string): Promise<string | u
 	return undefined;
 }
 
+/**
+ * Wraps `value` as a PowerShell single-quoted literal. PowerShell accepts more than the ASCII apostrophe as a
+ * quote delimiter, so every character it treats as one must be doubled: U+2018 `‘`, U+2019 `’`, U+201A `‚`
+ * and U+201B `‛` close a literal just like `'`. Doubling only `'` left a name such as `That’s.pdf` to end the
+ * literal early and the whole script to fail to parse, which aborted the refresh (NomaDamas/AutoRAG-app#463).
+ */
 function quotePowerShell(value: string): string {
-	return `'${value.replaceAll("'", "''")}'`;
+	return `'${value.replace(/['\u2018\u2019\u201A\u201B]/gu, (quote) => quote + quote)}'`;
 }
