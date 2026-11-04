@@ -27,7 +27,9 @@ import {
 	parseWindowsSyncRoots,
 	parseXattrValues,
 	pathLooksLikeCloudRoot,
+	powerShellLaunch,
 	providerFromWindowsSyncRoot,
+	runPowerShell,
 	uncShareRoot,
 	WINDOWS_ATTRIBUTE_BATCH,
 	WINDOWS_DRIVE_TYPE_NETWORK,
@@ -816,5 +818,30 @@ describe("cloud root listing", () => {
 		await expect(
 			new WindowsCloudProbe({ run: powerShell.run }).cloudRoots([String.raw`\\server\share\docs`]),
 		).resolves.toEqual([{ path: String.raw`\\server\share`, kind: "network" }]);
+	});
+});
+
+describe("PowerShell launch", () => {
+	// Korean Windows writes a parse error in CP949 when it comes from the command line itself, before any statement
+	// could switch the console to UTF-8 (Sentry ELECTRON-N/Z arrived as mojibake).
+	const script = "Write-Output 'C:\\Users\\x\\\uACC4\uC57D\uC11C \u2019\u2019final\u2019\u2019.pdf'";
+
+	it("passes the script outside the command line, so PowerShell parses it only after switching to UTF-8", () => {
+		const launch = powerShellLaunch(script);
+		expect(launch.args.join(" ")).not.toContain("\uACC4\uC57D\uC11C");
+		expect(Object.values(launch.env)).toContain(script);
+	});
+
+	it.runIf(process.platform === "win32")("reports a script that does not parse as readable UTF-8 text", async () => {
+		const result = await runPowerShell("$p = 'C:\\x\\That\u2019s.txt'\nWrite-Output $p", 30_000);
+		expect(result.ok).toBe(false);
+		expect(result.stderr).not.toContain("\uFFFD");
+		expect(result.stderr).toContain("That\u2019s.txt");
+	});
+
+	it.runIf(process.platform === "win32")("still returns non-ASCII output as UTF-8", async () => {
+		const result = await runPowerShell(script, 30_000);
+		expect(result).toMatchObject({ ok: true, stderr: "" });
+		expect(result.stdout.trim()).toBe("C:\\Users\\x\\\uACC4\uC57D\uC11C \u2019final\u2019.pdf");
 	});
 });
