@@ -7,6 +7,7 @@ describe("scan_duplicate_documents tool", () => {
 			async scanDuplicateDocuments() {
 				return {
 					scans: [{ dir: "/docs", files: [], errors: [], families: [] }],
+					skippedRoots: [],
 					familyCount: 0,
 					exactDuplicateCount: 0,
 				};
@@ -66,6 +67,7 @@ describe("scan_duplicate_documents tool", () => {
 					],
 				},
 			],
+			skippedRoots: [],
 			familyCount: 2,
 			exactDuplicateCount: 2,
 		};
@@ -90,5 +92,24 @@ describe("scan_duplicate_documents tool", () => {
 		expect(text).toContain("/docs/draft-b.txt");
 		expect(text).toContain("near");
 		expect(text).toContain("0.93");
+	});
+
+	it("tells the model which roots were not scanned because they sit in a cloud or network folder", async () => {
+		const tool = createScanDuplicateDocumentsTool({
+			async scanDuplicateDocuments() {
+				return {
+					scans: [],
+					skippedRoots: ["/Users/me/Library/CloudStorage/OneDrive-School"],
+					familyCount: 0,
+					exactDuplicateCount: 0,
+				};
+			},
+		});
+
+		const result = await tool.execute("call-1", {});
+		const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+
+		expect(text).toContain("Not scanned");
+		expect(text).toContain("/Users/me/Library/CloudStorage/OneDrive-School");
 	});
 });

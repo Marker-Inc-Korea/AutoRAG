@@ -131,6 +131,7 @@ describe("dupey and cloud folders", () => {
 		const details = await agent.scanDuplicateDocuments();
 
 		expect(details.scans).toEqual([]);
+		expect(details.skippedRoots).toEqual([docs]);
 		expect(dupey.calls).toEqual([]);
 	});
 });

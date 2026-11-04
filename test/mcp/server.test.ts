@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AutoRAGLite } from "../../src/core.ts";
+import type { CloudFileProbe } from "../../src/filesystem/cloud-placeholder.ts";
 import { createAutoRAGMcpServer } from "../../src/mcp/server.ts";
 
 const roots: string[] = [];
@@ -673,6 +674,36 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(hasFieldValue(output, "relation", "contains")).toBe(true);
 		expect(hasFieldValue(output, "message", "extract failed")).toBe(true);
 		expect(runCalls).toEqual([["scan", resolve(docs), "--json"]]);
+		await client.close();
+		await server.close();
+	});
+
+	it("does not scan a search root inside a cloud folder and lists it as skipped", async () => {
+		const docs = realpathSync(mkdtempSync(join(tmpdir(), "autorag-mcp-dupes-")));
+		roots.push(docs);
+		const runCalls: string[][] = [];
+		const { lite } = fakeLite({
+			workspacePath: docs,
+			searchPaths: [docs],
+			dupey: {
+				run: async (args: readonly string[]) => {
+					runCalls.push([...args]);
+					return JSON.stringify({ dir: docs, files: [], families: [], errors: [] });
+				},
+			},
+		});
+		const cloudProbe: CloudFileProbe = {
+			cloudRoots: async () => [{ path: docs, kind: "file-provider" }],
+			datalessAmong: async () => new Set(),
+			providerOf: async () => undefined,
+			canRelease: () => false,
+			evict: async () => ({ ok: true }),
+		};
+		const { client, server } = await connectedServer(lite, { cloudProbe });
+		const result = await client.callTool({ name: "autorag.duplicates", arguments: {} });
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({ ok: true, skippedRoots: [docs] });
+		expect(runCalls).toEqual([]);
 		await client.close();
 		await server.close();
 	});
