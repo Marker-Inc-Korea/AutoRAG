@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	buildWindowsAttributeScript,
+	buildWindowsDehydrateScript,
 	buildWindowsDiskScript,
 	type CloudDirEntry,
 	type CloudExec,
@@ -275,6 +277,87 @@ describe("windows evict result mapping", () => {
 		const result = parseWindowsDehydrateOutput({ ok: false, stdout: "", stderr: "powershell.exe not found" });
 		expect(result.ok).toBe(false);
 		expect(result).toHaveProperty("message", "powershell.exe not found");
+	});
+});
+
+/**
+ * PowerShell accepts the ASCII apostrophe and the four typographic single quotes U+2018–U+201B as
+ * single-quote delimiters. A path embedded in one of the scripts is a single-quoted literal, so every
+ * one of those characters must be doubled or the literal ends early and the whole script fails to parse
+ * (NomaDamas/AutoRAG-app#463). The same rule PowerShell's own
+ * `CodeGeneration.EscapeSingleQuotedStringContent` applies.
+ */
+describe("windows PowerShell path quoting", () => {
+	const SINGLE_QUOTES = ["'", "\u2018", "\u2019", "\u201A", "\u201B"] as const;
+	const DOUBLE_QUOTES = ["\u201C", "\u201D"] as const;
+	const SINGLE_QUOTE_CLASS = /['\u2018\u2019\u201A\u201B]/gu;
+	const DOUBLED_SINGLE_QUOTE_CLASS = /('|\u2018|\u2019|\u201A|\u201B)\1/gu;
+
+	/** The path literals of an attribute script: the `@(…)` array between `@(` and the `)){` that opens the loop. */
+	function attributePathLiterals(script: string): string[] {
+		const start = script.indexOf("@(");
+		const end = script.indexOf(")){", start);
+		expect(start).toBeGreaterThanOrEqual(0);
+		expect(end).toBeGreaterThan(start);
+		return script.slice(start + 2, end).split(",");
+	}
+
+	/**
+	 * Asserts `chunk` is one PowerShell single-quoted literal for `value`: it opens and closes with `'`, every
+	 * delimiter inside is doubled (so none can terminate it early), and it carries exactly `value`'s characters.
+	 */
+	function expectSingleQuotedLiteral(chunk: string | undefined, value: string): void {
+		expect(chunk).toBeDefined();
+		const literal = chunk as string;
+		expect(literal.startsWith("'")).toBe(true);
+		expect(literal.endsWith("'")).toBe(true);
+		const inner = literal.slice(1, -1);
+		expect(inner.replace(DOUBLED_SINGLE_QUOTE_CLASS, "")).not.toMatch(SINGLE_QUOTE_CLASS);
+		expect(inner).toBe(value.replace(SINGLE_QUOTE_CLASS, (quote) => quote + quote));
+	}
+
+	it("doubles every single-quote delimiter an embedded path contains", () => {
+		for (const quote of SINGLE_QUOTES) {
+			const path = `C:\\Users\\x\\That${quote}s right.txt`;
+			const [literal] = attributePathLiterals(buildWindowsAttributeScript([path]));
+			expectSingleQuotedLiteral(literal, path);
+		}
+	});
+
+	it("leaves double typographic quotes inside the literal unchanged", () => {
+		for (const quote of DOUBLE_QUOTES) {
+			const path = `C:\\Users\\x\\dq${quote}x.txt`;
+			const [literal] = attributePathLiterals(buildWindowsAttributeScript([path]));
+			expect(literal).toBe(`'${path}'`);
+		}
+	});
+
+	it("produces one valid literal per path in a mixed batch", () => {
+		const paths = [
+			"C:\\Users\\x\\plain.txt",
+			"C:\\Users\\x\\it's ascii.txt",
+			"C:\\Users\\x\\That\u2019s right.txt",
+			"C:\\Users\\x\\\u2018left\u2019.txt",
+			"C:\\Users\\x\\low\u201Aquote.txt",
+			"C:\\Users\\x\\rev\u201Bquote.txt",
+			"C:\\Users\\x\\dq\u201Cx\u201D.txt",
+		];
+		const literals = attributePathLiterals(buildWindowsAttributeScript(paths));
+		expect(literals).toHaveLength(paths.length);
+		paths.forEach((path, index) => {
+			expectSingleQuotedLiteral(literals[index], path);
+		});
+	});
+
+	it("doubles the same delimiters in the dehydrate script's path literal", () => {
+		for (const quote of [...SINGLE_QUOTES, ...DOUBLE_QUOTES]) {
+			const path = `C:\\Users\\x\\That${quote}s right.txt`;
+			const script = buildWindowsDehydrateScript(path);
+			const marker = "[Autorag.CfApi]::CfOpenFileWithOplock(";
+			const start = script.indexOf(marker) + marker.length;
+			const literal = script.slice(start, script.indexOf(",0x1,[ref]$h)", start));
+			expectSingleQuotedLiteral(literal, path);
+		}
 	});
 });
 
