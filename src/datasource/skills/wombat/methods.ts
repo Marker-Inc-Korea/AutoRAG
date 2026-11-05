@@ -7,7 +7,7 @@ import type {
 import { datasourceCliError } from "../../errors.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
 import type { WombatSearchClient } from "./client.ts";
-import type { WombatSearchMode } from "./types.ts";
+import type { WombatSearchHit, WombatSearchMode } from "./types.ts";
 
 export const WOMBAT_MODES: readonly WombatSearchMode[] = ["keyword", "semantic", "hybrid"];
 
@@ -68,7 +68,7 @@ export class WombatMethod implements RetrievalMethod {
 			})
 			.map((hit) => ({
 				id: `wombat:${this.instanceId}:${hit.chunkId}`,
-				content: hit.snippet,
+				content: `${sessionLabel(hit)}\n${hit.snippet}`,
 				source: datasourceSourcePath("wombat", this.instanceId, hit.chunkId),
 				score: hit.score,
 				metadata: {
@@ -91,4 +91,31 @@ export class WombatMethod implements RetrievalMethod {
 			}))
 			.slice(0, topK);
 	}
+}
+
+/** A value placed in the one-line label: no line breaks, so a title or path cannot add lines to a result. */
+function oneLine(value: string): string {
+	return value.replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * The first line of every hit: which session the snippet came from. It carries what `wombat show` and
+ * `wombat trace` take (`<agent>:<session id>`), the turn range to pass to `--turn`, and enough context
+ * (date, title, project) to tell two sessions apart. Parts the CLI did not report are left out.
+ */
+function sessionLabel(hit: WombatSearchHit): string {
+	const turns =
+		hit.startTurn === undefined
+			? undefined
+			: hit.endTurn === undefined || hit.endTurn === hit.startTurn
+				? `turn ${hit.startTurn}`
+				: `turns ${hit.startTurn}-${hit.endTurn}`;
+	const parts = [
+		oneLine(hit.catalogKey),
+		turns,
+		hit.startedAt === undefined ? undefined : hit.startedAt.slice(0, 10),
+		hit.title.length === 0 ? undefined : oneLine(hit.title),
+		hit.cwd === undefined ? undefined : oneLine(hit.cwd),
+	].filter((part): part is string => part !== undefined && part.length > 0);
+	return `[${parts.join(" | ")}]`;
 }
