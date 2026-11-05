@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { resolveAgentModel, resolveConfig } from "../../src/cli/config.ts";
 import { FAKE_TELEGRAM_USER, FakeTelegramApi } from "../helpers/fake-telegram.ts";
+import { realMinSync } from "../helpers/real-minsync.ts";
 
 const LIVE = process.env.AUTORAG_TELEGRAM_LIVE === "1" && Boolean(process.env.OPENROUTER_API_KEY);
 const MODEL_ID = process.env.AUTORAG_TELEGRAM_LIVE_MODEL ?? "anthropic/claude-haiku-5.5";
@@ -77,7 +78,7 @@ describe.skipIf(!LIVE)("Telegram remote control, live model", () => {
 			searchPaths: [docs],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			minSync: { autoInstall: false },
+			minSync: { autoInstall: false, binaryPath: realMinSync() },
 			jikji: false,
 			// Machine-wide finders would search the developer's real disk, not the fixture corpus.
 			everything: false,
@@ -87,6 +88,8 @@ describe.skipIf(!LIVE)("Telegram remote control, live model", () => {
 			piSessionDir: join(root, "sessions"),
 			telegram: true,
 		});
+		const refreshed = await agent.refresh(true, { methods: ["parsed", "minsync"] });
+		expect(refreshed.minsync?.ok, JSON.stringify(refreshed.minsync)).toBe(true);
 		const hosted = await agent.createPiInteractiveRuntime();
 		try {
 			await hosted.runtime.session.bindExtensions({

@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackendError } from "jev-use";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE } from "../../src/cloud/credential.ts";
 import { DAZZI_DEFAULT_JEV_MODEL, DazziJevBackend } from "../../src/cloud/jev-backend.ts";
-import { startFakeServer } from "./helpers/fake-server.ts";
+import { startFakeServer, strictKeyDecisionHandler } from "./helpers/fake-server.ts";
 
 let agentDir: string;
 
@@ -120,6 +120,33 @@ describe("DazziJevBackend", () => {
 		}
 	});
 
+	it("keys AutoRAG's question ids the way a strict model (Clef Omni) accepts, and reads each answer back for its own question", async () => {
+		const evidenceId = `evidence:1:minsync:${"f".repeat(120)}`;
+		const server = await startFakeServer(
+			strictKeyDecisionHandler({
+				"Search the web?": 0.9,
+				"Is citation 0 relevant?": 0.2,
+				"Is citation 0 on topic?": 0.6,
+				"Does the evidence support it?": 0.4,
+			}),
+		);
+		try {
+			const backend = new DazziJevBackend({ apiKey: "dz_test", baseUrl: server.url });
+			const judgment = await createJevJudge({ backend, model: "cloudflare/clef-omni" })("x", [
+				{ id: "datasource:web", type: "noul", question: "Search the web?" },
+				{ id: "citation:0", type: "noul", question: "Is citation 0 relevant?" },
+				{ id: "citation_0", type: "noul", question: "Is citation 0 on topic?" },
+				{ id: evidenceId, type: "noul", question: "Does the evidence support it?" },
+			]);
+			expect(judgment.answers["datasource:web"]?.answer).toBe(0.9);
+			expect(judgment.answers["citation:0"]?.answer).toBe(0.2);
+			expect(judgment.answers.citation_0?.answer).toBe(0.6);
+			expect(judgment.answers[evidenceId]?.answer).toBe(0.4);
+		} finally {
+			await server.close();
+		}
+	});
+
 	it("maps a 401 to a BackendError naming the backend, status, and server message", async () => {
 		const server = await startFakeServer(() => ({
 			status: 401,
@@ -216,16 +243,13 @@ describe("createJevJudge with the dazzi backend", () => {
 		);
 	});
 
-	it("builds the hosted backend from JEV_BACKEND=dazzi when no backend option is given", async () => {
+	it("picks the hosted backend when signed in and no backend is named", async () => {
 		signIn("dz_test");
 		const server = await startFakeServer(() => ({
 			body: { model: DAZZI_DEFAULT_JEV_MODEL, answers: { q0: { type: "noul", noul: 0.8 } } },
 		}));
 		try {
-			const judge = createJevJudge({
-				agentDir,
-				env: { JEV_BACKEND: "dazzi", AUTORAG_BASE_URL: server.url },
-			});
+			const judge = createJevJudge({ agentDir, env: { AUTORAG_BASE_URL: server.url } });
 			const judgment = await judge({ task: "x" }, [{ type: "noul", question: "ok?" }]);
 			expect(judgment.backend).toBe("dazzi");
 			expect(judgment.verdicts[0]?.answer).toBe(0.8);
@@ -234,11 +258,25 @@ describe("createJevJudge with the dazzi backend", () => {
 		}
 	});
 
-	it("reports the sign-in error for JEV_BACKEND=dazzi when not signed in", async () => {
-		const judge = createJevJudge({ agentDir, env: { JEV_BACKEND: "dazzi" } });
-		await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
-			/jev\.backend "dazzi" needs a sign-in/,
-		);
+	it("names the credentials to set when no backend is named, nobody is signed in, and no key is set", async () => {
+		for (const name of [
+			"OPENROUTER_API_KEY",
+			"OPENAI_API_KEY",
+			"TYPESAFE_API_KEY",
+			"AI_GATEWAY_API_KEY",
+			"CLOUDFLARE_API_KEY",
+			"OPENCODE_API_KEY",
+		]) {
+			vi.stubEnv(name, "");
+		}
+		try {
+			const judge = createJevJudge({ agentDir, env: {} });
+			await expect(judge({ task: "x" }, [{ type: "noul", question: "ok?" }])).rejects.toThrow(
+				/No Jev credentials found: set OPENROUTER_API_KEY.*sign in to Dazzi Models/u,
+			);
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("judges a noul question through the hosted endpoint", async () => {

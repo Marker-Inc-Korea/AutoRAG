@@ -10,6 +10,8 @@ const MAX_RENDERED_MEMBERS = 50;
 
 export interface ScanDuplicateDocumentsDetails {
 	readonly scans: readonly DupeyScanResult[];
+	/** Roots inside a cloud or network folder: `dupey scan` opens file contents, so they were not scanned. */
+	readonly skippedRoots: readonly string[];
 	readonly familyCount: number;
 	readonly exactDuplicateCount: number;
 }
@@ -50,6 +52,11 @@ function renderScanReport(details: ScanDuplicateDocumentsDetails): string {
 		`dupey scanned ${details.scans.length} configured root(s).`,
 		`families=${details.familyCount} exactDuplicates=${details.exactDuplicateCount} extractionErrors=${errors}`,
 		"Review exact families before cleanup; near/contains families are not safe deletion evidence.",
+		...(details.skippedRoots.length === 0
+			? []
+			: [
+					`Not scanned (inside a cloud or network folder; scanning would download or re-read every file): ${details.skippedRoots.join(", ")}. Duplicates there are not reported, and an exact duplicate is only found against files an earlier refresh fingerprinted.`,
+				]),
 	];
 	let rendered = 0;
 	let omitted = 0;

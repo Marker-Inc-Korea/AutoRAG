@@ -40,15 +40,6 @@ export {
 	type ResultsByMethod,
 } from "./scope.ts";
 export {
-	CLOUD_DRIVE_SKILL_DEFINITION,
-	CloudDriveSkill,
-	type CloudDriveSkillOptions,
-	RcloneConnector,
-	type RcloneConnectorOptions,
-	type RcloneRunner,
-	type RcloneRunResult,
-} from "./skills/cloud-drive/index.ts";
-export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
 	DEFAULT_DISCRAWL_MODE,
 	DiscrawlClient,
@@ -104,12 +95,6 @@ export {
 	LazykatokSkill,
 } from "./skills/lazykatok/index.ts";
 export {
-	MailExportConnector,
-	type MailExportConnectorOptions,
-	MailExportSkill,
-	type MailExportSkillOptions,
-} from "./skills/mail-export/index.ts";
-export {
 	MAILCRAWL_MODES,
 	MailcrawlClient,
 	type MailcrawlFailure,
@@ -131,11 +116,11 @@ export {
 	type NotionSkillOptions,
 } from "./skills/notion/index.ts";
 export {
-	ObsidianBm25Method,
 	type ObsidianMethodOptions,
 	ObsidianSemanticMethod,
 	ObsidianSkill,
 	type ObsidianSkillOptions,
+	ObsidianSparseMethod,
 } from "./skills/obsidian/index.ts";
 export {
 	RssConnector,
@@ -151,18 +136,26 @@ export {
 	type SlacrawlOptions,
 } from "./skills/slack/index.ts";
 export {
-	SpotlightConnector,
-	type SpotlightConnectorOptions,
-	SpotlightSkill,
-	type SpotlightSkillOptions,
-} from "./skills/spotlight/index.ts";
-export {
 	TelecrawlClient,
 	type TelecrawlOptions,
 	TelecrawlSkill,
 	type TelecrawlSkillOptions,
 } from "./skills/telecrawl/index.ts";
 export { WacrawlClient, type WacrawlOptions, WacrawlSkill, type WacrawlSkillOptions } from "./skills/wacrawl/index.ts";
+export {
+	WOMBAT_MODES,
+	WombatClient,
+	type WombatFailure,
+	type WombatFailureReason,
+	WombatMethod,
+	type WombatOptions,
+	type WombatSearchHit,
+	type WombatSearchMode,
+	type WombatSearchResult,
+	WombatSkill,
+	type WombatSkillOptions,
+	type WombatSyncResult,
+} from "./skills/wombat/index.ts";
 export type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,

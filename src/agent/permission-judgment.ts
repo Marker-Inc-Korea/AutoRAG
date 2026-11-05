@@ -60,8 +60,8 @@ const CATEGORY_QUESTIONS: Readonly<Record<PermissionKind, string>> = {
 	delete:
 		"Assume the proposed call runs. Is any file or folder that existed before it ran gone afterwards (rm, trash, find -delete, git clean, or code in perl, python, ruby, node, or any shell snippet that unlinks or removes it)?" +
 		AGENT_OWN_FILES,
-	move: "Does the proposed call move any existing file or folder to a different directory?" + AGENT_OWN_FILES,
-	rename: "Does the proposed call rename any existing file or folder within its directory?" + AGENT_OWN_FILES,
+	move: `Does the proposed call move any existing file or folder to a different directory?${AGENT_OWN_FILES}`,
+	rename: `Does the proposed call rename any existing file or folder within its directory?${AGENT_OWN_FILES}`,
 	overwrite:
 		"Does the proposed call replace the whole content of a file that existed before it ran (a redirect onto it, a download or extraction over it, cp or a script writing over it, git checkout or reset --hard)?" +
 		AGENT_OWN_FILES,

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -21,6 +22,18 @@ beforeEach(() => {
 		`#!/bin/sh
 printf '%s\\n' "$*" >> ${JSON.stringify(log)}
 case "$1" in
+  stage)
+    shift
+    state_dir=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --state-dir) state_dir="$2"; shift 2 ;;
+        --state-dir=*) state_dir="\${1#--state-dir=}"; shift ;;
+        *) shift ;;
+      esac
+    done
+    exec ${JSON.stringify(process.execPath)} -e 'require(process.argv[1]).runStage({ stateDir: process.argv[2] });' ${JSON.stringify(fakeMinSyncStageSimulatorPath)} "$state_dir"
+    ;;
   init) mkdir -p .minsync; printf '%s\\n' '[embedder]' 'id = "fixture"' > .minsync/config.toml; exit 0 ;;
   check) printf '%s\\n' '{"vectorstore_ok":true,"embedder_ok":true}'; exit 0 ;;
   sync) mkdir -p .minsync; printf '%s\\n' '{}' > .minsync/cursor.json; printf '%s\\n' '{"files_processed":1}'; exit 0 ;;
@@ -56,6 +69,9 @@ describe("model-free full refresh", () => {
 			.trim()
 			.split("\n")
 			.filter((command) => command.startsWith("sync"));
-		expect(syncCommands).toEqual(["sync --full --format json", "sync --full --format json"]);
+		expect(syncCommands).toEqual([
+			"sync --full --format json --progress jsonl",
+			"sync --full --format json --progress jsonl",
+		]);
 	});
 });

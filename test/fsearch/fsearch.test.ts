@@ -349,6 +349,47 @@ describeFSearch("FSearchClient", () => {
 		expect(calls.map((call) => call.args[0])).toEqual(["--version", "search"]);
 	});
 
+	it("runs concurrent searches at the same time, and lets an index wait for them", async () => {
+		const events: string[] = [];
+		const releases: Array<() => void> = [];
+		let inFlight = 0;
+		let peak = 0;
+		const client = new FSearchClient({
+			root,
+			folders: [join(root, "docs")],
+			platform: "darwin",
+			run: async (_command, args) => {
+				if (args[0] === "--version") return { code: 0, stdout: "fsearch-cli 0.3\n", stderr: "" };
+				if (args[0] === "search") {
+					inFlight += 1;
+					peak = Math.max(peak, inFlight);
+					events.push(`search ${args[args.length - 1]}`);
+					await new Promise<void>((resolve) => releases.push(resolve));
+					inFlight -= 1;
+					return { code: 0, stdout: '{"done":true,"num_results":0,"num_returned":0}\n', stderr: "" };
+				}
+				if (args[0] === "index") events.push("index");
+				if (args[0] === "stats") return { code: 0, stdout: '{"live":true,"files":0,"folders":0}', stderr: "" };
+				return { code: 0, stdout: "", stderr: "" };
+			},
+			launch: () => 1,
+			isProcessAlive: () => false,
+			startupTimeoutMs: 50,
+			pollIntervalMs: 1,
+		});
+		mkdirSync(join(root, ".autorag", "fsearch"), { recursive: true });
+		writeFileSync(join(root, ".autorag", "fsearch", "fsearch.db"), "db");
+		const searches = Promise.all([client.search({ query: "alpha" }), client.search({ query: "beta" })]);
+		const indexing = client.index();
+		for (let turn = 0; turn < 200 && releases.length < 2; turn++) await Promise.resolve();
+		expect(peak).toBe(2);
+		expect(events).not.toContain("index");
+		for (const release of releases) release();
+		await searches;
+		await indexing;
+		expect(events.at(-1)).toBe("index");
+	});
+
 	it("applies offset, maxResults, and the path prefix filter locally", async () => {
 		const lines = Array.from({ length: 10 }, (_, index) => {
 			const path = index < 5 ? `/docs/a${index}.txt` : `/other/a${index}.txt`;

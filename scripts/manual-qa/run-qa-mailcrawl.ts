@@ -31,6 +31,7 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 	if (!calls.some((call) => call.args[0] === "sync") || !calls.some((call) => call.args[0] === "index")) throw new Error("mailcrawl lifecycle calls missing");
 	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "mailcrawl-qa" }] });
 	registration.setResponses([
+		fauxAssistantMessage("Initial pass: checking the mailcrawl archive.", { stopReason: "stop" }),
 		fauxAssistantMessage([fauxToolCall("load_datasource_skill", { name: "datasource-mailcrawl" })], { stopReason: "toolUse" }),
 		fauxAssistantMessage([fauxToolCall("search_datasource_mailcrawl", { query: "refund approval", topK: 5, scope: "/mailcrawl/personal/**" })], { stopReason: "toolUse" }),
 		// Cite the evidence id the search tool printed, read back from its tool result.

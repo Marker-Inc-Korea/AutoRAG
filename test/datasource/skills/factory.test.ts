@@ -34,6 +34,48 @@ describe("datasource skill factory", () => {
 		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
 	});
 
+	it("treats retired datasources.mail-export config as unknown because mailcrawl --source files owns static mailboxes", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			"mail-export": { connector: { paths: ["/tmp/export.mbox"] } },
+			"old-backup": { type: "mail-export", connector: { paths: ["/tmp/eml"] } },
+			archive: {
+				type: "mailcrawl",
+				connector: { source: "files", paths: ["/tmp/export.mbox"] },
+			},
+		});
+
+		expect(unknown).toEqual(["mail-export", "old-backup"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["archive"]);
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("mail-export");
+	});
+
+	it("treats datasources.cloud-drive config as unknown because rclone support was removed", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			"cloud-drive": { connector: { remote: "gdrive:" } },
+			"my-drive": { type: "cloud-drive" },
+			rss: { connector: { feeds: [{ url: "https://example.com/feed.xml" }] } },
+		});
+
+		expect(unknown).toEqual(["cloud-drive", "my-drive"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("cloud-drive");
+		expect(builtinDatasourceSkillNames("darwin")).not.toContain("cloud-drive");
+		expect(builtinDatasourceSkillNames("win32")).not.toContain("cloud-drive");
+	});
+
+	it("treats datasources.spotlight config as unknown because Spotlight support was removed", () => {
+		const { skills, unknown } = buildDatasourceSkills({
+			spotlight: { connector: { queries: ["kMDItemContentTypeTree == 'public.text'"] } },
+			"my-files": { type: "spotlight" },
+			rss: { connector: { feeds: [{ url: "https://example.com/feed.xml" }] } },
+		});
+
+		expect(unknown).toEqual(["spotlight", "my-files"]);
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(BUILTIN_DATASOURCE_SKILL_NAMES).not.toContain("spotlight");
+		expect(builtinDatasourceSkillNames("darwin")).not.toContain("spotlight");
+	});
+
 	it("builds a github-gist skill from a typed alias entry", () => {
 		const { skills, unknown } = buildDatasourceSkills(
 			{

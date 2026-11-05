@@ -11,6 +11,7 @@
 import type { RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ModelRuntime, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { API_PATH, PROVIDER_ID, PROVIDER_NAME, resolveBaseUrl } from "./config.ts";
+import { streamDazziSimple } from "./context-overflow.ts";
 import { buildStoreEntry, fetchModels, modelsFromStore, resolveCredentialKey } from "./models.ts";
 import { loginDazzi, refreshDazziCredentials } from "./oauth-login.ts";
 
@@ -70,6 +71,7 @@ export function createDazziProviderConfig(env: DazziEnv = process.env): Provider
 		name: PROVIDER_NAME,
 		baseUrl: endpoints.apiBaseUrl,
 		api: "openai-responses",
+		streamSimple: streamDazziSimple,
 		oauth: {
 			name: PROVIDER_NAME,
 			login: (callbacks) => loginDazzi(callbacks, { baseUrl }),

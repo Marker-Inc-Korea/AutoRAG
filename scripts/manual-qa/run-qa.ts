@@ -1,9 +1,9 @@
 /**
  * Manual QA harness for connector-backed datasource skills
- * (#1300 #1301 #1302 #1303 #1304 #1305 #1311 #1314 #1316).
+ * (#1300 #1301 #1302 #1303 #1304 #1305 #1314 #1316).
  *
- * Spins up a local mock of every external API (plus real filesystem
- * fixtures for Obsidian and mail exports), builds all skills through the
+ * Spins up a local mock of every external API (plus a real filesystem
+ * fixture for Obsidian), builds all skills through the
  * trusted config factory, registers them on a real AutoRAGAgent, then walks
  * the checklist in docs/manual-qa-datasources.md: setup -> refresh/index ->
  * skill announcement -> load_datasource_skill -> per-connection
@@ -46,19 +46,7 @@ try {
 		join(vault, "projects", "roadmap.md"),
 		"---\ntags: [planning]\n---\n# Roadmap\nThe mobile app beta launches in October.",
 	);
-	const mailDir = join(tmpRoot, "mail");
-	mkdirSync(mailDir, { recursive: true });
-	writeFileSync(
-		join(mailDir, "budget.eml"),
-		[
-			"From: cfo@example.com",
-			"To: leads@example.com",
-			"Subject: FY25 budget freeze",
-			"Date: Mon, 03 Jun 2024 10:00:00 +0000",
-			"",
-			"Hiring is frozen until FY25 budgets are approved.",
-		].join("\r\n"),
-	);
+	// Static .eml/.mbox mailboxes now belong to mailcrawl 0.3.0 (`--source files`), tested in run-qa-mailcrawl-live.ts.
 	const docsDir = join(tmpRoot, "docs");
 	mkdirSync(docsDir, { recursive: true });
 	writeFileSync(join(docsDir, "readme.txt"), "Local corpus placeholder.");
@@ -67,13 +55,12 @@ try {
 	const { skills, unknown } = buildDatasourceSkills(
 		{
 			github: { connector: { baseUrl: `${base}/github`, repos: ["qa-org/qa-repo"] } },
-			"mail-export": { connector: { paths: [mailDir] } },
 			obsidian: { connector: { vaultPath: vault } },
 			rss: { connector: { feeds: [{ url: `${base}/rss/feed.xml` }] } },
 		},
 		tmpRoot,
 	);
-	check("setup: factory builds all four HTTP/filesystem skills", skills.length === 4 && unknown.length === 0);
+	check("setup: factory builds all three HTTP/filesystem skills", skills.length === 3 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
@@ -95,7 +82,7 @@ try {
 
 	// --- 3. Progressive disclosure: skills announced + loadable ---
 	const prompt = agent.getSystemPrompt();
-	const names = ["github", "mail-export", "obsidian", "rss"];
+	const names = ["github", "obsidian", "rss"];
 	check(
 		"prompt: all configured skills announced",
 		names.every((name) => prompt.includes(`datasource-${name}`)),
@@ -121,7 +108,6 @@ try {
 	);
 	const queries: Record<string, string> = {
 		github: "Korean queries tokenized ranking",
-		"mail-export": "hiring frozen budget approved",
 		obsidian: "mobile app beta October",
 		rss: "release incremental indexing",
 	};
@@ -137,14 +123,14 @@ try {
 	}
 
 	// --- 5. Optional scope narrowing (query filter only) ---
-	const mailExportTool = agentTools.find((tool) => tool.name === singleDatasourceToolName("mail-export"));
-	const narrowed = await mailExportTool?.execute("qa-narrow", {
-		query: "hiring frozen budget approved",
-		scope: "/mail-export/**",
+	const githubTool = agentTools.find((tool) => tool.name === singleDatasourceToolName("github"));
+	const narrowed = await githubTool?.execute("qa-narrow", {
+		query: "Korean queries tokenized ranking",
+		scope: "/github/**",
 	});
 	check(
 		"scope: narrowing excludes other skills",
-		narrowed !== undefined && narrowed.details.sources.every((source: string) => source.startsWith("/mail-export/")),
+		narrowed !== undefined && narrowed.details.sources.every((source: string) => source.startsWith("/github/")),
 	);
 
 	// --- summary ---

@@ -45,15 +45,12 @@ function realMinSync(): string {
 let root: string;
 let savedEnv: Record<string, string | undefined>;
 
-// The suite's setup files stub Kiwi (an empty library file) and the pi agent dir; the real MinSync would
-// fail to load that stub, so this lane drops the Kiwi variables to get the developer's real discovery.
-const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR", "KIWI_LIBRARY_PATH", "KIWI_MODEL_PATH"] as const;
+// The suite's setup files point the pi agent dir at a temp stand-in; this live lane restores the real one.
+const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR"] as const;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "arag-progress-live-"));
 	savedEnv = Object.fromEntries(RESTORED_VARIABLES.map((name) => [name, process.env[name]]));
-	delete process.env.KIWI_LIBRARY_PATH;
-	delete process.env.KIWI_MODEL_PATH;
 });
 
 afterEach(() => {
@@ -99,6 +96,7 @@ describe.skipIf(!LIVE)("search progress widget, live model", () => {
 			webSearch: false,
 			piAgentDir: agentDir,
 			piSessionDir: join(root, "sessions"),
+			jev: { backend: "openrouter" },
 		});
 		// The suite puts an inert `minsync` first on PATH; this lane needs the real one, found on the
 		// PATH the developer started with, and a real index to query.
@@ -149,12 +147,12 @@ describe.skipIf(!LIVE)("search progress widget, live model", () => {
 
 			expect(events).toEqual([true, false]);
 			const seen = frames.join("\n");
-			// No Jev here, so no routing or verification-check step: the baseline retrieval and both model
-			// phases are what shows, and nothing claims a check that never ran.
+			// Jev is required, so routing and the verification check show next to the baseline retrieval and the
+			// first model phase. Verification itself runs only when Jev asks for it.
+			expect(seen).toMatch(/Routing the question/u);
 			expect(seen).toMatch(/MinSync semantic search — \d+ hits?/u);
 			expect(seen).toMatch(/Drafting a first answer/u);
-			expect(seen).toMatch(/Verifying the answer against the sources/u);
-			expect(seen).not.toMatch(/Routing the question|Checking whether/u);
+			expect(seen).toMatch(/Checking whether the first answer needs verification/u);
 			// The elapsed time ticked while the search ran, so a stuck run would be visibly stuck.
 			expect(new Set(frames.map((frame) => frame.split("\n")[0])).size).toBeGreaterThan(1);
 

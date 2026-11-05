@@ -9,12 +9,14 @@ export {
 	DEFAULT_MINSYNC_EMBEDDER_CONFIG,
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 	DEFAULT_MINSYNC_EMBEDDER_ID,
+	isSparseOnlyEmbedder,
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
 	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
+	SPARSE_ONLY_EMBEDDER_ID,
 } from "./embedder-config.ts";
 export { MinSyncRequiredError } from "./errors.ts";
 export {
@@ -48,6 +50,7 @@ export type {
 	MinSyncFileFailure,
 	MinSyncOptions,
 	MinSyncQueryHit,
+	MinSyncSyncProgress,
 	MinSyncSyncResult,
 } from "./types.ts";
 export {

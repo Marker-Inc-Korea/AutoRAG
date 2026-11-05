@@ -1,5 +1,9 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { linkCitations, openableTarget } from "../../src/agent/citation-links.ts";
+
+// On Windows a root-relative path resolves onto the current drive, so its file URL carries `/D:`.
+const drive = process.platform === "win32" ? `/${resolve("/").slice(0, 2)}` : "";
 
 const sources: Record<string, string> = {
 	e1: "/data/reports/q3 (final).pdf",
@@ -11,7 +15,7 @@ const noFiles = (): boolean => false;
 
 describe("openableTarget", () => {
 	it("maps absolute paths to file URLs and keeps http(s) URLs", () => {
-		expect(openableTarget("/a b/[최종].pdf")).toBe("file:///a%20b/%5B%EC%B5%9C%EC%A2%85%5D.pdf");
+		expect(openableTarget("/a b/[최종].pdf")).toBe(`file://${drive}/a%20b/%5B%EC%B5%9C%EC%A2%85%5D.pdf`);
 		expect(openableTarget("https://example.com/x")).toBe("https://example.com/x");
 	});
 
@@ -24,7 +28,7 @@ describe("openableTarget", () => {
 describe("linkCitations", () => {
 	it("links an evidence id to its recorded source and keeps the brackets", () => {
 		expect(linkCitations("Cap is 28% [e1].", sourceOf, noFiles)).toBe(
-			"Cap is 28% [[e1](<file:///data/reports/q3%20(final).pdf>)].",
+			`Cap is 28% [[e1](<file://${drive}/data/reports/q3%20(final).pdf>)].`,
 		);
 	});
 
@@ -39,7 +43,7 @@ describe("linkCitations", () => {
 	it("turns a real [file:] marker into a link labelled with the file name", () => {
 		const path = "/tmp/x/[final] a.txt";
 		expect(linkCitations(`see [file:${path}] here`, sourceOf, (candidate) => candidate === path)).toBe(
-			"see [[\\[final\\] a\\.txt](<file:///tmp/x/%5Bfinal%5D%20a.txt>)] here",
+			`see [[\\[final\\] a\\.txt](<file://${drive}/tmp/x/%5Bfinal%5D%20a.txt>)] here`,
 		);
 	});
 

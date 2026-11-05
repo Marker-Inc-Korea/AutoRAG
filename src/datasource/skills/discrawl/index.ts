@@ -1,3 +1,17 @@
+export {
+	DISCORD_ATTACHMENT_STATUS_FILENAME,
+	type DiscordAttachmentClient,
+	type DiscordAttachmentRecord,
+	type DiscordAttachmentRun,
+	type DiscordAttachmentState,
+	DiscordAttachmentStore,
+	type DiscordAttachmentStoreOptions,
+	type DiscordAttachmentSummary,
+	type DiscordAttachmentSyncer,
+	type DiscordAttachmentSyncOptions,
+	type DiscordAttachmentSyncResult,
+	discordAttachmentsRoot,
+} from "./attachments.ts";
 export { DiscrawlClient, discrawlWorkspace } from "./client.ts";
 export {
 	DiscrawlFtsMethod,
@@ -22,6 +36,10 @@ export {
 	DEFAULT_DISCRAWL_MAX_BUFFER_BYTES,
 	DEFAULT_DISCRAWL_MODE,
 	DEFAULT_DISCRAWL_TIMEOUT_MS,
+	type DiscrawlAttachmentFetchResult,
+	type DiscrawlAttachmentFetchStats,
+	type DiscrawlAttachmentListResult,
+	type DiscrawlAttachmentRow,
 	type DiscrawlDoctorInfo,
 	type DiscrawlDoctorResult,
 	type DiscrawlEmbeddingConfigResult,

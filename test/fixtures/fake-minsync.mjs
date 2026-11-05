@@ -26,9 +26,7 @@ function stagedFiles(directory) {
 
 if (args[0] === "init") {
 	mkdirSync(dirname(config), { recursive: true });
-	const languageIndex = args.indexOf("--language");
-	const lexical = languageIndex === -1 ? "" : `\n[lexical]\nlanguage = "${args[languageIndex + 1]}"\n`;
-	writeFileSync(config, `[embedder]\nid = "openai"\n${lexical}`);
+	writeFileSync(config, `[embedder]\nid = "openai"\n`);
 	console.log(JSON.stringify({ initialized: true }));
 	process.exit(0);
 }

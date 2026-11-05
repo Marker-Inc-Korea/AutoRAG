@@ -349,6 +349,37 @@ describe("EverythingClient", () => {
 		expect(searchArgs[searchArgs.indexOf("-timeout") + 1]).toBe("30000");
 	});
 
+	it("runs concurrent searches at the same time", async () => {
+		const releases: Array<() => void> = [];
+		let inFlight = 0;
+		let peak = 0;
+		const client = new EverythingClient({
+			root,
+			folders: [join(root, "docs")],
+			platform: "win32",
+			resolveBinaries: async () => ({
+				ok: true,
+				everythingPath: "C:\\cache\\everything.exe",
+				esPath: "C:\\cache\\es.exe",
+				source: "cached",
+			}),
+			run: async (_command, args) => {
+				if (!args.includes("-json")) return { code: 0, stdout: "1.4.1.1032", stderr: "" };
+				inFlight += 1;
+				peak = Math.max(peak, inFlight);
+				await new Promise<void>((resolve) => releases.push(resolve));
+				inFlight -= 1;
+				return { code: 0, stdout: "[]", stderr: "" };
+			},
+			launch: () => undefined,
+		});
+		const searches = Promise.all([client.search({ query: "alpha" }), client.search({ query: "beta" })]);
+		for (let turn = 0; turn < 200 && releases.length < 2; turn++) await Promise.resolve();
+		expect(peak).toBe(2);
+		for (const release of releases) release();
+		await searches;
+	});
+
 	it("filters excluded files and subtrees using Windows paths while keeping sibling prefixes", async () => {
 		const paths = [
 			"C:\\DOCS\\PRIVATE\\",

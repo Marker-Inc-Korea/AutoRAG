@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,13 +6,12 @@ import {
 	buildAgentOptions,
 	type CliConfig,
 	ConfigError,
-	defaultRerankConfig,
 	normalizeRerankConfig,
+	resolveConfig,
+	writeDefaultConfig,
 } from "../../src/cli/config.ts";
 import {
-	DEFAULT_DAZZI_RERANK_MODEL,
 	DEFAULT_RERANK_API_KEY_ENV,
-	DEFAULT_RERANK_MODEL,
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
 } from "../../src/retrieval/rerank.ts";
@@ -37,41 +36,39 @@ function baseConfig(rerank?: CliConfig["rerank"]): CliConfig {
 	};
 }
 
-describe("defaultRerankConfig (what `autorag init` writes)", () => {
-	it("defaults to OpenRouter when not signed in to Dazzi Models", () => {
-		expect(defaultRerankConfig(join(root, "agent"))).toEqual({
-			provider: DEFAULT_RERANK_PROVIDER,
-			model: DEFAULT_RERANK_MODEL,
-			apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
-			topN: DEFAULT_RERANK_TOP_N,
-		});
+describe("autorag init (reranking is opt-in)", () => {
+	function initWith(rerank?: CliConfig["rerank"]): CliConfig {
+		const path = join(root, "config.json");
+		writeDefaultConfig(
+			path,
+			{ workspacePath: root, ...(rerank === undefined ? {} : { rerank }) },
+			{ cwd: root, env: {} },
+		);
+		return resolveConfig({ flags: { config: path }, cwd: root, env: {} });
+	}
+
+	it("writes no rerank block, so a new setup never sends text to a remote reranker", () => {
+		expect(initWith().rerank).toBeUndefined();
 	});
 
-	it("defaults to the Dazzi Models reranker when signed in", () => {
-		const agentDir = join(root, "agent");
-		mkdirSync(agentDir, { recursive: true });
-		writeFileSync(
-			join(agentDir, "auth.json"),
-			JSON.stringify({
-				dazzi: { type: "oauth", access: "dz_login", refresh: "", expires: Number.MAX_SAFE_INTEGER },
-			}),
-		);
-		expect(defaultRerankConfig(agentDir)).toEqual({
+	it("keeps an explicit rerank block together with its model", () => {
+		expect(initWith({ provider: "dazzi", model: "qwen/qwen3-reranker-8b" }).rerank).toEqual({
 			provider: "dazzi",
-			model: DEFAULT_DAZZI_RERANK_MODEL,
+			model: "qwen/qwen3-reranker-8b",
 			topN: DEFAULT_RERANK_TOP_N,
 		});
 	});
 });
 
 describe("normalizeRerankConfig", () => {
-	it("fills provider, model, apiKeyEnv, and topN defaults", () => {
-		expect(normalizeRerankConfig(undefined, "rerank")).toEqual({
+	it("fills provider, apiKeyEnv, and topN defaults but never invents a model", () => {
+		const out = normalizeRerankConfig(undefined, "rerank");
+		expect(out).toEqual({
 			provider: DEFAULT_RERANK_PROVIDER,
-			model: DEFAULT_RERANK_MODEL,
 			apiKeyEnv: DEFAULT_RERANK_API_KEY_ENV,
 			topN: DEFAULT_RERANK_TOP_N,
 		});
+		expect(out !== false && "model" in out).toBe(false);
 	});
 
 	it("keeps an explicit model and provider", () => {
@@ -83,12 +80,10 @@ describe("normalizeRerankConfig", () => {
 		});
 	});
 
-	it("fills the dazzi provider's own model and no key env (it uses the /login credential)", () => {
-		expect(normalizeRerankConfig({ provider: "dazzi" }, "rerank")).toEqual({
-			provider: "dazzi",
-			model: DEFAULT_DAZZI_RERANK_MODEL,
-			topN: DEFAULT_RERANK_TOP_N,
-		});
+	it("does not invent a model for the dazzi provider either (it uses the /login credential)", () => {
+		const out = normalizeRerankConfig({ provider: "dazzi" }, "rerank");
+		expect(out).toEqual({ provider: "dazzi", topN: DEFAULT_RERANK_TOP_N });
+		expect(out !== false && "model" in out).toBe(false);
 	});
 
 	it("rejects apiKeyEnv for the dazzi provider instead of silently ignoring it", () => {
@@ -131,5 +126,13 @@ describe("rerank agent options", () => {
 	it("passes the configured provider, model, and topN through", () => {
 		const opts = buildAgentOptions(baseConfig({ provider: "openrouter", model: "voyageai/rerank-3-lite", topN: 5 }));
 		expect(opts.rerank).toEqual({ provider: "openrouter", model: "voyageai/rerank-3-lite", topN: 5 });
+	});
+
+	it("passes a block without a model through as is and never invents one", () => {
+		expect(buildAgentOptions(baseConfig({ provider: "openrouter" })).rerank).toEqual({ provider: "openrouter" });
+		expect(buildAgentOptions(baseConfig({ provider: "dazzi", topN: 5 })).rerank).toEqual({
+			provider: "dazzi",
+			topN: 5,
+		});
 	});
 });

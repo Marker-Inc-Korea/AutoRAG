@@ -10,38 +10,26 @@
  *
  * The model must be a 2026+ release (see the global model-usage rule).
  */
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, delimiter, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { resolveAgentModel, resolveConfig } from "../../src/cli/config.ts";
+import { realMinSync } from "../helpers/real-minsync.ts";
 
 const LIVE = process.env.AUTORAG_READABILITY_LIVE === "1" && Boolean(process.env.OPENROUTER_API_KEY);
 const MODEL_ID = process.env.AUTORAG_READABILITY_LIVE_MODEL ?? "qwen/qwen3.7-flash";
 
-/** The developer's own `minsync`, skipping the inert stand-in the test setup prepends to PATH. */
-function realMinSync(): string {
-	const name = process.platform === "win32" ? "minsync.exe" : "minsync";
-	for (const directory of (process.env.PATH ?? "").split(delimiter)) {
-		if (directory === "" || basename(directory).startsWith("autorag-fake-minsync-path-")) continue;
-		const candidate = join(directory, name);
-		if (existsSync(candidate)) return candidate;
-	}
-	throw new Error("a real `minsync` on PATH is required for the live readability test");
-}
-
 let root: string;
 let savedEnv: Record<string, string | undefined>;
 
-// The suite's setup files stub Kiwi and the pi agent dir; the real MinSync would fail to load the stub.
-const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR", "KIWI_LIBRARY_PATH", "KIWI_MODEL_PATH"] as const;
+// The suite's setup files point the pi agent dir at a temp stand-in; this live lane restores the real one.
+const RESTORED_VARIABLES = ["PI_CODING_AGENT_DIR"] as const;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "arag-readability-live-"));
 	savedEnv = Object.fromEntries(RESTORED_VARIABLES.map((name) => [name, process.env[name]]));
-	delete process.env.KIWI_LIBRARY_PATH;
-	delete process.env.KIWI_MODEL_PATH;
 });
 
 afterEach(() => {
