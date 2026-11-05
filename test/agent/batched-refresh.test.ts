@@ -227,7 +227,7 @@ describe("batched refresh", () => {
 		expect(results.length).toBeGreaterThan(0);
 	});
 
-	it("continues past a failing MinSync batch and reports that batch's files", async () => {
+	it("continues past a failing MinSync batch and a later sync recovers its files", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
@@ -239,21 +239,37 @@ describe("batched refresh", () => {
 
 		const result = await agent.refresh(true, { methods: ["minsync"] });
 
-		// Every batch was attempted: the failure did not stop the ones after it.
+		// Every batch was attempted: the failure did not stop the ones after it,
+		// and the final sync indexed the failed batch's still-staged files.
 		const runs = syncRuns(logPath);
 		expect(runs).toHaveLength(3);
 		expect(runs[0]?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE);
 		expect(runs[1]?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE * 2);
 		expect(runs[2]?.staged).toHaveLength(total);
-		expect(runs[2]?.staged.some((path) => path.endsWith("f59.txt.md"))).toBe(true);
+		expect(result.minsync?.ok).toBe(true);
+		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-sync-failed")).toEqual([]);
+	});
+
+	it("reports the files of a failed final batch", async () => {
+		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
+		writeSources(total);
+		const binary = join(root, "batched-minsync.mjs");
+		const logPath = join(root, "minsync.log");
+		const counterPath = join(root, "minsync.counter");
+		writeBatchedMinSync(binary, logPath, counterPath, 3);
+		const workspacePath = join(root, ".autorag", "minsync");
+		const agent = makeAgent({ binary, workspacePath });
+
+		const result = await agent.refresh(true, { methods: ["minsync"] });
 
 		expect(result.minsync?.ok).toBe(false);
-		const failed = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-sync-failed");
-		const sources = failed.map((diagnostic) => diagnostic.source);
-		expect(sources).toContain("/docs/f25.txt");
-		expect(sources).toContain("/docs/f49.txt");
-		expect(sources).not.toContain("/docs/f00.txt");
-		expect(sources).not.toContain("/docs/f50.txt");
+		const sources = result.diagnostics
+			.filter((diagnostic) => diagnostic.code === "minsync-sync-failed" && diagnostic.source !== "minsync")
+			.map((diagnostic) => diagnostic.source);
+		expect(sources).toContain("/docs/f50.txt");
+		expect(sources).toContain("/docs/f59.txt");
+		expect(sources).not.toContain("/docs/f49.txt");
+		expect(sources).toHaveLength(total - DEFAULT_MIRROR_BATCH_SIZE * 2);
 	});
 
 	it("keeps not-yet-reached documents mid-refresh and deletes removed sources at the end", async () => {

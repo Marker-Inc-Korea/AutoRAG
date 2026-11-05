@@ -3859,9 +3859,12 @@ export class AutoRAGAgent {
 					});
 				});
 				minSyncBatches.push(result);
-				// A batch's content is already staged, so a later sync retries it; only
-				// that batch is reported failed, and the loop moves on to the next one.
-				if (!result.ok && result.reason !== "lock-held") {
+				// Every sync indexes the whole staged mirror, so a successful one also
+				// indexes the files of any earlier failed batch: only failures after
+				// the last success are still real. A failed batch's content stays
+				// staged, so a later sync retries it and the loop moves on.
+				if (result.ok) minSyncBatchFailures.length = 0;
+				else if (result.reason !== "lock-held") {
 					for (const virtualPath of batch.virtualPaths) {
 						minSyncBatchFailures.push({
 							code: "minsync-sync-failed",
@@ -5198,22 +5201,14 @@ function fsearchRefreshDiagnostics(fsearch: AutoRAGFSearchRefreshResult | undefi
 
 /**
  * Fold the per-batch MinSync results of one refresh into the single result the
- * public shape and `getRefreshStatus` expect: a failure in any batch makes the
- * aggregate not ok, while `synced` and the file lists sum across batches.
+ * public shape and `getRefreshStatus` expect. Every sync indexes the whole
+ * staged mirror, so the last batch's result describes the index (its status,
+ * staging exclusions and skipped files); only `synced` sums across batches.
  */
-function aggregateMinSyncBatches(batches: readonly MinSyncSyncResult[]): MinSyncSyncResult {
-	const failed = batches.find((batch) => !batch.ok);
-	const stagingExcluded = batches.flatMap((batch) => batch.stagingExcluded ?? []);
-	const filesFailed = batches.flatMap((batch) => batch.filesFailed ?? []);
-	return {
-		ok: failed === undefined,
-		synced: batches.reduce((total, batch) => total + batch.synced, 0),
-		workspacePath: batches[0]?.workspacePath ?? "",
-		...(failed?.reason !== undefined ? { reason: failed.reason } : {}),
-		...(failed?.diagnostic !== undefined ? { diagnostic: failed.diagnostic } : {}),
-		...(stagingExcluded.length > 0 ? { stagingExcluded } : {}),
-		...(filesFailed.length > 0 ? { filesFailed } : {}),
-	};
+function aggregateMinSyncBatches(batches: readonly MinSyncSyncResult[]): MinSyncSyncResult | undefined {
+	const last = batches.at(-1);
+	if (last === undefined) return undefined;
+	return { ...last, synced: batches.reduce((total, batch) => total + batch.synced, 0) };
 }
 
 /**
