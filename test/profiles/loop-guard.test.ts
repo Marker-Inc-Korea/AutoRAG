@@ -74,12 +74,20 @@ describe("loopGuardPrompt", () => {
 		expect(prompt).toMatch(/moving it back is a create/);
 	});
 
+	it("does not let the agent hide files behind the always-excluded names", () => {
+		const prompt = loopGuardPrompt(rule);
+		expect(prompt).toMatch(/not a hiding place/);
+		expect(prompt).toMatch(/keep the file type the user has/);
+	});
+
 	it("accepts a follow-up run only when the file state makes it unable to change anything", () => {
 		const prompt = loopGuardPrompt(rule);
 		expect(prompt).toMatch(/follow-up run[^.]*mechanical/i);
 		expect(prompt).toMatch(/whatever (it|that run) decides/);
 		expect(prompt).toMatch(/timestamp|counter|log that grows/);
 		expect(prompt).toMatch(/does not remember/);
+		expect(prompt).toMatch(/applies the same task to the file the event names/);
+		expect(prompt).toMatch(/a new name is a new file to rename again/);
 		expect(prompt).toMatch(/depends on the date|time of day/);
 	});
 
