@@ -224,8 +224,10 @@ grant an agent more than its profile has. `retrieval` optionally adds
 Retrieval memory is never connected to an automation agent.
 
 Every agent run gets a loop guard appended to its system prompt, naming the
-rule's folders, file types and events, and forbidding any change that would
-fire the rule again, editing the rules file, and running `autorag automate`. At
+rule's folders, file types and events, and how the rule decides what fires it.
+The agent must make no change that fires the rule again (a rename or write whose
+events the rule does not pick up is fine), designs a non-firing change before it
+declines, and never edits the rules file or runs `autorag automate`. At
 most one agent run is in flight across all rules, and an agent rule is
 disabled after 6 runs within 60 seconds (command rules: 20). The run's final
 reply is the `stdout` of its log entry.
