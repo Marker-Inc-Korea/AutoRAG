@@ -266,6 +266,45 @@ Retrieval is hybrid-first: one `mailcrawl search --mode hybrid` per query, and B
 datasource command taxonomy. Mailcrawl is the sole Gmail, IMAP, Maildir, and
 static `.mbox`/`.eml` (`--source files`) email path; the former `mail-export` connector is retired.
 
+## wombat
+
+The `wombat` datasource searches past coding-agent conversations: Codex, Claude Code, OpenCode, pi, and omp.
+Install the CLI with `cargo install wombat-sessions` (it installs the `wombat` binary; `minsync` 0.6.0 or newer must
+be on `PATH` too). wombat reads each agent's own session log, keeps only the user and assistant conversation, and
+lets MinSync index it incrementally with SPLADE and dense vectors. Thinking, tool calls and outputs, and file diffs
+are not indexed. AutoRAG never opens the agents' logs or wombat's catalog directly.
+
+```json
+{
+  "datasources": {
+    "wombat": {
+      "connector": {
+        "binaryPath": "wombat",
+        "agents": ["codex", "claude-code", "opencode", "pi", "omp"]
+      }
+    }
+  }
+}
+```
+
+- Refresh runs `wombat doctor --json`, then `wombat sync --index --json` (parse new and changed sessions, then
+  MinSync). It is incremental: only sessions that changed are parsed and only new chunks are embedded. `sync --index`
+  gets the one-hour connector budget (`connector.indexTimeoutMs`); search keeps its 60-second budget.
+- Retrieval is hybrid-first: one `wombat search --mode hybrid` per query, and SPLADE keyword search only when hybrid
+  cannot run (for example, no embedder is available). Results map to opaque
+  `/wombat/<instance>/chunks/<chunk-id>` sources and carry `agent`, `title`, `startTurn`, `endTurn` and
+  `sessionKey` (`<agent>:<session id>`) in their metadata.
+- `connector.agents` limits indexing and search to those agents. `connector.includeSubagents` and
+  `connector.includeEphemeral` index subagent transcripts and headless, benchmark, or temp-directory sessions, which
+  wombat skips by default. `connector.dataDir` and `connector.configPath` move wombat's data directory or config.
+- Embeddings stay inside MinSync: wombat starts `minsync` itself, and a native MinSync embedder adopts a running
+  `minsync serve` automatically, so AutoRAG passes no embedding endpoint to it. AutoRAG forwards only an allow-list of
+  environment variables and refuses to spawn the CLI when `WOMBAT_EMBEDDER` selects a remote (`openai:` or `tei:`)
+  embedder, because that would send conversation text off the machine.
+- To go from a result to the full conversation, the agent calls wombat through `bash` with the result's `sessionKey`:
+  `wombat show <sessionKey>` prints the cleaned conversation, and `wombat trace <sessionKey> --turn N` prints the
+  original log around that turn, including the tool calls and outputs the index leaves out.
+
 ## Universal connection aliases
 
 Every datasource entry can use a reusable template with a connection alias:

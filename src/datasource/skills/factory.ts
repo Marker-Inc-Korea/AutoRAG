@@ -39,6 +39,7 @@ import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill } from "./slack/index.ts";
 import { TelecrawlSkill } from "./telecrawl/index.ts";
 import { WacrawlSkill } from "./wacrawl/index.ts";
+import { type WombatOptions, WombatSkill } from "./wombat/index.ts";
 
 /** One configured datasource entry (the trusted `datasources.<name>` value). */
 export interface DatasourceSkillConfig {
@@ -381,6 +382,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions: config.connector as RssConnectorOptions,
+		}),
+	wombat: (config, workspaceRoot, registrationName) =>
+		new WombatSkill({
+			...common(config, workspaceRoot),
+			datasourceId: registrationName,
+			...(config.connector as WombatOptions),
 		}),
 };
 

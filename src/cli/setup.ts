@@ -128,6 +128,7 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	notion: "notcrawl",
 	mailcrawl: "mailcrawl",
 	hister: "hister",
+	wombat: "wombat",
 };
 /**
  * Connectors AutoRAG authenticates itself. Every other built-in datasource is
@@ -221,6 +222,7 @@ function datasourceNames(config: Record<string, unknown>, platform: NodeJS.Platf
 			"github",
 			"obsidian",
 			"rss",
+			"wombat",
 		]),
 	];
 }
@@ -392,7 +394,15 @@ export async function runSetup(options: {
 				datasources.push({ name, state: "skipped", reason: "not configured" });
 				continue;
 			}
-			const semanticDatasource = new Set(["discord", "kakao", "slack", "telegram", "whatsapp", "mailcrawl"]);
+			const semanticDatasource = new Set([
+				"discord",
+				"kakao",
+				"slack",
+				"telegram",
+				"whatsapp",
+				"mailcrawl",
+				"wombat",
+			]);
 			if (semanticDatasource.has(type) && !semantic) {
 				datasources.push({ name, state: "blocked", reason: "embedding model is unavailable" });
 			} else {

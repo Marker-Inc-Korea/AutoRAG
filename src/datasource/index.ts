@@ -142,6 +142,20 @@ export {
 	type TelecrawlSkillOptions,
 } from "./skills/telecrawl/index.ts";
 export { WacrawlClient, type WacrawlOptions, WacrawlSkill, type WacrawlSkillOptions } from "./skills/wacrawl/index.ts";
+export {
+	WOMBAT_MODES,
+	WombatClient,
+	type WombatFailure,
+	type WombatFailureReason,
+	WombatMethod,
+	type WombatOptions,
+	type WombatSearchHit,
+	type WombatSearchMode,
+	type WombatSearchResult,
+	WombatSkill,
+	type WombatSkillOptions,
+	type WombatSyncResult,
+} from "./skills/wombat/index.ts";
 export type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
