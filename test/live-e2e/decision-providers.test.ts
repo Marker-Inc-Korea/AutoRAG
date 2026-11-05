@@ -182,7 +182,7 @@ describe.skipIf(!LIVE)("sLLM fallback", () => {
 		const models = createDecisionModels({
 			backend: "openrouter",
 			model: "typesafe/jev-0.0-nope",
-			fallback: await sllm(OPENROUTER_SLLM),
+			sllm: await sllm(OPENROUTER_SLLM),
 		});
 		const status = await models.check();
 		expect(status.backend).toBe("sllm");

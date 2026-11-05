@@ -292,9 +292,11 @@ backend account is out of credit, `unreachable` and `rate-limited` mean retry.
   `"cloudflare-workers-ai"`, or `"opencode"`. List the choices with
   `autorag models list --decision --available`; never invent a model id.
 - sLLM fallback: when Jev is unavailable, the session runs on a small chat model
-  (default: the decomposition model) and warns `decision-model-fallback`. Set
-  `"jev": { "fallback": { "model": { "provider": …, "id": … } } }`, or
+  (default: the decomposition model) and warns `decision-model-fallback`. Set the
+  model with `"jev": { "sllm": { "model": { "provider": …, "id": … } } }`, or
   `"fallback": false` to fail instead.
+- sLLM as the decision model: `"jev": { "backend": "sllm" }` decides with the
+  small chat model alone and never calls Jev (no Jev credential needed).
 - Decomposition model: any catalog `provider`/`id`, with the same fields as
   the top-level `model`.
 - `"queryDecomposition": false` decomposes with the search model itself.
