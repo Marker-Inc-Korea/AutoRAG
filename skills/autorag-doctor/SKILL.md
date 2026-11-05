@@ -72,6 +72,7 @@ Each CLI owns its archive, so ask the CLI, not AutoRAG. A datasource is only
 | Notion | `notcrawl doctor`, `notcrawl status` | `notcrawl sync --source desktop` |
 | Obsidian / notes | `autorag status` (AutoRAG-owned index) | `autorag refresh --method datasources`; if corrupt, delete `.autorag/datasources/obsidian/<instance>` first |
 | Mail | `mailcrawl doctor`, `mailcrawl status` | `mailcrawl sync && mailcrawl index` |
+| Coding-agent sessions | `wombat doctor --json` | `wombat sync --index` |
 | Lark / Feishu | `lark-cli auth status --format json` | no local sync; search is remote |
 
 Rules:

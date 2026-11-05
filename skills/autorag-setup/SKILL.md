@@ -387,7 +387,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`lazykatok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `lark-cli`) and its
+   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `wombat`, `lark-cli`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
    tokens) are never required or checked for them. Non-CLI connectors
@@ -410,7 +410,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 Datasource skills belong in trusted config. Builtin
 template names are `kakao`, `whatsapp`, `telegram`, `slack`, `discord`,
 `clawgallery`, `notion`, `github`, `github-gist`,
-`mailcrawl`, `obsidian`, `rss`, `lark`, and `hister`. Config keys may be connection
+`mailcrawl`, `obsidian`, `rss`, `lark`, `hister`, and `wombat`. Config keys may be connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are descriptive metadata only, not search filters. MCP `datasourceIds` selects configured connections before retrieval; discover their IDs with `autorag.datasources.list`.
@@ -421,6 +421,7 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
     "github-gist": { "connector": { "tokenEnv": "GITHUB_TOKEN" } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
+    "wombat": { "connector": { "binaryPath": "wombat", "agents": ["codex", "claude-code"] } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   }
