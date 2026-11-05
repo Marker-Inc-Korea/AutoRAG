@@ -9,7 +9,7 @@ import {
 	ConfigError,
 	normalizeJevConfig,
 	resolveConfig,
-	resolveDecisionFallbackModel,
+	resolveSllmDecisionModel,
 } from "../../src/cli/config.ts";
 
 let root: string;
@@ -118,20 +118,29 @@ describe("jev CLI config", () => {
 		expect(() => normalizeJevConfig("openrouter")).toThrow(ConfigError);
 	});
 
-	it("validates the sLLM fallback: a model reference, or false", () => {
+	it("validates the sLLM: a model reference under `sllm`, and a boolean `fallback`", () => {
 		expect(normalizeJevConfig({ fallback: false })).toEqual({ fallback: false });
-		expect(normalizeJevConfig({ fallback: {} })).toEqual({ fallback: {} });
-		expect(normalizeJevConfig({ fallback: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } })).toEqual(
-			{
-				fallback: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } },
-			},
-		);
-		expect(() => normalizeJevConfig({ fallback: true })).toThrow(ConfigError);
-		expect(() => normalizeJevConfig({ fallback: { provider: "openrouter" } })).toThrow(ConfigError);
+		expect(normalizeJevConfig({ sllm: {} })).toEqual({ sllm: {} });
+		expect(normalizeJevConfig({ sllm: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } })).toEqual({
+			sllm: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } },
+		});
+		expect(() => normalizeJevConfig({ fallback: {} })).toThrow(/jev\.sllm\.model/u);
+		expect(() => normalizeJevConfig({ sllm: { provider: "openrouter" } })).toThrow(ConfigError);
+		expect(() => normalizeJevConfig({ sllm: false })).toThrow(ConfigError);
 	});
 
-	it("keeps the fallback out of the synchronous agent option: it is resolved with its credential later", () => {
+	it('takes the sLLM as the decision model with backend "sllm", and rejects Jev-only fields beside it', () => {
+		expect(normalizeJevConfig({ backend: "sllm" })).toEqual({ backend: "sllm" });
+		expect(
+			normalizeJevConfig({ backend: "sllm", sllm: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } }),
+		).toEqual({ backend: "sllm", sllm: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } });
+		expect(() => normalizeJevConfig({ backend: "sllm", model: "gpt-6-luna" })).toThrow(/jev\.sllm\.model/u);
+		expect(() => normalizeJevConfig({ backend: "sllm", fallback: true })).toThrow(/no meaning/u);
+	});
+
+	it("keeps the sLLM out of the synchronous agent option: it is resolved with its credential later", () => {
 		expect(buildAgentOptions(baseConfig({ backend: "openai", fallback: false })).jev).toEqual({ backend: "openai" });
+		expect(buildAgentOptions(baseConfig({ backend: "sllm", sllm: {} })).jev).toEqual({ backend: "sllm" });
 	});
 
 	it("rejects an out-of-range confidence threshold", () => {
@@ -140,7 +149,7 @@ describe("jev CLI config", () => {
 	});
 });
 
-describe("resolveDecisionFallbackModel", () => {
+describe("resolveSllmDecisionModel", () => {
 	async function runtime() {
 		return ModelRuntime.create({
 			authPath: join(root, "auth.json"),
@@ -151,22 +160,28 @@ describe("resolveDecisionFallbackModel", () => {
 
 	it("defaults to the question-decomposition model: its configured one, else the default", async () => {
 		const options = { runtime: await runtime(), agentDir: join(root, "agent"), env: {} };
-		const byDefault = await resolveDecisionFallbackModel(baseConfig(), options);
+		const byDefault = await resolveSllmDecisionModel(baseConfig(), options);
 		expect(`${byDefault?.model.provider}/${byDefault?.model.id}`).toBe("openrouter/qwen/qwen3.7-flash");
-		const configured = await resolveDecisionFallbackModel(
+		const configured = await resolveSllmDecisionModel(
 			{ ...baseConfig(), queryDecomposition: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } },
 			options,
 		);
 		expect(configured?.model.id).toBe("qwen/qwen3.8-flash");
 	});
 
-	it("uses the configured model, and none when the fallback is off", async () => {
+	it("uses the configured model, and none when the Jev fallback is off", async () => {
 		const options = { runtime: await runtime(), agentDir: join(root, "agent"), env: {} };
-		const named = await resolveDecisionFallbackModel(
-			baseConfig({ fallback: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } }),
+		const named = await resolveSllmDecisionModel(
+			baseConfig({ sllm: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" } } }),
 			options,
 		);
 		expect(named?.model.id).toBe("qwen/qwen3.8-flash");
-		expect(await resolveDecisionFallbackModel(baseConfig({ fallback: false }), options)).toBeUndefined();
+		expect(await resolveSllmDecisionModel(baseConfig({ fallback: false }), options)).toBeUndefined();
+	});
+
+	it('still resolves the sLLM when it is the decision model (backend "sllm")', async () => {
+		const options = { runtime: await runtime(), agentDir: join(root, "agent"), env: {} };
+		const resolved = await resolveSllmDecisionModel(baseConfig({ backend: "sllm" }), options);
+		expect(`${resolved?.model.provider}/${resolved?.model.id}`).toBe("openrouter/qwen/qwen3.7-flash");
 	});
 });

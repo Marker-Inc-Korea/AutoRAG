@@ -200,7 +200,7 @@ describe("runSearch", () => {
 		});
 		expect(jev).toMatchObject({
 			backend: "openrouter",
-			fallback: { model: { provider: "openrouter", id: "qwen/qwen3.7-flash" } },
+			sllm: { model: { provider: "openrouter", id: "qwen/qwen3.7-flash" } },
 		});
 	});
 

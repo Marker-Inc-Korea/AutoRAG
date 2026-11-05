@@ -25,6 +25,9 @@ export interface SllmDecisionModel {
 	readonly apiKey?: string;
 }
 
+/** `jev.backend` value, and the backend name, of the small LLM deciding in Jev's place. */
+export const SLLM_BACKEND = "sllm";
+
 /** The tool the small LLM answers through. */
 export const SLLM_DECISION_TOOL_NAME = "submit_decisions";
 
@@ -257,7 +260,7 @@ function readAnswer(asked: Asked, entry: unknown): RawAnswer | undefined {
 
 /** The small-LLM fallback behind jev-use's backend contract. */
 export class SllmDecisionBackend implements JevBackend {
-	readonly name = "sllm";
+	readonly name = SLLM_BACKEND;
 	private readonly target: SllmDecisionModel;
 
 	constructor(target: SllmDecisionModel) {

@@ -87,5 +87,5 @@ export {
 	type SingleDatasourceToolSpec,
 	singleDatasourceToolName,
 } from "./search-single-datasource-tool.ts";
-export { SLLM_DECISION_TOOL_NAME, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
+export { SLLM_BACKEND, SLLM_DECISION_TOOL_NAME, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";

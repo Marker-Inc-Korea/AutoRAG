@@ -11,8 +11,8 @@ import {
 	type ResolvedAgentModel,
 	resolveAgentModel,
 	resolveConfig,
-	resolveDecisionFallbackModel,
 	resolveQueryDecompositionModel,
+	resolveSllmDecisionModel,
 } from "../config.ts";
 import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -213,11 +213,11 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	} else {
 		let resolvedModel: ResolvedAgentModel;
 		let decompositionModel: DecompositionModel | undefined;
-		let decisionFallback: SllmDecisionModel | undefined;
+		let decisionSllm: SllmDecisionModel | undefined;
 		try {
 			resolvedModel = await (deps.modelResolver ?? resolveAgentModel)(config);
 			decompositionModel = await resolveQueryDecompositionModel(config);
-			decisionFallback = await resolveDecisionFallbackModel(config);
+			decisionSllm = await resolveSllmDecisionModel(config);
 		} catch (error) {
 			const hint = classifySearchHealthHint(error);
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
@@ -230,7 +230,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 			...(decompositionModel !== undefined ? { queryDecomposition: decompositionModel } : {}),
-			...(decisionFallback !== undefined ? { jev: { ...baseOptions.jev, fallback: decisionFallback } } : {}),
+			...(decisionSllm !== undefined ? { jev: { ...baseOptions.jev, sllm: decisionSllm } } : {}),
 			...(thinking !== undefined ? { thinking } : {}),
 		};
 		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);

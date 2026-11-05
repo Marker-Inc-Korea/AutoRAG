@@ -1,9 +1,9 @@
 import { check, type Judgment, pick, type Question } from "jev-use";
-import { createJevJudge, type JevJudge, type JevJudgeOptions } from "./jev-extension.ts";
-import { SllmDecisionBackend } from "./sllm-decision.ts";
+import { createJevJudge, type JevJudge, type JevJudgeOptions, sllmBackend } from "./jev-extension.ts";
+import { SLLM_BACKEND } from "./sllm-decision.ts";
 
 /**
- * AutoRAG cannot answer without its decision model (Jev): routing, the follow-up check, citation and
+ * AutoRAG cannot answer without its decision model (Jev, or the small chat LLM when `jev.backend` is `sllm`): routing, the follow-up check, citation and
  * evidence judgment, and the permission gate all ask it, in yes/no and choice questions. The first
  * question of every session therefore puts one tiny probe of each kind to the decision model. When Jev
  * cannot answer, the configured small chat LLM (sLLM) is probed and serves the session in its place,
@@ -88,7 +88,7 @@ export class DecisionModelUnavailableError extends Error {
 		const target = describeTarget(failure);
 		const fallbackTarget = fallback === undefined ? "" : describeTarget(fallback);
 		super(
-			`[${DECISION_MODEL_UNAVAILABLE_CODE}] AutoRAG cannot be used: its decision model (Jev) is unavailable (${failure.reason}). ` +
+			`[${DECISION_MODEL_UNAVAILABLE_CODE}] AutoRAG cannot be used: its decision model is unavailable (${failure.reason}). ` +
 				`${target === "" ? "" : `${target}: `}${failure.detail} ${REMEDIES[failure.reason]}` +
 				(fallback === undefined
 					? ""
@@ -110,7 +110,11 @@ export function classifyDecisionModelFailure(detail: string): DecisionModelFailu
 	if (/\b402\b|insufficient (credit|balance|fund)|payment required/u.test(text)) return "payment-required";
 	if (/\b404\b|does not exist|model[^.]* not found|unknown model|no such model/u.test(text)) return "model-not-found";
 	if (/\b429\b|rate.?limit/u.test(text)) return "rate-limited";
-	if (/no jev credentials|needs [a-z_]+_api_key|needs a sign-in|not signed in|not configured|no api key/u.test(text)) {
+	if (
+		/no jev credentials|has no sllm model|needs [a-z_]+_api_key|needs a sign-in|not signed in|not configured|no api key/u.test(
+			text,
+		)
+	) {
 		return "missing-credential";
 	}
 	if (/timed out|timeout|network error|fetch failed|econn|enotfound|eai_again|\b5\d\d\b|unreachable/u.test(text)) {
@@ -184,15 +188,20 @@ export interface DecisionModels {
 	check(): Promise<DecisionModelStatus>;
 }
 
-/** Jev from `options`, with `options.fallback` (a small chat LLM, or any backend) behind it. */
+/**
+ * The session's decision model from `options`: Jev (`options.backend`), with `options.sllm` behind it as
+ * the fallback, or the small chat LLM alone when `options.backend` is `"sllm"`.
+ */
 export function createDecisionModels(options: JevJudgeOptions): DecisionModels {
-	const { fallback, ...primaryOptions } = options;
-	const primary = createJevJudge(primaryOptions);
+	const { sllm, ...primaryOptions } = options;
+	// With the sLLM as the decision model there is nothing behind it: `sllm` is the primary, built by the judge.
+	const sllmDecides = options.backend === SLLM_BACKEND;
+	const primary = createJevJudge(sllmDecides ? options : primaryOptions);
 	const secondary =
-		fallback === undefined
+		sllm === undefined || sllmDecides
 			? undefined
 			: createJevJudge({
-					backend: "judge" in fallback ? fallback : new SllmDecisionBackend(fallback),
+					backend: sllmBackend(sllm),
 					...(options.confidenceThreshold !== undefined
 						? { confidenceThreshold: options.confidenceThreshold }
 						: {}),
