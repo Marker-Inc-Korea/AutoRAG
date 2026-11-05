@@ -113,7 +113,7 @@ setup. Configure datasources directly in trusted config, wizard-style:
 
 1. Probe every datasource for setup feasibility before asking the user
    anything: the backing CLI exists (`lazykatok`, `discrawl`, `slacrawl`,
-   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`) and its
+   `wacrawl`, `telecrawl`, `notcrawl`, `mailcrawl`, `wombat`) and its
    local store or archive is present. CLI-backed datasources own their own
    archive, index, and authentication, so environment credentials (such as bot
    tokens) are never required or checked for them. Non-CLI connectors
@@ -137,7 +137,7 @@ Datasource skills belong in trusted config.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`,
-`mailcrawl`, `obsidian`, `rss`, `lark`, `hister`) or connection
+`mailcrawl`, `obsidian`, `rss`, `lark`, `hister`, `wombat`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are
