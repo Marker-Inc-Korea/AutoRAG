@@ -89,6 +89,9 @@ export function syncMinSyncWorkspace(
 		desiredPaths.add(entry.minSyncPath);
 	}
 
+	// `desiredPaths` is driven by the whole mirror index, not by one parse batch,
+	// so a caller that stages once per batch never drops a not-yet-reached
+	// document: only entries the mirror no longer holds leave the staged tree.
 	removeUnexpectedStagedFiles(filesRoot, desiredPaths);
 	saveStagingState(workspacePath, { version: 1, entries: currentState });
 
