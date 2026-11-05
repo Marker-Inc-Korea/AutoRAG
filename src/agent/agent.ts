@@ -103,6 +103,8 @@ import {
 	detectMirrorStaleness,
 	isPathExcluded,
 	MirrorWorkspaceError,
+	type ParsedMirrorBatch,
+	type ParsedMirrorBatchOutcome,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncOptions,
 	type ParsedMirrorSyncResult,
@@ -3829,12 +3831,63 @@ export class AutoRAGAgent {
 		};
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
+			// MinSync indexes the parsed mirrors, so when both run every batch of
+			// sources is parsed, committed, staged and synced before the next one
+			// is read: the first batch is searchable long before the last.
+			const batchedMinSync = needsParsed && wants("minsync");
+			const minSyncBatches: MinSyncSyncResult[] = [];
+			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
+			// Cumulative offsets keep the persisted MinSync counters monotonic
+			// across batches instead of restarting at zero per sync.
+			let minSyncSyncedBase = 0;
+			let minSyncTotalBase = 0;
+			const minSyncBatch = async (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
+				signal?.throwIfAborted();
+				progress = updateRefreshProgress(progress, { phase: "minsync" });
+				writeRefreshProgress(this.workspaceProjectRoot, progress);
+				let batchTotal = minSyncTotalBase;
+				const result = await this.syncMinSync(force && batch.index === 1, signal, (minsyncProgress) => {
+					batchTotal = minSyncTotalBase + minsyncProgress.total;
+					progress = updateRefreshProgress(progress, {
+						minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: batchTotal },
+					});
+					writeRefreshProgress(this.workspaceProjectRoot, progress);
+					emitProgress({
+						phase: "minsync",
+						processed: minSyncSyncedBase + minsyncProgress.processed,
+						total: batchTotal,
+					});
+				});
+				minSyncBatches.push(result);
+				// Every sync indexes the whole staged mirror, so a successful one also
+				// indexes the files of any earlier failed batch: only failures after
+				// the last success are still real. A failed batch's content stays
+				// staged, so a later sync retries it and the loop moves on.
+				if (result.ok) minSyncBatchFailures.length = 0;
+				else if (result.reason !== "lock-held") {
+					for (const virtualPath of batch.virtualPaths) {
+						minSyncBatchFailures.push({
+							code: "minsync-sync-failed",
+							severity: "warning",
+							message: `This file stayed at its previous index entry: its batch could not be indexed and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
+							source: virtualPath,
+						});
+					}
+				}
+				minSyncSyncedBase = batchTotal;
+				minSyncTotalBase = batchTotal;
+				// A held lock means another sync owns the index: stop the loop instead
+				// of failing every remaining batch against the same lock.
+				return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+			};
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
+						...(batchedMinSync ? { onBatch: minSyncBatch } : {}),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
+								phase: "parsed",
 								sourceFiles: { total: parsedProgress.total },
 								parsedCounts: {
 									scanned: parsedProgress.processed,
@@ -3863,13 +3916,7 @@ export class AutoRAGAgent {
 				: await this.scanMirrorStaleness();
 			signal?.throwIfAborted();
 			progress = updateRefreshProgress(progress, {
-				phase: wants("minsync")
-					? "minsync"
-					: wants("datasources")
-						? "datasources"
-						: wants("jikji")
-							? "jikji"
-							: "finalizing",
+				phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
 				sourceFiles: { total: summary.scanned },
 				parsedCounts: {
 					scanned: summary.scanned,
@@ -3879,26 +3926,12 @@ export class AutoRAGAgent {
 				},
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsync = wants("minsync")
-				? await this.syncMinSync(force, signal, (minsyncProgress: MinSyncSyncProgress) => {
-						progress = updateRefreshProgress(progress, {
-							minsync: { synced: minsyncProgress.processed, total: minsyncProgress.total },
-						});
-						writeRefreshProgress(this.workspaceProjectRoot, progress);
-						emitProgress({
-							phase: "minsync",
-							processed: minsyncProgress.processed,
-							total: minsyncProgress.total,
-						});
-					})
-				: undefined;
-			signal?.throwIfAborted();
+			const minsync = batchedMinSync ? aggregateMinSyncBatches(minSyncBatches) : undefined;
 			if (minsync !== undefined) {
 				progress = updateRefreshProgress(progress, {
-					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
 					minsync: {
-						...progress.minsync,
 						synced: minsync.synced,
+						total: Math.max(minSyncTotalBase, minsync.synced),
 						...(minsync.filesFailed !== undefined && minsync.filesFailed.length > 0
 							? { filesSkipped: minsync.filesFailed.length }
 							: {}),
@@ -3984,7 +4017,7 @@ export class AutoRAGAgent {
 				finishedAt: new Date().toISOString(),
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			const minsyncDiagnostics = [...minSyncRefreshDiagnostics(minsync), ...minSyncBatchFailures];
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
@@ -4282,7 +4315,7 @@ export class AutoRAGAgent {
 
 	async syncParsedMirrors(
 		force = false,
-		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped"> = {},
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped" | "onBatch" | "batchSize"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
@@ -5164,6 +5197,18 @@ function fsearchRefreshDiagnostics(fsearch: AutoRAGFSearchRefreshResult | undefi
 			source: "fsearch",
 		},
 	];
+}
+
+/**
+ * Fold the per-batch MinSync results of one refresh into the single result the
+ * public shape and `getRefreshStatus` expect. Every sync indexes the whole
+ * staged mirror, so the last batch's result describes the index (its status,
+ * staging exclusions and skipped files); only `synced` sums across batches.
+ */
+function aggregateMinSyncBatches(batches: readonly MinSyncSyncResult[]): MinSyncSyncResult | undefined {
+	const last = batches.at(-1);
+	if (last === undefined) return undefined;
+	return { ...last, synced: batches.reduce((total, batch) => total + batch.synced, 0) };
 }
 
 /**
