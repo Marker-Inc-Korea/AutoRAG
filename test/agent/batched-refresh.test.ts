@@ -304,6 +304,28 @@ describe("batched refresh", () => {
 		expect(stagedFiles(workspacePath).some((path) => path.endsWith("f00.txt.md"))).toBe(false);
 	});
 
+	it("syncs only batches whose mirrors changed, and always the final one", async () => {
+		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
+		writeSources(total);
+		const binary = join(root, "batched-minsync.mjs");
+		const logPath = join(root, "minsync.log");
+		const counterPath = join(root, "minsync.counter");
+		writeBatchedMinSync(binary, logPath, counterPath);
+		const workspacePath = join(root, ".autorag", "minsync");
+		const agent = makeAgent({ binary, workspacePath });
+		await agent.refresh(true, { methods: ["minsync"] });
+		expect(syncRuns(logPath)).toHaveLength(3);
+
+		// Nothing changed: one sync (the final batch) instead of one per batch.
+		await agent.refresh(false, { methods: ["minsync"] });
+		expect(syncRuns(logPath)).toHaveLength(4);
+
+		// A change in the middle batch syncs that batch and the final one.
+		writeFileSync(join(docs, "f30.txt"), "changed content\n");
+		await agent.refresh(false, { methods: ["minsync"] });
+		expect(syncRuns(logPath)).toHaveLength(6);
+	});
+
 	it("still suppresses a mass delete in the batched refresh", async () => {
 		for (let index = 0; index < 150; index += 1) writeFileSync(join(docs, `n${index}.txt`), `Note ${index}\n`);
 		const binary = join(root, "batched-minsync.mjs");

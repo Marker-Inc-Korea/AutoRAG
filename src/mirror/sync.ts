@@ -244,9 +244,12 @@ export interface ParsedMirrorSyncResult {
  * whose run reflects deletions of genuinely-removed sources.
  */
 export interface ParsedMirrorBatch {
-	/** 1-based index of this batch within the refresh. */
+	/** 1-based index of this batch among the batches handed to `onBatch`. */
 	readonly index: number;
-	/** Total batches the listing was divided into; the last one carries `final`. */
+	/**
+	 * Batches the listing was divided into. A batch that wrote and deleted no
+	 * mirror output is not handed to `onBatch`; the final batch always is.
+	 */
 	readonly total: number;
 	/** Virtual paths the refresh attempted in this batch. */
 	readonly virtualPaths: readonly string[];
@@ -644,6 +647,7 @@ async function syncWithRegistry(
 		for (let batchStart = 0; batchStart < Math.max(current.length, 1); batchStart += batchSize) {
 			const batchEnd = Math.min(batchStart + batchSize, current.length);
 			const finalBatch = batchEnd >= current.length;
+			const changedBefore = written + deleted;
 			for (let position = batchStart; position < batchEnd; position += 1) {
 				const entry = current[position];
 				options.onProgress?.({
@@ -863,10 +867,14 @@ async function syncWithRegistry(
 				}
 			}
 			if (finalBatch && deferDeletions) await applyDeleteDecisions();
-			await runBatch(
-				current.slice(batchStart, batchEnd).map((item) => item.virtualPath),
-				finalBatch,
-			);
+			// A batch that changed no mirror output has nothing new to index; the
+			// final batch always runs so a previous failed sync is retried.
+			if (finalBatch || written + deleted !== changedBefore) {
+				await runBatch(
+					current.slice(batchStart, batchEnd).map((item) => item.virtualPath),
+					finalBatch,
+				);
+			}
 			if (batchStopped) break;
 		}
 		await session.finish();
