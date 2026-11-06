@@ -18,12 +18,12 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync --version 0.6.0 --locked` when
+yourself with `cargo install minsync --version 0.7.1 --locked` when
 auto-install cannot run. MinSync on Apple Silicon and Linux needs rustc
 1.96 or newer, because its dependency candle-core requires NEON f16 support;
 with an older toolchain the cargo install fails and AutoRAG falls back to the
-GitHub release binary. AutoRAG's installer pins MinSync 0.6.0 from crates.io.
-A `minsync` older than 0.6.0 is never run; see
+GitHub release binary. AutoRAG's installer pins MinSync 0.7.1 from crates.io.
+A `minsync` older than 0.7.1 is never run; see
 [Upgrading a BM25 workspace](#upgrading-a-bm25-workspace).
 
 Existing executables are not silently replaced. New installations, including
@@ -309,7 +309,7 @@ and rebuilds the index with a full sync.
 
 ### Upgrading a BM25 workspace
 
-AutoRAG requires MinSync 0.6.0 or newer. A `minsync` on `PATH` or in the
+AutoRAG requires MinSync 0.7.1 or newer. A `minsync` on `PATH` or in the
 workspace cache that reports an older version is never run: one later on
 `PATH` is used instead, a cached one is replaced by the next install (`autorag
 refresh` with `minSync.autoInstall`), and a query with no usable binary fails
@@ -404,7 +404,7 @@ daemon or the in-process engine.
 ## Durable incremental parsing
 
 Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
-including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.6.0 — ship it; published binaries up to 0.5.0 have the original
+including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.7.1 — ship it; published binaries up to 0.5.0 have the original
 durable stage, but not `capabilities`, `plan`, `inspect`, deliberate skips or
 deferred-failure policy. AutoRAG probes capabilities before opening a run and
 refuses an older build before mutating stage state. Parsing itself uses no
