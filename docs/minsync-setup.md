@@ -484,7 +484,6 @@ refresh continues:
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
 | `cloud-placeholder-skipped` | info | A File Provider placeholder whose provider has no verified release path was not read; `reason` carries the provider. |
-| `cloud-download-deferred` | info | A cloud placeholder is over this refresh's download budget and waits for the next refresh. |
 | `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the release helper's own error text and the attempt count. |
 | `cloud-fingerprint-failed` | warning | A cloud or network file was indexed but its duplicate fingerprint could not be read or saved; it stays indexed and does not take part in exact-duplicate exclusion. |
 
@@ -637,8 +636,10 @@ Any **other File Provider** has no verified release path, so a placeholder is no
 copy back and would otherwise leave every document on disk. A previously indexed copy is
 kept. Make the file or folder available offline in the provider's app to index it.
 
-Downloads per refresh are bounded; the rest wait for the next refresh
-(`cloud-download-deferred`, one diagnostic per deferred file). A refused release is
+Downloads are bounded per batch: a placeholder that would exceed the batch's budget ends
+the batch, which is synced and searchable, and is read first in the next batch with a fresh
+budget, so every placeholder is indexed in the same refresh. Each downloaded file is released
+right after it is parsed, before its batch is synced. A refused release is
 retried with doubling waits (500 ms, 1 s, 2 s); the provider briefly holding a
 just-downloaded file is the usual cause. A file still uploading to the cloud cannot be
 released yet — the refusal names that state. When the retries are spent the file is
@@ -671,7 +672,7 @@ rounded time from the start and is not re-downloaded.
 ```
 
 `cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
-refresh downloads; the first file is always allowed, so one large file cannot starve.
+batch downloads; a batch's first placeholder is always allowed, so one large file cannot starve.
 `cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. These
 keys apply on Windows too (below); Linux reads every file as before.
 
