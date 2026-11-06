@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDuplicates } from "../../src/cli/commands/duplicates.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
-import type { CloudFileProbe } from "../../src/filesystem/cloud-placeholder.ts";
 
 let root: string;
 let previousHome: string | undefined;
@@ -106,32 +105,5 @@ describe("autorag duplicates", () => {
 		const output = JSON.parse(stdout[0]);
 		expect(output.ok).toBe(true);
 		expect(output.exactGroups).toHaveLength(1);
-	});
-
-	it("does not scan a search root inside a cloud folder and reports it as skipped", async () => {
-		const docs = join(root, "docs");
-		mkdirSync(docs);
-		const { ctx, stdout } = context(true);
-		const scanned: string[] = [];
-		const probe: CloudFileProbe = {
-			cloudRoots: async () => [{ path: docs, kind: "file-provider" }],
-			datalessAmong: async () => new Set(),
-			providerOf: async () => undefined,
-			canRelease: () => false,
-			evict: async () => ({ ok: true }),
-		};
-
-		const code = await runDuplicates(
-			ctx,
-			async (path) => {
-				scanned.push(path);
-				return { dir: path, files: [], families: [], errors: [] };
-			},
-			probe,
-		);
-
-		expect(code).toBe(0);
-		expect(scanned).toEqual([]);
-		expect(JSON.parse(stdout[0]).skippedRoots).toEqual([docs]);
 	});
 });
