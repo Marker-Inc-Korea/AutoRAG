@@ -293,7 +293,10 @@ are not indexed. AutoRAG never opens the agents' logs or wombat's catalog direct
 - Retrieval is hybrid-first: one `wombat search --mode hybrid` per query, and SPLADE keyword search only when hybrid
   cannot run (for example, no embedder is available). Results map to opaque
   `/wombat/<instance>/chunks/<chunk-id>` sources and carry `agent`, `title`, `startTurn`, `endTurn` and
-  `sessionKey` (`<agent>:<session id>`) in their metadata.
+  `sessionKey` (`<agent>:<session id>`) in their metadata. The model reads only a result's content, never its
+  metadata, so the first line of every hit is a label with the same facts:
+  `[<sessionKey> | turns 3-5 | 2026-10-22 | <title> | <cwd>]`. Missing parts are omitted, and line breaks in a title or
+  path are collapsed so they cannot add lines to the result.
 - `connector.agents` limits indexing and search to those agents. `connector.includeSubagents` and
   `connector.includeEphemeral` index subagent transcripts and headless, benchmark, or temp-directory sessions, which
   wombat skips by default. `connector.dataDir` and `connector.configPath` move wombat's data directory or config.
@@ -301,9 +304,10 @@ are not indexed. AutoRAG never opens the agents' logs or wombat's catalog direct
   `minsync serve` automatically, so AutoRAG passes no embedding endpoint to it. AutoRAG forwards only an allow-list of
   environment variables and refuses to spawn the CLI when `WOMBAT_EMBEDDER` selects a remote (`openai:` or `tei:`)
   embedder, because that would send conversation text off the machine.
-- To go from a result to the full conversation, the agent calls wombat through `bash` with the result's `sessionKey`:
-  `wombat show <sessionKey>` prints the cleaned conversation, and `wombat trace <sessionKey> --turn N` prints the
-  original log around that turn, including the tool calls and outputs the index leaves out.
+- To go from a result to the full conversation, the agent calls wombat through `bash` with the `sessionKey` from the
+  label: `wombat show <sessionKey>` prints the cleaned conversation, and `wombat trace <sessionKey> --turn N` prints
+  the original log around that turn, including the tool calls and outputs the index leaves out. The skill's
+  always-visible description says this, because the skill body is read only when the agent loads it.
 
 ## Universal connection aliases
 
