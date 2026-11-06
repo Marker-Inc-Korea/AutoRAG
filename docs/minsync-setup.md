@@ -690,7 +690,7 @@ and network folders (see *Cloud and network folders* above) and keep their defau
   under one by its name (`--exclude-dir`, measured to skip reads under it entirely).
   A cloud or network file instead joins the exact-duplicate exclusion through a **stored fingerprint**:
   while the file is on disk during its single read (before a downloaded placeholder is released), a refresh
-  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, chars, modified, revision}`
+  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, modified, revision}`
   under `.autorag/cloud-fingerprints.json` in the workspace (an AutoRAG-owned store; the
   MinSync stage schema is unchanged). An unchanged file keeps that fingerprint without being
   read; a changed file gets a new one; a removed file drops it. A file whose provider has no
@@ -702,13 +702,19 @@ Exact-duplicate exclusion then groups the cloud fingerprints with the scanned, n
 files by exact hash and keeps one keeper — the newest by dupey's own ranking for scanned
 files, and the fingerprint's recorded `modified` time for a cloud file (falling back to a
 filesystem `stat`, which reports metadata without downloading the placeholder). The other
-copies are excluded through the normal `duplicate-excluded` path. A file dupey extracted no
-text from (`chars` 0; a binary HWP5 document with dupey 0.1.2, for one) is never part of a
-duplicate group, scanned or fingerprinted: every such file shares one hash, so the hash says
-nothing about which document it is. Because the fingerprints
+copies are excluded through the normal `duplicate-excluded` path. A file dupey extracts no
+text from (an image-only PDF, for one) is grouped by dupey's hash of its bytes, so only
+byte-identical copies match. Because the fingerprints
 are written during a refresh, a cloud file first fingerprinted this refresh can be excluded
 on the *next* one; that is expected and still never reads the released original. The parsed
 mirror, MinSync, and fsearch passes never re-download.
+
+AutoRAG requires **dupey 0.2.0 or later** (`cargo install dupey`) and refuses an older binary
+with a message naming its version: dupey 0.1.2 hashed incomplete text for HWP documents and
+empty text in `fingerprint` for files without text, so its hashes disagree with 0.2.0's. A
+store written by 0.1.2 (version 1) keeps every fingerprint except its HWP files and its files
+without text; those take part in exact-duplicate exclusion again once they change and are
+fingerprinted by 0.2.0.
 
 ### Cloud Files folders (Windows)
 

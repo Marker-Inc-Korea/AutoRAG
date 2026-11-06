@@ -164,7 +164,7 @@ describe("exact duplicate filter", () => {
 		// The cloud copy is not on disk at all: its stored fingerprint carries its modified time, so ranking
 		// never has to stat or read it.
 		const cloudCopy = join(root, "Library", "CloudStorage", "GoogleDrive-x", "report.txt");
-		const fingerprints = new Map([[cloudCopy, { exact: "same-hash", modified: "2030-01-01T00:00:00Z", chars: 4 }]]);
+		const fingerprints = new Map([[cloudCopy, { exact: "same-hash", modified: "2030-01-01T00:00:00Z" }]]);
 
 		const result = await selectExactDuplicateExclusions(
 			root,
@@ -187,8 +187,8 @@ describe("exact duplicate filter", () => {
 		utimesSync(older, 1, 1);
 		utimesSync(cloudNewer, 2, 2);
 		const fingerprints = new Map([
-			[older, { exact: "same-hash", modified: null, chars: 4 }],
-			[cloudNewer, { exact: "same-hash", modified: null, chars: 4 }],
+			[older, { exact: "same-hash", modified: null }],
+			[cloudNewer, { exact: "same-hash", modified: null }],
 		]);
 
 		const result = await selectExactDuplicateExclusions(
@@ -199,60 +199,6 @@ describe("exact duplicate filter", () => {
 		);
 
 		expect(result.keepers).toEqual(new Set([cloudNewer]));
-		expect(result.excluded).toEqual(new Set([older]));
-	});
-
-	it("never treats files dupey extracted no text from as duplicates of each other", async () => {
-		// Measured with dupey 0.1.2: a binary HWP5 document it cannot read reports `chars: 0`, and every such file
-		// shares one content hash, so distinct documents would collapse into one and all but the newest vanish.
-		const root = mkdtempSync(join(tmpdir(), "dupey-filter-"));
-		roots.push(root);
-		const plan = join(root, "plan.hwp");
-		const script = join(root, "script.hwp");
-		writeFileSync(plan, "a");
-		writeFileSync(script, "b");
-		const cloudForm = join(root, "Library", "CloudStorage", "GoogleDrive-x", "form.hwp");
-		const fingerprints = new Map([[cloudForm, { exact: "empty-text-hash", modified: null, chars: 0 }]]);
-
-		const result = await selectExactDuplicateExclusions(
-			root,
-			{
-				dir: root,
-				files: [
-					{ path: "plan.hwp", content_hash: "empty-text-hash", signals: { chars: 0 } },
-					{ path: "script.hwp", content_hash: "empty-text-hash", signals: { chars: 0 } },
-				],
-				families: [],
-				errors: [],
-			},
-			undefined,
-			fingerprints,
-		);
-
-		expect(result.excluded).toEqual(new Set());
-		expect(result.keepers).toEqual(new Set());
-	});
-
-	it("still groups copies whose text was extracted, even when dupey reports no character count", async () => {
-		const root = mkdtempSync(join(tmpdir(), "dupey-filter-"));
-		roots.push(root);
-		const older = join(root, "older.txt");
-		const newer = join(root, "newer.txt");
-		writeFileSync(older, "same");
-		writeFileSync(newer, "same");
-		utimesSync(older, 1, 1);
-		utimesSync(newer, 2, 2);
-
-		const result = await selectExactDuplicateExclusions(root, {
-			dir: root,
-			files: [
-				{ path: "older.txt", content_hash: "text-hash", signals: { chars: 4 } },
-				{ path: "newer.txt", content_hash: "text-hash" },
-			],
-			families: [],
-			errors: [],
-		});
-
 		expect(result.excluded).toEqual(new Set([older]));
 	});
 });
