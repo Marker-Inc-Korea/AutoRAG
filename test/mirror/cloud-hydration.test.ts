@@ -585,4 +585,30 @@ describe("cloud fingerprints", () => {
 
 		expect(loadCloudFingerprints(root).entries).toEqual({});
 	});
+
+	it("drops dupey 0.1.2 fingerprints whose hash 0.2.0 computes differently and keeps the rest", () => {
+		const entry = (exact: string, chars: number) => ({
+			sourceVersion: "1:1",
+			exact,
+			chars,
+			modified: null,
+			revision: null,
+		});
+		mkdirSync(join(root, ".autorag"), { recursive: true });
+		writeFileSync(
+			join(root, ".autorag", "cloud-fingerprints.json"),
+			JSON.stringify({
+				version: 1,
+				entries: {
+					"/cloud/plan.HWP": entry("truncated-hwp-text", 45),
+					"/cloud/scan.pdf": entry("empty-text-hash", 0),
+					"/cloud/report.docx": entry("docx-hash", 120),
+				},
+			}),
+		);
+
+		expect(loadCloudFingerprints(root).entries).toEqual({
+			"/cloud/report.docx": { sourceVersion: "1:1", exact: "docx-hash", modified: null, revision: null },
+		});
+	});
 });

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { DUPEY_MIN_VERSION, isSupportedDupeyVersion, parseDupeyVersion } from "./version.ts";
 
 export interface DupeyScanFile {
 	readonly path: string;
@@ -62,8 +63,34 @@ export class DupeyCliError extends Error {
 	}
 }
 
-function runDupey(args: readonly string[], options: DupeyCliOptions): Promise<string> {
-	return options.run ? options.run(args) : spawnDupey(options.executable ?? "dupey", args, options);
+/** One `--version` probe per executable per process; a failed probe is forgotten so a later install is seen. */
+const versionChecks = new Map<string, Promise<void>>();
+
+/**
+ * Refuse a dupey below {@link DUPEY_MIN_VERSION}: its hashes disagree with the ones AutoRAG stores. A version line
+ * AutoRAG cannot read is let through, as Jikji's gate does. Test doubles (`run`) are never probed.
+ */
+function checkDupeyVersion(executable: string, options: DupeyCliOptions): Promise<void> {
+	const cached = versionChecks.get(executable);
+	if (cached !== undefined) return cached;
+	const check = spawnDupey(executable, ["--version"], options).then((stdout) => {
+		const version = parseDupeyVersion(stdout);
+		if (version !== undefined && !isSupportedDupeyVersion(version)) {
+			throw new DupeyCliError(
+				`dupey ${version} at ${executable} is older than the ${DUPEY_MIN_VERSION} AutoRAG requires; run \`cargo install dupey\` to update it.`,
+			);
+		}
+	});
+	check.catch(() => versionChecks.delete(executable));
+	versionChecks.set(executable, check);
+	return check;
+}
+
+async function runDupey(args: readonly string[], options: DupeyCliOptions): Promise<string> {
+	if (options.run) return options.run(args);
+	const executable = options.executable ?? "dupey";
+	await checkDupeyVersion(executable, options);
+	return spawnDupey(executable, args, options);
 }
 
 export async function scanWithDupey(
