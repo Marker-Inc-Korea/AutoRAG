@@ -446,8 +446,8 @@ shared-fund ledger lives in one of two Discord servers). Over 3 runs, 30/30
 passed. Required datasources scored 0.71-0.96, and datasources the question
 excluded scored at most 0.38
 (`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`). With memory, a
-similar past question sharpens the choice: for "dependabot PR 알림", Discord,
-Spotlight, and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
+similar past question sharpens the choice: for "dependabot PR 알림", Discord
+and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
 showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉님
 랄프톤 공지" rose from 0.91 to 0.98.
 
@@ -456,7 +456,7 @@ real datasources (web tools enabled). A recent public fact ("What is the latest
 stable Node.js LTS version right now?") scored the web at 0.95 with every
 datasource at 0.24 or below, and a question about the user's own records ("내
 릴리즈 플랜 노트에 Q3 런치 날짜가 뭐라고 적혀 있어?") scored it 0.05 and selected
-KakaoTalk (0.61), Slack (0.57), Spotlight (0.88), and NomaDamas (0.58) instead
+KakaoTalk (0.61), Slack (0.57), and NomaDamas (0.58) instead
 (`bun src/cli/index.ts search "<q>" --json --debug`, plus
 `test/live-e2e/jev-web-datasource.test.ts` for the prefetch end to end).
 
