@@ -586,6 +586,15 @@ only as small `.gdoc`/`.gsheet`/`.gslides` pointer files with no document
 content, so they are not indexed beyond their names. Whether `rclone mount` /
 `rclone serve webdav` exports them as readable files is unverified.
 
+### Removed: the `spotlight` datasource
+
+The macOS Spotlight (`mdfind`) datasource is removed. A config entry named
+`spotlight`, or an alias with `"type": "spotlight"`, is ignored and reported with
+a `retired-datasource-skill` warning (not `unknown-datasource-skill`); nothing is
+migrated and config resolution does not fail. Remove those entries from
+`datasources`. File content stays searchable through `searchPaths` (mirror/BM25
+index) and, where installed, FSearch.
+
 Connector ingest caps stay trusted configuration: the RSS connector takes
 `maxDocuments`/`maxItemsPerFeed`/`maxContentChars`.
 

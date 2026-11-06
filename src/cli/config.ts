@@ -1436,7 +1436,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	const embedder = createEmbedderFromConfig({ embedder: config.minSync?.embedder });
 	opts.embedder = embedder;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath, {
+		const { skills, unknown, retired } = buildDatasourceSkills(config.datasources, config.workspacePath, {
 			embedder,
 			discrawl: async () => discrawlEmbeddingRuntimeFor(await embedder.describeEndpoint()),
 			cliEndpoint: embeddingEndpointSource(embedder),
@@ -1448,16 +1448,26 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 			},
 		});
 		if (skills.length > 0) opts.datasourceSkills = skills;
+		const diagnostics: SearchDocumentDiagnostic[] = [];
+		if (retired.length > 0) {
+			const names = retired.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
+			diagnostics.push({
+				code: "retired-datasource-skill",
+				severity: "warning",
+				message: `Datasource config ignored because the Spotlight datasource was removed: ${names.join(", ")}. Delete these entries; use fsearch/mirror search (searchPaths) instead.`,
+				source: "datasources",
+			});
+		}
 		if (unknown.length > 0) {
-			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
-			const diagnostic: SearchDocumentDiagnostic = {
+			const names = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
+			diagnostics.push({
 				code: "unknown-datasource-skill",
 				severity: "warning",
-				message: `Unknown datasource skill(s) in config were skipped: ${safeNames.join(", ")}`,
+				message: `Unknown datasource skill(s) in config were skipped: ${names.join(", ")}`,
 				source: "datasources",
-			};
-			opts.startupDiagnostics = [diagnostic];
+			});
 		}
+		if (diagnostics.length > 0) opts.startupDiagnostics = diagnostics;
 	}
 	return opts as Omit<AutoRAGAgentOptions, "model">;
 }

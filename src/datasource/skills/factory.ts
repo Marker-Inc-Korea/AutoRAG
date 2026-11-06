@@ -66,6 +66,8 @@ export interface BuildDatasourceSkillsResult {
 	readonly skills: readonly DatasourceSkill[];
 	/** Names that were configured but not recognized. */
 	readonly unknown: readonly string[];
+	/** Configured names whose skill type was removed; they are skipped, not built. */
+	readonly retired: readonly string[];
 }
 
 /**
@@ -422,9 +424,13 @@ function common(config: DatasourceSkillConfig, workspaceRoot: string | undefined
 	};
 }
 
+/** Skill templates that were removed. A config entry using one is skipped with a dedicated warning. */
+const RETIRED_TEMPLATES: Readonly<Record<string, true>> = { spotlight: true };
+
 /**
  * Build datasource skills from the trusted config section. `false` or
- * `{ enabled: false }` entries are skipped silently; unrecognized names are
+ * `{ enabled: false }` entries are skipped silently; entries naming a removed
+ * template are collected in `retired` and ignored; other unrecognized names are
  * collected in `unknown` (never thrown) so callers can surface setup
  * feedback without failing agent construction.
  */
@@ -435,6 +441,7 @@ export function buildDatasourceSkills(
 ): BuildDatasourceSkillsResult {
 	const skills: DatasourceSkill[] = [];
 	const unknown: string[] = [];
+	const retired: string[] = [];
 	for (const [name, raw] of Object.entries(config ?? {})) {
 		if (raw === false) continue;
 		if (raw !== true && (typeof raw !== "object" || raw === null || Array.isArray(raw))) {
@@ -444,6 +451,10 @@ export function buildDatasourceSkills(
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
 		const templateName = entry.type ?? name;
+		if (Object.hasOwn(RETIRED_TEMPLATES, templateName)) {
+			retired.push(name);
+			continue;
+		}
 		const builder =
 			Object.hasOwn(BUILDERS, templateName) && datasourceSkillSupported(templateName)
 				? BUILDERS[templateName]
@@ -478,5 +489,5 @@ export function buildDatasourceSkills(
 				: aliased,
 		);
 	}
-	return { skills, unknown };
+	return { skills, unknown, retired };
 }

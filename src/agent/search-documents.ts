@@ -63,6 +63,7 @@ export type SearchDocumentDiagnosticCode =
 	| "watch-failed"
 	| "watch-limited"
 	| "unknown-datasource-skill"
+	| "retired-datasource-skill"
 	| "no-final-answer"
 	| "model-request-failed"
 	| "tool-call-burst"

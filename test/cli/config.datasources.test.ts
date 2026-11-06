@@ -66,6 +66,33 @@ describe("CLI config datasources wiring", () => {
 		]);
 	});
 
+	it("warns about retired spotlight entries, ignores them, and still reports unknown names separately", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				rss: { connector: { feeds: [{ url: "https://feeds.example.com/a.xml" }] } },
+				spotlight: { connector: { queries: ["kMDItemContentTypeTree == 'public.text'"] } },
+				"my-files": { type: "spotlight" },
+				"slack-local": {},
+			},
+		});
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(options.startupDiagnostics).toEqual([
+			expect.objectContaining({
+				code: "retired-datasource-skill",
+				severity: "warning",
+				message: expect.stringContaining("spotlight, my-files"),
+			}),
+			expect.objectContaining({
+				code: "unknown-datasource-skill",
+				message: "Unknown datasource skill(s) in config were skipped: slack-local",
+			}),
+		]);
+	});
+
 	it("skips malformed datasource entries without constructing connectors", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
