@@ -319,12 +319,12 @@ export interface AutoRAGRefreshLimits {
 	/** Retries for a transient per-file I/O error (EMFILE/EBUSY/EIO/ETIMEDOUT) before the file is skipped. Default 3. */
 	readonly transientRetries?: number;
 	/**
-	 * Most cloud-file placeholders (files whose data is not on disk) one refresh may download.
-	 * Reading a placeholder downloads it, so this bounds disk and network use per refresh; the rest wait
-	 * for the next one. Default 200.
+	 * Most cloud-file placeholders (files whose data is not on disk) one refresh batch may download.
+	 * Reading a placeholder downloads it; the next one over the budget starts a new batch, so every
+	 * placeholder is still read in the same refresh. Default 200.
 	 */
 	readonly cloudMaxFiles?: number;
-	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default 536870912 (512 MiB). */
+	/** Most placeholder bytes one refresh batch may download; a batch's first file is always allowed. Default 536870912 (512 MiB). */
 	readonly cloudMaxBytes?: number;
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;

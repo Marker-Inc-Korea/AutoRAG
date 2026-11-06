@@ -41,7 +41,6 @@ export type SearchDocumentDiagnosticCode =
 	| "mass-delete-suppressed"
 	| "walk-truncated"
 	| "directory-unreadable"
-	| "cloud-download-deferred"
 	| "cloud-placeholder-skipped"
 	| "cloud-evict-failed"
 	| "cloud-fingerprint-failed"

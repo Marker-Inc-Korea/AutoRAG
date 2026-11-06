@@ -118,8 +118,9 @@ export interface ParsedMirrorSyncOptions {
 	/** Called before each file and once more with `processed === total` when the parse phase ends. */
 	readonly onProgress?: (progress: ParsedMirrorProgress) => void;
 	/**
-	 * Sources parsed and committed per batch before {@link ParsedMirrorSyncOptions.onBatch}
-	 * runs. Default {@link DEFAULT_MIRROR_BATCH_SIZE}.
+	 * Most sources parsed and committed per batch before {@link ParsedMirrorSyncOptions.onBatch}
+	 * runs; a batch ends sooner when a cloud placeholder would exceed its download budget.
+	 * Default {@link DEFAULT_MIRROR_BATCH_SIZE}.
 	 */
 	readonly batchSize?: number;
 	/**
@@ -155,9 +156,15 @@ export interface ParsedMirrorSyncOptions {
 	 * platforms read every file as before. Tests inject their own probe.
 	 */
 	readonly cloudProbe?: CloudFileProbe;
-	/** Most placeholders one refresh may download. Default {@link DEFAULT_CLOUD_MAX_FILES}. */
+	/**
+	 * Most placeholders one batch may download; the next placeholder starts a new batch, so every placeholder is
+	 * still read in the same refresh. Default {@link DEFAULT_CLOUD_MAX_FILES}.
+	 */
 	readonly cloudMaxFiles?: number;
-	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default {@link DEFAULT_CLOUD_MAX_BYTES}. */
+	/**
+	 * Most placeholder bytes one batch may download; a batch's first placeholder is always allowed, and the next
+	 * one over the budget starts a new batch. Default {@link DEFAULT_CLOUD_MAX_BYTES}.
+	 */
 	readonly cloudMaxBytes?: number;
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
@@ -212,7 +219,6 @@ export type ParsedMirrorDiagnosticCode =
 	| "mass-delete-suppressed"
 	| "walk-truncated"
 	| "directory-unreadable"
-	| "cloud-download-deferred"
 	| "cloud-placeholder-skipped"
 	| "cloud-evict-failed"
 	| "cloud-fingerprint-failed";
@@ -246,11 +252,6 @@ export interface ParsedMirrorSyncResult {
 export interface ParsedMirrorBatch {
 	/** 1-based index of this batch among the batches handed to `onBatch`. */
 	readonly index: number;
-	/**
-	 * Batches the listing was divided into. A batch that wrote and deleted no
-	 * mirror output is not handed to `onBatch`; the final batch always is.
-	 */
-	readonly total: number;
 	/** Virtual paths the refresh attempted in this batch. */
 	readonly virtualPaths: readonly string[];
 	/** The last batch: genuine deletions have by now been applied to the mirror. */
@@ -631,24 +632,26 @@ async function syncWithRegistry(
 		// removed source from the index before the rest of the listing was read.
 		const deferDeletions = options.onBatch !== undefined;
 		const batchSize = Math.max(1, Math.floor(options.batchSize ?? DEFAULT_MIRROR_BATCH_SIZE));
-		const batchCount = Math.max(1, Math.ceil(current.length / batchSize));
 		let batchIndex = 0;
 		let batchStopped = false;
 		const runBatch = async (virtualPaths: readonly string[], final: boolean): Promise<void> => {
 			if (options.onBatch === undefined) return;
 			batchIndex += 1;
-			const outcome = await options.onBatch({ index: batchIndex, total: batchCount, virtualPaths, final });
+			const outcome = await options.onBatch({ index: batchIndex, virtualPaths, final });
 			if (outcome?.stop === true) batchStopped = true;
 		};
 		if (!deferDeletions) await applyDeleteDecisions();
 		await gate.classify(
 			current.filter((entry) => pending.has(mirrorStageKey(entry.virtualPath))).map((entry) => entry.sourcePath),
 		);
-		for (let batchStart = 0; batchStart < Math.max(current.length, 1); batchStart += batchSize) {
-			const batchEnd = Math.min(batchStart + batchSize, current.length);
-			const finalBatch = batchEnd >= current.length;
+		let batchStart = 0;
+		for (;;) {
+			const batchLimit = Math.min(batchStart + batchSize, current.length);
+			// Ends early, before the placeholder that would exceed this batch's download budget.
+			let batchEnd = batchLimit;
 			const changedBefore = written + deleted;
-			for (let position = batchStart; position < batchEnd; position += 1) {
+			gate.startBatch();
+			for (let position = batchStart; position < batchLimit; position += 1) {
 				const entry = current[position];
 				options.onProgress?.({
 					processed: position,
@@ -704,16 +707,9 @@ async function syncWithRegistry(
 					});
 					continue;
 				}
-				if (cloudDecision.kind === "defer") {
-					skipped += 1;
-					diagnostics.push({
-						code: "cloud-download-deferred",
-						severity: "info",
-						message:
-							"The download budget for this refresh is used up; the file stays queued for the next refresh.",
-						source: entry.virtualPath,
-					});
-					continue;
+				if (cloudDecision.kind === "next-batch") {
+					batchEnd = position;
+					break;
 				}
 				if (pending.has(mirrorStageKey(entry.virtualPath))) {
 					let bytes: Awaited<ReturnType<typeof readFile>>;
@@ -866,6 +862,7 @@ async function syncWithRegistry(
 					}
 				}
 			}
+			const finalBatch = batchEnd >= current.length;
 			if (finalBatch && deferDeletions) await applyDeleteDecisions();
 			// A batch that changed no mirror output has nothing new to index; the
 			// final batch always runs so a previous failed sync is retried.
@@ -875,7 +872,8 @@ async function syncWithRegistry(
 					finalBatch,
 				);
 			}
-			if (batchStopped) break;
+			if (finalBatch || batchStopped) break;
+			batchStart = batchEnd;
 		}
 		await session.finish();
 		if (fingerprintCloud) {
