@@ -112,13 +112,13 @@ describe.skipIf(!LIVE)("live: record cut keeps a long document from taking every
 
 	afterAll(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }));
 
-	it("fills a plain top-8 with one document's passages when the cut is off", () => {
-		setRecordCut(undefined);
+	it("fills a plain top-8 with one document's passages only when the cut is turned off", () => {
+		setRecordCut({ enabled: false });
 		expect(perDocument(8)).toEqual({ "handbook-long.md": 8 });
 	});
 
-	it("returns every short document inside the same top-8 when the cut is on", () => {
-		setRecordCut({ enabled: true });
+	it("returns every short document inside the same top-8 with no recordCut configured at all", () => {
+		setRecordCut(undefined);
 		const counts = perDocument(8);
 
 		for (const name of SHORT_DOCUMENTS)
@@ -133,7 +133,7 @@ describe.skipIf(!LIVE)("live: record cut keeps a long document from taking every
 	});
 
 	it("rejects a malformed recordCut section with the field named", () => {
-		setRecordCut({ enabled: true, depth: 99 });
+		setRecordCut({ depth: 99 });
 		expect(() => cli(["lite", "retrieve", "refund approval", "--json"])).toThrow(
 			/limits\.recordCut\.depth must be an integer from 1 to 10/u,
 		);

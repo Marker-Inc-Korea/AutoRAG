@@ -25,8 +25,12 @@ function resolveFrom(limits: unknown) {
 }
 
 describe("limits.recordCut config", () => {
-	it("is absent unless configured: the record cut is opt-in", () => {
+	it("stays absent in the resolved config when not written: the default lives in one place, the cut itself", () => {
 		expect(resolveFrom({ minSyncTopK: 40 }).limits?.recordCut).toBeUndefined();
+	});
+
+	it("accepts enabled:false as the way to turn the cut off", () => {
+		expect(resolveFrom({ recordCut: { enabled: false } }).limits?.recordCut).toEqual({ enabled: false });
 	});
 
 	it("accepts the switch and every tuning field", () => {

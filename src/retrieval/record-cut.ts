@@ -78,8 +78,12 @@ export function cutByRecord<T>(results: readonly T[], limit: number, options: Cu
 	return [...chosen].sort((a, b) => a - b).map((index) => results[index]!);
 }
 
-/** What a caller may tune; every field but `enabled` is optional and clamped by {@link recordCutFromOptions}. */
+/**
+ * What a caller may tune; every field is optional and clamped by {@link recordCutFromOptions}. The cut is on unless
+ * `enabled` is false.
+ */
 export interface RecordCutOptions {
+	/** Set false to turn the record cut off. Default true. */
 	readonly enabled?: boolean;
 	/** Fusion depth: the backend is asked for `depth` x the limit. 1-10, default 3. */
 	readonly depth?: number;
@@ -138,9 +142,13 @@ function integerInRange(value: number | undefined, name: string, low: number, hi
 	}
 }
 
-/** The cut for these options, or undefined when it is off. Out-of-range tuning throws. */
+/** The cut these options describe: on unless `enabled` is false, then undefined. Out-of-range tuning throws. */
 export function recordCutFromOptions(options: RecordCutOptions | undefined): RecordCut | undefined {
-	if (options?.enabled !== true) return undefined;
+	if (options?.enabled === false) return undefined;
+	return validatedRecordCut(options ?? {});
+}
+
+function validatedRecordCut(options: RecordCutOptions): RecordCut {
 	integerInRange(options.depth, "depth", 1, MAX_FUSION_DEPTH);
 	integerInRange(options.perRecordFloor, "perRecordFloor", 1, MAX_PER_RECORD);
 	integerInRange(options.perRecordDivisor, "perRecordDivisor", 1, MAX_PER_RECORD);

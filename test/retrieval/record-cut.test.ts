@@ -116,12 +116,26 @@ describe("RecordCut", () => {
 });
 
 describe("recordCutFromOptions", () => {
-	it("is off when no options are given or enabled is false", () => {
-		expect(recordCutFromOptions(undefined)).toBeUndefined();
-		expect(recordCutFromOptions({ enabled: false })).toBeUndefined();
+	it("is on with the PipesHub defaults when nothing is configured", () => {
+		expect(recordCutFromOptions(undefined)).toMatchObject({
+			depth: 3,
+			newRecordShare: 0.5,
+			perRecordFloor: 4,
+			perRecordDivisor: 6,
+		});
+		expect(recordCutFromOptions({})).toBeDefined();
 	});
 
-	it("uses the PipesHub defaults when enabled with no tuning", () => {
+	it("is off only when enabled is explicitly false, even with tuning present", () => {
+		expect(recordCutFromOptions({ enabled: false })).toBeUndefined();
+		expect(recordCutFromOptions({ enabled: false, depth: 5 })).toBeUndefined();
+	});
+
+	it("still rejects out-of-range tuning when the cut is on by default", () => {
+		expect(() => recordCutFromOptions({ depth: 11 })).toThrow(/depth/);
+	});
+
+	it("uses the defaults when enabled with no tuning", () => {
 		const cut = recordCutFromOptions({ enabled: true });
 		expect(cut).toMatchObject({ depth: 3, newRecordShare: 0.5, perRecordFloor: 4, perRecordDivisor: 6 });
 	});

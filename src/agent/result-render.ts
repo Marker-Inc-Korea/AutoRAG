@@ -62,10 +62,12 @@ export function renderEvidenceRows(rows: readonly EvidenceRow[], recordCut: Reco
 			bodyById.set(row.id, NOT_READ_NOTE);
 			continue;
 		}
-		delivered.add(row.id);
+		const whole = content.length <= limit;
+		// A chunk cut to fit the budget did not reach the model whole: it stays unmarked, so a later search can send the rest.
+		if (whole) delivered.add(row.id);
 		bodyById.set(
 			row.id,
-			content.length <= limit
+			whole
 				? content
 				: `${content.slice(0, limit)} …[+${content.length - limit} chars cut to fit the result budget]`,
 		);

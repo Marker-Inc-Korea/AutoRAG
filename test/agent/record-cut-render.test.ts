@@ -80,6 +80,19 @@ describe("renderEvidenceRows", () => {
 		expect(out.length).toBeLessThan(7_000);
 	});
 
+	it("does not count a chunk it had to cut as delivered, so a later search can still send the rest", () => {
+		const rendered = renderEvidenceRows(
+			[
+				{ id: "e1", header: "/docs/huge.md", content: "x".repeat(50_000), repeat: false },
+				{ id: "e2", header: "/docs/small.md", content: "needle fact", repeat: false },
+			],
+			new RecordCut({ resultChars: 6_000, minReadChars: 100 }),
+		);
+		expect(rendered.text).toContain("chars cut to fit the result budget");
+		// Only the chunk whose whole text reached the model counts as shown.
+		expect([...rendered.delivered]).toEqual(["e2"]);
+	});
+
 	it("lists results it had no budget to read, with their ids so they can be cited or fetched", () => {
 		const rendered = renderEvidenceRows(
 			Array.from({ length: 6 }, (_, index) => ({
@@ -91,8 +104,9 @@ describe("renderEvidenceRows", () => {
 			new RecordCut({ resultChars: 15_000, minReadChars: 4_000 }),
 		);
 		const out = rendered.text;
-		// Only the results whose text reached the model count as shown; a later search may still deliver the rest.
-		expect([...rendered.delivered].sort()).toEqual(["e1", "e2", "e3"]);
+		// Three chunks get a share just under their size and are cut; the rest are not read. None reached the model
+		// whole, so none counts as shown and a later search may still deliver them.
+		expect([...rendered.delivered]).toEqual([]);
 		expect(out).toContain("[e1] /docs/0.md\nyyyy");
 		expect(out).toMatch(/\[e6\] \/docs\/5\.md\n\(not read: result budget used up; narrow the query to read it\)/u);
 	});

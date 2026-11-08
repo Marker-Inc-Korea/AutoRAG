@@ -356,10 +356,11 @@ value always wins.
 
 ### Record cut (`limits.recordCut`)
 
-Off by default. Without it a search keeps the top N *chunks*, so one long
-document whose dozens of passages all match can fill every slot while a
-document only the keyword leg found falls past the cut. With
-`limits.recordCut.enabled: true`:
+On by default. A search that keeps only the top N *chunks* lets one long
+document whose dozens of passages all match fill every slot while a document
+only the keyword leg found falls past the cut. The record cut spreads the top N
+across documents instead. Turn it off with `limits.recordCut.enabled: false`.
+When on:
 
 - MinSync and the merged search ask for `depth` times the requested count (3x,
   never past 300 hits), then keep the requested count spread across documents:
@@ -375,7 +376,7 @@ document only the keyword leg found falls past the cut. With
 
 | Field | Default | Controls |
 |---|---|---|
-| `enabled` | false | Turns the record cut on |
+| `enabled` | true | Set `false` to turn the record cut off |
 | `depth` | 3 | Fusion depth, 1-10 |
 | `newRecordShare` | 0.5 | Share of `topK` reserved for documents not shown yet, 0-1 |
 | `perRecordFloor` | 4 | Fewest chunks one document may keep in the head, 1-300 |
@@ -384,8 +385,13 @@ document only the keyword leg found falls past the cut. With
 | `minReadChars` | 2000 | Smallest share worth reading |
 
 ```json
-{ "limits": { "recordCut": { "enabled": true } } }
+{ "limits": { "recordCut": { "enabled": false } } }
 ```
+
+Measured on the maintainer's own corpus (297 sampled passages, a natural question
+and a keyword query each, file-level gold, hybrid mode, top 10): nDCG@10 0.646 →
+0.656, MRR@10 0.588 → 0.600, Recall@10 0.825 → 0.830, and the top 10 holds 8.8
+distinct files instead of 7.5. The Recall difference is within noise.
 
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,
