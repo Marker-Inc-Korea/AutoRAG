@@ -114,6 +114,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { locationSuffix } from "../retrieval/chunk-location.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
+import { type RecordCut, type RecordCutOptions, recordCutFromOptions } from "../retrieval/record-cut.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
@@ -369,6 +370,13 @@ export interface AutoRAGRetrievalLimits {
 		/** Max results rendered per baseline section. Default 100. */
 		readonly sectionLimit?: number;
 	};
+	/**
+	 * Spread each search's hits across documents instead of cutting by chunk, so one long document cannot take
+	 * every slot (PipesHub's FUSION_RECORD_CUT). Off unless `enabled` is true: when on, MinSync and the merger ask
+	 * for `depth` x the requested count, a chunk shown earlier in the run is not resent, and each search result
+	 * is held to `resultChars` with the budget split fairly across its chunks.
+	 */
+	readonly recordCut?: RecordCutOptions;
 }
 
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
@@ -405,6 +413,7 @@ type ResolvedRetrievalLimits = {
 		readonly jikjiPathLimit: number;
 		readonly sectionLimit: number;
 	};
+	readonly recordCut: RecordCut | undefined;
 };
 
 /** What the local branch searches alongside Jikji and MinSync: Jev's datasource ids and, when selected, the web. */
@@ -527,6 +536,7 @@ function resolveRetrievalLimits(
 				"limits.prefetch.sectionLimit",
 			),
 		},
+		recordCut: recordCutFromOptions(limits?.recordCut),
 	};
 }
 
@@ -1208,6 +1218,7 @@ export class AutoRAGAgent {
 			root: this.workspaceProjectRoot,
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		};
 		// The vector method owns sync, readiness and the dedicated semantic tool, but is not part of the
 		// fan-out: the hybrid method already fuses SPLADE sparse and dense vectors over the same chunks and
@@ -1270,6 +1281,7 @@ export class AutoRAGAgent {
 			this,
 			this.singleDatasourceToolSpecs(),
 			this.evidenceLedger,
+			{ recordCut: this.limits.recordCut },
 		);
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
@@ -1277,8 +1289,11 @@ export class AutoRAGAgent {
 			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
 			this.evidenceLedger,
+			{ recordCut: this.limits.recordCut },
 		);
-		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger);
+		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger, {
+			recordCut: this.limits.recordCut,
+		});
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
@@ -2285,6 +2300,8 @@ export class AutoRAGAgent {
 			this.citationNumbers.reset();
 			this.conversationQueries.reset();
 		}
+		// "Already shown" is per run: an earlier run's tool output may have been compacted away.
+		this.evidenceLedger.beginRun();
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
@@ -4811,6 +4828,7 @@ export class AutoRAGAgent {
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
 			dedup: true,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		const results = await this.applyRerank(query, merged, diagnostics);
 		return { results, diagnostics };
@@ -4862,6 +4880,7 @@ export class AutoRAGAgent {
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.singleDatasourceTopK,
 			dedup: true,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		// Single-datasource retrieval is intentionally NOT model-reranked: the
 		// caller already narrowed to one connection, so the merged order is kept.
@@ -4883,6 +4902,7 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				defaultTopK: this.limits.mergedEvidenceCeiling,
+				...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				datasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),

@@ -354,6 +354,39 @@ only when `rerank.model` names a model; then the pool is wide (Jikji 30, MinSync
 default) each source contributes its own top 10 to the first answer. An explicit
 value always wins.
 
+### Record cut (`limits.recordCut`)
+
+Off by default. Without it a search keeps the top N *chunks*, so one long
+document whose dozens of passages all match can fill every slot while a
+document only the keyword leg found falls past the cut. With
+`limits.recordCut.enabled: true`:
+
+- MinSync and the merged search ask for `depth` times the requested count (3x,
+  never past 300 hits), then keep the requested count spread across documents:
+  the best half with at most `max(perRecordFloor, topK / perRecordDivisor)`
+  chunks per document (8 at `topK` 50), then the best chunk of each document not
+  shown yet (`newRecordShare`, default 0.5 of `topK`), then rank order.
+- A chunk a search tool already showed during the same run is listed by id
+  without its text (`already shown earlier in this run`). A new run resends it.
+- Each search tool result is held to `resultChars` (60000). The budget is split
+  max-min fairly across the chunks, so one huge chunk is cut with a note instead
+  of starving the rest; chunks whose share would fall under `minReadChars`
+  (2000) are listed as `not read` with their ids.
+
+| Field | Default | Controls |
+|---|---|---|
+| `enabled` | false | Turns the record cut on |
+| `depth` | 3 | Fusion depth, 1-10 |
+| `newRecordShare` | 0.5 | Share of `topK` reserved for documents not shown yet, 0-1 |
+| `perRecordFloor` | 4 | Fewest chunks one document may keep in the head, 1-300 |
+| `perRecordDivisor` | 6 | One document keeps at most `topK / perRecordDivisor` in the head, 1-300 |
+| `resultChars` | 60000 | Characters one search tool result may hold |
+| `minReadChars` | 2000 | Smallest share worth reading |
+
+```json
+{ "limits": { "recordCut": { "enabled": true } } }
+```
+
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,
 `maxItemsPerFeed`, and `maxContentChars` (RSS). `maxContentChars` defaults to
