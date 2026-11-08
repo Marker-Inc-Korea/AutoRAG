@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	checkIndexSchedule,
 	detectPowerSource,
 	evaluateIndexSchedule,
 	parsePowerSourceOutput,
@@ -148,5 +149,48 @@ describe("detectPowerSource", () => {
 		files["/sys/class/power_supply/AC/online"] = "1\n";
 		expect(await detectPowerSource({ platform: "linux", read, list })).toBe("ac");
 		expect(await detectPowerSource({ platform: "linux", read, list: async () => [] })).toBe("unknown");
+	});
+});
+
+describe("checkIndexSchedule", () => {
+	const wed = (hh: number): Date => new Date(2026, 10, 11, hh, 0, 0);
+
+	it("allows when the raw config has no schedule", async () => {
+		expect(await checkIndexSchedule({}, { now: wed(3), detect: async () => "battery" })).toEqual({ allowed: true });
+		expect(await checkIndexSchedule({ refresh: {} }, { now: wed(3), detect: async () => "battery" })).toEqual({
+			allowed: true,
+		});
+	});
+
+	it("reads refresh.schedule from a raw config object and probes power only for ac", async () => {
+		let probes = 0;
+		const detect = async () => {
+			probes += 1;
+			return "battery" as const;
+		};
+		const raw = { refresh: { schedule: { power: "ac" } } };
+		expect(await checkIndexSchedule(raw, { now: wed(12), detect })).toMatchObject({
+			allowed: false,
+			reason: "battery",
+		});
+		expect(probes).toBe(1);
+		await checkIndexSchedule({ refresh: { schedule: { windows: ["09:00-17:00"] } } }, { now: wed(12), detect });
+		expect(probes).toBe(1);
+	});
+
+	it("applies the time window from the raw config", async () => {
+		const raw = { refresh: { schedule: { windows: ["22:00-07:00"] } } };
+		expect(await checkIndexSchedule(raw, { now: wed(12) })).toMatchObject({
+			allowed: false,
+			reason: "outside-window",
+		});
+		expect(await checkIndexSchedule(raw, { now: wed(23) })).toEqual({ allowed: true });
+	});
+
+	it("fails open on a malformed schedule so a bad edit cannot stop indexing", async () => {
+		expect(await checkIndexSchedule({ refresh: { schedule: { power: "solar" } } }, { now: wed(3) })).toEqual({
+			allowed: true,
+		});
+		expect(await checkIndexSchedule({ refresh: { schedule: "nope" } }, { now: wed(3) })).toEqual({ allowed: true });
 	});
 });

@@ -201,3 +201,33 @@ export async function detectPowerSource(deps: PowerProbeDeps = {}): Promise<Powe
 		return "unknown";
 	}
 }
+
+export interface CheckIndexScheduleOptions {
+	readonly now?: Date;
+	/** Replaces the platform power probe (tests). */
+	readonly detect?: () => Promise<PowerSource>;
+}
+
+/**
+ * Decide from a raw config object (`refresh.schedule`) whether a background refresh may run now. For hosts
+ * that run their own scheduler, such as the desktop app's OS job. Probes the power source only when the policy
+ * asks for AC. A malformed schedule fails open: a bad edit must not silently stop indexing, and the config
+ * loader already rejects it loudly where the user can see it.
+ */
+export async function checkIndexSchedule(
+	rawConfig: Record<string, unknown>,
+	options: CheckIndexScheduleOptions = {},
+): Promise<ScheduleDecision> {
+	const refresh = rawConfig.refresh;
+	if (typeof refresh !== "object" || refresh === null || Array.isArray(refresh)) return { allowed: true };
+	const rawSchedule = (refresh as Record<string, unknown>).schedule;
+	if (rawSchedule === undefined) return { allowed: true };
+	let schedule: IndexSchedule;
+	try {
+		schedule = validateIndexSchedule(rawSchedule);
+	} catch {
+		return { allowed: true };
+	}
+	const source = schedule.power === "ac" ? await (options.detect ?? detectPowerSource)() : "unknown";
+	return evaluateIndexSchedule(schedule, options.now ?? new Date(), source);
+}
