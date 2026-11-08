@@ -150,7 +150,7 @@ Global flags:
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
-  --power <any|ac|battery>  For watch: index only on this power source (overrides refresh.schedule.power)
+  --power <any|ac>     For watch: with ac, index only while plugged in (overrides refresh.schedule.power)
   --window <HH:MM-HH:MM>    For watch: index only inside this local-time window (repeatable)
   --days <csv>         For watch: index only on these weekdays (mon,tue,...)
   --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,everything,fsearch,all

@@ -165,7 +165,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --immediate         Refresh once before reading fs events (default true)",
 		"  --debounce-ms <n>   Debounce window for fs events (default 1500)",
 		"  --force             Re-index even when the mirror looks unchanged",
-		"  --power <p>         any | ac | battery: index only on that power source (pauses on battery with ac)",
+		"  --power <p>         any | ac: with ac, index only while plugged in (pauses on battery)",
 		"  --window <HH:MM-HH:MM>  Index only inside this local-time window; repeatable; 22:00-07:00 wraps midnight",
 		"  --days <csv>        Index only on these weekdays (mon,tue,wed,thu,fri,sat,sun)",
 		"",

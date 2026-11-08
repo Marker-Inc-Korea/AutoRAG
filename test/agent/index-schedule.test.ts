@@ -50,11 +50,8 @@ describe("evaluateIndexSchedule", () => {
 		expect(evaluateIndexSchedule(policy, at(MON, 12), "unknown")).toEqual({ allowed: true });
 	});
 
-	it("power=battery runs only on battery; unknown (desktop) does not count as battery", () => {
-		const policy = { power: "battery" as const };
-		expect(evaluateIndexSchedule(policy, at(MON, 12), "battery")).toEqual({ allowed: true });
-		expect(evaluateIndexSchedule(policy, at(MON, 12), "ac")).toMatchObject({ allowed: false, reason: "ac-power" });
-		expect(evaluateIndexSchedule(policy, at(MON, 12), "unknown")).toMatchObject({ allowed: false });
+	it("power=battery is no longer a valid policy", () => {
+		expect(() => validateIndexSchedule({ power: "battery" })).toThrow(/power/);
 	});
 
 	it("power=any ignores the power source", () => {

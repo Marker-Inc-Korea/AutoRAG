@@ -343,8 +343,8 @@ export interface AutoRAGRefreshLimits {
 	 */
 	readonly cloudEvictRetries?: number;
 	/**
-	 * When background indexing (auto-refresh, fs watch, `autorag watch`) may run: power source
-	 * (`any`/`ac`/`battery`), local-time `windows` (`HH:MM-HH:MM`) and weekdays. Omitted = always.
+	 * When background indexing (auto-refresh, fs watch, `autorag watch`) may run: power (`any`/`ac`),
+	 * local-time `windows` (`HH:MM-HH:MM`) and weekdays. Omitted = always.
 	 * An explicit `refresh()` call is never gated. See {@link IndexSchedule}.
 	 */
 	readonly schedule?: IndexSchedule;
@@ -2227,8 +2227,7 @@ export class AutoRAGAgent {
 	 */
 	async indexScheduleDecision(override?: IndexSchedule, now: Date = new Date()): Promise<ScheduleDecision> {
 		const schedule = override ?? this.refreshLimits.schedule;
-		const source: PowerSource =
-			schedule?.power === "ac" || schedule?.power === "battery" ? await detectPowerSource() : "unknown";
+		const source: PowerSource = schedule?.power === "ac" ? await detectPowerSource() : "unknown";
 		return evaluateIndexSchedule(schedule, now, source);
 	}
 

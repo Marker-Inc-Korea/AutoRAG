@@ -7,8 +7,7 @@
  *  - Pure decision: {@link evaluateIndexSchedule} takes the clock and power
  *    source as arguments, so it is deterministic.
  *  - Fail open on `power: "ac"` when the power source cannot be read (a
- *    desktop or a failed probe must not silently stop indexing). `power:
- *    "battery"` requires a positively detected battery.
+ *    desktop or a failed probe must not silently stop indexing).
  *  - A window is `[start, end)` in local time; `start > end` wraps midnight and
  *    belongs to the day it starts on.
  */
@@ -16,12 +15,12 @@ import { execFile } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
-export type PowerPolicy = "any" | "ac" | "battery";
+export type PowerPolicy = "any" | "ac";
 export type PowerSource = "ac" | "battery" | "unknown";
 export type ScheduleDay = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
 
 export interface IndexSchedule {
-	/** Which power source may index. `any` (default) ignores power; `ac` pauses on battery; `battery` runs only on battery. */
+	/** `any` (default) ignores power; `ac` pauses while on battery and runs only when plugged in. */
 	readonly power?: PowerPolicy;
 	/** Local-time windows `HH:MM-HH:MM`; indexing is allowed inside any of them. Omitted = all day. */
 	readonly windows?: readonly string[];
@@ -29,14 +28,14 @@ export interface IndexSchedule {
 	readonly days?: readonly ScheduleDay[];
 }
 
-export type ScheduleDenyReason = "battery" | "ac-power" | "power-unknown" | "outside-window" | "outside-day";
+export type ScheduleDenyReason = "battery" | "outside-window" | "outside-day";
 
 export type ScheduleDecision =
 	| { readonly allowed: true }
 	| { readonly allowed: false; readonly reason: ScheduleDenyReason };
 
 const DAYS: readonly ScheduleDay[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const POWER_POLICIES: readonly PowerPolicy[] = ["any", "ac", "battery"];
+const POWER_POLICIES: readonly PowerPolicy[] = ["any", "ac"];
 const SCHEDULE_KEYS: Record<string, true> = { power: true, windows: true, days: true };
 const WINDOW_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -98,9 +97,6 @@ export function evaluateIndexSchedule(
 ): ScheduleDecision {
 	if (schedule === undefined) return { allowed: true };
 	if (schedule.power === "ac" && source === "battery") return { allowed: false, reason: "battery" };
-	if (schedule.power === "battery" && source !== "battery") {
-		return { allowed: false, reason: source === "ac" ? "ac-power" : "power-unknown" };
-	}
 
 	const today = DAYS[now.getDay()] as ScheduleDay;
 	const yesterday = DAYS[(now.getDay() + 6) % 7] as ScheduleDay;
