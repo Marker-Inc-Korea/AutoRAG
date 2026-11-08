@@ -203,6 +203,7 @@ import {
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
+import { PipelinedSync } from "./pipelined-sync.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import {
 	type DatasourceCandidate,
@@ -3840,62 +3841,86 @@ export class AutoRAGAgent {
 			inFlight: true,
 			lastStartedAt: startedAt,
 		};
+		// Syncs run alongside parsing, so a refresh that fails must stop the one in flight rather than leave it
+		// running unattended; a caller's abort reaches it the same way.
+		const syncAbort = new AbortController();
+		const forwardAbort = (): void => syncAbort.abort(signal?.reason);
+		signal?.addEventListener("abort", forwardAbort, { once: true });
+		let minSyncPipeline: PipelinedSync | undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			// MinSync indexes the parsed mirrors, so when both run every batch of
-			// sources is parsed, committed, staged and synced before the next one
-			// is read: the first batch is searchable long before the last.
+			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
+			// parsing carries on, and each later sync covers every batch committed meanwhile: the first batch is
+			// searchable long before the last, and a large corpus costs a few syncs instead of one per batch.
 			const batchedMinSync = needsParsed && wants("minsync");
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
 			// Cumulative offsets keep the persisted MinSync counters monotonic
-			// across batches instead of restarting at zero per sync.
+			// across syncs instead of restarting at zero per sync.
 			let minSyncSyncedBase = 0;
 			let minSyncTotalBase = 0;
-			const minSyncBatch = async (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
-				signal?.throwIfAborted();
-				progress = updateRefreshProgress(progress, { phase: "minsync" });
-				writeRefreshProgress(this.workspaceProjectRoot, progress);
-				let batchTotal = minSyncTotalBase;
-				const result = await this.syncMinSync(force && batch.index === 1, signal, (minsyncProgress) => {
-					batchTotal = minSyncTotalBase + minsyncProgress.total;
-					progress = updateRefreshProgress(progress, {
-						minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: batchTotal },
-					});
-					writeRefreshProgress(this.workspaceProjectRoot, progress);
-					emitProgress({
-						phase: "minsync",
-						processed: minSyncSyncedBase + minsyncProgress.processed,
-						total: batchTotal,
-					});
-				});
-				minSyncBatches.push(result);
-				// Every sync indexes the whole staged mirror, so a successful one also
-				// indexes the files of any earlier failed batch: only failures after
-				// the last success are still real. A failed batch's content stays
-				// staged, so a later sync retries it and the loop moves on.
-				if (result.ok) minSyncBatchFailures.length = 0;
-				else if (result.reason !== "lock-held") {
-					for (const virtualPath of batch.virtualPaths) {
-						minSyncBatchFailures.push({
-							code: "minsync-sync-failed",
-							severity: "warning",
-							message: `This file stayed at its previous index entry: its batch could not be indexed and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
-							source: virtualPath,
-						});
-					}
-				}
-				minSyncSyncedBase = batchTotal;
-				minSyncTotalBase = batchTotal;
-				// A held lock means another sync owns the index: stop the loop instead
-				// of failing every remaining batch against the same lock.
-				return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
-			};
+			minSyncPipeline = batchedMinSync
+				? new PipelinedSync({
+						sync: async ({ index, virtualPaths }) => {
+							syncAbort.signal.throwIfAborted();
+							let syncTotal = minSyncTotalBase;
+							const result = await this.syncMinSync(
+								force && index === 1,
+								syncAbort.signal,
+								(minsyncProgress) => {
+									syncTotal = minSyncTotalBase + minsyncProgress.total;
+									progress = updateRefreshProgress(progress, {
+										minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: syncTotal },
+									});
+									writeRefreshProgress(this.workspaceProjectRoot, progress);
+									emitProgress({
+										phase: "minsync",
+										processed: minSyncSyncedBase + minsyncProgress.processed,
+										total: syncTotal,
+									});
+								},
+							);
+							minSyncBatches.push(result);
+							// Every sync indexes the whole staged mirror, so a successful one also
+							// indexes the files of any earlier failed sync: only failures after
+							// the last success are still real. A failed sync's content stays
+							// staged, so a later sync retries it and the pipeline moves on.
+							if (result.ok) minSyncBatchFailures.length = 0;
+							else if (result.reason !== "lock-held") {
+								for (const virtualPath of virtualPaths) {
+									minSyncBatchFailures.push({
+										code: "minsync-sync-failed",
+										severity: "warning",
+										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
+										source: virtualPath,
+									});
+								}
+							}
+							minSyncSyncedBase = syncTotal;
+							minSyncTotalBase = syncTotal;
+							// A held lock means another sync owns the index: stop the pipeline instead
+							// of failing every remaining sync against the same lock.
+							return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+						},
+					})
+				: undefined;
+			const pipeline = minSyncPipeline;
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
-						...(batchedMinSync ? { onBatch: minSyncBatch } : {}),
+						...(pipeline === undefined
+							? {}
+							: {
+									onBatch: (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
+										if (batch.final) {
+											// Parsing is over: what is left is waiting for the last sync.
+											progress = updateRefreshProgress(progress, { phase: "minsync" });
+											writeRefreshProgress(this.workspaceProjectRoot, progress);
+										}
+										return pipeline.batch(batch);
+									},
+								}),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
 								phase: "parsed",
@@ -4068,6 +4093,7 @@ export class AutoRAGAgent {
 				...(fsearch !== undefined ? { fsearch } : {}),
 			};
 		} catch (error) {
+			syncAbort.abort(error);
 			this.refreshState = {
 				...this.refreshState,
 				lastOutcome: "failed",
@@ -4086,6 +4112,8 @@ export class AutoRAGAgent {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			throw error;
 		} finally {
+			signal?.removeEventListener("abort", forwardAbort);
+			await minSyncPipeline?.settle();
 			this.refreshState = {
 				...this.refreshState,
 				inFlight: false,
