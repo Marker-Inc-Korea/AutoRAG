@@ -144,6 +144,12 @@ import {
 } from "./answer-guidelines.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
+import {
+	CALCULATOR_FAST_PHASE_RULE,
+	CALCULATOR_PROMPT_RULE,
+	CALCULATOR_TOOL_NAME,
+	createCalculatorTool,
+} from "./calculator-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
@@ -1285,6 +1291,7 @@ export class AutoRAGAgent {
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
+		const calculatorTool = createCalculatorTool();
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
@@ -1345,6 +1352,7 @@ export class AutoRAGAgent {
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			CONVERT_FILES_TOOL_NAME,
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
+			CALCULATOR_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -1373,6 +1381,7 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
+			calculatorTool,
 			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
@@ -3548,7 +3557,7 @@ export class AutoRAGAgent {
 		return (
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
 			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${this.askUserException()}` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE} ${this.askUserException()}` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
@@ -3657,6 +3666,7 @@ export class AutoRAGAgent {
 			`How to handle it:\n` +
 			`- Answer from your own knowledge when that reliably settles the question: stable general knowledge, a definition, simple reasoning, or small talk.\n` +
 			`- Look it up first when the answer depends on the user's own records (their files, chats, mail, notes, calendar, or history) or on facts that may be recent, specific, or changed${lookupHint}.\n` +
+			`- Any arithmetic, date, time, or time zone question: ${CALCULATOR_PROMPT_RULE}\n` +
 			`- Otherwise carry the task out with the tools.\n\n` +
 			`Rules for your reply:\n` +
 			`- ${ANSWER_LEAD_RULE}\n` +
@@ -3769,7 +3779,7 @@ export class AutoRAGAgent {
 			(jikjiStartingPoints.length === 0
 				? ""
 				: `Jikji's file discovery found these local files for the query. They are unverified candidates, not evidence: start exploring from them.\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`) +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
+			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()} ${CALCULATOR_PROMPT_RULE} Recompute every number or date in the first answer with it when you have not already.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
@@ -3802,6 +3812,7 @@ export class AutoRAGAgent {
 			`- ${ANSWER_RELEVANCE_RULE}\n` +
 			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
 			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
+			`${CALCULATOR_PROMPT_RULE}\n` +
 			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`

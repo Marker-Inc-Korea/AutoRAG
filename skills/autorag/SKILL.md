@@ -73,6 +73,31 @@ from it instead of probing. `"filee": { "enabled": false }` in `config.json` rem
 tools; `filee.timeoutMs` (default 30 minutes) and `filee.dataDir` (Filee's
 own settings and engines, `FILEE_DATA_DIR`) tune them.
 
+### Calculating numbers and dates
+
+The `calculator` Agent tool does every calculation the model would otherwise
+do in its head; the system prompt and each phase prompt (the fast answer
+included) tell the model never to compute these itself. It is read-only,
+in-process, and needs no configuration. Operations:
+
+- `evaluate`: exact decimal arithmetic to 40 significant digits (`0.1 + 0.2`
+  is `0.3`), `+ - * / % ^ !`, percent and percent change, rounding, sums,
+  means, medians, standard deviations, roots, logs, and trig. `exact: false`
+  in the result means a step rounded; `exp`, `ln`, `log`, trig, and fractional
+  powers are accurate to about 15 digits, not 40. A bare `log(x)` is refused as
+  ambiguous; use `ln`, `log10`, or `log(x, base)`.
+- `date_diff`, `date_add`, `date_info`: day counts, calendar spans
+  (`10 months, 7 days`), month-end clamping (Jan 31 + 1 month is Feb 28),
+  weekday, ISO week, and leap year. Dates read as `YYYY-MM-DD`, `YYYY/MM/DD`,
+  `YYYYMMDD`, `YYYY년 M월 D일`, ISO datetimes with an offset, epoch seconds,
+  `today`, or `now`.
+- `business_days_between` and `add_business_days`: Monday to Friday minus a
+  `holidays` list. The tool knows no public holidays; pass them in.
+- `now` and `convert_timezone`: the current time and DST-aware zone
+  conversion. An omitted `timeZone` means the host zone and the result says so;
+  a datetime with no offset needs its zone, and ambiguous abbreviations such as
+  PST or IST are refused.
+
 ### Excluding local files from the index
 
 `"excludePaths"` in `config.json` lists files or folders (absolute, or relative

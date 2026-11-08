@@ -1,6 +1,14 @@
 export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
+	CALCULATOR_FAST_PHASE_RULE,
+	CALCULATOR_PROMPT_RULE,
+	CALCULATOR_TOOL_NAME,
+	type CalculatorDetails,
+	type CalculatorToolOptions,
+	createCalculatorTool,
+} from "./calculator-tool.ts";
+export {
 	CONVERT_FILES_TOOL_NAME,
 	type ConvertFilesDetails,
 	createConvertFilesTool,
