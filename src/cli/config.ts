@@ -5,6 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import { type IndexSchedule, validateIndexSchedule } from "../agent/index-schedule.ts";
 import type { JevToolOptions } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
@@ -879,6 +880,7 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	cloudMaxBytes: true,
 	cloudEvictAfterParse: true,
 	cloudEvictRetries: true,
+	schedule: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -925,7 +927,16 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	) {
 		throw new ConfigError("refresh.cloudEvictRetries must be a non-negative integer");
 	}
+	let schedule: IndexSchedule | undefined;
+	if (record.schedule !== undefined) {
+		try {
+			schedule = validateIndexSchedule(record.schedule);
+		} catch (error) {
+			throw new ConfigError((error as Error).message);
+		}
+	}
 	return {
+		...(schedule !== undefined ? { schedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),

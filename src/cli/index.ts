@@ -43,6 +43,9 @@ const VALUE_FLAGS = new Set([
 	"scope",
 	"result",
 	"debounce-ms",
+	"power",
+	"window",
+	"days",
 	"method",
 	"embedder-id",
 	"embedder-base-url",
@@ -147,6 +150,9 @@ Global flags:
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
+  --power <any|ac>     For watch: with ac, index only while plugged in (overrides refresh.schedule.power)
+  --window <HH:MM-HH:MM>    For watch: index only inside this local-time window (repeatable)
+  --days <csv>         For watch: index only on these weekdays (mon,tue,...)
   --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,everything,fsearch,all
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
@@ -188,7 +194,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 		if (value === undefined || (eq === -1 && value.startsWith("--"))) {
 			return { error: `Flag --${key} requires a value` };
 		}
-		if (key === "exclude" || key === "event") {
+		if (key === "exclude" || key === "event" || key === "window") {
 			if (value.trim().length === 0) return { error: `Flag --${key} requires a non-empty value` };
 			repeatedFlags[key] ??= [];
 			repeatedFlags[key].push(value);

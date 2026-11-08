@@ -111,3 +111,19 @@ describe("refresh config normalization", () => {
 		expect(config.refresh).toEqual({ maxDeleteRatio: 0.2 });
 	});
 });
+
+describe("refresh.schedule config", () => {
+	it("round-trips a valid schedule into agent options", () => {
+		const config = resolveFrom({ refresh: { schedule: { power: "ac", windows: ["22:00-07:00"], days: ["Mon"] } } });
+		expect(buildAgentOptions(config).refresh?.schedule).toEqual({
+			power: "ac",
+			windows: ["22:00-07:00"],
+			days: ["mon"],
+		});
+	});
+
+	it("rejects invalid schedule values as ConfigError", () => {
+		expect(() => resolveFrom({ refresh: { schedule: { power: "solar" } } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { schedule: { windows: ["9-5"] } } })).toThrow(/windows/);
+	});
+});

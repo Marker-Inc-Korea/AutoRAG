@@ -165,6 +165,12 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"  --immediate         Refresh once before reading fs events (default true)",
 		"  --debounce-ms <n>   Debounce window for fs events (default 1500)",
 		"  --force             Re-index even when the mirror looks unchanged",
+		"  --power <p>         any | ac: with ac, index only while plugged in (pauses on battery)",
+		"  --window <HH:MM-HH:MM>  Index only inside this local-time window; repeatable; 22:00-07:00 wraps midnight",
+		"  --days <csv>        Index only on these weekdays (mon,tue,wed,thu,fri,sat,sun)",
+		"",
+		"Defaults come from config `refresh.schedule` ({ power, windows, days }); flags override it.",
+		"A skipped --once tick exits 0 with skipped=true. Explicit `autorag refresh` is never gated.",
 	]),
 	health: usage([
 		"autorag health - check the curation model's auth and completion access",

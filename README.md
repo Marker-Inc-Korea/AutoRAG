@@ -286,6 +286,20 @@ autorag refresh
 autorag status
 ```
 
+### Indexing only when you want it (power and time schedule)
+
+Background indexing (`autorag watch`, auto-refresh, the fs watcher) can be limited by power source and local time. An explicit `autorag refresh` is never gated.
+
+```jsonc
+// ~/.autorag/config.json
+{ "refresh": { "schedule": { "power": "ac", "windows": ["22:00-07:00"], "days": ["mon","tue","wed","thu","fri"] } } }
+```
+
+- `power`: `any` (default) or `ac` (index only while plugged in; pauses on battery). An unknown power source (desktop, probe failure) counts as plugged in.
+- `windows`: local `HH:MM-HH:MM`, start inclusive, end exclusive; `22:00-07:00` wraps midnight and belongs to the day it starts on.
+- `days`: `sun`..`sat`. Omit for every day.
+- `autorag watch --power ac --window 22:00-07:00 --days mon,tue` overrides the config. `--once` while closed prints `skipped` and exits 0; a long-running watcher defers changes and indexes once the schedule opens.
+
 ### Excluding files and folders
 
 Leave generated workspaces or archives out when initializing:
