@@ -129,34 +129,192 @@ describe("buildLtrDataset", () => {
 		expect(dataset.valid.groups.reduce((sum, size) => sum + size, 0)).toBe(dataset.valid.rows.length);
 	});
 
-	it("builds per-channel rank and score features from the raw observations, missing when a channel never found the chunk", () => {
-		const both = candidate("both", {
+	it("separates per-datasource score scales via categorical origin_id/method_id + primary_* while keeping local dense/sparse intersection", () => {
+		const localBoth = candidate("local-both", {
+			origin: "local files",
 			labels: labels({ citedFinal: true, modelCited: true }),
 			observations: [
-				{ stage: "prefetch", surface: "minsync", method: "minsync", query: "q", rank: 3, score: 0.4 },
-				{ stage: "prefetch", surface: "minsync", method: "minsync", query: "q2", rank: 1, score: 0.7 },
-				{ stage: "prefetch", surface: "datasource:slack", method: "slack.keyword", query: "q", rank: 2, score: 5 },
+				{ stage: "prefetch", surface: "minsync", method: "minsync", query: "q", rank: 2, score: 0.62 },
+				{ stage: "prefetch", surface: "minsync", method: "minsync-sparse", query: "q", rank: 1, score: 8.4 },
 			],
-			rerank: { rank: 1, score: 0.9 },
+			rerank: { rank: 1, score: 0.91 },
 		});
-		const denseOnly = candidate("dense", {
-			observations: [{ stage: "prefetch", surface: "minsync", method: "minsync", query: "q", rank: 1, score: 0.8 }],
+		const slackTop = candidate("slack-1", {
+			source: "/slack/default/m1",
+			origin: "slack",
+			observations: [
+				{ stage: "prefetch", surface: "datasource:slack", method: "slack.keyword", query: "q", rank: 1, score: 12 },
+			],
 		});
-		const dataset = buildLtrDataset([run("a", 1, [both, denseOnly])], { validFraction: 0 });
+		const slackLow = candidate("slack-2", {
+			source: "/slack/default/m2",
+			origin: "slack",
+			observations: [
+				{ stage: "prefetch", surface: "datasource:slack", method: "slack.keyword", query: "q", rank: 2, score: 4 },
+			],
+		});
+		const kakaoTop = candidate("kakao-1", {
+			source: "/kakao/personal/c1",
+			origin: "kakao",
+			observations: [
+				{ stage: "prefetch", surface: "datasource:kakao", method: "kakao.bm25", query: "q", rank: 1, score: 0.95 },
+			],
+		});
+		const dataset = buildLtrDataset([run("a", 1, [localBoth, slackTop, slackLow, kakaoTop])], { validFraction: 0 });
 
-		expect(feature(dataset, "train", 0, "dense_best_rank")).toBe(1);
-		expect(feature(dataset, "train", 0, "dense_max_score")).toBe(0.7);
-		expect(feature(dataset, "train", 0, "dense_reciprocal_rank_sum")).toBeCloseTo(1 + 1 / 3);
-		expect(feature(dataset, "train", 0, "dense_hits")).toBe(2);
-		expect(feature(dataset, "train", 0, "datasource_best_rank")).toBe(2);
+		expect(dataset.manifest.categoricalFeatures).toEqual({
+			names: ["origin_id", "method_id"],
+			indices: [0, 1],
+		});
+		expect(dataset.manifest.vocabularies).toEqual({
+			origin: { kakao: 0, "local files": 1, slack: 2 },
+			method: { "kakao.bm25": 0, minsync: 1, "minsync-sparse": 2, "slack.keyword": 3 },
+		});
+
+		// Slack and Kakao get distinct categorical origin/method ids and keep their own raw + within-list normalized scores.
+		expect(feature(dataset, "train", 1, "origin_id")).toBe(2);
+		expect(feature(dataset, "train", 1, "method_id")).toBe(3);
+		expect(feature(dataset, "train", 1, "primary_rank")).toBe(1);
+		expect(feature(dataset, "train", 1, "primary_raw_score")).toBe(12);
+		expect(feature(dataset, "train", 1, "primary_norm_score")).toBe(1);
+
+		expect(feature(dataset, "train", 2, "origin_id")).toBe(2);
+		expect(feature(dataset, "train", 2, "primary_raw_score")).toBe(4);
+		expect(feature(dataset, "train", 2, "primary_norm_score")).toBe(0);
+
+		expect(feature(dataset, "train", 3, "origin_id")).toBe(0);
+		expect(feature(dataset, "train", 3, "method_id")).toBe(0);
+		expect(feature(dataset, "train", 3, "primary_raw_score")).toBe(0.95);
+		expect(feature(dataset, "train", 3, "primary_norm_score")).toBe(1);
+
+		// Local multi-modal chunk keeps both dense and sparse intersections alongside its best primary hit.
+		expect(feature(dataset, "train", 0, "origin_id")).toBe(1);
+		expect(feature(dataset, "train", 0, "method_id")).toBe(2);
+		expect(feature(dataset, "train", 0, "primary_rank")).toBe(1);
+		expect(feature(dataset, "train", 0, "primary_raw_score")).toBe(8.4);
+		expect(feature(dataset, "train", 0, "dense_best_rank")).toBe(2);
+		expect(feature(dataset, "train", 0, "dense_max_score")).toBe(0.62);
+		expect(feature(dataset, "train", 0, "sparse_best_rank")).toBe(1);
+		expect(feature(dataset, "train", 0, "sparse_max_score")).toBe(8.4);
 		expect(feature(dataset, "train", 0, "channel_count")).toBe(2);
-		expect(feature(dataset, "train", 0, "query_hit_count")).toBe(2);
 		expect(feature(dataset, "train", 0, "rerank_rank")).toBe(1);
-		expect(feature(dataset, "train", 0, "rerank_score")).toBe(0.9);
-		expect(feature(dataset, "train", 1, "datasource_best_rank")).toBeNaN();
-		expect(feature(dataset, "train", 1, "datasource_hits")).toBe(0);
-		expect(feature(dataset, "train", 1, "rerank_score")).toBeNaN();
+		expect(feature(dataset, "train", 0, "rerank_score")).toBe(0.91);
+
+		// Non-local candidates leave local channel ranks missing (NaN), not zero.
+		expect(feature(dataset, "train", 1, "dense_best_rank")).toBeNaN();
 		expect(feature(dataset, "train", 1, "sparse_best_rank")).toBeNaN();
+		expect(feature(dataset, "train", 1, "rerank_score")).toBeNaN();
+	});
+
+	it("fits categorical vocabularies on train only so a brand-new datasource in validation degrades cleanly to NaN + coarse fallback", () => {
+		const trainRun = run("t1", 10, [
+			candidate("loc", {
+				origin: "local files",
+				labels: labels({ citedFinal: true, modelCited: true }),
+				observations: [
+					{ stage: "prefetch", surface: "minsync", method: "minsync", query: "q", rank: 1, score: 0.8 },
+				],
+			}),
+			candidate("slk", {
+				source: "/slack/default/1",
+				origin: "slack",
+				observations: [
+					{
+						stage: "prefetch",
+						surface: "datasource:slack",
+						method: "slack.keyword",
+						query: "q",
+						rank: 1,
+						score: 5,
+					},
+				],
+			}),
+		]);
+		const validRun = run("v1", 20, [
+			candidate("ntn", {
+				source: "/notion/workspace/p1",
+				origin: "notion",
+				labels: labels({ citedFinal: true, modelCited: true }),
+				observations: [
+					{
+						stage: "prefetch",
+						surface: "datasource:notion",
+						method: "notion.search",
+						query: "q",
+						rank: 1,
+						score: 0.9,
+					},
+				],
+			}),
+			candidate("slk2", {
+				source: "/slack/default/2",
+				origin: "slack",
+				observations: [
+					{
+						stage: "prefetch",
+						surface: "datasource:slack",
+						method: "slack.keyword",
+						query: "q",
+						rank: 2,
+						score: 2,
+					},
+				],
+			}),
+		]);
+		const dataset = buildLtrDataset([trainRun, validRun], { validFraction: 0.5 });
+
+		expect(dataset.manifest.vocabularies.origin).toEqual({ "local files": 0, slack: 1 });
+		expect(dataset.manifest.vocabularies.method).toEqual({ minsync: 0, "slack.keyword": 1 });
+		// Unseen 'notion' datasource gets NaN categorical ids + NaN prior win rate, while coarse origin_datasource=1 works immediately.
+		expect(feature(dataset, "valid", 0, "origin_id")).toBeNaN();
+		expect(feature(dataset, "valid", 0, "method_id")).toBeNaN();
+		expect(feature(dataset, "valid", 0, "origin_prior_win_rate")).toBeNaN();
+		expect(feature(dataset, "valid", 0, "origin_prior_candidates")).toBe(0);
+		expect(feature(dataset, "valid", 0, "origin_datasource")).toBe(1);
+		expect(feature(dataset, "valid", 0, "primary_rank")).toBe(1);
+		// Known 'slack' in validation still resolves to its train vocabulary code.
+		expect(feature(dataset, "valid", 1, "origin_id")).toBe(1);
+		expect(feature(dataset, "valid", 1, "method_id")).toBe(1);
+	});
+
+	it("computes point-in-time origin_prior_win_rate across strictly finished earlier runs without leaking in-flight or future runs", () => {
+		const r1: RankingRunRecord = {
+			...run("r1", 10, [
+				candidate("s1", { origin: "slack", labels: labels({ citedFinal: true, modelCited: true }) }),
+				candidate("s2", { origin: "slack" }),
+			]),
+			finishedAt: 15,
+		};
+		// All-zero noise run: skipped as a LambdaRank group, yet its 2 uncited Slack candidates still count in Slack's prior!
+		const r2Noise: RankingRunRecord = {
+			...run("r2", 20, [candidate("s3", { origin: "slack" }), candidate("s4", { origin: "slack" })]),
+			finishedAt: 25,
+		};
+		// Overlapping run that started before r3 (at 22) but finished AFTER r3 started (at 50): must NOT leak into r3!
+		const rOverlap: RankingRunRecord = {
+			...run("r-overlap", 22, [
+				candidate("s5", { origin: "slack", labels: labels({ citedFinal: true, modelCited: true }) }),
+				candidate("l1", { origin: "local files" }),
+			]),
+			finishedAt: 50,
+		};
+		const r3: RankingRunRecord = {
+			...run("r3", 30, [
+				candidate("s6", { origin: "slack", labels: labels({ citedFinal: true, modelCited: true }) }),
+				candidate("l2", { origin: "local files" }),
+			]),
+			finishedAt: 35,
+		};
+		const dataset = buildLtrDataset([r1, r2Noise, rOverlap, r3], { validFraction: 0 });
+
+		// Group 0 is r1 (startedAt 10): no prior finished runs -> win_rate NaN, 0 prior candidates.
+		expect(feature(dataset, "train", 0, "origin_prior_win_rate")).toBeNaN();
+		expect(feature(dataset, "train", 0, "origin_prior_candidates")).toBe(0);
+
+		// Group 2 is r3 (startedAt 30, rows 4..5): sees r1 (1/2) + r2Noise (0/2) = 1/4 = 0.25, excludes rOverlap (finishedAt 50 > 30).
+		const r3SlackRow = dataset.train.rows.findIndex((row) => row.chunkId === "s6");
+		expect(feature(dataset, "train", r3SlackRow, "origin_prior_candidates")).toBe(4);
+		expect(feature(dataset, "train", r3SlackRow, "origin_prior_win_rate")).toBeCloseTo(0.25);
 	});
 
 	it("never turns how the model was shown a chunk into a feature: exposure goes to the position column", () => {

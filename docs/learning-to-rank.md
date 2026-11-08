@@ -71,8 +71,8 @@ Reads the log (never creates it) and writes LightGBM text files:
 | `train.tsv`, `valid.tsv` | Header row, `label` first, then the features in `manifest.featureNames` order; `nan` = missing |
 | `*.tsv.query` | Rows per query group, in row order; LightGBM loads it automatically beside the data file |
 | `*.tsv.position` | Best position the model was shown each row at (0 = never shown), for LightGBM's position-bias correction |
-| `*.rows.jsonl` | `runId`, `chunkId`, `source`, `label`, `position` per row, for error analysis |
-| `manifest.json` | Schema version, feature names, label meanings, group/row/label counts, skipped groups, suggested LightGBM params |
+| `*.rows.jsonl` | `runId`, `chunkId`, `source`, `origin`, `label`, `position` per row, for error analysis |
+| `manifest.json` | Schema version, feature names, `categoricalFeatures` (`origin_id`, `method_id`), train-fit `vocabularies`, label meanings, group/row/label counts, skipped groups, suggested LightGBM params |
 
 Design decisions:
 
@@ -82,6 +82,16 @@ Design decisions:
 - **Exposure is not a feature.** A chunk the model never saw cannot be cited, so "was it shown" would let the model
   learn the old ranker back. It goes to `.position` instead, which LightGBM's unbiased LambdaRank
   (`lambdarank_position_bias_regularization`) uses to separate position bias from relevance.
+- **Hybrid channel representation (per-datasource calibration without schema churn).** External datasources never share
+  chunks with each other and report incompatible score scales (BM25 magnitudes, cosine similarities, rank scores).
+  Instead of either collapsing every datasource into one lossy bucket or adding wide columns per datasource, each row
+  carries `origin_id` and `method_id` (LightGBM `categorical_feature`, vocabularies fit on `train` only in
+  `manifest.vocabularies`) paired with `primary_rank`, `primary_raw_score`, and within-method `primary_norm_score`
+  (0..1). Depth-2 tree splits learn datasource-specific score thresholds, while a newly connected datasource arrives as
+  `nan` in `origin_id` and falls back cleanly to `origin_datasource`, `primary_norm_score`, and causal point-in-time
+  `origin_prior_win_rate` / `origin_prior_candidates` (computed strictly over earlier finished runs) without breaking
+  the column schema. Local files retain dedicated `dense_*`, `sparse_*`, and `hybrid_*` columns because dense vectors
+  and SPLADE index the same chunks and can intersect on one candidate.
 - **Missing is not zero.** A channel that did not find a chunk leaves its best rank and max score missing: rank 0
   would read as better than first. Hit counts and reciprocal-rank sums are genuinely 0.
 - **Groups that teach nothing are dropped.** A run with one candidate, or with every candidate on the same label
@@ -94,9 +104,11 @@ Design decisions:
 Train with LightGBM directly, for example:
 
 ```python
-import lightgbm as lgb
-train = lgb.Dataset("ltr/train.tsv", params={"header": True, "label_column": 0})
-valid = lgb.Dataset("ltr/valid.tsv", params={"header": True, "label_column": 0}, reference=train)
+import json, lightgbm as lgb
+manifest = json.load(open("ltr/manifest.json"))
+cats = manifest["categoricalFeatures"]["indices"]
+train = lgb.Dataset("ltr/train.tsv", params={"header": True, "label_column": 0}, categorical_feature=cats)
+valid = lgb.Dataset("ltr/valid.tsv", params={"header": True, "label_column": 0}, reference=train, categorical_feature=cats)
 model = lgb.train({"objective": "lambdarank", "metric": "ndcg", "eval_at": [1, 3, 5, 10]}, train, valid_sets=[valid])
 ```
 

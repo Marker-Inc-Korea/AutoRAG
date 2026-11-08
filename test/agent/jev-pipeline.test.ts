@@ -31,7 +31,7 @@ import type { SearchProgressTracker } from "../../src/agent/search-progress.ts";
 import type { WebSearchToolOptions } from "../../src/agent/web-search-tool.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
-import { buildLtrDataset } from "../../src/memory/ltr-export.ts";
+import { buildLtrDataset, LTR_FEATURE_NAMES } from "../../src/memory/ltr-export.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 import { RankingLogStore, type RankingRunRecord, rankingLogPath } from "../../src/memory/ranking-log.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
@@ -1638,10 +1638,13 @@ describe("Jev query pipeline before the fast answer", () => {
 				});
 
 				const dataset = buildLtrDataset(loggedRuns(), { validFraction: 0 });
-				const labelOf = (source: string): number | undefined =>
-					dataset.train.rows.find((row) => row.source === source)?.label;
+				expect(dataset.manifest.vocabularies.origin).toEqual({ "local files": 0, slack: 1 });
+				const rowBySource = new Map(dataset.train.rows.map((row) => [row.source, row]));
 				expect(dataset.train.groups).toEqual([3]);
-				expect([labelOf(budget), labelOf(office)]).toEqual([3, 0]);
+				expect([rowBySource.get(budget)?.label, rowBySource.get(office)?.label]).toEqual([3, 0]);
+				expect(rowBySource.get(budget)?.features[LTR_FEATURE_NAMES.indexOf("origin_id")]).toBe(1);
+				expect(rowBySource.get(budget)?.features[LTR_FEATURE_NAMES.indexOf("primary_norm_score")]).toBe(1);
+				expect(rowBySource.get(office)?.features[LTR_FEATURE_NAMES.indexOf("primary_norm_score")]).toBe(0);
 			} finally {
 				rerankServer.close();
 			}

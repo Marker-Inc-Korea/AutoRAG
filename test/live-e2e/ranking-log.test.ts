@@ -162,10 +162,11 @@ describe.skipIf(!LIVE)("learning-to-rank log, live stack", () => {
 					"import json, sys, lightgbm as lgb",
 					"d = sys.argv[1]",
 					"m = json.load(open(f'{d}/manifest.json'))",
-					"ds = lgb.Dataset(f'{d}/train.tsv', params={'header': True, 'label_column': 0})",
-					"booster = lgb.train({'objective': 'lambdarank', 'metric': 'ndcg', 'eval_at': [1, 3], 'min_data_in_leaf': 1, 'min_data_in_bin': 1, 'verbose': -1}, ds, num_boost_round=5)",
+					"cat_idx = m['categoricalFeatures']['indices']",
+					"ds = lgb.Dataset(f'{d}/train.tsv', params={'header': True, 'label_column': 0}, categorical_feature=cat_idx)",
+					"booster = lgb.train({'objective': 'lambdarank', 'metric': 'ndcg', 'eval_at': [1, 3], 'min_data_in_leaf': 1, 'min_data_in_bin': 1, 'min_data_per_group': 1, 'cat_smooth': 1.0, 'verbose': -1}, ds, num_boost_round=5)",
 					"assert booster.num_feature() == len(m['featureNames']), (booster.num_feature(), len(m['featureNames']))",
-					"print(json.dumps({'features': booster.num_feature(), 'trees': booster.num_trees(), 'groups': len(ds.get_group())}))",
+					"print(json.dumps({'features': booster.num_feature(), 'trees': booster.num_trees(), 'groups': len(ds.get_group()), 'categorical': cat_idx}))",
 				].join("\n"),
 				output,
 			],
@@ -173,8 +174,10 @@ describe.skipIf(!LIVE)("learning-to-rank log, live stack", () => {
 		);
 		console.log(`lightgbm: ${train.stdout}${train.stderr}`);
 		expect(train.status, train.stderr).toBe(0);
+		expect(train.stderr).not.toContain("UserWarning");
 		const trained = JSON.parse(train.stdout.trim().split("\n").at(-1) ?? "{}");
 		expect(trained.features).toBe(LTR_FEATURE_NAMES.length);
+		expect(trained.categorical).toEqual([0, 1]);
 		expect(trained.groups).toBe(dataset.train.groups.length);
 		expect(existsSync(join(output, "train.tsv.position"))).toBe(true);
 	}, 900_000);
