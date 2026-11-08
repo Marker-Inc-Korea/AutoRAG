@@ -182,6 +182,14 @@ import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import {
+	detectPowerSource,
+	evaluateIndexSchedule,
+	type IndexSchedule,
+	type PowerSource,
+	type ScheduleDecision,
+	validateIndexSchedule,
+} from "./index-schedule.ts";
 import { intentOfMessage } from "./intent-tracing.ts";
 import { createJevExtension, JEV_TOOL_NAME, type JevJudge, type JevToolOptions } from "./jev-extension.ts";
 import {
@@ -334,6 +342,12 @@ export interface AutoRAGRefreshLimits {
 	 * disk and `cloud-evict-failed` is reported. `0` tries once. Default 3.
 	 */
 	readonly cloudEvictRetries?: number;
+	/**
+	 * When background indexing (auto-refresh, fs watch, `autorag watch`) may run: power source
+	 * (`any`/`ac`/`battery`), local-time `windows` (`HH:MM-HH:MM`) and weekdays. Omitted = always.
+	 * An explicit `refresh()` call is never gated. See {@link IndexSchedule}.
+	 */
+	readonly schedule?: IndexSchedule;
 }
 
 /**
@@ -445,6 +459,7 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 		cloudMaxBytes,
 		cloudEvictAfterParse,
 		cloudEvictRetries,
+		schedule,
 	} = limits;
 	if (
 		maxDeleteRatio !== undefined &&
@@ -467,7 +482,9 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	if (cloudEvictRetries !== undefined && (!Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)) {
 		throw new Error("refresh.cloudEvictRetries must be a non-negative integer");
 	}
+	const validatedSchedule = schedule === undefined ? undefined : validateIndexSchedule(schedule);
 	return {
+		...(validatedSchedule !== undefined ? { schedule: validatedSchedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
@@ -649,6 +666,10 @@ export interface AutoRAGWatchRefreshOptions {
 	readonly debounceMs?: number;
 	readonly force?: boolean;
 	readonly maxWatchers?: number;
+	/** Replaces the configured `refresh.schedule` for this watcher. */
+	readonly schedule?: IndexSchedule;
+	/** How often a watcher with a closed schedule re-checks it (default 60000). */
+	readonly scheduleRecheckMs?: number;
 	/** Injectable watcher factory (defaults to a recursive fs.watch). Primarily for tests. */
 	readonly watcherFactory?: WatcherFactory;
 }
@@ -2200,10 +2221,22 @@ export class AutoRAGAgent {
 		this.autoRefreshTimer = undefined;
 	}
 
+	/**
+	 * Whether the configured index schedule lets a background refresh run now. `override` replaces the
+	 * configured schedule (CLI flags). Probes the power source only when the policy depends on it.
+	 */
+	async indexScheduleDecision(override?: IndexSchedule, now: Date = new Date()): Promise<ScheduleDecision> {
+		const schedule = override ?? this.refreshLimits.schedule;
+		const source: PowerSource =
+			schedule?.power === "ac" || schedule?.power === "battery" ? await detectPowerSource() : "unknown";
+		return evaluateIndexSchedule(schedule, now, source);
+	}
+
 	private async runAutoRefreshTick(): Promise<void> {
 		if (this.refreshing) return;
 		this.refreshing = true;
 		try {
+			if (!(await this.indexScheduleDecision()).allowed) return;
 			await this.refresh(false);
 		} catch {
 			// Background auto-refresh is best-effort; keep the interval alive.
@@ -4282,18 +4315,46 @@ export class AutoRAGAgent {
 		this.refreshState = { ...this.refreshState, watchLimited: false, watchFailed: false };
 		const dirs = this.searchPaths.map((searchPath) => resolve(searchPath));
 		const watcherFactory = options.watcherFactory ?? this.defaultWatcherFactory();
-		return createWatchRefresh({
+		const recheckMs = options.scheduleRecheckMs ?? 60_000;
+		let stopped = false;
+		let recheckTimer: ReturnType<typeof setInterval> | undefined;
+		// Changes seen while the schedule is closed are not lost: one deferred refresh runs when it opens.
+		const runWhenAllowed = async (): Promise<void> => {
+			if (stopped) return;
+			if (!(await this.indexScheduleDecision(options.schedule)).allowed) {
+				if (recheckTimer === undefined) {
+					recheckTimer = setInterval(() => {
+						void runWhenAllowed().catch(() => {});
+					}, recheckMs);
+					recheckTimer.unref();
+				}
+				return;
+			}
+			if (recheckTimer !== undefined) {
+				clearInterval(recheckTimer);
+				recheckTimer = undefined;
+			}
+			await this.refresh(options.force ?? false);
+		};
+		const handle = createWatchRefresh({
 			dirs,
 			debounceMs: options.debounceMs ?? 200,
 			maxWatchers: options.maxWatchers ?? 64,
 			watcherFactory,
-			runRefresh: async () => {
-				await this.refresh(options.force ?? false);
-			},
+			runRefresh: runWhenAllowed,
 			onLimit: () => {
 				this.refreshState = { ...this.refreshState, watchLimited: true };
 			},
 		});
+		return {
+			trigger: () => handle.trigger(),
+			stop(): void {
+				stopped = true;
+				if (recheckTimer !== undefined) clearInterval(recheckTimer);
+				recheckTimer = undefined;
+				handle.stop();
+			},
+		};
 	}
 
 	private defaultWatcherFactory(): WatcherFactory {
