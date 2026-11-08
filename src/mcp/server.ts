@@ -8,8 +8,7 @@ import { evidenceFor } from "../cli/commands/evidence.ts";
 import { validateReport } from "../cli/commands/report.ts";
 import type { AutoRAGLite } from "../core.ts";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
-import { type DupeyScanResult, listCloudRoots, planDupeyScans, scanWithDupey } from "../dupey/index.ts";
-import { type CloudFileProbe, defaultCloudProbe } from "../filesystem/cloud-placeholder.ts";
+import { type DupeyScanResult, scanWithDupey } from "../dupey/index.ts";
 import {
 	filterFileNameSearchMatches,
 	resolveConfiguredFileSearchRoot,
@@ -95,8 +94,6 @@ export interface AutoRAGMcpServerOptions {
 	readonly tools?: readonly string[];
 	/** Test/embedded override; defaults to the current Node platform. */
 	readonly platform?: NodeJS.Platform;
-	/** Test/embedded override for the cloud probe `autorag.duplicates` uses; defaults to this platform's probe. */
-	readonly cloudProbe?: CloudFileProbe;
 }
 
 function jsonResult<T extends object>(value: T, isError = false) {
@@ -440,19 +437,10 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 									...(configuredDupey.run !== undefined ? { run: configuredDupey.run } : {}),
 								};
 					const roots = lite.config.searchPaths.map((path: string) => resolve(path));
-					const plan = planDupeyScans(
-						roots,
-						await listCloudRoots(options.cloudProbe ?? defaultCloudProbe(), roots),
-					);
-					const scans = await Promise.all(
-						plan.targets.map(({ path, excludeDirs }) =>
-							scanWithDupey(path, { ...dupeyOptions, ...(excludeDirs.length === 0 ? {} : { excludeDirs }) }),
-						),
-					);
+					const scans = await Promise.all(roots.map((root: string) => scanWithDupey(root, dupeyOptions)));
 					return jsonResult({
 						ok: true,
 						roots,
-						skippedRoots: plan.skipped,
 						exactGroups: scans.flatMap(exactGroupsFromScan),
 						families: scans.flatMap((scan) => scan.families),
 						extractionErrors: scans.flatMap((scan) => scan.errors),

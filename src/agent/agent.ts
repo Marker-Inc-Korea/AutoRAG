@@ -22,7 +22,6 @@ import {
 	DupeyCliError,
 	type DupeyCliOptions,
 	type DupeyScanResult,
-	planDupeyScans,
 	scanWithDupey,
 	selectExactDuplicateExclusions,
 } from "../dupey/index.ts";
@@ -212,6 +211,7 @@ import {
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
+import { PipelinedSync } from "./pipelined-sync.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import {
 	type DatasourceCandidate,
@@ -327,12 +327,12 @@ export interface AutoRAGRefreshLimits {
 	/** Retries for a transient per-file I/O error (EMFILE/EBUSY/EIO/ETIMEDOUT) before the file is skipped. Default 3. */
 	readonly transientRetries?: number;
 	/**
-	 * Most cloud-file placeholders (files whose data is not on disk) one refresh may download.
-	 * Reading a placeholder downloads it, so this bounds disk and network use per refresh; the rest wait
-	 * for the next one. Default 200.
+	 * Most cloud-file placeholders (files whose data is not on disk) one refresh batch may download.
+	 * Reading a placeholder downloads it; the next one over the budget starts a new batch, so every
+	 * placeholder is still read in the same refresh. Default 200.
 	 */
 	readonly cloudMaxFiles?: number;
-	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default 536870912 (512 MiB). */
+	/** Most placeholder bytes one refresh batch may download; a batch's first file is always allowed. Default 536870912 (512 MiB). */
 	readonly cloudMaxBytes?: number;
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
@@ -1449,11 +1449,23 @@ export class AutoRAGAgent {
 
 	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {
 		if (this.dupeyOptions === false) {
-			return { scans: [], skippedRoots: [], familyCount: 0, exactDuplicateCount: 0 };
+			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
 		}
-		const { targets, skipped } = planDupeyScans(this.searchPaths, await this.cloudRoots());
+		// A search root inside a cloud or network folder is skipped whole and a cloud or network folder nested
+		// under a root is excluded by name: `dupey scan` opens file contents, which would re-download a released
+		// placeholder and re-read a network file over the wire.
+		const cloudRoots = await this.cloudRoots();
+		const scanRoots: { readonly path: string; readonly excludeDirs: string[] }[] = [];
+		for (const searchPath of this.searchPaths) {
+			const scope = cloudScope(searchPath, cloudRoots);
+			if (scope.insideCloudRoot) continue;
+			scanRoots.push({
+				path: searchPath,
+				excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)),
+			});
+		}
 		const scans = await Promise.all(
-			targets.map(({ path, excludeDirs }) =>
+			scanRoots.map(({ path, excludeDirs }) =>
 				scanWithDupey(path, {
 					...(this.dupeyOptions || {}),
 					...(excludeDirs.length === 0 ? {} : { excludeDirs }),
@@ -1469,7 +1481,7 @@ export class AutoRAGAgent {
 			}
 			return count + [...hashes.values()].reduce((sum, size) => sum + Math.max(0, size - 1), 0);
 		}, 0);
-		return { scans, skippedRoots: skipped, familyCount, exactDuplicateCount };
+		return { scans, familyCount, exactDuplicateCount };
 	}
 
 	/**
@@ -3861,62 +3873,86 @@ export class AutoRAGAgent {
 			inFlight: true,
 			lastStartedAt: startedAt,
 		};
+		// Syncs run alongside parsing, so a refresh that fails must stop the one in flight rather than leave it
+		// running unattended; a caller's abort reaches it the same way.
+		const syncAbort = new AbortController();
+		const forwardAbort = (): void => syncAbort.abort(signal?.reason);
+		signal?.addEventListener("abort", forwardAbort, { once: true });
+		let minSyncPipeline: PipelinedSync | undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			// MinSync indexes the parsed mirrors, so when both run every batch of
-			// sources is parsed, committed, staged and synced before the next one
-			// is read: the first batch is searchable long before the last.
+			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
+			// parsing carries on, and each later sync covers every batch committed meanwhile: the first batch is
+			// searchable long before the last, and a large corpus costs a few syncs instead of one per batch.
 			const batchedMinSync = needsParsed && wants("minsync");
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
 			// Cumulative offsets keep the persisted MinSync counters monotonic
-			// across batches instead of restarting at zero per sync.
+			// across syncs instead of restarting at zero per sync.
 			let minSyncSyncedBase = 0;
 			let minSyncTotalBase = 0;
-			const minSyncBatch = async (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
-				signal?.throwIfAborted();
-				progress = updateRefreshProgress(progress, { phase: "minsync" });
-				writeRefreshProgress(this.workspaceProjectRoot, progress);
-				let batchTotal = minSyncTotalBase;
-				const result = await this.syncMinSync(force && batch.index === 1, signal, (minsyncProgress) => {
-					batchTotal = minSyncTotalBase + minsyncProgress.total;
-					progress = updateRefreshProgress(progress, {
-						minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: batchTotal },
-					});
-					writeRefreshProgress(this.workspaceProjectRoot, progress);
-					emitProgress({
-						phase: "minsync",
-						processed: minSyncSyncedBase + minsyncProgress.processed,
-						total: batchTotal,
-					});
-				});
-				minSyncBatches.push(result);
-				// Every sync indexes the whole staged mirror, so a successful one also
-				// indexes the files of any earlier failed batch: only failures after
-				// the last success are still real. A failed batch's content stays
-				// staged, so a later sync retries it and the loop moves on.
-				if (result.ok) minSyncBatchFailures.length = 0;
-				else if (result.reason !== "lock-held") {
-					for (const virtualPath of batch.virtualPaths) {
-						minSyncBatchFailures.push({
-							code: "minsync-sync-failed",
-							severity: "warning",
-							message: `This file stayed at its previous index entry: its batch could not be indexed and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
-							source: virtualPath,
-						});
-					}
-				}
-				minSyncSyncedBase = batchTotal;
-				minSyncTotalBase = batchTotal;
-				// A held lock means another sync owns the index: stop the loop instead
-				// of failing every remaining batch against the same lock.
-				return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
-			};
+			minSyncPipeline = batchedMinSync
+				? new PipelinedSync({
+						sync: async ({ index, virtualPaths }) => {
+							syncAbort.signal.throwIfAborted();
+							let syncTotal = minSyncTotalBase;
+							const result = await this.syncMinSync(
+								force && index === 1,
+								syncAbort.signal,
+								(minsyncProgress) => {
+									syncTotal = minSyncTotalBase + minsyncProgress.total;
+									progress = updateRefreshProgress(progress, {
+										minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: syncTotal },
+									});
+									writeRefreshProgress(this.workspaceProjectRoot, progress);
+									emitProgress({
+										phase: "minsync",
+										processed: minSyncSyncedBase + minsyncProgress.processed,
+										total: syncTotal,
+									});
+								},
+							);
+							minSyncBatches.push(result);
+							// Every sync indexes the whole staged mirror, so a successful one also
+							// indexes the files of any earlier failed sync: only failures after
+							// the last success are still real. A failed sync's content stays
+							// staged, so a later sync retries it and the pipeline moves on.
+							if (result.ok) minSyncBatchFailures.length = 0;
+							else if (result.reason !== "lock-held") {
+								for (const virtualPath of virtualPaths) {
+									minSyncBatchFailures.push({
+										code: "minsync-sync-failed",
+										severity: "warning",
+										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
+										source: virtualPath,
+									});
+								}
+							}
+							minSyncSyncedBase = syncTotal;
+							minSyncTotalBase = syncTotal;
+							// A held lock means another sync owns the index: stop the pipeline instead
+							// of failing every remaining sync against the same lock.
+							return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+						},
+					})
+				: undefined;
+			const pipeline = minSyncPipeline;
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
-						...(batchedMinSync ? { onBatch: minSyncBatch } : {}),
+						...(pipeline === undefined
+							? {}
+							: {
+									onBatch: (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
+										if (batch.final) {
+											// Parsing is over: what is left is waiting for the last sync.
+											progress = updateRefreshProgress(progress, { phase: "minsync" });
+											writeRefreshProgress(this.workspaceProjectRoot, progress);
+										}
+										return pipeline.batch(batch);
+									},
+								}),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
 								phase: "parsed",
@@ -4089,6 +4125,7 @@ export class AutoRAGAgent {
 				...(fsearch !== undefined ? { fsearch } : {}),
 			};
 		} catch (error) {
+			syncAbort.abort(error);
 			this.refreshState = {
 				...this.refreshState,
 				lastOutcome: "failed",
@@ -4107,6 +4144,8 @@ export class AutoRAGAgent {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			throw error;
 		} finally {
+			signal?.removeEventListener("abort", forwardAbort);
+			await minSyncPipeline?.settle();
 			this.refreshState = {
 				...this.refreshState,
 				inFlight: false,
@@ -4440,9 +4479,9 @@ export class AutoRAGAgent {
 		// same hash groups as the scanned, non-cloud copies.
 		const fingerprints = cloudFingerprintExclusions(loadCloudFingerprints(this.workspaceProjectRoot));
 		for (const searchPath of this.searchPaths) {
-			const target = planDupeyScans([searchPath], cloudRoots).targets[0];
+			const scope = cloudScope(searchPath, cloudRoots);
 			let scan: DupeyScanResult;
-			if (target === undefined) {
+			if (scope.insideCloudRoot) {
 				// `dupey scan` opens file contents, which would re-download every released placeholder (and
 				// re-read every network file), so such a search root is never scanned. Its cloud and network
 				// files still join the merge through their stored fingerprints, so an exact duplicate among
@@ -4452,7 +4491,9 @@ export class AutoRAGAgent {
 				try {
 					scan = await scanWithDupey(searchPath, {
 						...(this.dupeyOptions || {}),
-						...(target.excludeDirs.length === 0 ? {} : { excludeDirs: target.excludeDirs }),
+						...(scope.nestedCloudRoots.length === 0
+							? {}
+							: { excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)) }),
 					});
 				} catch (error) {
 					if (!(error instanceof DupeyCliError)) throw error;

@@ -16,6 +16,10 @@ export function writeFakeDupeyExecutable(directory: string): string {
 const { join } = require("node:path");
 
 const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("dupey 0.2.0");
+  process.exit(0);
+}
 if (args[0] !== "scan") {
   console.error("unexpected fake dupey command: " + args.join(" "));
   process.exit(2);

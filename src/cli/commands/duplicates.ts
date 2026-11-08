@@ -1,12 +1,11 @@
 import { resolve } from "node:path";
 import type { DupeyScanResult } from "../../dupey/index.ts";
-import { listCloudRoots, planDupeyScans, scanWithDupey } from "../../dupey/index.ts";
-import { type CloudFileProbe, defaultCloudProbe } from "../../filesystem/cloud-placeholder.ts";
+import { scanWithDupey } from "../../dupey/index.ts";
 import { ConfigError, resolveConfig } from "../config.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
-export type DuplicateScanner = (path: string, excludeDirs: readonly string[]) => Promise<DupeyScanResult>;
+export type DuplicateScanner = (path: string) => Promise<DupeyScanResult>;
 
 interface ExactGroup {
 	readonly hash: string;
@@ -21,15 +20,13 @@ interface ExactGroup {
  */
 export async function runDuplicates(
 	ctx: CommandContext,
-	scanner: DuplicateScanner = (path, excludeDirs) => scanWithDupey(path, { excludeDirs }),
-	cloudProbe: CloudFileProbe | undefined = defaultCloudProbe(),
+	scanner: DuplicateScanner = (path) => scanWithDupey(path),
 ): Promise<number> {
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 		const requested = ctx.positionals[0];
 		const roots = requested ? [resolve(ctx.cwd, requested)] : config.searchPaths.map((path) => resolve(path));
-		const plan = planDupeyScans(roots, await listCloudRoots(cloudProbe, roots));
-		const scans = await Promise.all(plan.targets.map(({ path, excludeDirs }) => scanner(path, excludeDirs)));
+		const scans = await Promise.all(roots.map((root) => scanner(root)));
 		const exactGroups = scans.flatMap(exactGroupsFromScan);
 		const extractionErrors = scans.flatMap((scan) => scan.errors);
 		if (ctx.json) {
@@ -38,7 +35,6 @@ export async function runDuplicates(
 					{
 						ok: true,
 						roots,
-						skippedRoots: plan.skipped,
 						exactGroups,
 						families: scans.flatMap((scan) => scan.families),
 						extractionErrors,
@@ -51,16 +47,11 @@ export async function runDuplicates(
 			return 0;
 		}
 		const lines = [
-			`duplicates: scanned ${scans.length} root(s)`,
+			`duplicates: scanned ${roots.length} root(s)`,
 			`  exact groups: ${exactGroups.length}`,
 			`  other families: ${scans.reduce((count, scan) => count + scan.families.length, 0)}`,
 			`  extraction errors: ${extractionErrors.length}`,
 		];
-		for (const root of plan.skipped) {
-			lines.push(
-				`  not scanned (inside a cloud or network folder; scanning would download or re-read every file): ${root}`,
-			);
-		}
 		for (const [index, group] of exactGroups.entries()) {
 			lines.push(`  exact group ${index + 1}:`);
 			for (const file of group.files) lines.push(`    - ${file}`);

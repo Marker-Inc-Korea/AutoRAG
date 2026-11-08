@@ -56,9 +56,16 @@ function writeSources(count: number): void {
 /**
  * A MinSync stand-in that stages through the shared simulator, answers queries by
  * walking the staged `files/`, and records every `sync` run (invocation number and
- * the staged paths it saw). `failAtSync` makes the n-th sync exit non-zero.
+ * the staged paths it saw). `failAtSync` makes the n-th sync exit non-zero; `holdFirstSyncPath`
+ * keeps the first sync running until that file exists, so a test decides when it may finish.
  */
-function writeBatchedMinSync(binaryPath: string, logPath: string, counterPath: string, failAtSync = 0): void {
+function writeBatchedMinSync(
+	binaryPath: string,
+	logPath: string,
+	counterPath: string,
+	options: { readonly failAtSync?: number; readonly holdFirstSyncPath?: string } = {},
+): void {
+	const { failAtSync = 0, holdFirstSyncPath = "" } = options;
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
@@ -101,6 +108,13 @@ if (args[0] === "stage") {
   writeFileSync(${JSON.stringify(counterPath)}, String(run));
   const staged = walk(join(process.cwd(), "files"), "");
   appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ run, staged }) + "\\n");
+  if (run === 1 && ${JSON.stringify(holdFirstSyncPath)}) {
+    // Another process releases this sync, so the wait is on a file the test writes, not on a timer.
+    const hold = ${JSON.stringify(holdFirstSyncPath)};
+    const deadline = Date.now() + 20000;
+    while (!existsSync(hold) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    writeFileSync(hold + ".result", existsSync(hold) ? "released" : "timeout");
+  }
   if (${failAtSync} > 0 && run === ${failAtSync}) {
     console.error("synthetic batch failure");
     process.exit(1);
@@ -173,103 +187,93 @@ function queryHits(binary: string, workspacePath: string): number {
 	return 0;
 }
 
+/**
+ * Releases a held first sync once parsing reaches its last source. A refresh that parsed and synced one
+ * batch at a time would never get there while the sync waits, so a release proves the two overlapped.
+ */
+function releaseWhenParsingEnds(holdPath: string, total: number): (progress: AutoRAGRefreshProgress) => void {
+	return (progress) => {
+		if (progress.phase === "parsed" && progress.processed === total - 1) writeFileSync(holdPath, "");
+	};
+}
+
 describe("batched refresh", () => {
-	it("makes the first batch searchable before later batches are parsed", async () => {
+	it("syncs the first batch while the rest is still being parsed", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE + 5;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const method = new MinSyncVectorMethod({ root, binaryPath: binary, workspacePath, autoInstall: false });
 		const agent = makeAgent({ binary, workspacePath });
 
-		let boundary:
-			| {
-					readonly syncs: number;
-					readonly ready: boolean;
-					readonly staged: readonly string[];
-					readonly queryHits: number;
-					readonly currentVirtualPath?: string;
-			  }
-			| undefined;
-		await agent.refresh(true, {
-			methods: ["minsync"],
-			onProgress: (progress: AutoRAGRefreshProgress) => {
-				if (boundary !== undefined) return;
-				if (progress.phase !== "parsed" || progress.processed !== DEFAULT_MIRROR_BATCH_SIZE) return;
-				// This fires at the top of the first batch-2 file, after batch 1's sync.
-				boundary = {
-					syncs: syncRuns(logPath).length,
-					ready: method.isReady(),
-					staged: stagedFiles(workspacePath),
-					queryHits: queryHits(binary, workspacePath),
-					currentVirtualPath: progress.currentVirtualPath,
-				};
-			},
-		});
+		await agent.refresh(true, { methods: ["minsync"], onProgress: releaseWhenParsingEnds(hold, total) });
 
-		expect(boundary).toBeDefined();
-		expect(boundary?.currentVirtualPath).toMatch(/f25\.txt$/);
-		expect(boundary?.syncs).toBe(1);
-		expect(boundary?.ready).toBe(true);
-		expect(boundary?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE);
-		expect(boundary?.staged.some((path) => path.endsWith("f24.txt.md"))).toBe(true);
-		expect(boundary?.staged.some((path) => path.endsWith("f25.txt.md"))).toBe(false);
-		expect(boundary?.queryHits).toBe(DEFAULT_MIRROR_BATCH_SIZE);
-
-		// The remaining batch ran too, and the whole corpus is queryable afterwards.
+		// The first sync only finished because parsing carried on to the last source.
+		expect(readFileSync(`${hold}.result`, "utf8")).toBe("released");
+		// Two syncs, not one per batch: the first covered batch 1, the second everything committed meanwhile.
 		const runs = syncRuns(logPath);
 		expect(runs).toHaveLength(2);
+		expect(runs[0]?.staged.length).toBeGreaterThanOrEqual(DEFAULT_MIRROR_BATCH_SIZE);
 		expect(runs[1]?.staged).toHaveLength(total);
+		expect(method.isReady()).toBe(true);
+		expect(queryHits(binary, workspacePath)).toBe(total);
 		const results = await method.retrieve("content", { topK: 5 });
 		expect(results.length).toBeGreaterThan(0);
 	});
 
-	it("continues past a failing MinSync batch and a later sync recovers its files", async () => {
+	it("continues past a failing MinSync sync and a later sync recovers its files", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath, 2);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { failAtSync: 1, holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const agent = makeAgent({ binary, workspacePath });
 
-		const result = await agent.refresh(true, { methods: ["minsync"] });
+		const result = await agent.refresh(true, {
+			methods: ["minsync"],
+			onProgress: releaseWhenParsingEnds(hold, total),
+		});
 
-		// Every batch was attempted: the failure did not stop the ones after it,
-		// and the final sync indexed the failed batch's still-staged files.
+		// The failure did not stop the next sync, which indexed the failed sync's still-staged files.
 		const runs = syncRuns(logPath);
-		expect(runs).toHaveLength(3);
-		expect(runs[0]?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE);
-		expect(runs[1]?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE * 2);
-		expect(runs[2]?.staged).toHaveLength(total);
+		expect(runs).toHaveLength(2);
+		expect(runs[1]?.staged).toHaveLength(total);
 		expect(result.minsync?.ok).toBe(true);
 		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-sync-failed")).toEqual([]);
 	});
 
-	it("reports the files of a failed final batch", async () => {
+	it("reports the files covered by a failed final sync", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath, 3);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { failAtSync: 2, holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const agent = makeAgent({ binary, workspacePath });
 
-		const result = await agent.refresh(true, { methods: ["minsync"] });
+		const result = await agent.refresh(true, {
+			methods: ["minsync"],
+			onProgress: releaseWhenParsingEnds(hold, total),
+		});
 
+		// The first sync covered batch 1 and succeeded; the failed second one covered every later batch.
 		expect(result.minsync?.ok).toBe(false);
 		const sources = result.diagnostics
 			.filter((diagnostic) => diagnostic.code === "minsync-sync-failed" && diagnostic.source !== "minsync")
 			.map((diagnostic) => diagnostic.source);
-		expect(sources).toContain("/docs/f50.txt");
+		expect(sources).toContain("/docs/f25.txt");
 		expect(sources).toContain("/docs/f59.txt");
-		expect(sources).not.toContain("/docs/f49.txt");
-		expect(sources).toHaveLength(total - DEFAULT_MIRROR_BATCH_SIZE * 2);
+		expect(sources).not.toContain("/docs/f24.txt");
+		expect(sources).toHaveLength(total - DEFAULT_MIRROR_BATCH_SIZE);
 	});
 
 	it("keeps not-yet-reached documents mid-refresh and deletes removed sources at the end", async () => {
@@ -320,26 +324,27 @@ describe("batched refresh", () => {
 		expect(stagedFiles(workspacePath).some((path) => path.endsWith("f00.txt.md"))).toBe(false);
 	});
 
-	it("syncs only batches whose mirrors changed, and always the final one", async () => {
+	it("starts no sync for batches whose mirrors did not change, and always syncs after the final one", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const agent = makeAgent({ binary, workspacePath });
-		await agent.refresh(true, { methods: ["minsync"] });
+		await agent.refresh(true, { methods: ["minsync"], onProgress: releaseWhenParsingEnds(hold, total) });
+		expect(syncRuns(logPath)).toHaveLength(2);
+
+		// Nothing changed: only the final batch syncs.
+		await agent.refresh(false, { methods: ["minsync"] });
 		expect(syncRuns(logPath)).toHaveLength(3);
 
-		// Nothing changed: one sync (the final batch) instead of one per batch.
-		await agent.refresh(false, { methods: ["minsync"] });
-		expect(syncRuns(logPath)).toHaveLength(4);
-
-		// A change in the middle batch syncs that batch and the final one.
+		// A change in the middle batch syncs it, and the final batch syncs once more.
 		writeFileSync(join(docs, "f30.txt"), "changed content\n");
 		await agent.refresh(false, { methods: ["minsync"] });
-		expect(syncRuns(logPath)).toHaveLength(6);
+		expect(syncRuns(logPath)).toHaveLength(5);
 	});
 
 	it("still suppresses a mass delete in the batched refresh", async () => {
