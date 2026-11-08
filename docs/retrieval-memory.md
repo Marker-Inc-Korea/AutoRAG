@@ -155,6 +155,17 @@ result's user verdict and remote-peer tag are dropped (feedback state no longer
 exists), and a v4 insight's `supportingSignalCount` becomes its evidence count.
 A file that is neither v4 nor v5 is reset, with a `memory-reset` warning.
 
+## Learning-to-rank log
+
+Beside the memory file, `memory.json.ranking.db` keeps the training data a
+ranker needs and memory does not: each search run's whole candidate pool
+(cited or not), the serve-time rank and score of every retrieval channel, where
+the model was shown each candidate, and graded outcome labels (cited by the
+final answer, Jev's citation relevance and support probabilities). Chunk text is
+not stored. `autorag memory export-ltr --output <dir>` writes it as LightGBM
+LambdaRank files; `"rankingLog": false` turns it off. Like memory, it never
+reorders search results. See [learning-to-rank.md](learning-to-rank.md).
+
 ## What was removed
 
 The redesign deleted the old feedback and scoring machinery outright:

@@ -71,7 +71,7 @@ export function createSearchAllDocumentsTool(
 				scope: params.scope,
 				...(signal === undefined ? {} : { signal }),
 			});
-			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_ALL_DOCUMENTS_TOOL_NAME, result));
+			const evidenceIds = ledger.registerResults(SEARCH_ALL_DOCUMENTS_TOOL_NAME, query, results);
 			return {
 				content: [{ type: "text", text: formatResults(results, diagnostics, evidenceIds) }],
 				details: {

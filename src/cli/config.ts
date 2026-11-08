@@ -256,6 +256,8 @@ export interface CliConfig {
 		timeoutMs?: number;
 	};
 	excludeExactDuplicates?: boolean;
+	/** Learning-to-rank training log beside the memory file. Default on; `false` stops logging. */
+	rankingLog?: boolean;
 	/** Filee command line behind the `convert_files` tool. `enabled: false` removes the conversion tools. */
 	filee?: {
 		enabled?: boolean;
@@ -1051,6 +1053,10 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		throw new ConfigError("Config field 'excludeExactDuplicates' must be a boolean");
 	}
 	config.excludeExactDuplicates = file.excludeExactDuplicates ?? true;
+	if (file.rankingLog !== undefined) {
+		if (typeof file.rankingLog !== "boolean") throw new ConfigError("Config field 'rankingLog' must be a boolean");
+		config.rankingLog = file.rankingLog;
+	}
 	if (file.datasources !== undefined) {
 		if (typeof file.datasources !== "object" || file.datasources === null || Array.isArray(file.datasources)) {
 			throw new ConfigError("Config field 'datasources' must be an object mapping skill names to their config");
@@ -1437,6 +1443,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		};
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
+	if (config.rankingLog === false) opts.rankingLog = false;
 	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
 	if (config.limits !== undefined) opts.limits = config.limits;
 	if (config.refresh !== undefined) opts.refresh = config.refresh;

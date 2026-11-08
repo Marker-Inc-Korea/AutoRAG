@@ -37,6 +37,8 @@ const VALUE_FLAGS = new Set([
 	"languages",
 	"workspace",
 	"memory-path",
+	"output",
+	"valid-fraction",
 	"model-provider",
 	"model-id",
 	"top-k",
@@ -110,6 +112,7 @@ Commands:
   search <query>       Search and curate documents (requires a configured model)
   evidence <session>   Show persisted source/chunk evidence (--result N)
   memory inspect       Inspect the retrieval memory snapshot
+  memory export-ltr    Export the learning-to-rank log as LightGBM files (--output)
   index reset          Remove parsed/minsync indexes (--method)
   index rebuild        Reset then re-run a refresh (--method minsync|all)
   health               Check model/provider auth and completion access (no index check)

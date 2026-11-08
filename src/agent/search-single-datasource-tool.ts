@@ -108,9 +108,7 @@ function createTool(
 				scope: params.scope,
 				...(signal === undefined ? {} : { signal }),
 			});
-			const evidenceIds = results.map((result) =>
-				ledger.registerResult(`search_datasource_${spec.datasourceId}`, result),
-			);
+			const evidenceIds = ledger.registerResults(`search_datasource_${spec.datasourceId}`, query, results);
 			return {
 				content: [{ type: "text", text: formatDatasourceResults(results, diagnostics, evidenceIds) }],
 				details: {

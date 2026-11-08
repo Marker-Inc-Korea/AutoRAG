@@ -57,7 +57,7 @@ export function createSearchMinSyncDocumentsTool(
 				scope,
 				...(signal === undefined ? {} : { signal }),
 			});
-			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, result));
+			const evidenceIds = ledger.registerResults(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, params.query, results);
 			return {
 				content: [{ type: "text", text: formatResults(results, evidenceIds) }],
 				details: {

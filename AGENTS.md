@@ -591,6 +591,13 @@ hints. Memory never reorders search results. Evidence from datasources not
 configured for the run is never shown. See
 [docs/retrieval-memory.md](docs/retrieval-memory.md).
 
+Every finished search run is also appended to a learning-to-rank log beside the
+memory file (`memory.json.ranking.db`): the whole candidate pool with serve-time
+per-channel ranks and scores, exposures, and graded labels (final citation, Jev
+relevance and support). No chunk text is stored; `"rankingLog": false` turns it
+off; `autorag memory export-ltr --output <dir>` writes LightGBM LambdaRank files.
+See [docs/learning-to-rank.md](docs/learning-to-rank.md).
+
 ## Files
 
 | File | Role |
@@ -626,6 +633,8 @@ configured for the run is never shown. See
 | `src/memory/context.ts` | Assembles current-conversation evidence, similar past questions, and insights into the advisory memory context |
 | `src/memory/renderer.ts` | Renders retrieval memory as JSON-quoted advisory markdown |
 | `src/memory/check-memory-tool.ts` | `check_memory` tool (pi-agent-core AgentTool) |
+| `src/memory/ranking-log.ts` | Learning-to-rank log: `RankingRunRecorder` (per-run candidates, channel observations, exposures, labels, point-in-time memory priors) and the append-only SQLite `RankingLogStore` |
+| `src/memory/ltr-export.ts` | Ranking log → LightGBM LambdaRank files: graded 0–3 labels, feature columns, `.query`/`.position` sidecars, time-ordered run split |
 | `src/agent/evidence-judgment.ts` | Post-answer Jev step: one batched evidence-support call, the 0.7 threshold, and fallback |
 | `src/agent/evidence-origins.ts` | Maps a cited evidence ref back to the search query and method that surfaced it |
 | `src/retrieval/types.ts` | Core retrieval type definitions |

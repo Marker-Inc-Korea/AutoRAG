@@ -193,6 +193,7 @@ autorag refresh --force --json
 autorag index rebuild --yes --json
 autorag index reset --method parsed --yes --json
 autorag memory inspect --json
+autorag memory export-ltr --output ./ltr --json
 autorag tui
 autorag automate status --json
 autorag automate install --json
@@ -243,6 +244,9 @@ maintenance should use non-daemon `autorag watch --once`, typically every
 
 Reset and rebuild commands remove only selected workspace `.autorag` indexes.
 Never target source documents. `memory inspect` is read-only and path-opaque.
+`memory export-ltr` reads the learning-to-rank log beside the memory file and
+writes LightGBM LambdaRank files to `--output`; set `"rankingLog": false` to
+stop logging (see `docs/learning-to-rank.md`).
 
 ## Rules
 

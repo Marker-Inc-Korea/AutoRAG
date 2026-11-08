@@ -185,6 +185,12 @@ describe("single-model CLI config", () => {
 		expect(opts.excludeExactDuplicates).toBe(false);
 	});
 
+	it("passes rankingLog: false to the agent and leaves the log on by default", () => {
+		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
+		expect(buildAgentOptions({ ...base }).rankingLog).toBeUndefined();
+		expect(buildAgentOptions({ ...base, rankingLog: false }).rankingLog).toBe(false);
+	});
+
 	it("maps the filee config to agent options, and disables conversion with enabled:false", () => {
 		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
 		expect(buildAgentOptions({ ...base }).filee).toEqual({});
