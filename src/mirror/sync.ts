@@ -56,8 +56,8 @@ export const DEFAULT_MAX_WALK_DEPTH = 64;
 
 /**
  * Sources parsed and committed per batch before {@link ParsedMirrorSyncOptions.onBatch}
- * runs. Small enough that a corpus becomes searchable after its first slice,
- * large enough to amortize one index sync's startup.
+ * runs. Small enough that the first batch starts the index sync soon after parsing
+ * begins; later syncs fold every batch committed meanwhile into one run.
  */
 export const DEFAULT_MIRROR_BATCH_SIZE = 25;
 
@@ -124,9 +124,11 @@ export interface ParsedMirrorSyncOptions {
 	 */
 	readonly batchSize?: number;
 	/**
-	 * Runs after each batch of sources is parsed and committed to the mirror, and
-	 * before the next batch is read, so a caller can make the batch's results
-	 * searchable (stage them and sync the index). A thrown error aborts the
+	 * Runs after each batch of sources is parsed and committed to the mirror, so
+	 * a caller can make the batch's results searchable (sync the index). The next
+	 * batch is read once the returned promise settles: a caller that wants parsing
+	 * to carry on returns at once and indexes in the background, and waits only on
+	 * the final batch. A thrown error aborts the
 	 * refresh; returning `stop` ends the loop after this batch. Deletions of
 	 * genuinely-removed sources wait for the final batch, so a mid-refresh call
 	 * never drops a not-yet-reached document from the index.

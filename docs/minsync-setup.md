@@ -18,11 +18,11 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync --version 0.7.1 --locked` when
+yourself with `cargo install minsync --version 0.7.3 --locked` when
 auto-install cannot run. MinSync on Apple Silicon and Linux needs rustc
 1.96 or newer, because its dependency candle-core requires NEON f16 support;
 with an older toolchain the cargo install fails and AutoRAG falls back to the
-GitHub release binary. AutoRAG's installer pins MinSync 0.7.1 from crates.io.
+GitHub release binary. AutoRAG's installer pins MinSync 0.7.3 from crates.io.
 A `minsync` older than 0.7.1 is never run; see
 [Upgrading a BM25 workspace](#upgrading-a-bm25-workspace).
 
@@ -404,7 +404,7 @@ daemon or the in-process engine.
 ## Durable incremental parsing
 
 Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
-including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.7.1 — ship it; published binaries up to 0.5.0 have the original
+including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.7.3 — ship it; published binaries up to 0.5.0 have the original
 durable stage, but not `capabilities`, `plan`, `inspect`, deliberate skips or
 deferred-failure policy. AutoRAG probes capabilities before opening a run and
 refuses an older build before mutating stage state. Parsing itself uses no
@@ -637,9 +637,10 @@ copy back and would otherwise leave every document on disk. A previously indexed
 kept. Make the file or folder available offline in the provider's app to index it.
 
 Downloads are bounded per batch: a placeholder that would exceed the batch's budget ends
-the batch, which is synced and searchable, and is read first in the next batch with a fresh
-budget, so every placeholder is indexed in the same refresh. Each downloaded file is released
-right after it is parsed, before its batch is synced. A refused release is
+the batch, which is handed to MinSync (searchable once that sync reaches it), and is read
+first in the next batch with a fresh budget, so every placeholder is indexed in the same
+refresh. Each downloaded file is released right after it is parsed, before its batch is
+handed to MinSync. A refused release is
 retried with doubling waits (500 ms, 1 s, 2 s); the provider briefly holding a
 just-downloaded file is the usual cause. A file still uploading to the cloud cannot be
 released yet — the refusal names that state. When the retries are spent the file is
