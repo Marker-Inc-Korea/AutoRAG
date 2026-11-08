@@ -83,6 +83,7 @@ import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory
 import { RetrievalMemory } from "../memory/memory.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
+import { unionChannelResults } from "../minsync/channel-union.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
 	isSparseOnlyEmbedder,
@@ -124,6 +125,7 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
+import { describeRetrievalError } from "../retrieval/skip.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
@@ -1076,6 +1078,8 @@ export class AutoRAGAgent {
 	private readonly rerankTopN: number | undefined;
 
 	private readonly minSyncMethod: MinSyncVectorMethod;
+	/** SPLADE channel of the fast-answer baseline; absent on a sparse-only index, where the one channel already is SPLADE. */
+	private readonly minSyncSparseMethod: MinSyncVectorMethod | undefined;
 	private readonly minSyncEmbedderConfig: MinSyncEmbedderConfig | undefined;
 	private readonly minSyncBinaryPath: string | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
@@ -1252,6 +1256,9 @@ export class AutoRAGAgent {
 		// degrades to sparse by itself, so registering both would search the workspace twice and let the
 		// merger count one index as two corroborating methods.
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
+		this.minSyncSparseMethod = isSparseOnlyEmbedder(options.minSync?.embedder)
+			? undefined
+			: new MinSyncVectorMethod({ ...minSyncDefaults, mode: "sparse" });
 		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
@@ -3311,20 +3318,7 @@ export class AutoRAGAgent {
 		const perQuery = await Promise.all(
 			searchQueries.map((searchQuery) =>
 				Promise.all([
-					this.searchProgress
-						.track(
-							"minsync",
-							"MinSync semantic search",
-							this.minSyncMethod.retrieve(searchQuery, retrieveOptions),
-							{
-								count: (found) => found.length,
-							},
-						)
-						.catch((error: unknown) => {
-							// MinSync is required: its absence fails the run, anything else is one empty source.
-							if (error instanceof MinSyncRequiredError) throw error;
-							return [];
-						}),
+					this.prefetchMinSyncCandidates(searchQuery, retrieveOptions),
 					Promise.all(
 						datasources.map((datasourceId) =>
 							this.searchProgress
@@ -3481,6 +3475,40 @@ export class AutoRAGAgent {
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
+	}
+
+	/**
+	 * MinSync candidates for one baseline query. A reranker decides the final order, so it is shown what either
+	 * MinSync channel found: dense and SPLADE are queried separately (MinSync's own `hybrid` fuses them by RRF
+	 * and cuts the list before the reranker sees it) and the two lists are unioned by rank. Without a reranker the
+	 * baseline is the order itself, so it stays the dense list alone. A failing channel is reported and the other
+	 * channel's candidates still count; MinSync being absent still fails the run.
+	 */
+	private async prefetchMinSyncCandidates(searchQuery: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		const sparse = this.reranker === undefined ? undefined : this.minSyncSparseMethod;
+		const run = (id: string, label: string, method: MinSyncVectorMethod): Promise<RetrievalResult[]> =>
+			this.searchProgress
+				.track(id, label, method.retrieve(searchQuery, options), { count: (found) => found.length })
+				.catch((error: unknown) => {
+					// MinSync is required: its absence fails the run, anything else is one empty source.
+					if (error instanceof MinSyncRequiredError) throw error;
+					if (sparse !== undefined) {
+						this.routingDiagnostics.push({
+							code: "retrieval-method-failed",
+							severity: "warning",
+							message: `MinSync ${id === "minsync" ? "dense" : "SPLADE"} search failed and its candidates were skipped; the other channel's were used: ${describeRetrievalError(error)}`,
+							source: id,
+						});
+					}
+					return [];
+				});
+		const dense = run("minsync", "MinSync semantic search", this.minSyncMethod);
+		if (sparse === undefined) return dense;
+		const [vector, splade] = await Promise.all([dense, run("minsync-sparse", "MinSync SPLADE search", sparse)]);
+		return unionChannelResults([
+			{ channel: "vector", results: vector },
+			{ channel: "sparse", results: splade },
+		]);
 	}
 
 	/**
