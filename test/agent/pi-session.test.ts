@@ -25,6 +25,7 @@ import {
 	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 import type { DatasourceSkill } from "../../src/datasource/types.ts";
+import { RetrievalMemory } from "../../src/memory/memory.ts";
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { citationsRelevant } from "../helpers/citations-relevant.ts";
 
@@ -69,7 +70,7 @@ function jevRoute(route: QueryRoute, followUp = 0.9): JevBackend {
 async function tuiAgent(
 	responses: FauxResponseStep[],
 	jev: JevBackend = jevRoute("extra"),
-	extra: Pick<AutoRAGAgentOptions, "datasourceSkills"> = {},
+	extra: Pick<AutoRAGAgentOptions, "datasourceSkills" | "memoryPath" | "memoryEmbedder" | "tools"> = {},
 	ui: Partial<ExtensionUIContext> = {},
 ) {
 	const registration = registerFauxProvider({ api: `faux-tui-${randomUUID()}`, models: [{ id: "tui-model" }] });
@@ -1363,6 +1364,100 @@ describe("AutoRAG pi coding-agent host", () => {
 				expect(preliminaries).toEqual(["Beta first [1]. Then alpha [2]."]);
 				// The verification answer cites the same sources in the other order: each keeps the number the quick answer showed.
 				expect(finalAnswer).toBe("Alpha first [2]. Then beta [1].");
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		/** Seeds a memory file with past questions the test's questions match, so every run gets a memory message. */
+		function seedMemory(titles: readonly [string, string][]): string {
+			const memoryPath = join(root, "memory.json");
+			const memory = new RetrievalMemory({ storagePath: memoryPath });
+			memory.load();
+			memory.recordJudgedEvidence(
+				titles.map(([question, title], index) => ({
+					id: `seed-${index}`,
+					sessionId: `seed-session-${index}`,
+					conversationId: "earlier-conversation",
+					question,
+					searchQuery: question,
+					method: "search_all_documents",
+					source: join(root, `doc-${index}.txt`),
+					stableEvidenceId: `file:seed-${index}`,
+					resultNumber: 1,
+					title,
+					excerpt: `${title} excerpt`,
+					probability: 0.9,
+					createdAt: 1_000 + index,
+				})),
+			);
+			memory.save();
+			return memoryPath;
+		}
+
+		/** The messages of one model request as role and serialized content, in the order the model receives them. */
+		function snapshot(messages: readonly { role: string; content: unknown }[]): { role: string; text: string }[] {
+			return messages.map((message) => ({ role: message.role, text: JSON.stringify(message.content) }));
+		}
+
+		it("sends each question's memory message where it first went, so every request starts with the previous one", async () => {
+			const memoryPath = seedMemory([
+				["alpha release schedule overview", "Alpha schedule"],
+				["beta budget approval status", "Beta budget"],
+			]);
+			const requests: { role: string; text: string }[][] = [];
+			const record: FauxResponseStep = (context) => {
+				requests.push(snapshot(context.messages));
+				return fauxAssistantMessage("Done.", { stopReason: "stop" });
+			};
+			const tui = await tuiAgent([record, record, record], jevRoute("extra"), { memoryPath, memoryEmbedder: false });
+			try {
+				await tui.agent.searchDocuments("what is the alpha release schedule?");
+				await tui.agent.searchDocuments("and the beta budget approval?");
+				await tui.agent.searchDocuments("alpha release schedule again");
+
+				expect(requests).toHaveLength(3);
+				const memoryCount = (request: readonly { text: string }[]) =>
+					request.filter((message) => message.text.includes("<memory_context>")).length;
+				// Each question had its own memory message, and the earlier ones are still in the later requests.
+				expect(requests.map(memoryCount)).toEqual([1, 2, 3]);
+				// A request starts with every message of the one before it: nothing earlier moved or changed.
+				for (const [index, request] of requests.entries()) {
+					const previous = requests[index - 1];
+					if (previous === undefined) continue;
+					expect(request.slice(0, previous.length)).toEqual(previous);
+				}
+			} finally {
+				await tui.dispose();
+			}
+		});
+
+		it("repeats a run's memory message on every request of the run, directly before that run's question", async () => {
+			const memoryPath = seedMemory([["alpha release schedule overview", "Alpha schedule"]]);
+			const requests: { role: string; text: string }[][] = [];
+			const toolThenAnswer: FauxResponseStep = (context) => {
+				requests.push(snapshot(context.messages));
+				return context.messages.at(-1)?.role === "toolResult"
+					? fauxAssistantMessage("Done.", { stopReason: "stop" })
+					: fauxAssistantMessage([fauxToolCall("search_custom", { query: "q" })], { stopReason: "toolUse" });
+			};
+			const tui = await tuiAgent([toolThenAnswer, toolThenAnswer], jevRoute("extra"), {
+				memoryPath,
+				memoryEmbedder: false,
+				tools: [customTool()],
+			});
+			try {
+				await tui.agent.searchDocuments("what is the alpha release schedule?");
+
+				expect(requests).toHaveLength(2);
+				for (const request of requests) {
+					const visible = request.filter((message) => message.role !== "system");
+					const at = visible.findIndex((message) => message.text.includes("<memory_context>"));
+					expect(at).toBeGreaterThanOrEqual(0);
+					// The memory message sits directly before the question it belongs to.
+					expect(visible[at + 1]?.text).toContain("alpha release schedule");
+				}
+				expect(requests[1]?.slice(0, requests[0]?.length)).toEqual(requests[0]);
 			} finally {
 				await tui.dispose();
 			}
