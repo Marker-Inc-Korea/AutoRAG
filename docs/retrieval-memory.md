@@ -89,6 +89,12 @@ newlines, preserving literal backslashes without letting them cancel an escape:
    unavailable; ranked by keywords only. …").
 3. **Long-term insights** — matching insights (see below).
 
+Where it goes in the transcript: each question's memory message is built once, on the run's first model request, and
+placed directly before that question's user message. Every later request of the conversation sends it again in the same
+place, byte for byte, instead of rebuilding it from the newest question. A request therefore starts with all the
+messages of the one before it, which is what lets a provider's prompt cache cover the earlier turns. A run that owns no
+transcript (a one-off `searchDocuments()` call) is its own conversation and keeps no earlier memory messages.
+
 The same content is available to the agent as it works through the
 `check_memory` tool, which takes a query and returns advisory context.
 

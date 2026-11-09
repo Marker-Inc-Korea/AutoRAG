@@ -1151,6 +1151,14 @@ export class AutoRAGAgent {
 	private readonly conversationId = randomUUID();
 	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
+	/**
+	 * Each run's `<memory_context>` message with the user message it sits in front of. The message is built once, on
+	 * the run's first model request, and every later request of the conversation replays it in the same place, so a
+	 * request always starts with the previous request's messages and a provider's prompt cache keeps covering them.
+	 */
+	private memoryMessages: MemoryMessageRecord[] = [];
+	/** Set when a run starts; the run's first model request takes it and decides where the run's memory message goes. */
+	private memoryRunStart = false;
 	private readonly discordRemote: boolean;
 	/** Whether the bound interactive session offers `ask_user`; the phase prompts name it only then. */
 	private askUserOffered = false;
@@ -1534,16 +1542,32 @@ export class AutoRAGAgent {
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		if (this.lastQuery === undefined) return messages;
-		const context = await this.loadMemoryContextFor(this.lastQuery);
-		if (context.empty) return messages;
-		return [
-			{
-				role: "user",
-				content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
-				timestamp: Date.now(),
-			},
-			...messages,
-		];
+		if (this.memoryRunStart) {
+			const context = await this.loadMemoryContextFor(this.lastQuery);
+			// Requests that overlap each wait on the same load; the first to resume records the message.
+			if (this.memoryRunStart) {
+				this.memoryRunStart = false;
+				let anchor: number | undefined;
+				for (let index = messages.length - 1; index >= 0; index--) {
+					const message = messages[index];
+					if (message?.role === "user") {
+						anchor = message.timestamp;
+						break;
+					}
+				}
+				if (!context.empty && anchor !== undefined) {
+					this.memoryMessages.push({
+						anchor,
+						message: {
+							role: "user",
+							content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
+							timestamp: Date.now(),
+						},
+					});
+				}
+			}
+		}
+		return withMemoryMessages(messages, this.memoryMessages);
 	}
 
 	/**
@@ -2346,6 +2370,9 @@ export class AutoRAGAgent {
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
+		this.memoryRunStart = true;
+		// A run that owns no transcript is its own conversation, so earlier runs' memory messages have nothing to sit in.
+		if (this.boundPiRuntime === undefined) this.memoryMessages = [];
 		this.routingDiagnostics = [];
 		if (decisionModel !== undefined) {
 			this.routingDiagnostics.push({
@@ -5128,6 +5155,35 @@ function frameSteers(messages: AgentMessage[], steerTexts: ReadonlySet<string>):
 		if (first?.type !== "text" || !steerTexts.has(first.text)) return message;
 		return { ...message, content: [{ ...first, text: buildSteerMessage(first.text) }, ...rest] };
 	});
+}
+
+/** One run's `<memory_context>` message and the timestamp of the user message it was first placed in front of. */
+interface MemoryMessageRecord {
+	readonly anchor: number;
+	readonly message: AgentMessage;
+}
+
+/**
+ * Puts each recorded memory message back in front of the user message it was first placed before. A record whose user
+ * message is no longer in the transcript (compacted away, another branch) is skipped.
+ */
+function withMemoryMessages(messages: AgentMessage[], records: readonly MemoryMessageRecord[]): AgentMessage[] {
+	if (records.length === 0) return messages;
+	const pending = new Map(records.map((record) => [record.anchor, record.message]));
+	const out: AgentMessage[] = [];
+	let inserted = false;
+	for (const message of messages) {
+		if (message.role === "user") {
+			const memory = pending.get(message.timestamp);
+			if (memory !== undefined) {
+				pending.delete(message.timestamp);
+				out.push(memory);
+				inserted = true;
+			}
+		}
+		out.push(message);
+	}
+	return inserted ? out : messages;
 }
 
 /** Restates the run's steers for a verification phase that starts after them. */
