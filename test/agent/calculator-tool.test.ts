@@ -82,6 +82,12 @@ describe("calculator tool", () => {
 		expect(tool.description).toMatch(/time zone/i);
 		expect(tool.description).toMatch(/never/i);
 	});
+
+	it("tells the model an abbreviation is a fixed offset, so it does not swap in a daylight-saving region", () => {
+		const schema = JSON.stringify(tool.parameters);
+		expect(schema).toMatch(/PST is -08:00 all year/);
+		expect(schema).toMatch(/Never replace an abbreviation with a region/);
+	});
 });
 
 describe("calculator in the system prompt", () => {
@@ -92,6 +98,13 @@ describe("calculator in the system prompt", () => {
 		expect(prompt).toMatch(/never (do|compute|calculate)/i);
 		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
 		expect(without).not.toContain("calculator");
+	});
+
+	it("states that an abbreviation is a fixed offset and that a region is a different claim", () => {
+		const prompt = buildSystemPrompt({ toolNames: ["bash", "calculator"], modelId: "test-model" });
+		expect(prompt).toContain("PST is UTC-8 all year");
+		expect(prompt).toMatch(/Never replace an abbreviation with a region such as America\/Los_Angeles/);
+		expect(prompt).toMatch(/several zones \(CST, IST, BST\) is the user's to settle: ask/);
 	});
 
 	it("does not list it twice as a caller tool", () => {

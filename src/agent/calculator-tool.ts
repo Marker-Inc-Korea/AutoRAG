@@ -42,7 +42,7 @@ const calculatorSchema = Type.Object({
 	timeZone: Type.Optional(
 		Type.String({
 			description:
-				"Zone a date or time is read in and shown in; for convert_timezone, the SOURCE zone. IANA name (Asia/Seoul, America/New_York), UTC, KST, JST, or a fixed offset (+09:00). Omit to use the host default, which the result states. Ambiguous abbreviations (PST, CST, IST) are refused.",
+				"Zone a date or time is read in and shown in; for convert_timezone, the SOURCE zone. IANA name (Asia/Seoul, America/New_York), UTC, KST, JST, or a fixed offset (+09:00). Omit to use the host default, which the result states. Abbreviations other than UTC/KST/JST are refused: an abbreviation is a fixed offset (PST is -08:00 all year, EDT is -04:00), so pass that offset. Never replace an abbreviation with a region such as America/Los_Angeles; it follows daylight saving and is an hour off in summer. Use a region only for a named place. CST, IST and BST mean several zones: ask the user.",
 		}),
 	),
 	toTimeZone: Type.Optional(Type.String({ description: "convert_timezone only: the zone to convert into." })),

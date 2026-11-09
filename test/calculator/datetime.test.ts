@@ -41,6 +41,38 @@ describe("calculator: now", () => {
 		expect(() => run({ operation: "now", timeZone: "PST" })).toThrow(/IANA/);
 		expect(() => run({ operation: "now", timeZone: "Mars/Base" })).toThrow(/unknown time zone/i);
 	});
+
+	it("tells the caller which fixed offset a US abbreviation names, so it never has to swap in a region", () => {
+		for (const [abbreviation, offset] of [
+			["PST", "-08:00"],
+			["PDT", "-07:00"],
+			["MST", "-07:00"],
+			["MDT", "-06:00"],
+			["EST", "-05:00"],
+			["EDT", "-04:00"],
+		] as const) {
+			expect(() => run({ operation: "now", timeZone: abbreviation })).toThrow(
+				new RegExp(`"${abbreviation}".*names the fixed offset ${offset}.*America/`),
+			);
+		}
+	});
+
+	it("names no offset for an abbreviation with several meanings, and says to ask", () => {
+		for (const abbreviation of ["CST", "IST", "BST"]) {
+			expect(() => run({ operation: "now", timeZone: abbreviation })).toThrow(/several time zones.*ask/i);
+			expect(() => run({ operation: "now", timeZone: abbreviation })).not.toThrow(/fixed offset [+-]\d/);
+		}
+	});
+
+	it("takes the offset an abbreviation names, so PST stays UTC-8 in July when Los Angeles is on UTC-7", () => {
+		const july = (timeZone: string) =>
+			calculate(
+				{ operation: "convert_timezone", datetime: "2026-07-01T15:00:00", timeZone, toTimeZone: "Asia/Seoul" },
+				{ now: NOW, hostTimeZone: "Asia/Seoul" },
+			).fields.result;
+		expect(july("-08:00")).toBe("2026-07-02T08:00:00+09:00");
+		expect(july("America/Los_Angeles")).toBe("2026-07-02T07:00:00+09:00");
+	});
 });
 
 describe("calculator: date_diff with dates", () => {

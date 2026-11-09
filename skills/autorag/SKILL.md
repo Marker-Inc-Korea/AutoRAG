@@ -95,8 +95,11 @@ in-process, and needs no configuration. Operations:
   `holidays` list. The tool knows no public holidays; pass them in.
 - `now` and `convert_timezone`: the current time and DST-aware zone
   conversion. An omitted `timeZone` means the host zone and the result says so;
-  a datetime with no offset needs its zone, and ambiguous abbreviations such as
-  PST or IST are refused.
+  a datetime with no offset needs its zone. A zone abbreviation other than
+  UTC, KST, and JST is refused, and the error names what to pass instead: PST,
+  PDT, MST, MDT, EST, and EDT are fixed offsets (PST is `-08:00` all year, so
+  it differs from `America/Los_Angeles` in summer), and CST, IST, and BST mean
+  several zones, so the user has to say which.
 
 ### Excluding local files from the index
 
