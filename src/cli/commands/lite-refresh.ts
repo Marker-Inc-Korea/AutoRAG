@@ -1,6 +1,7 @@
 import { createAutoRAGLite } from "../../core.ts";
 import { ConfigError } from "../config.ts";
 import { renderError } from "../output.ts";
+import { abortOnSignal, SIGNAL_EXIT_CODES } from "../signal-abort.ts";
 import { parseMethodFlag } from "./refresh.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -10,9 +11,10 @@ import type { CommandContext } from "./types.ts";
  * Delegates to the agent's refresh pipeline (parsed mirrors, MinSync,
  * datasources, Jikji) without requiring any model configuration.
  *
- * Exit codes: 0 on success, 2 on config error, 1 on runtime error.
+ * Exit codes: 0 on success, 2 on config error, 1 on runtime error, 130/143 when stopped by SIGINT/SIGTERM.
  */
 export async function runLiteRefresh(ctx: CommandContext): Promise<number> {
+	const stop = abortOnSignal();
 	try {
 		const lite = createAutoRAGLite({ flags: ctx.flags, cwd: ctx.cwd });
 		const methods = parseMethodFlag(ctx.flags.method);
@@ -20,6 +22,7 @@ export async function runLiteRefresh(ctx: CommandContext): Promise<number> {
 		const options = {
 			...(methods ? { methods } : {}),
 			...(ctx.flags["retry-failed"] === true ? { retrySkipped: true } : {}),
+			signal: stop.signal,
 		};
 		const result = await lite.refresh(force, options);
 		const { renderRefresh } = await import("../output.ts");
@@ -27,6 +30,9 @@ export async function runLiteRefresh(ctx: CommandContext): Promise<number> {
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		if (stop.received !== undefined) return SIGNAL_EXIT_CODES[stop.received];
 		return error instanceof ConfigError ? 2 : 1;
+	} finally {
+		stop.dispose();
 	}
 }
