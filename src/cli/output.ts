@@ -200,6 +200,8 @@ export function renderStatus(status: AutoRAGRefreshStatus, opts: RenderOptions):
 interface MeasuredLocation {
 	readonly lineStart?: number;
 	readonly lineEnd?: number;
+	readonly pageStart?: number;
+	readonly pageEnd?: number;
 	readonly section?: string;
 }
 
@@ -208,10 +210,12 @@ function measuredLocations(result: SearchDocumentsResponse["results"][number]): 
 	const seen = new Set<string>();
 	const locations: MeasuredLocation[] = [];
 	for (const e of result.evidence) {
-		if (e.lineNumber === undefined && e.section === undefined) continue;
+		if (e.lineNumber === undefined && e.pageStart === undefined && e.section === undefined) continue;
 		const location: MeasuredLocation = {
 			...(e.lineNumber !== undefined ? { lineStart: e.lineNumber } : {}),
 			...(e.lineEnd !== undefined ? { lineEnd: e.lineEnd } : {}),
+			...(e.pageStart !== undefined ? { pageStart: e.pageStart } : {}),
+			...(e.pageEnd !== undefined ? { pageEnd: e.pageEnd } : {}),
 			...(e.section !== undefined ? { section: e.section } : {}),
 		};
 		const key = JSON.stringify(location);
@@ -238,6 +242,8 @@ function searchEnvelope(resp: SearchDocumentsResponse, debug: boolean) {
 				const ev: Record<string, unknown> = { excerpt: e.excerpt };
 				if (e.lineNumber !== undefined) ev.lineNumber = e.lineNumber;
 				if (e.lineEnd !== undefined) ev.lineEnd = e.lineEnd;
+				if (e.pageStart !== undefined) ev.pageStart = e.pageStart;
+				if (e.pageEnd !== undefined) ev.pageEnd = e.pageEnd;
 				if (e.section !== undefined) ev.section = e.section;
 				return ev;
 			});
@@ -279,6 +285,8 @@ function renderSearchHuman(resp: SearchDocumentsResponse, debug: boolean): strin
 				const described = describeLocation({
 					...(ev.lineNumber !== undefined ? { lineStart: ev.lineNumber } : {}),
 					...(ev.lineEnd !== undefined ? { lineEnd: ev.lineEnd } : {}),
+					...(ev.pageStart !== undefined ? { pageStart: ev.pageStart } : {}),
+					...(ev.pageEnd !== undefined ? { pageEnd: ev.pageEnd } : {}),
 				});
 				const ln = described !== undefined ? ` (${described})` : "";
 				lines.push(`   evidence${ln}: ${ev.excerpt}`);

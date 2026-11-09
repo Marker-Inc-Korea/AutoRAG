@@ -71,6 +71,11 @@ export interface MinSyncDiagnostic {
 
 export interface MinSyncQueryHit {
 	readonly path: string;
+	/**
+	 * MinSync's `heading_path`. It is also the first line of `text` (truncated by MinSync, so not always the
+	 * whole `path`); that line is not part of the document. Absent in older builds.
+	 */
+	readonly headingPath?: string;
 	readonly score: number;
 	readonly text: string;
 	/**
