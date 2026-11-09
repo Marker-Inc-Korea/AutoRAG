@@ -255,6 +255,48 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		expect(progress.some((text) => text.includes("Final answer"))).toBe(false);
 	});
 
+	it("records the model's since/until on the retrieval trace and only searches inside the window (#1958)", async () => {
+		const rows: RetrievalResult[] = [
+			{
+				id: "old",
+				source: "/kakao/acct-1/chunks/old",
+				content: "refund approval, July",
+				score: 1,
+				metadata: { publishedAt: Date.UTC(2026, 6, 10) },
+			},
+			{
+				id: "new",
+				source: "/kakao/acct-1/chunks/new",
+				content: "refund approval, October",
+				score: 0.5,
+				metadata: { publishedAt: Date.UTC(2026, 9, 10) },
+			},
+		];
+		const model = fauxModel(
+			true,
+			fastAnswerCall(),
+			fauxAssistantMessage(
+				[
+					fauxToolCall("search_all_documents", {
+						query: "refund approval",
+						since: "2026-10-01T00:00:00Z",
+						until: "2026-11-01T00:00:00Z",
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+			// A drained script ends the run as a degraded response, which carries the retrieval trace.
+		);
+		const agent = new AutoRAGAgent({ ...agentOptions(model), datasourceSkills: [makeSkill(rows)] });
+
+		const response = await agent.searchDocuments("what was approved last month?");
+
+		const entry = response.retrievalTrace?.find((candidate) => candidate.tool === "search_all_documents");
+		expect(entry?.query).toBe("refund approval");
+		expect(entry?.window).toEqual({ since: "2026-10-01T00:00:00.000Z", until: "2026-11-01T00:00:00.000Z" });
+		expect(entry?.results.map((result) => result.source)).toEqual(["/kakao/acct-1/chunks/new"]);
+	});
+
 	it("returns a degraded fallback with reason and retrieval trace when the model request fails", async () => {
 		const rows: RetrievalResult[] = [
 			{

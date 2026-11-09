@@ -87,6 +87,8 @@ interface EverythingCall {
 
 interface FakeOptions {
 	readonly workspacePath: string;
+	/** Make searchSelected report an empty windowed search. */
+	readonly window?: boolean;
 	readonly searchPaths?: readonly string[];
 	readonly excludePaths?: readonly string[];
 	/** Fixed Everything provider result (success or failure). */
@@ -159,6 +161,9 @@ function fakeLite(options: FakeOptions): {
 				],
 				diagnostics: [],
 				unsearched: [],
+				...(options.window === true
+					? { window: { since: 1, examined: 7, matched: 0, untimed: 0, ceilingHit: false, fetchDepth: 50 } }
+					: {}),
 			};
 		},
 		searchEverything: async (request: unknown) => {
@@ -324,6 +329,62 @@ describe("AutoRAG Lite MCP server", () => {
 			options: { topK: 5, scope: "/kakao/default" },
 		});
 		expect(hasFieldValue(result.structuredContent, "source", "docs/refund-policy.md")).toBe(true);
+		await client.close();
+		await server.close();
+	});
+
+	it("parses ISO since/until into epoch ms for searchSelected and the per-datasource tool", async () => {
+		const { lite, searchCalls } = fakeLite({ workspacePath: workspace(true) });
+		const { client, server } = await connectedServer(lite);
+
+		await client.callTool({
+			name: "autorag.search",
+			arguments: { query: "refund", since: "2026-09-01T00:00:00Z", until: "2026-10-01T00:00:00Z" },
+		});
+		await client.callTool({
+			name: "autorag.search_datasource_kakao",
+			arguments: { query: "refund", since: "2026-09-01T00:00:00Z" },
+		});
+
+		expect(searchCalls[0]?.options).toMatchObject({ since: Date.UTC(2026, 8, 1), until: Date.UTC(2026, 9, 1) });
+		expect(searchCalls[1]?.options).toMatchObject({ since: Date.UTC(2026, 8, 1) });
+		expect(searchCalls[1]?.options).not.toHaveProperty("until");
+		await client.close();
+		await server.close();
+	});
+
+	it("returns an invalid since/until as the parse error verbatim and searches nothing", async () => {
+		const { lite, searchCalls } = fakeLite({ workspacePath: workspace(true) });
+		const { client, server } = await connectedServer(lite);
+
+		const result = await client.callTool({
+			name: "autorag.search",
+			arguments: { query: "refund", since: "last month" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			errorCode: "invalid-time-window",
+			message: expect.stringContaining('Invalid since "last month": expected an ISO-8601 date or datetime'),
+		});
+		expect(searchCalls).toHaveLength(0);
+		await client.close();
+		await server.close();
+	});
+
+	it("surfaces the window report so an empty range is explicit", async () => {
+		const { lite } = fakeLite({ workspacePath: workspace(true), window: true });
+		const { client, server } = await connectedServer(lite);
+
+		const result = await client.callTool({
+			name: "autorag.search",
+			arguments: { query: "refund", since: "2026-09-01" },
+		});
+
+		expect(result.structuredContent).toMatchObject({
+			ok: true,
+			window: { examined: 7, matched: 0, ceilingHit: false },
+		});
 		await client.close();
 		await server.close();
 	});

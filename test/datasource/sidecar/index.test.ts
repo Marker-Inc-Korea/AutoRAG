@@ -145,6 +145,65 @@ describe("CrawlerSidecar lexical search", () => {
 	});
 });
 
+describe("CrawlerSidecar time window", () => {
+	const SEED = [
+		{ channel: "C1", ts: "100.000001", text: "release release release plan" },
+		{ channel: "C1", ts: "200.000001", text: "release notes" },
+		{ channel: "C1", ts: "300.000001", text: "release release shipped" },
+	] as const;
+
+	it("pushes the window into the query, so an in-window message that BM25 ranks last is still found at topK 1", () => {
+		seedSlack(SEED);
+		const sidecar = open();
+		// Unwindowed, the best BM25 match for "release" is not the middle message.
+		expect(sidecar.searchLexical("release", 1)[0]?.key).not.toBe("C1|200.000001");
+
+		const hits = sidecar.searchLexical("release", 1, { since: 150_000, until: 250_000 });
+
+		expect(hits.map((hit) => hit.key)).toEqual(["C1|200.000001"]);
+		expect(hits[0]?.publishedAt).toBe(200_000);
+		sidecar.close();
+	});
+
+	it("is half-open: since inclusive, until exclusive", () => {
+		seedSlack(SEED);
+		const sidecar = open();
+		const keys = (window: { since?: number; until?: number }) =>
+			sidecar
+				.searchLexical("release", 10, window)
+				.map((hit) => hit.key)
+				.sort();
+
+		expect(keys({ since: 200_000, until: 300_000 })).toEqual(["C1|200.000001"]);
+		expect(keys({ since: 200_001 })).toEqual(["C1|300.000001"]);
+		expect(keys({ until: 200_000 })).toEqual(["C1|100.000001"]);
+		sidecar.close();
+	});
+
+	it("applies to semantic and hybrid search too", async () => {
+		seedSlack([
+			{ channel: "C1", ts: "100.000001", text: "we ship the release friday" },
+			{ channel: "C1", ts: "200.000001", text: "we ship the release monday" },
+		]);
+		const sidecar = open(vocabEmbedder(VOCAB));
+		await sidecar.sync();
+
+		const semantic = await sidecar.searchSemantic("ship release", 5, { since: 150_000 });
+		const hybrid = await sidecar.searchHybrid("ship release", 5, { since: 150_000 });
+
+		expect(semantic.map((hit) => hit.key)).toEqual(["C1|200.000001"]);
+		expect(hybrid.map((hit) => hit.key)).toEqual(["C1|200.000001"]);
+		sidecar.close();
+	});
+
+	it("leaves queries without a window unchanged", () => {
+		seedSlack(SEED);
+		const sidecar = open();
+		expect(sidecar.searchLexical("release", 10)).toHaveLength(3);
+		sidecar.close();
+	});
+});
+
 describe("CrawlerSidecar is lazy", () => {
 	it("surfaces corrupt archives instead of treating them as not-yet-synced", async () => {
 		writeFileSync(crawlerDb, "not a SQLite archive");

@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bm25Scores, tokenize } from "../retrieval/bm25.ts";
+import { inTimeWindow, type TimeWindow } from "../retrieval/time-window.ts";
 import type { ConnectorDocument } from "./connector.ts";
 import { sanitizeIdSegment } from "./connector.ts";
 
@@ -148,9 +149,10 @@ export class DatasourceChunkStore {
 	/**
 	 * BM25-style lexical search over the stored chunks. Empty queries and
 	 * empty stores return `[]`; this method never throws. Scoring is delegated
-	 * to {@link bm25Scores}.
+	 * to {@link bm25Scores}. With a `window`, chunks dated outside `[since, until)` are dropped before the cut to
+	 * `topK`, so newer off-window chunks cannot crowd in-window ones out.
 	 */
-	search(query: string, topK: number): readonly ScoredChunk[] {
+	search(query: string, topK: number, window?: TimeWindow): readonly ScoredChunk[] {
 		this.ensureLoaded();
 		if (tokenize(query).length === 0 || this.chunkList.length === 0 || topK <= 0) return [];
 
@@ -161,9 +163,18 @@ export class DatasourceChunkStore {
 		const scored: ScoredChunk[] = [];
 		for (const [index, chunk] of this.chunkList.entries()) {
 			const score = scores[index] ?? 0;
-			if (score > 0) scored.push({ chunk, score });
+			if (score <= 0) continue;
+			if (window !== undefined && chunk.publishedAt !== undefined && !inTimeWindow(chunk.publishedAt, window))
+				continue;
+			scored.push({ chunk, score });
 		}
-		scored.sort((a, b) => b.score - a.score || a.chunk.chunkId.localeCompare(b.chunk.chunkId));
+		// Under a window, chunks the window can place rank ahead of undated ones. An undated chunk is returned only if
+		// there is room left, so the retrieval pipeline can exclude it and report that this store cannot date it.
+		const placed = (item: ScoredChunk): number =>
+			window === undefined || item.chunk.publishedAt !== undefined ? 0 : 1;
+		scored.sort(
+			(a, b) => placed(a) - placed(b) || b.score - a.score || a.chunk.chunkId.localeCompare(b.chunk.chunkId),
+		);
 		return scored.slice(0, topK);
 	}
 

@@ -5,6 +5,7 @@
  */
 
 import { FallbackRetrievalMethod } from "../../retrieval/fallback.ts";
+import { windowFromOptions } from "../../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -78,7 +79,11 @@ export class SidecarRetrievalMethod implements RetrievalMethod {
 		const sidecar =
 			typeof this.options.sidecar === "function" ? await this.options.sidecar(options.signal) : this.options.sidecar;
 		options.signal?.throwIfAborted();
-		const hits = mode === "bm25" ? sidecar.searchLexical(trimmed, topK) : await sidecar.searchHybrid(trimmed, topK);
+		const window = windowFromOptions(options);
+		const hits =
+			mode === "bm25"
+				? sidecar.searchLexical(trimmed, topK, window)
+				: await sidecar.searchHybrid(trimmed, topK, window);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const result = this.toResult(hit, options);

@@ -1,3 +1,4 @@
+import { publishedAtFrom } from "../../../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -144,6 +145,8 @@ function toRetrievalResult(
 			instanceId,
 			mode,
 			chunkId: hit.chunkId,
+			// A chat chunk spans a window; its start is when the conversation it belongs to began.
+			...publishedAtFrom(hit.metadata?.startedAt),
 		},
 	};
 }

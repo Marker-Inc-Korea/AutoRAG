@@ -192,6 +192,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 					virtualPath: entry.virtualPath,
 					minsyncChunkId: chunkId,
 					minsyncPath: hit.path,
+					// The window's fallback time for a local file: when the source was last modified.
+					sourceMtimeMs: entry.sourceMtimeMs,
 					...(location !== undefined
 						? {
 								lineNumber: location.lineStart,

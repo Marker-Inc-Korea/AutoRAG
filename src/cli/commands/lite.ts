@@ -30,8 +30,11 @@ Subcommands:
                        reported as "stale": true plus stale-index diagnostics, and
                        the query is still answered; indexes are only rebuilt when
                        asked to.
-                       (--top-k N  --scope SCOPE
+                       (--top-k N  --scope SCOPE  --since ISO  --until ISO
                         --refresh  --strict  --json  --debug)
+                       --since/--until keep only evidence dated in [since, until)
+                       (ISO-8601, date-only = local midnight); results with no date
+                       are excluded and the method is reported in "unsearched".
                        --refresh rebuilds the indexes incrementally first;
                        --strict fails with exit 2 when the index is stale instead
                        of answering from it.

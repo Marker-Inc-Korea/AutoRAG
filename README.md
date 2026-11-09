@@ -554,7 +554,10 @@ hard-code a tool count.
 Core Lite tools include `autorag.status`, `autorag.search`,
 `autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
 `autorag.refresh`, `autorag.report`, and `autorag.evidence`. Configured
-integrated datasources expose additional scoped search tools. Read-only MCP
+integrated datasources expose additional scoped search tools. Searches take an
+optional ISO-8601 `since` (inclusive) / `until` (exclusive) time window; see
+[Time windows](docs/datasource-skills.md#time-windows) for how each method dates
+its results. Read-only MCP
 mode omits mutating tools such as refresh and report.
 
 ## Using external MCP servers and agent skills
